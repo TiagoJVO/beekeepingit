@@ -1,40 +1,24 @@
 # Rule: Mandatory workflow (read before any task)
 
-Binding for every planning or implementation task. **Nothing is built yet.** `requirements/`
-is the **source of truth** (intent) and the plan/backlog lives in **GitHub Issues** — both revisable; `docs/`
-documents what's actually built (empty until implementation).
+Binding for every planning or implementation task. `requirements/` is the **source of truth**
+(intent); the plan/backlog lives in **GitHub Issues**; `docs/` documents what's actually built.
 
-## 1. During planning, read the sources of truth (no working from memory)
-Read these **when planning a task** — not during implementation:
-- `requirements/context.md`, `functional-requirements.md`, `non-functional-requirements.md`
-- `requirements/decisions.md` (`D-*`) and `requirements/open-questions.md` (`Q-*`)
-- The intended technical approach in `requirements/tech-stack.md` (see §3)
-- The task's epic/story in **GitHub Issues** (`gh issue list`; epics carry the `type/epic` label)
+## 1. When planning a task, look it up in `requirements/` first
+Don't work from memory. Before planning, search `requirements/` for everything the task touches:
+- the **requirements** it implements (`FR-*/NFR-*`),
+- the **decisions** it relies on or touches (`D-*` in `decisions.md`),
+- any **open questions** it must clarify first (`Q-*` in `open-questions.md`),
+- relevant **context** and intended approach (`context.md`, `tech-stack.md`).
 
-Identify the `FR-*/NFR-*` the task implements, the `D-*` it touches, and any `Q-*`.
+Also read the task's epic/story in GitHub Issues (`gh issue list`; epics carry `type/epic`).
+For the non-obvious conventions of that folder, see the **`requirements-folder` skill**.
 
 ## 2. Decisions & requirements are the default — but revisitable
-- Treat `D-*` decisions and requirements as the working default.
+- Treat `D-*` decisions and requirements — including rollout phase and deferred scope
+  (e.g. `D-10`, `D-4`) — as the working default.
 - If contradicting one genuinely makes sense, **stop and propose it to the user**. On
   confirmation, **update** the decision/requirement (note it). Never silently diverge.
 - If an unresolved `Q-*` blocks the task, surface it.
 
-## 3. Intent lives in `requirements/`; `docs/` documents what's built
-- Architecture **intent** is in `requirements/` (incl. `requirements/tech-stack.md`) —
-  read it during planning.
-- As you **implement**, document the **actual** architecture in `docs/` and record
-  significant decisions as ADRs in `docs/adr/`.
-- If implementation must diverge from a `D-*`/requirement, confirm with the user and
-  update `requirements/` (see §2).
-
-## 4. Respect phase & scope
-- Follow the rollout order in `D-10` (PWA → Android → iOS; native only when needed).
-- Don't build deferred scope (`D-4`: billing `EPIC-90`, quotas `EPIC-91`, on-device AI
-  until the native phase) without a decision.
-
-## 5. Traceability
-- Reference IDs (`FR-*/NFR-*`, `D-*`, `Q-*`, `EPIC-*`, issue `#`) in branches, commits, PRs.
-
-## 6. Quality gates
-- Write/update tests with every change (`NFR-TST`). Update docs when behavior/scope changes.
-- See `.claude/rules/definition-of-done.md` and `CONTRIBUTING.md` before opening a PR.
+Finishing a task (tests, docs, traceability, tenancy, security) is governed by
+[`definition-of-done.md`](definition-of-done.md).

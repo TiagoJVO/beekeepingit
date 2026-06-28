@@ -8,8 +8,8 @@ where there's a sensible one.
 > **answered it is removed from here**, and its answer is written to its place of record —
 > a decision (`D-*`) in [decisions.md](decisions.md), an `FR-*/NFR-*`, or `docs/` — with
 > that artifact citing the `Q-*` ID so traceability survives the removal. See the
-> **`open-questions` skill** ([`.claude/skills/open-questions`](../.claude/skills/open-questions/SKILL.md))
-> for the full read / add / resolve workflow.
+> **`requirements-folder` skill** ([`.claude/skills/requirements-folder`](../.claude/skills/requirements-folder/SKILL.md))
+> for this and the other requirements/ conventions.
 
 ---
 
