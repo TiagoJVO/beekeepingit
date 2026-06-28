@@ -6,8 +6,8 @@
 - **Requirements:** NFR-ARC-1, NFR-ARC-2, NFR-ARC-3
 - **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture),
   D-5, D-6, D-7, D-9, D-10
-- **Open questions:** [Q-SCALE](../../requirements/open-questions.md)
-  (resolved by D-1), [Q-SYNC](../../requirements/open-questions.md#q-sync--offline-conflict-resolution-strategy)
+- **Open questions:** [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
+  (resolved by D-1), [Q-SYNC](../../requirements/open-questions.md#q-sync--offline-sync-conflict-resolution--write-back-integrity)
 - **Design doc:** [service-decomposition.md](../architecture/service-decomposition.md)
 
 ## Context
@@ -17,7 +17,7 @@ to a **full microservices architecture** and names service decomposition a "firs
 task". This must be reconciled with two forces pulling the other way:
 
 - Context [C-1](../../requirements/context.md#c-1--single-organization-now-multi-organization-later)
-  and the [Q-SCALE](../../requirements/open-questions.md)
+  and the [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
   recommended-default warn that full microservices is likely **over-engineering for a single-org
   v1** and suggest a modular monolith with clean internal boundaries.
 - Offline-first (FR-OF-1, D-6) wants a **consolidated, replicable** store, while microservices

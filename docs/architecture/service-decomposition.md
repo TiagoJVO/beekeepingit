@@ -44,7 +44,7 @@ their internals):
 v1 to **full microservices from day one**, knowingly going beyond Context
 [C-1](../../requirements/context.md#c-1--single-organization-now-multi-organization-later)
 ("single org now, don't over-build") and the
-[Q-SCALE](../../requirements/open-questions.md)
+[Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
 recommended-default (modular monolith). We honor that decision here; the cost/over-engineering
 trade-off and the **modular-monolith migration escape hatch** are recorded in
 [ADR-0001](../adr/0001-service-decomposition.md).
@@ -260,7 +260,7 @@ S3-compatible interface (MinIO now, cloud later) and DB access via a typed query
 
 | Item | Impact on this design | Where it's resolved |
 |---|---|---|
-| [Q-SCALE](../../requirements/open-questions.md) | Full microservices may be over-built for one org; mitigated by the schema-per-service **split-later** path + modular-monolith escape hatch | [ADR-0001](../adr/0001-service-decomposition.md) |
+| [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture) | Full microservices may be over-built for one org; mitigated by the schema-per-service **split-later** path + modular-monolith escape hatch | [ADR-0001](../adr/0001-service-decomposition.md) |
 | [Q-SYNC](../../requirements/open-questions.md#q-sync--offline-sync-conflict-resolution--write-back-integrity) | Write-back must respect ownership **and be atomic per push** (rollback on partial failure) + client validation parity + failure UX (D-12) — biggest cross-service risk | #106, SP-1 (#54) |
 | [Q-AICLOUD](../../requirements/open-questions.md#q-aicloud--cloud-ai-privacy--gdpr-now-near-term-per-d-8) | `ai` sends org data to an external processor → consent/DPA/no-training/EU-residency gate **before** AI build | EPIC-08, NFR-CMP |
 | [Q-JOUR](../../requirements/open-questions.md#q-jour--journey-planned-vs-actual-model) | `journeys`↔`activities` attribution (and "how much is missing") undefined | #105/#110, EPIC-04 |
