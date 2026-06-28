@@ -19,7 +19,7 @@ The reasoning behind the intended stack, and the input to a future service decom
 | On-device store | **SQLite** | Decided (D-6) |
 | Offline sync engine | **PowerSync _or_ ElectricSQL** | Spike SP-1 |
 | Identity / auth | **Keycloak (self-hosted, OIDC)** | Decided (D-7) |
-| AI assistant | **NL→query; cloud model first (e.g. Claude API), on-device later** | Decided (D-8) |
+| AI assistant | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11) |
 | API style | REST + OpenAPI (client); gRPC optional (inter-service) | Proposed |
 | Orchestration | Kubernetes + Helm | Decided (NFR-ARC) |
 | Observability | OpenTelemetry + Prometheus + Grafana + Loki/Tempo | Proposed |
@@ -108,19 +108,23 @@ codebase throughout.
   resource ownership** enforced at the app layer (FR-TEN); consider OpenFGA/Keto if
   fine-grained sharing grows.
 
-## AI assistant — NL→query (cloud first, on-device later)
+## AI assistant — NL→query & actions (cloud first, on-device later)
 
-- **Approach:** translate the question into a **structured query / tool call** over
-  the org's data (accurate for "total honey last year", "overdue todos"); optional
-  RAG for open-ended beekeeping Q&A later. Same pattern in both phases.
+- **Approach:** translate the request into a **structured query or action (tool call)**
+  over the org's data — reads (accurate for "total honey last year", "overdue todos") and
+  **proposed writes** ("set apiary X to 12 hives", user-confirmed); optional RAG for
+  open-ended beekeeping Q&A later. Same pattern in both phases.
 - **PWA phase — cloud, server-side:** a Go **AI service** receives the question, calls
   a **hosted LLM (e.g. Claude API)** to produce the structured query, runs it against
   Postgres (scoped), and returns the answer. Keys stay server-side; **online-only**.
 - **Native phase — on-device:** same flow with a **local LLM** (`flutter_gemma` /
   llama.cpp; candidates Gemma 2 2B / Llama 3.2 3B / Phi-3.5-mini) + the local/cloud
   toggle (`NFR-AI-3`). Feasibility via **SP-2**.
-- **Context scoping:** organization (default) / apiary / journey (`FR-AI-1`); queries
-  are parameterized, read-only, and never reach beyond the selected scope.
+- **Context scoping & write-safety:** organization (default) / apiary / journey
+  (`FR-AI-1`); reads are parameterized and never reach beyond the selected scope. The
+  `ai` service holds **no direct write access** — it **proposes** actions that the user
+  **confirms** and the **owning service executes** via its normal API (`FR-AI-2`,
+  `NFR-AI-4`, D-11).
 - **Privacy / GDPR:** cloud mode sends org data to an external processor → needs
   **consent + DPA + no-training terms + EU-residency** consideration (`NFR-AI-1`,
   `NFR-CMP`, Q-AICLOUD).

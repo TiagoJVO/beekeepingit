@@ -103,6 +103,8 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Privacy / GDPR (important):** cloud AI sends org data to an external processor →
   requires **explicit consent**, a **DPA**, a **no-training** guarantee, and
   EU-residency consideration (NFR-AI-1, NFR-CMP). Tracked as Q-AICLOUD.
+- **Extended (D-11):** the assistant is **not read-only** — it can also propose
+  **write actions** (user-confirmed, owner-executed). See D-11.
 - **Supersedes:** Q-LLM direction; reorders NFR-AI-2/3 (cloud before local).
 
 ## D-9 — Repository structure: monorepo
@@ -123,6 +125,48 @@ Core technology decisions (2026-06-27). Detail and rationale in
   data capture works via the sync engine's **web SDK** (iOS PWA storage persistence
   is the weak spot to validate — but iOS is last anyway).
 - **Supersedes:** the earlier "native mobile app is the primary v1 surface" framing.
+
+## D-11 — AI write-actions: propose → confirm → owner-executes
+- **Decision:** the assistant is **not limited to reads**. Beyond NL→query (D-8) it can
+  translate a natural-language (or **voice**) request into a **proposed structured action**
+  — create/update/delete over app data (e.g. "set apiary X to 12 hives", "mark todo Y done",
+  "log a 10 kg harvest at Z") — surfacing the change for the user to **confirm** (FR-AI-2).
+- **Safety model (the rule):** the `ai` service holds **no direct write access** to domain
+  schemas. A proposed action runs **only after explicit user confirmation** and **only through
+  the owning domain service's normal API**, inheriting its validation, authz, `organization_id`
+  scoping, history/audit (FR-HIS) and the offline-sync write path (D-6, #106). This **replaces**
+  the blunt "AI is read-only" stance with **"AI never writes directly; writes are user-confirmed
+  and owner-mediated"** (the *AI write-safety guarantee*, NFR-AI-4).
+- **Why:** preserves bounded-context ownership (no service writes another's schema), keeps the
+  untrusted NL/LLM **blast radius contained** (LLM output is a *proposal*, never a direct DB
+  write), and **reuses** the existing validated/audited/offline write path instead of a
+  privileged AI bypass. The C4 container view barely changes — `ai → pg` stays read-only and
+  confirmed writes flow through the normal `client → gateway → owning service` path.
+- **Scope/phase:** like all AI in the PWA phase, online-only + cloud (D-8/D-10); the confirmed
+  edit then queues & syncs like any edit. **Voice input** (speech→text) is a separate input
+  modality feeding the same pipeline — deferred to an **EPIC-08 spike** (cloud STT falls under
+  the same Q-AICLOUD consent gate).
+- **Extends:** D-8 (NL→query → NL→query **and** NL→action). Touches FR-AI-2, NFR-AI-4, NFR-CMP,
+  FR-HIS, EPIC-08.
+
+## D-12 — Offline sync write-back: atomic, validation-parity, notify-and-fix
+- **Decision:** the client→server sync **push is atomic** — if any change in a push is
+  rejected, the **whole push rolls back** (the server applies all-or-nothing; no partial
+  write-back). The **client revalidates** queued edits against the **same rules the server
+  enforces**, as closely as feasible, *before* pushing, to catch failures locally rather than
+  at the server. The **server stays authoritative** — client validation is a UX optimization,
+  not a security boundary.
+- **On failure:** the **pushing user is notified**, the rejected push is surfaced with the
+  offending change(s), and the user **fixes it on the client** before the next push (FR-OF-2).
+  The **failure-handling UX must be designed** (#106 / EPIC-06).
+- **Tension to resolve (mechanism — open):** atomic write-back **conflicts with ownership
+  rule 1** ("a service writes only its own schema; no cross-schema transactions"). A push that
+  spans services therefore **cannot use one DB transaction** — atomicity must be orchestrated at
+  the write-back layer (e.g. **saga / compensating actions**, or a **per-service transactional
+  batch + coordinator** with idempotent, reversible apply). Choosing the mechanism is **#106 +
+  SP-1** (Q-SYNC).
+- **Refines:** D-6 (sync) and ownership rule 1 (service-decomposition §4). Touches FR-OF-2,
+  Q-SYNC, FR-HIS, EPIC-06, #106.
 
 ---
 

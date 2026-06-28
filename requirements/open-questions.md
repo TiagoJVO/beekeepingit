@@ -24,16 +24,21 @@ where there's a sensible one.
   k8s cluster, so it can be split into microservices later without a rewrite.
   Treat "microservices" as a target architecture, not a v1 deliverable.
 
-### Q-SYNC — Offline conflict-resolution strategy
+### Q-SYNC — Offline sync: conflict resolution + write-back integrity
 > **Partially addressed:** sync **engine** chosen (D-6: PowerSync/ElectricSQL — final
-> pick + web/PWA persistence via **SP-1**). The **conflict policy** below is still to
-> be designed.
-- **Affects:** FR-OF-1, and indirectly every entity (FR-HIS-1 too).
+> pick + web/PWA persistence via **SP-1**); **write-back integrity decided** (D-12: atomic
+> push, client validation parity, notify-and-fix). The **conflict policy** and the
+> **atomicity mechanism** below are still to be designed.
+- **Affects:** FR-OF-1, FR-OF-2, and indirectly every entity (FR-HIS-1 too).
 - **Gap:** Offline + multiple users in one org editing shared data = guaranteed
   conflicts, but no resolution strategy is defined.
 - **Decisions needed:** sync granularity (record vs. field), conflict policy
   (last-write-wins, per-field merge, CRDT, manual resolution), tombstones for
-  deletes, clock source, and what "synced" status the UI shows.
+  deletes, clock source, and what "synced" status the UI shows. **Plus (D-12):** the
+  **write-back atomicity mechanism** across per-service writes — saga/compensation vs a
+  per-service transactional batch + coordinator (a multi-service push can't share one DB
+  transaction; tension with ownership rule 1); **client↔server validation parity** (how
+  rules are shared without divergence); and the **sync-failure notify-and-fix UX** (FR-OF-2).
 - **Recommended default:** per-record **last-write-wins with server timestamps**
   for v1, plus a conflict log; revisit field-level merge only where it hurts.
 

@@ -19,7 +19,9 @@
 ## Testing (NFR-TST)
 - Add/adjust tests with every change. Go: unit + integration (containerized Postgres).
   Flutter: widget + integration. Admin: component + key e2e flows. Cover offline/sync paths
-  and the AI read-only guarantee. A change isn't done until its tests pass in CI.
+  and the **AI write-safety guarantees** (no direct AI writes; AI-proposed mutations require
+  explicit user confirmation and execute via the owning service's validated, audited API).
+  A change isn't done until its tests pass in CI.
 
 ## Security & data (NFR-SEC, NFR-CMP)
 - No secrets in the repo; load server-side (`EPIC-14`). Validate all input; protect against

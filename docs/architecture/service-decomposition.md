@@ -80,7 +80,7 @@ named contexts. Each domain service is a **Go** service (D-5) owning **one Postg
 | 4 | **activities** (`activities`) | Activity CRUD with **per-type JSONB attributes**; recorded against the **performing user** and referencing an apiary. | `activities` (`apiary_id` ref, `performed_by` ref, `type`, `attributes jsonb`) | FR-AC-1..6 (D-2) |
 | 5 | **journeys** (`journeys`) | Journey CRUD; **planned-vs-actual aggregation** (apiaries visited, hives harvested, honey collected, missing). | `journeys`, journey↔activity attribution (model is **Q-JOUR**, open) | FR-JO-1..4 |
 | 6 | **todos** (`todos`) | Todo CRUD + lifecycle; association to apiary/area; filters. | `todos` (`org_id`, due date, priority, status, optional `apiary_id`/assignee) | FR-TD-1 (lifecycle **Q-TODO**, open) |
-| 7 | **ai** (`ai`) | NL→**structured-query** assistant; **cloud LLM** (D-8); **read-only**, org/apiary/journey-scoped, parameterized queries. Online-only (PWA phase). | Minimal: consent records / query logs. **Owns no domain data** — reads only. | FR-AI-1, NFR-AI-1 (consent **Q-AICLOUD**, gating) |
+| 7 | **ai** (`ai`) | NL→**query & action** assistant; **cloud LLM** (D-8); org/apiary/journey-scoped. Reads are parameterized; writes are **proposed** (user-confirmed, owner-executed) — **no direct write access**. Online-only (PWA phase). | Minimal: consent records / query **+ action** logs. **Owns no domain data.** | FR-AI-1/2, NFR-AI-1/4 (consent **Q-AICLOUD**, gating) |
 | 8 | **history** (`history`) | **Append-only** change history (actor + timestamp) for every create/update/delete; per-entity history views; must survive offline edits + sync. | `audit_log` (append-only; `entity_type`, `entity_id`, `org_id`, `actor`, `change`, `ts`) | FR-HIS-1 (capture mechanism → #107; retention **Q-HIS**) |
 
 ### "admin" is a client, not a new domain service
@@ -120,11 +120,18 @@ These rules make "no cross-service data-ownership ambiguity" (AC) concrete:
    cross-domain joins are avoided to preserve the split-later property.
 4. **Tenancy is universal.** Every owned row carries `organization_id`; every query is
    org-scoped; optional Postgres **RLS** as defense-in-depth (detail → #105/#109).
-5. **The `ai` service is read-only over domain data.** It never writes domain tables; access is
-   scoped and parameterized (the "AI read-only guarantee").
+5. **The `ai` service never writes domain data directly (the "AI write-safety guarantee").** Its
+   own DB access is **read-only**, scoped and parameterized. It can **propose** a create/update/
+   delete, but the change executes only after **explicit user confirmation** and **through the
+   owning service's normal API** — inheriting that service's validation, authz, tenancy and
+   history. `ai` holds no write credentials to any other schema (D-11; FR-AI-2; NFR-AI-4).
 6. **The sync engine replicates the org/user slice**; the **write-back path** (how queued
    offline edits reach the authoritative tables while respecting per-service ownership and
-   validation) is the central question for **#106** and must not bypass ownership rules.
+   validation) is the central question for **#106** and must not bypass ownership rules. It must
+   be **atomic per push** (all-or-nothing), with **client-side validation parity** and a
+   **notify-and-fix** flow on rejection (D-12, FR-OF-2). Because a multi-service push **can't
+   share one DB transaction** (rule 1), atomicity needs **saga/compensation or a per-service
+   transactional batch + coordinator** (#106 / SP-1).
 
 ---
 
@@ -145,7 +152,7 @@ graph TB
     beekeeper -->|"manage apiaries, activities,<br/>journeys, todos — offline-first"| sys
     admin -->|"manage orgs, members, roles<br/>(online-only)"| sys
     sys -->|"authenticate users (OIDC),<br/>cache tokens for field login"| keycloak
-    sys -->|"NL→query assistant —<br/>consent-gated, read-only, online-only"| llm
+    sys -->|"NL→query/action assistant —<br/>consent-gated, online-only"| llm
 ```
 
 **Actors:** field **Beekeepers** (offline-first PWA) and **Organization Admins** (online-only
@@ -212,7 +219,10 @@ graph TB
 - **Offline path is special.** The Flutter PWA's local store is fed by the **sync engine**, not
   by direct REST reads, for the replicated slice. REST is used for online actions and for the
   Admin App. The write-back contract is **#106**.
-- **AI reads, never writes** (rule 5) and is the only service talking to an external system.
+- **AI reads (scoped) but never writes domain tables directly** — it proposes writes the user
+  confirms and the owning service executes (rule 5); it is the only service talking to an
+  external system. (So `ai → pg` stays read-only; confirmed writes flow `pwa → gateway →
+  owning service`, the path already drawn above.)
 - **Observability** (NFR-OBS-1): every service exports OTel signals to the collector → the
   Prometheus/Grafana/Loki/Tempo stack (EPIC-13 #87).
 
@@ -251,7 +261,7 @@ S3-compatible interface (MinIO now, cloud later) and DB access via a typed query
 | Item | Impact on this design | Where it's resolved |
 |---|---|---|
 | [Q-SCALE](../../requirements/open-questions.md) | Full microservices may be over-built for one org; mitigated by the schema-per-service **split-later** path + modular-monolith escape hatch | [ADR-0001](../adr/0001-service-decomposition.md) |
-| [Q-SYNC](../../requirements/open-questions.md#q-sync--offline-conflict-resolution-strategy) | The sync write-back path must respect service ownership — biggest cross-service risk | #106, SP-1 (#54) |
+| [Q-SYNC](../../requirements/open-questions.md#q-sync--offline-sync-conflict-resolution--write-back-integrity) | Write-back must respect ownership **and be atomic per push** (rollback on partial failure) + client validation parity + failure UX (D-12) — biggest cross-service risk | #106, SP-1 (#54) |
 | [Q-AICLOUD](../../requirements/open-questions.md#q-aicloud--cloud-ai-privacy--gdpr-now-near-term-per-d-8) | `ai` sends org data to an external processor → consent/DPA/no-training/EU-residency gate **before** AI build | EPIC-08, NFR-CMP |
 | [Q-JOUR](../../requirements/open-questions.md#q-jour--journey-planned-vs-actual-model) | `journeys`↔`activities` attribution (and "how much is missing") undefined | #105/#110, EPIC-04 |
 | [Q-TODO](../../requirements/open-questions.md#q-todo--todo-lifecycle--associations) | `todos` lifecycle/assignment/area association | EPIC-05 |
