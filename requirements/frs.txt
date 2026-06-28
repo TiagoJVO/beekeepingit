@@ -1,0 +1,42 @@
+- Crud of apiaries
+- list of apiaries ordered by closest apiary to the user current location
+- map view of apiaries with markers for each apiary location and current location of the user
+- both map view and list view should be available for the user to switch between
+- there needs to be a feature to measure the distance between the 2 apiaries
+- search functionality to find apiaries by name, location, or other attributes
+- on apiary detail page, display information about the apiary including its name, location, number of hives, and any other relevant details
+- activity types may have different attributes. activity types are well defined, each activity type has its own set of attributes. current activity types (can be extended in the future): 
+-- honey harvest (attributes: date, amount of honey harvested, notes)
+-- feeding (attributes: date, type of feed, amount of feed, notes)
+-- treatment (attributes: date, type of treatment, notes)
+-- generic (attributes: date, notes)
+- there should be a feature to add new activities to an apiary, with the ability to select the activity type and fill in the relevant attributes
+- there should be a feature to edit existing activities, with the ability to update the relevant attributes
+- there should be a feature to delete existing activities
+- there should be a feature to view a list of all activities for an apiary, with the ability to filter by activity type and date range on the apiary detail page
+- there should be a feature to view a list of all activities for all apiaries, with the ability to filter by activity type and date range on the main activities page
+- some activities are seasonal, and the user may want to aggregate them by "journey", for example, spring honey harvest will need all apiaries to be visited, so the user needs to have a journey statistics page to view the aggregated activities for a specific journey, how many apiaries were visited, how many hives were harvested, how much honey was collected, how much is missing, etc. The user should be able to select a journey and view the aggregated statistics for that journey.
+- there should be a feature to view a list of all journeys, with the ability to filter by date range and activity type on the main journeys page
+- there should be a feature to view the details of a specific journey, including the list of apiaries visited, the activities performed at each apiary, and the aggregated statistics for that journey
+- there should be a feature to add new journeys, with the ability to select the apiaries to be visited and the activities to be performed at each apiary (or all apiaries)
+- the app will be mainly used in the field, so it should be designed to work offline and sync data when an internet connection is available
+- there should be a feature to export data for apiaries, activities, and journeys in a common format (e.g., CSV or JSON) for backup or analysis purposes
+- there should be a feature to import data for apiaries, activities, and journeys from a common format (e.g., CSV or JSON) for backup or analysis purposes
+- the app should work for android and ios devices, and should be designed to work on both phones and tablets (or evenr larger devices like laptops or desktops, where offline functionality is not required)
+- all features should be designed with a user-friendly interface, with clear navigation and intuitive controls, specially the ones that wuill be used in the field, where the user may have limited time and attention to interact with the app and gloves on
+- there should be a feature to allow the user to customize the app settings, including notification preferences, data sync settings, and other relevant options
+- the app is multi-tenant, meaning that multiple users can use the app and have their own data, but they should not be able to see each other's data. Each user should have their own account and login credentials, and the app should enforce access control to ensure that users can only access their own data.
+- there should be a feature to allow the user to manage their account settings, including changing their password, updating their profile information, and managing their subscription (if applicable)
+- features should be designed to have a toggle based on the subscription level of the user, for example, some features may be available only to premium users, while others may be available to all users. The app should enforce access control based on the user's subscription level. for now, all features will be available to all users, but in the future, some features may be restricted based on subscription level.
+- users on login need to create their profile, including their name, email, and other relevant information. The app should enforce that users complete their profile before they can access the main features of the app.
+- users before seeing their apiaries, need to create their "organization", including the organization name, address, and other relevant information. The app should enforce that users complete their organization profile before they can access the main features of the app. (some might be optional)
+- the only thing that a user owns in the data store is the organization. all apiaries, activities, and journeys belong to the organization, and all users within the organization can access the same data (apart from activities, that are registered with the user that performed them). The app should enforce access control to ensure that users can only access data belonging to their own organization.
+- there needs to be "history" for all the data, meaning that when a user creates, updates, or deletes an apiary, activity, or journey, or any other entity, the app should keep a record of the change, including the user who made the change and the timestamp of the change. The app should provide a feature to view the history of changes for each apiary, activity, and journey.
+- the app should be designed with accessibility in mind, including support for screen readers, keyboard navigation, and other accessibility features to ensure that the app is usable by all users, including those with disabilities.
+- there needs to be a feature to create "todos", easily accessible from main screen, apriaries list, and apiary detail page, where the user can create a todo with a title, description, due date, and priority level. The app should provide a feature to view a list of all todos, with the ability to filter by due date and priority level.
+- AI features, where the this initial stage will be a chatbot that can answer questions about beekeeping, apiaries, activities, journeys, todos, and other relevant topics. The chatbot should be able to understand natural language queries and provide relevant answers based on the user's input, accessing the app's data. The chat should allow to select the context in scope, a specific organization (default), a specific apiary, or a specific journey. Examples of questions that the chatbot should be able to answer include: 
+-- "What are the activities performed at apiary X in the last month?",
+-- "What is the total amount of honey harvested in the last year?",
+-- "What are the todos due in the next week?",
+-- "what are the todos that are overdue?",
+-- "what are the todos that are peding for the area of apiary X?"

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"[BeekeepingIT] Nothing is built yet; source of truth (intent) is requirements/. When PLANNING a task, READ: requirements/ (context, FRs, NFRs, decisions, open-questions, tech-stack) — at planning, not implementation. Intent lives in requirements/; docs/ documents what gets built. As you implement, document the real architecture in docs/ (+ ADRs in docs/adr/). Decisions/requirements are revisitable: if contradicting one makes sense, get user confirmation, then update requirements/. Respect rollout order (D-10) and deferred scope (D-4). Full rules: CLAUDE.md + .claude/rules/.\"}}'",
+            "statusMessage": "Loading BeekeepingIT workflow rules"
+          }
+        ]
+      }
+    ]
+  }
+}

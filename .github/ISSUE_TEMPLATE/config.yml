@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📋 Requirements & scope
+    url: https://github.com/OWNER/REPO/blob/main/requirements/README.md
+    about: Read the requirements, decisions, and open questions before filing.

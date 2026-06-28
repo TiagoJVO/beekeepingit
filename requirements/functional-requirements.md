@@ -1,0 +1,207 @@
+# Functional Requirements
+
+Each requirement has a **stable ID** (e.g., `FR-AP-1`) for traceability into
+planning, design, and test artifacts. IDs are grouped by domain. The wording is
+refined from the original `frs.txt` but preserves the original intent; typos and
+ambiguities flagged inline link to `open-questions.md`.
+
+| Prefix | Domain |
+|---|---|
+| FR-AP | Apiaries |
+| FR-AC | Activities |
+| FR-JO | Journeys |
+| FR-TD | Todos |
+| FR-AI | AI / Chatbot |
+| FR-OF | Offline & Sync |
+| FR-IE | Import / Export |
+| FR-ONB | Onboarding (Profile & Organization) |
+| FR-AU | Accounts & Subscription |
+| FR-TEN | Tenancy & Data Ownership |
+| FR-HIS | History / Audit |
+| FR-ST | Settings |
+| FR-PL | Platforms & Devices |
+| FR-UX | Usability (field-first) |
+| FR-AX | Accessibility |
+
+---
+
+## Apiaries (FR-AP)
+
+- **FR-AP-1** — Full **CRUD** for apiaries (create, read, update, delete).
+- **FR-AP-2** — **List** of apiaries ordered by **proximity** to the user's
+  current location (closest first).
+- **FR-AP-3** — **Map view** showing a marker for each apiary's location and a
+  marker for the user's current location.
+- **FR-AP-4** — Users can **switch** between map view and list view; both must be
+  available.
+- **FR-AP-5** — Feature to **measure the distance between two apiaries**.
+  - *Open question (Q-DIST):* straight-line vs. driving distance, and how the two
+    apiaries are selected.
+- **FR-AP-6** — **Search** apiaries by **name, location, or other attributes**.
+- **FR-AP-7** — **Apiary detail page** showing name, location, number of hives,
+  and other relevant details.
+  - *Resolved (D-2):* "number of hives" is a **count** on the apiary; hives are
+    **not** a separate entity.
+
+## Activities (FR-AC)
+
+- **FR-AC-1** — Activities have a **type**, and each type defines its **own set of
+  attributes**. Types are well-defined and **extensible** in the future. Initial
+  types:
+  - **Honey harvest** — date, amount of honey harvested, **number of hives
+    harvested**, notes.
+  - **Feeding** — date, type of feed, amount of feed, notes.
+  - **Treatment** — date, type of treatment, notes.
+  - **Generic** — date, notes.
+  - *Per D-2:* relevant types (harvest, and optionally treatment/feeding) capture a
+    **number-of-hives-involved** attribute; activities stay at the apiary level.
+- **FR-AC-2** — **Add** an activity to an apiary: select the activity type and
+  fill in the relevant attributes.
+- **FR-AC-3** — **Edit** an existing activity, updating the relevant attributes.
+- **FR-AC-4** — **Delete** an existing activity.
+- **FR-AC-5** — On the **apiary detail page**, view a list of all activities for
+  that apiary, **filterable by activity type and date range**.
+- **FR-AC-6** — On the **main activities page**, view a list of all activities
+  across **all apiaries**, **filterable by activity type and date range**.
+  - *Resolved (D-2):* activities are recorded per **apiary**; hive counts are
+    activity attributes, not separate hive records.
+
+## Journeys (FR-JO)
+
+A **journey** aggregates seasonal work across apiaries (e.g., the spring honey
+harvest, which requires visiting all apiaries).
+
+- **FR-JO-1** — **Journey statistics page**: select a journey and view aggregated
+  metrics — apiaries visited, hives harvested, honey collected, how much is still
+  **missing** (planned vs. done), etc.
+  - *Per D-2:* "hives harvested" = **sum of the number-of-hives-harvested
+    attribute** across harvest activities in the journey.
+- **FR-JO-2** — **Main journeys page**: list all journeys, **filterable by date
+  range and activity type**.
+- **FR-JO-3** — **Journey detail page**: apiaries visited, activities performed at
+  each apiary, and the aggregated statistics for that journey.
+- **FR-JO-4** — **Add a journey**: select the apiaries to be visited and the
+  activities to be performed at each apiary (or for all apiaries).
+  - *Open question (Q-JOUR):* how do executed activities get **attributed** to a
+    journey (manual link, auto-match by date+type+apiary, etc.)? "How much is
+    missing" requires a planned-vs-actual model.
+
+## Todos (FR-TD)
+
+- **FR-TD-1** — Create **todos** with **title, description, due date, and priority
+  level**. Todos are easily accessible from the **main screen**, the **apiaries
+  list**, and the **apiary detail page**. Provide a list of all todos,
+  **filterable by due date and priority level**.
+  - *Open question (Q-TODO):* todo lifecycle (complete/edit/delete), assignment to
+    a user, and association to an apiary/area (the AI examples reference "todos
+    pending for the area of apiary X").
+
+## AI / Chatbot (FR-AI)
+
+- **FR-AI-1** — A **chatbot** that answers natural-language questions about
+  beekeeping, apiaries, activities, journeys, todos, and related topics, using the
+  **app's own data**. The user can select the **context scope**: a specific
+  organization (default), a specific apiary, or a specific journey. Example
+  questions it must handle:
+  - "What are the activities performed at apiary X in the last month?"
+  - "What is the total amount of honey harvested in the last year?"
+  - "What are the todos due in the next week?"
+  - "What are the todos that are overdue?"
+  - "What are the todos that are pending for the area of apiary X?"
+  - *Constraints (D-8):* scoped to the selected context; **cloud AI now**
+    (online-only), **on-device later** — see `non-functional-requirements.md`
+    (NFR-AI group) and `decisions.md` (D-8).
+
+## Offline & Sync (FR-OF)
+
+- **FR-OF-1** — The app is used **mainly in the field**, so it must **work offline**
+  and **sync data when an internet connection is available**.
+  - *Open question (Q-SYNC):* conflict-resolution strategy when multiple
+    organization users edit the same data offline — this is the single largest
+    undefined area.
+
+## Import / Export (FR-IE)
+
+- **FR-IE-1** — **Export** apiaries, activities, and journeys in a common format
+  (e.g., CSV or JSON) for backup or analysis.
+- **FR-IE-2** — **Import** apiaries, activities, and journeys from a common format
+  (e.g., CSV or JSON) for backup or analysis.
+  - *Open question (Q-IMP):* import semantics — merge vs. replace, ID preservation,
+    duplicate/conflict handling.
+
+## Onboarding — Profile & Organization (FR-ONB)
+
+- **FR-ONB-1** — On first login, users must **create their profile** (name, email,
+  and other relevant info). Profile completion is **enforced** before accessing
+  main features.
+- **FR-ONB-2** — Before viewing apiaries, users must **create their organization**
+  (name, address, and other relevant info; some fields may be optional).
+  Organization completion is **enforced** before accessing main features.
+  - *Resolved (D-3):* the user who **creates** an organization becomes its
+    **admin**; other users **join an existing org via email invitation**.
+- **FR-ONB-3** — **Organization membership & invitations**: the org admin can
+  **invite members by email**; invited users join the existing organization. The
+  org creator is the first admin (see NFR-ROL-1). *(Detail still open: invite
+  expiry/re-invite, removing members, transferring admin.)*
+
+## Accounts & Subscription (FR-AU)
+
+- **FR-AU-1** — Manage **account settings**: change password, update profile
+  information, and manage subscription (if applicable).
+- **FR-AU-2** — **Subscription-based feature toggles**: some features may be
+  premium-only, others available to all; the app enforces access by subscription
+  level. **For now, all features are available to all users**, but the mechanism
+  must exist for future restriction.
+  - *Resolved (D-4):* **v1 ships the toggle/enforcement mechanism only** — **no
+    billing or subscription UI**, everything free. Real billing is deferred.
+
+## Tenancy & Data Ownership (FR-TEN)
+
+- **FR-TEN-1** — The app supports **multiple users**, each with their **own
+  account and login credentials**, and **enforces access control** so users only
+  access data they are entitled to.
+- **FR-TEN-2** — The **Organization is the unit of ownership**. Apiaries,
+  activities, and journeys **belong to the organization**, and **all users within
+  an organization share the same data** — except that **each activity is recorded
+  against the user who performed it**. Access control ensures users only access
+  data belonging to **their own organization**.
+  - *Interpretation:* the original text's "users have their own data, cannot see
+    each other's data" (frs line 28) is reconciled here as **organization-level**
+    isolation, not per-user isolation. See `open-questions.md` (Q-TEN).
+
+## History / Audit (FR-HIS)
+
+- **FR-HIS-1** — Maintain a **change history** for all entities. Every create,
+  update, or delete (apiary, activity, journey, or any other entity) records the
+  **user who made the change** and the **timestamp**. Provide a feature to **view
+  the history** of changes for each apiary, activity, and journey.
+  - *Open question (Q-HIS):* retention period, immutability, and how history
+    behaves across offline edits and sync.
+
+## Settings (FR-ST)
+
+- **FR-ST-1** — Allow users to **customize app settings**, including notification
+  preferences, data sync settings, and other relevant options.
+  - *Open question (Q-NOTIF):* what notifications exist (e.g., todo due dates) and
+    the delivery channel (in-app, push)?
+
+## Platforms & Devices (FR-PL)
+
+- **FR-PL-1** — Support **Android and iOS**, on both **phones and tablets**, and
+  on **larger devices (laptops/desktops)** where **offline functionality is not
+  required**.
+  - *Open question (Q-STACK):* native vs. cross-platform (Flutter/React Native);
+    this is a planning decision but shapes almost everything.
+
+## Usability — field-first (FR-UX)
+
+- **FR-UX-1** — All features must use a **user-friendly interface** with clear
+  navigation and intuitive controls — **especially field features**, where the
+  user has limited time/attention and may be **wearing gloves**.
+
+## Accessibility (FR-AX)
+
+- **FR-AX-1** — Design with **accessibility** in mind: screen-reader support,
+  keyboard navigation, and other accessibility features so the app is usable by
+  everyone, including users with disabilities.
+  - *Open question (Q-AX):* target standard/level (e.g., WCAG 2.2 AA).
