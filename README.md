@@ -6,7 +6,7 @@ todos**, with an **offline-first** mobile/tablet client, a **web admin app**, an
 a multi-organization path kept open.
 
 > **Status:** Requirements captured (incl. an **intended** stack/architecture) and a
-> **backlog** ([planning/roadmap.md](planning/roadmap.md)) drafted. **Nothing is built
+> **backlog** filed as [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues). **Nothing is built
 > yet** — the source of truth (intent) is [requirements/](requirements/); `docs/` will
 > document the system as it's built.
 
@@ -23,7 +23,6 @@ decisions behind it: [requirements/decisions.md](requirements/decisions.md) (`D-
 ```
 beekeepingit/
 ├── requirements/      # Source of truth: context, FRs, NFRs, decisions, open questions
-├── planning/          # roadmap.md + epics/ (intention) → GitHub Issues & Projects
 ├── docs/              # Intended architecture, tech stack, ADRs
 ├── .claude/           # AI rules + settings (SessionStart workflow hook)
 ├── .github/           # Issue templates, PR template, label taxonomy
@@ -39,7 +38,7 @@ beekeepingit/
 | Contributing (branches/commits/PRs) | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Requirements & scope (source of truth) | [requirements/README.md](requirements/README.md) |
 | Decisions · open questions | [requirements/decisions.md](requirements/decisions.md) · [requirements/open-questions.md](requirements/open-questions.md) |
-| Backlog (milestones, order, deps) | [planning/roadmap.md](planning/roadmap.md) · [planning/epics/](planning/epics/) |
+| Backlog (epics, stories, milestones) | [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues) (epics: `type/epic`) · Project board |
 | Intended stack/architecture | [requirements/tech-stack.md](requirements/tech-stack.md) |
 | Built-system docs (as implemented) | [docs/](docs/) |
 
@@ -50,9 +49,9 @@ Work is tracked on **GitHub** (Issues + Projects):
 - **Issues** are filed via the templates in [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE).
 - **Labels** are defined in [.github/labels.yml](.github/labels.yml) (apply with a
   label-sync tool or `gh`).
-- **Epics/stories** are authored as Markdown under [planning/](planning/) (see
-  [roadmap.md](planning/roadmap.md)) and will be generated into GitHub Issues + a
-  Project board via a `gh` script.
+- **Epics/stories** live as [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues)
+  (epics labelled `type/epic`) — generated from the original Markdown backlog and tracked on
+  the Project board.
 
 ## Key constraints (see requirements for detail)
 
