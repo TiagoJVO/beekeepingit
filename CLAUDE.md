@@ -13,6 +13,7 @@ field app) — so you know where things live and which folders to skip. Operatin
 | `docs/` | Documentation of the system **as built** (+ `adr/`). Near-empty until implementation; read to understand existing behavior |
 | `.claude/rules/` | Operating rules — already auto-loaded, no need to open |
 | `.github/` | Issue/PR templates, `labels.yml` |
+| `FOLLOWUPS.md` | **Session follow-up ledger** — pending / before-merge work persisted for continuity (per the `track-pending-work` rule). Read when picking up an in-flight branch. Not the backlog (that's Issues) |
 | `CONTRIBUTING.md` | Branching, commits, PR process — read when committing / opening a PR |
 
 ### Notes (lifecycle — not derivable from the tree)
