@@ -1,7 +1,7 @@
 # Rule: Mandatory workflow (read before any task)
 
 Binding for every planning or implementation task. **Nothing is built yet.** `requirements/`
-is the **source of truth** (intent) and `planning/` is the plan — both revisable; `docs/`
+is the **source of truth** (intent) and the plan/backlog lives in **GitHub Issues** — both revisable; `docs/`
 documents what's actually built (empty until implementation).
 
 ## 1. During planning, read the sources of truth (no working from memory)
@@ -9,7 +9,7 @@ Read these **when planning a task** — not during implementation:
 - `requirements/context.md`, `functional-requirements.md`, `non-functional-requirements.md`
 - `requirements/decisions.md` (`D-*`) and `requirements/open-questions.md` (`Q-*`)
 - The intended technical approach in `requirements/tech-stack.md` (see §3)
-- The task's epic/story in `planning/roadmap.md` and `planning/epics/`
+- The task's epic/story in **GitHub Issues** (`gh issue list`; epics carry the `type/epic` label)
 
 Identify the `FR-*/NFR-*` the task implements, the `D-*` it touches, and any `Q-*`.
 
