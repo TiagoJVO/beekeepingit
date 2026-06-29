@@ -3,7 +3,8 @@
 A change is done only when all of the following hold:
 
 - [ ] All acceptance criteria of the story/issue are met.
-- [ ] Linked to its requirement IDs (`FR-*/NFR-*`) and issue/epic (`#`, `EPIC-*`).
+- [ ] Linked to its requirement IDs (`FR-*/NFR-*`), decisions (`D-*`) and issue/epic
+      (`#`, `EPIC-*`) — reference these in the branch, commits, and PR.
 - [ ] Honors relevant `D-*` decisions — or a contradiction was confirmed with the user and
       the decision updated; no unresolved `Q-*` was silently assumed.
 - [ ] Tests added/updated and **passing in CI** (`NFR-TST`).

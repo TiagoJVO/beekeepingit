@@ -125,6 +125,14 @@ to `open-questions.md`.
     applies once on-device exists.)
   - *Open question (Q-LLM → SP-2, native phase):* on-device model, device specs,
     size, quality bar — spike when approaching native.
+- **NFR-AI-4** — **AI write-safety.** AI features **never write domain data directly**.
+  An AI-proposed create/update/delete executes **only after explicit user confirmation**
+  (human-in-the-loop) and **only via the owning service's authorized, validated, audited
+  API** — never by the `ai` service touching domain tables. Proposed actions, like reads,
+  **cannot exceed the selected context scope**, and are recorded in **history** (FR-HIS) as
+  user-confirmed, AI-assisted changes.
+  - *Source (D-11):* replaces the earlier "AI is read-only" stance — the AI can act, but
+    only through **confirm + owner-mediated execution**.
 
 ## Rate Limiting & Quotas (NFR-RL)
 
