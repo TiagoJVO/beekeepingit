@@ -12,7 +12,9 @@ field app) — so you know where things live and which folders to skip. Operatin
 | _GitHub Issues_ | The plan/backlog — epics (`type/epic`) & stories, migrated from the retired `planning/` folder. Scope work via `gh issue list` / the Project board |
 | `docs/` | Documentation of the system **as built** (+ `adr/`). Near-empty until implementation; read to understand existing behavior |
 | `.claude/rules/` | Operating rules — already auto-loaded, no need to open |
+| `.claude/skills/` | Project skills (procedural how-tos), e.g. `requirements-folder` — invoked on demand; open the `SKILL.md` when doing that task |
 | `.github/` | Issue/PR templates, `labels.yml` |
+| `FOLLOWUPS.md` | **Session follow-up ledger** — pending / before-merge work persisted for continuity (per the `track-pending-work` rule). Read when picking up an in-flight branch. Not the backlog (that's Issues) |
 | `CONTRIBUTING.md` | Branching, commits, PR process — read when committing / opening a PR |
 
 ### Notes (lifecycle — not derivable from the tree)

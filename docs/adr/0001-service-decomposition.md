@@ -6,8 +6,8 @@
 - **Requirements:** NFR-ARC-1, NFR-ARC-2, NFR-ARC-3
 - **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture),
   D-5, D-6, D-7, D-9, D-10
-- **Open questions:** [Q-SCALE](../../requirements/open-questions.md)
-  (resolved by D-1), [Q-SYNC](../../requirements/open-questions.md#q-sync--offline-conflict-resolution-strategy)
+- **Open questions:** [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
+  (resolved by D-1), [Q-SYNC](../../requirements/open-questions.md#q-sync--offline-sync-conflict-resolution--write-back-integrity)
 - **Design doc:** [service-decomposition.md](../architecture/service-decomposition.md)
 
 ## Context
@@ -17,7 +17,7 @@ to a **full microservices architecture** and names service decomposition a "firs
 task". This must be reconciled with two forces pulling the other way:
 
 - Context [C-1](../../requirements/context.md#c-1--single-organization-now-multi-organization-later)
-  and the [Q-SCALE](../../requirements/open-questions.md)
+  and the [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
   recommended-default warn that full microservices is likely **over-engineering for a single-org
   v1** and suggest a modular monolith with clean internal boundaries.
 - Offline-first (FR-OF-1, D-6) wants a **consolidated, replicable** store, while microservices
@@ -45,8 +45,10 @@ Boundary rules (full rationale and diagrams in the
    **API composition**.
 3. **Tenancy is universal:** every owned row carries `organization_id`; all queries are
    org-scoped (RLS optional, detail in #105/#109).
-4. **`ai` is read-only** over domain data (scoped, parameterized) and is the only service that
-   calls an external system (the cloud LLM).
+4. **`ai` never writes domain data directly** (AI write-safety): its own DB access is read-only,
+   scoped and parameterized; it **proposes** writes that are **user-confirmed** and executed by
+   the **owning service** via its normal API. It is the only service that calls an external
+   system (the cloud LLM). (D-11)
 5. The **admin** context is a **client** (React Admin App) over `identity` + `organizations`
    management endpoints — **not** a separate microservice (it owns no data).
 6. **Billing/quotas** (D-4), **import/export** (EPIC-09), and **on-device AI** (D-10) are **not**
@@ -63,8 +65,9 @@ The decomposition's by-product — the **Helm umbrella subchart list** — is ha
   architecture is in place from day one (the explicit intent of D-1).
 - Schema-per-service on one cluster keeps the **offline slice tractable** and makes "split a
   schema into its own database later" a **migration, not a rewrite** — preserving NFR-ARC-2/3.
-- The `ai` read-only rule and per-row `organization_id` make the security/tenancy guarantees
-  (NFR-AI-1, FR-TEN) enforceable and testable.
+- The `ai` no-direct-write rule (reads scoped/parameterized; writes proposed → user-confirmed →
+  owner-executed) and per-row `organization_id` keep the security/tenancy guarantees (NFR-AI-1,
+  NFR-AI-4, FR-TEN) enforceable and testable.
 
 **Negative / risks**
 
@@ -77,7 +80,14 @@ The decomposition's by-product — the **Helm umbrella subchart list** — is ha
   chatter still hurts, **merge them into one `field-records` service first**.
 - **Sync write-back vs. ownership:** letting the sync engine apply offline writes directly to
   authoritative tables can bypass per-service validation. This is the sharpest cross-service
-  risk and is owned by **#106** (the write path must respect ownership rule 1).
+  risk and is owned by **#106** (the write path must respect ownership rule 1). D-12 also requires
+  each push to be **atomic** (all-or-nothing) with client validation parity and a notify-and-fix
+  flow — but a multi-service push **can't share one DB transaction** (rule 1), so atomicity needs
+  **saga/compensation or a per-service transactional batch + coordinator**.
+- **AI-proposed writes add an injection / over-reach surface:** an LLM fed untrusted NL/voice
+  could propose a wrong or over-broad action. **Mitigation:** mandatory user confirmation,
+  owner-side validation/authz, and context-scope limits — the `ai` service never executes the
+  write itself (NFR-AI-4, D-11; detailed write-action model deferred to EPIC-08 design).
 
 ## Alternatives considered
 

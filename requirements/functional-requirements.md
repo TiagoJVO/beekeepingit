@@ -111,6 +111,15 @@ harvest, which requires visiting all apiaries).
   - *Constraints (D-8):* scoped to the selected context; **cloud AI now**
     (online-only), **on-device later** — see `non-functional-requirements.md`
     (NFR-AI group) and `decisions.md` (D-8).
+- **FR-AI-2** — Beyond answering, the assistant can **propose actions** on the app's
+  data from a natural-language (or **voice**) request — e.g. *"set apiary X to 12
+  hives"*, *"mark the todo for apiary Y as done"*, *"log a 10 kg honey harvest at
+  apiary Z"*. Every AI-proposed **create/update/delete requires explicit user
+  confirmation** before it runs, and executes through the **normal domain write path**
+  (same validation, authorization, tenancy, and history as a manual edit). The `ai`
+  service itself **never writes** — it only proposes.
+  - *Constraints (D-11):* propose → confirm → owner-executes; **cloud + online-only** in
+    the PWA phase; see NFR-AI-4 and `decisions.md` (D-11). Voice input is an EPIC-08 spike.
 
 ## Offline & Sync (FR-OF)
 
@@ -119,6 +128,14 @@ harvest, which requires visiting all apiaries).
   - *Open question (Q-SYNC):* conflict-resolution strategy when multiple
     organization users edit the same data offline — this is the single largest
     undefined area.
+- **FR-OF-2** — **Sync failure handling.** A client→server sync **push is atomic**: if any
+  queued change is rejected, the **entire push is rolled back** (no partial apply). Before
+  pushing, the client **revalidates** queued edits against the **same rules the server will
+  apply** (as closely as feasible) to catch problems offline. On rejection, the **user who
+  pushed is notified**, shown the offending change(s), and **resolves them on the client**
+  before re-pushing. The server remains authoritative.
+  - *Decision (D-12):* atomic write-back + client validation parity + notify-and-fix; the
+    **failure-handling UX is to be designed** (Q-SYNC, #106 / EPIC-06).
 
 ## Import / Export (FR-IE)
 
