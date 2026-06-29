@@ -171,7 +171,7 @@ One Postgres cluster; **one schema per service**; a service writes **only** its 
 | `activities` | activities | `activities` | JSONB `attributes` + promoted `hives_involved`/`honey_kg` |
 | `journeys` | journeys | `journeys`, `journey_plan_items`, `journey_activities` | planned-vs-actual; attribution is **Q-JOUR** |
 | `todos` | todos | `todos` | lifecycle/assignment/area are **Q-TODO** |
-| `ai` | ai | `ai_consents`, `ai_query_log` | **no domain data**; consent (Q-AICLOUD) + read-only query audit |
+| `ai` | ai | `ai_consents`, `ai_query_log`, `ai_action_log` | **no domain data, no direct writes** (D-11 / NFR-AI-4): consent (Q-AICLOUD) + audit of NL→query (D-8) **and** NL→**proposed actions** (FR-AI-2). A confirmed action executes via the **owning** service's API — `ai` never writes another schema |
 | `history` | history | `audit_log` | append-only; retention/immutability **Q-HIS** (#107) |
 
 **Tenancy exception:** `identity.users` is a *global* identity (a person, not org property);
@@ -231,6 +231,11 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
   **manual-vs-auto** attribution rule is **Q-JOUR** (resolved in EPIC-04 / #110).
 - **History is occurred-at vs recorded-at aware:** `audit_log` records both device time and
   server time so history stays correct across offline edits + late sync (#107).
+- **AI is propose-only, never a writer** (D-11 / NFR-AI-4): the `ai` schema holds **no domain
+  data and no write access** to other schemas. It logs NL→query (D-8) and NL→**proposed actions**
+  (FR-AI-2) in `ai_query_log` / `ai_action_log`; a *confirmed* action is executed by the **owning
+  domain service's** validated, audited API — inheriting `organization_id` scoping, validation and
+  history (FR-HIS) — so the untrusted-LLM blast radius is a **proposal, never a direct mutation**.
 
 ---
 
