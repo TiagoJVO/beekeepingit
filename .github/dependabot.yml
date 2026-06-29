@@ -1,0 +1,16 @@
+# Keeps GitHub Actions up to date. Dependabot bumps the SHA-pinned `uses:` refs and
+# updates the version comment, opening a PR per update.
+#
+# `commit-message.prefix: ci` makes Dependabot's PR titles Conventional-Commits-compliant
+# (e.g. "ci: bump amannn/action-semantic-pull-request …") so they pass the
+# "PR Title Semantics" check.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "type/chore"
