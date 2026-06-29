@@ -1,0 +1,43 @@
+name: PR Title Semantics
+
+# A PR's title becomes the squash-merge commit subject on `main`
+# (the repo merges with squash_merge_commit_title=PR_TITLE), so it must follow
+# Conventional Commits. The allowed type set is kept in sync with CONTRIBUTING.md
+# ("Commits — Conventional Commits").
+
+on:
+  pull_request:
+    # Re-validate whenever the title can change (edited) or a new commit lands
+    # (synchronize) so the check is fresh on the head SHA — needed if this is ever
+    # made a required status check.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate PR title (Conventional Commits)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lint PR title against the convention
+        uses: amannn/action-semantic-pull-request@v5 # consider pinning to a full commit SHA
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Allowed types — keep in sync with CONTRIBUTING.md.
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            chore
+            perf
+            ci
+            build
+          # Scope is optional and free-form (e.g. `chore: …` or `feat(apiaries): …`).
+          # A breaking-change marker (`feat(api)!: …`) is allowed by default.
+          requireScope: false
+          # No subject-case rule on purpose: titles legitimately start with IDs or
+          # acronyms (e.g. "feat(ai): AI write-actions", "fix(sync): FR-OF-2 …").
