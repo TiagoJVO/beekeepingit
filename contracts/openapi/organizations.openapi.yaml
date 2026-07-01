@@ -1,0 +1,344 @@
+# Organizations service — client-facing REST contract (SKELETON).
+# Onboarding (FR-ONB) + the management surface the React Admin App consumes (NFR-ROL-2).
+# Demonstrates nested sub-resources (members, invitations) and the role model (NFR-ROL-1).
+# Stamped from ./_shared/components.openapi.yaml; conventions in
+# docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email).
+openapi: 3.1.0
+info:
+  title: BeekeepingIT — Organizations API
+  version: 0.1.0
+  description: >-
+    Organization CRUD, membership and email invitations. The user who creates an
+    organization becomes its admin and invites others by email (D-3). Org scope and role
+    are derived from the JWT (ADR-0002); `{orgId}` in the path must match the caller's org.
+  license:
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
+
+servers:
+  - url: /v1
+    description: Served through the API gateway; major version in the path (ADR-0003).
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Organizations
+    description: Organization records and onboarding (FR-ONB).
+  - name: Members
+    description: Organization membership and roles (NFR-ROL-1).
+  - name: Invitations
+    description: Email invitations to join an organization (D-3, FR-ONB-3).
+
+paths:
+  /organizations:
+    post:
+      operationId: createOrganization
+      summary: Create an organization (caller becomes admin)
+      description: Creates an org and makes the authenticated user its first admin (D-3, FR-ONB-2).
+      tags: [Organizations]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreate'
+      responses:
+        '201':
+          description: Organization created.
+          headers:
+            Location:
+              $ref: './_shared/components.openapi.yaml#/components/headers/Location'
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
+  /organizations/{orgId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      operationId: getOrganization
+      summary: Get an organization
+      tags: [Organizations]
+      responses:
+        '200':
+          description: The organization.
+          headers:
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+    patch:
+      operationId: updateOrganization
+      summary: Update an organization (admin only)
+      tags: [Organizations]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/IfMatchHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdate'
+      responses:
+        '200':
+          description: Updated organization.
+          headers:
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
+  /organizations/{orgId}/members:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      operationId: listMembers
+      summary: List organization members
+      tags: [Members]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: A page of members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberList'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+
+  /organizations/{orgId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      operationId: listInvitations
+      summary: List invitations (admin only)
+      tags: [Invitations]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: A page of invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationList'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+    post:
+      operationId: createInvitation
+      summary: Invite a member by email (admin only)
+      description: Sends an email invitation to join this organization (D-3, FR-ONB-3).
+      tags: [Invitations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationCreate'
+      responses:
+        '201':
+          description: Invitation created.
+          headers:
+            Location:
+              $ref: './_shared/components.openapi.yaml#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
+  /organizations/{orgId}/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+    delete:
+      operationId: revokeInvitation
+      summary: Revoke an invitation (admin only)
+      description: Revokes a pending invitation. (Expiry/re-invite detail is Q-JOIN — EPIC-01.)
+      tags: [Invitations]
+      responses:
+        '204':
+          description: Revoked (no content).
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+
+components:
+  # bearerAuth must resolve locally for the top-level `security` name reference; the
+  # canonical definition stays in _shared (single source of truth), pulled in by $ref.
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.openapi.yaml#/components/securitySchemes/bearerAuth'
+
+  parameters:
+    OrgId:
+      name: orgId
+      in: path
+      required: true
+      description: Must match the caller's organization (ADR-0002).
+      schema:
+        $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+
+  schemas:
+    Organization:
+      type: object
+      allOf:
+        - $ref: './_shared/components.openapi.yaml#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id:
+              $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+            name:
+              type: string
+              minLength: 1
+              maxLength: 200
+            address:
+              type: [string, "null"]
+            created_by:
+              allOf:
+                - $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+              readOnly: true
+              description: The first admin (D-3).
+          required: [id, name]
+
+    OrganizationCreate:
+      type: object
+      properties:
+        id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        address:
+          type: string
+      required: [id, name]
+
+    OrganizationUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        address:
+          type: [string, "null"]
+      minProperties: 1
+
+    Role:
+      type: string
+      description: Membership role (extensible set — NFR-ROL-1).
+      enum: [admin, user]
+
+    Member:
+      type: object
+      properties:
+        user_id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        role:
+          $ref: '#/components/schemas/Role'
+        status:
+          type: string
+          enum: [active, invited, removed]
+      required: [user_id, role, status]
+
+    MemberList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
+
+    Invitation:
+      type: object
+      allOf:
+        - $ref: './_shared/components.openapi.yaml#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id:
+              $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+            email:
+              type: string
+              format: email
+            role:
+              $ref: '#/components/schemas/Role'
+            status:
+              type: string
+              enum: [pending, accepted, expired, revoked]
+          required: [id, email, role, status]
+
+    InvitationCreate:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/Role'
+      required: [email]
+
+    InvitationList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
