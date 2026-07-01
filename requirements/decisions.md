@@ -77,11 +77,17 @@ Core technology decisions (2026-06-27). Detail and rationale in
   with a schema per service** (clean boundaries now, split later) — the agreed
   reconciliation of offline-sync vs. microservices.
 - **On device:** **SQLite**.
-- **Sync:** **PowerSync or ElectricSQL** (final pick via spike SP-1).
+- **Sync:** **PowerSync**, **self-hosted (Open Edition)** — engine pick **resolved by spike SP-1**
+  (#54): [ADR-0005](../docs/adr/0005-sync-engine-choice.md) /
+  [SP-1 report](../docs/spikes/sp-1-powersync-vs-electricsql.md). On device: **SQLite** (native) /
+  wa-sqlite over OPFS/IndexedDB (web/PWA). Client writes flow through the **owning service's
+  connector** (D-11/D-12), never PowerSync writing domain schemas directly.
 - **Notes:** per-type activity attributes via **JSONB**; geo (proximity/distance)
   via **PostGIS**.
-- **Supersedes:** Q-SYNC (engine chosen; conflict policy still to be designed —
-  default server-authoritative last-write-wins).
+- **Supersedes:** Q-SYNC — engine **now finalized (PowerSync)**; the default conflict policy
+  (server-authoritative **record-level last-write-wins + conflict log**) was **validated by SP-1**
+  and is the working default. The **cross-service write-back atomicity mechanism** (D-12) remains
+  to be designed in #106.
 
 ## D-7 — Identity & auth: Keycloak (self-hosted)
 - **Keycloak** (OIDC/OAuth2) on the k8s cluster; **realms + roles** for RBAC
@@ -173,9 +179,10 @@ Core technology decisions (2026-06-27). Detail and rationale in
 
 # Open Spikes
 
-- **SP-1** — PowerSync vs. ElectricSQL head-to-head, **including Flutter _web_ SDK
-  maturity + offline persistence in a PWA** (and iOS PWA storage durability),
-  conflict handling, self-hosting. Resolves the D-6 sync engine. _Near-term._
+- **SP-1** — ✅ **RESOLVED (2026-07-01) → PowerSync** (self-hosted Open Edition). Head-to-head +
+  a working k8s prototype (create → offline edit → sync + server-authoritative LWW/conflict-log).
+  Recorded in [ADR-0005](../docs/adr/0005-sync-engine-choice.md) /
+  [SP-1 report](../docs/spikes/sp-1-powersync-vs-electricsql.md); resolves the D-6 sync engine.
 - **SP-2** — On-device LLM feasibility: model + runtime + NL→query accuracy on a
   mid-range phone. **Re-scoped to the native phase** (D-8/D-10) — not PWA-blocking.
 

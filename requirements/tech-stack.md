@@ -17,7 +17,7 @@ The reasoning behind the intended stack, and the input to a future service decom
 | Admin web app | **React + TypeScript** | Decided (D-5) |
 | Primary database | **PostgreSQL + PostGIS** | Decided (D-6) |
 | On-device store | **SQLite** | Decided (D-6) |
-| Offline sync engine | **PowerSync _or_ ElectricSQL** | Spike SP-1 |
+| Offline sync engine | **PowerSync** (self-hosted, Open Edition) | Decided (SP-1 → D-6) |
 | Identity / auth | **Keycloak (self-hosted, OIDC)** | Decided (D-7) |
 | AI assistant | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11) |
 | API style | REST + OpenAPI (client); gRPC optional (inter-service) | Proposed |
@@ -54,9 +54,9 @@ codebase throughout.
 - **PWA shell:** web app manifest + service worker for installability and offline
   app-shell caching; "add to home screen" on Android/desktop (iOS later, with
   caveats).
-- **Local data + sync:** the sync engine's **web SDK** in the PWA phase (wa-sqlite
-  over IndexedDB/OPFS); **SQLite** on device in the native phase. PowerSync or
-  ElectricSQL — SP-1 (now also checks **web/PWA persistence**).
+- **Local data + sync:** **PowerSync** (self-hosted) — its **web SDK** in the PWA phase
+  (wa-sqlite over OPFS/IndexedDB); **SQLite** on device in the native phase. Engine resolved by
+  **SP-1** ([ADR-0005](../docs/adr/0005-sync-engine-choice.md)); web/PWA persistence validated.
 - **Maps:** `flutter_map` + MapLibre/OSM tiles (open licensing; Mapbox alternative);
   works on web and native. Drives map view, location, proximity, distance
   (`FR-AP-2/3/5`).
@@ -148,8 +148,9 @@ codebase throughout.
 
 ## Open spikes
 
-- **SP-1** _(near-term)_ — PowerSync vs. ElectricSQL, **including Flutter web SDK +
-  PWA offline persistence** (and iOS PWA storage durability), conflict handling,
-  self-hosting.
+- **SP-1** — ✅ **resolved → PowerSync** (self-hosted Open Edition), via a head-to-head +
+  a working k8s prototype (create → offline edit → sync + LWW/conflict-log). See
+  [ADR-0005](../docs/adr/0005-sync-engine-choice.md) /
+  [SP-1 report](../docs/spikes/sp-1-powersync-vs-electricsql.md).
 - **SP-2** _(native phase)_ — On-device LLM feasibility & NL→query accuracy on a
   mid-range phone. Not PWA-blocking.
