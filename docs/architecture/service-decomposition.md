@@ -265,7 +265,7 @@ S3-compatible interface (MinIO now, cloud later) and DB access via a typed query
 | [Q-AICLOUD](../../requirements/open-questions.md#q-aicloud--cloud-ai-privacy--gdpr-now-near-term-per-d-8) | `ai` sends org data to an external processor → consent/DPA/no-training/EU-residency gate **before** AI build | EPIC-08, NFR-CMP |
 | [Q-JOUR](../../requirements/open-questions.md#q-jour--journey-planned-vs-actual-model) | `journeys`↔`activities` attribution (and "how much is missing") undefined | #105/#110, EPIC-04 |
 | [Q-TODO](../../requirements/open-questions.md#q-todo--todo-lifecycle--associations) | `todos` lifecycle/assignment/area association | EPIC-05 |
-| Q-ROLE (admin scope) — **resolved** | "admin" is **org-scoped** (the membership role); shapes `organizations` authZ | [auth.md](auth.md) §5.3 / [ADR-0003](../adr/0003-authn-authz.md) |
+| Q-ROLE (admin scope) — **resolved** | "admin" is **org-scoped** (the membership role); shapes `organizations` authZ | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md) |
 
 **Coupling risk to watch:** `apiaries` + `activities` + `journeys` form one tightly-coupled
 **core domain** (activities belong to apiaries; journeys aggregate activities). They are split

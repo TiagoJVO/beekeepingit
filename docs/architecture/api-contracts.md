@@ -259,8 +259,8 @@ flowchart TD
 | Item | Effect on the contract | Resolved in |
 |---|---|---|
 | [Q-SYNC](../../requirements/open-questions.md) | The **sync write-back** protocol (offline queue → authoritative tables) layers on these REST writes + `Idempotency-Key`; atomic-push semantics (D-12) are defined there, not here | #106, SP-1 |
-| [Q-AUTH](../../requirements/open-questions.md) | JWT validation placement (edge vs per-service), scopes/claims → `organization_id`, offline-token handling | #109 |
-| [Q-ROLE](../../requirements/open-questions.md) | Whether `admin` is org-scoped vs system-wide shapes the `organizations` authZ and which endpoints are admin-only | #109 |
+| Q-AUTH — **resolved** | JWT validation (edge + per-service), org scope from token+membership, offline-token handling | [auth.md](auth.md) / [ADR-0004](../adr/0004-authn-authz.md) (#109) |
+| Q-ROLE — **resolved** | `admin` is **org-scoped**; member/invitation endpoints are admin-only | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md) (#109) |
 | [Q-SEARCH](../../requirements/open-questions.md) | `?q=` scope (which entities, offline vs online, which attributes) | EPIC-02 |
 | [Q-JOUR](../../requirements/open-questions.md) / [Q-TODO](../../requirements/open-questions.md) | Exact journey/todo endpoints & payloads (attribution, lifecycle) | EPIC-04 / EPIC-05 |
 | [NFR-RL-1](../../requirements/non-functional-requirements.md) (D-4) | `429` + quota/usage headers are **stubbed** now; enforced later via the Admin App | deferred (D-4) |

@@ -2,8 +2,8 @@
 
 > **Status:** High-Level Design (HLD) for v1 — the target the M0 build realizes; refined toward
 > as-built as services land. Builds on
-> [service-decomposition.md](service-decomposition.md) and
-> [data-model.md](data-model.md). Intent lives in [../../requirements/](../../requirements/).
+> [service-decomposition.md](service-decomposition.md), [data-model.md](data-model.md) and
+> [api-contracts.md](api-contracts.md). Intent lives in [../../requirements/](../../requirements/).
 
 **Issue:** #109 · **Epic:** #103 (EPIC-DESIGN) · **Milestone:** M0
 **Requirements:** NFR-SEC-1, NFR-ROL-1, NFR-ROL-2, FR-TEN-1, FR-TEN-2, FR-ONB-1/2/3, FR-OF-1, NFR-AI-4
@@ -11,7 +11,7 @@
 [D-3](../../requirements/decisions.md) (org creator = admin, invite by email),
 [D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-10](../../requirements/decisions.md) (PWA-first)
 **Resolves:** [Q-AUTH](../../requirements/open-questions.md), [Q-ROLE](../../requirements/open-questions.md)
-**Depends on:** #104, #105 · **ADR:** [0003-authn-authz](../adr/0003-authn-authz.md)
+**Depends on:** #104, #105, #108 · **ADR:** [0004-authn-authz](../adr/0004-authn-authz.md)
 
 ---
 
@@ -95,7 +95,7 @@ app, where a client secret cannot be kept confidential.
 
 > **Key decision.** Keycloak carries only a **coarse, global** role; the **admin/user distinction
 > that matters is per-organization** and lives in `organizations.memberships.role`, **not** in the
-> token. See [ADR-0003](../adr/0003-authn-authz.md).
+> token. See [ADR-0004](../adr/0004-authn-authz.md).
 
 - **Keycloak realm roles** are kept minimal: every end user is simply an **authenticated user**. An
   optional **`platform-operator`** realm role exists for **operations/superadmin** (managing
@@ -130,7 +130,7 @@ is **long-ish lived and cached offline** — an embedded org/role would go **sta
 member would keep access until token expiry). The **active org is also a per-request choice** in the
 multi-org future. So the app resolves org + role from the **database** on each request (§5), keeping
 the `organizations` service authoritative. *(Alternative — a Keycloak protocol mapper that injects
-memberships — is weighed and rejected in [ADR-0003](../adr/0003-authn-authz.md).)*
+memberships — is weighed and rejected in [ADR-0004](../adr/0004-authn-authz.md).)*
 
 ---
 
@@ -175,17 +175,17 @@ sequenceDiagram
     C->>KC: Authorization Code + PKCE (redirect)
     KC-->>C: ID + access + refresh tokens (JWT)
     Note over C: cache tokens in secure storage
-    C->>GW: REST + Bearer access token (+ X-Organization-Id)
+    C->>GW: REST + Bearer access token
     GW->>S: forward (optional edge JWT check)
     S->>KC: fetch JWKS (cached; refetch on new kid)
     S->>S: verify JWT — sig / iss / aud / exp → sub
-    S->>DB: resolve membership (sub → user, active org)
-    alt no active membership for that org
+    S->>DB: resolve membership (sub → user) → org_id + role
+    alt no org membership
         S-->>C: 403 Forbidden
-    else active member
+    else member
         Note over S: org_id + role in request context
         S->>DB: org-scoped query (organization_id = org_id)
-        S-->>C: 200 data
+        S-->>C: 200 (or 404 if target is outside the org)
     end
 ```
 
@@ -199,17 +199,23 @@ valid token (§4) and decides org scope, role, and resource access.
 ### 5.1 Deriving `organization_id` from token + membership
 
 This is the precise mechanism that [ADR-0002](../adr/0002-multi-tenancy.md#follow-ups) and
-[data-model.md §5](data-model.md#5-multi-tenancy-model-fr-ten) defer to #109:
+[data-model.md §5](data-model.md#5-multi-tenancy-model-fr-ten) defer to #109. It also honors the
+contract rule that **tenancy is derived server-side, never a client parameter**
+([api-contracts.md §9](api-contracts.md#9-auth--tenancy-in-the-contract-d-7-adr-0002)):
 
 1. **Token → user.** The verified `sub` maps to `identity.users` (by `keycloak_sub`) → `user_id`.
-2. **Pick the active organization.** The request carries the **active org** — an `X-Organization-Id`
-   header (or `:orgId` path segment for org-scoped routes). With a **single org per user** (v1, C-1)
-   it defaults to the user's only org; the explicit selector is what makes **multi-org** work later
-   without redesign.
-3. **Resolve membership.** Look up `organizations.memberships` for **(`user_id`, active
-   `organization_id`, `status = active`)**. **No active membership → 403** (and the denial is logged,
-   per [#28](https://github.com/TiagoJVO/beekeepingit/issues/28)). A match yields the authoritative
-   **`organization_id`** and **role** (`admin`/`user`).
+2. **Resolve the org from membership — server-side.** The caller's `organization_id` is **never a
+   client parameter** (not a header, query, or body field). In v1 each user belongs to a **single
+   organization** (C-1), so `organizations.memberships` resolves it unambiguously. The one place an
+   org id appears in a URL is an org-**management** resource (`/organizations/{orgId}/…`), where the
+   service **asserts `{orgId}` matches the caller's membership** — the path never *widens* scope
+   ([api-contracts.md §9](api-contracts.md#9-auth--tenancy-in-the-contract-d-7-adr-0002)). Multi-org
+   "active org" selection is a deferred future concern and will still derive scope from membership,
+   not a trusted client claim.
+3. **Look up membership** for **(`user_id`, `status = active`)** → the authoritative
+   **`organization_id`** and **role** (`admin`/`user`). A caller with **no active membership → 403**
+   (logged, per [#28](https://github.com/TiagoJVO/beekeepingit/issues/28)); a resource **outside the
+   caller's org → 404** (not 403) so the API never confirms its existence (api-contracts.md §9).
 4. **Inject org context.** `organization_id` + `role` go into the request context; the **typed query
    layer scopes every query** by `organization_id` (ADR-0002 **layer 1**), optionally setting
    `app.current_org` for **RLS** (ADR-0002 **layer 2**). A query without an org filter is a bug.
@@ -227,13 +233,15 @@ graph TD
     A["Request + Bearer token"] --> B{"Valid JWT?<br/>sig · iss · aud · exp (JWKS)"}
     B -- no --> R1["401 Unauthorized"]
     B -- yes --> C["sub → identity.users → user_id"]
-    C --> D["Resolve active org<br/>(X-Organization-Id / path)"]
-    D --> E{"Active membership in<br/>organizations.memberships?"}
+    C --> D["Resolve caller's org + role<br/>from membership (server-side)"]
+    D --> E{"Active membership?"}
     E -- no --> R2["403 Forbidden (logged)"]
-    E -- yes --> F["org_id + role → request context"]
-    F --> G{"Role permits action?<br/>admin-only vs shared CRUD"}
-    G -- no --> R3["403 Forbidden"]
-    G -- yes --> H["org-scoped query<br/>organization_id = org_id (+ optional RLS)"]
+    E -- yes --> F["org_id + role → context;<br/>scope every query"]
+    F --> G{"Target resource<br/>in caller's org?"}
+    G -- no --> R3["404 Not Found<br/>(scope hides it)"]
+    G -- yes --> H{"Role permits action?<br/>admin-only vs shared CRUD"}
+    H -- no --> R4["403 Forbidden"]
+    H -- yes --> I["execute — org-scoped query<br/>(+ optional RLS)"]
 ```
 
 ### 5.3 Role capabilities — `admin` vs `user` (resolves Q-ROLE)
@@ -251,7 +259,10 @@ graph TD
 
 The **canonical management surface** is the **Admin App** (NFR-ROL-2, web, online-only); the
 PWA/native client focuses on field features. **Admin-only operations are rejected for non-admins**
-([#28](https://github.com/TiagoJVO/beekeepingit/issues/28) AC). There is **no system-wide application
+([#28](https://github.com/TiagoJVO/beekeepingit/issues/28) AC) — the **organizations** OpenAPI
+contract already encodes this: `role` is the open enum `[admin, user]` and the member/invitation
+endpoints are admin-only (`403` for a `user`), with `{orgId}` asserted against membership
+([`organizations.openapi.yaml`](../../contracts/openapi/organizations.openapi.yaml)). There is **no system-wide application
 admin** in v1 — a platform super-admin is the **`platform-operator`** ops role (§3.3), not an app
 role; NFR-ROL-1's "more roles later" can add one when needed. *This resolves
 [Q-ROLE](../../requirements/open-questions.md) (admin = org-scoped).*
@@ -263,9 +274,11 @@ Isolation is at the **organization** level, not per user (Q-TEN, settled in
 members share the org's data**. So a member may **edit another member's** apiary/activity — but every
 change **records the actor** in history (FR-HIS-1), and each activity is still stamped with the
 **performing user** (`activities.performed_by`). The org-scoping in §5.1 is itself the primary
-ownership control: a resource from another org **isn't visible**, so cross-org access is denied
-(403/404). A stricter *per-record* rule (e.g. only the performer or an admin may edit a given
-activity) is **not v1** but fits this model as a future per-resource policy.
+ownership control: a resource from another org **isn't visible**, so cross-org access returns
+**`404`** (not `403` — the API doesn't confirm the resource exists;
+[api-contracts.md §9](api-contracts.md#9-auth--tenancy-in-the-contract-d-7-adr-0002)). A stricter
+*per-record* rule (e.g. only the performer or an admin may edit a given activity) is **not v1** but
+fits this model as a future per-resource policy.
 
 ### 5.5 When app-layer scoping isn't enough (future)
 
@@ -408,14 +421,16 @@ security review). The middleware here is also the **producer** of the `organizat
   Keycloak's coarse roles — §2, §5
 - [x] **Offline-login** token/JWKS caching + **grace-window** design (native-phase, designed now per
   D-7) — §6
-- [x] **Design + ADR** in `docs/` — this doc + [ADR-0003](../adr/0003-authn-authz.md)
+- [x] **Design + ADR** in `docs/` — this doc + [ADR-0004](../adr/0004-authn-authz.md)
 
 ## 10. Links
 
 - Builds on: [#104 service-decomposition](service-decomposition.md) ·
-  [#105 data-model](data-model.md) · ADRs [0001](../adr/0001-service-decomposition.md),
-  [0002](../adr/0002-multi-tenancy.md)
-- ADR: [0003-authn-authz](../adr/0003-authn-authz.md)
+  [#105 data-model](data-model.md) · [#108 api-contracts](api-contracts.md) ·
+  ADRs [0001](../adr/0001-service-decomposition.md), [0002](../adr/0002-multi-tenancy.md),
+  [0003-api-contract-conventions](../adr/0003-api-contract-conventions.md)
+- ADR: [0004-authn-authz](../adr/0004-authn-authz.md) ·
+  Contracts: [`contracts/openapi/`](../../contracts/openapi/)
 - Intent: [`requirements/decisions.md` D-7](../../requirements/decisions.md#d-7--identity--auth-keycloak-self-hosted),
   [`requirements/tech-stack.md` — Identity](../../requirements/tech-stack.md#identity--keycloak)
 - Next in EPIC-DESIGN: [#110](https://github.com/TiagoJVO/beekeepingit/issues/110)

@@ -28,7 +28,7 @@ Use a **shared-schema, discriminator-column** tenancy model:
    org membership is modelled separately in `organizations.memberships`.
 2. **Mandatory application-layer scoping** is the primary control: a shared Go middleware
    resolves the caller's `organization_id` (from the verified token + membership — authZ detail
-   in [ADR-0003](0003-authn-authz.md)) and **every query is org-scoped**. A query without an org filter is a bug.
+   in [ADR-0004](0004-authn-authz.md)) and **every query is org-scoped**. A query without an org filter is a bug.
 3. **Optional Postgres Row-Level Security (RLS)** as defense-in-depth: set `app.current_org` per
    request and apply `USING (organization_id = current_setting('app.current_org')::uuid)`
    policies on owned tables, so a forgotten filter fails safe.
@@ -73,6 +73,6 @@ Use a **shared-schema, discriminator-column** tenancy model:
 
 - #106 — tombstones, LWW clock and **org-scoped sync publication** mechanics.
 - `organization_id` derivation from the token + membership (the authZ that feeds layer 2) —
-  **designed in [ADR-0003](0003-authn-authz.md)** / [auth.md](../architecture/auth.md) (#109).
+  **designed in [ADR-0004](0004-authn-authz.md)** / [auth.md](../architecture/auth.md) (#109).
 - Per-service build (EPIC-00 #20, EPIC-13) — implement scoping in the shared query layer and add
   tenancy tests; decide whether to enable RLS.

@@ -1,4 +1,4 @@
-# 0003 — AuthN via Keycloak (JWKS-validated JWT) + app-layer org-scoped authZ
+# 0004 — AuthN via Keycloak (JWKS-validated JWT) + app-layer org-scoped authZ
 
 - **Status:** Accepted
 - **Date:** 2026-07-01
@@ -43,11 +43,14 @@ Adopt a **two-layer** model — Keycloak for authentication + a coarse global ro
    edge): verify **signature (RS256), `iss`, `aud`, `exp/nbf`** against **cached JWKS** (refreshed on
    rotation / unknown `kid`). Defense in depth — the gateway may also validate.
 3. **App-layer org-scoped authZ is the real access control.** The `admin`/`user` role (NFR-ROL-1)
-   is the **membership** role in `organizations.memberships`, resolved **per request** for the
-   **active organization** (`X-Organization-Id` / path). The middleware maps **`sub` → user → active
-   membership → `organization_id` + role**; **no active membership ⇒ 403**. That `organization_id`
-   **feeds the multi-tenancy model** ([ADR-0002](0002-multi-tenancy.md)): every query is org-scoped
-   (+ optional RLS), and the sync slice is org-scoped.
+   is the **membership** role in `organizations.memberships`, resolved **per request** — the
+   `organization_id` is **derived server-side** from the caller's membership, **never a client
+   parameter** (an org id in an org-management path is *asserted* against membership, never
+   widening — [api-contracts.md §9](../architecture/api-contracts.md#9-auth--tenancy-in-the-contract-d-7-adr-0002)).
+   The middleware maps **`sub` → user → active membership → `organization_id` + role**; **no active
+   membership ⇒ 403**, an **out-of-scope resource ⇒ 404**. That `organization_id` **feeds the
+   multi-tenancy model** ([ADR-0002](0002-multi-tenancy.md)): every query is org-scoped (+ optional
+   RLS), and the sync slice is org-scoped.
 4. **Org/role are deliberately NOT in the token** — they are resolved from the **database** so the
    `organizations` service stays authoritative and cached/offline tokens don't grant stale access.
 5. **`admin` is org-scoped** (D-3) — manages members, roles, org settings, invitations (later
