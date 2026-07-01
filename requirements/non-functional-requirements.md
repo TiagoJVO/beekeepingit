@@ -26,8 +26,9 @@ to `open-questions.md`.
 
 - **NFR-SEC-1** — Secure **authentication and authorization**, **data encryption**,
   and protection against common threats including **SQL injection, XSS, and CSRF**.
-  - *Open question (Q-AUTH):* auth mechanism (email/password, SSO, social),
-    email verification, password reset, and **how authentication works offline**.
+  - *Resolved (D-7, Q-AUTH):* Keycloak / OIDC; email verification & password reset via Keycloak;
+    token lifetimes and **offline login** (cached tokens/JWKS + grace window) designed in
+    [`docs/architecture/auth.md`](../docs/architecture/auth.md) / [ADR-0003](../docs/adr/0003-authn-authz.md).
 
 ## Scalability (NFR-SCA)
 
@@ -58,8 +59,10 @@ to `open-questions.md`.
   Initial roles: **admin** and **user**; more roles may exist later. Provide
   management of roles/permissions: create roles, assign permissions to roles,
   assign roles to users.
-  - *Open question (Q-ROLE):* is "admin" scoped to an organization or system-wide,
-    and what specifically can admin do that user cannot?
+  - *Resolved (Q-ROLE):* **admin is organization-scoped** (the membership role; D-3) — manages
+    members, roles, org settings and invitations; `user` does field CRUD + AI + history. No
+    system-wide app admin in v1. See [`docs/architecture/auth.md`](../docs/architecture/auth.md)
+    §5.3 / [ADR-0003](../docs/adr/0003-authn-authz.md).
 - **NFR-ROL-2** — A separate **Admin App** (web/browser only, **no offline
   support**) for role management, organization management, and other
   administrative tasks (including rate-limit/quota management — see NFR-RL-1).

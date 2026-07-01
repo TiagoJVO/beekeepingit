@@ -87,7 +87,8 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Keycloak** (OIDC/OAuth2) on the k8s cluster; **realms + roles** for RBAC
   (NFR-ROL); **offline token caching** for field login; **app-level org-scoped
   authorization** layered on top (FR-TEN).
-- **Supersedes:** Q-AUTH (mechanism); offline-login details to be designed.
+- **Supersedes:** Q-AUTH — mechanism **and** offline-login now designed in
+  [`docs/architecture/auth.md`](../docs/architecture/auth.md) / [ADR-0003](../docs/adr/0003-authn-authz.md).
 
 ## D-8 — AI: NL→structured-query, cloud model first (on-device later)
 - **Approach (unchanged):** the assistant translates questions into a **structured

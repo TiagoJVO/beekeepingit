@@ -189,7 +189,7 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 **Enforcement layers (defense in depth):**
 
 1. **Application (primary):** a shared Go middleware derives the caller's `organization_id` from
-   the verified token + membership (authZ detail → #109) and **every query is org-scoped**. No
+   the verified token + membership (authZ detail → [auth.md](auth.md) / [ADR-0003](../adr/0003-authn-authz.md)) and **every query is org-scoped**. No
    query runs without an org filter.
 2. **Database (optional RLS):** session var `SET app.current_org = $org`; RLS policies
    `USING (organization_id = current_setting('app.current_org')::uuid)` on owned tables — a
