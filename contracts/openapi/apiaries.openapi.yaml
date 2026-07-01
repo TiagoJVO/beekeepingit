@@ -1,0 +1,309 @@
+# Apiaries service — client-facing REST contract (SKELETON).
+# First domain service and the walking-skeleton's "create" target (#110).
+# Stamped from ./_shared/components.openapi.yaml; conventions in
+# docs/architecture/api-contracts.md. Requirements: FR-AP-1..7 (D-2).
+openapi: 3.1.0
+info:
+  title: BeekeepingIT — Apiaries API
+  version: 0.1.0
+  description: >-
+    CRUD for apiaries, proximity-ordered listing, and distance measurement.
+    Org scope is derived from the JWT (ADR-0002) — never a parameter here.
+    `number of hives` is a count on the apiary, not a separate entity (D-2).
+  license:
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
+
+servers:
+  - url: /v1
+    description: >-
+      Served through the API gateway; the major API version is the path prefix
+      (ADR-0003). The gateway routes `/v1/apiaries/**` to this service.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Apiaries
+    description: Apiary records (FR-AP).
+
+paths:
+  /apiaries:
+    get:
+      operationId: listApiaries
+      summary: List apiaries (optionally proximity-ordered)
+      description: >-
+        Returns the organization's apiaries (cursor-paginated). When `near` is supplied,
+        results are ordered by distance to that point and each item carries `distance_m`
+        (FR-AP-2). Online read; offline, the client lists from its replicated slice.
+      tags: [Apiaries]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+        - name: near
+          in: query
+          required: false
+          description: '`lon,lat` reference point; when set, results are distance-ordered (FR-AP-2).'
+          schema:
+            type: string
+            pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?$'
+        - name: q
+          in: query
+          required: false
+          description: Free-text search over name/attributes (FR-AP-6; scope is Q-SEARCH).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of apiaries.
+          headers:
+            X-Request-Id:
+              $ref: './_shared/components.openapi.yaml#/components/headers/X-Request-Id'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiaryList'
+        '400':
+          $ref: './_shared/components.openapi.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '429':
+          $ref: './_shared/components.openapi.yaml#/components/responses/TooManyRequests'
+    post:
+      operationId: createApiary
+      summary: Create an apiary
+      description: >-
+        Creates an apiary. The client supplies the UUID `id` (offline-generatable) and may
+        send an `Idempotency-Key` so a re-queued offline create is not duplicated. The org
+        is taken from the token (the body must not carry `organization_id`).
+      tags: [Apiaries]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiaryCreate'
+      responses:
+        '201':
+          description: Apiary created.
+          headers:
+            Location:
+              $ref: './_shared/components.openapi.yaml#/components/headers/Location'
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Apiary'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
+  /apiaries/{apiaryId}:
+    parameters:
+      - $ref: '#/components/parameters/ApiaryId'
+    get:
+      operationId: getApiary
+      summary: Get an apiary
+      tags: [Apiaries]
+      responses:
+        '200':
+          description: The apiary (FR-AP-7).
+          headers:
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Apiary'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+    patch:
+      operationId: updateApiary
+      summary: Update an apiary (partial)
+      description: Partial update. Send `If-Match` with the current ETag for safe concurrent edits.
+      tags: [Apiaries]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/IfMatchHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiaryUpdate'
+      responses:
+        '200':
+          description: Updated apiary.
+          headers:
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Apiary'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+    delete:
+      operationId: deleteApiary
+      summary: Delete an apiary (soft)
+      description: Soft-delete (sets the tombstone that propagates to devices via sync — data-model.md).
+      tags: [Apiaries]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/IfMatchHeader'
+      responses:
+        '204':
+          description: Deleted (no content).
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+
+  /apiaries/{apiaryId}/distance:
+    parameters:
+      - $ref: '#/components/parameters/ApiaryId'
+    get:
+      operationId: getApiaryDistance
+      summary: Distance to another apiary
+      description: >-
+        Straight-line distance between this apiary and `to` (FR-AP-5; straight-line is the
+        Q-DIST default — driving distance is out of v1 scope).
+      tags: [Apiaries]
+      parameters:
+        - name: to
+          in: query
+          required: true
+          description: The other apiary's id.
+          schema:
+            $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: The computed distance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Distance'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+
+components:
+  # bearerAuth must resolve locally for the top-level `security` name reference; the
+  # canonical definition stays in _shared (single source of truth), pulled in by $ref.
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.openapi.yaml#/components/securitySchemes/bearerAuth'
+
+  parameters:
+    ApiaryId:
+      name: apiaryId
+      in: path
+      required: true
+      schema:
+        $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+
+  schemas:
+    Apiary:
+      type: object
+      description: An apiary (FR-AP-7). `organization_id` is read-only (set from the token).
+      allOf:
+        - $ref: './_shared/components.openapi.yaml#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id:
+              $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+            organization_id:
+              allOf:
+                - $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+              readOnly: true
+            name:
+              type: string
+              minLength: 1
+              maxLength: 200
+            location:
+              $ref: './_shared/components.openapi.yaml#/components/schemas/GeoPoint'
+            hive_count:
+              type: integer
+              minimum: 0
+              description: Number of hives at the apiary (D-2).
+            distance_m:
+              type: [number, "null"]
+              readOnly: true
+              description: Distance (metres) from the `near` point; only on proximity lists (FR-AP-2).
+          required: [id, name, hive_count]
+
+    ApiaryCreate:
+      type: object
+      description: Create payload. `id` is client-supplied (offline UUID); no `organization_id`.
+      properties:
+        id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        location:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/GeoPoint'
+        hive_count:
+          type: integer
+          minimum: 0
+          default: 0
+      required: [id, name]
+
+    ApiaryUpdate:
+      type: object
+      description: Partial update — any subset of mutable fields.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        location:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/GeoPoint'
+        hive_count:
+          type: integer
+          minimum: 0
+      minProperties: 1
+
+    ApiaryList:
+      type: object
+      description: A page of apiaries (standard list envelope — ADR-0003).
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Apiary'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
+
+    Distance:
+      type: object
+      properties:
+        from:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        to:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        distance_m:
+          type: number
+          description: Straight-line distance in metres.
+        method:
+          const: straight_line
+      required: [from, to, distance_m, method]

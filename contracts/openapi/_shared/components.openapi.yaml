@@ -1,0 +1,234 @@
+# Shared OpenAPI components — the reusable "contract template" every BeekeepingIT
+# client-facing service is stamped from. Encodes the conventions in
+# docs/architecture/api-contracts.md and docs/adr/0003-api-contract-conventions.md.
+#
+# This is a valid standalone OpenAPI 3.1 document (openapi + info + components, no paths),
+# consumed by service specs via relative $ref, e.g.:
+#   $ref: './_shared/components.openapi.yaml#/components/schemas/Problem'
+# Specs are bundled (Redocly/Spectral) before codegen — see ../../README.md.
+openapi: 3.1.0
+info:
+  title: BeekeepingIT — shared API components
+  version: 0.1.0
+  description: >-
+    Reusable security scheme, parameters, headers, error format (RFC 9457) and
+    pagination primitives shared across all client-facing service contracts.
+    Not a service in itself — referenced by the per-service specs in this folder.
+  license:
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
+
+components:
+  # --- AuthN: Keycloak-issued JWT bearer (D-7). Tenancy (organization_id) is derived
+  #     server-side from the token + membership — never sent by the client (ADR-0002). ---
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        OIDC access token issued by Keycloak (D-7). The owning service validates it via
+        JWKS and derives the caller's `organization_id` and role from the token +
+        membership; the org scope is **never** a path/query/body parameter (ADR-0002).
+
+  parameters:
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      description: Maximum items to return (cursor pagination). See ADR-0003 §pagination.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque keyset cursor from a previous response's `page.next_cursor`.
+      schema:
+        type: string
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Client-supplied key (UUID) making a create/POST safe to retry — essential for the
+        offline write-back path (a queued create may be re-sent). Same key + same body ⇒
+        the original result is returned, not a duplicate. Pairs with client-generated
+        UUID PKs (data-model.md).
+      schema:
+        type: string
+        format: uuid
+    IfMatchHeader:
+      name: If-Match
+      in: header
+      required: false
+      description: >-
+        ETag of the version the client intends to modify, for optimistic concurrency on
+        PATCH/DELETE. A stale ETag yields `409 Conflict` (ties into the LWW/sync model,
+        Q-SYNC / #106).
+      schema:
+        type: string
+
+  headers:
+    ETag:
+      description: Entity version tag; echo back in `If-Match` to update safely.
+      schema:
+        type: string
+    Location:
+      description: Canonical URI of a newly created resource.
+      schema:
+        type: string
+        format: uri-reference
+    X-Request-Id:
+      description: Correlation id for tracing (propagated to OTel — NFR-OBS-1).
+      schema:
+        type: string
+
+  schemas:
+    # RFC 9457 Problem Details — the single error format for every service.
+    # Media type: application/problem+json.
+    Problem:
+      type: object
+      description: >-
+        Error payload per RFC 9457 (Problem Details for HTTP APIs). Returned with the
+        `application/problem+json` media type for every non-2xx response.
+      properties:
+        type:
+          type: string
+          format: uri
+          default: about:blank
+          description: URI identifying the problem type (a docs anchor, or `about:blank`).
+        title:
+          type: string
+          description: Short, human-readable, stable summary of the problem type.
+        status:
+          type: integer
+          description: HTTP status code, repeated for convenience.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: URI reference identifying this specific occurrence.
+        code:
+          type: string
+          description: >-
+            Stable, machine-readable application error code (e.g. `apiary.not_found`,
+            `validation.failed`) — clients branch on this, not on `detail`.
+        errors:
+          type: array
+          description: Field-level details for validation failures (422).
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                description: Dotted path to the offending field (e.g. `location.coordinates`).
+              code:
+                type: string
+                description: Machine-readable reason (e.g. `required`, `out_of_range`).
+              message:
+                type: string
+                description: Human-readable, localizable (EN/PT) message.
+            required: [field, message]
+      required: [title, status]
+
+    Page:
+      type: object
+      description: Cursor-pagination envelope metadata (keyset; see ADR-0003).
+      properties:
+        next_cursor:
+          type: [string, "null"]
+          description: Cursor for the next page, or null when there are no more items.
+        limit:
+          type: integer
+          description: Page size that was applied.
+      required: [limit]
+
+    Uuid:
+      type: string
+      format: uuid
+      description: >-
+        Client-generatable UUID (v7 preferred) — devices mint ids offline with no server
+        round-trip (data-model.md). Also the idempotency anchor for sync upload.
+
+    GeoPoint:
+      type: object
+      description: GeoJSON Point — `coordinates` are `[longitude, latitude]` in WGS84 (EPSG:4326).
+      properties:
+        type:
+          const: Point
+        coordinates:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: number
+      required: [type, coordinates]
+
+    Timestamps:
+      type: object
+      description: System-time audit fields present on every persisted resource.
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+  responses:
+    BadRequest:
+      description: Malformed request (syntax, params).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Missing or invalid access token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Authenticated but not permitted (role/org scope).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Resource not found within the caller's organization scope.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Version/state conflict (stale `If-Match`, concurrent edit).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnprocessableEntity:
+      description: Well-formed but semantically invalid (validation failure).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    TooManyRequests:
+      description: Rate limit exceeded (mechanism stubbed in v1 — D-4 / NFR-RL-1).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
