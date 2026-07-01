@@ -84,20 +84,10 @@ where there's a sensible one.
 
 ## Tier 3 — NFR / operational clarifications
 
-### Q-AUTH — Authentication details, especially offline
-- **Affects:** NFR-SEC-1, FR-AU-1. **Mechanism set by D-7** (Keycloak / OIDC). Still
-  open: email verification, password reset, session/token lifetime, and **how login
-  works when offline** (cached credentials/tokens) — critical for a field-first app.
-
 ### Q-LLM — On-device LLM feasibility — ⏭️ DEFERRED to native phase (D-8/D-10 → SP-2)
 - **Affects:** NFR-AI-2/3, FR-AI-1. The PWA phase uses **cloud AI**, so on-device is
   no longer near-term. Revisit at the native phase (model, device specs, size,
   quality) via **SP-2**.
-
-### Q-ROLE — Admin scope & capabilities
-- **Affects:** NFR-ROL-1/2. Is "admin" per-organization or system-wide? Exactly
-  what can admin do (manage members, roles, org settings, quotas)? Does any of this
-  exist in the mobile app or only the Admin App?
 
 ### Q-CMP / Q-REG — Compliance & Portuguese regulation
 - **Affects:** NFR-CMP-1, Context C-2. Confirm **GDPR** scope (data export/erasure,

@@ -29,4 +29,3 @@ microservices, Flutter (PWA-first → native), Postgres + sync, Keycloak, cloud-
 - **Q-SYNC** — conflict-resolution policy (engine chosen; spike **SP-1**).
 - **Q-AICLOUD** — cloud-AI privacy/GDPR (consent, DPA, no-training, EU residency).
 - **Q-JOUR** — journey planned-vs-actual model.
-- **Q-AUTH** — auth flows incl. offline login (native phase).
