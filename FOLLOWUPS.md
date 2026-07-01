@@ -5,19 +5,12 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
-## SP-1 sync-engine spike (#54) — branch `claude/vigilant-napier-b1e0c8`
-
-- **What landed:** engine pick **PowerSync** (self-hosted Open Edition), resolved by a head-to-head
-  **and a working k8s prototype** (create → offline edit → sync + server-authoritative LWW/conflict-log,
-  **8/8** automated checks). Recorded in [ADR-0005](docs/adr/0005-sync-engine-choice.md) +
-  [SP-1 report](docs/spikes/sp-1-powersync-vs-electricsql.md); `D-6`, `Q-SYNC`, `tech-stack.md` updated.
-- **Before merge:** commit + open the PR for the above; confirm **#54 closed** with a link to ADR-0005.
-- **Prototype NOT committed** (research only, per #54's AC): the throwaway kind + Postgres + PowerSync +
-  `@powersync/web` PWA stack ran in the session scratchpad and was torn down — reproduction lives in
-  the SP-1 report. (Local WSL `.wslconfig` `vmIdleTimeout=-1` was added for the spike; remove if unwanted.)
-- **Handoff → #106 (EPIC-06 #7):** cross-service write-back **atomicity mechanism** (D-12), **org-scoped
-  Sync Rules** (the client slice), tombstones/deletes, client↔server validation parity, and the
-  "synced"/notify-and-fix UX; **validate iOS PWA** storage durability when iOS is in scope (D-10).
+<!-- Closed for PR #123 (SP-1 sync-engine spike, #54): engine pick → PowerSync (self-hosted Open
+Edition), recorded in ADR-0005 + docs/spikes/sp-1-powersync-vs-electricsql.md; D-6 / Q-SYNC /
+tech-stack updated; #54 closed on merge. Handoff → #106: cross-service write-back atomicity (D-12),
+org-scoped Sync Rules, tombstones/deletes, client↔server validation parity, notify-and-fix UX, iOS
+PWA storage durability. Prototype not committed (research only). Local WSL `.wslconfig`
+`vmIdleTimeout=-1` left in place; remove if unwanted. -->
 
 ## EPIC-13 (platform) — wire API-contract tooling into CI
 
