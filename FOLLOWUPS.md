@@ -16,7 +16,3 @@
   [`docs/architecture/api-contracts.md`](docs/architecture/api-contracts.md) §11 ·
   ADR: [`docs/adr/0003-api-contract-conventions.md`](docs/adr/0003-api-contract-conventions.md)
 - **Status:** pending EPIC-13 (#83/#84). Not a blocker for #108 (design/skeletons only).
-
-<!-- Closed for PR #112 (docs/epic-design-service-decomposition): AI write-actions story → #114
-(EPIC-08); sync write-back D-12 (scope + failure UX + atomicity mechanism) → #106 (+ EPIC-06 #7);
-ai-schema consistency → PR #113 comment; ADR-0002 → tracked in #114. -->
