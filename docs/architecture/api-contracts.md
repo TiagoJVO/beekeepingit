@@ -258,7 +258,7 @@ flowchart TD
 
 | Item | Effect on the contract | Resolved in |
 |---|---|---|
-| [Q-SYNC](../../requirements/open-questions.md) | The **sync write-back** protocol (offline queue → authoritative tables) layers on these REST writes + `Idempotency-Key`; atomic-push semantics (D-12) are defined there, not here | #106, SP-1 |
+| Q-SYNC (**resolved**) | The **sync write-back** protocol (offline queue → authoritative tables) layers on these REST writes + `Idempotency-Key`; atomic-push semantics (D-12) are defined there, not here | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106) |
 | Q-AUTH — **resolved** | JWT validation (edge + per-service), org scope from token+membership, offline-token handling | [auth.md](auth.md) / [ADR-0004](../adr/0004-authn-authz.md) (#109) |
 | Q-ROLE — **resolved** | `admin` is **org-scoped**; member/invitation endpoints are admin-only | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md) (#109) |
 | [Q-SEARCH](../../requirements/open-questions.md) | `?q=` scope (which entities, offline vs online, which attributes) | EPIC-02 |

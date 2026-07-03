@@ -7,8 +7,8 @@
 - **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
   (microservices → inter-service contracts), [D-5](../../requirements/decisions.md) (Go/Flutter/React),
   [D-7](../../requirements/decisions.md) (Keycloak JWT)
-- **Open questions:** [Q-SYNC](../../requirements/open-questions.md),
-  [Q-AUTH](../../requirements/open-questions.md), [Q-ROLE](../../requirements/open-questions.md)
+- **Open questions:** Q-SYNC (resolved → [sync.md](../architecture/sync.md) / [ADR-0006](0006-sync-conflict-resolution.md)),
+  Q-AUTH / Q-ROLE (resolved → [ADR-0004](0004-authn-authz.md))
 - **Design doc:** [api-contracts.md](../architecture/api-contracts.md) ·
   **Contracts:** [`contracts/openapi/`](../../contracts/openapi/)
 

@@ -7,7 +7,7 @@
 - **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture),
   D-5, D-6, D-7, D-9, D-10
 - **Open questions:** [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
-  (resolved by D-1), [Q-SYNC](../../requirements/open-questions.md#q-sync--offline-sync-conflict-resolution--write-back-integrity)
+  (resolved by D-1), Q-SYNC (resolved → [sync.md](../architecture/sync.md) / [ADR-0006](0006-sync-conflict-resolution.md))
 - **Design doc:** [service-decomposition.md](../architecture/service-decomposition.md)
 
 ## Context

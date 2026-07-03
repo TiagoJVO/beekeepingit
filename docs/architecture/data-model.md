@@ -243,7 +243,7 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 
 | Item | Effect on the model | Resolved in |
 |---|---|---|
-| [Q-SYNC](../../requirements/open-questions.md) | tombstones, LWW clock (`updated_at`), upload idempotency | #106 + SP-1 (#54) |
+| Q-SYNC (**resolved**) | tombstones, LWW clock (`updated_at`), upload idempotency | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106, SP-1 #54) |
 | [Q-HIS](../../requirements/open-questions.md) | `audit_log` retention/immutability; capture (events/outbox/triggers) | #107 |
 | [Q-JOUR](../../requirements/open-questions.md) | journey↔activity attribution; "how much is missing" | EPIC-04, #110 |
 | [Q-TODO](../../requirements/open-questions.md) | todo status set, assignment, "area" semantics | EPIC-05 |

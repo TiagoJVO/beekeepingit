@@ -125,17 +125,18 @@ harvest, which requires visiting all apiaries).
 
 - **FR-OF-1** — The app is used **mainly in the field**, so it must **work offline**
   and **sync data when an internet connection is available**.
-  - *Open question (Q-SYNC):* conflict-resolution strategy when multiple
-    organization users edit the same data offline — this is the single largest
-    undefined area.
+  - *Resolved (was Q-SYNC):* conflict resolution when multiple org users edit the same data
+    offline is **server-authoritative record-level last-write-wins + a conflict log** — designed
+    in [`docs/architecture/sync.md`](../docs/architecture/sync.md) / ADR-0006 (#106).
 - **FR-OF-2** — **Sync failure handling.** A client→server sync **push is atomic**: if any
   queued change is rejected, the **entire push is rolled back** (no partial apply). Before
   pushing, the client **revalidates** queued edits against the **same rules the server will
   apply** (as closely as feasible) to catch problems offline. On rejection, the **user who
   pushed is notified**, shown the offending change(s), and **resolves them on the client**
   before re-pushing. The server remains authoritative.
-  - *Decision (D-12):* atomic write-back + client validation parity + notify-and-fix; the
-    **failure-handling UX is to be designed** (Q-SYNC, #106 / EPIC-06).
+  - *Decision (D-12):* atomic write-back + client validation parity + notify-and-fix. Mechanism
+    designed in [`docs/architecture/sync.md`](../docs/architecture/sync.md) §6/§8/§9 (#106); the
+    **failure-handling screens** are built in EPIC-06.
 
 ## Import / Export (FR-IE)
 

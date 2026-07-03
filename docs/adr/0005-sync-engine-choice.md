@@ -6,7 +6,7 @@
 - **Requirements:** FR-OF-1, FR-OF-2, NFR-ARC-2, NFR-ARC-3, FR-HIS-1, NFR-TST-1
 - **Decisions:** [D-6](../../requirements/decisions.md) (resolves the engine pick), [D-12](../../requirements/decisions.md)
   (write-back), [D-5](../../requirements/decisions.md) (Flutter), [D-10](../../requirements/decisions.md) (PWA-first)
-- **Questions:** [Q-SYNC](../../requirements/open-questions.md) (conflict policy — default confirmed here)
+- **Questions:** Q-SYNC (conflict policy — default confirmed here; fully resolved in [ADR-0006](0006-sync-conflict-resolution.md) / [sync.md](../architecture/sync.md))
 - **Spike:** [SP-1 report](../spikes/sp-1-powersync-vs-electricsql.md) (head-to-head + a working k8s prototype)
 
 ## Context
@@ -86,9 +86,11 @@ Adopt **PowerSync**, **self-hosted (Open Edition)** on the k8s cluster, as the o
 
 ## Follow-ups
 
-- **#106** — the sync design doc: org-scoped Sync Rules (the client slice), the sync-publication
-  contract each service honors, the **cross-service write-back atomicity mechanism** (D-12), client↔
-  server validation parity, tombstones/deletes, and the "synced" status + notify-and-fix UX (FR-OF-2).
+- **#106 — ✅ delivered** in [sync.md](../architecture/sync.md) / [ADR-0006](0006-sync-conflict-resolution.md):
+  org-scoped Sync Rules (the client slice), the sync-publication contract each service honors, the
+  **cross-service write-back atomicity mechanism** (D-12 → single-endpoint seam + validate-first /
+  forward-retry), client↔server validation parity, tombstones/deletes, and the "synced" status +
+  notify-and-fix UX (FR-OF-2).
 - **EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13** — build the PowerSync subchart (self-hosted service +
   storage DB), the per-service connector in the shared service template, and offline/sync tests
   (NFR-TST). Validate **iOS PWA** persistence when iOS is in scope (D-10).

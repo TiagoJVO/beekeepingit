@@ -84,10 +84,13 @@ Core technology decisions (2026-06-27). Detail and rationale in
   connector** (D-11/D-12), never PowerSync writing domain schemas directly.
 - **Notes:** per-type activity attributes via **JSONB**; geo (proximity/distance)
   via **PostGIS**.
-- **Supersedes:** Q-SYNC — engine **now finalized (PowerSync)**; the default conflict policy
-  (server-authoritative **record-level last-write-wins + conflict log**) was **validated by SP-1**
-  and is the working default. The **cross-service write-back atomicity mechanism** (D-12) remains
-  to be designed in #106.
+- **Supersedes:** Q-SYNC — **fully resolved.** Engine finalized (PowerSync); conflict policy
+  (server-authoritative **record-level last-write-wins + conflict log**, validated by SP-1), the
+  org-scoped client slice, the sync-publication contract, tombstones, clock source, validation
+  parity, notify-and-fix UX, and the **cross-service write-back atomicity mechanism** (D-12) are
+  all designed in [`docs/architecture/sync.md`](../docs/architecture/sync.md) /
+  [ADR-0006](../docs/adr/0006-sync-conflict-resolution.md) (#106). Field-level merge / compensation
+  are documented future refinements, not open items.
 
 ## D-7 — Identity & auth: Keycloak (self-hosted)
 - **Keycloak** (OIDC/OAuth2) on the k8s cluster; **realms + roles** for RBAC
@@ -166,12 +169,15 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **On failure:** the **pushing user is notified**, the rejected push is surfaced with the
   offending change(s), and the user **fixes it on the client** before the next push (FR-OF-2).
   The **failure-handling UX must be designed** (#106 / EPIC-06).
-- **Tension to resolve (mechanism — open):** atomic write-back **conflicts with ownership
-  rule 1** ("a service writes only its own schema; no cross-schema transactions"). A push that
-  spans services therefore **cannot use one DB transaction** — atomicity must be orchestrated at
-  the write-back layer (e.g. **saga / compensating actions**, or a **per-service transactional
-  batch + coordinator** with idempotent, reversible apply). Choosing the mechanism is **#106 +
-  SP-1** (Q-SYNC).
+- **Mechanism (resolved in #106):** atomic write-back **conflicts with ownership rule 1** (no
+  cross-schema transactions), so a multi-service push cannot be one DB transaction. Chosen: a
+  **single server-side write-back endpoint (seam)** with **validate-first + idempotent
+  forward-retry** ("A-lite") behind it — per-service local transactions, no compensation code in
+  v1. Client-side fan-out, 2PC/prepared-transactions, choreographed saga, and a workflow-engine
+  saga are **rejected for v1** but reachable behind the seam. Compensation/true rollback and
+  field-level merge are **specified-but-deferred**. See
+  [`docs/architecture/sync.md`](../docs/architecture/sync.md) §6 /
+  [ADR-0006](../docs/adr/0006-sync-conflict-resolution.md).
 - **Refines:** D-6 (sync) and ownership rule 1 (service-decomposition §4). Touches FR-OF-2,
   Q-SYNC, FR-HIS, EPIC-06, #106.
 

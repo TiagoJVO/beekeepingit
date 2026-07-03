@@ -13,32 +13,14 @@ where there's a sensible one.
 
 ---
 
-## Tier 1 — Foundational (these reshape the whole plan)
-
-### Q-SYNC — Offline sync: conflict resolution + write-back integrity
-> **Partially addressed:** sync **engine finalized → PowerSync (self-hosted)** via **SP-1** (#54):
-> [ADR-0005](../docs/adr/0005-sync-engine-choice.md) /
-> [SP-1 report](../docs/spikes/sp-1-powersync-vs-electricsql.md); **write-back integrity decided**
-> (D-12: atomic push, client validation parity, notify-and-fix). The **conflict-policy default**
-> (server-authoritative **record-level LWW + conflict log**) was **validated end-to-end by the SP-1
-> prototype** and is the working default. **Still open (→ #106):** the cross-service write-back
-> **atomicity mechanism**, tombstones/deletes, client↔server validation parity, field-level merge
-> where record-level LWW hurts, clock source, and the "synced"/notify-and-fix UX.
-- **Affects:** FR-OF-1, FR-OF-2, and indirectly every entity (FR-HIS-1 too).
-- **Gap:** Offline + multiple users in one org editing shared data = guaranteed
-  conflicts, but no resolution strategy is defined.
-- **Decisions needed:** sync granularity (record vs. field), conflict policy
-  (last-write-wins, per-field merge, CRDT, manual resolution), tombstones for
-  deletes, clock source, and what "synced" status the UI shows. **Plus (D-12):** the
-  **write-back atomicity mechanism** across per-service writes — saga/compensation vs a
-  per-service transactional batch + coordinator (a multi-service push can't share one DB
-  transaction; tension with ownership rule 1); **client↔server validation parity** (how
-  rules are shared without divergence); and the **sync-failure notify-and-fix UX** (FR-OF-2).
-- **Recommended default:** per-record **last-write-wins** for v1, plus a conflict log
-  (**validated by SP-1**); revisit field-level merge only where it hurts. Clock source
-  (client wall-clock vs. server-assigned vs. HLC) is a #106 detail.
-
----
+> **Tier 1 (foundational) is empty — resolved.** The former **Q-SYNC** (offline sync: conflict
+> resolution + write-back integrity) is **fully resolved**: engine → PowerSync
+> ([ADR-0005](../docs/adr/0005-sync-engine-choice.md), SP-1 #54); conflict policy, client slice,
+> publication contract, tombstones, clock source, validation parity, notify-and-fix UX, and the
+> cross-service **write-back atomicity mechanism** (D-12) are decided in
+> [`docs/architecture/sync.md`](../docs/architecture/sync.md) / [ADR-0006](../docs/adr/0006-sync-conflict-resolution.md)
+> (#106), which cite Q-SYNC as their origin. Field-level merge and compensation are **documented
+> future refinements**, not open blockers.
 
 ## Tier 2 — Functional gaps to close
 
