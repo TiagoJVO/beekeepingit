@@ -32,7 +32,7 @@ cnpg/cloudnative-pg -n cnpg-system --create-namespace`, right after cluster brin
   prerequisite for the umbrella chart's `postgres` subchart (its `Cluster` custom resource), not a
   subchart itself — installing/upgrading it on every per-environment `helm upgrade beekeepingit`
   would be wrong for something meant to serve every environment on the cluster (see
-  [ADR-0009](../adr/0009-platform-backing-services-provisioning.md)). `down.sh` needs no change:
+  [ADR-0010](../adr/0010-platform-backing-services-provisioning.md)). `down.sh` needs no change:
   deleting the k3d cluster removes it along with everything else.
 
 ## Helm umbrella chart
@@ -57,7 +57,7 @@ section covers the _why_.
   on top of `values.yaml`). Only `dev` is deployed anywhere today; `staging`/`prod` exist to
   prove the override mechanism per `NFR-ARC-2` (don't force cloud/multi-env now, but don't block
   it later either).
-- **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0009](../adr/0009-platform-backing-services-provisioning.md)):
+- **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0010](../adr/0010-platform-backing-services-provisioning.md)):
   `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
   portable `Ingress` + self-signed TLS Secret, reusing k3d's Traefik) are hand-rolled — there's
   nothing to vendor for either. `keycloak` and `minio` are thin **wrapper charts**: each declares
@@ -74,12 +74,19 @@ section covers the _why_.
 `helm template` (base + each environment overlay) as a manifest-rendering dry-run. No live
 cluster is involved — deploying to the cluster from CI is `#86` (GitOps)/`#88` (CI/CD pipeline).
 
+## GitOps (Flux)
+
+[`infra/gitops/`](../../infra/gitops/) reconciles the umbrella chart above onto the `dev` cluster
+from this repo — a manual `helm install`/`upgrade` is no longer how `dev` gets updated once a
+change is merged to `main`. See the directory's own
+[README](../../infra/gitops/README.md) for layout and day-to-day operation, and
+[ADR-0009](../adr/0009-gitops-flux.md) for why Flux and why hand-wired (not `flux bootstrap`).
+
 ## Not yet covered here
 
 - Production-grade Keycloak realm/RBAC hardening and trusted-CA TLS for the gateway (both
-  EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0009).
-- GitOps reconciliation (Flux is installed on the dev cluster but not bootstrapped against this
-  repo yet — deferred to `#86` per the `local-dev-environment` setup notes).
+  EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0010).
 - The full path-filtered monorepo CI/CD pipeline (`#88`) — `helm-ci.yml` only covers the chart
   itself, and has no live cluster to run the `postgres` subchart's `helm test` smoke-query hook
-  against yet (that's a developer's local `beekeeping` k3d cluster today).
+  against yet (that's a developer's local `beekeeping` k3d cluster today); CI publishing images
+  and updating manifests for Flux to pick up also lands with `#88`.

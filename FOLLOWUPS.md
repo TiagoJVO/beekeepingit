@@ -5,6 +5,22 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
+## #84/#86 — verify Flux resolves the new vendored subchart dependencies
+
+- **What:** `#84` added `keycloak`/`minio` as wrapper charts around vendored dependencies
+  (`codecentric/keycloakx`, the official `charts.min.io` chart) — resolved via `helm dependency
+build`, never committed (`.gitignore`: `**/charts/*.tgz`). `#86`'s `HelmRelease` points Flux's
+  `helm-controller` at this chart directly from the Git source (`chart: ./infra/helm/beekeepingit`),
+  not a pre-packaged release.
+- **Why it matters:** unconfirmed whether `helm-controller` resolves remote chart-repo
+  dependencies (`helm repo add` + `dependency build` equivalent) at reconcile time the way local
+  `helm install`/CI's `helm-ci.yml` do explicitly, or expects them vendored/committed. If not,
+  Flux's first reconcile of this chart after both PRs land could fail.
+- **Where:** [`infra/gitops/apps/dev/beekeepingit-helmrelease.yaml`](infra/gitops/apps/dev/beekeepingit-helmrelease.yaml),
+  [`infra/helm/beekeepingit/Chart.yaml`](infra/helm/beekeepingit/Chart.yaml).
+- **Status:** verify on the next `dev` reconcile after both land; not blocking either PR
+  individually (each was independently live-verified via direct `helm install`, not via Flux).
+
 ## Tooling — deferred (post-#19)
 
 - **golangci-lint v1 → v2** config migration (v2 is current; `.golangci.yml` uses v1 schema).
@@ -57,3 +73,19 @@ does not exist`. Fixed by only creating schemas (owned by the `beekeepingit` app
   `identity_svc` could create a table in its own schema; Keycloak realm `beekeepingit` reachable
   through the gateway's TLS Ingress (`/.well-known/openid-configuration` served correctly); MinIO
   health endpoint returned 200.
+
+## #86 (GitOps/Flux) — before-merge: one-time cluster bootstrap
+
+- **What:** after this merges to `main`, run the one-time bootstrap on the dev cluster:
+  `kubectl apply -f infra/gitops/clusters/dev/` (documented in
+  [`infra/gitops/README.md`](infra/gitops/README.md)). Nothing deploys via Flux until this runs,
+  since the `GitRepository` tracks `main` and the manifests don't exist there yet.
+- **Why:** deliberate — bootstrapping isn't done via `flux bootstrap` (would push straight to
+  `main`, bypassing PR review; see `D-13`/ADR-0009), so it needs this one manual step post-merge.
+- **Where:** [`infra/gitops/`](infra/gitops/).
+- **Status:** before-merge for this branch. All 5 acceptance criteria (reconcile/deploy,
+  drift-revert, sync-on-merge, sync/health observability, rollback) were live-verified against
+  the real `k3d-beekeeping` cluster during implementation, pointed at this feature branch — see
+  the branch history for the `reconcileStrategy: Revision` fix this verification caught (the
+  default strategy only re-deploys on a `Chart.yaml` version bump, which would've silently
+  broken "merge auto-deploys" for ordinary values/template edits).

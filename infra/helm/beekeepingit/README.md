@@ -7,7 +7,7 @@ Composes the whole BeekeepingIT platform into **one Helm release** on the single
 ## Adding a new service subchart
 
 Two shapes, depending on whether a maintained upstream chart already exists for the service (see
-[ADR-0009](../../../docs/adr/0009-platform-backing-services-provisioning.md) for the full
+[ADR-0010](../../../docs/adr/0010-platform-backing-services-provisioning.md) for the full
 reasoning):
 
 **Hand-rolled** (no upstream chart, or not worth vendoring — e.g. `postgres`, `gateway`):
@@ -44,7 +44,7 @@ umbrella only picks up what's already resolved inside the wrapper.
 
 Note: a cluster-scoped **operator** (e.g. CloudNativePG, which `postgres`'s `Cluster` CR depends
 on) is _not_ a subchart at all — it's installed once per cluster by `infra/cluster/up.sh`, the
-same way k3d itself bundles Traefik. See `charts/postgres/Chart.yaml` and ADR-0009.
+same way k3d itself bundles Traefik. See `charts/postgres/Chart.yaml` and ADR-0010.
 
 ## Namespace & environments
 

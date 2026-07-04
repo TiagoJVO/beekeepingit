@@ -11,7 +11,7 @@ appVersion: "0.1.0"
 # `keycloak`/`minio` are thin *wrapper* charts: each has its own nested
 # dependency on a real vendored upstream chart (codecentric/keycloakx,
 # charts.min.io) plus our own supplementary templates (generated credentials,
-# realm import) that a vendored chart can't own itself — see ADR-0009 and each
+# realm import) that a vendored chart can't own itself — see ADR-0010 and each
 # wrapper's own Chart.yaml. Each subchart's values live under a top-level key
 # matching its name, and it reads shared config via `.Values.global` (see
 # values.yaml, README.md).

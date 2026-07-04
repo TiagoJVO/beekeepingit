@@ -54,7 +54,7 @@ jobs:
           helm repo update codecentric minio
 
       # keycloak/minio are wrapper charts around a vendored dependency (see
-      # ADR-0009) — each needs its own `helm dependency build` to resolve that
+      # ADR-0010) — each needs its own `helm dependency build` to resolve that
       # vendored chart *before* the umbrella's own build packages them up.
       - name: helm dependency build (wrapper subcharts)
         if: steps.changes.outputs.helm == 'true'

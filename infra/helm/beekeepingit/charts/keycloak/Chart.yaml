@@ -5,7 +5,7 @@ description: >-
   BeekeepingIT-specific bits it can't own itself: a generated admin-bootstrap
   credential and the dev/CI-grade realm import (realm `beekeepingit`, client
   `beekeepingit-pwa`, one test user) already designed in
-  docs/architecture/walking-skeleton.md §4.5/§7.2 for #23 to reuse. See ADR-0009.
+  docs/architecture/walking-skeleton.md §4.5/§7.2 for #23 to reuse. See ADR-0010.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

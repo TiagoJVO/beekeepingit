@@ -1,4 +1,4 @@
-# 0009 — Platform backing-services provisioning: vendored charts, CNPG, Traefik reuse
+# 0010 — Platform backing-services provisioning: vendored charts, CNPG, Traefik reuse
 
 - **Status:** Accepted
 - **Date:** 2026-07-04

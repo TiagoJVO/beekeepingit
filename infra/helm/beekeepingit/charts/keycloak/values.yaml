@@ -13,7 +13,7 @@ resourceTier: medium
 
 # Dev/CI-grade realm seed matching docs/architecture/walking-skeleton.md
 # §4.5/§7.2 — #23 reuses this rather than redoing it. Production realm
-# config/hardening is EPIC-14 (see ADR-0009).
+# config/hardening is EPIC-14 (see ADR-0010).
 realmFile: beekeepingit-realm.json
 
 keycloakx:

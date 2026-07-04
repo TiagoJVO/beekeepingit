@@ -131,8 +131,9 @@ codebase throughout.
 
 ## Infrastructure
 
-- **k8s + Helm** (one cluster for v1, `NFR-ARC-3`); GitOps (ArgoCD/Flux) optional.
-- **Gateway/ingress:** **Traefik** (settled by `#84`/[ADR-0009](../docs/adr/0009-platform-backing-services-provisioning.md)
+- **k8s + Helm** (one cluster for v1, `NFR-ARC-3`); **GitOps: Flux** (`D-13`), hand-wired
+  `Kustomization`/`HelmRelease` objects (not `flux bootstrap`), no ArgoCD.
+- **Gateway/ingress:** **Traefik** (settled by `#84`/[ADR-0010](../docs/adr/0010-platform-backing-services-provisioning.md)
   — k3d already bundles it as the cluster's ingress controller, so it's reused rather than
   installing NGINX as a second one) (+ a thin BFF if needed).
 - **Observability:** OpenTelemetry → Prometheus (metrics), Loki (logs), Tempo
