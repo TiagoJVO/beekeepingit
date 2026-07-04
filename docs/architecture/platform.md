@@ -127,6 +127,11 @@ literal "walking-skeleton traces visible" AC gets closed for real once `#23` shi
 wires its Go service's OTel SDK to `otel-collector:4317` (tracked in
 [`FOLLOWUPS.md`](../../FOLLOWUPS.md)).
 
+[`infra/grafana-open.sh`](../../infra/grafana-open.sh) is a dev convenience for reaching
+Grafana itself: it reads the chart-generated admin password out of the
+`kube-prometheus-stack-grafana` Secret (never committed — see below), port-forwards the
+service, and opens it in a browser.
+
 **Alerting demo:** a custom `PrometheusRule` (injected via
 `additionalPrometheusRulesMap`, no hand-written CRD template) fires `OtelCollectorDown`
 when the collector's own scrape target goes down; Alertmanager's default route sends
