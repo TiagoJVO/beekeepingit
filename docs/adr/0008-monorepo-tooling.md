@@ -63,7 +63,8 @@ Adopt three composable, single-binary tools plus per-language linter configs:
 
 5. **CI** — a `lint` workflow runs `task ci` via `mise-action`, enforcing the same checks on every
    PR. Per-language, path-filtered build/test matrices are **out of scope here** and land in
-   EPIC-13 alongside the OpenAPI/contract tooling.
+   EPIC-13 alongside the OpenAPI/contract tooling. _(Renamed `lint` → `ci` with #85 once `task ci`
+   started running tests too — see `docs/adr/0011-infra-abstraction-object-storage-db-access.md`.)_
 
 ## Consequences
 

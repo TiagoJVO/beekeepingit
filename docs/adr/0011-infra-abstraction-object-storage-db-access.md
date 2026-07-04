@@ -80,6 +80,14 @@ mechanical config-schema port — same linters, same behavior) rather than pinni
 dependency tree to increasingly old versions to keep an EOL linter binary working.
 `mise.toml`'s `go` pin moves `1.24` → `1.25` for the same reason.
 
+### CI workflow renamed `lint` → `ci`
+
+Once `task ci` (which the CI workflow runs) started running `task test` too, a GitHub check
+literally named `lint` gating merges on test results was misleading. Renamed the workflow file
+`.github/workflows/lint.yml` → `ci.yml` (`name: lint` → `ci`, job id `lint:` → `ci:`) and updated
+`main`'s branch-protection required status check from `lint` to `ci` in the same change, so no
+PR is left blocked on a check name that no longer exists.
+
 ## Consequences
 
 **Positive**
