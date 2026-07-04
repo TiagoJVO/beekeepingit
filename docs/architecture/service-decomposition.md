@@ -246,6 +246,7 @@ hand-off #104 owes EPIC-13):
 | `keycloak` | OIDC IdP, realm + roles | D-7, #84 |
 | `postgres` | PostgreSQL + **PostGIS**, schema-per-service | D-6, #84 |
 | `sync-engine` | **PowerSync** (self-hosted, Open Edition) | D-6, ADR-0005 (SP-1 #54) |
+| `sync` | Thin stateless Go service: sync-token mint + write-back coordinator (owns no domain data) | D-12, [sync.md](sync.md) §6.4, [walking-skeleton.md](walking-skeleton.md) §4.3 |
 | `minio` | S3-compatible object storage (exports later) | NFR-ARC-2, #84 |
 | `observability` | OTel Collector + Prometheus + Grafana + Loki + Tempo | NFR-OBS-1, #87 |
 | `admin-app` | Static React bundle (served via gateway/CDN) | NFR-ROL-2 |

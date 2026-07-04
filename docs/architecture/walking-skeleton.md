@@ -99,8 +99,9 @@ cluster.
 
 `activities`, `journeys`, `todos`, `ai` services · React Admin App · MinIO · `audit_log`
 capture (FR-HIS → EPIC-07, per #23's note) · notify-and-fix UX and per-record sync-status
-badges (FR-OF-2 → EPIC-06 #58) · onboarding flows (profile/org creation, invitations →
-EPIC-01 #25–#27) · role-differentiated authz (`admin` vs `user` matrix → #28; the slice only
+badges (FR-OF-2 → EPIC-06 #58) · the **connection-quality sync gate** (FR-OF-3 → EPIC-06;
+the skeleton pushes on simple reconnect — [sync.md](sync.md) §7.1) · onboarding flows
+(profile/org creation, invitations → EPIC-01 #25–#27) · role-differentiated authz (`admin` vs `user` matrix → #28; the slice only
 needs *"active member"*, since apiary CRUD is available to both roles per [auth.md](auth.md)
 §5.3) · optional RLS (#30) · offline **login** (native phase, [auth.md](auth.md) §6).
 
