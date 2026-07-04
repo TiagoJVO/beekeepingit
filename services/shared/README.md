@@ -66,14 +66,16 @@ pool, err := dbaccess.Connect(ctx, devDBCfg)      // or prodDBCfg
 
 The integration tests (`objectstore/store_test.go`, `dbaccess/dbaccess_test.go`) are the
 executable proof the adapters work end-to-end — they build the same `Config` from an ephemeral
-testcontainers endpoint instead of the dev cluster's, exercising the exact same code path.
+testcontainers endpoint instead of the dev cluster's, exercising the exact same code path. The
+unit tests (`objectstore/objectstore_test.go`, `dbaccess/config_test.go`) cover the pure-logic
+paths that don't need a live endpoint: fail-fast validation and DSN rendering/escaping.
 
 ## Development
 
 ```sh
 cd services/shared
 go build ./...
-go test ./...              # runs the testcontainers integration tests (needs Docker)
+go test ./...              # unit tests + testcontainers integration tests (needs Docker)
 golangci-lint run ./...
 
 # Regenerate the sqlc reference queries after editing dbaccess/sqlc/queries or schema.sql:
