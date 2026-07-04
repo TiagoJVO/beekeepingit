@@ -42,6 +42,17 @@ examples of this pattern; if the vendored chart's own dependency needs a fresh v
 dependency build charts/<service>` _before_ `helm dependency build .` at the umbrella root — the
 umbrella only picks up what's already resolved inside the wrapper.
 
+**Important — commit the wrapper's own resolved `.tgz`:** unlike every other Helm dependency
+here, this one **must** be committed (`.gitignore` carries an explicit exception for
+`charts/keycloak/charts/*.tgz` and `charts/minio/charts/*.tgz`). Flux's source-controller (a
+GitRepository-sourced chart, see [`infra/gitops/`](../../gitops/)) only resolves the **umbrella's
+own top-level** dependencies from what's already on disk in the git checkout — it does not
+recursively run `helm dependency build` into subcharts. Verified directly: a pristine checkout
+without the wrapper's vendored `.tgz` renders the wrapper's own templates (the generated Secret,
+etc.) but silently produces **zero** `Deployment`/`StatefulSet`/`Service` for the vendored chart
+itself — no error, just a broken deploy. Re-run `helm dependency build charts/<service>` and
+commit the result whenever the vendored version bumps.
+
 Note: a cluster-scoped **operator** (e.g. CloudNativePG, which `postgres`'s `Cluster` CR depends
 on) is _not_ a subchart at all — it's installed once per cluster by `infra/cluster/up.sh`, the
 same way k3d itself bundles Traefik. See `charts/postgres/Chart.yaml` and ADR-0010.
