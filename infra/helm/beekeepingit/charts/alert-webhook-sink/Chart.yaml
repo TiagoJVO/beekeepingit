@@ -1,0 +1,9 @@
+apiVersion: v2
+name: alert-webhook-sink
+description: >-
+  Self-contained Alertmanager receiver for local/dev use (#87, NFR-OBS-1) — logs every
+  received webhook POST to stdout so an alert firing can be observed without any
+  external account/secret (Slack, PagerDuty, etc.). Not meant for prod alerting.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

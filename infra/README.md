@@ -14,7 +14,11 @@ for the as-built design; intent/decisions live in
 #    subchart (see charts/postgres/Chart.yaml and ADR-0010)
 infra/cluster/up.sh
 
-# 2. Install (or upgrade) the platform
+# 2. Fetch chart dependencies (local + vendored third-party, see the chart's README) —
+#    re-run after cloning or whenever a dependency version changes.
+helm dependency build infra/helm/beekeepingit
+
+# 3. Install (or upgrade) the platform
 infra/cluster/with-lock.sh helm install beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
   --namespace beekeepingit-dev --create-namespace
@@ -69,12 +73,18 @@ filesystem with this machine or across concurrent runs, so `flock` wouldn't appl
 
 ## Layout
 
-| Path                                       | What it is                                                                                                                         |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [`cluster/`](cluster/)                     | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`)                                                                |
-| [`helm/beekeepingit/`](helm/beekeepingit/) | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                |
-| [`gitops/`](gitops/)                       | **Flux** GitOps wiring that reconciles the umbrella chart onto the cluster from this repo — see its own [README](gitops/README.md) |
+| Path                                                          | What it is                                                                                                                          |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| [`cluster/`](cluster/)                                        | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`)                                                                 |
+| [`helm/beekeepingit/`](helm/beekeepingit/)                    | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                 |
+| [`gitops/`](gitops/)                                          | **Flux** GitOps wiring that reconciles the umbrella chart onto the cluster from this repo — see its own [README](gitops/README.md) |
+| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry      |
 
 Postgres+PostGIS, Keycloak, MinIO and the gateway (**#84**) are the umbrella chart's first real
 subcharts; the walking-skeleton services + PowerSync + PWA subcharts land with **#23**. Both wire
 into this umbrella chart rather than standing up their own release.
+
+The **observability stack** (OTel Collector, Prometheus, Grafana, Loki, Tempo — `NFR-OBS-1`)
+landed with **#87**: see
+[`docs/architecture/platform.md#observability`](../docs/architecture/platform.md#observability)
+for the design.
