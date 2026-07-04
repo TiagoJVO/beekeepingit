@@ -8,7 +8,7 @@
 
 [tools]
 # --- Language toolchains (baseline for the first services/apps) ---
-go = "1.24"
+go = "1.25"   # bumped from 1.24 landing services/shared (#85): pgx v5/minio-go v7 require it
 node = "22"
 
 # --- Task runner & git hooks ---
@@ -16,7 +16,13 @@ task = "3"          # go-task — the monorepo task runner (Taskfile.yml)
 lefthook = "1"      # fast, cross-platform git hooks (lefthook.yml)
 
 # --- Per-language linters/formatters ---
-golangci-lint = "1.64"   # Go meta-linter (see .golangci.yml). v1; migrate to v2 later.
+golangci-lint = "2.12.2"   # Go meta-linter (see .golangci.yml). v2 (ADR-0008 follow-up, #85:
+                            # v1's last release, 1.64.8, was built with go1.24.1 and can't lint
+                            # go1.25+ modules — a hard blocker once real go.mod's landed).
+
+# --- Go backend service tooling (services/shared — #85; grows with each service) ---
+sqlc = "1.31.1"                                          # typed SQL query codegen (pgx/sqlc)
+"go:github.com/pressly/goose/v3/cmd/goose" = "3.24.3"    # versioned Postgres migrations
 
 # --- Repo-hygiene linters/formatters (run today, no code packages needed) ---
 actionlint = "latest"        # GitHub Actions workflow linter
