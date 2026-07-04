@@ -94,9 +94,9 @@ Config lives in the umbrella's `values.yaml` under each chart's name.
   avoids writing and maintaining custom CRD templates.
 - **`grafana/loki`** (`SingleBinary` deployment mode, `filesystem` storage) and
   **`grafana/tempo`** (the monolithic chart, local-disk storage) — right-sized for one
-  small dev cluster. Neither uses object storage yet: **MinIO isn't deployed until
-  `#84`**, so this is filesystem-backed for now (tracked in
-  [`FOLLOWUPS.md`](../../FOLLOWUPS.md) — swap to MinIO-backed storage once `#84` lands).
+  small dev cluster. Neither uses object storage yet, even though `#84` has since deployed
+  MinIO — filesystem-backed for now, swapping to MinIO-backed storage is tracked as its own
+  follow-up (tracked in [`FOLLOWUPS.md`](../../FOLLOWUPS.md)).
 - **`open-telemetry/opentelemetry-collector`** runs as a single `Deployment` (not a
   per-node `DaemonSet` — unnecessary on a single-node cluster), receiving OTLP
   (gRPC 4317 / HTTP 4318) and exporting: traces → Tempo (`otlp`), metrics → Prometheus
