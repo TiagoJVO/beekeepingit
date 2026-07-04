@@ -238,7 +238,8 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
   locality. This also makes the sync upload idempotent on PK.
 - **Journey attribution as a link table** (`journey_activities` in the `journeys` schema, soft
   ref to `activities`): keeps the journeys concern out of the `activities` schema; the
-  **manual-vs-auto** attribution rule is **Q-JOUR** (resolved in EPIC-04 / #110).
+  **manual-vs-auto** attribution rule is **Q-JOUR** (resolved in EPIC-04 #46; journeys are
+  outside the walking-skeleton slice).
 - **History is occurred-at vs recorded-at aware:** `audit_log` records both device time and
   server time so history stays correct across offline edits + late sync; it is **append-only**,
   **per-service**, and **pseudonymous** (actor = internal user ID only) — [history.md](history.md)
@@ -257,7 +258,7 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 |---|---|---|
 | Q-SYNC (**resolved**) | tombstones, LWW clock (`updated_at`), upload idempotency | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106, SP-1 #54) |
 | Q-HIS (**resolved**) | `audit_log` capture (per-service, in-transaction), immutability, retention, GDPR, visibility | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107) |
-| [Q-JOUR](../../requirements/open-questions.md) | journey↔activity attribution; "how much is missing" | EPIC-04, #110 |
+| [Q-JOUR](../../requirements/open-questions.md) | journey↔activity attribution; "how much is missing" | EPIC-04 (#46) |
 | [Q-TODO](../../requirements/open-questions.md) | todo status set, assignment, "area" semantics | EPIC-05 |
 | [Q-JOIN](../../requirements/open-questions.md) | invitation expiry/re-invite, member removal, admin transfer | EPIC-01 |
 | [Q-AICLOUD](../../requirements/open-questions.md) | `ai_consents` fields (DPA version, scope, residency) | EPIC-08 |

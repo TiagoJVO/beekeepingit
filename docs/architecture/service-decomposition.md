@@ -32,7 +32,7 @@ their internals):
 | History/audit capture mechanism (events / outbox / triggers) | #107 |
 | API & inter-service contract conventions (REST + OpenAPI) | #108 |
 | AuthN/AuthZ & offline-login detail | #109 |
-| Walking-skeleton slice design (consolidates the above) | #110 |
+| Walking-skeleton slice design (consolidates the above) | #110 → [walking-skeleton.md](walking-skeleton.md) |
 
 ---
 
@@ -246,6 +246,7 @@ hand-off #104 owes EPIC-13):
 | `keycloak` | OIDC IdP, realm + roles | D-7, #84 |
 | `postgres` | PostgreSQL + **PostGIS**, schema-per-service | D-6, #84 |
 | `sync-engine` | **PowerSync** (self-hosted, Open Edition) | D-6, ADR-0005 (SP-1 #54) |
+| `sync` | Thin stateless Go service: sync-token mint + write-back coordinator (owns no domain data) | D-12, [sync.md](sync.md) §6.4, [walking-skeleton.md](walking-skeleton.md) §4.3 |
 | `minio` | S3-compatible object storage (exports later) | NFR-ARC-2, #84 |
 | `observability` | OTel Collector + Prometheus + Grafana + Loki + Tempo | NFR-OBS-1, #87 |
 | `admin-app` | Static React bundle (served via gateway/CDN) | NFR-ROL-2 |
@@ -264,7 +265,7 @@ S3-compatible interface (MinIO now, cloud later) and DB access via a typed query
 | [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture) | Full microservices may be over-built for one org; mitigated by the schema-per-service **split-later** path + modular-monolith escape hatch | [ADR-0001](../adr/0001-service-decomposition.md) |
 | Q-SYNC (**resolved**) | Write-back respects ownership **and is atomic per push** (validate-first + forward-retry) + client validation parity + notify-and-fix (D-12) — was the biggest cross-service risk | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106, SP-1 #54) |
 | [Q-AICLOUD](../../requirements/open-questions.md#q-aicloud--cloud-ai-privacy--gdpr-now-near-term-per-d-8) | `ai` sends org data to an external processor → consent/DPA/no-training/EU-residency gate **before** AI build | EPIC-08, NFR-CMP |
-| [Q-JOUR](../../requirements/open-questions.md#q-jour--journey-planned-vs-actual-model) | `journeys`↔`activities` attribution (and "how much is missing") undefined | #105/#110, EPIC-04 |
+| [Q-JOUR](../../requirements/open-questions.md#q-jour--journey-planned-vs-actual-model) | `journeys`↔`activities` attribution (and "how much is missing") undefined | EPIC-04 (#46) — journeys are outside the walking-skeleton slice ([walking-skeleton.md](walking-skeleton.md) §8) |
 | [Q-TODO](../../requirements/open-questions.md#q-todo--todo-lifecycle--associations) | `todos` lifecycle/assignment/area association | EPIC-05 |
 | Q-ROLE (admin scope) — **resolved** | "admin" is **org-scoped** (the membership role); shapes `organizations` authZ | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md) |
 
