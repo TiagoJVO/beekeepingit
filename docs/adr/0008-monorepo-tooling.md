@@ -63,7 +63,8 @@ Adopt three composable, single-binary tools plus per-language linter configs:
 
 5. **CI** — a `lint` workflow runs `task ci` via `mise-action`, enforcing the same checks on every
    PR. Per-language, path-filtered build/test matrices are **out of scope here** and land in
-   EPIC-13 alongside the OpenAPI/contract tooling.
+   EPIC-13 alongside the OpenAPI/contract tooling. _(Renamed `lint` → `ci` with #85 once `task ci`
+   started running tests too — see `docs/adr/0011-infra-abstraction-object-storage-db-access.md`.)_
 
 ## Consequences
 
@@ -83,7 +84,10 @@ Adopt three composable, single-binary tools plus per-language linter configs:
 
 - **POSIX shell assumption:** the discovery scripts use `find`/`sh`, so native Windows `cmd`/
   PowerShell is unsupported — contributors use WSL2 (already the team's environment). Documented.
-- **golangci-lint pinned to v1** (v2 changed its config schema); a follow-up migrates to v2.
+- ~~**golangci-lint pinned to v1**~~ **Superseded:** migrated to v2 with #85 — landing
+  `services/shared`'s real dependencies pulled in transitive `golang.org/x/*` requiring Go
+  1.25+, which v1's last release (built with go1.24.1) can't lint. See
+  [ADR-0011](0011-infra-abstraction-object-storage-db-access.md#golangci-lint-v1-v2-unplanned-but-forced-by-this-task).
 - **Version pins need periodic bumps** (Dependabot covers Actions, not mise yet) — tracked as a
   follow-up.
 - **First run must normalize existing docs** to be Prettier/Markdown-clean (`task format`), a
@@ -115,5 +119,5 @@ Adopt three composable, single-binary tools plus per-language linter configs:
   (previously scanned `scripts/` only).
 - **When the Flutter client lands (D-10)** — add `flutter`/`dart` to `mise.toml`; the client's
   `analysis_options.yaml` includes this baseline + `flutter_lints`.
-- **golangci-lint v1 → v2** config migration.
+- ~~**golangci-lint v1 → v2** config migration.~~ **Done** — see #85 / ADR-0011.
 - Consider a mise/Dependabot equivalent for pinned-tool updates.

@@ -5,9 +5,23 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
+## #85 → #20 — reuse `services/shared/dbaccess`, don't re-derive
+
+- **What:** `#85` landed `services/shared/dbaccess` (pgx + sqlc + goose, `Connect`/`Migrate`)
+  and `services/shared/objectstore` (S3-compatible adapter) as a library, deliberately
+  scoped to stop short of a config-loading framework.
+- **Why it matters:** `#20` ("Shared Go service template") also lists "a Postgres data-access
+  layer (pgx + sqlc, goose/golang-migrate)... demonstrated by at least one sample endpoint" as
+  an acceptance criterion. When #20 is picked up, import `services/shared/dbaccess` (and
+  `objectstore` if the sample endpoint needs uploads) instead of re-implementing the same
+  pgx/sqlc/goose wiring — and add the `go.work` (or `replace` directive) needed to link the
+  two modules, since #85 didn't need one with only a single module in the repo.
+- **Where:** [`services/shared/README.md`](services/shared/README.md),
+  [`docs/adr/0011-infra-abstraction-object-storage-db-access.md`](docs/adr/0011-infra-abstraction-object-storage-db-access.md).
+- **Status:** pending #20.
+
 ## Tooling — deferred (post-#19)
 
-- **golangci-lint v1 → v2** config migration (v2 is current; `.golangci.yml` uses v1 schema).
 - **Add `flutter`/`dart` to [`mise.toml`](mise.toml)** when the Flutter client package lands (D-10);
   wire `dart:build` and have the client `include:` the shared `analysis_options.yaml` +
   `flutter_lints`.
