@@ -1,0 +1,36 @@
+name: GitOps CI
+
+# Validates the Flux GitOps manifests on every change: schema-checks every
+# GitRepository/Kustomization/HelmRelease against the upstream Flux CRD
+# schemas. No live cluster is used here, same philosophy as helm-ci.yml —
+# applying to the cluster is a manual one-time bootstrap (infra/gitops/README.md).
+
+on:
+  pull_request:
+    paths:
+      - "infra/gitops/**"
+      - ".github/workflows/gitops-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/gitops/**"
+      - ".github/workflows/gitops-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  kubeconform:
+    name: kubeconform (Flux CRD schemas)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: kubeconform
+        uses: docker://ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e # v0.8.0
+        with:
+          args: >-
+            -strict -summary
+            -schema-location default
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+            infra/gitops

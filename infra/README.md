@@ -36,6 +36,7 @@ Requires `k3d`, `kubectl`, and `helm` on `PATH`. On Windows, run these from the 
 |---|---|
 | [`cluster/`](cluster/) | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`) |
 | [`helm/beekeepingit/`](helm/beekeepingit/) | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions |
+| [`gitops/`](gitops/) | **Flux** GitOps wiring that reconciles the umbrella chart onto the cluster from this repo — see its own [README](gitops/README.md) |
 
 Environment-specific services (Postgres, Keycloak, MinIO, gateway) land with **#84**; the
 walking-skeleton services + PowerSync + PWA subcharts land with **#23**. Both wire into this

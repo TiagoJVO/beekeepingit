@@ -181,6 +181,20 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Refines:** D-6 (sync) and ownership rule 1 (service-decomposition §4). Touches FR-OF-2,
   Q-SYNC, FR-HIS, EPIC-06, #106.
 
+## D-13 — GitOps: Flux, hand-wired (not `flux bootstrap`)
+- **Decision:** **Flux** is the GitOps controller (resolves the "ArgoCD/Flux optional" note in
+  `tech-stack.md`) — it was already installed and trialled on the dev cluster, so adopting it is
+  the path of least resistance over evaluating ArgoCD from scratch.
+- **Wiring:** the Flux `GitRepository`/`Kustomization`/`HelmRelease` objects are **hand-written
+  and committed like any other change** (branch → PR → squash-merge), then applied once with
+  `kubectl apply -f infra/gitops/clusters/dev/` to bootstrap — **not** `flux bootstrap github`,
+  which would push a deploy-key-backed commit directly to `main`, bypassing the PR-only workflow
+  (`CONTRIBUTING.md`). After the one-time apply, `infra/gitops/` is self-managed by Flux.
+- **Reconciliation is polling-only** (`GitRepository` interval, no GitHub webhook receiver) — the
+  local cluster has no public endpoint for GitHub to call.
+- See [`infra/gitops/README.md`](../infra/gitops/README.md) and
+  [ADR-0008](../docs/adr/0008-gitops-flux.md). Touches `NFR-ARC-3`, `NFR-MNT-1`, `#86`.
+
 ---
 
 # Open Spikes
