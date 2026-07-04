@@ -1,0 +1,18 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by the
+# `smoke:` key in the parent's values.yaml/environments/*.yaml.
+enabled: true
+replicaCount: 1
+image:
+  repository: nginxinc/nginx-unprivileged
+  tag: "1.27-alpine"
+resourceTier: small
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit
+  resources:
+    small:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 64Mi }

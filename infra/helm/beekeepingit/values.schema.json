@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "beekeepingit umbrella chart values",
+  "type": "object",
+  "required": ["global"],
+  "properties": {
+    "global": {
+      "type": "object",
+      "required": ["environment", "namespace", "resources"],
+      "properties": {
+        "environment": {
+          "type": "string",
+          "enum": ["dev", "staging", "prod"]
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resources": {
+          "type": "object",
+          "required": ["small", "medium", "large"],
+          "properties": {
+            "small": { "$ref": "#/$defs/resourceTier" },
+            "medium": { "$ref": "#/$defs/resourceTier" },
+            "large": { "$ref": "#/$defs/resourceTier" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "resourceTier": {
+      "type": "object",
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": { "$ref": "#/$defs/resourceSpec" },
+        "limits": { "$ref": "#/$defs/resourceSpec" }
+      }
+    },
+    "resourceSpec": {
+      "type": "object",
+      "required": ["cpu", "memory"],
+      "properties": {
+        "cpu": { "type": "string" },
+        "memory": { "type": "string" }
+      }
+    }
+  }
+}
