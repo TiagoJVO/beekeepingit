@@ -47,7 +47,7 @@
   [`infra/gitops/README.md`](infra/gitops/README.md)). Nothing deploys via Flux until this runs,
   since the `GitRepository` tracks `main` and the manifests don't exist there yet.
 - **Why:** deliberate — bootstrapping isn't done via `flux bootstrap` (would push straight to
-  `main`, bypassing PR review; see `D-13`/ADR-0008), so it needs this one manual step post-merge.
+  `main`, bypassing PR review; see `D-13`/ADR-0009), so it needs this one manual step post-merge.
 - **Where:** [`infra/gitops/`](infra/gitops/).
 - **Status:** before-merge for this branch. All 5 acceptance criteria (reconcile/deploy,
   drift-revert, sync-on-merge, sync/health observability, rollback) were live-verified against
