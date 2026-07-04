@@ -6,6 +6,19 @@ small, reviewable changes. Keep it simple.
 > Most work is implemented by Claude. When **planning** a task, follow the workflow in
 > [CLAUDE.md](CLAUDE.md) and read the sources of truth in [requirements/](requirements/).
 
+## Getting set up
+
+One-command bootstrap (Linux / macOS / **WSL2 on Windows**):
+
+```sh
+./scripts/bootstrap.sh   # installs mise + toolchains + git hooks (lefthook)
+```
+
+Then run everything through the task runner — `task lint`, `task format`, `task test`,
+`task build`. Git hooks format staged files and block on lint/secret failures. Full details:
+[docs/development/tooling.md](docs/development/tooling.md) · rationale:
+[ADR-0008](docs/adr/0008-monorepo-tooling.md).
+
 ## Workflow (GitHub Flow)
 
 1. Create a short-lived branch off `main` for **one** task.
@@ -20,7 +33,7 @@ Keep `main` always releasable.
 
 `<type>/<short-description>` (lowercase, hyphenated), optionally with an issue or epic ref:
 
-```
+```text
 feat/EPIC-02-apiary-crud
 fix/sync-conflict-tombstone
 docs/update-roadmap
@@ -32,14 +45,15 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`
 
 Format: `type(scope): short description`
 
-```
+```text
 feat(apiaries): add CRUD (FR-AP-1, #123)
 fix(sync): resolve delete tombstone race (Q-SYNC)
 docs(requirements): clarify journey stats (FR-JO-1)
 ```
 
 - Same `type` set as branches. The **type reflects the outcome** (a refactor that fixes a
-  bug is a `fix`).
+  bug is a `fix`). The `commit-msg` hook enforces this format locally; PR titles are checked
+  in CI.
 - **Scope** = the area touched; keep scopes consistent (e.g. always `auth`, not sometimes
   `authentication`).
 - Be specific: "fix race in webhook retry", not "fix bug".

@@ -5,23 +5,23 @@ planning, design, and test artifacts. IDs are grouped by domain. The wording is
 refined from the original `frs.txt` but preserves the original intent; typos and
 ambiguities flagged inline link to `open-questions.md`.
 
-| Prefix | Domain |
-|---|---|
-| FR-AP | Apiaries |
-| FR-AC | Activities |
-| FR-JO | Journeys |
-| FR-TD | Todos |
-| FR-AI | AI / Chatbot |
-| FR-OF | Offline & Sync |
-| FR-IE | Import / Export |
+| Prefix | Domain                              |
+| ------ | ----------------------------------- |
+| FR-AP  | Apiaries                            |
+| FR-AC  | Activities                          |
+| FR-JO  | Journeys                            |
+| FR-TD  | Todos                               |
+| FR-AI  | AI / Chatbot                        |
+| FR-OF  | Offline & Sync                      |
+| FR-IE  | Import / Export                     |
 | FR-ONB | Onboarding (Profile & Organization) |
-| FR-AU | Accounts & Subscription |
-| FR-TEN | Tenancy & Data Ownership |
-| FR-HIS | History / Audit |
-| FR-ST | Settings |
-| FR-PL | Platforms & Devices |
-| FR-UX | Usability (field-first) |
-| FR-AX | Accessibility |
+| FR-AU  | Accounts & Subscription             |
+| FR-TEN | Tenancy & Data Ownership            |
+| FR-HIS | History / Audit                     |
+| FR-ST  | Settings                            |
+| FR-PL  | Platforms & Devices                 |
+| FR-UX  | Usability (field-first)             |
+| FR-AX  | Accessibility                       |
 
 ---
 
@@ -35,12 +35,12 @@ ambiguities flagged inline link to `open-questions.md`.
 - **FR-AP-4** — Users can **switch** between map view and list view; both must be
   available.
 - **FR-AP-5** — Feature to **measure the distance between two apiaries**.
-  - *Open question (Q-DIST):* straight-line vs. driving distance, and how the two
+  - _Open question (Q-DIST):_ straight-line vs. driving distance, and how the two
     apiaries are selected.
 - **FR-AP-6** — **Search** apiaries by **name, location, or other attributes**.
 - **FR-AP-7** — **Apiary detail page** showing name, location, number of hives,
   and other relevant details.
-  - *Resolved (D-2):* "number of hives" is a **count** on the apiary; hives are
+  - _Resolved (D-2):_ "number of hives" is a **count** on the apiary; hives are
     **not** a separate entity.
 
 ## Activities (FR-AC)
@@ -53,7 +53,7 @@ ambiguities flagged inline link to `open-questions.md`.
   - **Feeding** — date, type of feed, amount of feed, notes.
   - **Treatment** — date, type of treatment, notes.
   - **Generic** — date, notes.
-  - *Per D-2:* relevant types (harvest, and optionally treatment/feeding) capture a
+  - _Per D-2:_ relevant types (harvest, and optionally treatment/feeding) capture a
     **number-of-hives-involved** attribute; activities stay at the apiary level.
 - **FR-AC-2** — **Add** an activity to an apiary: select the activity type and
   fill in the relevant attributes.
@@ -63,7 +63,7 @@ ambiguities flagged inline link to `open-questions.md`.
   that apiary, **filterable by activity type and date range**.
 - **FR-AC-6** — On the **main activities page**, view a list of all activities
   across **all apiaries**, **filterable by activity type and date range**.
-  - *Resolved (D-2):* activities are recorded per **apiary**; hive counts are
+  - _Resolved (D-2):_ activities are recorded per **apiary**; hive counts are
     activity attributes, not separate hive records.
 
 ## Journeys (FR-JO)
@@ -74,7 +74,7 @@ harvest, which requires visiting all apiaries).
 - **FR-JO-1** — **Journey statistics page**: select a journey and view aggregated
   metrics — apiaries visited, hives harvested, honey collected, how much is still
   **missing** (planned vs. done), etc.
-  - *Per D-2:* "hives harvested" = **sum of the number-of-hives-harvested
+  - _Per D-2:_ "hives harvested" = **sum of the number-of-hives-harvested
     attribute** across harvest activities in the journey.
 - **FR-JO-2** — **Main journeys page**: list all journeys, **filterable by date
   range and activity type**.
@@ -82,7 +82,7 @@ harvest, which requires visiting all apiaries).
   each apiary, and the aggregated statistics for that journey.
 - **FR-JO-4** — **Add a journey**: select the apiaries to be visited and the
   activities to be performed at each apiary (or for all apiaries).
-  - *Open question (Q-JOUR):* how do executed activities get **attributed** to a
+  - _Open question (Q-JOUR):_ how do executed activities get **attributed** to a
     journey (manual link, auto-match by date+type+apiary, etc.)? "How much is
     missing" requires a planned-vs-actual model.
 
@@ -92,7 +92,7 @@ harvest, which requires visiting all apiaries).
   level**. Todos are easily accessible from the **main screen**, the **apiaries
   list**, and the **apiary detail page**. Provide a list of all todos,
   **filterable by due date and priority level**.
-  - *Open question (Q-TODO):* todo lifecycle (complete/edit/delete), assignment to
+  - _Open question (Q-TODO):_ todo lifecycle (complete/edit/delete), assignment to
     a user, and association to an apiary/area (the AI examples reference "todos
     pending for the area of apiary X").
 
@@ -108,24 +108,24 @@ harvest, which requires visiting all apiaries).
   - "What are the todos due in the next week?"
   - "What are the todos that are overdue?"
   - "What are the todos that are pending for the area of apiary X?"
-  - *Constraints (D-8):* scoped to the selected context; **cloud AI now**
+  - _Constraints (D-8):_ scoped to the selected context; **cloud AI now**
     (online-only), **on-device later** — see `non-functional-requirements.md`
     (NFR-AI group) and `decisions.md` (D-8).
 - **FR-AI-2** — Beyond answering, the assistant can **propose actions** on the app's
-  data from a natural-language (or **voice**) request — e.g. *"set apiary X to 12
-  hives"*, *"mark the todo for apiary Y as done"*, *"log a 10 kg honey harvest at
-  apiary Z"*. Every AI-proposed **create/update/delete requires explicit user
+  data from a natural-language (or **voice**) request — e.g. _"set apiary X to 12
+  hives"_, _"mark the todo for apiary Y as done"_, _"log a 10 kg honey harvest at
+  apiary Z"_. Every AI-proposed **create/update/delete requires explicit user
   confirmation** before it runs, and executes through the **normal domain write path**
   (same validation, authorization, tenancy, and history as a manual edit). The `ai`
   service itself **never writes** — it only proposes.
-  - *Constraints (D-11):* propose → confirm → owner-executes; **cloud + online-only** in
+  - _Constraints (D-11):_ propose → confirm → owner-executes; **cloud + online-only** in
     the PWA phase; see NFR-AI-4 and `decisions.md` (D-11). Voice input is an EPIC-08 spike.
 
 ## Offline & Sync (FR-OF)
 
 - **FR-OF-1** — The app is used **mainly in the field**, so it must **work offline**
   and **sync data when an internet connection is available**.
-  - *Resolved (was Q-SYNC):* conflict resolution when multiple org users edit the same data
+  - _Resolved (was Q-SYNC):_ conflict resolution when multiple org users edit the same data
     offline is **server-authoritative record-level last-write-wins + a conflict log** — designed
     in [`docs/architecture/sync.md`](../docs/architecture/sync.md) / ADR-0006 (#106).
 - **FR-OF-2** — **Sync failure handling.** A client→server sync **push is atomic**: if any
@@ -134,7 +134,7 @@ harvest, which requires visiting all apiaries).
   apply** (as closely as feasible) to catch problems offline. On rejection, the **user who
   pushed is notified**, shown the offending change(s), and **resolves them on the client**
   before re-pushing. The server remains authoritative.
-  - *Decision (D-12):* atomic write-back + client validation parity + notify-and-fix. Mechanism
+  - _Decision (D-12):_ atomic write-back + client validation parity + notify-and-fix. Mechanism
     designed in [`docs/architecture/sync.md`](../docs/architecture/sync.md) §6/§8/§9 (#106); the
     **failure-handling screens** are built in EPIC-06.
 - **FR-OF-3** — **Connection-quality-gated sync.** Having connectivity is **not sufficient** to
@@ -145,7 +145,7 @@ harvest, which requires visiting all apiaries).
   instead of routine. A **manual "sync now"** action always attempts once, regardless of the
   gate. The gate is a client-side **optimization only** — sync correctness (atomic push,
   idempotent retry, D-12) never depends on it.
-  - *Mechanism:* designed in [`docs/architecture/sync.md`](../docs/architecture/sync.md) §7.1;
+  - _Mechanism:_ designed in [`docs/architecture/sync.md`](../docs/architecture/sync.md) §7.1;
     built in EPIC-06.
 
 ## Import / Export (FR-IE)
@@ -154,7 +154,7 @@ harvest, which requires visiting all apiaries).
   (e.g., CSV or JSON) for backup or analysis.
 - **FR-IE-2** — **Import** apiaries, activities, and journeys from a common format
   (e.g., CSV or JSON) for backup or analysis.
-  - *Open question (Q-IMP):* import semantics — merge vs. replace, ID preservation,
+  - _Open question (Q-IMP):_ import semantics — merge vs. replace, ID preservation,
     duplicate/conflict handling.
 
 ## Onboarding — Profile & Organization (FR-ONB)
@@ -165,12 +165,12 @@ harvest, which requires visiting all apiaries).
 - **FR-ONB-2** — Before viewing apiaries, users must **create their organization**
   (name, address, and other relevant info; some fields may be optional).
   Organization completion is **enforced** before accessing main features.
-  - *Resolved (D-3):* the user who **creates** an organization becomes its
+  - _Resolved (D-3):_ the user who **creates** an organization becomes its
     **admin**; other users **join an existing org via email invitation**.
 - **FR-ONB-3** — **Organization membership & invitations**: the org admin can
   **invite members by email**; invited users join the existing organization. The
-  org creator is the first admin (see NFR-ROL-1). *(Detail still open: invite
-  expiry/re-invite, removing members, transferring admin.)*
+  org creator is the first admin (see NFR-ROL-1). _(Detail still open: invite
+  expiry/re-invite, removing members, transferring admin.)_
 
 ## Accounts & Subscription (FR-AU)
 
@@ -180,7 +180,7 @@ harvest, which requires visiting all apiaries).
   premium-only, others available to all; the app enforces access by subscription
   level. **For now, all features are available to all users**, but the mechanism
   must exist for future restriction.
-  - *Resolved (D-4):* **v1 ships the toggle/enforcement mechanism only** — **no
+  - _Resolved (D-4):_ **v1 ships the toggle/enforcement mechanism only** — **no
     billing or subscription UI**, everything free. Real billing is deferred.
 
 ## Tenancy & Data Ownership (FR-TEN)
@@ -193,7 +193,7 @@ harvest, which requires visiting all apiaries).
   an organization share the same data** — except that **each activity is recorded
   against the user who performed it**. Access control ensures users only access
   data belonging to **their own organization**.
-  - *Interpretation:* the original text's "users have their own data, cannot see
+  - _Interpretation:_ the original text's "users have their own data, cannot see
     each other's data" (frs line 28) is reconciled here as **organization-level**
     isolation, not per-user isolation. See `open-questions.md` (Q-TEN).
 
@@ -203,7 +203,7 @@ harvest, which requires visiting all apiaries).
   update, or delete (apiary, activity, journey, or any other entity) records the
   **user who made the change** and the **timestamp**. Provide a feature to **view
   the history** of changes for each apiary, activity, and journey.
-  - *Resolved (Q-HIS):* the history architecture — append-only per-entity model,
+  - _Resolved (Q-HIS):_ the history architecture — append-only per-entity model,
     per-service in-transaction capture, immutability, retention, GDPR-erasure
     handling, visibility, and offline/sync behaviour — is decided in
     `docs/architecture/history.md` + `docs/adr/0007-history-audit.md` (#107).
@@ -212,7 +212,7 @@ harvest, which requires visiting all apiaries).
 
 - **FR-ST-1** — Allow users to **customize app settings**, including notification
   preferences, data sync settings, and other relevant options.
-  - *Open question (Q-NOTIF):* what notifications exist (e.g., todo due dates) and
+  - _Open question (Q-NOTIF):_ what notifications exist (e.g., todo due dates) and
     the delivery channel (in-app, push)?
 
 ## Platforms & Devices (FR-PL)
@@ -220,7 +220,7 @@ harvest, which requires visiting all apiaries).
 - **FR-PL-1** — Support **Android and iOS**, on both **phones and tablets**, and
   on **larger devices (laptops/desktops)** where **offline functionality is not
   required**.
-  - *Open question (Q-STACK):* native vs. cross-platform (Flutter/React Native);
+  - _Open question (Q-STACK):_ native vs. cross-platform (Flutter/React Native);
     this is a planning decision but shapes almost everything.
 
 ## Usability — field-first (FR-UX)
@@ -234,4 +234,4 @@ harvest, which requires visiting all apiaries).
 - **FR-AX-1** — Design with **accessibility** in mind: screen-reader support,
   keyboard navigation, and other accessibility features so the app is usable by
   everyone, including users with disabilities.
-  - *Open question (Q-AX):* target standard/level (e.g., WCAG 2.2 AA).
+  - _Open question (Q-AX):_ target standard/level (e.g., WCAG 2.2 AA).

@@ -24,7 +24,7 @@ Two constraints shape the decision:
   rule 1** ([service-decomposition.md](../architecture/service-decomposition.md) §4) **forbids a
   single DB transaction across schemas.** A multi-service push cannot be one transaction.
 - The concern is **offline-deferred pushes only**; online writes conflict at the DB normally. Two
-  users editing the *same* record in overlapping *offline* windows is **rare**. And PowerSync's
+  users editing the _same_ record in overlapping _offline_ windows is **rare**. And PowerSync's
   write model means the **client must reconcile rejected/superseded writes regardless** (its
   checkpoint reverts un-applied local changes), so **client-side conflict handling is a fixed cost
   in every option** — it does not distinguish them.
@@ -47,12 +47,12 @@ merge only where the conflict log shows it hurts. Full spec: [sync.md](../archit
 ### 2. Write-back atomicity — a single server-side seam, with "A-lite" behind it
 
 **The client always POSTs the whole client transaction to ONE server-side write-back endpoint.**
-This **seam** is the primary decision: the *apply mechanism* lives entirely behind it and is
+This **seam** is the primary decision: the _apply mechanism_ lives entirely behind it and is
 swappable with **zero client change**.
 
 Behind the seam, v1 uses **"A-lite": validate-first + idempotent forward-retry** —
 
-1. **validate-all** across every involved service *before any write* (dovetails with client-side
+1. **validate-all** across every involved service _before any write_ (dovetails with client-side
    validation parity, so most rejections never leave the device);
 2. **apply** each service's batch in **its own local transaction** (LWW + conflict log + history);
 3. on a **post-validation transient failure**, PowerSync's normal batch retry **rolls forward to
@@ -69,9 +69,10 @@ keeps it (or any stronger option) a later change behind the seam.
 ## Consequences
 
 **Positive**
+
 - **Honors D-12 for the real traffic:** single-service pushes are trivially atomic; multi-service
   pushes get validate-first (rejects touch nothing) + forward-retry (transient faults heal) — no
-  partial *incorrect* state, which is D-12's intent.
+  partial _incorrect_ state, which is D-12's intent.
 - **Least v1 code:** no saga engine, no compensation, no 2PC — just per-service local transactions
   behind one endpoint.
 - **Most future-proof:** the seam lets us add field-merge, compensation, HLC, 2PC, or a workflow
@@ -85,11 +86,12 @@ keeps it (or any stronger option) a later change behind the seam.
   invest further.
 
 **Negative / risks**
+
 - **A new (if thin) coordinator component** to build and operate (mitigated: stateless, may begin
   as a gateway/BFF route).
 - **A-lite does not undo a "validated-then-permanently-rejected" op** — accepted because
   validation is the gate; if this case ever appears, compensation is the specified next step.
-- **Record-level LWW can lose a concurrent edit to a *different field*** — accepted for v1
+- **Record-level LWW can lose a concurrent edit to a _different field_** — accepted for v1
   (rare, logged, recoverable); field-merge is the documented upgrade.
 - **Device clock skew** can mis-order rare concurrent offline edits — recoverable via the log;
   HLC is the upgrade.
@@ -99,8 +101,8 @@ keeps it (or any stronger option) a later change behind the seam.
 - **Client-side fan-out (no coordinator).** The device routes each op to its owning service.
   **Rejected:** it either drops cross-service atomicity or pushes compensation onto the device,
   and it **bakes routing + partial-failure handling into three client platforms** — the one option
-  that *soft-blocks* the future (migrating to a coordinator later means re-doing client sync logic).
-  Since client conflict-handling is a fixed cost anyway, it saves little. This is *why* the seam is
+  that _soft-blocks_ the future (migrating to a coordinator later means re-doing client sync logic).
+  Since client conflict-handling is a fixed cost anyway, it saves little. This is _why_ the seam is
   server-side.
 - **2PC / Postgres prepared transactions.** True cross-service ACID. **Rejected for v1:** holds
   locks across the multi-service round-trip, and a coordinator crash between prepare and commit
@@ -123,5 +125,5 @@ keeps it (or any stronger option) a later change behind the seam.
   offline/sync + boundary contract tests (NFR-TST).
 - **#107** — history capture mechanism (events/outbox/triggers) feeding `audit_log`; Q-HIS
   retention.
-- Add **field-level merge** / **compensation** / **HLC** *iff* the conflict log or operations show
+- Add **field-level merge** / **compensation** / **HLC** _iff_ the conflict log or operations show
   they are needed — all reachable behind the seam.

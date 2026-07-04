@@ -1,0 +1,26 @@
+# Build / dependency output
+node_modules/
+dist/
+build/
+out/
+coverage/
+vendor/
+.dart_tool/
+.task/
+
+# Generated / vendored lockfiles
+**/package-lock.json
+**/pnpm-lock.yaml
+**/yarn.lock
+
+# OpenAPI specs are hand-authored + bundled; owned by the contract tooling (EPIC-13),
+# not Prettier — keep them out to avoid churn/conflicts.
+contracts/openapi/
+
+# Nested worktrees (this repo uses .claude/worktrees for agent branches)
+.claude/worktrees/
+
+# Helm chart templates (infra/helm/) embed Go template syntax ({{ .Values.x }}) inside
+# .yaml files — not valid standalone YAML, so a generic formatter corrupts them. Chart
+# linting/rendering is owned by `helm lint`/`helm template` in .github/workflows/helm-ci.yml.
+infra/helm/**/templates/**

@@ -2,7 +2,7 @@
 
 **Contract-first** API definitions — the source of truth for every client-facing service
 boundary. Specs live here **before** the services are scaffolded (D-9: directories appear as
-work needs them), so each service epic implements *against a committed contract* and boundary
+work needs them), so each service epic implements _against a committed contract_ and boundary
 (contract) tests can be wired in.
 
 > **Conventions:** the rules these specs follow — REST style, resource naming, pagination,
@@ -13,11 +13,11 @@ work needs them), so each service epic implements *against a committed contract*
 
 ## Layout
 
-| Path | What |
-|---|---|
-| `openapi/_shared/components.openapi.yaml` | The reusable **contract template**: security scheme (Keycloak JWT), pagination params, standard headers, the RFC 9457 `Problem` error schema, and shared responses. Every service spec `$ref`s this — it is *not* a deployable API on its own (a partial). |
-| `openapi/apiaries.openapi.yaml` | Skeleton for the **apiaries** service (FR-AP) — the walking-skeleton's "create" target (#110). |
-| `openapi/organizations.openapi.yaml` | Skeleton for the **organizations** service (onboarding + admin surface, FR-ONB / NFR-ROL). |
+| Path                                      | What                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openapi/_shared/components.openapi.yaml` | The reusable **contract template**: security scheme (Keycloak JWT), pagination params, standard headers, the RFC 9457 `Problem` error schema, and shared responses. Every service spec `$ref`s this — it is _not_ a deployable API on its own (a partial). |
+| `openapi/apiaries.openapi.yaml`           | Skeleton for the **apiaries** service (FR-AP) — the walking-skeleton's "create" target (#110).                                                                                                                                                             |
+| `openapi/organizations.openapi.yaml`      | Skeleton for the **organizations** service (onboarding + admin surface, FR-ONB / NFR-ROL).                                                                                                                                                                 |
 
 The remaining services from the [service decomposition](../docs/architecture/service-decomposition.md)
 (`identity`, `activities`, `journeys`, `todos`, `ai`, `history`) are stamped from the same
