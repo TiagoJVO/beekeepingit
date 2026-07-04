@@ -34,7 +34,21 @@ jobs:
         with:
           version: "v3.21.2"
 
-      - name: helm dependency build
+      - name: Add vendored chart repos
+        run: |
+          helm repo add codecentric https://codecentric.github.io/helm-charts
+          helm repo add minio https://charts.min.io/
+          helm repo update codecentric minio
+
+      # keycloak/minio are wrapper charts around a vendored dependency (see
+      # ADR-0008) — each needs its own `helm dependency build` to resolve that
+      # vendored chart *before* the umbrella's own build packages them up.
+      - name: helm dependency build (wrapper subcharts)
+        run: |
+          helm dependency build charts/keycloak
+          helm dependency build charts/minio
+
+      - name: helm dependency build (umbrella)
         run: helm dependency build .
 
       - name: helm lint (base values)

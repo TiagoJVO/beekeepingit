@@ -17,16 +17,34 @@
   ADR: [`docs/adr/0003-api-contract-conventions.md`](docs/adr/0003-api-contract-conventions.md)
 - **Status:** pending EPIC-13 (#83/#84). Not a blocker for #108 (design/skeletons only).
 
-## EPIC-13 (#83) — remove the `smoke` placeholder subchart
+## EPIC-13 (#83/#84) — `helm test` smoke hooks need a live cluster
 
-- **What:** delete `infra/helm/beekeepingit/charts/smoke/`, its `dependencies:` entry in the
-  umbrella `Chart.yaml`, and the `smoke:` values keys (`values.yaml` +
-  `environments/{staging,prod}.yaml`).
-- **Why:** it's a throwaway subchart added only to prove the umbrella↔subchart Helm wiring
-  (values overrides, global resource tiers, CI dependency-build/lint/template) end-to-end before
-  any real service exists — not a real component.
-- **Where:** [`infra/helm/beekeepingit/`](infra/helm/beekeepingit/), documented in its
-  [README](infra/helm/beekeepingit/README.md) and
-  [`docs/architecture/platform.md`](docs/architecture/platform.md).
-- **Status:** pending #84 (Postgres/Keycloak/MinIO/gateway) or #23 (walking-skeleton services) —
-  remove it in whichever PR adds the first real service subchart.
+- **What:** the `postgres` subchart's PostGIS smoke-query `helm test` hook (and any future
+  liveness checks for `keycloak`/`minio`/`gateway`) only run against a real cluster
+  (`helm test beekeepingit -n beekeepingit-dev`), not in CI — `.github/workflows/helm-ci.yml` is a
+  `helm lint`/`helm template` dry-run with no live cluster.
+- **Why:** deploying to a live cluster from CI is `#86` (GitOps)/`#88` (CI/CD pipeline), still
+  pending — same limitation `docs/architecture/platform.md` already notes for the whole chart.
+- **Where:** [`infra/helm/beekeepingit/charts/postgres/templates/tests/`](infra/helm/beekeepingit/charts/postgres/templates/tests/).
+- **Status:** pending #86/#88 — until then, exercised manually against the local `beekeeping`
+  k3d cluster (see `infra/README.md`).
+
+## #84 — verified live against the local `beekeeping` k3d cluster (2026-07-04)
+
+Full `helm install`/`helm test` verification from WSL2 caught and fixed two real bugs before
+merge (not just `helm lint`/`template`, which don't exercise a live cluster):
+
+- **Gateway backend Service name was wrong.** `charts/gateway/values.yaml`'s
+  `backend.serviceName` guessed `beekeepingit-keycloakx`; the vendored `keycloakx` chart actually
+  creates `beekeepingit-keycloakx-headless` (StatefulSet DNS) and `beekeepingit-keycloakx-http`
+  (the one that serves traffic) — confirmed via a live render and fixed.
+- **Schema grants failed at bootstrap.** `postInitApplicationSQL` (cluster.yaml) ran the
+  per-service `GRANT ... TO <schema>_svc` before `spec.managed.roles` had created those roles
+  (bootstrap runs before role reconciliation), so every install failed with `role "identity_svc"
+  does not exist`. Fixed by only creating schemas (owned by the `beekeepingit` app user) at
+  bootstrap, and moving the grants to a new `templates/schema-grants-job.yaml` post-install hook
+  that retries until each role exists.
+- Confirmed end-to-end: Postgres cluster healthy + `helm test` PostGIS smoke query passed +
+  `identity_svc` could create a table in its own schema; Keycloak realm `beekeepingit` reachable
+  through the gateway's TLS Ingress (`/.well-known/openid-configuration` served correctly); MinIO
+  health endpoint returned 200.

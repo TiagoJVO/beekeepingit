@@ -6,8 +6,19 @@ set -euo pipefail
 
 cluster_name="beekeeping"
 
-if ! command -v k3d >/dev/null 2>&1; then
-  echo "error: 'k3d' not found on PATH" >&2
+for bin in k3d flock; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "error: '$bin' not found on PATH" >&2
+    exit 1
+  fi
+done
+
+# Same lock as up.sh (see infra/README.md) — most important here, since this
+# deletes the whole cluster out from under anyone else using it.
+lockfile="/tmp/k3d-${cluster_name}.lock"
+exec 200>"$lockfile"
+if ! flock -w 300 200; then
+  echo "error: timed out waiting for the '$cluster_name' cluster lock — another session appears to be using it" >&2
   exit 1
 fi
 

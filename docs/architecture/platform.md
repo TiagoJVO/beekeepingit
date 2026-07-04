@@ -19,10 +19,21 @@ starts deploying to a live cluster (`#86`/`#88`).
 - Teardown: [`infra/cluster/down.sh`](../../infra/cluster/down.sh) — deletes the cluster and
   flags any orphaned k3d docker volumes.
 
-This is deliberately just the cluster — no backing services live here yet. Postgres+PostGIS,
-Keycloak, MinIO and the gateway land with `#84`; the walking-skeleton Go services + PowerSync +
-PWA land with `#23`. Both deploy through the umbrella chart below rather than standing up their
-own release.
+Postgres+PostGIS, Keycloak, MinIO and the gateway landed with `#84` (see below); the
+walking-skeleton Go services + PowerSync + PWA land with `#23`. Both deploy through the umbrella
+chart below rather than standing up their own release.
+
+One thing doesn't: the **CloudNativePG operator** (below) is cluster-scoped, so — like Traefik —
+it's installed once by `up.sh` itself rather than through the umbrella chart.
+
+- **CloudNativePG operator**: `up.sh` also does `helm repo add cnpg
+  https://cloudnative-pg.github.io/charts` + `helm upgrade --install cnpg-operator
+  cnpg/cloudnative-pg -n cnpg-system --create-namespace`, right after cluster bring-up. It's a
+  prerequisite for the umbrella chart's `postgres` subchart (its `Cluster` custom resource), not a
+  subchart itself — installing/upgrading it on every per-environment `helm upgrade beekeepingit`
+  would be wrong for something meant to serve every environment on the cluster (see
+  [ADR-0008](../adr/0008-platform-backing-services-provisioning.md)). `down.sh` needs no change:
+  deleting the k3d cluster removes it along with everything else.
 
 ## Helm umbrella chart
 
@@ -46,11 +57,15 @@ section covers the *why*.
   on top of `values.yaml`). Only `dev` is deployed anywhere today; `staging`/`prod` exist to
   prove the override mechanism per `NFR-ARC-2` (don't force cloud/multi-env now, but don't block
   it later either).
-- **`charts/smoke/`**: a placeholder subchart (tiny `nginx-unprivileged` Deployment+Service)
-  proving the whole umbrella→subchart wiring — dependency declaration, per-subchart values
-  override, global resource tiers — actually renders and lints in CI before any real service
-  exists. It is disabled in the `staging`/`prod` overlays and is removed once `#84`/`#23` add the
-  first real subchart (tracked in [`FOLLOWUPS.md`](../../FOLLOWUPS.md)).
+- **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0008](../adr/0008-platform-backing-services-provisioning.md)):
+  `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
+  portable `Ingress` + self-signed TLS Secret, reusing k3d's Traefik) are hand-rolled — there's
+  nothing to vendor for either. `keycloak` and `minio` are thin **wrapper charts**: each declares
+  a real upstream chart (`codecentric/keycloakx`, the official `charts.min.io` MinIO chart) as its
+  own nested dependency, adding only what the vendored chart can't own itself (a generated
+  credential Secret; for Keycloak, also the dev/CI-grade realm import). The former `charts/smoke/`
+  placeholder that originally proved this wiring end-to-end has been removed now that real
+  subcharts exist.
 
 ## CI gate
 
@@ -61,8 +76,10 @@ cluster is involved — deploying to the cluster from CI is `#86` (GitOps)/`#88`
 
 ## Not yet covered here
 
-- Actual backing services and their resource requests (`#84`).
+- Production-grade Keycloak realm/RBAC hardening and trusted-CA TLS for the gateway (both
+  EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0008).
 - GitOps reconciliation (Flux is installed on the dev cluster but not bootstrapped against this
   repo yet — deferred to `#86` per the `local-dev-environment` setup notes).
 - The full path-filtered monorepo CI/CD pipeline (`#88`) — `helm-ci.yml` only covers the chart
-  itself.
+  itself, and has no live cluster to run the `postgres` subchart's `helm test` smoke-query hook
+  against yet (that's a developer's local `beekeeping` k3d cluster today).

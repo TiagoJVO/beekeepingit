@@ -1,0 +1,28 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by the
+# `minio:` key in the parent's values.yaml/environments/*.yaml.
+enabled: true
+
+# See the keycloak subchart's values.yaml for why this can't use the shared
+# global.resources.<tier> lookup — kept for documentation, hand-synced below.
+resourceTier: small
+
+minio:
+  mode: standalone
+  replicas: 1
+  existingSecret: root-credentials
+  persistence:
+    enabled: true
+    size: 2Gi
+  resources:
+    requests: { cpu: 25m, memory: 128Mi }
+    limits: { cpu: 100m, memory: 256Mi }
+  ingress:
+    enabled: false
+  consoleIngress:
+    enabled: false
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit
