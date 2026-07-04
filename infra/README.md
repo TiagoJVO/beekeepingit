@@ -11,7 +11,7 @@ for the as-built design; intent/decisions live in
 ```sh
 # 1. Bring up the local cluster (k3d, idempotent) — also installs/upgrades the
 #    CloudNativePG operator, a cluster-scoped prerequisite for the `postgres`
-#    subchart (see charts/postgres/Chart.yaml and ADR-0008)
+#    subchart (see charts/postgres/Chart.yaml and ADR-0009)
 infra/cluster/up.sh
 
 # 2. Install (or upgrade) the platform
@@ -62,9 +62,9 @@ filesystem with this machine or across concurrent runs, so `flock` wouldn't appl
 
 ## Layout
 
-| Path | What it is |
-|---|---|
-| [`cluster/`](cluster/) | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`) |
+| Path                                       | What it is                                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| [`cluster/`](cluster/)                     | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`)                                                 |
 | [`helm/beekeepingit/`](helm/beekeepingit/) | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions |
 
 Postgres+PostGIS, Keycloak, MinIO and the gateway (**#84**) are the umbrella chart's first real

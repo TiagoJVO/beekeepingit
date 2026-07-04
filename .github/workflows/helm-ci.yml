@@ -4,17 +4,17 @@ name: Helm CI
 # `helm lint`, and a `helm template` dry-run for the base values and every
 # per-environment overlay. No live cluster is used here — deploying to the
 # cluster is a separate concern (EPIC-13 #86/#88).
+#
+# This is a required status check on `main`, so the job runs on EVERY PR/push (no path filter
+# on the trigger) — otherwise a PR that doesn't touch infra/helm/** would never get a run for
+# this check and its "Expected" status would block merging forever. Path-relevance is instead
+# checked inside the job (dorny/paths-filter) so the real helm steps are skipped — not
+# absent — when irrelevant, and the check still reports success quickly.
 
 on:
   pull_request:
-    paths:
-      - "infra/helm/**"
-      - ".github/workflows/helm-ci.yml"
   push:
     branches: [main]
-    paths:
-      - "infra/helm/**"
-      - ".github/workflows/helm-ci.yml"
 
 permissions:
   contents: read
@@ -28,33 +28,50 @@ jobs:
         working-directory: infra/helm/beekeepingit
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Check for relevant changes
+        id: changes
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        with:
+          filters: |
+            helm:
+              - 'infra/helm/**'
+              - '.github/workflows/helm-ci.yml'
 
       - name: Set up Helm
+        if: steps.changes.outputs.helm == 'true'
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: "v3.21.2"
 
       - name: Add vendored chart repos
+        if: steps.changes.outputs.helm == 'true'
         run: |
           helm repo add codecentric https://codecentric.github.io/helm-charts
           helm repo add minio https://charts.min.io/
           helm repo update codecentric minio
 
       # keycloak/minio are wrapper charts around a vendored dependency (see
-      # ADR-0008) — each needs its own `helm dependency build` to resolve that
+      # ADR-0009) — each needs its own `helm dependency build` to resolve that
       # vendored chart *before* the umbrella's own build packages them up.
       - name: helm dependency build (wrapper subcharts)
+        if: steps.changes.outputs.helm == 'true'
         run: |
           helm dependency build charts/keycloak
           helm dependency build charts/minio
 
       - name: helm dependency build (umbrella)
+        if: steps.changes.outputs.helm == 'true'
         run: helm dependency build .
 
       - name: helm lint (base values)
+        if: steps.changes.outputs.helm == 'true'
         run: helm lint .
 
       - name: helm lint (per-environment overlays)
+        if: steps.changes.outputs.helm == 'true'
         run: |
           for env in dev staging prod; do
             echo "::group::lint $env"
@@ -63,9 +80,11 @@ jobs:
           done
 
       - name: helm template dry-run (base values)
+        if: steps.changes.outputs.helm == 'true'
         run: helm template beekeepingit .
 
       - name: helm template dry-run (per-environment overlays)
+        if: steps.changes.outputs.helm == 'true'
         run: |
           for env in dev staging prod; do
             echo "::group::template $env"

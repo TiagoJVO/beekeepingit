@@ -1,0 +1,51 @@
+# Web (TypeScript/React) tasks — discover every npm package (package.json) and delegate
+# to its own scripts. Each package owns its eslint/prettier/vite config; the root just
+# fans out. `--if-present` means a package without a given script is silently skipped.
+# No-ops until the first package is scaffolded (e.g. apps/admin/package.json).
+version: "3"
+
+silent: true
+
+vars:
+  FIND_PKGS: >-
+    find . -type f -name package.json
+    -not -path '*/node_modules/*'
+    -not -path '*/.git/*'
+    -not -path '*/.claude/worktrees/*'
+
+tasks:
+  lint:
+    desc: "Lint web packages (npm run lint)"
+    cmds:
+      - |
+        set -e
+        pkgs=$({{.FIND_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] lint $d"; (cd "$d" && npm run lint --if-present); done
+
+  format:
+    desc: "Format web packages (npm run format)"
+    cmds:
+      - |
+        set -e
+        pkgs=$({{.FIND_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] format $d"; (cd "$d" && npm run format --if-present); done
+
+  test:
+    desc: "Test web packages (npm test)"
+    cmds:
+      - |
+        set -e
+        pkgs=$({{.FIND_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] test $d"; (cd "$d" && npm test --if-present); done
+
+  build:
+    desc: "Build web packages (npm run build)"
+    cmds:
+      - |
+        set -e
+        pkgs=$({{.FIND_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] build $d"; (cd "$d" && npm run build --if-present); done

@@ -1,0 +1,5 @@
+# Prettier — formats Markdown / YAML / JSON at the repo level (TS/JS packages carry
+# their own prettier config). proseWrap: preserve keeps our hand-wrapped Markdown intact.
+printWidth: 100
+proseWrap: preserve
+singleQuote: false

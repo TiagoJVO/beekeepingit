@@ -1,4 +1,4 @@
-# Technology Stack — *intended direction*
+# Technology Stack — _intended direction_
 
 > **Intention, not a rule.** This is the stack we currently intend to use; like the rest of
 > `requirements/`, it can be questioned and changed (with the user). **Nothing here is built
@@ -10,31 +10,31 @@ The reasoning behind the intended stack, and the input to a future service decom
 
 ## Summary
 
-| Layer | Choice | Status |
-|---|---|---|
-| Client | **Flutter (Dart)** — Web/PWA first, native later | Decided (D-5, D-10) |
-| Backend microservices | **Go** | Decided (D-5) |
-| Admin web app | **React + TypeScript** | Decided (D-5) |
-| Primary database | **PostgreSQL + PostGIS** | Decided (D-6) |
-| On-device store | **SQLite** | Decided (D-6) |
-| Offline sync engine | **PowerSync** (self-hosted, Open Edition) | Decided (SP-1 → D-6) |
-| Identity / auth | **Keycloak (self-hosted, OIDC)** | Decided (D-7) |
-| AI assistant | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11) |
-| API style | REST + OpenAPI (client); gRPC optional (inter-service) | Proposed |
-| Orchestration | Kubernetes + Helm | Decided (NFR-ARC) |
-| Observability | OpenTelemetry + Prometheus + Grafana + Loki/Tempo | Proposed |
-| Object storage | MinIO (S3-compatible) | Proposed |
-| CI/CD | GitHub Actions | Proposed |
-| Repo | Monorepo | Decided (D-9) |
-| Platform rollout | PWA → Android → iOS (native only when needed) | Decided (D-10) |
+| Layer                 | Choice                                                                                | Status               |
+| --------------------- | ------------------------------------------------------------------------------------- | -------------------- |
+| Client                | **Flutter (Dart)** — Web/PWA first, native later                                      | Decided (D-5, D-10)  |
+| Backend microservices | **Go**                                                                                | Decided (D-5)        |
+| Admin web app         | **React + TypeScript**                                                                | Decided (D-5)        |
+| Primary database      | **PostgreSQL + PostGIS**                                                              | Decided (D-6)        |
+| On-device store       | **SQLite**                                                                            | Decided (D-6)        |
+| Offline sync engine   | **PowerSync** (self-hosted, Open Edition)                                             | Decided (SP-1 → D-6) |
+| Identity / auth       | **Keycloak (self-hosted, OIDC)**                                                      | Decided (D-7)        |
+| AI assistant          | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11)  |
+| API style             | REST + OpenAPI (client); gRPC optional (inter-service)                                | Proposed             |
+| Orchestration         | Kubernetes + Helm                                                                     | Decided (NFR-ARC)    |
+| Observability         | OpenTelemetry + Prometheus + Grafana + Loki/Tempo                                     | Proposed             |
+| Object storage        | MinIO (S3-compatible)                                                                 | Proposed             |
+| CI/CD                 | GitHub Actions                                                                        | Proposed             |
+| Repo                  | Monorepo                                                                              | Decided (D-9)        |
+| Platform rollout      | PWA → Android → iOS (native only when needed)                                         | Decided (D-10)       |
 
 > **Versions are intentionally unpinned here.** Pin them in each app/service manifest
 > when scaffolded.
 
 ## The central reconciliation: offline-first ⨉ microservices
 
-Offline sync wants a *consolidated, replicable* store; microservices want
-*per-service* stores. For a single-org v1:
+Offline sync wants a _consolidated, replicable_ store; microservices want
+_per-service_ stores. For a single-org v1:
 
 - All services run on **one PostgreSQL cluster**, each owning a **separate schema**
   (clean boundaries, no cross-schema writes).
@@ -132,7 +132,7 @@ codebase throughout.
 ## Infrastructure
 
 - **k8s + Helm** (one cluster for v1, `NFR-ARC-3`); GitOps (ArgoCD/Flux) optional.
-- **Gateway/ingress:** **Traefik** (settled by `#84`/[ADR-0008](../docs/adr/0008-platform-backing-services-provisioning.md)
+- **Gateway/ingress:** **Traefik** (settled by `#84`/[ADR-0009](../docs/adr/0009-platform-backing-services-provisioning.md)
   — k3d already bundles it as the cluster's ingress controller, so it's reused rather than
   installing NGINX as a second one) (+ a thin BFF if needed).
 - **Observability:** OpenTelemetry → Prometheus (metrics), Loki (logs), Tempo

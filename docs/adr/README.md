@@ -5,6 +5,7 @@ still also go to [../../requirements/decisions.md](../../requirements/decisions.
 `D-*`; ADRs capture the finer-grained "why" for a component or implementation.
 
 ## Convention
+
 - One file per decision: `NNNN-short-title.md` (e.g. `0001-sync-engine-choice.md`).
 - Suggested sections: **Context → Decision → Consequences → Alternatives** (+ Status:
   proposed / accepted / superseded).

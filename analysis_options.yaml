@@ -1,0 +1,22 @@
+# Shared Dart/Flutter analyzer baseline for the monorepo.
+# The Flutter client package includes this and also layers on flutter_lints, e.g.:
+#
+#     include: ../../analysis_options.yaml   # this shared baseline
+#     # then in the package: include: package:flutter_lints/flutter.yaml
+#
+# Kept package-independent so it resolves without pub-get at repo root.
+# See .claude/rules/coding-standards.md (Effective Dart; logic out of widgets).
+analyzer:
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  errors:
+    todo: ignore
+
+linter:
+  rules:
+    - prefer_single_quotes
+    - require_trailing_commas
+    - avoid_print
+    - prefer_const_constructors
+    - directives_ordering

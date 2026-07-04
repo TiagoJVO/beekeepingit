@@ -12,7 +12,7 @@ description: >-
 
 # Working with `requirements/`
 
-The source of truth for **intent** — what we want and why. (`docs/` is the *as-built* record;
+The source of truth for **intent** — what we want and why. (`docs/` is the _as-built_ record;
 don't conflate them.) **When planning a task, read it for the topics the task touches** — the
 `FR-*/NFR-*` it implements, the `D-*` decisions it relies on or touches, and any open `Q-*` it
 must clarify first — and identify those before writing code.

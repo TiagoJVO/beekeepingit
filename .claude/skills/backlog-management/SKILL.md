@@ -15,14 +15,14 @@ description: >-
 # Managing the backlog (Milestones, Epics, Tasks, Sub-issues)
 
 The plan/backlog lives in **GitHub Issues + Projects** (the old `planning/` folder was migrated and
-**retired** — see [CLAUDE.md](../../../CLAUDE.md)). `requirements/` holds *intent*
+**retired** — see [CLAUDE.md](../../../CLAUDE.md)). `requirements/` holds _intent_
 (`FR-*`/`NFR-*`/`D-*`/`Q-*`); this skill is about how that intent is tracked as **work**. Always
 map an item to its requirement IDs first — see the **requirements-folder** skill and the
 `mandatory-workflow` rule.
 
 ## The hierarchy & the native mechanisms
 
-```
+```text
 Milestone (M0…M5)            time-boxed delivery target
 └─ Epic                      issue, label type/epic, titled "EPIC-XX — Name"
    └─ Story / Task           issue, linked as a native SUB-ISSUE of the epic
@@ -31,13 +31,13 @@ Milestone (M0…M5)            time-boxed delivery target
 
 Each mechanism has **one** job — never re-implement one in prose:
 
-| Mechanism | What it is | What it's for |
-|---|---|---|
-| **Milestone** | flat, date-bound bucket; progress = closed ÷ total | "is M0 on track?" |
-| **Sub-issues** | native parent/child link with its own progress bar | the epic→story hierarchy — **source of truth** |
-| **Labels** | `type/ area/ priority/ size/ status/` | classification & filtering |
-| **Project (v2)** | table/board; *Group by → Parent issue* | the working view; expand an epic to its tasks |
-| **Dependencies** | native *blocked-by* / *blocking* links (Relationships panel) | sequencing — what must ship before what |
+| Mechanism        | What it is                                                   | What it's for                                  |
+| ---------------- | ------------------------------------------------------------ | ---------------------------------------------- |
+| **Milestone**    | flat, date-bound bucket; progress = closed ÷ total           | "is M0 on track?"                              |
+| **Sub-issues**   | native parent/child link with its own progress bar           | the epic→story hierarchy — **source of truth** |
+| **Labels**       | `type/ area/ priority/ size/ status/`                        | classification & filtering                     |
+| **Project (v2)** | table/board; _Group by → Parent issue_                       | the working view; expand an epic to its tasks  |
+| **Dependencies** | native _blocked-by_ / _blocking_ links (Relationships panel) | sequencing — what must ship before what        |
 
 The Milestone view is **flat** — it can't nest or show "only epics". Hierarchy comes from
 sub-issues (on the epic page) and the Project, not the milestone.
@@ -62,7 +62,8 @@ What **stays** in the body (GitHub has no native field for these):
 ## Body shape
 
 **Story / Task / Feature / Chore**
-```
+
+```text
 <optional one-line intent>
 **Requirements:** FR-…, NFR-…
 **Decisions:** D-…            (only if it relies on one)
@@ -72,6 +73,7 @@ What **stays** in the body (GitHub has no native field for these):
 
 > **Notes:** …               (optional)
 ```
+
 Dependencies are not a body line — set them as native **blocked-by** relationships (see recipes).
 
 **Epic** — intro paragraph, then any `**Phase:**` / `**Spans:**`, `**Requirements:**`, and
@@ -80,17 +82,20 @@ Sub-issues panel, which auto-tracks "X of N done". A manual checklist only drift
 hand-updates on every completion.
 
 ## Titles
+
 Plain, imperative, specific — no `EPIC-XX:` prefix, no `(Mx)` tag, no `[Type]` prefix. The lone
 exception is epics themselves: `EPIC-XX — Short Name` (em dash, not a colon).
 
 ## Labels (`.github/labels.yml`)
+
 - **type/** (exactly one): `epic story task feature bug chore spike research docs`
 - **area/**: `activities apiaries journeys ai todos offline-sync auth-identity org-tenancy rbac
-  history-audit admin-app import-export maps-geo i18n-a11y infra observability security`
+history-audit admin-app import-export maps-geo i18n-a11y infra observability security`
 - **priority/**: `critical high medium low` · **size/**: `xs s m l xl` ·
   **status/**: `needs-triage blocked needs-info ready`
 
 ## Milestones — what to assign
+
 The bar is just closed ÷ total of assigned issues. **Recommended:** assign **leaf issues**
 (stories/tasks) to a milestone for an honest burndown, and read epic progress from the Sub-issues
 bar + the Project grouped by epic. Pick one assignment policy and apply it consistently. An epic
@@ -98,6 +103,7 @@ stays in its **first** milestone; per-phase work is carried by the **sub-issues'
 that is exactly what `**Spans:**` documents.
 
 ## Tooling recipes (`gh` has no first-class sub-issue commands)
+
 `gh` is authenticated here; the REST API drives sub-issues. The repo is public, so reads also work
 unauthenticated.
 

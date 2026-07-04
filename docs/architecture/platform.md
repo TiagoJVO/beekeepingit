@@ -27,12 +27,12 @@ One thing doesn't: the **CloudNativePG operator** (below) is cluster-scoped, so 
 it's installed once by `up.sh` itself rather than through the umbrella chart.
 
 - **CloudNativePG operator**: `up.sh` also does `helm repo add cnpg
-  https://cloudnative-pg.github.io/charts` + `helm upgrade --install cnpg-operator
-  cnpg/cloudnative-pg -n cnpg-system --create-namespace`, right after cluster bring-up. It's a
+https://cloudnative-pg.github.io/charts` + `helm upgrade --install cnpg-operator
+cnpg/cloudnative-pg -n cnpg-system --create-namespace`, right after cluster bring-up. It's a
   prerequisite for the umbrella chart's `postgres` subchart (its `Cluster` custom resource), not a
   subchart itself — installing/upgrading it on every per-environment `helm upgrade beekeepingit`
   would be wrong for something meant to serve every environment on the cluster (see
-  [ADR-0008](../adr/0008-platform-backing-services-provisioning.md)). `down.sh` needs no change:
+  [ADR-0009](../adr/0009-platform-backing-services-provisioning.md)). `down.sh` needs no change:
   deleting the k3d cluster removes it along with everything else.
 
 ## Helm umbrella chart
@@ -41,7 +41,7 @@ it's installed once by `up.sh` itself rather than through the umbrella chart.
 every service as a **subchart** under `charts/`, so the whole platform deploys/upgrades as one
 release. Conventions (namespace, resource tiers, values schema, how a service subchart plugs in)
 are documented in the chart's own [README](../../infra/helm/beekeepingit/README.md) — this
-section covers the *why*.
+section covers the _why_.
 
 - **Namespace**: one per environment (`beekeepingit-<env>`), created at install time via
   `--create-namespace` rather than a chart-managed `Namespace` resource, so `helm uninstall`
@@ -57,7 +57,7 @@ section covers the *why*.
   on top of `values.yaml`). Only `dev` is deployed anywhere today; `staging`/`prod` exist to
   prove the override mechanism per `NFR-ARC-2` (don't force cloud/multi-env now, but don't block
   it later either).
-- **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0008](../adr/0008-platform-backing-services-provisioning.md)):
+- **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0009](../adr/0009-platform-backing-services-provisioning.md)):
   `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
   portable `Ingress` + self-signed TLS Secret, reusing k3d's Traefik) are hand-rolled — there's
   nothing to vendor for either. `keycloak` and `minio` are thin **wrapper charts**: each declares
@@ -77,7 +77,7 @@ cluster is involved — deploying to the cluster from CI is `#86` (GitOps)/`#88`
 ## Not yet covered here
 
 - Production-grade Keycloak realm/RBAC hardening and trusted-CA TLS for the gateway (both
-  EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0008).
+  EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0009).
 - GitOps reconciliation (Flux is installed on the dev cluster but not bootstrapped against this
   repo yet — deferred to `#86` per the `local-dev-environment` setup notes).
 - The full path-filtered monorepo CI/CD pipeline (`#88`) — `helm-ci.yml` only covers the chart

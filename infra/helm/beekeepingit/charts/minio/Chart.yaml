@@ -4,7 +4,7 @@ description: >-
   Wraps the official MinIO Inc. `minio` chart (charts.min.io) — S3-compatible
   object storage (NFR-ARC-2) — with the one thing it can't own itself: a
   generated root-credentials Secret (never a literal value in git, NFR-SEC).
-  See ADR-0008.
+  See ADR-0009.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

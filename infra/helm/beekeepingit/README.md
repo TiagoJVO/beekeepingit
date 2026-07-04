@@ -7,14 +7,15 @@ Composes the whole BeekeepingIT platform into **one Helm release** on the single
 ## Adding a new service subchart
 
 Two shapes, depending on whether a maintained upstream chart already exists for the service (see
-[ADR-0008](../../../docs/adr/0008-platform-backing-services-provisioning.md) for the full
+[ADR-0009](../../../docs/adr/0009-platform-backing-services-provisioning.md) for the full
 reasoning):
 
 **Hand-rolled** (no upstream chart, or not worth vendoring — e.g. `postgres`, `gateway`):
+
 1. Create `charts/<service>/` as a normal Helm chart (its own `Chart.yaml`, `values.yaml`,
    `templates/`). Helm composes anything under `charts/` automatically.
 2. Add it to this chart's `Chart.yaml` `dependencies:` (name, version, `repository:
-   file://charts/<service>`) — `helm lint` requires every subchart under `charts/` to be
+file://charts/<service>`) — `helm lint` requires every subchart under `charts/` to be
    declared there.
 3. Give it a top-level key in `values.yaml` matching its name (e.g. `<service>: {...}`) — that
    becomes the subchart's own `.Values` scope. Add an `enabled` field and gate every template
@@ -29,7 +30,7 @@ reasoning):
 
 **Vendored** (a maintained upstream chart exists — e.g. `keycloak`, `minio`): create a thin
 **wrapper chart** at `charts/<service>/` whose own `Chart.yaml` declares the real upstream chart
-as *its* nested dependency (a remote `repository:`, not `file://`), and whose own `templates/`
+as _its_ nested dependency (a remote `repository:`, not `file://`), and whose own `templates/`
 add only what the vendored chart can't own itself — a generated-credential Secret (the standard
 `lookup` + `randAlphaNum` idiom used throughout: preserve on `helm upgrade`, generate on first
 install, never a literal value in git). The umbrella's own `Chart.yaml` then depends on the
@@ -38,12 +39,12 @@ templated, a vendored chart's own fields (its `resources:`, etc.) **can't** cons
 `global.resources.<tier>` lookup — set them directly in the wrapper's `values.yaml` instead, with
 a comment noting they're hand-kept in sync. `charts/keycloak/` and `charts/minio/` are live
 examples of this pattern; if the vendored chart's own dependency needs a fresh version, run `helm
-dependency build charts/<service>` *before* `helm dependency build .` at the umbrella root — the
+dependency build charts/<service>` _before_ `helm dependency build .` at the umbrella root — the
 umbrella only picks up what's already resolved inside the wrapper.
 
 Note: a cluster-scoped **operator** (e.g. CloudNativePG, which `postgres`'s `Cluster` CR depends
-on) is *not* a subchart at all — it's installed once per cluster by `infra/cluster/up.sh`, the
-same way k3d itself bundles Traefik. See `charts/postgres/Chart.yaml` and ADR-0008.
+on) is _not_ a subchart at all — it's installed once per cluster by `infra/cluster/up.sh`, the
+same way k3d itself bundles Traefik. See `charts/postgres/Chart.yaml` and ADR-0009.
 
 ## Namespace & environments
 
@@ -68,12 +69,12 @@ and the three resource tiers (`requests`/`limits` × `cpu`/`memory`) — enforce
 
 ## Current subcharts
 
-| Subchart | What it is |
-|---|---|
+| Subchart   | What it is                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------------- |
 | `postgres` | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials |
-| `keycloak` | OIDC IdP (D-7) — wraps `codecentric/keycloakx`; dev/CI-grade realm import |
-| `minio` | S3-compatible object storage (NFR-ARC-2) — wraps the official `charts.min.io` chart |
-| `gateway` | Ingress + self-signed TLS, reusing k3d's Traefik |
+| `keycloak` | OIDC IdP (D-7) — wraps `codecentric/keycloakx`; dev/CI-grade realm import                                  |
+| `minio`    | S3-compatible object storage (NFR-ARC-2) — wraps the official `charts.min.io` chart                        |
+| `gateway`  | Ingress + self-signed TLS, reusing k3d's Traefik                                                           |
 
 The former `charts/smoke/` placeholder that originally proved the umbrella-to-subchart wiring
 (dependency declaration, values overrides, global resource tiers) before any real service existed

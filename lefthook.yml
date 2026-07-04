@@ -1,0 +1,45 @@
+# Git hooks (lefthook — https://lefthook.dev). Installed by `scripts/bootstrap.sh`
+# (or `task setup` / `lefthook install`).
+#
+# pre-commit: auto-format staged files (re-staged) and run fast lint/secret gates that
+# BLOCK the commit on failure. Heavy, whole-repo checks (golangci-lint, full test suites)
+# run via `task lint` / CI, not on every commit.
+# commit-msg: enforce Conventional Commits locally (also enforced on PR title in CI).
+#
+# glob_matcher: doublestar makes `**` match zero-or-more directories (i.e. `**/*.go` also
+# matches a root-level file) — lefthook's default `gobwas` matcher requires `**` to descend
+# at least one directory, which would silently skip root-level files and require a second
+# bare pattern per hook. doublestar is simpler and matches normal shell/gitignore intuition.
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: true
+  commands:
+    prettier:
+      glob: "**/*.{md,yml,yaml,json}"
+      run: prettier --write {staged_files}
+      stage_fixed: true
+    markdownlint:
+      glob: "**/*.md"
+      run: markdownlint-cli2 {staged_files}
+    gofmt:
+      glob: "**/*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    dartfmt:
+      glob: "**/*.dart"
+      run: dart format {staged_files}
+      stage_fixed: true
+    actionlint:
+      glob: ".github/workflows/**/*.{yml,yaml}"
+      run: actionlint {staged_files}
+    shellcheck:
+      glob: "**/*.sh"
+      run: shellcheck {staged_files}
+    gitleaks:
+      run: gitleaks protect --staged --no-banner --redact
+
+commit-msg:
+  commands:
+    conventional:
+      run: ./scripts/check-commit-msg.sh {1}

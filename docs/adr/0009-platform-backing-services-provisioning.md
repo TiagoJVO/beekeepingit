@@ -1,4 +1,4 @@
-# 0008 — Platform backing-services provisioning: vendored charts, CNPG, Traefik reuse
+# 0009 — Platform backing-services provisioning: vendored charts, CNPG, Traefik reuse
 
 - **Status:** Accepted
 - **Date:** 2026-07-04
@@ -16,7 +16,7 @@
 EPIC-13 Helm umbrella chart (`infra/helm/beekeepingit/`), which until now only proved its
 subchart-wiring mechanism via a throwaway `charts/smoke/` placeholder. `docs/architecture/
 service-decomposition.md` §7 names the four platform subcharts it owns — `postgres`, `keycloak`,
-`minio`, `gateway` — but left several implementation choices open: how each subchart is *built*
+`minio`, `gateway` — but left several implementation choices open: how each subchart is _built_
 (hand-rolled, like `smoke`, vs. vendoring a maintained upstream chart), which Postgres delivery
 mechanism satisfies D-6, which ingress controller settles `tech-stack.md`'s "Traefik or NGINX",
 and how TLS is obtained for the gateway AC. This ADR records those choices.
@@ -26,21 +26,21 @@ and how TLS is obtained for the gateway AC. This ADR records those choices.
 **Vendor real upstream Helm charts where one exists and is well-maintained; hand-roll only where
 there's a genuine reason (`gateway`, and the CR/Secrets layer of `postgres`).**
 
-| Subchart | Approach |
-|---|---|
-| `postgres` | **CloudNativePG (CNPG)** operator (CNCF sandbox, maintained by EDB) — not a plain StatefulSet chart. The `postgres` subchart itself is hand-rolled (a `Cluster` CR + per-service credential Secrets), because CNPG's own chart *is* the operator, not a per-instance chart. |
-| `keycloak` | Vendors community **`codecentric/keycloakx`** (`https://codecentric.github.io/helm-charts`), wrapped by our own thin chart that adds the one thing it can't own itself: a generated admin credential + the dev/CI-grade realm import. |
-| `minio` | Vendors the **official `charts.min.io` MinIO Inc. chart**, wrapped the same way for a generated root-credentials Secret. |
-| `gateway` | Hand-rolled — it's just a portable `Ingress` + a self-signed TLS `Secret`; there's nothing to vendor. |
+| Subchart   | Approach                                                                                                                                                                                                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `postgres` | **CloudNativePG (CNPG)** operator (CNCF sandbox, maintained by EDB) — not a plain StatefulSet chart. The `postgres` subchart itself is hand-rolled (a `Cluster` CR + per-service credential Secrets), because CNPG's own chart _is_ the operator, not a per-instance chart. |
+| `keycloak` | Vendors community **`codecentric/keycloakx`** (`https://codecentric.github.io/helm-charts`), wrapped by our own thin chart that adds the one thing it can't own itself: a generated admin credential + the dev/CI-grade realm import.                                       |
+| `minio`    | Vendors the **official `charts.min.io` MinIO Inc. chart**, wrapped the same way for a generated root-credentials Secret.                                                                                                                                                    |
+| `gateway`  | Hand-rolled — it's just a portable `Ingress` + a self-signed TLS `Secret`; there's nothing to vendor.                                                                                                                                                                       |
 
 ### Why CNPG over a plain chart, and where the operator lives
 
 CNPG gives first-class **PostGIS support** (its own maintained `ghcr.io/cloudnative-pg/postgis`
 operand images — confirmed via `cloudnative-pg/postgis-containers`) and **declarative role
 management** (`spec.managed.roles`), which is exactly D-6's "schema per service" shape: one schema
-+ one least-privilege login role per future domain service
-([`data-model.md`](../architecture/data-model.md) §4), provisioned via `postInitApplicationSQL` +
-`spec.managed.roles` in `infra/helm/beekeepingit/charts/postgres/templates/cluster.yaml`.
+and one least-privilege login role per future domain service
+([`data-model.md`](../architecture/data-model.md) §4), provisioned via `postInitApplicationSQL`
+and `spec.managed.roles` in `infra/helm/beekeepingit/charts/postgres/templates/cluster.yaml`.
 
 CNPG's declarative roles do **not** auto-generate passwords — the referenced
 `kubernetes.io/basic-auth` Secret must pre-exist — so `charts/postgres/templates/secrets.yaml`
@@ -62,7 +62,7 @@ to consume our shared `global.resources.<tier>` lookup — that only works insid
 Vendoring `keycloakx`/`minio` as **direct** umbrella dependencies would also leave nowhere to put
 the generated-credential Secret and realm-import ConfigMap each one needs. Both problems are
 solved the same way: a thin **local wrapper chart** (`charts/keycloak/`, `charts/minio/`) that
-declares the real upstream chart as its *own* nested dependency and adds our supplementary
+declares the real upstream chart as its _own_ nested dependency and adds our supplementary
 templates alongside it. The umbrella only ever sees the wrapper.
 
 ### Gateway: reuse Traefik, portable `Ingress`, self-signed TLS
@@ -82,6 +82,7 @@ infrastructure that will be replaced (or fronted by a real CA) when EPIC-14 land
 ## Consequences
 
 **Positive**
+
 - Reuses proven, maintained upstream projects for the hard parts (Postgres HA-ready lifecycle,
   Keycloak's own image/config surface, MinIO's own storage layout) instead of re-implementing them.
 - CNPG's declarative roles make "schema per service + per-service credentials" a first-class,
@@ -90,6 +91,7 @@ infrastructure that will be replaced (or fronted by a real CA) when EPIC-14 land
   AC, consistent with the issue's own EPIC-14 deferral.
 
 **Negative / risks**
+
 - Three new external chart-repo dependencies (`cloudnative-pg`, `codecentric`, `charts.min.io`) —
   CI now does `helm repo add` for the first time (`.github/workflows/helm-ci.yml`); each pinned
   version needs periodic bumping (a maintenance task, not tracked as a FOLLOWUPS item yet since

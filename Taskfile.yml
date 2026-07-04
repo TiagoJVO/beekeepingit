@@ -1,0 +1,70 @@
+# BeekeepingIT monorepo task runner (go-task — https://taskfile.dev).
+#
+# One consistent surface across every language: `lint`, `format`, `test`, `build`.
+# Aggregate targets fan out to per-language taskfiles under ./taskfiles/. Each language
+# target DISCOVERS its packages and no-ops gracefully until one exists — so the whole
+# repo stays green before any code is scaffolded (D-9: dirs created as work needs them).
+#
+# Run `task` (or `task --list`) to see everything. Assumes a POSIX shell (WSL2 on Windows).
+
+version: "3"
+
+silent: true
+
+includes:
+  repo: ./taskfiles/repo.yml
+  go: ./taskfiles/go.yml
+  web: ./taskfiles/web.yml
+  dart: ./taskfiles/dart.yml
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  bootstrap:
+    desc: One-command setup — install toolchains (mise) + git hooks (lefthook)
+    cmds:
+      - ./scripts/bootstrap.sh
+
+  setup:
+    desc: Install git hooks (lefthook) into this clone
+    cmds:
+      - lefthook install
+
+  lint:
+    desc: Lint everything — repo hygiene + every language package
+    cmds:
+      - task: repo:lint
+      - task: go:lint
+      - task: web:lint
+      - task: dart:lint
+
+  format:
+    desc: Auto-format everything (writes changes)
+    cmds:
+      - task: repo:format
+      - task: go:format
+      - task: web:format
+      - task: dart:format
+
+  test:
+    desc: Run all tests
+    cmds:
+      - task: go:test
+      - task: web:test
+      - task: dart:test
+
+  build:
+    desc: Build all packages
+    cmds:
+      - task: go:build
+      - task: web:build
+      - task: dart:build
+
+  ci:
+    desc: What CI runs — everything lints (repo:lint already checks formatting)
+    cmds:
+      - task: lint
+      # `- task: test` is added here once the first code packages land.

@@ -33,7 +33,7 @@ consumed, and contract-tested independently (NFR-ARC-1, NFR-MNT-1, NFR-TST-1). I
 
 It does **not** define per-service business endpoints in full (each service epic does that,
 against these conventions), nor the auth/offline-login mechanics (#109) or the sync write-back
-protocol (#106) — it defines the *contract shapes* those build on.
+protocol (#106) — it defines the _contract shapes_ those build on.
 
 ---
 
@@ -45,10 +45,10 @@ spec drift. This is what makes "keep spec and code in sync" (coding-standards) e
 
 There are **two** distinct surfaces, and they are not the same contract:
 
-| Surface | Who calls it | Style | Where the contract lives |
-|---|---|---|---|
-| **Client-facing** (through the gateway) | Flutter PWA, React Admin App, the `ai` service's *confirmed writes* | **REST + OpenAPI 3.1** (mandatory) | `contracts/openapi/<service>.openapi.yaml` |
-| **Inter-service** (east-west, in-cluster) | one Go service → another | Prefer **REST/JSON**; **gRPC** only for a measured hot path; **async events** for notifications | see [§10](#10-inter-service-communication-d-1) |
+| Surface                                   | Who calls it                                                        | Style                                                                                           | Where the contract lives                       |
+| ----------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **Client-facing** (through the gateway)   | Flutter PWA, React Admin App, the `ai` service's _confirmed writes_ | **REST + OpenAPI 3.1** (mandatory)                                                              | `contracts/openapi/<service>.openapi.yaml`     |
+| **Inter-service** (east-west, in-cluster) | one Go service → another                                            | Prefer **REST/JSON**; **gRPC** only for a measured hot path; **async events** for notifications | see [§10](#10-inter-service-communication-d-1) |
 
 Everything a client touches is REST+OpenAPI. Inter-service traffic is deliberately **minimal
 by design** ([#104](service-decomposition.md) pushes composite reads to the client's replicated
@@ -79,17 +79,17 @@ owning service (so a service spec's paths are version-relative — see [§8](#8-
 
 ## 4. HTTP methods, status codes & idempotency
 
-| Method | Use | Success | Idempotent |
-|---|---|---|---|
-| `GET` | read (item/collection) | `200` | yes |
-| `POST` | create (client supplies the UUID) | `201` + `Location` + `ETag` | **made** idempotent via `Idempotency-Key` |
-| `PATCH` | partial update (JSON merge) | `200` | with `If-Match` |
-| `DELETE` | soft-delete (tombstone) | `204` | yes |
-| `PUT` | full replace | `200` | yes — used sparingly; `PATCH` is the default |
+| Method   | Use                               | Success                     | Idempotent                                   |
+| -------- | --------------------------------- | --------------------------- | -------------------------------------------- |
+| `GET`    | read (item/collection)            | `200`                       | yes                                          |
+| `POST`   | create (client supplies the UUID) | `201` + `Location` + `ETag` | **made** idempotent via `Idempotency-Key`    |
+| `PATCH`  | partial update (JSON merge)       | `200`                       | with `If-Match`                              |
+| `DELETE` | soft-delete (tombstone)           | `204`                       | yes                                          |
+| `PUT`    | full replace                      | `200`                       | yes — used sparingly; `PATCH` is the default |
 
 **Canonical error statuses** (bodies always [RFC 9457](#7-error-format-rfc-9457)):
 `400` malformed · `401` no/invalid token · `403` authenticated-but-forbidden ·
-`404` not found *within the caller's org* · `409` version/state conflict (stale `If-Match`,
+`404` not found _within the caller's org_ · `409` version/state conflict (stale `If-Match`,
 concurrent edit) · `422` validation failure · `429` rate-limited (stub, D-4) · `5xx` server.
 
 **Idempotency for offline:** because a queued offline create can be re-sent, `POST` accepts an
@@ -126,10 +126,11 @@ row's own id is the natural idempotency anchor for the sync upload (#106).
 - **Standard list envelope** (every collection response):
 
   ```json
-  { "data": [ /* items */ ], "page": { "next_cursor": "…|null", "limit": 50 } }
+  { "data": [/* items */], "page": { "next_cursor": "…|null", "limit": 50 } }
   ```
 
   `next_cursor: null` means the last page. (Single items are returned bare, not wrapped.)
+
 - **Filtering** via explicit `snake_case` query params (`?type=harvest&from=…&to=…`), per the
   filterable lists the FRs call for (FR-AC-5/6, FR-JO-2). **Search** is `?q=` (FR-AP-6; scope
   is [Q-SEARCH](../../requirements/open-questions.md)).
@@ -156,7 +157,7 @@ Details** (`application/problem+json`). Canonical schema in
   "status": 422,
   "detail": "hive_count must be >= 0",
   "code": "validation.failed",
-  "errors": [ { "field": "hive_count", "code": "out_of_range", "message": "Must be 0 or more." } ]
+  "errors": [{ "field": "hive_count", "code": "out_of_range", "message": "Must be 0 or more." }]
 }
 ```
 
@@ -175,7 +176,7 @@ Details** (`application/problem+json`). Canonical schema in
 - **Major version in the URL path: `/v1/…`.** Simple for clients, cache- and gateway-friendly,
   and unambiguous. The **gateway owns the `/vN` prefix** and routes `/v1/apiaries/**` to the
   apiaries service, so each **service spec's paths are version-relative** (`servers: [{ url:
-  /v1 }]`, paths start at `/apiaries`). A breaking change ⇒ `/v2` runs **alongside** `/v1`
+/v1 }]`, paths start at `/apiaries`). A breaking change ⇒ `/v2` runs **alongside** `/v1`
   until clients migrate — essential because **field clients update slowly** and old PWApp
   installs linger.
 - **`info.version`** in each spec is the **document's** semver (evolution tracking); it is
@@ -197,7 +198,7 @@ Details** (`application/problem+json`). Canonical schema in
   `organization_id` comes from the **token + membership**, so it is **never** a path, query, or
   body field ([ADR-0002](../adr/0002-multi-tenancy.md)). Where an org id must appear in a path
   for a nested admin resource (`/organizations/{orgId}/…`), the service **asserts it matches**
-  the caller's org — the path never *widens* scope. `404` (not `403`) is returned for
+  the caller's org — the path never _widens_ scope. `404` (not `403`) is returned for
   out-of-scope ids so the API doesn't confirm their existence.
 - **AI confirmed writes reuse this surface unchanged:** the `ai` service never writes domain
   data; a user-confirmed action is executed by the **owning service via this same REST
@@ -224,13 +225,13 @@ flowchart TD
     choose -->|"yes"| grpc["gRPC (protobuf contract)<br/>— typed, streaming, low overhead"]
 ```
 
-- **Default to REST/JSON** for the *rare* synchronous internal call in v1 — same naming, error
+- **Default to REST/JSON** for the _rare_ synchronous internal call in v1 — same naming, error
   and versioning conventions as client-facing (one mental model, NFR-MNT-1). No public exposure.
 - **gRPC only where measured** — reserved for a genuine high-frequency/low-latency internal
   path (none in v1). If adopted, the **protobuf `.proto` is the contract** (added under
   `contracts/proto/`), kept as disciplined as the OpenAPI specs. We don't pay gRPC's toolchain
   cost speculatively (the tech-stack marks it "optional").
-- **Prefer async for reactions:** cross-service *notifications* (e.g. history capture,
+- **Prefer async for reactions:** cross-service _notifications_ (e.g. history capture,
   read-model updates) go through the **event/outbox path (#107)**, not synchronous calls — this
   keeps services decoupled and avoids distributed request chains.
 - **No cross-service DB access** and **no cross-schema joins** ([#104](service-decomposition.md)
@@ -256,28 +257,28 @@ flowchart TD
 
 ## 12. Open questions & hand-offs
 
-| Item | Effect on the contract | Resolved in |
-|---|---|---|
-| Q-SYNC (**resolved**) | The **sync write-back** protocol (offline queue → authoritative tables) layers on these REST writes + `Idempotency-Key`; atomic-push semantics (D-12) are defined there, not here | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106) |
-| Q-AUTH — **resolved** | JWT validation (edge + per-service), org scope from token+membership, offline-token handling | [auth.md](auth.md) / [ADR-0004](../adr/0004-authn-authz.md) (#109) |
-| Q-ROLE — **resolved** | `admin` is **org-scoped**; member/invitation endpoints are admin-only | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md) (#109) |
-| [Q-SEARCH](../../requirements/open-questions.md) | `?q=` scope (which entities, offline vs online, which attributes) | EPIC-02 |
-| [Q-JOUR](../../requirements/open-questions.md) / [Q-TODO](../../requirements/open-questions.md) | Exact journey/todo endpoints & payloads (attribution, lifecycle) | EPIC-04 / EPIC-05 |
-| [NFR-RL-1](../../requirements/non-functional-requirements.md) (D-4) | `429` + quota/usage headers are **stubbed** now; enforced later via the Admin App | deferred (D-4) |
+| Item                                                                                            | Effect on the contract                                                                                                                                                            | Resolved in                                                                     |
+| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Q-SYNC (**resolved**)                                                                           | The **sync write-back** protocol (offline queue → authoritative tables) layers on these REST writes + `Idempotency-Key`; atomic-push semantics (D-12) are defined there, not here | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106) |
+| Q-AUTH — **resolved**                                                                           | JWT validation (edge + per-service), org scope from token+membership, offline-token handling                                                                                      | [auth.md](auth.md) / [ADR-0004](../adr/0004-authn-authz.md) (#109)              |
+| Q-ROLE — **resolved**                                                                           | `admin` is **org-scoped**; member/invitation endpoints are admin-only                                                                                                             | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md) (#109)         |
+| [Q-SEARCH](../../requirements/open-questions.md)                                                | `?q=` scope (which entities, offline vs online, which attributes)                                                                                                                 | EPIC-02                                                                         |
+| [Q-JOUR](../../requirements/open-questions.md) / [Q-TODO](../../requirements/open-questions.md) | Exact journey/todo endpoints & payloads (attribution, lifecycle)                                                                                                                  | EPIC-04 / EPIC-05                                                               |
+| [NFR-RL-1](../../requirements/non-functional-requirements.md) (D-4)                             | `429` + quota/usage headers are **stubbed** now; enforced later via the Admin App                                                                                                 | deferred (D-4)                                                                  |
 
 ---
 
 ## 13. Acceptance-criteria traceability (#108)
 
 - [x] Client-facing API style fixed — **REST + OpenAPI 3.1, contract-first**; resource naming,
-  pagination, errors documented — §2, §3, §6, §7
+      pagination, errors documented — §2, §3, §6, §7
 - [x] Consistent **error format** (RFC 9457) and **versioning** strategy (URL major `/vN` +
-  backward-compatible evolution) defined — §7, §8
+      backward-compatible evolution) defined — §7, §8
 - [x] **Inter-service** guidance (REST default, gRPC only where measured, async for reactions)
-  per D-1 — §10
+      per D-1 — §10
 - [x] **OpenAPI skeletons + a contract template** for the first services committed —
-  [`contracts/openapi/`](../../contracts/openapi/) (`_shared` template + `apiaries` +
-  `organizations`) — §11
+      [`contracts/openapi/`](../../contracts/openapi/) (`_shared` template + `apiaries` +
+      `organizations`) — §11
 - [x] An **ADR** records the contract conventions — [ADR-0003](../adr/0003-api-contract-conventions.md)
 
 ## 14. Links

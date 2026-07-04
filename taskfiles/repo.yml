@@ -1,0 +1,52 @@
+# Repo-hygiene tasks — cross-cutting linters/formatters that run with zero code packages.
+# These give `task lint` / the pre-commit hook something real to enforce from day one.
+version: "3"
+
+silent: true
+
+tasks:
+  lint:
+    desc: "Repo hygiene: format check + Markdown + GitHub Actions + shell + secrets"
+    cmds:
+      - task: format-check
+      - task: markdown
+      - task: actions
+      - task: shell
+      - task: secrets
+
+  format:
+    desc: "Format Markdown / YAML / JSON with Prettier (writes changes)"
+    cmds:
+      - prettier --write "**/*.{md,yml,yaml,json}"
+
+  format-check:
+    desc: "Verify Markdown / YAML / JSON are Prettier-clean"
+    cmds:
+      - prettier --check "**/*.{md,yml,yaml,json}"
+
+  markdown:
+    desc: "Lint Markdown (markdownlint-cli2, config in .markdownlint-cli2.yaml)"
+    cmds:
+      - markdownlint-cli2 "**/*.md"
+
+  actions:
+    desc: "Lint GitHub Actions workflows (actionlint)"
+    cmds:
+      - |
+        if [ -d .github/workflows ]; then actionlint; else echo "› [repo] no workflows — skipping"; fi
+
+  shell:
+    desc: "Lint shell scripts anywhere in the repo (shellcheck)"
+    cmds:
+      - |
+        files=$(find . -type f -name '*.sh' \
+          -not -path './node_modules/*' -not -path './.git/*' \
+          -not -path './.claude/worktrees/*' -not -path '*/.dart_tool/*' \
+          2>/dev/null || true)
+        if [ -z "$files" ]; then echo "› [repo] no shell scripts — skipping"; exit 0; fi
+        shellcheck $files
+
+  secrets:
+    desc: "Scan the working tree for committed secrets (gitleaks)"
+    cmds:
+      - gitleaks detect --no-git --no-banner --redact

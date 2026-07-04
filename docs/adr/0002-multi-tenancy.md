@@ -38,6 +38,7 @@ Use a **shared-schema, discriminator-column** tenancy model:
 ## Consequences
 
 **Positive**
+
 - **One model serves 1 org and N orgs** with no structural change — directly satisfies C-1
   ("don't block multi-org") and NFR-SCA-1 while staying cheap for the single-org present.
 - Keeps the **single cluster** (NFR-ARC-3) and a **consolidated, simple sync publication**
@@ -48,6 +49,7 @@ Use a **shared-schema, discriminator-column** tenancy model:
 - RLS gives a **fail-safe backstop** for the worst tenancy bug (cross-org data leak).
 
 **Negative / risks**
+
 - **Discipline-dependent:** isolation relies on every query being scoped. **Mitigations:** the
   shared query layer enforces it, optional RLS backstops it, and tenancy is part of the
   Definition of Done + tests (NFR-TST).
@@ -66,7 +68,7 @@ Use a **shared-schema, discriminator-column** tenancy model:
 - **Database-per-tenant:** strongest isolation, heaviest ops; contradicts NFR-ARC-3's single
   cluster and the consolidated sync. **Rejected** for v1.
 - **RLS-only (no app scoping):** elegant, but makes correctness depend on the session var being
-  set on every path and offers no in-app clarity. **Rejected** as the *primary* control; kept as
+  set on every path and offers no in-app clarity. **Rejected** as the _primary_ control; kept as
   the optional backstop layered under app scoping.
 
 ## Follow-ups

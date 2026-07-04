@@ -5,6 +5,15 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
+## Tooling — deferred (post-#19)
+
+- **golangci-lint v1 → v2** config migration (v2 is current; `.golangci.yml` uses v1 schema).
+- **Add `flutter`/`dart` to [`mise.toml`](mise.toml)** when the Flutter client package lands (D-10);
+  wire `dart:build` and have the client `include:` the shared `analysis_options.yaml` +
+  `flutter_lints`.
+- **Pinned-tool updates** — Dependabot covers GitHub Actions only; add a mechanism (renovate/mise)
+  to bump `mise.toml` pins.
+
 ## EPIC-13 (platform) — wire API-contract tooling into CI
 
 - **What:** OpenAPI **lint** (Redocly/Spectral), a **breaking-change diff** (`oasdiff`) gate on
@@ -41,7 +50,7 @@ merge (not just `helm lint`/`template`, which don't exercise a live cluster):
 - **Schema grants failed at bootstrap.** `postInitApplicationSQL` (cluster.yaml) ran the
   per-service `GRANT ... TO <schema>_svc` before `spec.managed.roles` had created those roles
   (bootstrap runs before role reconciliation), so every install failed with `role "identity_svc"
-  does not exist`. Fixed by only creating schemas (owned by the `beekeepingit` app user) at
+does not exist`. Fixed by only creating schemas (owned by the `beekeepingit` app user) at
   bootstrap, and moving the grants to a new `templates/schema-grants-job.yaml` post-install hook
   that retries until each role exists.
 - Confirmed end-to-end: Postgres cluster healthy + `helm test` PostGIS smoke query passed +

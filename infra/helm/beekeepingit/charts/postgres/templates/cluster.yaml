@@ -1,7 +1,7 @@
 {{/*
 Assumes the CloudNativePG operator is already installed on the cluster (a
 cluster-scoped prerequisite provisioned by infra/cluster/up.sh, not this chart
-— see ADR-0008). One instance (no HA yet — single small dev cluster, NFR-ARC-3).
+— see ADR-0009). One instance (no HA yet — single small dev cluster, NFR-ARC-3).
 */}}
 {{- if .Values.enabled }}
 apiVersion: postgresql.cnpg.io/v1

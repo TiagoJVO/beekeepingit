@@ -1,0 +1,28 @@
+# golangci-lint (v1) — shared baseline for every Go module in the monorepo.
+# Each service inherits this by virtue of running from the repo root config; a module
+# may add a local .golangci.yml that extends it. See .claude/rules/coding-standards.md.
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck # unchecked errors
+    - govet # suspicious constructs
+    - ineffassign # unused assignments
+    - staticcheck # broad static analysis
+    - unused # unused code
+    - gofmt # formatting
+    - goimports # import grouping/formatting
+    - revive # golint successor (style)
+    - gosec # security issues
+    - misspell # common misspellings
+
+issues:
+  # Show all findings (don't cap per-linter/per-file).
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # Relax security/style noise in tests.
+    - path: _test\.go
+      linters:
+        - gosec
