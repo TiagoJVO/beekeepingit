@@ -137,6 +137,16 @@ harvest, which requires visiting all apiaries).
   - *Decision (D-12):* atomic write-back + client validation parity + notify-and-fix. Mechanism
     designed in [`docs/architecture/sync.md`](../docs/architecture/sync.md) §6/§8/§9 (#106); the
     **failure-handling screens** are built in EPIC-06.
+- **FR-OF-3** — **Connection-quality-gated sync.** Having connectivity is **not sufficient** to
+  attempt a sync: the client **measures connection quality** and only starts a push (or stream
+  reconnect) when quality clears a **configurable threshold** (roughly "usable 3G or better").
+  Field sites often have short windows of **very weak** signal where an attempted sync stalls or
+  fails mid-operation; gating on measured quality keeps the FR-OF-2 failure/retry path **rare**
+  instead of routine. A **manual "sync now"** action always attempts once, regardless of the
+  gate. The gate is a client-side **optimization only** — sync correctness (atomic push,
+  idempotent retry, D-12) never depends on it.
+  - *Mechanism:* designed in [`docs/architecture/sync.md`](../docs/architecture/sync.md) §7.1;
+    built in EPIC-06.
 
 ## Import / Export (FR-IE)
 
