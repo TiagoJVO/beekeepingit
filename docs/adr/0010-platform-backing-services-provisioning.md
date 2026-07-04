@@ -101,6 +101,12 @@ infrastructure that will be replaced (or fronted by a real CA) when EPIC-14 land
   so it isn't mistaken for an oversight.
 - Self-signed TLS means clients must trust-on-first-use (`-k`/`--insecure` or an explicit
   `--resolve` + cert pin for local testing) until EPIC-14 fronts it with a real CA.
+- The `keycloak`/`minio` wrapper charts' own vendored `.tgz` **must be committed** (an explicit
+  `.gitignore` exception), unlike every other Helm dependency here — Flux's GitOps deploy
+  (`infra/gitops/`) sources this chart directly from Git, and its source-controller only resolves
+  the umbrella's own top-level dependencies from disk, not a subchart's nested ones. Confirmed by
+  direct test: a checkout without it renders the wrapper's own Secret but zero of the vendored
+  chart's actual resources — silently, no error. See `infra/helm/beekeepingit/README.md`.
 
 ## Alternatives considered
 

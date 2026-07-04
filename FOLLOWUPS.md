@@ -5,22 +5,6 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
-## #84/#86 — verify Flux resolves the new vendored subchart dependencies
-
-- **What:** `#84` added `keycloak`/`minio` as wrapper charts around vendored dependencies
-  (`codecentric/keycloakx`, the official `charts.min.io` chart) — resolved via `helm dependency
-build`, never committed (`.gitignore`: `**/charts/*.tgz`). `#86`'s `HelmRelease` points Flux's
-  `helm-controller` at this chart directly from the Git source (`chart: ./infra/helm/beekeepingit`),
-  not a pre-packaged release.
-- **Why it matters:** unconfirmed whether `helm-controller` resolves remote chart-repo
-  dependencies (`helm repo add` + `dependency build` equivalent) at reconcile time the way local
-  `helm install`/CI's `helm-ci.yml` do explicitly, or expects them vendored/committed. If not,
-  Flux's first reconcile of this chart after both PRs land could fail.
-- **Where:** [`infra/gitops/apps/dev/beekeepingit-helmrelease.yaml`](infra/gitops/apps/dev/beekeepingit-helmrelease.yaml),
-  [`infra/helm/beekeepingit/Chart.yaml`](infra/helm/beekeepingit/Chart.yaml).
-- **Status:** verify on the next `dev` reconcile after both land; not blocking either PR
-  individually (each was independently live-verified via direct `helm install`, not via Flux).
-
 ## Tooling — deferred (post-#19)
 
 - **golangci-lint v1 → v2** config migration (v2 is current; `.golangci.yml` uses v1 schema).
