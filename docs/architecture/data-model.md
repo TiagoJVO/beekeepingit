@@ -149,12 +149,16 @@ erDiagram
         uuid actor_user_id "soft -> users"
         timestamptz occurred_at "device time"
         timestamptz recorded_at "server time"
-        jsonb snapshot "FR-HIS-1"
+        text[] changed_fields "updated columns"
+        jsonb change "field-level delta, not snapshot (FR-HIS-1)"
     }
 ```
 
 `AUDIT_LOG` relates to every entity polymorphically by (`entity_type`, `entity_id`) — drawn
-separately to keep the ERD legible; capture mechanism is **#107**.
+separately to keep the ERD legible. It is **not a single central table**: each owning service holds
+its **own** append-only `audit_log` in its **own** schema, written in the same local transaction as
+the change (capture mechanism + retention/immutability decided in **#107** → [history.md](history.md)
+/ [ADR-0007](../adr/0007-history-audit.md)).
 
 ---
 
@@ -172,7 +176,13 @@ One Postgres cluster; **one schema per service**; a service writes **only** its 
 | `journeys` | journeys | `journeys`, `journey_plan_items`, `journey_activities` | planned-vs-actual; attribution is **Q-JOUR** |
 | `todos` | todos | `todos` | lifecycle/assignment/area are **Q-TODO** |
 | `ai` | ai | `ai_consents`, `ai_query_log`, `ai_action_log` | **no domain data, no direct writes** (D-11 / NFR-AI-4): consent (Q-AICLOUD) + audit of NL→query (D-8) **and** NL→**proposed actions** (FR-AI-2). A confirmed action executes via the **owning** service's API — `ai` never writes another schema |
-| `history` | history | `audit_log` | append-only; retention/immutability **Q-HIS** (#107) |
+
+**History is per-service, not a schema of its own.** Each owning service carries its **own**
+append-only `audit_log` (and the conflict sibling `sync_conflict_log`) **inside its own schema**,
+written in the same local transaction as the change — this is what honors ownership rule 1 (a
+service writes only its own schema) while keeping history atomic. There is no central `history`
+service in v1. Model, capture, immutability, retention and the FR-HIS view are decided in
+[history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107).
 
 **Tenancy exception:** `identity.users` is a *global* identity (a person, not org property);
 org membership lives in `organizations.memberships`. Every **other** owned table carries
@@ -230,7 +240,9 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
   ref to `activities`): keeps the journeys concern out of the `activities` schema; the
   **manual-vs-auto** attribution rule is **Q-JOUR** (resolved in EPIC-04 / #110).
 - **History is occurred-at vs recorded-at aware:** `audit_log` records both device time and
-  server time so history stays correct across offline edits + late sync (#107).
+  server time so history stays correct across offline edits + late sync; it is **append-only**,
+  **per-service**, and **pseudonymous** (actor = internal user ID only) — [history.md](history.md)
+  / [ADR-0007](../adr/0007-history-audit.md) (#107).
 - **AI is propose-only, never a writer** (D-11 / NFR-AI-4): the `ai` schema holds **no domain
   data and no write access** to other schemas. It logs NL→query (D-8) and NL→**proposed actions**
   (FR-AI-2) in `ai_query_log` / `ai_action_log`; a *confirmed* action is executed by the **owning
@@ -244,7 +256,7 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 | Item | Effect on the model | Resolved in |
 |---|---|---|
 | Q-SYNC (**resolved**) | tombstones, LWW clock (`updated_at`), upload idempotency | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106, SP-1 #54) |
-| [Q-HIS](../../requirements/open-questions.md) | `audit_log` retention/immutability; capture (events/outbox/triggers) | #107 |
+| Q-HIS (**resolved**) | `audit_log` capture (per-service, in-transaction), immutability, retention, GDPR, visibility | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107) |
 | [Q-JOUR](../../requirements/open-questions.md) | journey↔activity attribution; "how much is missing" | EPIC-04, #110 |
 | [Q-TODO](../../requirements/open-questions.md) | todo status set, assignment, "area" semantics | EPIC-05 |
 | [Q-JOIN](../../requirements/open-questions.md) | invitation expiry/re-invite, member removal, admin transfer | EPIC-01 |
@@ -263,5 +275,5 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 
 - Prev: [#104 service-decomposition](service-decomposition.md) · ADR:
   [0002-multi-tenancy](../adr/0002-multi-tenancy.md)
-- Next in EPIC-DESIGN: #106 (sync/conflict) → #107 (history) → #108 (contracts) → #109
-  (authN/authZ) → #110 (walking-skeleton design)
+- Next in EPIC-DESIGN: #106 (sync/conflict → [sync.md](sync.md)) → #107 (history →
+  [history.md](history.md)) → #108 (contracts) → #109 (authN/authZ) → #110 (walking-skeleton design)

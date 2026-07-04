@@ -98,8 +98,6 @@ where there's a sensible one.
 - **Q-TEN** — Confirm the tenancy interpretation: isolation is at the
   **organization** level (resolved in FR-TEN-2), not per-user as frs line 28 reads
   literally.
-- **Q-HIS** — History retention period, immutability, visibility (all users or
-  admin only), and behaviour across offline edits/sync.
 - **Q-AX** — Accessibility target standard/level (recommend **WCAG 2.2 AA**).
 - **Q-EXPORT-PII** — Export (FR-IE-1) of activities tied to users may include PII;
   confirm what's allowed under GDPR.
