@@ -1,0 +1,37 @@
+# mise — single source of truth for dev toolchains + tooling (https://mise.jdx.dev)
+#
+# One-command bootstrap: `./scripts/bootstrap.sh` (installs mise, runs `mise install`,
+# then installs git hooks). Everything below is version-pinned for reproducibility.
+#
+# This file GROWS as packages land (D-9: dirs/toolchains created as work needs them).
+# e.g. add `flutter = "…"` when the Flutter client package is scaffolded.
+
+[tools]
+# --- Language toolchains (baseline for the first services/apps) ---
+go = "1.24"
+node = "22"
+
+# --- Task runner & git hooks ---
+task = "3"          # go-task — the monorepo task runner (Taskfile.yml)
+lefthook = "1"      # fast, cross-platform git hooks (lefthook.yml)
+
+# --- Per-language linters/formatters ---
+golangci-lint = "1.64"   # Go meta-linter (see .golangci.yml). v1; migrate to v2 later.
+
+# --- Repo-hygiene linters/formatters (run today, no code packages needed) ---
+actionlint = "latest"        # GitHub Actions workflow linter
+shellcheck = "latest"        # shell script linter
+gitleaks = "latest"          # secret scanning
+"npm:prettier" = "3"                 # Markdown / YAML / JSON formatter
+"npm:markdownlint-cli2" = "latest"   # Markdown linter
+
+# --- Infra toolchain (infra/ — single-cluster k8s platform, #83/EPIC-13) ---
+helm = "3.21.2"     # pinned to match .github/workflows/helm-ci.yml
+kubectl = "latest"
+k3d = "latest"
+
+[settings]
+# Trust this config without an interactive prompt in CI/agent contexts.
+experimental = true
+# Auto-install missing tools when a task needs them.
+not_found_auto_install = true

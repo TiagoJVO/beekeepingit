@@ -35,7 +35,7 @@ the `audit_log` shape reserved in [data-model.md](data-model.md) §3 and finaliz
 
 ## 2. Mental model — history is a side-effect of the write, in the same transaction
 
-```
+```text
    owning service (e.g. apiaries)
    ┌───────────────────────────────────────────────────────────────┐
    │  write path (ONE local transaction)                            │
@@ -63,27 +63,27 @@ commits **iff** the change commits — it can never be lost, backdated, or drift
 One immutable row per change, polymorphic over every entity by (`entity_type`, `entity_id`). This
 finalizes the `AUDIT_LOG` shape from [data-model.md](data-model.md) §3.
 
-| Column | Type | Meaning |
-|---|---|---|
-| `id` | `uuid` (v7) PK | client/server-generatable; time-ordered |
-| `organization_id` | `uuid` | tenancy key — every audit row is org-scoped (FR-TEN, RLS, sync slice) |
-| `entity_type` | `text` | `apiary` \| `activity` \| `journey` \| `todo` \| `membership` \| … (open set) |
-| `entity_id` | `uuid` | soft reference to the changed row (no cross-schema FK) |
-| `change_type` | `text` | `create` \| `update` \| `delete` (soft-delete tombstone, §6) |
-| `actor_user_id` | `uuid` | **internal user UUID only** — soft ref to `identity.users`; **never** denormalized actor PII (§7.3) |
-| `occurred_at` | `timestamptz` | **device** time the change was made (offline-correct, §6) |
-| `recorded_at` | `timestamptz` | **server** time the change was applied/committed |
-| `changed_fields` | `text[]` | on `update`, the columns that changed — drives the timeline UI and lets a reader filter |
-| `change` | `jsonb` | the **delta**, not a full snapshot: on `create` the initial field values (the baseline); on `update` `{ field: { from, to } }` for **changed columns only**; on `delete` just the tombstone marker. Soft ID refs only, **no embedded personal data** (§7.3) |
+| Column            | Type           | Meaning                                                                                                                                                                                                                                                     |
+| ----------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | `uuid` (v7) PK | client/server-generatable; time-ordered                                                                                                                                                                                                                     |
+| `organization_id` | `uuid`         | tenancy key — every audit row is org-scoped (FR-TEN, RLS, sync slice)                                                                                                                                                                                       |
+| `entity_type`     | `text`         | `apiary` \| `activity` \| `journey` \| `todo` \| `membership` \| … (open set)                                                                                                                                                                               |
+| `entity_id`       | `uuid`         | soft reference to the changed row (no cross-schema FK)                                                                                                                                                                                                      |
+| `change_type`     | `text`         | `create` \| `update` \| `delete` (soft-delete tombstone, §6)                                                                                                                                                                                                |
+| `actor_user_id`   | `uuid`         | **internal user UUID only** — soft ref to `identity.users`; **never** denormalized actor PII (§7.3)                                                                                                                                                         |
+| `occurred_at`     | `timestamptz`  | **device** time the change was made (offline-correct, §6)                                                                                                                                                                                                   |
+| `recorded_at`     | `timestamptz`  | **server** time the change was applied/committed                                                                                                                                                                                                            |
+| `changed_fields`  | `text[]`       | on `update`, the columns that changed — drives the timeline UI and lets a reader filter                                                                                                                                                                     |
+| `change`          | `jsonb`        | the **delta**, not a full snapshot: on `create` the initial field values (the baseline); on `update` `{ field: { from, to } }` for **changed columns only**; on `delete` just the tombstone marker. Soft ID refs only, **no embedded personal data** (§7.3) |
 
 **Notes**
 
-- **Actor is an opaque internal ID.** The audit row records *that user `<uuid>` changed it*, never
+- **Actor is an opaque internal ID.** The audit row records _that user `<uuid>` changed it_, never
   their name/email. Personal data is resolved by **join** to `identity.users` at display time
   (§7.3, §8) — the design property that removes the GDPR-erasure clash.
 - **Two clocks.** `occurred_at` (device) vs `recorded_at` (server) mirror
   [data-model.md](data-model.md) §2's device-time-vs-server-time split, so a change made offline
-  Monday and synced Wednesday reads *occurred Monday, recorded Wednesday* — not backdated or lost.
+  Monday and synced Wednesday reads _occurred Monday, recorded Wednesday_ — not backdated or lost.
 - **Store the delta, not a full snapshot.** Writing the whole row on every edit grows `audit_log`
   with **row size × edit count**, re-copying unchanged fields each time — wasteful, and it scales
   with entity size rather than with how much actually changed. Instead each row stores only **what
@@ -91,7 +91,7 @@ finalizes the `AUDIT_LOG` shape from [data-model.md](data-model.md) §3.
   already holds both old and new values at write time ([sync.md](sync.md) §5.2 captures prior state
   for reversibility), so the delta is free to produce. A `create` writes the initial values as its
   baseline; updates write per-field `{from, to}`; a `delete` writes only the tombstone marker.
-- **Trade-off (accepted):** reconstructing an entity's *full* state as-of an arbitrary past time
+- **Trade-off (accepted):** reconstructing an entity's _full_ state as-of an arbitrary past time
   then needs **replay** (baseline + deltas). FR-HIS-1 requires a **change log**, not point-in-time
   reconstruction, and deep history is an online query anyway — so materialization/replay is a
   deferred refinement, not a v1 need. Growth is bounded by real change volume (a low-write,
@@ -110,7 +110,7 @@ transaction** as the domain mutation — on both the online write path and the s
 
 - **Atomicity = correctness.** History commits with the change or not at all. There is no window
   where a change exists without its history, and no relay/consumer that could lag or drop events.
-- **One path for online and offline.** The sync-apply endpoint is *the same service write path*;
+- **One path for online and offline.** The sync-apply endpoint is _the same service write path_;
   recording history there means offline-then-synced edits are audited **identically** to online
   ones, with the device `occurred_at` preserved (§6). Nothing special is needed for the sync case.
 - **Least v1 infra.** It reuses the local transaction each service already opens; it does **not**
@@ -120,7 +120,7 @@ transaction** as the domain mutation — on both the online write path and the s
 **Rejected for v1** (full weighing in [ADR-0007](../adr/0007-history-audit.md)): DB **triggers**
 (hidden control flow, harder to test/version, can't see the app-level actor cleanly),
 **CDC/logical-decoding** into a history service (async, extra infra, eventual), **transactional
-outbox → events → central projection** (async + new infra; the reserved *upgrade*, not v1, §5),
+outbox → events → central projection** (async + new infra; the reserved _upgrade_, not v1, §5),
 and **app-level after-commit write** (a second transaction that can fail independently — reopens
 the lost-history window).
 
@@ -139,22 +139,22 @@ There is **no** central `history` schema/service written to synchronously by eve
 
 **Why (this is forced by ownership + the in-transaction choice):**
 
-- **Ownership rule 1** ([service-decomposition.md](service-decomposition.md) §4: *a service writes
-  only its own schema*) **forbids** a central history schema written synchronously by every
+- **Ownership rule 1** ([service-decomposition.md](service-decomposition.md) §4: _a service writes
+  only its own schema_) **forbids** a central history schema written synchronously by every
   service — that would be a cross-schema write. Keeping the audit INSERT in the domain write's
   local transaction (§4) therefore **requires** the audit table to live in the **same schema**.
-- **The FR-HIS view is per-entity.** "View the history of *this* apiary / activity / journey"
+- **The FR-HIS view is per-entity.** "View the history of _this_ apiary / activity / journey"
   (FR-HIS-1, §8) is answered entirely by the **owning service's own** `audit_log` — no cross-schema
   join (ownership rule 3), no fan-out.
 
 **Trade-offs considered**
 
-| Option | Atomic w/ write | Honors ownership | Per-entity view | Global timeline | v1 infra | Verdict |
-|---|---|---|---|---|---|---|
-| **Per-service, in-tx `audit_log`** (chosen) | ✅ same local tx | ✅ own schema only | ✅ owning service | ⚠️ needs fan-out/projection | none | **v1** |
-| Central `history` schema, **sync** write | ✅ | ❌ cross-schema write | ✅ | ✅ single table | none | **rejected** — breaks rule 1 |
-| Central `history` schema, **async** (outbox→events→projection) | ❌ eventual | ✅ (services write own outbox) | ✅ | ✅ | event bus + relay + consumer | **deferred upgrade** (§5.1) |
-| One shared audit table, all services write | ✅ | ❌ shared ownership | ✅ | ✅ | none | **rejected** — ownership ambiguity (D-1/AC) |
+| Option                                                         | Atomic w/ write  | Honors ownership               | Per-entity view   | Global timeline             | v1 infra                     | Verdict                                     |
+| -------------------------------------------------------------- | ---------------- | ------------------------------ | ----------------- | --------------------------- | ---------------------------- | ------------------------------------------- |
+| **Per-service, in-tx `audit_log`** (chosen)                    | ✅ same local tx | ✅ own schema only             | ✅ owning service | ⚠️ needs fan-out/projection | none                         | **v1**                                      |
+| Central `history` schema, **sync** write                       | ✅               | ❌ cross-schema write          | ✅                | ✅ single table             | none                         | **rejected** — breaks rule 1                |
+| Central `history` schema, **async** (outbox→events→projection) | ❌ eventual      | ✅ (services write own outbox) | ✅                | ✅                          | event bus + relay + consumer | **deferred upgrade** (§5.1)                 |
+| One shared audit table, all services write                     | ✅               | ❌ shared ownership            | ✅                | ✅                          | none                         | **rejected** — ownership ambiguity (D-1/AC) |
 
 ### 5.1 Reserved upgrade — a global cross-entity timeline behind the boundary
 
@@ -183,7 +183,7 @@ History is designed against the [sync.md](sync.md) reconciliation flow, not bolt
 - **LWW losers are not lost.** The #106 policy is **record-level last-write-wins + a conflict log**.
   A losing offline edit is preserved in **`sync_conflict_log`** ([sync.md](sync.md) §4.2), captured
   the **same way** as `audit_log` — per-service, in the apply transaction. The entity timeline can
-  therefore surface a **`superseded`** event ("your offline change to *Serra Norte* was superseded
+  therefore surface a **`superseded`** event ("your offline change to _Serra Norte_ was superseded
   by a newer value") alongside the applied changes, so no edit silently vanishes from the record.
 - **Deletes are tombstones.** A soft-delete (`deleted_at`) is a `change_type = delete` audit row and
   participates in LWW like any update ([sync.md](sync.md) §4.5). Physical purge of tombstones is a
@@ -235,6 +235,7 @@ never stores personal data in the first place:
 
   This is crypto/pseudonymization-by-design rather than deletion of audit rows, and it is what lets
   history be simultaneously **immutable** and **GDPR-compliant**.
+
 - **Design constraint this imposes:** the `change` delta and audit rows MUST NOT embed actor/member
   personal data — only soft ID references. Services build audit rows from IDs, not denormalized profiles.
   (This is a boundary/contract test target, NFR-TST.)
@@ -244,7 +245,7 @@ never stores personal data in the first place:
 ## 8. Visibility — a per-entity timeline on the entity's screen
 
 - **Where:** history is surfaced as a **per-entity timeline on that entity's detail screen** — e.g.
-  *Apiary details → history*, and likewise for activities and journeys (the FR-HIS-1 "view the
+  _Apiary details → history_, and likewise for activities and journeys (the FR-HIS-1 "view the
   history" feature). It is not a separate global console in v1 (§5.1).
 - **Who:** **any organization member who can already access the entity** may view its history —
   consistent with **FR-TEN-2** (members share all of the org's data). No admin-only gate is added in
@@ -263,13 +264,13 @@ never stores personal data in the first place:
 
 FR-HIS-1 is **all entities**. In v1 that is:
 
-| Entity | Owning service | History source |
-|---|---|---|
-| `apiaries` | apiaries | `apiaries.audit_log` |
-| `activities` | activities | `activities.audit_log` |
-| `journeys`, `journey_plan_items`, `journey_activities` | journeys | `journeys.audit_log` |
-| `todos` | todos | `todos.audit_log` |
-| `memberships`, `organizations`, `invitations` | organizations | `organizations.audit_log` (admin actions) |
+| Entity                                                 | Owning service | History source                            |
+| ------------------------------------------------------ | -------------- | ----------------------------------------- |
+| `apiaries`                                             | apiaries       | `apiaries.audit_log`                      |
+| `activities`                                           | activities     | `activities.audit_log`                    |
+| `journeys`, `journey_plan_items`, `journey_activities` | journeys       | `journeys.audit_log`                      |
+| `todos`                                                | todos          | `todos.audit_log`                         |
+| `memberships`, `organizations`, `invitations`          | organizations  | `organizations.audit_log` (admin actions) |
 
 `identity.users` records only minimal self-profile changes; it is global (not org-owned) and carries
 no `organization_id`. The `ai` service **records no domain history** — a confirmed AI action executes
@@ -280,14 +281,14 @@ so the AI write-safety guarantee and the audit trail reinforce each other.
 
 ## 10. Open items, deferred scope & hand-offs
 
-| Item | Status | Where |
-|---|---|---|
-| Global / cross-entity audit timeline (outbox → projection) | **Reserved, not built** — API composition suffices for v1; projection behind the boundary later (§5.1) | future; EPIC-07 if needed |
-| Configurable retention window / automatic purge / legal-hold | **Deferred** — v1 retains indefinitely (§7.2) | EPIC-14 (#15) |
-| Diff / `changed_fields` presentation in the timeline | **Design hand-off** — shape fixed here (§3) | EPIC-07 (#8), entity EPICs |
-| Build: in-tx audit append on each service write + sync-apply path; INSERT-only grant; append-only + pseudonymity contract tests | **Depends-on** | EPIC-07 (#8), per-service EPIC-02/03/04/05 |
-| History view screens (per-entity timeline, EN/PT, a11y) | **Design hand-off** — data + states fixed here | EPIC-02/03/04, EPIC-07 (#8) |
-| `sync_conflict_log` surfaced as `superseded` timeline events | Shape fixed here (§6) | EPIC-06 (#7) / EPIC-07 (#8) |
+| Item                                                                                                                            | Status                                                                                                 | Where                                      |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| Global / cross-entity audit timeline (outbox → projection)                                                                      | **Reserved, not built** — API composition suffices for v1; projection behind the boundary later (§5.1) | future; EPIC-07 if needed                  |
+| Configurable retention window / automatic purge / legal-hold                                                                    | **Deferred** — v1 retains indefinitely (§7.2)                                                          | EPIC-14 (#15)                              |
+| Diff / `changed_fields` presentation in the timeline                                                                            | **Design hand-off** — shape fixed here (§3)                                                            | EPIC-07 (#8), entity EPICs                 |
+| Build: in-tx audit append on each service write + sync-apply path; INSERT-only grant; append-only + pseudonymity contract tests | **Depends-on**                                                                                         | EPIC-07 (#8), per-service EPIC-02/03/04/05 |
+| History view screens (per-entity timeline, EN/PT, a11y)                                                                         | **Design hand-off** — data + states fixed here                                                         | EPIC-02/03/04, EPIC-07 (#8)                |
+| `sync_conflict_log` surfaced as `superseded` timeline events                                                                    | Shape fixed here (§6)                                                                                  | EPIC-06 (#7) / EPIC-07 (#8)                |
 
 ---
 
@@ -295,11 +296,11 @@ so the AI write-safety guarantee and the audit trail reinforce each other.
 
 - [x] **Append-only, per-entity history model** (actor + timestamp + change) designed — §3
 - [x] **History survives offline edits + sync**; interaction with the #106 conflict policy specified
-  (recorded on the apply path, recent-history offline slice, LWW losers via `sync_conflict_log`) — §6
+      (recorded on the apply path, recent-history offline slice, LWW losers via `sync_conflict_log`) — §6
 - [x] **Storage approach** (per-schema vs central) decided **with trade-offs** — per-service,
-  co-located, in-transaction; central-async reserved as an upgrade — §5
+      co-located, in-transaction; central-async reserved as an upgrade — §5
 - [x] **Retention / immutability stance noted** — append-only + DB-enforced immutability; retain in
-  v1, purge deferred; **GDPR resolved** by pseudonymity-by-construction — §7
+      v1, purge deferred; **GDPR resolved** by pseudonymity-by-construction — §7
 - [x] **Design + ADR in `docs/`**, resolving Q-HIS — this doc + [ADR-0007](../adr/0007-history-audit.md)
 
 ## 12. Links

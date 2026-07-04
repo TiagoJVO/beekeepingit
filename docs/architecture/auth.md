@@ -44,10 +44,10 @@ the authZ middleware every domain service depends on.
 Authentication and authorization are **deliberately split** across two systems of record, so each
 concern is owned where it belongs:
 
-| Layer | Question | System of record | Mechanism |
-|---|---|---|---|
-| **AuthN** (identity) | *Is this a valid, authenticated user?* | **Keycloak** (D-7) | OIDC login → signed **JWT**; services verify it via **JWKS** |
-| **AuthZ** (org-scoped) | *In which org, with what role, may they touch this resource?* | **`organizations` service** (`memberships`) | **App-layer** check on every request — derive `organization_id` + role, scope every query |
+| Layer                  | Question                                                      | System of record                            | Mechanism                                                                                 |
+| ---------------------- | ------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **AuthN** (identity)   | _Is this a valid, authenticated user?_                        | **Keycloak** (D-7)                          | OIDC login → signed **JWT**; services verify it via **JWKS**                              |
+| **AuthZ** (org-scoped) | _In which org, with what role, may they touch this resource?_ | **`organizations` service** (`memberships`) | **App-layer** check on every request — derive `organization_id` + role, scope every query |
 
 **Why split it:** Keycloak realm roles are **global to a user**, but our access rules are
 **per-organization** (a person can be **admin of org A and a plain user of org B** in the multi-org
@@ -57,11 +57,11 @@ Org **membership and resource ownership are domain data** owned by the `organiza
 often (invite/remove/promote). Encoding them in the IdP would couple the domain to Keycloak and go
 **stale** against cached/offline tokens. So Keycloak does **authN + identity (+ a coarse global
 role)**; the **org-scoped role and tenancy** are resolved in the app from the database — exactly
-D-7's *"app-level org-scoped authorization layered on top (FR-TEN)."*
+D-7's _"app-level org-scoped authorization layered on top (FR-TEN)."_
 
 This authZ layer is **the producer of the `organization_id`** that the whole multi-tenancy model
-([ADR-0002](../adr/0002-multi-tenancy.md)) consumes: *layer 1 app-scoping*, *layer 2 optional RLS*,
-and the *org-scoped sync slice* all key off the `organization_id` resolved here.
+([ADR-0002](../adr/0002-multi-tenancy.md)) consumes: _layer 1 app-scoping_, _layer 2 optional RLS_,
+and the _org-scoped sync slice_ all key off the `organization_id` resolved here.
 
 ---
 
@@ -79,10 +79,10 @@ secrets live in the repo (NFR-SEC, EPIC-14).
 
 ### 3.2 Clients
 
-| Client | Type | Flow | Used by |
-|---|---|---|---|
-| `beekeepingit-pwa` | **public** (no secret) | **Authorization Code + PKCE** | Flutter **PWA** now, native app later — same flow (`openid_client`/`oauth2` on web, `flutter_appauth` on native, per [tech-stack.md](../../requirements/tech-stack.md#client--flutter-webpwa-first)) |
-| `beekeepingit-admin` | **public** (no secret) | **Authorization Code + PKCE** | React **Admin App** (online-only, NFR-ROL-2) |
+| Client               | Type                   | Flow                          | Used by                                                                                                                                                                                              |
+| -------------------- | ---------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `beekeepingit-pwa`   | **public** (no secret) | **Authorization Code + PKCE** | Flutter **PWA** now, native app later — same flow (`openid_client`/`oauth2` on web, `flutter_appauth` on native, per [tech-stack.md](../../requirements/tech-stack.md#client--flutter-webpwa-first)) |
+| `beekeepingit-admin` | **public** (no secret) | **Authorization Code + PKCE** | React **Admin App** (online-only, NFR-ROL-2)                                                                                                                                                         |
 
 **Domain services are OAuth2 _resource servers_, not login clients** — they **validate** bearer
 tokens (§4) and never initiate a login. A **confidential service-account client** is introduced
@@ -118,19 +118,19 @@ later" open (add membership roles, or adopt ReBAC — §5.5 — without re-plumb
 Services consume the **access token** (JWT, **RS256**). We rely on **standard OIDC claims** and
 **deliberately keep org/role _out_ of the token**:
 
-| Claim | Use |
-|---|---|
-| `sub` | Keycloak subject → maps to `identity.users.keycloak_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity |
-| `email`, `email_verified` | profile (FR-ONB-1); gate on verification if required |
-| `preferred_username`, `name`, `locale` | profile / i18n (EN-PT, NFR-I18N) |
-| `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4) |
+| Claim                                          | Use                                                                                                                                             |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sub`                                          | Keycloak subject → maps to `identity.users.keycloak_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity |
+| `email`, `email_verified`                      | profile (FR-ONB-1); gate on verification if required                                                                                            |
+| `preferred_username`, `name`, `locale`         | profile / i18n (EN-PT, NFR-I18N)                                                                                                                |
+| `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4)                                                                                                                          |
 
 **Why no `organization_id` / org-role claim:** membership is **domain data that changes** and a token
 is **long-ish lived and cached offline** — an embedded org/role would go **stale** (e.g. a removed
 member would keep access until token expiry). The **active org is also a per-request choice** in the
 multi-org future. So the app resolves org + role from the **database** on each request (§5), keeping
-the `organizations` service authoritative. *(Alternative — a Keycloak protocol mapper that injects
-memberships — is weighed and rejected in [ADR-0004](../adr/0004-authn-authz.md).)*
+the `organizations` service authoritative. _(Alternative — a Keycloak protocol mapper that injects
+memberships — is weighed and rejected in [ADR-0004](../adr/0004-authn-authz.md).)_
 
 ---
 
@@ -208,7 +208,7 @@ contract rule that **tenancy is derived server-side, never a client parameter**
    client parameter** (not a header, query, or body field). In v1 each user belongs to a **single
    organization** (C-1), so `organizations.memberships` resolves it unambiguously. The one place an
    org id appears in a URL is an org-**management** resource (`/organizations/{orgId}/…`), where the
-   service **asserts `{orgId}` matches the caller's membership** — the path never *widens* scope
+   service **asserts `{orgId}` matches the caller's membership** — the path never _widens_ scope
    ([api-contracts.md §9](api-contracts.md#9-auth--tenancy-in-the-contract-d-7-adr-0002)). Multi-org
    "active org" selection is a deferred future concern and will still derive scope from membership,
    not a trusted client claim.
@@ -248,14 +248,14 @@ graph TD
 
 **`admin` is org-scoped** (D-3: the org creator is its first admin). Within an organization:
 
-| Capability | `user` | `admin` |
-|---|---|---|
-| Full CRUD on **apiaries, activities, journeys, todos** (org-shared data) | ✓ | ✓ |
-| Use the **AI assistant**; view **history** (FR-HIS) | ✓ | ✓ |
-| Manage **members** — invite / remove (FR-ONB-3, D-3) | — | ✓ |
-| Assign **membership roles** (promote/demote `admin`/`user`) | — | ✓ |
-| Edit **organization** settings; manage **invitations** | — | ✓ |
-| Manage **quotas / rate-limits** (NFR-RL-1) | — | ✓ *(deferred D-4)* |
+| Capability                                                               | `user` | `admin`            |
+| ------------------------------------------------------------------------ | ------ | ------------------ |
+| Full CRUD on **apiaries, activities, journeys, todos** (org-shared data) | ✓      | ✓                  |
+| Use the **AI assistant**; view **history** (FR-HIS)                      | ✓      | ✓                  |
+| Manage **members** — invite / remove (FR-ONB-3, D-3)                     | —      | ✓                  |
+| Assign **membership roles** (promote/demote `admin`/`user`)              | —      | ✓                  |
+| Edit **organization** settings; manage **invitations**                   | —      | ✓                  |
+| Manage **quotas / rate-limits** (NFR-RL-1)                               | —      | ✓ _(deferred D-4)_ |
 
 The **canonical management surface** is the **Admin App** (NFR-ROL-2, web, online-only); the
 PWA/native client focuses on field features. **Admin-only operations are rejected for non-admins**
@@ -264,8 +264,8 @@ contract already encodes this: `role` is the open enum `[admin, user]` and the m
 endpoints are admin-only (`403` for a `user`), with `{orgId}` asserted against membership
 ([`organizations.openapi.yaml`](../../contracts/openapi/organizations.openapi.yaml)). There is **no system-wide application
 admin** in v1 — a platform super-admin is the **`platform-operator`** ops role (§3.3), not an app
-role; NFR-ROL-1's "more roles later" can add one when needed. *This resolves
-[Q-ROLE](../../requirements/open-questions.md) (admin = org-scoped).*
+role; NFR-ROL-1's "more roles later" can add one when needed. _This resolves
+[Q-ROLE](../../requirements/open-questions.md) (admin = org-scoped)._
 
 ### 5.4 Resource ownership (FR-TEN-2)
 
@@ -277,7 +277,7 @@ change **records the actor** in history (FR-HIS-1), and each activity is still s
 ownership control: a resource from another org **isn't visible**, so cross-org access returns
 **`404`** (not `403` — the API doesn't confirm the resource exists;
 [api-contracts.md §9](api-contracts.md#9-auth--tenancy-in-the-contract-d-7-adr-0002)). A stricter
-*per-record* rule (e.g. only the performer or an admin may edit a given activity) is **not v1** but
+_per-record_ rule (e.g. only the performer or an admin may edit a given activity) is **not v1** but
 fits this model as a future per-resource policy.
 
 ### 5.5 When app-layer scoping isn't enough (future)
@@ -291,9 +291,9 @@ authN as an extra authZ check; the org-scoping here remains the baseline. **Not 
 
 ## 6. Offline login — token & JWKS caching + grace window (D-7)
 
-> **Phase note (D-10).** Offline *data capture* works in **every** phase via the replicated slice
+> **Phase note (D-10).** Offline _data capture_ works in **every** phase via the replicated slice
 > (§6.4). Offline **login** — opening the app with **no connectivity at all** — is a **native-phase**
-> concern (the PWA still needs an online redirect for a *fresh* login). Per the issue, it is
+> concern (the PWA still needs an online redirect for a _fresh_ login). Per the issue, it is
 > **designed now** so the token/JWKS handling everyone builds on is settled.
 
 ### 6.1 PWA phase vs native phase
@@ -376,14 +376,14 @@ sequenceDiagram
 The remaining open items in [Q-AUTH](../../requirements/open-questions.md) (beyond the D-7 mechanism)
 are settled by **using Keycloak's built-ins** plus the token policy above — **no custom auth build**:
 
-| Item | Decision |
-|---|---|
-| **Email verification** | Keycloak **"Verify Email"** required action; SMTP configured in EPIC-14. App may gate sensitive flows on `email_verified`. |
-| **Password reset** | Keycloak **"Forgot password"** flow (self-service, email link). |
-| **Registration** | Keycloak credential auth; **first login** triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on. |
-| **Access-token lifetime** | **short, ≈ 5–15 min** (limits exposure; forces refresh). *Proposed; tune in EPIC-14.* |
-| **Refresh / SSO session** | **sliding, ≈ 30 days** (field convenience). *Proposed; tune in EPIC-14.* |
-| **Offline grace window** | **≈ 14–30 days** (native, §6.3). *Proposed; tune in EPIC-14.* |
+| Item                      | Decision                                                                                                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Email verification**    | Keycloak **"Verify Email"** required action; SMTP configured in EPIC-14. App may gate sensitive flows on `email_verified`.                                                                                     |
+| **Password reset**        | Keycloak **"Forgot password"** flow (self-service, email link).                                                                                                                                                |
+| **Registration**          | Keycloak credential auth; **first login** triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on. |
+| **Access-token lifetime** | **short, ≈ 5–15 min** (limits exposure; forces refresh). _Proposed; tune in EPIC-14._                                                                                                                          |
+| **Refresh / SSO session** | **sliding, ≈ 30 days** (field convenience). _Proposed; tune in EPIC-14._                                                                                                                                       |
+| **Offline grace window**  | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._                                                                                                                                                  |
 
 > Lifetimes are **starting points**, to be confirmed against a **security review** (EPIC-14, #15) and
 > field-UX testing — not hard requirements.
@@ -392,15 +392,15 @@ are settled by **using Keycloak's built-ins** plus the token policy above — **
 
 ## 8. Open questions, risks & hand-offs
 
-| Item | Effect on this design | Resolved / built in |
-|---|---|---|
-| [Q-AUTH](../../requirements/open-questions.md) | mechanism (D-7) + offline login, token lifetimes, verification/reset | **Resolved here** (§4, §6, §7) |
-| [Q-ROLE](../../requirements/open-questions.md) | admin org-scoped vs system-wide; capability split | **Resolved here** (§5.3) — org-scoped |
-| **Token-lifetime / grace values** | exact minutes/days need security sign-off | EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) |
-| **PWA token persistence (iOS)** | durability of cached session in a PWA | SP-1 (PWA persistence), [#54](https://github.com/TiagoJVO/beekeepingit/issues/54) |
-| **Membership read path** | services call `organizations` vs read a replicated projection | [#108](https://github.com/TiagoJVO/beekeepingit/issues/108) / [#28](https://github.com/TiagoJVO/beekeepingit/issues/28) |
-| **Offline revocation latency** | removed member keeps **local** access within grace window | accepted (§6.4); server re-auth at sync |
-| **Fine-grained sharing** | per-resource / cross-org ACLs | future — OpenFGA/Keto (§5.5), not v1 |
+| Item                                           | Effect on this design                                                | Resolved / built in                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [Q-AUTH](../../requirements/open-questions.md) | mechanism (D-7) + offline login, token lifetimes, verification/reset | **Resolved here** (§4, §6, §7)                                                                                          |
+| [Q-ROLE](../../requirements/open-questions.md) | admin org-scoped vs system-wide; capability split                    | **Resolved here** (§5.3) — org-scoped                                                                                   |
+| **Token-lifetime / grace values**              | exact minutes/days need security sign-off                            | EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15))                                                     |
+| **PWA token persistence (iOS)**                | durability of cached session in a PWA                                | SP-1 (PWA persistence), [#54](https://github.com/TiagoJVO/beekeepingit/issues/54)                                       |
+| **Membership read path**                       | services call `organizations` vs read a replicated projection        | [#108](https://github.com/TiagoJVO/beekeepingit/issues/108) / [#28](https://github.com/TiagoJVO/beekeepingit/issues/28) |
+| **Offline revocation latency**                 | removed member keeps **local** access within grace window            | accepted (§6.4); server re-auth at sync                                                                                 |
+| **Fine-grained sharing**                       | per-resource / cross-org ACLs                                        | future — OpenFGA/Keto (§5.5), not v1                                                                                    |
 
 **Hand-off to build (this design de-risks them):**
 [#24](https://github.com/TiagoJVO/beekeepingit/issues/24) (Keycloak realm/client + OIDC login),
@@ -418,9 +418,9 @@ security review). The middleware here is also the **producer** of the `organizat
 - [x] **Keycloak realm + client + roles (`admin`/`user`)** documented (NFR-ROL) — §3
 - [x] **JWT validation via JWKS** in the shared Go middleware specified — §4
 - [x] **App-layer org-scoped authorization** (membership + resource ownership, FR-TEN) — beyond
-  Keycloak's coarse roles — §2, §5
+      Keycloak's coarse roles — §2, §5
 - [x] **Offline-login** token/JWKS caching + **grace-window** design (native-phase, designed now per
-  D-7) — §6
+      D-7) — §6
 - [x] **Design + ADR** in `docs/` — this doc + [ADR-0004](../adr/0004-authn-authz.md)
 
 ## 10. Links

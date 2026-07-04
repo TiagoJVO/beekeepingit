@@ -44,5 +44,11 @@ vendor/
 Chart.lock
 **/charts/*.tgz
 
+# --- Dev tooling (mise / go-task / lefthook) ---
+.task/                 # go-task cache
+mise.local.toml        # personal mise overrides (not committed)
+.mise.local.toml
+lefthook-local.yml     # personal lefthook overrides
+
 # --- Misc ---
 *.tsbuildinfo

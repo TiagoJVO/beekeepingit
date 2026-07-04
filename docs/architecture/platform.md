@@ -30,7 +30,7 @@ own release.
 every service as a **subchart** under `charts/`, so the whole platform deploys/upgrades as one
 release. Conventions (namespace, resource tiers, values schema, how a service subchart plugs in)
 are documented in the chart's own [README](../../infra/helm/beekeepingit/README.md) — this
-section covers the *why*.
+section covers the _why_.
 
 - **Namespace**: one per environment (`beekeepingit-<env>`), created at install time via
   `--create-namespace` rather than a chart-managed `Namespace` resource, so `helm uninstall`

@@ -42,13 +42,14 @@ Adopt **PowerSync**, **self-hosted (Open Edition)** on the k8s cluster, as the o
   the **owning service's API** (the connector), which validates, authorizes, org-scopes, and records
   history — PowerSync never writes domain schemas directly.
 - **Conflict policy (confirms Q-SYNC default):** **server-authoritative, record-level last-write-wins
-  + a conflict log**, implemented in the owning service's write handler. The SP-1 prototype
-  demonstrated this end-to-end (older offline edit lost to a newer server value; conflict logged;
-  client converged).
+  - a conflict log**, implemented in the owning service's write handler. The SP-1 prototype
+    demonstrated this end-to-end (older offline edit lost to a newer server value; conflict logged;
+    client converged).
 
 ## Consequences
 
 **Positive**
+
 - **Fits offline-first + Flutter directly:** full offline reads **and** writes with a durable queue,
   and an official Flutter SDK covering the PWA (web/OPFS) and later native — no rewrite across D-10's
   PWA→Android→iOS rollout (one of the reasons Flutter was kept, D-5).
@@ -59,6 +60,7 @@ Adopt **PowerSync**, **self-hosted (Open Edition)** on the k8s cluster, as the o
 - **Loose Postgres↔client-schema coupling** lets the client slice differ from service schemas.
 
 **Negative / risks**
+
 - **New self-hosted stateful service** to operate (PowerSync service + its storage DB) — added
   ops surface for EPIC-13/EPIC-00.
 - **Cross-service write-back atomicity is still ours to design** (D-12): PowerSync's queue is one

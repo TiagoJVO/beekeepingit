@@ -21,28 +21,58 @@ decisions behind it: [requirements/decisions.md](requirements/decisions.md) (`D-
 
 ## Repository layout (monorepo)
 
-```
+```text
 beekeepingit/
 ├── requirements/      # Source of truth: context, FRs, NFRs, decisions, open questions
 ├── docs/              # Intended architecture, tech stack, ADRs
 ├── infra/             # k8s cluster bring-up/teardown + Helm umbrella chart (EPIC-13)
 ├── .claude/           # AI rules + settings (SessionStart workflow hook)
 ├── .github/           # Issue templates, PR template, label taxonomy
+├── taskfiles/         # Per-language task definitions (go-task)
+├── scripts/           # Dev scripts (bootstrap, hooks)
+├── mise.toml          # Pinned toolchains + tools
+├── Taskfile.yml       # Task runner: lint / format / test / build
 ├── CLAUDE.md          # Operating manual for AI contributors (start here)
 └── CONTRIBUTING.md    # Branching, commits, PR process
 ```
 
+Code directories (`services/`, `apps/`, `clients/`, `infra/`) appear as work needs them
+(`D-9`) — nothing is pre-scaffolded.
+
+## Development
+
+One-command bootstrap (Linux / macOS / **WSL2 on Windows**):
+
+```sh
+./scripts/bootstrap.sh          # installs mise + toolchains + git hooks
+```
+
+Then use the task runner — the same verbs across every language:
+
+```sh
+task lint      # lint everything (repo hygiene + each package)
+task format    # auto-format
+task test      # run tests
+task build     # build packages
+```
+
+Tooling: **mise** (toolchains) · **go-task** (runner) · **lefthook** (git hooks). Setup,
+conventions, and how targets stay green before any code exists:
+[docs/development/tooling.md](docs/development/tooling.md) · rationale in
+[ADR-0008](docs/adr/0008-monorepo-tooling.md).
+
 ## Documentation
 
-| Area | Location |
-|---|---|
-| **AI contributor manual** | [CLAUDE.md](CLAUDE.md) |
-| Contributing (branches/commits/PRs) | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Requirements & scope (source of truth) | [requirements/README.md](requirements/README.md) |
-| Decisions · open questions | [requirements/decisions.md](requirements/decisions.md) · [requirements/open-questions.md](requirements/open-questions.md) |
-| Backlog (epics, stories, milestones) | [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues) (epics: `type/epic`) · Project board |
-| Intended stack/architecture | [requirements/tech-stack.md](requirements/tech-stack.md) |
-| Built-system docs (as implemented) | [docs/](docs/) |
+| Area                                     | Location                                                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **AI contributor manual**                | [CLAUDE.md](CLAUDE.md)                                                                                                    |
+| Contributing (branches/commits/PRs)      | [CONTRIBUTING.md](CONTRIBUTING.md)                                                                                        |
+| Dev tooling & conventions (setup, tasks) | [docs/development/tooling.md](docs/development/tooling.md)                                                                |
+| Requirements & scope (source of truth)   | [requirements/README.md](requirements/README.md)                                                                          |
+| Decisions · open questions               | [requirements/decisions.md](requirements/decisions.md) · [requirements/open-questions.md](requirements/open-questions.md) |
+| Backlog (epics, stories, milestones)     | [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues) (epics: `type/epic`) · Project board                     |
+| Intended stack/architecture              | [requirements/tech-stack.md](requirements/tech-stack.md)                                                                  |
+| Built-system docs (as implemented)       | [docs/](docs/)                                                                                                            |
 
 ## Project management
 

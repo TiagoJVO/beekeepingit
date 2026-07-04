@@ -5,6 +5,15 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
+## Tooling — deferred (post-#19)
+
+- **golangci-lint v1 → v2** config migration (v2 is current; `.golangci.yml` uses v1 schema).
+- **Add `flutter`/`dart` to [`mise.toml`](mise.toml)** when the Flutter client package lands (D-10);
+  wire `dart:build` and have the client `include:` the shared `analysis_options.yaml` +
+  `flutter_lints`.
+- **Pinned-tool updates** — Dependabot covers GitHub Actions only; add a mechanism (renovate/mise)
+  to bump `mise.toml` pins.
+
 ## EPIC-13 (platform) — wire API-contract tooling into CI
 
 - **What:** OpenAPI **lint** (Redocly/Spectral), a **breaking-change diff** (`oasdiff`) gate on

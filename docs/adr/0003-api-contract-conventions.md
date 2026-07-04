@@ -57,6 +57,7 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 ## Consequences
 
 **Positive**
+
 - **One consistent, standard surface:** every service looks the same to clients and testers;
   RFC 9457 + OpenAPI are interoperable IETF/OAI standards with mature tooling (codegen, mock,
   contract test) — directly serves NFR-MNT-1 and NFR-TST-1.
@@ -69,6 +70,7 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
   let old PWApp installs keep working while `/v2` rolls out.
 
 **Negative / risks**
+
 - **Discipline-dependent:** contract-first only holds if CI enforces spec↔code parity and
   breaking-change detection. **Mitigation:** lint + `oasdiff` + codegen + contract tests wired in
   EPIC-13 (tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)); until then specs are hand-linted.
@@ -76,7 +78,7 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
   be cross-file `$ref`s (each spec re-declares `bearerAuth` as a `$ref` to the shared def).
   Accepted — it is the standard contract-first workflow and keeps a single source of truth.
 - **Two protocols if gRPC ever lands:** a second contract toolchain. **Mitigation:** gRPC is
-  gated behind *measured* need (none in v1), so we don't pay it speculatively.
+  gated behind _measured_ need (none in v1), so we don't pay it speculatively.
 - **Cursor pagination** is less trivial to implement than offset and can't random-access a page.
   Accepted: it is correct under concurrent writes and matches indexed keys/sync; offline reads
   dominate anyway.

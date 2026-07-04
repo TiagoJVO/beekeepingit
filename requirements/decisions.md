@@ -11,6 +11,7 @@ _Last updated: 2026-06-27._
 ---
 
 ## D-1 — v1 uses a full microservices architecture
+
 - **Decision:** Build **full microservices from day one** (not a modular monolith).
 - **Supersedes:** Q-SCALE. Confirms NFR-ARC-1 as a **v1** requirement.
 - **Note / trade-off:** This intentionally goes beyond Context C-1's "don't
@@ -25,6 +26,7 @@ _Last updated: 2026-06-27._
   - Still targets a **single k8s cluster** initially (NFR-ARC-3).
 
 ## D-2 — Hives are a count + activity attribute, not a separate entity
+
 - **Decision:** **No hive entities.** Apiary keeps a **hive count** (FR-AP-7), and
   relevant activities capture a **"number of hives involved"** attribute. Activities
   remain recorded at the **apiary** level.
@@ -36,6 +38,7 @@ _Last updated: 2026-06-27._
     across harvest activities in the journey.
 
 ## D-3 — Organization membership: first user is admin, invites others by email
+
 - **Decision:** The user who **creates an organization becomes its admin**; the
   admin **invites other members by email** to join the existing organization.
 - **Supersedes:** Q-JOIN.
@@ -45,14 +48,15 @@ _Last updated: 2026-06-27._
   admin (minor — for planning detail).
 
 ## D-4 — v1 scope deferrals
+
 - **Deferred out of v1** (kept only as design boundaries/stubs, built later):
   - **Billing, subscriptions & rate limits/quotas** — keep the feature-toggle and
-    enforcement *mechanism* (FR-AU-2, NFR-RL-1) but **no billing UI or quota
+    enforcement _mechanism_ (FR-AU-2, NFR-RL-1) but **no billing UI or quota
     enforcement** in v1; everything free.
   - **On-device/local AI** — deferred to the **native phase** (can't run in a PWA).
     The PWA phase ships **cloud AI** instead (see D-8 — this reverses the earlier
     local-only-first stance).
-- **Kept in v1** (explicitly *not* deferred):
+- **Kept in v1** (explicitly _not_ deferred):
   - **Web Admin App** (NFR-ROL-2) — in scope for v1 (role/org management).
   - **CSV/JSON import & export** (FR-IE-1/2) — in scope for v1.
 - **Supersedes:** Q-SUB, Q-RL (deferred); partially Q-LLM (cloud path deferred —
@@ -60,12 +64,13 @@ _Last updated: 2026-06-27._
 
 ---
 
-# Technology Stack
+## Technology Stack
 
 Core technology decisions (2026-06-27). Detail and rationale in
 [tech-stack.md](tech-stack.md).
 
 ## D-5 — Stack: Flutter + Go + React
+
 - **Client (mobile/tablet/desktop):** **Flutter (Dart)** — single codebase, strong
   offline, on-device LLM support.
 - **Backend microservices:** **Go**.
@@ -73,6 +78,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Supersedes:** Q-STACK.
 
 ## D-6 — Data & offline sync: PostgreSQL + PostGIS, SQLite on device, managed sync
+
 - **Backend:** **PostgreSQL + PostGIS**. For v1, microservices share **one cluster
   with a schema per service** (clean boundaries now, split later) — the agreed
   reconciliation of offline-sync vs. microservices.
@@ -93,6 +99,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
   are documented future refinements, not open items.
 
 ## D-7 — Identity & auth: Keycloak (self-hosted)
+
 - **Keycloak** (OIDC/OAuth2) on the k8s cluster; **realms + roles** for RBAC
   (NFR-ROL); **offline token caching** for field login; **app-level org-scoped
   authorization** layered on top (FR-TEN).
@@ -100,6 +107,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
   [`docs/architecture/auth.md`](../docs/architecture/auth.md) / [ADR-0004](../docs/adr/0004-authn-authz.md).
 
 ## D-8 — AI: NL→structured-query, cloud model first (on-device later)
+
 - **Approach (unchanged):** the assistant translates questions into a **structured
   query / tool call** over the org's data (accurate for totals, overdue todos),
   scoped to org / apiary / journey (FR-AI-1).
@@ -118,11 +126,13 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Supersedes:** Q-LLM direction; reorders NFR-AI-2/3 (cloud before local).
 
 ## D-9 — Repository structure: monorepo
+
 - **Single monorepo** — one repository holds everything (client, backend services,
   infrastructure, docs, planning, requirements). Simpler cross-service changes, one CI
   config — fits a small team. Directories are created as work needs them, not pre-scaffolded.
 
 ## D-10 — Platform rollout: PWA → Android → iOS (native only when needed)
+
 - **Surface priority:** **Flutter Web (installable PWA)** first → **Android** →
   **iOS**. Native build targets are added **only when a feature requires native**
   (e.g. on-device LLM, deep background sync) — not up front.
@@ -137,6 +147,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Supersedes:** the earlier "native mobile app is the primary v1 surface" framing.
 
 ## D-11 — AI write-actions: propose → confirm → owner-executes
+
 - **Decision:** the assistant is **not limited to reads**. Beyond NL→query (D-8) it can
   translate a natural-language (or **voice**) request into a **proposed structured action**
   — create/update/delete over app data (e.g. "set apiary X to 12 hives", "mark todo Y done",
@@ -146,9 +157,9 @@ Core technology decisions (2026-06-27). Detail and rationale in
   the owning domain service's normal API**, inheriting its validation, authz, `organization_id`
   scoping, history/audit (FR-HIS) and the offline-sync write path (D-6, #106). This **replaces**
   the blunt "AI is read-only" stance with **"AI never writes directly; writes are user-confirmed
-  and owner-mediated"** (the *AI write-safety guarantee*, NFR-AI-4).
+  and owner-mediated"** (the _AI write-safety guarantee_, NFR-AI-4).
 - **Why:** preserves bounded-context ownership (no service writes another's schema), keeps the
-  untrusted NL/LLM **blast radius contained** (LLM output is a *proposal*, never a direct DB
+  untrusted NL/LLM **blast radius contained** (LLM output is a _proposal_, never a direct DB
   write), and **reuses** the existing validated/audited/offline write path instead of a
   privileged AI bypass. The C4 container view barely changes — `ai → pg` stays read-only and
   confirmed writes flow through the normal `client → gateway → owning service` path.
@@ -160,10 +171,11 @@ Core technology decisions (2026-06-27). Detail and rationale in
   FR-HIS, EPIC-08.
 
 ## D-12 — Offline sync write-back: atomic, validation-parity, notify-and-fix
+
 - **Decision:** the client→server sync **push is atomic** — if any change in a push is
   rejected, the **whole push rolls back** (the server applies all-or-nothing; no partial
   write-back). The **client revalidates** queued edits against the **same rules the server
-  enforces**, as closely as feasible, *before* pushing, to catch failures locally rather than
+  enforces**, as closely as feasible, _before_ pushing, to catch failures locally rather than
   at the server. The **server stays authoritative** — client validation is a UX optimization,
   not a security boundary.
 - **On failure:** the **pushing user is notified**, the rejected push is surfaced with the
@@ -197,7 +209,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
 
 ---
 
-# Open Spikes
+## Open Spikes
 
 - **SP-1** — ✅ **RESOLVED (2026-07-01) → PowerSync** (self-hosted Open Edition). Head-to-head +
   a working k8s prototype (create → offline edit → sync + server-authoritative LWW/conflict-log).
@@ -205,4 +217,3 @@ Core technology decisions (2026-06-27). Detail and rationale in
   [SP-1 report](../docs/spikes/sp-1-powersync-vs-electricsql.md); resolves the D-6 sync engine.
 - **SP-2** — On-device LLM feasibility: model + runtime + NL→query accuracy on a
   mid-range phone. **Re-scoped to the native phase** (D-8/D-10) — not PWA-blocking.
-

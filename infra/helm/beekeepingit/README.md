@@ -9,7 +9,7 @@ Composes the whole BeekeepingIT platform into **one Helm release** on the single
 1. Create `charts/<service>/` as a normal Helm chart (its own `Chart.yaml`, `values.yaml`,
    `templates/`). Helm composes anything under `charts/` automatically.
 2. Add it to this chart's `Chart.yaml` `dependencies:` (name, version, `repository:
-   file://charts/<service>`) — `helm lint` requires every subchart under `charts/` to be
+file://charts/<service>`) — `helm lint` requires every subchart under `charts/` to be
    declared there.
 3. Give it a top-level key in `values.yaml` matching its name (e.g. `<service>: {...}`) — that
    becomes the subchart's own `.Values` scope. Add an `enabled` field and gate every template

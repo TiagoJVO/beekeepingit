@@ -46,7 +46,7 @@ that no-ops the domain write writes no duplicate history. No triggers, CDC, outb
 History is **per-service**: each service holds its own append-only `audit_log` (and the conflict
 sibling `sync_conflict_log`) **in its own schema**. This is forced by the two decisions above — an
 in-transaction write must live in the same schema as the row it audits (ownership rule 1). The
-FR-HIS-1 **per-entity** view ("history of *this* apiary") is served by the owning service's own log
+FR-HIS-1 **per-entity** view ("history of _this_ apiary") is served by the owning service's own log
 with **no cross-schema join** (ownership rule 3). A **central, cross-entity timeline is reserved**,
 not built: added later via a **transactional outbox → history projection behind the service
 boundary**, changing nothing about how services record.
@@ -85,18 +85,20 @@ so no edit silently disappears.
 ## Consequences
 
 **Positive**
+
 - **History cannot be lost or diverge** — it shares the change's transaction; no relay/consumer to lag.
 - **One path for online + offline** — the sync-apply endpoint records history identically; offline
   edits are audited with their true device time.
 - **Honors ownership** (rule 1/3) and the **AI write-safety guarantee** (D-11) — every write, incl.
   confirmed AI actions, is audited by the owning service.
 - **Least v1 infra** — reuses each service's local transaction; no event bus/outbox/CDC.
-- **Immutable *and* GDPR-compliant** — pseudonymity-by-construction resolves the erasure tension
+- **Immutable _and_ GDPR-compliant** — pseudonymity-by-construction resolves the erasure tension
   without deleting audit rows.
 - **Future-proof** — a global timeline, retention/purge, and legal-hold are all reachable **behind
   the boundary** without changing how services capture.
 
 **Negative / risks**
+
 - **No single global audit table in v1** — a cross-entity feed needs API composition until the §5.1
   projection is built (accepted: not an FR-HIS-1 requirement).
 - **Per-service audit tables repeat a small pattern** across services — mitigated by the shared
