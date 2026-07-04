@@ -7,7 +7,7 @@
 > in [../../requirements/](../../requirements/).
 
 **Issue:** #106 · **Epic:** #103 (EPIC-DESIGN) · **Milestone:** M0
-**Requirements:** FR-OF-1, FR-OF-2, FR-HIS-1, FR-TEN-2, NFR-ARC-1, NFR-ARC-3
+**Requirements:** FR-OF-1, FR-OF-2, FR-OF-3, FR-HIS-1, FR-TEN-2, NFR-ARC-1, NFR-ARC-3
 **Decisions:** [D-6](../../requirements/decisions.md#d-6--data--offline-sync-postgresql--postgis-sqlite-on-device-managed-sync) (sync engine + shape),
 [D-12](../../requirements/decisions.md#d-12--offline-sync-write-back-atomic-validation-parity-notify-and-fix) (write-back integrity),
 [D-11](../../requirements/decisions.md) (AI writes via owning service), [D-10](../../requirements/decisions.md) (PWA-first), [D-5](../../requirements/decisions.md) (Flutter)
@@ -27,8 +27,9 @@ document decides the five things #106 owes:
    conflict log** (§4);
 3. the **sync-publication contract** every owning service must honor (§5);
 4. the **cross-service write-back atomicity mechanism** (the open part of D-12) (§6);
-5. the **offline → online reconciliation flow**, including history (FR-HIS) (§7), plus the
-   **notify-and-fix** UX (§8) and **client↔server validation parity** (§9).
+5. the **offline → online reconciliation flow**, including history (FR-HIS) (§7) and the
+   **connection-quality push gate** (§7.1, FR-OF-3), plus the **notify-and-fix** UX (§8) and
+   **client↔server validation parity** (§9).
 
 The **engine is already chosen** — PowerSync, self-hosted (Open Edition), in
 [ADR-0005](../adr/0005-sync-engine-choice.md); the [SP-1 report](../spikes/sp-1-powersync-vs-electricsql.md)
@@ -69,7 +70,8 @@ open** (§6, §10).
 - **Down (read path):** PowerSync **Sync Rules** replicate the **org-scoped slice** into the
   device's local SQLite. The client reads/queries locally — offline by default (§3).
 - **Up (write path):** local writes land in SQLite immediately (optimistic) and queue in
-  PowerSync's persistent CRUD queue. When online, `uploadData` posts each **client transaction**
+  PowerSync's persistent CRUD queue. When online **and the link clears the quality gate
+  (§7.1, FR-OF-3)**, `uploadData` posts each **client transaction**
   to **one** server endpoint (§6); the owning services apply it authoritatively (§5), and the
   result replicates back **down**, so the client converges (§4, §7).
 
@@ -350,7 +352,7 @@ sequenceDiagram
     L-->>U: instant local read reflects change
     Note over L: change persisted in crash-surviving CRUD queue
 
-    Note over U,PG: CONNECTIVITY RESTORED
+    Note over U,PG: CONNECTIVITY RESTORED + QUALITY GATE PASSED (§7.1)
     L->>L: client re-validates queued edits (parity, §9)
     L->>C: uploadData → POST one client transaction (batch)
     C->>S: 1) validate-all (dry run)
@@ -380,6 +382,34 @@ recorded Wednesday*, not backdated or lost. **LWW losers** are preserved in `syn
 (§4.2) and surfaced as `superseded` events in the entity's history/timeline. Recent history
 replicates down (§3.2) so it is viewable offline; deep history is an online query
 ([history.md](history.md) §6).
+
+### 7.1 When the client pushes — the connection-quality gate (FR-OF-3)
+
+**"Connectivity restored" is necessary but not sufficient to start a sync attempt.** Field
+sites often get **short windows of very weak signal**; a push attempted there stalls or fails
+mid-transfer, repeatedly dropping the client into the reconnect/retry path. Per **FR-OF-3**,
+the client gates sync on **measured link quality**, not the mere presence of a connection:
+
+- **Trigger rule.** The client connects the sync stream / flushes the upload queue only when
+  (a) connectivity exists **and** (b) a **quality probe** passes — roughly *"usable 3G or
+  better."*
+- **Measurement.** The portable primary signal is a **tiny probe request** to the gateway's
+  health endpoint (RTT + hard timeout). Where available, the Network Information API
+  (`effectiveType` / `downlink`) serves as a cheap *hint* — but it is Chromium-only, so the
+  probe is the decision-maker on every platform.
+- **Thresholds are configurable** (probe timeout / RTT ceiling), with defaults tuned in
+  EPIC-06 field testing — not hard-coded guesses.
+- **Backoff.** Failed probes and failed pushes back off exponentially, so marginal-signal
+  windows don't churn the radio and battery.
+- **Manual override.** A user-triggered **"sync now"** always attempts once, gate or no gate —
+  the beekeeper on the hill may know things the probe doesn't.
+- **The gate is an optimization, never a correctness mechanism.** An interrupted push is
+  already safe — atomic per push (§6), completed by idempotent forward-retry (§6.2). The gate
+  exists to make that failure path **rare**: fewer aborted attempts, fewer
+  `syncing → pending` flaps in the UI (§8), less battery burn.
+- **Engine placement.** Implemented client-side around the engine's connect/upload lifecycle
+  (with PowerSync: gate `connect()`/`disconnect()` and the `uploadData` trigger). It sits
+  **outside** the §5 contract, so it survives an engine swap (NFR-ARC-2).
 
 ---
 
@@ -435,6 +465,7 @@ authoritative.
 | Compensation / true cross-service rollback | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change | §6.3; EPIC-06 |
 | Clock source → HLC | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3) | owning service |
 | Notify-and-fix screens | **Design hand-off** — states/data fixed here | EPIC-06 |
+| Connection-quality gate (FR-OF-3) | **Design hand-off** — trigger rule, probe approach & override fixed here (§7.1); thresholds tuned in field testing | EPIC-06 (#55/#58) |
 | Validation-parity mechanism | **Design hand-off** — approach fixed here (§9) | EPIC-06 |
 | History capture mechanism | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1 | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107) |
 | History retention / immutability / offline behavior | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved) |
@@ -463,5 +494,5 @@ authoritative.
   [data-model.md](data-model.md) (#105) · [api-contracts.md](api-contracts.md) (#108) ·
   [auth.md](auth.md) (#109)
 - Intent: [decisions.md](../../requirements/decisions.md) (D-6, D-12) ·
-  [functional-requirements.md](../../requirements/functional-requirements.md) (FR-OF-1/2, FR-HIS-1)
+  [functional-requirements.md](../../requirements/functional-requirements.md) (FR-OF-1/2/3, FR-HIS-1)
 - Next in EPIC-DESIGN: #107 (history — [history.md](history.md)) → #110 (walking-skeleton design)
