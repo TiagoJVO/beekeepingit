@@ -73,8 +73,8 @@ finalizes the `AUDIT_LOG` shape from [data-model.md](data-model.md) §3.
 | `actor_user_id` | `uuid` | **internal user UUID only** — soft ref to `identity.users`; **never** denormalized actor PII (§7.3) |
 | `occurred_at` | `timestamptz` | **device** time the change was made (offline-correct, §6) |
 | `recorded_at` | `timestamptz` | **server** time the change was applied/committed |
-| `snapshot` | `jsonb` | post-change state of the row (soft ID refs, no embedded personal data, §7.3) |
-| `changed_fields` | `text[]` (optional) | on `update`, the columns that changed — cheap diff for the timeline UI |
+| `changed_fields` | `text[]` | on `update`, the columns that changed — drives the timeline UI and lets a reader filter |
+| `change` | `jsonb` | the **delta**, not a full snapshot: on `create` the initial field values (the baseline); on `update` `{ field: { from, to } }` for **changed columns only**; on `delete` just the tombstone marker. Soft ID refs only, **no embedded personal data** (§7.3) |
 
 **Notes**
 
@@ -84,9 +84,19 @@ finalizes the `AUDIT_LOG` shape from [data-model.md](data-model.md) §3.
 - **Two clocks.** `occurred_at` (device) vs `recorded_at` (server) mirror
   [data-model.md](data-model.md) §2's device-time-vs-server-time split, so a change made offline
   Monday and synced Wednesday reads *occurred Monday, recorded Wednesday* — not backdated or lost.
-- **Prior state for `update`** need not be duplicated: [sync.md](sync.md) §5.2 already requires the
-  apply step to **capture prior state** (for reversibility); the timeline computes a diff from the
-  previous audit row's `snapshot` (or `changed_fields`), so we store the **post-change** snapshot only.
+- **Store the delta, not a full snapshot.** Writing the whole row on every edit grows `audit_log`
+  with **row size × edit count**, re-copying unchanged fields each time — wasteful, and it scales
+  with entity size rather than with how much actually changed. Instead each row stores only **what
+  changed**, which is also exactly what the "view history" timeline renders. The owning service
+  already holds both old and new values at write time ([sync.md](sync.md) §5.2 captures prior state
+  for reversibility), so the delta is free to produce. A `create` writes the initial values as its
+  baseline; updates write per-field `{from, to}`; a `delete` writes only the tombstone marker.
+- **Trade-off (accepted):** reconstructing an entity's *full* state as-of an arbitrary past time
+  then needs **replay** (baseline + deltas). FR-HIS-1 requires a **change log**, not point-in-time
+  reconstruction, and deep history is an online query anyway — so materialization/replay is a
+  deferred refinement, not a v1 need. Growth is bounded by real change volume (a low-write,
+  single-org field domain — Context C-1), and Postgres **TOAST** compresses any large JSONB
+  out-of-line.
 
 ---
 
@@ -213,7 +223,7 @@ There is **no clash** between immutable history and the GDPR right-to-erasure, b
 never stores personal data in the first place:
 
 - **`audit_log` holds only opaque internal identifiers** — `actor_user_id` (internal user UUID),
-  `entity_id`, `organization_id` — and domain snapshots that themselves carry **soft ID references**,
+  `entity_id`, `organization_id` — and `change` deltas that themselves carry **soft ID references**,
   **never** denormalized names/emails. It is **pseudonymous by construction**.
 - **Personal data lives in exactly one place:** `identity.users`. Actor and subject names are
   resolved by **join** to that table **at display time** (§8), from the org roster slice
@@ -225,8 +235,8 @@ never stores personal data in the first place:
 
   This is crypto/pseudonymization-by-design rather than deletion of audit rows, and it is what lets
   history be simultaneously **immutable** and **GDPR-compliant**.
-- **Design constraint this imposes:** snapshots and audit rows MUST NOT embed actor/member personal
-  data — only soft ID references. Services build audit rows from IDs, not denormalized profiles.
+- **Design constraint this imposes:** the `change` delta and audit rows MUST NOT embed actor/member
+  personal data — only soft ID references. Services build audit rows from IDs, not denormalized profiles.
   (This is a boundary/contract test target, NFR-TST.)
 
 ---

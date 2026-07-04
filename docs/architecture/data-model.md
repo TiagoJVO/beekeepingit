@@ -149,7 +149,8 @@ erDiagram
         uuid actor_user_id "soft -> users"
         timestamptz occurred_at "device time"
         timestamptz recorded_at "server time"
-        jsonb snapshot "FR-HIS-1"
+        text[] changed_fields "updated columns"
+        jsonb change "field-level delta, not snapshot (FR-HIS-1)"
     }
 ```
 

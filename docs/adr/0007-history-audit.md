@@ -54,9 +54,13 @@ boundary**, changing nothing about how services record.
 ### 3. Model — opaque, two-clock, append-only
 
 `audit_log` = `{ id, organization_id, entity_type, entity_id, change_type(create|update|delete),
-actor_user_id, occurred_at(device), recorded_at(server), snapshot(jsonb), changed_fields? }`.
-`actor_user_id` is the **internal user UUID only**; snapshots carry **soft ID references** — **never
-denormalized personal data**. Two clocks keep late sync correct (occurred vs recorded).
+actor_user_id, occurred_at(device), recorded_at(server), changed_fields(text[]), change(jsonb) }`.
+`change` is a **field-level delta, not a full snapshot** — `create` writes the baseline values,
+`update` writes `{field:{from,to}}` for changed columns only, `delete` writes just the tombstone
+marker; this keeps the table growing with **change volume, not row size** and matches what the
+timeline renders. `actor_user_id` is the **internal user UUID only**; the delta carries **soft ID
+references** — **never denormalized personal data**. Two clocks keep late sync correct (occurred vs
+recorded).
 
 ### 4. Q-HIS — immutability, retention, GDPR, visibility
 
@@ -119,6 +123,11 @@ so no edit silently disappears.
   transaction can fail independently — reopens the **lost-history window** the in-tx write closes.
 - **One shared audit table all services write to.** Single timeline, atomic. **Rejected:** shared
   ownership — the exact cross-service data-ownership ambiguity D-1/the decomposition AC forbids.
+- **Full post-change snapshot per audit row.** Self-contained rows, trivial point-in-time reads.
+  **Rejected:** it grows the table with **row size × edit count** (re-copying unchanged fields) and
+  duplicates the domain data; a **field-level delta** is far smaller and is exactly what the
+  timeline renders. The cost — replaying baseline + deltas to materialize full past state — is not
+  an FR-HIS-1 requirement (change log, not point-in-time reconstruction) and deep history is online.
 - **Time-boxed retention / purge in v1.** **Rejected for v1:** unnecessary (history is immutable and
   small); deferred to EPIC-14 so v1 keeps a complete record.
 
