@@ -1,0 +1,14 @@
+# Staging overlay — not deployed anywhere yet (NFR-ARC-2: design for future
+# cloud/environment integration without forcing it). Demonstrates the
+# per-environment override convention future service subcharts follow.
+global:
+  environment: staging
+  namespace: beekeepingit-staging
+  resources:
+    small:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 150m, memory: 128Mi }
+
+# The smoke workload is a dev-only wiring check, not a real component.
+smoke:
+  enabled: false

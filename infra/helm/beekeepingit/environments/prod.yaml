@@ -1,0 +1,20 @@
+# Prod overlay — not deployed anywhere yet (NFR-ARC-2: design for future
+# cloud/environment integration without forcing it). Demonstrates the
+# per-environment override convention future service subcharts follow.
+global:
+  environment: prod
+  namespace: beekeepingit-prod
+  resources:
+    small:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 200m, memory: 256Mi }
+    medium:
+      requests: { cpu: 250m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    large:
+      requests: { cpu: 500m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+
+# The smoke workload is a dev-only wiring check, not a real component.
+smoke:
+  enabled: false

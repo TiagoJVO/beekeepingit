@@ -15,4 +15,9 @@ A change is done only when all of the following hold:
 - [ ] Docs updated when behavior/scope changed: `requirements/` (with user confirmation
       for `D-*`/requirement changes), and **`docs/`** to document the architecture as it's
       built (+ an ADR for significant decisions).
+- [ ] If this change creates a **new top-level directory** (e.g. `infra/`, `client/`,
+      `services/`) for the first time, add its row to **`CLAUDE.md`'s repo map** (and update
+      its lifecycle note) and update **`README.md`'s** "Status" line / repository-layout tree —
+      in the same PR, not a follow-up. Both are entry-point maps, not documentation — point to
+      the real docs (`docs/`, or the new directory's own `README.md`), don't restate them.
 - [ ] PR uses `.github/PULL_REQUEST_TEMPLATE.md` and the checklist is complete.

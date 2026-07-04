@@ -1,0 +1,15 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: beekeeping
+servers: 1
+agents: 0
+ports:
+  # Host -> in-cluster Traefik (k3d's bundled ingress controller), matching the
+  # already-provisioned local dev cluster (see docs/architecture/platform.md).
+  - port: 8080:80
+    nodeFilters:
+      - loadbalancer
+  - port: 8443:443
+    nodeFilters:
+      - loadbalancer

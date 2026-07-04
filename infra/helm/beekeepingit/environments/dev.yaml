@@ -1,0 +1,4 @@
+# Local single-cluster dev overlay (the only environment actually deployed today).
+global:
+  environment: dev
+  namespace: beekeepingit-dev

@@ -40,5 +40,9 @@ target/
 .flutter-plugins*
 vendor/
 
+# --- Helm ---
+Chart.lock
+**/charts/*.tgz
+
 # --- Misc ---
 *.tsbuildinfo

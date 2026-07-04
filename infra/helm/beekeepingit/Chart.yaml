@@ -1,0 +1,17 @@
+apiVersion: v2
+name: beekeepingit
+description: >-
+  Umbrella chart for the BeekeepingIT platform (NFR-ARC-1/NFR-ARC-3, D-1) — composes
+  per-service subcharts into one release on a single k8s cluster.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+# Subcharts are plain Helm charts dropped under charts/<service>/, each declared
+# here so `helm dependency build`/`helm lint` can see them. Each subchart's values
+# live under a top-level key matching its `name` (e.g. `smoke:` below), and it
+# reads shared config via `.Values.global` (see values.yaml, README.md).
+dependencies:
+  - name: smoke
+    version: "0.1.0"
+    repository: "file://charts/smoke"
+    condition: smoke.enabled

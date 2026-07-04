@@ -6,9 +6,10 @@ todos**, with an **offline-first** mobile/tablet client, a **web admin app**, an
 a multi-organization path kept open.
 
 > **Status:** Requirements captured (incl. an **intended** stack/architecture) and a
-> **backlog** filed as [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues). **Nothing is built
-> yet** — the source of truth (intent) is [requirements/](requirements/); `docs/` will
-> document the system as it's built.
+> **backlog** filed as [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues).
+> The single-cluster k8s platform + Helm umbrella chart (`infra/`) is the first thing built;
+> application services/client are still pending. Source of truth (intent) is
+> [requirements/](requirements/); `docs/` documents the system as it's built.
 
 ## Intended stack (not final)
 
@@ -24,6 +25,7 @@ decisions behind it: [requirements/decisions.md](requirements/decisions.md) (`D-
 beekeepingit/
 ├── requirements/      # Source of truth: context, FRs, NFRs, decisions, open questions
 ├── docs/              # Intended architecture, tech stack, ADRs
+├── infra/             # k8s cluster bring-up/teardown + Helm umbrella chart (EPIC-13)
 ├── .claude/           # AI rules + settings (SessionStart workflow hook)
 ├── .github/           # Issue templates, PR template, label taxonomy
 ├── CLAUDE.md          # Operating manual for AI contributors (start here)

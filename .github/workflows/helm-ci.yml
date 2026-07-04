@@ -1,0 +1,60 @@
+name: Helm CI
+
+# Validates the platform umbrella chart on every change: dependency build,
+# `helm lint`, and a `helm template` dry-run for the base values and every
+# per-environment overlay. No live cluster is used here — deploying to the
+# cluster is a separate concern (EPIC-13 #86/#88).
+
+on:
+  pull_request:
+    paths:
+      - "infra/helm/**"
+      - ".github/workflows/helm-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/helm/**"
+      - ".github/workflows/helm-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-template:
+    name: helm lint & template dry-run
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/helm/beekeepingit
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: "v3.21.2"
+
+      - name: helm dependency build
+        run: helm dependency build .
+
+      - name: helm lint (base values)
+        run: helm lint .
+
+      - name: helm lint (per-environment overlays)
+        run: |
+          for env in dev staging prod; do
+            echo "::group::lint $env"
+            helm lint . -f "environments/$env.yaml"
+            echo "::endgroup::"
+          done
+
+      - name: helm template dry-run (base values)
+        run: helm template beekeepingit .
+
+      - name: helm template dry-run (per-environment overlays)
+        run: |
+          for env in dev staging prod; do
+            echo "::group::template $env"
+            helm template beekeepingit . -f "environments/$env.yaml"
+            echo "::endgroup::"
+          done

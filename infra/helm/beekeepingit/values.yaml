@@ -1,0 +1,34 @@
+# Base/default values for the beekeepingit umbrella chart. Environment overlays in
+# environments/*.yaml override the fields that differ per environment (namespace,
+# resource tiers) — see infra/helm/beekeepingit/README.md.
+
+global:
+  # dev | staging | prod — validated by values.schema.json.
+  environment: dev
+  # Target namespace for this release. Create it with
+  # `helm install ... --namespace <ns> --create-namespace`.
+  namespace: beekeepingit
+
+  # Resource-request/limit presets every subchart should reference via
+  # `.Values.global.resources.<tier>` instead of hardcoding numbers, so sizing is
+  # tuned in one place per environment.
+  resources:
+    small:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 64Mi }
+    medium:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    large:
+      requests: { cpu: 250m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+# Placeholder subchart proving the umbrella <-> subchart wiring (values overrides,
+# resource tiers, dependency-build) end-to-end. Remove once #84/#23 add the first
+# real service subchart — tracked in FOLLOWUPS.md.
+smoke:
+  enabled: true
+  image:
+    repository: nginxinc/nginx-unprivileged
+    tag: "1.27-alpine"
+  resourceTier: small
