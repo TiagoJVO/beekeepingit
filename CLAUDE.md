@@ -6,17 +6,17 @@ field app) — so you know where things live and which folders to skip. Operatin
 
 ## Repo map
 
-| Path | What's there (and when to read it) |
-|---|---|
-| `requirements/` | **Source of truth (intent)** — read when **planning**: context, FRs, NFRs, `decisions.md` (`D-*`), `open-questions.md` (`Q-*`), intended `tech-stack.md` |
-| _GitHub Issues_ | The plan/backlog — epics (`type/epic`) & stories, migrated from the retired `planning/` folder. Scope work via `gh issue list` / the Project board |
-| `docs/` | Documentation of the system **as built** (+ `adr/`). Near-empty until implementation; read to understand existing behavior |
-| `infra/` | k8s cluster bring-up/teardown + the Helm **umbrella chart** (`EPIC-13`) — see `infra/README.md`; design notes in `docs/architecture/platform.md` |
-| `.claude/rules/` | Operating rules — already auto-loaded, no need to open |
-| `.claude/skills/` | Project skills (procedural how-tos), e.g. `requirements-folder` — invoked on demand; open the `SKILL.md` when doing that task |
-| `.github/` | Issue/PR templates, `labels.yml` |
-| `FOLLOWUPS.md` | **Session follow-up ledger** — pending / before-merge work persisted for continuity (per the `track-pending-work` rule). Read when picking up an in-flight branch. Not the backlog (that's Issues) |
-| `CONTRIBUTING.md` | Branching, commits, PR process — read when committing / opening a PR |
+| Path              | What's there (and when to read it)                                                                                                                                                                 |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requirements/`   | **Source of truth (intent)** — read when **planning**: context, FRs, NFRs, `decisions.md` (`D-*`), `open-questions.md` (`Q-*`), intended `tech-stack.md`                                           |
+| _GitHub Issues_   | The plan/backlog — epics (`type/epic`) & stories, migrated from the retired `planning/` folder. Scope work via `gh issue list` / the Project board                                                 |
+| `docs/`           | Documentation of the system **as built** (+ `adr/`). Near-empty until implementation; read to understand existing behavior                                                                         |
+| `infra/`          | k8s cluster bring-up/teardown + the Helm **umbrella chart** (`EPIC-13`) — see `infra/README.md`; design notes in `docs/architecture/platform.md`                                                   |
+| `.claude/rules/`  | Operating rules — already auto-loaded, no need to open                                                                                                                                             |
+| `.claude/skills/` | Project skills (procedural how-tos), e.g. `requirements-folder` — invoked on demand; open the `SKILL.md` when doing that task                                                                      |
+| `.github/`        | Issue/PR templates, `labels.yml`                                                                                                                                                                   |
+| `FOLLOWUPS.md`    | **Session follow-up ledger** — pending / before-merge work persisted for continuity (per the `track-pending-work` rule). Read when picking up an in-flight branch. Not the backlog (that's Issues) |
+| `CONTRIBUTING.md` | Branching, commits, PR process — read when committing / opening a PR                                                                                                                               |
 
 ### Notes (lifecycle — not derivable from the tree)
 

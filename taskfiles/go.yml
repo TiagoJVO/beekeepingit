@@ -1,0 +1,50 @@
+# Go tasks — discover every module (go.mod) and run the tool inside each.
+# No-ops until the first Go service is scaffolded (services/*/go.mod).
+version: "3"
+
+silent: true
+
+vars:
+  # All go.mod dirs, excluding vendored/build/worktree noise.
+  FIND_MODS: >-
+    find . -type f -name go.mod
+    -not -path '*/vendor/*'
+    -not -path '*/.git/*'
+    -not -path '*/.claude/worktrees/*'
+
+tasks:
+  lint:
+    desc: "Lint Go modules (golangci-lint, config in .golangci.yml)"
+    cmds:
+      - |
+        set -e
+        mods=$({{.FIND_MODS}})
+        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
+        for m in $mods; do d=$(dirname "$m"); echo "› [go] lint $d"; (cd "$d" && golangci-lint run ./...); done
+
+  format:
+    desc: "Format Go modules (gofmt + golangci-lint --fix for imports)"
+    cmds:
+      - |
+        set -e
+        mods=$({{.FIND_MODS}})
+        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
+        for m in $mods; do d=$(dirname "$m"); echo "› [go] format $d"; (cd "$d" && gofmt -w . && golangci-lint run --fix ./... || true); done
+
+  test:
+    desc: "Test Go modules (go test ./...)"
+    cmds:
+      - |
+        set -e
+        mods=$({{.FIND_MODS}})
+        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
+        for m in $mods; do d=$(dirname "$m"); echo "› [go] test $d"; (cd "$d" && go test ./...); done
+
+  build:
+    desc: "Build Go modules (go build ./...)"
+    cmds:
+      - |
+        set -e
+        mods=$({{.FIND_MODS}})
+        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
+        for m in $mods; do d=$(dirname "$m"); echo "› [go] build $d"; (cd "$d" && go build ./...); done

@@ -16,9 +16,9 @@
 **Keycloak** (OIDC), **offline token caching**, and **app-level org-scoped authorization** on top —
 but leaves the detail to design. Two prior EPIC-DESIGN decisions **depend on that detail**:
 [ADR-0002](0002-multi-tenancy.md) makes app-layer scoping the primary tenancy control and explicitly
-defers *"how `organization_id` is derived from the token + membership"* to #109, and
-[service-decomposition.md](../architecture/service-decomposition.md) leaves *"JWT validation at the
-edge and/or per service"* and the **Q-ROLE** admin-scope question to #109.
+defers _"how `organization_id` is derived from the token + membership"_ to #109, and
+[service-decomposition.md](../architecture/service-decomposition.md) leaves _"JWT validation at the
+edge and/or per service"_ and the **Q-ROLE** admin-scope question to #109.
 
 The forces to reconcile:
 
@@ -45,7 +45,7 @@ Adopt a **two-layer** model — Keycloak for authentication + a coarse global ro
 3. **App-layer org-scoped authZ is the real access control.** The `admin`/`user` role (NFR-ROL-1)
    is the **membership** role in `organizations.memberships`, resolved **per request** — the
    `organization_id` is **derived server-side** from the caller's membership, **never a client
-   parameter** (an org id in an org-management path is *asserted* against membership, never
+   parameter** (an org id in an org-management path is _asserted_ against membership, never
    widening — [api-contracts.md §9](../architecture/api-contracts.md#9-auth--tenancy-in-the-contract-d-7-adr-0002)).
    The middleware maps **`sub` → user → active membership → `organization_id` + role**; **no active
    membership ⇒ 403**, an **out-of-scope resource ⇒ 404**. That `organization_id` **feeds the

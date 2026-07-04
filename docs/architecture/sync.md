@@ -41,7 +41,7 @@ engine remains swappable (NFR-ARC-2).
 **offline-deferred push** only: writes made while a device is disconnected and replayed later.
 **Online writes go straight through the normal service API** and conflict at the database like
 any concurrent request (`409`/`If-Match`, [api-contracts.md](api-contracts.md) §4). Two users
-editing the *same* record inside overlapping *offline* windows is rare — the design is
+editing the _same_ record inside overlapping _offline_ windows is rare — the design is
 deliberately **optimized for "rare": cheapest viable path now, with the stronger options kept
 open** (§6, §10).
 
@@ -49,7 +49,7 @@ open** (§6, §10).
 
 ## 2. Mental model
 
-```
+```text
    ┌─────────────────────────── device (offline-first) ───────────────────────────┐
    │  Flutter app  ──writes──▶  local SQLite  ──▶  PowerSync CRUD upload queue      │
    │      ▲                     (OPFS/IndexedDB on web; native SQLite on mobile)    │
@@ -86,7 +86,7 @@ ownership and all members share its data**. So the slice is **org-scoped**: a de
 **every row of its active organization** for the syncable entities below — not a per-user subset.
 
 The "**and by user for activity ownership**" in [D-6](../../requirements/decisions.md#d-6--data--offline-sync-postgresql--postgis-sqlite-on-device-managed-sync)
-is about **attribution, not slice filtering**: `activities.performed_by` records *who* did each
+is about **attribution, not slice filtering**: `activities.performed_by` records _who_ did each
 activity (stamped server-side from the verified identity), but every org member still syncs and
 sees **all** the org's activities. No per-user narrowing is applied in v1. (A user-scoped stream
 is the reserved extension point should any per-user-private entity appear later — none exists
@@ -94,25 +94,25 @@ today.)
 
 ### 3.2 What replicates down
 
-| Entity (owning service) | Syncs to device | Direction | Why |
-|---|---|---|---|
-| `organizations` (the **active** org) | that one row | read-only on device¹ | tenant root, names/settings for the UI |
-| `memberships`, `users` (org roster, minimal profile) | the org's members | read-only | display `performed_by` / `assigned_to` names offline |
-| `apiaries` | all org rows | read-write | core field entity (incl. PostGIS location for offline proximity, [data-model.md](data-model.md) §6) |
-| `activities` | all org rows | read-write | core field entity; `performed_by` attribution |
-| `journeys`, `journey_plan_items`, `journey_activities` | all org rows | read-write | planned-vs-actual in the field |
-| `todos` | all org rows | read-write | field task capture |
-| `audit_log` (recent window) | recent history for the org's entities | read-only | "view history" works offline for **recent** changes (§7); deep history is an online read ([history.md](history.md) §6, #107) |
-| `sync_conflict_log` (own org) | conflict rows touching the device's edits | read-only | surface "your offline edit was superseded" (§4, §8) |
+| Entity (owning service)                                | Syncs to device                           | Direction            | Why                                                                                                                          |
+| ------------------------------------------------------ | ----------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `organizations` (the **active** org)                   | that one row                              | read-only on device¹ | tenant root, names/settings for the UI                                                                                       |
+| `memberships`, `users` (org roster, minimal profile)   | the org's members                         | read-only            | display `performed_by` / `assigned_to` names offline                                                                         |
+| `apiaries`                                             | all org rows                              | read-write           | core field entity (incl. PostGIS location for offline proximity, [data-model.md](data-model.md) §6)                          |
+| `activities`                                           | all org rows                              | read-write           | core field entity; `performed_by` attribution                                                                                |
+| `journeys`, `journey_plan_items`, `journey_activities` | all org rows                              | read-write           | planned-vs-actual in the field                                                                                               |
+| `todos`                                                | all org rows                              | read-write           | field task capture                                                                                                           |
+| `audit_log` (recent window)                            | recent history for the org's entities     | read-only            | "view history" works offline for **recent** changes (§7); deep history is an online read ([history.md](history.md) §6, #107) |
+| `sync_conflict_log` (own org)                          | conflict rows touching the device's edits | read-only            | surface "your offline edit was superseded" (§4, §8)                                                                          |
 
-¹ *Read-only on device* = the app has no UI path to edit it offline; org/membership admin is an
+¹ _Read-only on device_ = the app has no UI path to edit it offline; org/membership admin is an
 **online** Admin-App concern (NFR-ROL-2). It still replicates down for display.
 
 ### 3.3 What does **not** sync
 
 - **`ai` schema** (`ai_consents`, `ai_query_log`, `ai_action_log`) — the assistant is
   **cloud + online-only** in the PWA phase (D-8/D-10); nothing AI is available offline. A
-  *confirmed* AI action becomes an ordinary edit and then syncs like any edit (D-11).
+  _confirmed_ AI action becomes an ordinary edit and then syncs like any edit (D-11).
 - **`invitations`** — an online admin flow (email round-trip); not a field entity.
 - **`identity.entitlements`** — feature-toggle flags **may** replicate down **read-only** (small,
   useful offline for gating UI), but are never client-writable (D-4 stub).
@@ -129,13 +129,13 @@ PowerSync parameterizes the slice off **JWT claims**, but [auth.md](auth.md) §3
 keeps `organization_id` / role out of the long-lived Keycloak access token** (membership is
 mutable domain data; a cached token would go stale). We reconcile this cleanly:
 
-> **A separate, short-lived PowerSync *sync token*** is minted server-side by the connector's
+> **A separate, short-lived PowerSync _sync token_** is minted server-side by the connector's
 > auth endpoint (`GET /v1/sync/token`), which resolves the caller's **active org from the
 > database** (the same membership lookup as every request, [auth.md](auth.md) §5) and stamps it
 > into a **short-TTL** token (minutes, auto-refreshed by the SDK).
 
 Because the sync token is **short-lived**, it can't go stale — which is exactly the reasoning
-[auth.md](auth.md) uses to justify keeping org out of the *long-lived* token. The two invariants
+[auth.md](auth.md) uses to justify keeping org out of the _long-lived_ token. The two invariants
 coexist: **long-lived access token stays org-free; org is resolved from the DB and carried only
 in the ephemeral sync token.** A member removed from an org stops getting a fresh sync token
 within one TTL.
@@ -153,7 +153,7 @@ last-write-wins (LWW) + a conflict log.**
 The **owning service** is authoritative. On write-back, for each incoming row it compares the
 incoming `updated_at` against the stored `updated_at`:
 
-```
+```text
 if stored is null:                      insert            # offline create
 elif incoming.updated_at > stored:      apply update      # client is newer → wins
 else:                                   keep server value + write a conflict-log row
@@ -176,7 +176,7 @@ Every LWW loss writes a row to **`sync_conflict_log`** — owned by the losing w
 
 The conflict log is the safety net that makes LWW **non-destructive**: no edit is silently thrown
 away — the losing payload is retained, replicated **down read-only** (§3.2), and surfaced to the
-user ("your offline change to *Serra Norte* was superseded by a newer value"; §8). It is **also
+user ("your offline change to _Serra Norte_ was superseded by a newer value"; §8). It is **also
 our telemetry**: if it grows for a particular entity, that is the signal to add field-level merge
 there (§4.4) — we measure before we build.
 
@@ -187,7 +187,7 @@ there (§4.4) — we measure before we build.
   `recorded_at` (server receive time) on every applied row for audit and ordering (matches
   [data-model.md](data-model.md) §2's device-time-vs-server-time split).
 - **Known limitation:** device clock skew can mis-order genuinely concurrent offline edits.
-  Accepted for v1 because (a) concurrent same-record *offline* edits are rare (§1) and (b) the
+  Accepted for v1 because (a) concurrent same-record _offline_ edits are rare (§1) and (b) the
   conflict log makes any mis-order recoverable, not lost.
 - **Documented upgrade path:** replace the comparator with a **hybrid logical clock (HLC)** if
   the conflict log shows skew-driven mis-ordering hurts. HLC is a comparator swap **inside the
@@ -195,7 +195,7 @@ there (§4.4) — we measure before we build.
 
 ### 4.4 Field-level merge — deferred, noted where it would help
 
-Record-level LWW is **lossy when two users edit *different* fields** of the same record offline
+Record-level LWW is **lossy when two users edit _different_ fields** of the same record offline
 (e.g. one corrects an apiary's `name`, another updates its `hive_count`): the older push loses
 the **whole** record, not just its field. v1 **accepts this** (rare; logged; recoverable) rather
 than build per-field merge everywhere.
@@ -255,7 +255,7 @@ Each owning service exposes an **internal sync-apply endpoint** that accepts a b
 - returns a **per-op result**: `applied` · `superseded` (lost LWW) · `rejected` (+ reason `code`).
 
 **The `ai` service is not exempt from ownership** — it never has a sync-apply endpoint for
-another schema. A confirmed AI action executes through the *owning* service's normal API and then
+another schema. A confirmed AI action executes through the _owning_ service's normal API and then
 syncs like any edit (D-11, rule 5).
 
 ---
@@ -265,23 +265,23 @@ syncs like any edit (D-11, rule 5).
 [D-12](../../requirements/decisions.md#d-12--offline-sync-write-back-atomic-validation-parity-notify-and-fix)
 requires a client→server push to be **atomic** (reject one change → the whole push rolls back),
 but **ownership rule 1 forbids a single DB transaction across schemas**. A push that spans
-services therefore cannot be one transaction. Here is how we get the *effect* of atomicity
+services therefore cannot be one transaction. Here is how we get the _effect_ of atomicity
 without one — and, crucially, **without foreclosing any stronger option later**.
 
 ### 6.1 The invariant that preserves the future: a single server-side seam
 
 > **The client always POSTs the whole client transaction to ONE server-side write-back endpoint.**
-> Everything about *how* it is applied lives **behind** that endpoint.
+> Everything about _how_ it is applied lives **behind** that endpoint.
 
 This seam is the most important decision in this section, because it is the expensive-to-change
 one. With it, the apply mechanism — per-service-only, validate-first, compensation, even 2PC or a
 durable workflow engine later — is swappable **with zero client change** across PWA/Android/iOS.
 The **rejected** alternative of **client-side fan-out** (the device routing each op to its owning
-service) is the *only* option that would bake routing + partial-failure handling into three client
+service) is the _only_ option that would bake routing + partial-failure handling into three client
 platforms and thus **soft-block** the future; we avoid it for that reason (full weighing in
 [ADR-0006](../adr/0006-sync-conflict-resolution.md)).
 
-```
+```text
   client (uploadData)
       │  one POST: the whole client transaction (a batch of CRUD ops)
       ▼
@@ -303,27 +303,27 @@ platforms and thus **soft-block** the future; we avoid it for that reason (full 
    of it before the push even leaves the device.
 2. **Apply.** If all validated, each service applies its batch in **its own local transaction**
    (record-level LWW + conflict log + history, §5.2).
-3. **Forward-retry, not rollback.** The *only* way an apply fails **after** passing validation is
+3. **Forward-retry, not rollback.** The _only_ way an apply fails **after** passing validation is
    a **transient/infra fault** (a service momentarily down, a lost connection). Because ops are
    **idempotent on the client UUID PK**, PowerSync's normal retry of the whole batch simply
    **rolls forward to completion**: already-applied services no-op, the previously-failed one now
-   applies. No partial *incorrect* state is ever committed, and no compensation code is needed.
+   applies. No partial _incorrect_ state is ever committed, and no compensation code is needed.
 
 ### 6.3 Why this honors D-12 — and what is deferred
 
 - **Single-service push** (the overwhelming majority, §1): trivially atomic — one service, one
   local transaction, all-or-nothing.
-- **Multi-service push** (rare, offline-only): **validate-first** guarantees a *validation*
-  rejection touches **nothing**; a *post-validation* failure is transient and **heals on
-  idempotent forward-retry**. Either way there is no partial *wrong* apply — which is D-12's real
+- **Multi-service push** (rare, offline-only): **validate-first** guarantees a _validation_
+  rejection touches **nothing**; a _post-validation_ failure is transient and **heals on
+  idempotent forward-retry**. Either way there is no partial _wrong_ apply — which is D-12's real
   intent.
 - **Deferred (specified, not built): compensation / true rollback.** The one case A-lite does not
-  undo is "an op passes validation but then *permanently* rejects at apply" — which good design
+  undo is "an op passes validation but then _permanently_ rejects at apply" — which good design
   avoids (validation is the gate). We therefore **do not build compensating actions in v1**; §5.2
   captures prior state so a **compensation step or a bounded saga can be added later without a
   client or contract change** (§10). The [ADR](../adr/0006-sync-conflict-resolution.md) records
   client-fan-out, 2PC/prepared-transactions, choreographed (event) saga, and a durable
-  workflow-engine saga as **alternatives rejected for v1**, each reachable *behind the seam* if
+  workflow-engine saga as **alternatives rejected for v1**, each reachable _behind the seam_ if
   telemetry ever justifies it.
 
 ### 6.4 Where the coordinator lives
@@ -331,7 +331,7 @@ platforms and thus **soft-block** the future; we avoid it for that reason (full 
 A thin, **stateless** component behind the gateway (it may start as a gateway/BFF route and be
 extracted later). It **owns no domain data** and holds **no write credentials to any schema** — it
 only orchestrates calls to the owning services' sync-apply endpoints (§5.2), preserving ownership
-rule 1. One client transaction = one atomic *unit of intent* = one coordinator invocation.
+rule 1. One client transaction = one atomic _unit of intent_ = one coordinator invocation.
 
 ---
 
@@ -377,8 +377,8 @@ sequenceDiagram
 **History (FR-HIS-1).** Every applied create/update/delete is recorded in `audit_log` by the
 owning service **in the same apply transaction**, with **both** the device `occurred_at` and the
 server `recorded_at` ([history.md](history.md) §4, #107) — so the history view stays **correct
-across late sync**: a change made offline on Monday and synced Wednesday reads as *occurred Monday,
-recorded Wednesday*, not backdated or lost. **LWW losers** are preserved in `sync_conflict_log`
+across late sync**: a change made offline on Monday and synced Wednesday reads as _occurred Monday,
+recorded Wednesday_, not backdated or lost. **LWW losers** are preserved in `sync_conflict_log`
 (§4.2) and surfaced as `superseded` events in the entity's history/timeline. Recent history
 replicates down (§3.2) so it is viewable offline; deep history is an online query
 ([history.md](history.md) §6).
@@ -391,11 +391,11 @@ mid-transfer, repeatedly dropping the client into the reconnect/retry path. Per 
 the client gates sync on **measured link quality**, not the mere presence of a connection:
 
 - **Trigger rule.** The client connects the sync stream / flushes the upload queue only when
-  (a) connectivity exists **and** (b) a **quality probe** passes — roughly *"usable 3G or
-  better."*
+  (a) connectivity exists **and** (b) a **quality probe** passes — roughly _"usable 3G or
+  better."_
 - **Measurement.** The portable primary signal is a **tiny probe request** to the gateway's
   health endpoint (RTT + hard timeout). Where available, the Network Information API
-  (`effectiveType` / `downlink`) serves as a cheap *hint* — but it is Chromium-only, so the
+  (`effectiveType` / `downlink`) serves as a cheap _hint_ — but it is Chromium-only, so the
   probe is the decision-maker on every platform.
 - **Thresholds are configurable** (probe timeout / RTT ceiling), with defaults tuned in
   EPIC-06 field testing — not hard-coded guesses.
@@ -420,13 +420,13 @@ The engine tracks queue state; the app surfaces it. Both are required by
 
 **Per-record sync status** shown in the UI:
 
-| State | Meaning |
-|---|---|
-| `pending` | edited offline, not yet uploaded |
-| `syncing` | in an in-flight push |
-| `synced` | applied server-side and confirmed |
+| State        | Meaning                                                              |
+| ------------ | -------------------------------------------------------------------- |
+| `pending`    | edited offline, not yet uploaded                                     |
+| `syncing`    | in an in-flight push                                                 |
+| `synced`     | applied server-side and confirmed                                    |
 | `superseded` | lost LWW to a newer value — surfaced from `sync_conflict_log` (§4.2) |
-| `rejected` | the push was rejected; needs the user to fix (below) |
+| `rejected`   | the push was rejected; needs the user to fix (below)                 |
 
 **Notify-and-fix on rejection (D-12).** Because a push is atomic (§6), a rejection surfaces the
 **whole push** with the **offending op(s)** highlighted, using the server's RFC 9457
@@ -459,32 +459,32 @@ authoritative.
 
 ## 10. Open items, deferred scope & hand-offs
 
-| Item | Status | Where |
-|---|---|---|
-| Field-level merge | **Deferred** — record-level LWW + log for v1; add per-field where the conflict log shows it hurts (§4.4) | owning service apply step; behind the seam (§6) |
-| Compensation / true cross-service rollback | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change | §6.3; EPIC-06 |
-| Clock source → HLC | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3) | owning service |
-| Notify-and-fix screens | **Design hand-off** — states/data fixed here | EPIC-06 |
-| Connection-quality gate (FR-OF-3) | **Design hand-off** — trigger rule, probe approach & override fixed here (§7.1); thresholds tuned in field testing | EPIC-06 (#55/#58) |
-| Validation-parity mechanism | **Design hand-off** — approach fixed here (§9) | EPIC-06 |
-| History capture mechanism | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1 | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107) |
-| History retention / immutability / offline behavior | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved) |
-| Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13 |
-| iOS PWA storage durability (OPFS/IndexedDB eviction) | Validate when iOS is in scope (D-10) | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5 |
+| Item                                                                      | Status                                                                                                                                     | Where                                                                                   |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Field-level merge                                                         | **Deferred** — record-level LWW + log for v1; add per-field where the conflict log shows it hurts (§4.4)                                   | owning service apply step; behind the seam (§6)                                         |
+| Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change           | §6.3; EPIC-06                                                                           |
+| Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                   | owning service                                                                          |
+| Notify-and-fix screens                                                    | **Design hand-off** — states/data fixed here                                                                                               | EPIC-06                                                                                 |
+| Connection-quality gate (FR-OF-3)                                         | **Design hand-off** — trigger rule, probe approach & override fixed here (§7.1); thresholds tuned in field testing                         | EPIC-06 (#55/#58)                                                                       |
+| Validation-parity mechanism                                               | **Design hand-off** — approach fixed here (§9)                                                                                             | EPIC-06                                                                                 |
+| History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                 | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)              |
+| History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved) |
+| Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on                                                                                                                                 | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13                                                   |
+| iOS PWA storage durability (OPFS/IndexedDB eviction)                      | Validate when iOS is in scope (D-10)                                                                                                       | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5                                  |
 
 ---
 
 ## 11. Acceptance-criteria traceability (#106)
 
 - [x] Replicated **client slice** defined — org-scoped (user = attribution), via Sync Rules + a
-  short-lived sync token — §3
+      short-lived sync token — §3
 - [x] Conflict-resolution policy documented — server-authoritative **record-level LWW + conflict
-  log**; field-level merge noted where needed (deferred) — §4
+      log**; field-level merge noted where needed (deferred) — §4
 - [x] **Sync-publication contract** every service must honor (down + up) — §5
 - [x] Offline → online **reconciliation flow** incl. history (FR-HIS) — §7
 - [x] Cross-service **write-back atomicity** mechanism decided (the open part of D-12) — §6
 - [x] Sync design doc + **ADR** in `docs/`; **resolves the Q-SYNC default** — this doc +
-  [ADR-0006](../adr/0006-sync-conflict-resolution.md) (Q-SYNC removed from open-questions)
+      [ADR-0006](../adr/0006-sync-conflict-resolution.md) (Q-SYNC removed from open-questions)
 
 ## 12. Links
 
