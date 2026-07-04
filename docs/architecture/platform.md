@@ -65,7 +65,7 @@ cluster is involved — deploying to the cluster from CI is `#86` (GitOps)/`#88`
 from this repo — a manual `helm install`/`upgrade` is no longer how `dev` gets updated once a
 change is merged to `main`. See the directory's own
 [README](../../infra/gitops/README.md) for layout and day-to-day operation, and
-[ADR-0008](../adr/0008-gitops-flux.md) for why Flux and why hand-wired (not `flux bootstrap`).
+[ADR-0009](../adr/0009-gitops-flux.md) for why Flux and why hand-wired (not `flux bootstrap`).
 
 ## Not yet covered here
 

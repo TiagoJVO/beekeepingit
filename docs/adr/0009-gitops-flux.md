@@ -1,4 +1,4 @@
-# 0008 — GitOps: Flux, hand-wired (not `flux bootstrap`)
+# 0009 — GitOps: Flux, hand-wired (not `flux bootstrap`)
 
 - **Status:** Accepted
 - **Date:** 2026-07-04
@@ -36,11 +36,13 @@ acceptance criteria nor justified for a single local dev cluster at this stage.
 ### 2. Hand-wired manifests + one-time `kubectl apply`, not `flux bootstrap github`
 
 `flux bootstrap github` is the conventional way to wire Flux to a GitHub repo, but it:
+
 - creates a deploy key (or uses a PAT) via the GitHub API, and
 - **commits directly to the target branch**, bypassing pull requests entirely.
 
 That conflicts with `CONTRIBUTING.md`'s GitHub-Flow (branch → PR → CI → squash-merge to `main`).
 Instead:
+
 - The Flux objects (`GitRepository`, `Kustomization`, `HelmRelease`) are **plain YAML committed
   like any other change** — reviewed in a PR the same as Helm chart changes.
 - **Bootstrapping** the cluster onto them is one `kubectl apply -f infra/gitops/clusters/dev/`,
@@ -74,7 +76,7 @@ manual verification).
   `apps/staging/`, `apps/prod/` `HelmRelease`s — mirrors the existing (currently unused)
   `environments/{staging,prod}.yaml` Helm overlays.
 - The Flux **controller installation** itself (`flux install`) stays imperative/untracked — only
-  the *application* reconciliation is GitOps-managed. Self-managing the controllers too (the
+  the _application_ reconciliation is GitOps-managed. Self-managing the controllers too (the
   `flux-system/gotk-components.yaml` pattern `flux bootstrap` would normally generate) is not
   needed at this stage and can be added later without disrupting this layout.
 

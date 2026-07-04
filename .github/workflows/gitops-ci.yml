@@ -29,8 +29,12 @@ jobs:
       - name: kubeconform
         uses: docker://ghcr.io/yannh/kubeconform@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e # v0.8.0
         with:
+          # NOTE: no shell parses these args (docker:// step, not `run:`), so they must
+          # NOT be shell-quoted — a real shell would strip the quotes below, but the
+          # Actions runner just whitespace-splits, so quoting them breaks the URL (the
+          # literal quote characters end up embedded in it).
           args: >-
             -strict -summary
             -schema-location default
-            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+            -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
             infra/gitops

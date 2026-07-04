@@ -194,6 +194,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
   Q-SYNC, FR-HIS, EPIC-06, #106.
 
 ## D-13 — GitOps: Flux, hand-wired (not `flux bootstrap`)
+
 - **Decision:** **Flux** is the GitOps controller (resolves the "ArgoCD/Flux optional" note in
   `tech-stack.md`) — it was already installed and trialled on the dev cluster, so adopting it is
   the path of least resistance over evaluating ArgoCD from scratch.
@@ -205,7 +206,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Reconciliation is polling-only** (`GitRepository` interval, no GitHub webhook receiver) — the
   local cluster has no public endpoint for GitHub to call.
 - See [`infra/gitops/README.md`](../infra/gitops/README.md) and
-  [ADR-0008](../docs/adr/0008-gitops-flux.md). Touches `NFR-ARC-3`, `NFR-MNT-1`, `#86`.
+  [ADR-0009](../docs/adr/0009-gitops-flux.md). Touches `NFR-ARC-3`, `NFR-MNT-1`, `#86`.
 
 ---
 
