@@ -73,7 +73,7 @@ directory at all — not even a wrapper:
    (gitignored, like every subchart archive — see below).
 2. Give it a top-level key in `values.yaml` matching its chart `name`, same as a local
    subchart — that's the config the upstream chart itself reads.
-3. Set `fullnameOverride` on it (and on any of *its own* nested subcharts you need a fixed
+3. Set `fullnameOverride` on it (and on any of _its own_ nested subcharts you need a fixed
    name for, e.g. `grafana.fullnameOverride` inside `kube-prometheus-stack`) so the
    in-cluster Service names other components reference are fixed, not derived from the
    chart's default naming template — one less thing to reverse-engineer from generated

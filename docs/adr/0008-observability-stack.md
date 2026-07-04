@@ -22,6 +22,7 @@ each substantial, well-tested open-source projects with mature Helm charts — h
 equivalents as raw manifests would be far more code and risk for no benefit over vendoring.
 
 Two things this stack can't fully close yet, and aren't silently glossed over:
+
 - **No object storage yet** — MinIO lands with #84, so Loki/Tempo start on
   filesystem/local-disk storage.
 - **No real telemetry source yet** — #23 (walking-skeleton services) hasn't landed, so
