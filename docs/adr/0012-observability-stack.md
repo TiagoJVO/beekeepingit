@@ -1,4 +1,4 @@
-# 0008 — Observability stack: OTel Collector + kube-prometheus-stack + Loki + Tempo
+# 0012 — Observability stack: OTel Collector + kube-prometheus-stack + Loki + Tempo
 
 - **Status:** Accepted
 - **Date:** 2026-07-04

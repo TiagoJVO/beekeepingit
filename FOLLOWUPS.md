@@ -77,7 +77,7 @@
   pending when `#87` landed. The `telemetrygen` script proves the pipeline works now; this
   item closes the AC for real.
 - **Where:** [`docs/architecture/platform.md#observability`](docs/architecture/platform.md#observability),
-  [ADR-0008](docs/adr/0008-observability-stack.md).
+  [ADR-0012](docs/adr/0012-observability-stack.md).
 - **Status:** pending `#23`.
 
 ## #84 — verified live against the local `beekeeping` k3d cluster (2026-07-04)
