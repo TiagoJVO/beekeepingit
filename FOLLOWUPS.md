@@ -5,6 +5,19 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
+## #87 — verify Loki/Tempo's MinIO-backed storage live
+
+- **What:** confirm on the local `beekeeping` k3d cluster that Loki and Tempo actually
+  start and write/read successfully against MinIO (buckets `loki`/`tempo`) — that the
+  `root-credentials` Secret env injection resolves correctly, Tempo's
+  `-config.expand-env=true` substitution works as expected, and
+  `infra/observability-smoke-test.sh` still shows correlated data end-to-end.
+- **Why:** this wiring (ADR-0012, formerly ADR-0008 before renumbering to avoid colliding
+  with `#130`'s ADR-0008) was verified via `helm lint`/`helm template` (real rendered
+  manifests) but not against a live cluster — no cluster is available in this sandbox.
+- **Where:** `infra/helm/beekeepingit/values.yaml` (`loki:`/`tempo:` blocks).
+- **Status:** pending a live `helm upgrade` + smoke test on `beekeepingit-dev`.
+
 ## #85 → #20 — reuse `services/shared/dbaccess`, don't re-derive
 
 - **What:** `#85` landed `services/shared/dbaccess` (pgx + sqlc + goose, `Connect`/`Migrate`)
@@ -51,21 +64,6 @@
 - **Where:** [`infra/helm/beekeepingit/charts/postgres/templates/tests/`](infra/helm/beekeepingit/charts/postgres/templates/tests/).
 - **Status:** pending #86/#88 — until then, exercised manually against the local `beekeeping`
   k3d cluster (see `infra/README.md`).
-
-## EPIC-13 (#87) — Loki/Tempo: swap filesystem/local-disk storage for MinIO-backed
-
-- **What:** reconfigure `loki` (`loki.storage.type`) and `tempo`
-  (`tempo.tempo.storage.trace.backend`) in
-  [`infra/helm/beekeepingit/values.yaml`](infra/helm/beekeepingit/values.yaml) to use MinIO
-  (S3-compatible) instead of the current filesystem/local-disk storage.
-- **Why:** `#87` landed before `#84`, so there was no object store yet to point at —
-  filesystem/local-disk storage is the documented interim state (see
-  [`docs/architecture/platform.md#observability`](docs/architecture/platform.md#observability),
-  [ADR-0008](docs/adr/0008-observability-stack.md)).
-- **Where:** `infra/helm/beekeepingit/values.yaml` (`loki:`/`tempo:` blocks), MinIO credentials
-  from the `minio` subchart's generated Secret (`#84`).
-- **Status:** now actionable — `#84` merged MinIO to `main`. Not done in the same change that
-  resolved this conflict; do it as its own follow-up commit/PR.
 
 ## EPIC-13 (#87) — verify real walking-skeleton telemetry once #23 lands
 

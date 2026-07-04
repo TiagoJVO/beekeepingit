@@ -54,7 +54,9 @@ keycloak:
 minio:
   enabled: true
   # No workload of its own (just the root-credentials Secret) — MinIO itself is
-  # a separate Flux HelmRelease, see ADR-0012.
+  # a separate Flux HelmRelease, see ADR-0012. Its buckets (loki/tempo, #87) are
+  # configured on that standalone HelmRelease
+  # (infra/gitops/apps/dev/minio-helmrelease.yaml), not here.
 
 gateway:
   enabled: true
@@ -241,8 +243,9 @@ kube-prometheus-stack:
       requests: { cpu: 10m, memory: 16Mi }
       limits: { cpu: 50m, memory: 32Mi }
 
-# Logs. SingleBinary + filesystem storage — no object store yet (MinIO lands with
-# #84; tracked in FOLLOWUPS.md to swap this for an S3-backed mode once it does).
+# Logs. SingleBinary mode, MinIO-backed (#84's `minio` subchart) object storage —
+# credentials come from its generated `root-credentials` Secret via env vars, never
+# a literal value here (NFR-SEC).
 loki:
   enabled: true
   fullnameOverride: loki
@@ -252,12 +255,29 @@ loki:
     commonConfig:
       replication_factor: 1
     storage:
-      type: filesystem
+      bucketNames:
+        chunks: loki
+        ruler: loki
+        admin: loki
+      type: s3
+      s3:
+        # MinIO now runs as its own standalone Flux HelmRelease (ADR-0012), not
+        # nested in this umbrella — pinned releaseName "minio" (its own
+        # HelmRelease's spec.releaseName), same namespace, hence a bare
+        # same-namespace short DNS name.
+        endpoint: minio:9000
+        region: us-east-1
+        # Credentials come from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (env, below)
+        # — the Go S3 client falls back to them when these are left unset.
+        secretAccessKey: null
+        accessKeyId: null
+        s3ForcePathStyle: true
+        insecure: true
     schemaConfig:
       configs:
         - from: "2024-01-01"
           store: tsdb
-          object_store: filesystem
+          object_store: s3
           schema: v13
           index:
             prefix: index_
@@ -270,6 +290,19 @@ loki:
     persistence:
       enabled: true
       size: 5Gi
+    # MinIO's root user/password (#84), reused here — single-tenant dev cluster,
+    # no per-service MinIO users provisioned yet.
+    extraEnv:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: root-credentials
+            key: rootUser
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: root-credentials
+            key: rootPassword
   # Not used in SingleBinary mode.
   read: { replicas: 0 }
   write: { replicas: 0 }
@@ -285,7 +318,8 @@ loki:
     lokiCanary: { enabled: false }
     serviceMonitor: { enabled: false }
 
-# Traces. Monolithic chart, local-disk storage — same MinIO caveat as Loki above.
+# Traces. Monolithic chart, MinIO-backed (#84's `minio` subchart) object storage —
+# same credentials-via-env approach as Loki above (NFR-SEC).
 tempo:
   enabled: true
   fullnameOverride: tempo
@@ -295,9 +329,19 @@ tempo:
       limits: { cpu: 250m, memory: 256Mi }
     storage:
       trace:
-        backend: local
-        local:
-          path: /var/tempo/traces
+        backend: s3
+        s3:
+          bucket: tempo
+          # MinIO's own standalone Flux HelmRelease (ADR-0012) — see the same
+          # note on loki's endpoint above.
+          endpoint: minio:9000
+          # `${...}` needs -config.expand-env (extraArgs below) — Tempo's own config
+          # loader doesn't fall back to AWS_* env vars the way Loki's S3 client does.
+          access_key: "${AWS_ACCESS_KEY_ID}"
+          secret_key: "${AWS_SECRET_ACCESS_KEY}"
+          insecure: true
+        wal:
+          path: /var/tempo/wal
     receivers:
       otlp:
         protocols:
@@ -305,9 +349,26 @@ tempo:
             endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
+    extraArgs:
+      config.expand-env: "true"
+    # MinIO's root user/password (#84), reused here — single-tenant dev cluster,
+    # no per-service MinIO users provisioned yet.
+    extraEnv:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: root-credentials
+            key: rootUser
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: root-credentials
+            key: rootPassword
+  # WAL is always local (Tempo architecture) — small now that the trace backend
+  # itself is MinIO, not local disk.
   persistence:
     enabled: true
-    size: 5Gi
+    size: 2Gi
   serviceMonitor:
     enabled: true
 

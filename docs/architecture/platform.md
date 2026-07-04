@@ -92,11 +92,14 @@ Config lives in the umbrella's `values.yaml` under each chart's name.
   hand-rolling any of this: it's the standard, well-tested way to get this exact
   combination, and using the operator's `PrometheusRule`/Alertmanager-config values
   avoids writing and maintaining custom CRD templates.
-- **`grafana/loki`** (`SingleBinary` deployment mode, `filesystem` storage) and
-  **`grafana/tempo`** (the monolithic chart, local-disk storage) — right-sized for one
-  small dev cluster. Neither uses object storage yet, even though `#84` has since deployed
-  MinIO — filesystem-backed for now, swapping to MinIO-backed storage is tracked as its own
-  follow-up (tracked in [`FOLLOWUPS.md`](../../FOLLOWUPS.md)).
+- **`grafana/loki`** (`SingleBinary` deployment mode) and **`grafana/tempo`** (the monolithic
+  chart) — right-sized for one small dev cluster, both **MinIO-backed** (`#84`'s `minio`
+  subchart; buckets `loki`/`tempo`, created idempotently by its post-install job). Credentials
+  come from MinIO's generated `root-credentials` Secret via env vars
+  (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`), never a literal value in `values.yaml`
+  (`NFR-SEC`) — Loki's S3 client falls back to them automatically; Tempo needs
+  `-config.expand-env=true` plus `${AWS_ACCESS_KEY_ID}`/`${AWS_SECRET_ACCESS_KEY}` placeholders
+  in its own config, since its config loader (unlike Loki's) doesn't fall back to them itself.
 - **`open-telemetry/opentelemetry-collector`** runs as a single `Deployment` (not a
   per-node `DaemonSet` — unnecessary on a single-node cluster), receiving OTLP
   (gRPC 4317 / HTTP 4318) and exporting: traces → Tempo (`otlp`), metrics → Prometheus

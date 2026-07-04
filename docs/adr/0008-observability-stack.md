@@ -21,12 +21,14 @@ The umbrella chart (#83) so far shows one subchart pattern: a fully custom local
 each substantial, well-tested open-source projects with mature Helm charts — hand-rolling
 equivalents as raw manifests would be far more code and risk for no benefit over vendoring.
 
-Two things this stack can't fully close yet, and aren't silently glossed over:
+One thing this stack can't fully close yet, and isn't silently glossed over:
 
-- **No object storage yet** — MinIO lands with #84, so Loki/Tempo start on
-  filesystem/local-disk storage.
 - **No real telemetry source yet** — #23 (walking-skeleton services) hasn't landed, so
   nothing in the cluster emits OTel data on its own.
+
+(Loki/Tempo initially shipped on filesystem/local-disk storage since #84's MinIO hadn't
+landed yet; #84 has since merged, and this same change wires both to MinIO — see
+decision 3 below.)
 
 ## Decision
 
@@ -42,9 +44,14 @@ Two things this stack can't fully close yet, and aren't silently glossed over:
    sub-dependency. This satisfies "Prometheus scrapes service/infra metrics" (infra
    metrics via kube-state-metrics/node-exporter) and gives the alerting/`PrometheusRule`
    machinery for free.
-3. **Loki (`SingleBinary` mode) + Tempo (monolithic chart)**, both filesystem/local-disk
-   storage, no distributed mode — right-sized for one small dev cluster, and there's no
-   object store to point at yet anyway.
+3. **Loki (`SingleBinary` mode) + Tempo (monolithic chart)**, no distributed mode — right-sized
+   for one small dev cluster. Both are **MinIO-backed** (`#84`'s `minio` subchart; buckets
+   `loki`/`tempo`, created idempotently by MinIO's own post-install job), with credentials
+   from MinIO's generated `root-credentials` Secret injected as
+   `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars — never a literal value in
+   `values.yaml` (`NFR-SEC`). Loki's S3 client falls back to these env vars automatically;
+   Tempo's config loader doesn't, so it additionally needs `-config.expand-env=true` plus
+   `${AWS_ACCESS_KEY_ID}`/`${AWS_SECRET_ACCESS_KEY}` placeholders in its own config.
 4. **OTel Collector as a single `Deployment`** (not a `DaemonSet` — unneeded on a
    single-node cluster), OTLP receiver, exporting traces→Tempo (`otlp`),
    metrics→Prometheus (`prometheusremotewrite` via
@@ -67,9 +74,12 @@ Two things this stack can't fully close yet, and aren't silently glossed over:
 
 ## Consequences
 
-- Two follow-ups are tracked in [`FOLLOWUPS.md`](../../FOLLOWUPS.md): swap Loki/Tempo to
-  MinIO-backed storage once #84 lands, and replace the `telemetrygen` verification with
-  #23's real service traffic once it ships (closing #87's last AC literally).
+- One follow-up remains, tracked in [`FOLLOWUPS.md`](../../FOLLOWUPS.md): replace the
+  `telemetrygen` verification with `#23`'s real service traffic once it ships (closing
+  `#87`'s last AC literally).
+- The MinIO wiring (decision 3) was verified via `helm lint`/`helm template` (real
+  rendered manifests, not guessed values) but not yet against a live cluster — no cluster
+  is available in this sandbox. Confirm on the next `dev` install/upgrade.
 - CRD lifecycle caveat: `kube-prometheus-stack`'s CRDs install cleanly via `helm install`
   (its own `crds` sub-dependency) but, like all Helm CRDs, aren't auto-upgraded by
   `helm upgrade` — a future chart-version bump needing new/changed CRDs will need a
