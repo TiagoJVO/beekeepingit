@@ -31,4 +31,4 @@ smoke:
   image:
     repository: nginxinc/nginx-unprivileged
     tag: "1.27-alpine"
-  resourceTier: small
+  resourceTier: medium
