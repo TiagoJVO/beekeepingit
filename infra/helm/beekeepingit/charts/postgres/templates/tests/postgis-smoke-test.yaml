@@ -1,0 +1,45 @@
+{{/*
+The "smoke query confirms PostGIS is available" AC — run explicitly against a
+live cluster via `helm test <release> -n <namespace>` (this repo's CI has no
+live cluster yet, see FOLLOWUPS.md). Uses the app-owner credentials CNPG
+auto-generates for the bootstrap database (<cluster-fullname>-app Secret).
+*/}}
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "postgres.fullname" . }}-postgis-smoke-test
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: postgis-smoke-test
+      image: {{ .Values.image }}
+      command:
+        - psql
+        - -v
+        - ON_ERROR_STOP=1
+        - -c
+        - "SELECT postgis_version();"
+      env:
+        - name: PGHOST
+          value: {{ include "postgres.fullname" . }}-rw
+        - name: PGDATABASE
+          value: beekeepingit
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "postgres.fullname" . }}-app
+              key: username
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "postgres.fullname" . }}-app
+              key: password
+{{- end }}

@@ -1,0 +1,26 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by the
+# `gateway:` key in the parent's values.yaml/environments/*.yaml.
+enabled: true
+
+# Local dev hostname (k3d maps host 8443 -> 443, see infra/README.md). Add it to
+# /etc/hosts (or use `curl --resolve`) to reach it from outside the cluster.
+host: keycloak.beekeepingit.local
+
+# The one real backend that exists after #84 — domain services/PWA land later
+# (#23). Routes to the keycloak subchart's "http" Service (name confirmed via a
+# live `helm template` render: keycloakx creates both a "-headless" Service, for
+# StatefulSet DNS, and this "-http" one, which is the one that actually serves
+# traffic — not a plain "<release>-keycloakx" as the naming convention alone
+# would suggest).
+backend:
+  serviceName: beekeepingit-keycloakx-http
+  servicePort: 80
+
+ingressClassName: traefik
+selfSignedCertDays: 365
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit

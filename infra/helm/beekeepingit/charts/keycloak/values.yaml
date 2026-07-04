@@ -1,0 +1,66 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by the
+# `keycloak:` key in the parent's values.yaml/environments/*.yaml.
+enabled: true
+
+# NOTE on resources: unlike the hand-rolled subcharts (postgres/gateway), we
+# don't own keycloakx's templates, so it can't consume the shared
+# `global.resources.<tier>` lookup (values.yaml is plain data, not templated —
+# that lookup only works inside templates/ we author ourselves). `resourceTier`
+# is kept here for documentation/consistency; the actual numbers are set
+# directly on `keycloakx.resources` below and must be kept in sync by hand.
+resourceTier: medium
+
+# Dev/CI-grade realm seed matching docs/architecture/walking-skeleton.md
+# §4.5/§7.2 — #23 reuses this rather than redoing it. Production realm
+# config/hardening is EPIC-14 (see ADR-0010).
+realmFile: beekeepingit-realm.json
+
+keycloakx:
+  replicas: 1
+  # Dev mode (bundled H2, no external DB — Keycloak isn't in data-model.md's
+  # schema-per-service list) + realm import on every start, which is a feature
+  # here: the seed realm is fully reproducible on every pod restart.
+  command:
+    - /opt/keycloak/bin/kc.sh
+  args:
+    - start-dev
+    - --import-realm
+  http:
+    # Modern Keycloak serves at "/", not the chart's legacy "/auth" default.
+    relativePath: "/"
+  ingress:
+    enabled: false
+  dbchecker:
+    enabled: false
+  # See the NOTE above — hand-kept in sync with global.resources.medium rather
+  # than templated, since this is a vendored chart's own values shape.
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: 250m, memory: 1Gi }
+  # extraEnv/extraVolumes/extraVolumeMounts are raw YAML-as-string in this
+  # chart (rendered via `tpl`, not native lists) — a quirk of keycloakx itself,
+  # not our convention. `.Release.Name` resolves the same regardless of which
+  # chart's context renders it, so the literal names here must exactly match
+  # the Secret/ConfigMap this wrapper's own templates create.
+  extraEnv: |
+    - name: KEYCLOAK_ADMIN
+      value: admin
+    - name: KEYCLOAK_ADMIN_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ .Release.Name }}-keycloak-admin-credentials
+          key: password
+  extraVolumes: |
+    - name: realm-import
+      configMap:
+        name: {{ .Release.Name }}-keycloak-realm-import
+  extraVolumeMounts: |
+    - name: realm-import
+      mountPath: /opt/keycloak/data/import
+      readOnly: true
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: postgres
+description: >-
+  PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` custom resource — schema-per-service
+  provisioning and per-service credentials. Assumes the CNPG operator is already installed on the
+  cluster (a cluster-scoped prerequisite handled by infra/cluster/up.sh, not this chart — see
+  ADR-0010). Hand-rolled (not vendored): CNPG's own chart is the operator, not a per-instance
+  chart, so this just templates the CR + supporting Secrets.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,63 @@
+{{/*
+D-6's "schema per service" grants — split from bootstrap (cluster.yaml) because
+spec.managed.roles is reconciled *after* initdb's postInitApplicationSQL runs,
+so the per-service roles don't exist yet at bootstrap time. This hook runs
+post-install/post-upgrade, connecting as the `beekeepingit` app owner (which
+owns every schema per cluster.yaml's `AUTHORIZATION beekeepingit`, so it can
+GRANT without needing superuser access) — and retries each grant until the
+matching role exists, since the operator's role reconciliation is async
+relative to this hook firing.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "postgres.fullname" . }}-schema-grants
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "1"
+spec:
+  backoffLimit: 30
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "beekeepingit.labels" . | nindent 8 }}
+        app.kubernetes.io/name: postgres
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: schema-grants
+          image: {{ .Values.image }}
+          env:
+            - name: PGHOST
+              value: {{ include "postgres.fullname" . }}-rw
+            - name: PGDATABASE
+              value: beekeepingit
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres.fullname" . }}-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres.fullname" . }}-app
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              {{- range .Values.schemas }}
+              until psql -v ON_ERROR_STOP=1 -c "GRANT USAGE, CREATE ON SCHEMA {{ . }} TO {{ . }}_svc;"; do
+                echo "role {{ . }}_svc not ready yet, retrying in 5s..."
+                sleep 5
+              done
+              {{- end }}
+{{- end }}

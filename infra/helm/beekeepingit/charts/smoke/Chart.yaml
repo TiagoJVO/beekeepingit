@@ -1,9 +1,0 @@
-apiVersion: v2
-name: smoke
-description: >-
-  Placeholder subchart proving the umbrella <-> subchart Helm wiring (values
-  overrides, global resource tiers, CI dependency-build/lint/template) end-to-end.
-  Not a real service — remove once #84/#23 add the first one (see FOLLOWUPS.md).
-type: application
-version: 0.1.0
-appVersion: "0.1.0"

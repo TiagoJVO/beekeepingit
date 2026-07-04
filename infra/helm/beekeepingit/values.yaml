@@ -23,12 +23,37 @@ global:
       requests: { cpu: 250m, memory: 256Mi }
       limits: { cpu: 500m, memory: 512Mi }
 
-# Placeholder subchart proving the umbrella <-> subchart wiring (values overrides,
-# resource tiers, dependency-build) end-to-end. Remove once #84/#23 add the first
-# real service subchart — tracked in FOLLOWUPS.md.
-smoke:
+# Platform backing services (#84) — see each subchart's own values.yaml for the
+# full set of overridable fields; only the wiring-relevant ones are set here.
+
+postgres:
   enabled: true
-  image:
-    repository: nginxinc/nginx-unprivileged
-    tag: "1.27-alpine"
+  image: ghcr.io/cloudnative-pg/postgis:18.4-3.6.4-system-trixie
+  instances: 1
+  storageSize: 1Gi
+  resourceTier: medium
+  # One schema (+ login role) per future domain service (data-model.md §4) — the
+  # scaffold services will grow into as #23/EPIC-02+ land, not #84's concern to
+  # populate with tables.
+  schemas:
+    - identity
+    - organizations
+    - apiaries
+    - activities
+    - journeys
+    - todos
+    - ai
+
+keycloak:
+  enabled: true
+  resourceTier: medium
+
+minio:
+  enabled: true
   resourceTier: small
+
+gateway:
+  enabled: true
+  host: keycloak.beekeepingit.local
+  # No workload of its own (just Ingress + a self-signed TLS Secret) — reuses
+  # k3d's already-running Traefik, so there's no resourceTier to size here.

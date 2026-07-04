@@ -14,7 +14,3 @@ global:
     large:
       requests: { cpu: 500m, memory: 512Mi }
       limits: { cpu: "1", memory: 1Gi }
-
-# The smoke workload is a dev-only wiring check, not a real component.
-smoke:
-  enabled: false

@@ -1,0 +1,31 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by the
+# `postgres:` key in the parent's values.yaml/environments/*.yaml.
+enabled: true
+
+# CNPG's own maintained PostGIS operand image (cloudnative-pg/postgis-containers).
+image: ghcr.io/cloudnative-pg/postgis:18.4-3.6.4-system-trixie
+instances: 1
+storageSize: 1Gi
+resourceTier: medium
+
+# One schema (+ login role, per-service credentials Secret) per future domain
+# service (docs/architecture/data-model.md §4) — D-6 "schema per service",
+# provisioned ahead of the services that will own them.
+schemas:
+  - identity
+  - organizations
+  - apiaries
+  - activities
+  - journeys
+  - todos
+  - ai
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit
+  resources:
+    medium:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }

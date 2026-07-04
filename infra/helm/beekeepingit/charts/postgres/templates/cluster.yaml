@@ -1,0 +1,47 @@
+{{/*
+Assumes the CloudNativePG operator is already installed on the cluster (a
+cluster-scoped prerequisite provisioned by infra/cluster/up.sh, not this chart
+— see ADR-0010). One instance (no HA yet — single small dev cluster, NFR-ARC-3).
+*/}}
+{{- if .Values.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "postgres.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+spec:
+  instances: {{ .Values.instances | default 1 }}
+  imageName: {{ .Values.image }}
+  storage:
+    size: {{ .Values.storageSize }}
+  resources:
+    {{- index .Values.global.resources .Values.resourceTier | toYaml | nindent 4 }}
+  bootstrap:
+    initdb:
+      database: beekeepingit
+      owner: beekeepingit
+      # Runs once, as superuser, inside the `beekeepingit` application database
+      # (postInitApplicationSQL — not postInitSQL/postInitTemplateSQL, which run
+      # against `postgres`/`template1` instead), *before* spec.managed.roles
+      # below is reconciled — so this can only create schemas (owned by the
+      # `beekeepingit` app user, so it — not just a superuser — can later GRANT
+      # on them), not GRANT to the per-service roles yet: they don't exist at
+      # bootstrap time. See templates/schema-grants-job.yaml for the grants.
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS postgis;
+        {{- range .Values.schemas }}
+        - CREATE SCHEMA IF NOT EXISTS {{ . }} AUTHORIZATION beekeepingit;
+        {{- end }}
+  managed:
+    roles:
+      {{- range .Values.schemas }}
+      - name: {{ . }}_svc
+        ensure: present
+        login: true
+        passwordSecret:
+          name: {{ . }}-svc-credentials
+      {{- end }}
+{{- end }}
