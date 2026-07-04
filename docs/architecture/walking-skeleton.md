@@ -342,7 +342,7 @@ sequenceDiagram
 
     Note over U,C: ④ OFFLINE EDIT (FR-OF-1)
     U->>C: (no connectivity) edit hive_count 0 → 12
-    C->>C: optimistic local write; op persists in crash-surviving queue
+    C->>C: optimistic local write — op persists in crash-surviving queue
 
     Note over C,PG: ⑤ RECONNECT → SYNC (sync.md §6–§7)
     C->>GW: uploadData → POST /v1/sync/batch (queued op)
@@ -355,7 +355,7 @@ sequenceDiagram
     PS-->>C: local state converges (visible after reload — #23 AC)
 
     Note over U,PG: ⑥ VERIFY (NFR-TST-1 / NFR-OBS-1)
-    Note over C,AP: e2e test asserts GET /v1/apiaries shows the edit;<br/>one trace spans gateway → sync → apiaries (Tempo)
+    Note over C,AP: e2e test asserts GET /v1/apiaries shows the edit —<br/>one trace spans gateway → sync → apiaries (Tempo)
 ```
 
 If any op fails **validation**, step ⑤ short-circuits before any write: the coordinator returns
