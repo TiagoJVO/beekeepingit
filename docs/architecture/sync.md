@@ -100,7 +100,7 @@ today.)
 | `activities` | all org rows | read-write | core field entity; `performed_by` attribution |
 | `journeys`, `journey_plan_items`, `journey_activities` | all org rows | read-write | planned-vs-actual in the field |
 | `todos` | all org rows | read-write | field task capture |
-| `audit_log` (recent window) | recent history for the org's entities | read-only | "view history" works offline for **recent** changes (§7); deep history is an online read (Q-HIS/#107) |
+| `audit_log` (recent window) | recent history for the org's entities | read-only | "view history" works offline for **recent** changes (§7); deep history is an online read ([history.md](history.md) §6, #107) |
 | `sync_conflict_log` (own org) | conflict rows touching the device's edits | read-only | surface "your offline edit was superseded" (§4, §8) |
 
 ¹ *Read-only on device* = the app has no UI path to edit it offline; org/membership admin is an
@@ -166,8 +166,9 @@ else:                                   keep server value + write a conflict-log
 
 ### 4.2 Conflict log
 
-Every LWW loss writes a row to **`sync_conflict_log`** (owned by the losing write's service, or a
-shared history-adjacent table — capture mechanism aligns with #107):
+Every LWW loss writes a row to **`sync_conflict_log`** — owned by the losing write's service,
+**co-located in its own schema and written in the same apply transaction as the history row**
+(the per-service, in-transaction capture decided in [history.md](history.md) §6, #107):
 
 `{ id, organization_id, entity_type, entity_id, winning_payload, losing_payload, winner (server|client), actor_user_id, occurred_at (device), recorded_at (server) }`
 
@@ -207,7 +208,7 @@ keeps it a local change.
 Deletes are **soft-deletes**: setting `deleted_at` ([data-model.md](data-model.md) §2). A tombstone
 is just another field-set, so it **participates in LWW like any update** and replicates down; the
 client hides tombstoned rows. Physical purge (and tombstone retention) is a history/retention
-concern (Q-HIS, #107). This is what makes deletes propagate to every device rather than resurrect
+concern ([history.md](history.md) §7.2, deferred to EPIC-14). This is what makes deletes propagate to every device rather than resurrect
 on the next sync.
 
 ---
@@ -372,12 +373,13 @@ sequenceDiagram
 ```
 
 **History (FR-HIS-1).** Every applied create/update/delete is recorded in `audit_log` by the
-owning service with **both** the device `occurred_at` and the server `recorded_at`
-([data-model.md](data-model.md) §3, mechanism #107) — so the history view stays **correct across
-late sync**: a change made offline on Monday and synced Wednesday reads as *occurred Monday,
+owning service **in the same apply transaction**, with **both** the device `occurred_at` and the
+server `recorded_at` ([history.md](history.md) §4, #107) — so the history view stays **correct
+across late sync**: a change made offline on Monday and synced Wednesday reads as *occurred Monday,
 recorded Wednesday*, not backdated or lost. **LWW losers** are preserved in `sync_conflict_log`
-(§4.2) and can be surfaced in the entity's history/timeline. Recent history replicates down (§3.2)
-so it is viewable offline; deep history is an online query (Q-HIS/#107).
+(§4.2) and surfaced as `superseded` events in the entity's history/timeline. Recent history
+replicates down (§3.2) so it is viewable offline; deep history is an online query
+([history.md](history.md) §6).
 
 ---
 
@@ -434,8 +436,8 @@ authoritative.
 | Clock source → HLC | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3) | owning service |
 | Notify-and-fix screens | **Design hand-off** — states/data fixed here | EPIC-06 |
 | Validation-parity mechanism | **Design hand-off** — approach fixed here (§9) | EPIC-06 |
-| History capture mechanism (events/outbox/triggers) | Depends-on | #107 |
-| History retention / immutability / offline behavior | Open | [Q-HIS](../../requirements/open-questions.md), #107 |
+| History capture mechanism | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1 | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107) |
+| History retention / immutability / offline behavior | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved) |
 | Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13 |
 | iOS PWA storage durability (OPFS/IndexedDB eviction) | Validate when iOS is in scope (D-10) | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5 |
 
@@ -462,4 +464,4 @@ authoritative.
   [auth.md](auth.md) (#109)
 - Intent: [decisions.md](../../requirements/decisions.md) (D-6, D-12) ·
   [functional-requirements.md](../../requirements/functional-requirements.md) (FR-OF-1/2, FR-HIS-1)
-- Next in EPIC-DESIGN: #107 (history) → #110 (walking-skeleton design)
+- Next in EPIC-DESIGN: #107 (history — [history.md](history.md)) → #110 (walking-skeleton design)

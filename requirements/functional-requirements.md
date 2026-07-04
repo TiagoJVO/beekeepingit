@@ -193,8 +193,10 @@ harvest, which requires visiting all apiaries).
   update, or delete (apiary, activity, journey, or any other entity) records the
   **user who made the change** and the **timestamp**. Provide a feature to **view
   the history** of changes for each apiary, activity, and journey.
-  - *Open question (Q-HIS):* retention period, immutability, and how history
-    behaves across offline edits and sync.
+  - *Resolved (Q-HIS):* the history architecture — append-only per-entity model,
+    per-service in-transaction capture, immutability, retention, GDPR-erasure
+    handling, visibility, and offline/sync behaviour — is decided in
+    `docs/architecture/history.md` + `docs/adr/0007-history-audit.md` (#107).
 
 ## Settings (FR-ST)
 
