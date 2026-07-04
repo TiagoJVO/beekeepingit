@@ -73,13 +73,13 @@ filesystem with this machine or across concurrent runs, so `flock` wouldn't appl
 
 ## Layout
 
-| Path                                                          | What it is                                                                                                                          |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| [`cluster/`](cluster/)                                        | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`)                                                                 |
-| [`helm/beekeepingit/`](helm/beekeepingit/)                    | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                 |
-| [`gitops/`](gitops/)                                          | **Flux** GitOps wiring that reconciles the umbrella chart onto the cluster from this repo — see its own [README](gitops/README.md) |
-| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry      |
-| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                          |
+| Path                                                         | What it is                                                                                                                         |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`)                                                                |
+| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                |
+| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the umbrella chart onto the cluster from this repo — see its own [README](gitops/README.md) |
+| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry     |
+| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                         |
 
 Postgres+PostGIS, Keycloak, MinIO and the gateway (**#84**) are the umbrella chart's first real
 subcharts; the walking-skeleton services + PowerSync + PWA subcharts land with **#23**. Both wire
