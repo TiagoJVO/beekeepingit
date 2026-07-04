@@ -1,0 +1,29 @@
+# Enforce the monorepo tooling in CI: everything must be format-clean, lint-clean, and
+# passing tests. Runs `task ci` (lint + test): repo-hygiene checks (Prettier, Markdown,
+# actionlint, shellcheck, gitleaks), per-language linters, and per-language tests — all
+# no-op gracefully until a package exists for that language.
+# Per-language, path-filtered build/test matrices are added in EPIC-13 (#88).
+#
+# Renamed from "lint" (#85): the job started running `task test` too, so a check named
+# "lint" gating merges on test results was misleading.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for gitleaks
+      - name: Set up toolchains from mise.toml
+        uses: jdx/mise-action@v2
+      - name: Lint + test
+        run: task ci

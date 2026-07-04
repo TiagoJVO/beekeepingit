@@ -1,28 +1,46 @@
-# golangci-lint (v1) — shared baseline for every Go module in the monorepo.
+# golangci-lint (v2) — shared baseline for every Go module in the monorepo.
 # Each service inherits this by virtue of running from the repo root config; a module
 # may add a local .golangci.yml that extends it. See .claude/rules/coding-standards.md.
-run:
-  timeout: 5m
-
+#
+# Migrated from v1 via `golangci-lint migrate` (ADR-0008 follow-up, landed with #85): v1's
+# last release (1.64.8) was built with go1.24.1 and refuses to lint go1.25+ modules, which
+# blocked services/shared's real dependencies (pgx, minio-go, testcontainers-go and their
+# transitive golang.org/x/* requirements all sit at go1.25+ by now).
+version: "2"
 linters:
+  # v2's "standard" bundle (errcheck, govet, ineffassign, staticcheck, unused) is enabled
+  # by default and matches what v1's config enabled explicitly — kept implicit here.
   enable:
-    - errcheck # unchecked errors
-    - govet # suspicious constructs
-    - ineffassign # unused assignments
-    - staticcheck # broad static analysis
-    - unused # unused code
-    - gofmt # formatting
-    - goimports # import grouping/formatting
-    - revive # golint successor (style)
     - gosec # security issues
     - misspell # common misspellings
-
+    - revive # golint successor (style)
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Relax security noise in tests.
+      - linters:
+          - gosec
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   # Show all findings (don't cap per-linter/per-file).
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-rules:
-    # Relax security/style noise in tests.
-    - path: _test\.go
-      linters:
-        - gosec
+formatters:
+  enable:
+    - gofmt # formatting
+    - goimports # import grouping/formatting
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
