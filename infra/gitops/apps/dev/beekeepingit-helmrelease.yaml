@@ -1,0 +1,30 @@
+# Deploys the umbrella chart (infra/helm/beekeepingit) the same way
+# `helm install ... -f environments/dev.yaml` does today (infra/README.md) —
+# `values` below mirrors that overlay; chart defaults (values.yaml) still
+# apply underneath, exactly as with the `-f` overlay.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: beekeepingit
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-dev
+  install:
+    createNamespace: true
+  chart:
+    spec:
+      chart: ./infra/helm/beekeepingit
+      # Default reconcileStrategy (ChartVersion) only re-deploys when Chart.yaml's
+      # `version:` bumps. This chart's version won't move on every values/template
+      # edit, so track the Git revision instead — otherwise a merged change to the
+      # chart wouldn't actually sync (breaks the #86 "merge auto-deploys" criterion).
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: beekeepingit
+        namespace: flux-system
+  values:
+    global:
+      environment: dev
+      namespace: beekeepingit-dev

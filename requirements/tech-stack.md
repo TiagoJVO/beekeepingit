@@ -131,7 +131,8 @@ codebase throughout.
 
 ## Infrastructure
 
-- **k8s + Helm** (one cluster for v1, `NFR-ARC-3`); GitOps (ArgoCD/Flux) optional.
+- **k8s + Helm** (one cluster for v1, `NFR-ARC-3`); **GitOps: Flux** (`D-13`), hand-wired
+  `Kustomization`/`HelmRelease` objects (not `flux bootstrap`), no ArgoCD.
 - **Gateway/ingress:** Traefik or NGINX ingress (+ a thin BFF if needed).
 - **Observability:** OpenTelemetry → Prometheus (metrics), Loki (logs), Tempo
   (traces), Grafana (dashboards) (`NFR-OBS`).

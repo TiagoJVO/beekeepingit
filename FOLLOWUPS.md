@@ -39,3 +39,19 @@
   [`docs/architecture/platform.md`](docs/architecture/platform.md).
 - **Status:** pending #84 (Postgres/Keycloak/MinIO/gateway) or #23 (walking-skeleton services) —
   remove it in whichever PR adds the first real service subchart.
+
+## #86 (GitOps/Flux) — before-merge: one-time cluster bootstrap
+
+- **What:** after this merges to `main`, run the one-time bootstrap on the dev cluster:
+  `kubectl apply -f infra/gitops/clusters/dev/` (documented in
+  [`infra/gitops/README.md`](infra/gitops/README.md)). Nothing deploys via Flux until this runs,
+  since the `GitRepository` tracks `main` and the manifests don't exist there yet.
+- **Why:** deliberate — bootstrapping isn't done via `flux bootstrap` (would push straight to
+  `main`, bypassing PR review; see `D-13`/ADR-0009), so it needs this one manual step post-merge.
+- **Where:** [`infra/gitops/`](infra/gitops/).
+- **Status:** before-merge for this branch. All 5 acceptance criteria (reconcile/deploy,
+  drift-revert, sync-on-merge, sync/health observability, rollback) were live-verified against
+  the real `k3d-beekeeping` cluster during implementation, pointed at this feature branch — see
+  the branch history for the `reconcileStrategy: Revision` fix this verification caught (the
+  default strategy only re-deploys on a `Chart.yaml` version bump, which would've silently
+  broken "merge auto-deploys" for ordinary values/template edits).
