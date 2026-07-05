@@ -45,13 +45,12 @@ idiom used throughout: preserve on `helm upgrade`, generate on first install, ne
 value in git), add a **thin local chart** here (`charts/keycloak/`, `charts/minio/` are live
 examples) with just those templates — no `dependencies:` section, nothing vendored. The standalone
 `HelmRelease`'s `values:` then references those Secrets/ConfigMaps by their literal name (there's
-no Helm templating inside a `HelmRelease`'s `values:` block, so use the umbrella's **actual**
-release name, not the name you might expect — check `helm list -n beekeepingit-dev` or the
-`HelmRelease`'s own status: Flux defaults an unset `releaseName` to
-`<targetNamespace>-<HelmRelease name>` when they differ, e.g.
-`beekeepingit-dev-beekeepingit-keycloak-admin-credentials`, confirmed against the live cluster —
-pin `spec.releaseName` on your own new `HelmRelease` to avoid the same surprise for whatever
-references it).
+no Helm templating inside a `HelmRelease`'s `values:` block), e.g.
+`beekeepingit-keycloak-admin-credentials`. That name is only stable because all three
+`HelmRelease`s **pin `spec.releaseName`** — Flux otherwise defaults an unset `releaseName` to
+`<targetNamespace>-<HelmRelease name>` when they differ (which would make it
+`beekeepingit-dev-beekeepingit-keycloak-admin-credentials`; confirmed against the live cluster).
+Pin `spec.releaseName` on any new `HelmRelease` too, for the same reason (ADR-0012).
 
 Note: a cluster-scoped **operator** (e.g. CloudNativePG, which `postgres`'s `Cluster` CR depends
 on) is _not_ a subchart at all — it's installed once per cluster by `infra/cluster/up.sh`, the
