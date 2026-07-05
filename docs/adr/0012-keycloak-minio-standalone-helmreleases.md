@@ -109,26 +109,40 @@ infra/gitops/apps/dev/minio-helmrelease.yaml`) — works because the Flux contro
   #84 scaffold with no tables yet, MinIO has no buckets, Keycloak is H2 + realm-import — everything
   is regenerated identically on reinstall.)
 
-## Release-name migration runbook (one-time, at merge)
+## Release-name migration runbook (one-time, per environment)
 
-Because this pins `releaseName: beekeepingit` on a release that already exists on the `dev`
-cluster under the Flux-defaulted name `beekeepingit-dev-beekeepingit`, a plain reconcile of this
-change would fail with a Helm ownership conflict (the existing postgres `Cluster`, Secrets, etc.
-are annotated `meta.helm.sh/release-name: beekeepingit-dev-beekeepingit`). Migrate once, right
-after this lands on `main`:
+> **`dev`: done — 2026-07-05.** Verified live; the notes below record what actually happened so a
+> future `staging`/`prod` migration goes smoothly.
+
+Pinning `releaseName: beekeepingit` on an already-running release is a rename. In practice Flux's
+helm-controller **handles the rename itself** on the next reconcile — it detected the changed
+`releaseName`, uninstalled the old-named release (`…Helm uninstall succeeded for
+beekeepingit-dev-beekeepingit.v7`), and installed the pinned `beekeepingit` — no manual step
+needed, provided nothing else already owns the `beekeepingit-*` resources. (Note: Flux stores its
+release history in the **HelmRelease's** namespace, `flux-system`, not the `targetNamespace` — so
+`helm list -n flux-system`, not `-n beekeepingit-dev`, is where the Flux-managed releases show.)
+
+The only manual work on `dev` was clearing **unrelated cruft**: an orphaned `helm install
+beekeepingit` from earlier `#84` verification (stored in `beekeepingit-dev`, using the pre-refactor
+chart that still bundled keycloak/minio as workloads) was co-owning the `beekeepingit-*` names. If
+a target environment is clean (only ever reconciled by Flux), the plain reconcile is enough. If it
+has leftover manual installs, do a clean-slate teardown — safe here since the data is empty `#84`
+scaffold, all regenerated on reinstall:
 
 ```sh
-# Stop Flux fighting the migration, remove the old-named release (deletes its
-# resources — empty scaffold data at this stage, all regenerated below), then
-# let Flux reinstall everything under the pinned names.
 flux suspend helmrelease beekeepingit keycloak minio -n flux-system
-infra/cluster/with-lock.sh helm uninstall keycloak minio -n beekeepingit-dev
-infra/cluster/with-lock.sh helm uninstall beekeepingit-dev-beekeepingit -n beekeepingit-dev
+# drop any stray manually-installed release (storage lives in the target ns):
+helm uninstall beekeepingit -n beekeepingit-dev 2>/dev/null || true
+# clean slate: the namespace (deployed resources) + Flux's release history secrets
+kubectl delete namespace beekeepingit-dev
+kubectl delete secret -n flux-system -l owner=helm \
+  -l 'name in (beekeepingit,keycloak,minio)'
 flux resume helmrelease beekeepingit keycloak minio -n flux-system
-flux reconcile helmrelease beekeepingit -n flux-system   # then keycloak/minio via dependsOn
+flux reconcile helmrelease beekeepingit -n flux-system --with-source  # keycloak/minio follow via dependsOn
 ```
 
-After this, `helm list -n beekeepingit-dev` shows `beekeepingit`/`keycloak`/`minio`, and no
+After this, `helm list -n flux-system` shows `beekeepingit`/`keycloak`/`minio` (all rev 1), the
+only workload pods are `beekeepingit-postgres-1` / `keycloak-keycloakx-0` / `minio-*`, and no
 further migration is ever needed — the names are pinned.
 
 ## Alternatives considered
@@ -153,6 +167,5 @@ further migration is ever needed — the names are pinned.
 - EPIC-14 (#15): the literal Secret/ConfigMap name coupling should be revisited if multi-tenant
   per-org releases are introduced (the release names are pinned now, so a straight rename is no
   longer the risk — a per-org fan-out would be).
-- **Merge-time:** run the release-name migration runbook above once, right after this lands on
-  `main`, before Flux next reconciles the umbrella (or the reconcile fails on a Helm ownership
-  conflict). Tracked in `FOLLOWUPS.md`.
+- **`dev` release-name migration: done (2026-07-05)** — see the runbook above. Re-run it per new
+  environment when `staging`/`prod` are added.
