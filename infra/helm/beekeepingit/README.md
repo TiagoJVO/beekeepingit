@@ -94,6 +94,7 @@ and the three resource tiers (`requests`/`limits` × `cpu`/`memory`) — enforce
 | `keycloak` | Generated admin credential + dev/CI-grade realm import for OIDC IdP Keycloak (D-7) — Keycloak itself is a separate Flux `HelmRelease` (ADR-0012) |
 | `minio`    | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)        |
 | `gateway`  | Ingress + self-signed TLS, reusing k3d's Traefik                                                                                                 |
+| `powersync` | Self-hosted PowerSync sync engine (D-6/ADR-0005), Postgres storage backend — placeholder sync-config + Keycloak-JWKS stopgap until #23/#106 land the real ones (`#22`) |
 
 The observability stack (`NFR-OBS-1`, #87) is deliberately **not** in this table — it's the
 separate [`infra/helm/observability/`](../observability/) chart, deployed by its own Flux

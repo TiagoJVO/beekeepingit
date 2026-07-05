@@ -75,6 +75,74 @@ lands; none blocks #88's merge:
   [ADR-0013](docs/adr/0013-observability-stack.md).
 - **Status:** pending `#23`.
 
+## EPIC-13 (#22) — PowerSync: real Sync Rules + connector + JWKS still owed to #23/#106
+
+- **What:** `#22` lands the PowerSync subchart (self-hosted service + Postgres storage backend,
+  D-6/ADR-0005) with two documented local-dev stopgaps: (1) `sync-config.yaml` is a placeholder
+  (`streams.placeholder`, no real tables) because `apiaries`/`organizations` don't exist yet; (2)
+  `client_auth.jwks_uri` points at Keycloak's own realm JWKS endpoint instead of a real
+  per-org sync-token connector (accepts any token signed by that realm's keys, not a
+  sync-scoped one).
+- **Why:** `#23` (walking-skeleton, still open) is where the real domain tables land, and
+  `#106`'s design (`docs/architecture/sync.md`, ADR-0006) is where the real org-scoped Sync
+  Rules stream and the `/v1/sync/token` connector endpoint are meant to be built. `#22` only
+  needs PowerSync running and healthy as part of the single bring-up command, not a working
+  end-to-end sync round-trip — building the real thing now would duplicate `#23`/`#106`'s work
+  ahead of the tables it depends on.
+- **Where:** [`infra/helm/beekeepingit/charts/powersync/values.yaml`](infra/helm/beekeepingit/charts/powersync/values.yaml)
+  (`syncConfig`, `auth.jwksUrl`).
+- **Status:** pending `#23`/`#106`.
+
+## #22 (before merge) — one clean end-to-end `dev-up.sh` reproducibility run still owed
+
+Two full `dev-up.sh` runs from a torn-down cluster (below) already caught and fixed real bugs —
+each individual piece (Postgres config, PowerSync, Keycloak, MinIO, teardown) has been directly
+observed working live. What's still outstanding: a single, uninterrupted `dev-down.sh` →
+`dev-up.sh` pass start-to-finish, to confirm the whole script (not just its parts) is reproducible
+in one go. The last attempt was interrupted mid-run by the local `beekeeping` k3d cluster's own
+container(s) restarting unprompted several times in the same session (see the
+`k3d-docker-restart-flakiness` memory — concurrent sessions on the shared cluster, not this PR's
+changes) — recovery via plain `up.sh` worked every time and lost no data, but never stayed up long
+enough for one fully clean, uninterrupted timed run. Re-run `infra/cluster/dev-down.sh` then
+`infra/cluster/dev-up.sh` once, ideally with no other session touching the `beekeeping` cluster
+concurrently, before considering `#22` fully done.
+
+**Status:** functionally verified piece-by-piece (see below); one clean end-to-end timing run
+pending before merge.
+
+Findings from the runs so far (not just `helm lint`/`template`):
+
+- **PowerSync needs `POWERSYNC_CONFIG_PATH`.** The image doesn't infer its config location from
+  the mounted volume — it looks for `/app/powersync.yaml` by default and exits fatally if that
+  literal path is missing. Fixed by setting `POWERSYNC_CONFIG_PATH=/config/service.yaml` (confirmed
+  against `powersync-ja/self-host-demo`'s reference `docker-compose` service).
+- **The placeholder sync-config query needs a real table.** `SELECT 1 AS id WHERE false` fails
+  PowerSync's sync-rules validator ("Must have a result column selecting from a table") — a
+  literal projection with no `FROM` doesn't qualify, and neither does selecting a literal column
+  from a table. Fixed by selecting an actual column (`schemaname`) from Postgres's always-present
+  `pg_catalog.pg_tables`, still gated by `WHERE false` so it never returns/replicates a row.
+- **`helm dependency build` must re-run after every local subchart edit.** `infra/helm/beekeepingit/charts/*.tgz`
+  is a packaged snapshot Helm actually installs from (not the live `charts/<name>/` source
+  directory) — editing a subchart's templates/values without rebuilding silently installs the
+  stale snapshot. Not a bug in the shipped code, just a sharp edge worth calling out here since it
+  cost real time to diagnose.
+- **The documented "apply Keycloak/MinIO HelmReleases directly for local-only testing" step
+  (previously in `infra/README.md`) never actually worked standalone.** Both files'
+  `dependsOn: [beekeepingit]` targets the *HelmRelease object* named `beekeepingit`, which only
+  exists once the cluster is GitOps-bootstrapped (`infra/gitops/clusters/dev/`) — bootstrapping
+  that, though, makes Flux deploy the umbrella chart from `main`, defeating local branch testing.
+  `dev-up.sh`/`dev-down.sh` (`#22`) fix this by stripping `dependsOn` at apply-time for this
+  direct-install path only (committed files untouched) — the umbrella release's own `--wait`
+  already guarantees the Secret/ConfigMap these referenced exist, which is all `dependsOn` was
+  protecting in the first place.
+- Confirmed end-to-end from an empty cluster: `wal_level=logical` + `powersync_storage` DB +
+  `powersync` role (`Replication` attribute) + `powersync` publication (`puballtables=t`) all
+  present; PowerSync pod reaches a clean steady state (replication slot active, storage
+  connected, no JWKS-fetch errors); PostGIS `helm test` passes; Keycloak realm reachable through
+  the gateway; MinIO health endpoint returns 200; the whole stack survived a k3d container
+  restart (a known, unrelated flakiness — see the `k3d-docker-restart-flakiness` memory) with no
+  data loss, recovered by `up.sh` alone.
+
 ## #84 — verified live against the local `beekeeping` k3d cluster (2026-07-04)
 
 Full `helm install`/`helm test` verification from WSL2 caught and fixed two real bugs before

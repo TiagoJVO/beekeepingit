@@ -1,0 +1,11 @@
+apiVersion: v2
+name: powersync
+description: >-
+  Self-hosted PowerSync sync engine (D-6, ADR-0005) — the offline sync engine chosen by spike
+  SP-1 (#54). Hand-rolled (not vendored): PowerSync ships as a bare Docker image
+  (journeyapps/powersync-service), not a Helm chart, so this just templates the Deployment +
+  supporting ConfigMap/Service. Storage backend is Postgres (not MongoDB), matching the
+  SP-1 spike's proven config (docs/spikes/sp-1-powersync-vs-electricsql.md).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

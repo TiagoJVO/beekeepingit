@@ -8,45 +8,100 @@ for the as-built design; intent/decisions live in
 
 ## Quickstart
 
+A single command brings up the whole local dev environment (`#22`, `NFR-ARC-2`/`NFR-ARC-3`) —
+Postgres+PostGIS, Keycloak, PowerSync, MinIO, and the gateway/ingress — and another tears it down:
+
+```sh
+infra/cluster/dev-up.sh    # idempotent: safe to re-run against an already-provisioned cluster
+infra/cluster/dev-down.sh  # uninstalls the releases, then deletes the k3d cluster
+```
+
+Requires `k3d`, `kubectl`, `helm`, `flux`, and `flock` on `PATH`. On Windows, run these from the
+WSL2 environment (see the local-dev-environment notes) — the scripts are plain POSIX `bash`.
+
+`dev-up.sh` does NOT apply `infra/gitops/clusters/dev/` (the one-time GitOps bootstrap that makes
+Flux auto-sync from this repo's `main` branch) — that would deploy the umbrella chart from
+`main`, ignoring whatever's checked out locally, the opposite of what a pre-merge dev/test loop
+needs. It also skips the observability stack (`#87`) — not one of `#22`'s components, and its
+HelmRelease depends on that same bootstrap `GitRepository`. See
+[`infra/gitops/README.md`](gitops/README.md) for the post-merge bootstrap step.
+
+### Step-by-step (what `dev-up.sh`/`dev-down.sh` actually do)
+
 ```sh
 # 1. Bring up the local cluster (k3d, idempotent) — also installs/upgrades the
 #    CloudNativePG operator, a cluster-scoped prerequisite for the `postgres`
 #    subchart (see charts/postgres/Chart.yaml and ADR-0010)
 infra/cluster/up.sh
 
-# 2. Fetch chart dependencies (local + vendored third-party, see the chart's README) —
-#    re-run after cloning or whenever a dependency version changes.
+# 2. Install/upgrade the Flux controllers (idempotent) — keycloak/minio below are
+#    Flux HelmReleases, so this is a real prerequisite, not optional.
+flux install --components-extra=image-reflector-controller,image-automation-controller
+
+# 3. Fetch chart dependencies (local + vendored third-party, see the chart's README) —
+#    re-run after cloning, after changing a dependency version, AND after editing any
+#    local subchart's templates/values (helm installs the packaged charts/*.tgz
+#    snapshot under this dir, not the live source — a stale snapshot silently
+#    installs old content otherwise, see FOLLOWUPS.md).
 helm dependency build infra/helm/beekeepingit
 
-# 3. Install (or upgrade) the platform
-infra/cluster/with-lock.sh helm install beekeepingit infra/helm/beekeepingit \
+# 4. Install (or upgrade) the platform
+infra/cluster/with-lock.sh helm upgrade --install beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
-  --namespace beekeepingit-dev --create-namespace
+  --namespace beekeepingit-dev --create-namespace --wait
 
-# ...later, after changing values or adding a service subchart:
-infra/cluster/with-lock.sh helm upgrade beekeepingit infra/helm/beekeepingit \
-  -f infra/helm/beekeepingit/environments/dev.yaml \
-  --namespace beekeepingit-dev
+# 5. Keycloak/MinIO are separate Flux HelmReleases (ADR-0012), not part of the
+#    umbrella release above — either let Flux reconcile them (if bootstrapped, see
+#    infra/gitops/README.md) or apply them directly for local-only testing. Their
+#    `dependsOn: [beekeepingit]` targets a HelmRelease *object* that only exists
+#    once bootstrapped, so strip it for this direct-apply path (committed files
+#    untouched) — step 4's `--wait` already guarantees what dependsOn was protecting
+#    (the credential Secret/ConfigMap these reference):
+for f in keycloak-helmrelease.yaml minio-helmrelease.yaml; do
+  sed '/^  dependsOn:$/,+1d' "infra/gitops/apps/dev/$f" \
+    | infra/cluster/with-lock.sh kubectl apply -f -
+done
 
-# 3. Keycloak/MinIO/observability are separate Flux HelmReleases (ADR-0012,
-#    ADR-0013), not part of the umbrella release above — either let Flux
-#    reconcile them (if bootstrapped, see infra/gitops/README.md) or apply them
-#    directly for local-only testing:
-infra/cluster/with-lock.sh kubectl apply \
-  -f infra/gitops/apps/dev/keycloak-helmrelease.yaml \
-  -f infra/gitops/apps/dev/minio-helmrelease.yaml \
-  -f infra/gitops/apps/dev/observability-helmrelease.yaml
-
-# 4. Smoke-test the backing services (Postgres/PostGIS; #84)
+# 6. Smoke-test the backing services (Postgres/PostGIS; #84)
 helm test beekeepingit --namespace beekeepingit-dev
 
-# 5. Tear down
+# 7. Tear down
+infra/cluster/with-lock.sh kubectl delete --ignore-not-found \
+  -f infra/gitops/apps/dev/keycloak-helmrelease.yaml \
+  -f infra/gitops/apps/dev/minio-helmrelease.yaml
 infra/cluster/with-lock.sh helm uninstall beekeepingit --namespace beekeepingit-dev
 infra/cluster/down.sh
 ```
 
-Requires `k3d`, `kubectl`, `helm`, and `flock` on `PATH`. On Windows, run these from the WSL2
-environment (see the local-dev-environment notes) — the scripts are plain POSIX `bash`.
+## Verify the environment
+
+Each of `#22`'s acceptance checks, in one place (all assume `dev-up.sh` finished successfully):
+
+```sh
+# PostGIS is enabled (helm test already runs this; shown here standalone)
+kubectl -n beekeepingit-dev exec beekeepingit-postgres-1 -- \
+  psql -U postgres -d beekeepingit -c "SELECT postgis_version();"
+
+# Keycloak: seeded realm reachable through the gateway (add keycloak.beekeepingit.local
+# to /etc/hosts pointing at 127.0.0.1, or use --resolve like this)
+curl -sk --resolve keycloak.beekeepingit.local:8443:127.0.0.1 \
+  https://keycloak.beekeepingit.local:8443/realms/beekeepingit/.well-known/openid-configuration
+
+# MinIO: reachable via an S3-compatible client (health endpoint shown here; `mc`/`aws s3`
+# work the same way once port-forwarded)
+kubectl -n beekeepingit-dev port-forward svc/minio 9000:9000 &
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9000/minio/health/live
+
+# PowerSync: pod healthy, replication + storage connected, no JWKS-fetch errors
+kubectl -n beekeepingit-dev get pods -l app.kubernetes.io/name=powersync
+kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=powersync --tail=50
+
+# Gateway: routes to a backend service (Keycloak, today's only one — #23 adds more)
+# — same curl as the Keycloak check above exercises this.
+```
+
+PowerSync's placeholder sync-config and Keycloak-JWKS stopgap are intentional local-dev
+limitations (`#22`), not bugs — see `FOLLOWUPS.md` for what `#23`/`#106` still need to wire up.
 
 ## Sharing the local cluster across concurrent sessions
 
@@ -77,7 +132,7 @@ filesystem with this machine or across concurrent runs, so `flock` wouldn't appl
 
 | Path                                                         | What it is                                                                                                                                 |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`)                                                                        |
+| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`) |
 | [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                        |
 | [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md) |
 | [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                 |
@@ -85,8 +140,10 @@ filesystem with this machine or across concurrent runs, so `flock` wouldn't appl
 | [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                 |
 
 Postgres+PostGIS, Keycloak, MinIO and the gateway (**#84**) are the umbrella chart's first real
-subcharts; the walking-skeleton services + PowerSync + PWA subcharts land with **#23**. Both wire
-into this umbrella chart rather than standing up their own release.
+subcharts; PowerSync (**#22**) followed, with a placeholder sync-config and a Keycloak-JWKS
+stopgap until real domain tables/a connector exist. The walking-skeleton services + PWA + PowerSync's
+real org-scoped Sync Rules land with **#23**/**#106**. All wire into this umbrella chart rather
+than standing up their own release.
 
 The **observability stack** (OTel Collector, Prometheus, Grafana, Loki, Tempo — `NFR-OBS-1`)
 landed with **#87**: see

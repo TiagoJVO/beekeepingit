@@ -93,9 +93,14 @@ Adopt **PowerSync**, **self-hosted (Open Edition)** on the k8s cluster, as the o
   **cross-service write-back atomicity mechanism** (D-12 → single-endpoint seam + validate-first /
   forward-retry), client↔server validation parity, tombstones/deletes, and the "synced" status +
   notify-and-fix UX (FR-OF-2).
-- **EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13** — build the PowerSync subchart (self-hosted service +
-  storage DB), the per-service connector in the shared service template, and offline/sync tests
-  (NFR-TST). Validate **iOS PWA** persistence when iOS is in scope (D-10).
+- **EPIC-13 (#22) — ✅ subchart delivered**: `infra/helm/beekeepingit/charts/powersync/` — the
+  self-hosted service + a **Postgres** storage backend (not MongoDB, matching the SP-1 config
+  below — avoids a second datastore technology). Ships with two documented local-dev stopgaps
+  (placeholder sync-config, Keycloak-realm JWKS) since no domain tables/connector exist yet —
+  see `FOLLOWUPS.md`.
+- **EPIC-06 (#7) / EPIC-00 (#1) — still open**: the per-service connector in the shared service
+  template, the real org-scoped Sync Rules (once `#23` lands `apiaries`/`organizations`), and
+  offline/sync tests (NFR-TST). Validate **iOS PWA** persistence when iOS is in scope (D-10).
 - The SP-1 throwaway prototype (kind + Postgres + PowerSync + a Playwright-driven `@powersync/web`
   PWA) is **not committed** (research only); its config + results are captured in the
   [SP-1 report](../spikes/sp-1-powersync-vs-electricsql.md) for reproduction.

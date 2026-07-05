@@ -63,3 +63,14 @@ gateway:
   host: keycloak.beekeepingit.local
   # No workload of its own (just Ingress + a self-signed TLS Secret) — reuses
   # k3d's already-running Traefik, so there's no resourceTier to size here.
+
+powersync:
+  enabled: true
+  image:
+    repository: journeyapps/powersync-service
+    tag: "1.23.2"
+  resourceTier: medium
+  # Local-dev stopgap JWKS source (Keycloak's realm) + placeholder sync-config
+  # (no domain tables exist yet) — see the subchart's own values.yaml for why,
+  # and FOLLOWUPS.md for what #23/#106 still need to wire up (real org-scoped
+  # Sync Rules, real connector).

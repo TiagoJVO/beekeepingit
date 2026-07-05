@@ -19,10 +19,25 @@ spec:
     size: {{ .Values.storageSize }}
   resources:
     {{- index .Values.global.resources .Values.resourceTier | toYaml | nindent 4 }}
+  postgresql:
+    # Logical replication, required by the PowerSync sync engine (D-6, ADR-0005)
+    # to stream the `powersync` publication (below) to its self-hosted service.
+    parameters:
+      wal_level: "logical"
+      max_wal_senders: "10"
+      max_replication_slots: "10"
   bootstrap:
     initdb:
       database: beekeepingit
       owner: beekeepingit
+      # Runs once, as superuser, connected to the default `postgres` database,
+      # *before* the `beekeepingit` application database above is even created
+      # — the only bootstrap hook that can CREATE DATABASE. Used for PowerSync's
+      # bucket-storage database (ADR-0005: "a SEPARATE database, so the
+      # `powersync` publication below never captures it") — deliberately not a
+      # schema in `beekeepingit` like the domain services below.
+      postInitSQL:
+        - CREATE DATABASE powersync_storage OWNER beekeepingit;
       # Runs once, as superuser, inside the `beekeepingit` application database
       # (postInitApplicationSQL — not postInitSQL/postInitTemplateSQL, which run
       # against `postgres`/`template1` instead), *before* spec.managed.roles
@@ -35,6 +50,10 @@ spec:
         {{- range .Values.schemas }}
         - CREATE SCHEMA IF NOT EXISTS {{ . }} AUTHORIZATION beekeepingit;
         {{- end }}
+        # `FOR ALL TABLES` (not a fixed table list) so every domain service's
+        # tables are replicated automatically as they land (#23+) — no
+        # follow-up SQL needed when a new schema grows its first table.
+        - CREATE PUBLICATION powersync FOR ALL TABLES;
   managed:
     roles:
       {{- range .Values.schemas }}
@@ -44,4 +63,16 @@ spec:
         passwordSecret:
           name: {{ . }}-svc-credentials
       {{- end }}
+      # One combined role for the PowerSync service: `replication` to open a
+      # logical-replication connection to `beekeepingit` (the `powersync`
+      # publication above), and it also owns/uses `powersync_storage` (granted
+      # by templates/schema-grants-job.yaml, since that DB is created — at
+      # postInitSQL time, above — before this role exists). No isolation
+      # benefit to splitting these into two roles; one process uses both.
+      - name: powersync
+        ensure: present
+        login: true
+        replication: true
+        passwordSecret:
+          name: powersync-credentials
 {{- end }}
