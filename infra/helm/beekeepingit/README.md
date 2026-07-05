@@ -109,17 +109,17 @@ and the three resource tiers (`requests`/`limits` × `cpu`/`memory`) — enforce
 
 ## Current subcharts
 
-| Subchart                  | What it is                                                                                                                                        |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `postgres`                | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials                                        |
+| Subchart                  | What it is                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `postgres`                | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials                                       |
 | `keycloak`                | Generated admin credential + dev/CI-grade realm import for OIDC IdP Keycloak (D-7) — Keycloak itself is a separate Flux `HelmRelease` (ADR-0012) |
 | `minio`                   | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)        |
-| `gateway`                 | Ingress + self-signed TLS, reusing k3d's Traefik                                                                                                  |
-| `kube-prometheus-stack`   | Prometheus + Alertmanager + Grafana + kube-state-metrics + node-exporter (`NFR-OBS-1`, #87)                                                       |
-| `loki`                    | Logs (`NFR-OBS-1`, #87) — `SingleBinary` mode, MinIO-backed (the standalone `minio` `HelmRelease` above)                                          |
-| `tempo`                   | Traces (`NFR-OBS-1`, #87) — monolithic chart, same MinIO-backed storage as `loki`                                                                 |
-| `opentelemetry-collector` | OTLP receiver fanning out to the three above (#87)                                                                                                 |
-| `alert-webhook-sink`      | Local/dev-only Alertmanager receiver (#87) — not production alerting                                                                              |
+| `gateway`                 | Ingress + self-signed TLS, reusing k3d's Traefik                                                                                                 |
+| `kube-prometheus-stack`   | Prometheus + Alertmanager + Grafana + kube-state-metrics + node-exporter (`NFR-OBS-1`, #87)                                                      |
+| `loki`                    | Logs (`NFR-OBS-1`, #87) — `SingleBinary` mode, MinIO-backed (the standalone `minio` `HelmRelease` above)                                         |
+| `tempo`                   | Traces (`NFR-OBS-1`, #87) — monolithic chart, same MinIO-backed storage as `loki`                                                                |
+| `opentelemetry-collector` | OTLP receiver fanning out to the three above (#87)                                                                                               |
+| `alert-webhook-sink`      | Local/dev-only Alertmanager receiver (#87) — not production alerting                                                                             |
 
 The former `charts/smoke/` placeholder that originally proved the umbrella-to-subchart wiring
 (dependency declaration, values overrides, global resource tiers) before any real service existed

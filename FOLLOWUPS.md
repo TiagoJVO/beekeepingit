@@ -8,14 +8,17 @@
 ## #87 — verify Loki/Tempo's MinIO-backed storage live
 
 - **What:** confirm on the local `beekeeping` k3d cluster that Loki and Tempo actually
-  start and write/read successfully against MinIO (buckets `loki`/`tempo`) — that the
-  `root-credentials` Secret env injection resolves correctly, Tempo's
-  `-config.expand-env=true` substitution works as expected, and
-  `infra/observability-smoke-test.sh` still shows correlated data end-to-end.
-- **Why:** this wiring (ADR-0012, formerly ADR-0008 before renumbering to avoid colliding
-  with `#130`'s ADR-0008) was verified via `helm lint`/`helm template` (real rendered
+  start and write/read successfully against MinIO (`minio:9000`, the standalone Flux
+  `HelmRelease` — ADR-0012, buckets `loki`/`tempo`) — that the `root-credentials` Secret
+  env injection resolves correctly, Tempo's `-config.expand-env=true` substitution works
+  as expected, and `infra/observability-smoke-test.sh` still shows correlated data
+  end-to-end.
+- **Why:** this wiring ([ADR-0013](docs/adr/0013-observability-stack.md), renumbered
+  twice already from the original ADR-0008 to dodge collisions with `#130`'s and then
+  `#138`'s own ADR-0008/0012) was verified via `helm lint`/`helm template` (real rendered
   manifests) but not against a live cluster — no cluster is available in this sandbox.
-- **Where:** `infra/helm/beekeepingit/values.yaml` (`loki:`/`tempo:` blocks).
+- **Where:** `infra/helm/beekeepingit/values.yaml` (`loki:`/`tempo:` blocks),
+  `infra/gitops/apps/dev/minio-helmrelease.yaml` (buckets).
 - **Status:** pending a live `helm upgrade` + smoke test on `beekeepingit-dev`.
 
 ## #85 → #20 — reuse `services/shared/dbaccess`, don't re-derive
@@ -77,7 +80,7 @@
   pending when `#87` landed. The `telemetrygen` script proves the pipeline works now; this
   item closes the AC for real.
 - **Where:** [`docs/architecture/platform.md#observability`](docs/architecture/platform.md#observability),
-  [ADR-0012](docs/adr/0012-observability-stack.md).
+  [ADR-0013](docs/adr/0013-observability-stack.md).
 - **Status:** pending `#23`.
 
 ## #84 — verified live against the local `beekeeping` k3d cluster (2026-07-04)

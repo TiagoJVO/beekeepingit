@@ -61,10 +61,14 @@ section covers the _why_.
 - **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0010](../adr/0010-platform-backing-services-provisioning.md)):
   `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
   portable `Ingress` + self-signed TLS Secret, reusing k3d's Traefik) are hand-rolled — there's
-  nothing to vendor for either. `keycloak` and `minio` are thin **wrapper charts**: each declares
-  a real upstream chart (`codecentric/keycloakx`, the official `charts.min.io` MinIO chart) as its
-  own nested dependency, adding only what the vendored chart can't own itself (a generated
-  credential Secret; for Keycloak, also the dev/CI-grade realm import).
+  nothing to vendor for either. `keycloak` and `minio` only hold what a vendored chart can't own
+  itself (a generated credential Secret; for Keycloak, also the dev/CI-grade realm import) — the
+  actual vendored charts (`codecentric/keycloakx`, the official `charts.min.io` MinIO chart) run as
+  their own standalone Flux `HelmRelease`s (`infra/gitops/apps/dev/`), not nested here, since
+  Flux's GitRepository-sourced charts don't recursively resolve a subchart's own vendored
+  dependency (the original nested-wrapper approach silently deployed zero of the vendored chart's
+  workload) — see [ADR-0012](../adr/0012-keycloak-minio-standalone-helmreleases.md), which
+  supersedes the wrapper-chart part of ADR-0010.
 - **Vendoring a third-party chart with no wrapper at all**: see Observability below, which pulls
   `kube-prometheus-stack`/`loki`/`tempo`/`opentelemetry-collector` straight from their upstream
   repos as direct `Chart.yaml` dependencies (`repository: https://...`, not even a local
@@ -93,9 +97,10 @@ Config lives in the umbrella's `values.yaml` under each chart's name.
   combination, and using the operator's `PrometheusRule`/Alertmanager-config values
   avoids writing and maintaining custom CRD templates.
 - **`grafana/loki`** (`SingleBinary` deployment mode) and **`grafana/tempo`** (the monolithic
-  chart) — right-sized for one small dev cluster, both **MinIO-backed** (`#84`'s `minio`
-  subchart; buckets `loki`/`tempo`, created idempotently by its post-install job). Credentials
-  come from MinIO's generated `root-credentials` Secret via env vars
+  chart) — right-sized for one small dev cluster, both **MinIO-backed** (`minio:9000`, MinIO's
+  own standalone Flux `HelmRelease`, ADR-0012; buckets `loki`/`tempo`, created idempotently by
+  its post-install job — configured on that `HelmRelease`'s `values:`, not this umbrella's).
+  Credentials come from MinIO's generated `root-credentials` Secret via env vars
   (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`), never a literal value in `values.yaml`
   (`NFR-SEC`) — Loki's S3 client falls back to them automatically; Tempo needs
   `-config.expand-env=true` plus `${AWS_ACCESS_KEY_ID}`/`${AWS_SECRET_ACCESS_KEY}` placeholders

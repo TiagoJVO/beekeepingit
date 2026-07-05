@@ -1,4 +1,4 @@
-# 0012 — Observability stack: OTel Collector + kube-prometheus-stack + Loki + Tempo
+# 0013 — Observability stack: OTel Collector + kube-prometheus-stack + Loki + Tempo
 
 - **Status:** Accepted
 - **Date:** 2026-07-04
@@ -45,13 +45,18 @@ decision 3 below.)
    metrics via kube-state-metrics/node-exporter) and gives the alerting/`PrometheusRule`
    machinery for free.
 3. **Loki (`SingleBinary` mode) + Tempo (monolithic chart)**, no distributed mode — right-sized
-   for one small dev cluster. Both are **MinIO-backed** (`#84`'s `minio` subchart; buckets
-   `loki`/`tempo`, created idempotently by MinIO's own post-install job), with credentials
-   from MinIO's generated `root-credentials` Secret injected as
-   `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env vars — never a literal value in
-   `values.yaml` (`NFR-SEC`). Loki's S3 client falls back to these env vars automatically;
-   Tempo's config loader doesn't, so it additionally needs `-config.expand-env=true` plus
-   `${AWS_ACCESS_KEY_ID}`/`${AWS_SECRET_ACCESS_KEY}` placeholders in its own config.
+   for one small dev cluster. Both are **MinIO-backed**, buckets `loki`/`tempo` (created
+   idempotently by MinIO's own post-install job), with credentials from MinIO's generated
+   `root-credentials` Secret injected as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` env
+   vars — never a literal value in `values.yaml` (`NFR-SEC`). Loki's S3 client falls back
+   to these env vars automatically; Tempo's config loader doesn't, so it additionally
+   needs `-config.expand-env=true` plus `${AWS_ACCESS_KEY_ID}`/`${AWS_SECRET_ACCESS_KEY}`
+   placeholders in its own config. Endpoint is `minio:9000` — MinIO itself moved from an
+   umbrella-nested subchart to its own standalone Flux `HelmRelease`
+   (`infra/gitops/apps/dev/minio-helmrelease.yaml`, pinned `releaseName: minio`) partway
+   through this same change, per [ADR-0012](0012-keycloak-minio-standalone-helmreleases.md)
+   — the bucket config lives on that `HelmRelease`'s `values:`, not in this umbrella's
+   `values.yaml`.
 4. **OTel Collector as a single `Deployment`** (not a `DaemonSet` — unneeded on a
    single-node cluster), OTLP receiver, exporting traces→Tempo (`otlp`),
    metrics→Prometheus (`prometheusremotewrite` via
