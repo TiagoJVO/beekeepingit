@@ -9,9 +9,10 @@ a multi-organization path kept open.
 > **backlog** filed as [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues).
 > The single-cluster k8s platform + Helm umbrella chart (`infra/`) is built; `services/` has
 > landed starting with the `shared` Go library (object storage + DB access abstractions,
-> `#85`); `client/` has landed as the Flutter PWA skeleton (`#21`); domain services and the
-> walking-skeleton slice are still pending. Source of truth (intent) is
-> [requirements/](requirements/); `docs/` documents the system as it's built.
+> `#85`) and the `servicetemplate` shared service template (health, config, logging, OTel,
+> JWT auth, error format, `#20`); `client/` has landed as the Flutter PWA skeleton (`#21`);
+> domain services and the walking-skeleton slice are still pending. Source of truth (intent)
+> is [requirements/](requirements/); `docs/` documents the system as it's built.
 
 ## Intended stack (not final)
 
@@ -28,7 +29,8 @@ beekeepingit/
 ├── requirements/      # Source of truth: context, FRs, NFRs, decisions, open questions
 ├── docs/              # Intended architecture, tech stack, ADRs
 ├── infra/             # k8s cluster bring-up/teardown + Helm umbrella chart (EPIC-13)
-├── services/          # Go backend; services/shared/ is the cross-cutting infra library (#85)
+├── services/          # Go backend; shared/ = infra library (#85), servicetemplate/ = shared
+│                      #   service template (#20) — see services/*/README.md
 ├── client/            # Flutter PWA — shell, routing, theming, state mgmt, i18n scaffold (#21)
 ├── .claude/           # AI rules + settings (SessionStart workflow hook)
 ├── .github/           # Issue templates, PR template, label taxonomy
