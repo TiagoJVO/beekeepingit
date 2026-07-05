@@ -1,0 +1,40 @@
+# Flux image-automation ENGINE (EPIC-13 #88, AC #5 — deploy via image/manifest update, not
+# manual kubectl). This object teaches Flux HOW and WHERE to commit image-tag bumps back to Git;
+# the per-service ImageRepository + ImagePolicy (see example-*.yaml) decide WHICH tag to set.
+#
+# NOT reconciled yet: this directory is intentionally outside the Flux Kustomization paths
+# (clusters/dev, apps/dev), so nothing here is applied to the cluster until activated — see this
+# directory's README.md ("Activation"). It is committed now so the mechanism + convention are
+# ready and version-controlled the day the first service publishes an image.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: beekeepingit-dev
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: beekeepingit
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        # Bot identity for the automated tag-bump commits.
+        email: 41898282+github-actions[bot]@users.noreply.github.com
+        name: flux-image-automation
+      messageTemplate: |
+        chore(deploy): update image tags
+
+        Automated by Flux image-automation.
+        {{ range $image, $_ := .Updated.Images -}}
+        - {{ $image }}
+        {{ end -}}
+    push:
+      branch: main
+  update:
+    # Rewrites the `# {"$imagepolicy": "..."}` setter markers in these manifests in place.
+    path: ./infra/gitops/apps/dev
+    strategy: Setters

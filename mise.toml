@@ -23,6 +23,7 @@ golangci-lint = "2.12.2"   # Go meta-linter (see .golangci.yml). v2 (ADR-0008 fo
 # --- Go backend service tooling (services/shared — #85; grows with each service) ---
 sqlc = "1.31.1"                                          # typed SQL query codegen (pgx/sqlc)
 "go:github.com/pressly/goose/v3/cmd/goose" = "3.24.3"    # versioned Postgres migrations
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"        # Go vuln scanner (`task go:vuln`, CI #88)
 
 # --- Repo-hygiene linters/formatters (run today, no code packages needed) ---
 actionlint = "latest"        # GitHub Actions workflow linter

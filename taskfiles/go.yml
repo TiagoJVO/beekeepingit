@@ -48,3 +48,12 @@ tasks:
         mods=$({{.FIND_MODS}})
         if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
         for m in $mods; do d=$(dirname "$m"); echo "› [go] build $d"; (cd "$d" && go build ./...); done
+
+  vuln:
+    desc: "Scan Go modules for known vulnerabilities (govulncheck; wired into CI #88)"
+    cmds:
+      - |
+        set -e
+        mods=$({{.FIND_MODS}})
+        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
+        for m in $mods; do d=$(dirname "$m"); echo "› [go] vuln $d"; (cd "$d" && govulncheck ./...); done

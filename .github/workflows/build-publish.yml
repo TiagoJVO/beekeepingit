@@ -1,0 +1,185 @@
+# Path-filtered per-component build → test → image-scan → publish for the monorepo (EPIC-13 #88;
+# requirements NFR-TST-1, NFR-MNT-1, NFR-ARC-3; D-9 monorepo).
+#
+# DORMANT BY DESIGN until the first service/app ships a Dockerfile. A "component" is any directory
+# containing a `Dockerfile`; the detect job emits a matrix of only the components touched by the
+# change (path filtering — AC #1), so the build job self-discovers work and no-ops cleanly while
+# the repo has no Dockerfiles yet (same "green before code" philosophy as ci.yml / taskfiles/*).
+#
+# On merge to main, images publish to ghcr.io tagged by commit SHA (AC #4); Flux image-automation
+# then bumps the deployed tag in Git and reconciles it onto the cluster — no manual kubectl
+# (AC #5, see infra/gitops/image-automation/). Container-image scanning gates the build (AC #3);
+# repo-level dependency/secret scanning lives in security-scan.yml.
+#
+# macOS runners for iOS builds are intentionally NOT here at M0 — added at M5 by EPIC-15 (AC #6);
+# see the disabled `ios-build` placeholder job at the bottom.
+name: build-publish
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Publishing is opt-in per job; the default token is read-only.
+permissions:
+  contents: read
+
+concurrency:
+  group: build-publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  detect:
+    name: detect affected components
+    runs-on: ubuntu-latest
+    outputs:
+      has_work: ${{ steps.scan.outputs.has_work }}
+      matrix: ${{ steps.scan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # need history to diff against the base/previous commit
+
+      - name: Compute changed components (dirs with a Dockerfile)
+        id: scan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Resolve the diff base: PR target for PRs, previous tip for pushes.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="$BASE_SHA"
+          else
+            base="$BEFORE_SHA"
+          fi
+          # First push to a new branch has an all-zero "before"; fall back to the parent commit.
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base="$(git rev-parse "${HEAD_SHA}~1" 2>/dev/null || git hash-object -t tree /dev/null)"
+          fi
+          changed="$(git diff --name-only "$base" "$HEAD_SHA")"
+          echo "Changed files:"; echo "$changed"
+
+          # Every directory holding a Dockerfile is a buildable component.
+          components="$(find . -type f -name Dockerfile \
+            -not -path './.git/*' -not -path '*/.claude/*' -not -path '*/node_modules/*' \
+            -printf '%h\n' | sed 's|^\./||' | sort -u)"
+
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          include=""
+          for dir in $components; do
+            # Affected if any changed file lives under the component directory.
+            if echo "$changed" | grep -q "^${dir}/"; then
+              name="$(echo "$dir" | tr '/' '-')"
+              image="ghcr.io/${owner}/beekeepingit/${name}"
+              include="${include}{\"component\":\"${name}\",\"path\":\"${dir}\",\"image\":\"${image}\"},"
+            fi
+          done
+          include="${include%,}" # trim trailing comma
+
+          if [ -n "$include" ]; then
+            echo "has_work=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[${include}]}" >> "$GITHUB_OUTPUT"
+            echo "Affected components: [${include}]"
+          else
+            echo "has_work=false" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            echo "No affected buildable components — build job will be skipped (no Dockerfiles yet)."
+          fi
+
+  build:
+    name: build ${{ matrix.component }}
+    needs: detect
+    if: needs.detect.outputs.has_work == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io on merge
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up toolchains from mise.toml
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      # AC #2: lint → unit/integration tests → build, before the image is built/published.
+      # Today these run the repo-wide discovering targets; they gain per-component scoping
+      # (e.g. `task go:test -- ${{ matrix.path }}`) when the first service adds scoped targets.
+      - name: Lint & test (affected component)
+        run: task ci
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Image metadata (tag by commit)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ matrix.image }}
+          # `sha-<short>` on every build (AC #4 "tagged by commit"). On main, also a
+          # timestamp-prefixed tag so Flux image-automation can order builds by recency
+          # (commit SHAs aren't chronologically sortable) — the example ImagePolicy in
+          # infra/gitops/image-automation/ filters on this `<YYYYMMDDHHMMSS>-<sha>` scheme.
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value={{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Build to the local daemon first so the image is scanned BEFORE it can be published —
+      # a failing scan must block the push, not chase an already-published tag.
+      - name: Build image (load, no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ matrix.path }}
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy image scan (AC #3 — blocks on HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          # `meta.outputs.version` is the primary tag (`sha-<short>`) built above.
+          image-ref: ${{ matrix.image }}:${{ steps.meta.outputs.version }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # Publish only on merge to main; PRs build + scan but never push.
+      - name: Log in to ghcr.io
+        if: github.event_name == 'push'
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image (merge only; cache reused from build above)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ matrix.path }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+  # ---------------------------------------------------------------------------------------------
+  # PLACEHOLDER — NOT part of the M0 pipeline (AC #6). macOS runners for native iOS builds are
+  # added only at M5 by EPIC-15 (platform rollout PWA → Android → iOS, D-10). Kept disabled so the
+  # deferral is recorded in-pipeline; do not enable before EPIC-15.
+  ios-build:
+    name: iOS build (deferred to M5 / EPIC-15)
+    # Always false at M0 (the `ENABLE_IOS_CI` repo variable is unset). EPIC-15 enables iOS/macOS
+    # CI at M5 by defining it — no Apple Developer account / macOS runners exist before then.
+    if: ${{ vars.ENABLE_IOS_CI == 'true' }}
+    runs-on: macos-latest
+    steps:
+      - run: echo "Placeholder — iOS/macOS CI is added at M5 by EPIC-15, not at M0."
