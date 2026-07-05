@@ -16,10 +16,12 @@ updates:
     labels:
       - "type/chore"
 
-  # Go backend modules — services/shared today (#85); each new service is its own module.
+  # Go backend modules — services/shared (#85) and services/servicetemplate (#20) today;
+  # each new service is its own module.
   - package-ecosystem: "gomod"
     directories:
       - "/services/shared"
+      - "/services/servicetemplate"
     schedule:
       interval: "weekly"
     commit-message:

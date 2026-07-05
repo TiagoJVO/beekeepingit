@@ -15,9 +15,11 @@ not a deployable service — it's a library other `services/*` modules import.
   migration + typed queries other services can pattern-match — not a real domain feature.
 
 Both packages take an explicit `Config` struct (dependency injection) rather than loading
-their own environment/config — that's the shared **Go service template**'s job
-([#20](https://github.com/TiagoJVO/beekeepingit/issues/20)), which will import these packages
-for its own data-access AC. See [FOLLOWUPS.md](../../FOLLOWUPS.md).
+their own environment/config — that's [`services/servicetemplate`](../servicetemplate/README.md)'s
+job, the shared **Go service template**
+([#20](https://github.com/TiagoJVO/beekeepingit/issues/20),
+[ADR-0015](../../docs/adr/0015-shared-go-service-template.md)), which imports `dbaccess` for its
+own data-access AC via the repo-root [`go.work`](../../go.work).
 
 ## The seam: switching endpoints is a config change, not a code change
 
