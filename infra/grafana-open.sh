@@ -24,17 +24,17 @@ PASSWORD="$(kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" \
 
 echo "Grafana admin password: ${PASSWORD}"
 
-if command -v clip.exe >/dev/null 2>&1; then
-  printf '%s' "${PASSWORD}" | clip.exe
+# Best-effort only — never let a clipboard failure abort the port-forward below.
+# (Verified live: clip.exe can be on PATH yet fail with "Exec format error" when
+# WSL's Windows-interop isn't available in the current session.)
+if printf '%s' "${PASSWORD}" | clip.exe 2>/dev/null; then
   echo "(copied to the Windows clipboard via clip.exe — just paste)"
-elif command -v pbcopy >/dev/null 2>&1; then
-  printf '%s' "${PASSWORD}" | pbcopy
+elif printf '%s' "${PASSWORD}" | pbcopy 2>/dev/null; then
   echo "(copied to the clipboard via pbcopy)"
-elif command -v xclip >/dev/null 2>&1; then
-  printf '%s' "${PASSWORD}" | xclip -selection clipboard
+elif printf '%s' "${PASSWORD}" | xclip -selection clipboard 2>/dev/null; then
   echo "(copied to the clipboard via xclip)"
 else
-  echo "(no clipboard tool found — copy the password above manually)"
+  echo "(couldn't reach a clipboard — copy the password above manually)"
 fi
 
 echo "== Port-forwarding ${SERVICE_NAME}:80 -> localhost:${LOCAL_PORT} (namespace ${NAMESPACE}) =="
@@ -44,19 +44,15 @@ trap 'kill "${PF_PID}" 2>/dev/null || true' EXIT
 sleep 2
 
 echo "== Opening ${URL} =="
-if command -v explorer.exe >/dev/null 2>&1; then
-  # WSL2 -> Windows default browser. explorer.exe returns a nonzero exit code on
-  # success too (a known WSL interop quirk), so don't let `set -e` treat it as failure.
-  explorer.exe "${URL}" || true
-elif command -v wslview >/dev/null 2>&1; then
-  wslview "${URL}"
-elif command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "${URL}"
-elif command -v open >/dev/null 2>&1; then
-  open "${URL}"
+# Best-effort, like the clipboard above. wslview (wslu) first — it reports
+# failure honestly; explorer.exe opens the Windows default browser but returns
+# nonzero even on success (known interop quirk), so it goes last and blind.
+if wslview "${URL}" 2>/dev/null || xdg-open "${URL}" 2>/dev/null || open "${URL}" 2>/dev/null; then
+  :
 else
-  echo "No way to auto-open a browser here — open manually: ${URL}"
+  explorer.exe "${URL}" >/dev/null 2>&1 || true
 fi
 
+echo "If no browser opened, open manually: ${URL}"
 echo "Log in as 'admin' with the password above. Ctrl+C to stop the port-forward."
 wait "${PF_PID}"

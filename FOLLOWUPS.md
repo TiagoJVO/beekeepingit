@@ -5,26 +5,6 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
-## #87 — re-verify the split observability release live (+ correlation/alerting walkthroughs)
-
-- **What:** deploy the final layout (umbrella → `minio` → `observability`, three Flux
-  `HelmRelease`s) on the local `beekeeping` k3d cluster and confirm: Tempo now starts
-  cleanly (buckets exist first — the whole point of the split), Loki writes to MinIO,
-  `infra/observability-smoke-test.sh` shows correlated trace↔log data in Grafana, the
-  `OtelCollectorDown` alert reaches `alert-webhook-sink`, and `infra/grafana-open.sh`
-  works end-to-end.
-- **Why:** a first live test (Flux pointed at this branch, pre-split) already validated
-  most of the stack — Loki/Prometheus/Grafana/OTel Collector/kube-state-metrics/
-  node-exporter/alert sink all `Running`, datasources + starter dashboard provisioned —
-  and caught the fresh-install deadlock that ADR-0013's split fixes (Tempo crash-looped
-  on the missing bucket; MinIO's `dependsOn` could never fire). The split layout itself
-  hasn't run live yet, and the correlation/alerting walkthroughs were cut short by the
-  deadlock.
-- **Where:** [`infra/helm/observability/`](infra/helm/observability/),
-  [`infra/gitops/apps/dev/observability-helmrelease.yaml`](infra/gitops/apps/dev/observability-helmrelease.yaml),
-  [ADR-0013](docs/adr/0013-observability-stack.md).
-- **Status:** pending the next live test window on the shared dev cluster.
-
 ## #85 → #20 — reuse `services/shared/dbaccess`, don't re-derive
 
 - **What:** `#85` landed `services/shared/dbaccess` (pgx + sqlc + goose, `Connect`/`Migrate`)

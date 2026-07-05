@@ -99,13 +99,22 @@ does not exist`, crash-loop — confirmed live) until MinIO exists. So the umbre
 
 ## Consequences
 
-- A **live test against the real dev cluster** (Flux pointed at this branch) validated
-  most of the stack first-try: Loki, Prometheus, Grafana (datasources + starter
-  dashboard), OTel Collector, kube-state-metrics, node-exporter and the alert sink all
-  came up `Running`; Tempo exposed the deadlock that motivated decision 1. A re-test of
-  the final split layout (and of the trace↔log correlation + alerting walkthroughs) is
-  tracked in [`FOLLOWUPS.md`](../../FOLLOWUPS.md), alongside replacing the `telemetrygen`
-  verification with `#23`'s real service traffic once it ships.
+- The final split layout was **verified live end-to-end** on the real dev cluster (Flux
+  pointed at this branch): all pods `Running` including Tempo (booting cleanly against
+  the pre-created bucket — the deadlock fix working); `telemetrygen` trace found via
+  Tempo's search API, its correlated `trace_id=...` log line found via Loki's query API,
+  and its remote-written metric found in Prometheus; Grafana serving with all four
+  datasources + the starter dashboard provisioned, admin login working via the
+  Secret-fetched password (`infra/grafana-open.sh`); and the **full alert lifecycle** —
+  `OtelCollectorDown` fired to `alert-webhook-sink` during a real unscraped window, then
+  delivered its resolution once scraping started. Live testing surfaced four more bugs
+  that `helm lint`/`template` couldn't (all fixed on this branch): the Alertmanager
+  config's Helm array-merge trap (receiver `null` undefined → Alertmanager never
+  provisioned at all), ServiceMonitors silently unselected
+  (`serviceMonitorSelectorNilUsesHelmValues`), the collector's `metrics` Service port
+  not exposed by default, and `up == 0` being unable to fire for an absent target
+  (→ `absent()`). Remaining follow-up in [`FOLLOWUPS.md`](../../FOLLOWUPS.md): replace
+  the `telemetrygen` verification with `#23`'s real service traffic once it ships.
 - **Removing a whole subchart from a live Helm release doesn't reliably prune all its
   resources** — observed directly while backing the test out: reverting the release to a
   chart without the stack left ~90 orphaned resources (Deployments, ConfigMaps, RBAC,
