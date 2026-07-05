@@ -1,0 +1,56 @@
+# MinIO (NFR-ARC-2) as its own Flux-managed release, sourced directly from the
+# official upstream chart repo — not nested inside the umbrella release. Same
+# reasoning as keycloak-helmrelease.yaml: Flux's GitRepository-sourced charts
+# don't recursively resolve a subchart's own vendored dependency, so sourcing
+# this via HelmRepository instead sidesteps that entirely. See ADR-0012.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: minio
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://charts.min.io/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: minio
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-dev
+  # Pinned explicitly for the same reason as keycloak-helmrelease.yaml: Flux
+  # defaults an unset releaseName to "<targetNamespace>-<HelmRelease name>"
+  # when they differ, which would otherwise make the generated Service name
+  # unpredictable for anything that needs to reach MinIO later.
+  releaseName: minio
+  install:
+    createNamespace: true
+  # The umbrella release (infra/gitops/apps/dev/beekeepingit-helmrelease.yaml)
+  # must land first — it creates the root-credentials Secret this release's
+  # `values.existingSecret` references by name.
+  dependsOn:
+    - name: beekeepingit
+  chart:
+    spec:
+      chart: minio
+      version: "5.4.0"
+      sourceRef:
+        kind: HelmRepository
+        name: minio
+        namespace: flux-system
+  values:
+    mode: standalone
+    replicas: 1
+    existingSecret: root-credentials
+    persistence:
+      enabled: true
+      size: 2Gi
+    resources:
+      requests: { cpu: 25m, memory: 128Mi }
+      limits: { cpu: 100m, memory: 256Mi }
+    ingress:
+      enabled: false
+    consoleIngress:
+      enabled: false

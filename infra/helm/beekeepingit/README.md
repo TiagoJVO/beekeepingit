@@ -6,9 +6,10 @@ Composes the whole BeekeepingIT platform into **one Helm release** on the single
 
 ## Adding a new service subchart
 
-Two shapes, depending on whether a maintained upstream chart already exists for the service (see
-[ADR-0010](../../../docs/adr/0010-platform-backing-services-provisioning.md) for the full
-reasoning):
+Two shapes, depending on whether the service needs a maintained upstream chart (see
+[ADR-0012](../../../docs/adr/0012-keycloak-minio-standalone-helmreleases.md) for the full
+reasoning, and [ADR-0010](../../../docs/adr/0010-platform-backing-services-provisioning.md) for
+what it supersedes):
 
 **Hand-rolled** (no upstream chart, or not worth vendoring — e.g. `postgres`, `gateway`):
 
@@ -28,30 +29,29 @@ file://charts/<service>`) — `helm lint` requires every subchart under `charts/
 
 `charts/postgres/` and `charts/gateway/` are live examples of this pattern.
 
-**Vendored** (a maintained upstream chart exists — e.g. `keycloak`, `minio`): create a thin
-**wrapper chart** at `charts/<service>/` whose own `Chart.yaml` declares the real upstream chart
-as _its_ nested dependency (a remote `repository:`, not `file://`), and whose own `templates/`
-add only what the vendored chart can't own itself — a generated-credential Secret (the standard
-`lookup` + `randAlphaNum` idiom used throughout: preserve on `helm upgrade`, generate on first
-install, never a literal value in git). The umbrella's own `Chart.yaml` then depends on the
-wrapper (`file://charts/<service>`), same as a hand-rolled subchart. Because values.yaml isn't
-templated, a vendored chart's own fields (its `resources:`, etc.) **can't** consume the shared
-`global.resources.<tier>` lookup — set them directly in the wrapper's `values.yaml` instead, with
-a comment noting they're hand-kept in sync. `charts/keycloak/` and `charts/minio/` are live
-examples of this pattern; if the vendored chart's own dependency needs a fresh version, run `helm
-dependency build charts/<service>` _before_ `helm dependency build .` at the umbrella root — the
-umbrella only picks up what's already resolved inside the wrapper.
+**Vendored** (a maintained upstream chart exists — e.g. Keycloak, MinIO): **don't** nest it as a
+Helm dependency of anything in this umbrella. This chart is deployed by Flux straight from Git
+(see [`infra/gitops/`](../../gitops/)), and its source-controller only resolves the umbrella's own
+top-level dependencies from what's checked into Git — it does not recursively resolve a
+subchart's own nested vendored dependency (confirmed directly: a pristine checkout without one,
+tried once, rendered zero of the vendored chart's actual resources, silently — see ADR-0012).
 
-**Important — commit the wrapper's own resolved `.tgz`:** unlike every other Helm dependency
-here, this one **must** be committed (`.gitignore` carries an explicit exception for
-`charts/keycloak/charts/*.tgz` and `charts/minio/charts/*.tgz`). Flux's source-controller (a
-GitRepository-sourced chart, see [`infra/gitops/`](../../gitops/)) only resolves the **umbrella's
-own top-level** dependencies from what's already on disk in the git checkout — it does not
-recursively run `helm dependency build` into subcharts. Verified directly: a pristine checkout
-without the wrapper's vendored `.tgz` renders the wrapper's own templates (the generated Secret,
-etc.) but silently produces **zero** `Deployment`/`StatefulSet`/`Service` for the vendored chart
-itself — no error, just a broken deploy. Re-run `helm dependency build charts/<service>` and
-commit the result whenever the vendored version bumps.
+Instead: deploy the vendored chart as its **own standalone Flux `HelmRepository` + `HelmRelease`**
+under [`infra/gitops/apps/dev/`](../../gitops/apps/dev/) (`keycloak-helmrelease.yaml`,
+`minio-helmrelease.yaml` are live examples), with `dependsOn: [beekeepingit]` if it needs a
+Secret/ConfigMap this umbrella creates. If the service needs supplementary resources the vendored
+chart can't own itself (a generated-credential Secret — the standard `lookup` + `randAlphaNum`
+idiom used throughout: preserve on `helm upgrade`, generate on first install, never a literal
+value in git), add a **thin local chart** here (`charts/keycloak/`, `charts/minio/` are live
+examples) with just those templates — no `dependencies:` section, nothing vendored. The standalone
+`HelmRelease`'s `values:` then references those Secrets/ConfigMaps by their literal name (there's
+no Helm templating inside a `HelmRelease`'s `values:` block, so use the umbrella's **actual**
+release name, not the name you might expect — check `helm list -n beekeepingit-dev` or the
+`HelmRelease`'s own status: Flux defaults an unset `releaseName` to
+`<targetNamespace>-<HelmRelease name>` when they differ, e.g.
+`beekeepingit-dev-beekeepingit-keycloak-admin-credentials`, confirmed against the live cluster —
+pin `spec.releaseName` on your own new `HelmRelease` to avoid the same surprise for whatever
+references it).
 
 Note: a cluster-scoped **operator** (e.g. CloudNativePG, which `postgres`'s `Cluster` CR depends
 on) is _not_ a subchart at all — it's installed once per cluster by `infra/cluster/up.sh`, the
@@ -80,12 +80,12 @@ and the three resource tiers (`requests`/`limits` × `cpu`/`memory`) — enforce
 
 ## Current subcharts
 
-| Subchart   | What it is                                                                                                 |
-| ---------- | ---------------------------------------------------------------------------------------------------------- |
-| `postgres` | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials |
-| `keycloak` | OIDC IdP (D-7) — wraps `codecentric/keycloakx`; dev/CI-grade realm import                                  |
-| `minio`    | S3-compatible object storage (NFR-ARC-2) — wraps the official `charts.min.io` chart                        |
-| `gateway`  | Ingress + self-signed TLS, reusing k3d's Traefik                                                           |
+| Subchart   | What it is                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `postgres` | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials                                       |
+| `keycloak` | Generated admin credential + dev/CI-grade realm import for OIDC IdP Keycloak (D-7) — Keycloak itself is a separate Flux `HelmRelease` (ADR-0012) |
+| `minio`    | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)        |
+| `gateway`  | Ingress + self-signed TLS, reusing k3d's Traefik                                                                                                 |
 
 The former `charts/smoke/` placeholder that originally proved the umbrella-to-subchart wiring
 (dependency declaration, values overrides, global resource tiers) before any real service existed

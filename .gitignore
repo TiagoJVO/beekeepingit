@@ -43,16 +43,6 @@ vendor/
 # --- Helm ---
 Chart.lock
 **/charts/*.tgz
-# Exception: Flux's source-controller (GitRepository-sourced charts) only resolves the
-# *top-level* chart's own immediate dependencies from what's on disk — it does not run a
-# recursive `helm dependency build` into subcharts, so a wrapper chart's own *nested* vendored
-# dependency (keycloak/minio — see infra/helm/beekeepingit/README.md) must be committed, or Flux
-# silently renders the wrapper's own templates but none of the vendored chart's (verified: a
-# fresh checkout without these committed produces zero Deployment/StatefulSet/Service for
-# keycloak/minio). Every other `charts/*.tgz` (the umbrella's own local file:// deps, and these
-# two wrappers' own Chart.lock) stays ignored/regenerated.
-!infra/helm/beekeepingit/charts/keycloak/charts/*.tgz
-!infra/helm/beekeepingit/charts/minio/charts/*.tgz
 
 # --- Dev tooling (mise / go-task / lefthook) ---
 .task/                 # go-task cache

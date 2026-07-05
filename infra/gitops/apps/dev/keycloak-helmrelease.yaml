@@ -1,0 +1,91 @@
+# Keycloak (D-7) as its own Flux-managed release, sourced directly from the
+# upstream chart repo — not nested inside the umbrella release. Flux's
+# GitRepository-sourced charts (the umbrella above) only resolve their own
+# top-level dependencies from what's checked into Git; they don't recursively
+# `helm dependency build` into a subchart's own vendored dependency. Sourcing
+# this chart via HelmRepository instead sidesteps that entirely (source-controller
+# fetches the already-packaged chart from the repo's index — nothing to vendor).
+# See ADR-0012.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: codecentric
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://codecentric.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: keycloak
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-dev
+  # Pinned explicitly: Flux defaults an unset releaseName to
+  # "<targetNamespace>-<HelmRelease name>" when they differ (confirmed live —
+  # the umbrella HelmRelease below has no releaseName set and actually runs as
+  # "beekeepingit-dev-beekeepingit", not "beekeepingit"). Pinning this one
+  # keeps the vendored chart's generated resource names short and predictable
+  # (e.g. the Service the gateway subchart targets is "keycloak-keycloakx-http").
+  releaseName: keycloak
+  install:
+    createNamespace: true
+  # The umbrella release (infra/gitops/apps/dev/beekeepingit-helmrelease.yaml)
+  # must land first — it creates the admin-credential Secret and realm-import
+  # ConfigMap this release's `values` reference by name below.
+  dependsOn:
+    - name: beekeepingit
+  chart:
+    spec:
+      chart: keycloakx
+      version: "7.2.0"
+      sourceRef:
+        kind: HelmRepository
+        name: codecentric
+        namespace: flux-system
+  values:
+    replicas: 1
+    # Dev mode (bundled H2, no external DB — Keycloak isn't in data-model.md's
+    # schema-per-service list) + realm import on every start, which is a
+    # feature here: the seed realm is fully reproducible on every pod restart.
+    command:
+      - /opt/keycloak/bin/kc.sh
+    args:
+      - start-dev
+      - --import-realm
+    http:
+      # Modern Keycloak serves at "/", not the chart's legacy "/auth" default.
+      relativePath: "/"
+    ingress:
+      enabled: false
+    dbchecker:
+      enabled: false
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { cpu: 250m, memory: 1Gi }
+    # extraEnv/extraVolumes/extraVolumeMounts are raw YAML-as-string in this
+    # chart (rendered via `tpl`, not native lists) — a quirk of keycloakx
+    # itself. The names below are literal (no Helm templating applies inside
+    # a HelmRelease's `values:`) and must exactly match what the umbrella
+    # release's `keycloak` subchart creates. That release's own name is
+    # Flux-auto-generated as "beekeepingit-dev-beekeepingit" (targetNamespace +
+    # HelmRelease name, since beekeepingit-helmrelease.yaml doesn't pin
+    # releaseName) — confirmed against the live cluster, not "beekeepingit".
+    extraEnv: |
+      - name: KEYCLOAK_ADMIN
+        value: admin
+      - name: KEYCLOAK_ADMIN_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: beekeepingit-dev-beekeepingit-keycloak-admin-credentials
+            key: password
+    extraVolumes: |
+      - name: realm-import
+        configMap:
+          name: beekeepingit-dev-beekeepingit-keycloak-realm-import
+    extraVolumeMounts: |
+      - name: realm-import
+        mountPath: /opt/keycloak/data/import
+        readOnly: true

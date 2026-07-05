@@ -46,23 +46,11 @@ jobs:
         with:
           version: "v3.21.2"
 
-      - name: Add vendored chart repos
-        if: steps.changes.outputs.helm == 'true'
-        run: |
-          helm repo add codecentric https://codecentric.github.io/helm-charts
-          helm repo add minio https://charts.min.io/
-          helm repo update codecentric minio
-
-      # keycloak/minio are wrapper charts around a vendored dependency (see
-      # ADR-0010) — each needs its own `helm dependency build` to resolve that
-      # vendored chart *before* the umbrella's own build packages them up.
-      - name: helm dependency build (wrapper subcharts)
-        if: steps.changes.outputs.helm == 'true'
-        run: |
-          helm dependency build charts/keycloak
-          helm dependency build charts/minio
-
-      - name: helm dependency build (umbrella)
+      # Every subchart is a local file:// dependency (postgres/gateway are
+      # hand-rolled; keycloak/minio only hold supplementary Secrets/ConfigMaps
+      # now — the actual vendored charts are separate Flux HelmReleases, see
+      # ADR-0012), so this never needs network access to a chart repo.
+      - name: helm dependency build
         if: steps.changes.outputs.helm == 'true'
         run: helm dependency build .
 

@@ -1,6 +1,9 @@
 # 0010 — Platform backing-services provisioning: vendored charts, CNPG, Traefik reuse
 
-- **Status:** Accepted
+- **Status:** Accepted — the `keycloak`/`minio` vendoring approach below (wrapper charts nesting
+  the vendored dependency) is **superseded by
+  [ADR-0012](0012-keycloak-minio-standalone-helmreleases.md)**; `postgres`/`gateway`/CNPG/Traefik/
+  TLS are unaffected and still stand.
 - **Date:** 2026-07-04
 - **Issue / Epic:** #84 · EPIC-13 (#83) · **Milestone:** M0
 - **Requirements:** NFR-ARC-2, NFR-ARC-3, NFR-SEC
@@ -26,12 +29,12 @@ and how TLS is obtained for the gateway AC. This ADR records those choices.
 **Vendor real upstream Helm charts where one exists and is well-maintained; hand-roll only where
 there's a genuine reason (`gateway`, and the CR/Secrets layer of `postgres`).**
 
-| Subchart   | Approach                                                                                                                                                                                                                                                                    |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `postgres` | **CloudNativePG (CNPG)** operator (CNCF sandbox, maintained by EDB) — not a plain StatefulSet chart. The `postgres` subchart itself is hand-rolled (a `Cluster` CR + per-service credential Secrets), because CNPG's own chart _is_ the operator, not a per-instance chart. |
-| `keycloak` | Vendors community **`codecentric/keycloakx`** (`https://codecentric.github.io/helm-charts`), wrapped by our own thin chart that adds the one thing it can't own itself: a generated admin credential + the dev/CI-grade realm import.                                       |
-| `minio`    | Vendors the **official `charts.min.io` MinIO Inc. chart**, wrapped the same way for a generated root-credentials Secret.                                                                                                                                                    |
-| `gateway`  | Hand-rolled — it's just a portable `Ingress` + a self-signed TLS `Secret`; there's nothing to vendor.                                                                                                                                                                       |
+| Subchart   | Approach                                                                                                                                                                                                                                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `postgres` | **CloudNativePG (CNPG)** operator (CNCF sandbox, maintained by EDB) — not a plain StatefulSet chart. The `postgres` subchart itself is hand-rolled (a `Cluster` CR + per-service credential Secrets), because CNPG's own chart _is_ the operator, not a per-instance chart.                                                                            |
+| `keycloak` | ~~Vendors community **`codecentric/keycloakx`**, wrapped by our own thin chart that adds a generated admin credential + the dev/CI-grade realm import.~~ **Superseded by ADR-0012**: Keycloak is now its own standalone Flux `HelmRelease` sourced from `codecentric/keycloakx` directly; this subchart only keeps the supplementary Secret/ConfigMap. |
+| `minio`    | ~~Vendors the **official `charts.min.io` MinIO Inc. chart**, wrapped the same way for a generated root-credentials Secret.~~ **Superseded by ADR-0012**: MinIO is now its own standalone Flux `HelmRelease`; this subchart only keeps the supplementary root-credentials Secret.                                                                       |
+| `gateway`  | Hand-rolled — it's just a portable `Ingress` + a self-signed TLS `Secret`; there's nothing to vendor.                                                                                                                                                                                                                                                  |
 
 ### Why CNPG over a plain chart, and where the operator lives
 
@@ -55,7 +58,10 @@ uninstall`) would be wrong for something meant to serve every environment on the
 it's installed once via `infra/cluster/up.sh`, the same way k3d already bundles Traefik as a
 cluster-level prerequisite the umbrella chart doesn't own.
 
-### Wrapper-chart pattern for `keycloak`/`minio`
+### Wrapper-chart pattern for `keycloak`/`minio` — superseded, see ADR-0012
+
+_This section describes the original #84 approach, kept for history — it no longer reflects what's
+deployed; see [ADR-0012](0012-keycloak-minio-standalone-helmreleases.md)._
 
 Values files aren't templated (only `templates/` are), so a subchart we don't author can't be made
 to consume our shared `global.resources.<tier>` lookup — that only works inside templates we own.
@@ -101,12 +107,12 @@ infrastructure that will be replaced (or fronted by a real CA) when EPIC-14 land
   so it isn't mistaken for an oversight.
 - Self-signed TLS means clients must trust-on-first-use (`-k`/`--insecure` or an explicit
   `--resolve` + cert pin for local testing) until EPIC-14 fronts it with a real CA.
-- The `keycloak`/`minio` wrapper charts' own vendored `.tgz` **must be committed** (an explicit
-  `.gitignore` exception), unlike every other Helm dependency here — Flux's GitOps deploy
-  (`infra/gitops/`) sources this chart directly from Git, and its source-controller only resolves
-  the umbrella's own top-level dependencies from disk, not a subchart's nested ones. Confirmed by
-  direct test: a checkout without it renders the wrapper's own Secret but zero of the vendored
-  chart's actual resources — silently, no error. See `infra/helm/beekeepingit/README.md`.
+- ~~The `keycloak`/`minio` wrapper charts' own vendored `.tgz` must be committed~~ — this was a
+  real, confirmed bug (Flux's GitOps deploy sources the umbrella chart directly from Git, and its
+  source-controller doesn't recursively resolve a subchart's own nested dependency, so it silently
+  deployed nothing for Keycloak/MinIO). Fixed for good, not patched, in
+  [ADR-0012](0012-keycloak-minio-standalone-helmreleases.md): Keycloak/MinIO no longer nest inside
+  this umbrella chart at all.
 
 ## Alternatives considered
 

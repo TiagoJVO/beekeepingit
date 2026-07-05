@@ -5,6 +5,23 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
+## #84 (ADR-0012) — pin `releaseName` on the umbrella `HelmRelease`
+
+- **What:** `infra/gitops/apps/dev/beekeepingit-helmrelease.yaml` doesn't set `spec.releaseName`,
+  so Flux's helm-controller defaults it to `<targetNamespace>-<HelmRelease name>` —
+  `beekeepingit-dev-beekeepingit` in practice (confirmed on the live cluster), not
+  `beekeepingit`. The new `keycloak`/`minio` `HelmRelease`s hardcode references to that actual
+  name (`beekeepingit-dev-beekeepingit-keycloak-admin-credentials`, etc.).
+- **Why it matters:** if this ever changes (releaseName pinned, targetNamespace altered), those
+  hardcoded references go stale silently. Pinning `spec.releaseName: beekeepingit` there would
+  make the name match direct `helm install beekeepingit` too — but the release is already live
+  under the auto-generated name, so renaming it needs a deliberate migration (old release
+  cleanup), not a drive-by edit.
+- **Where:** `infra/gitops/apps/dev/beekeepingit-helmrelease.yaml`,
+  [`docs/adr/0012-keycloak-minio-standalone-helmreleases.md`](docs/adr/0012-keycloak-minio-standalone-helmreleases.md)
+  Follow-ups.
+- **Status:** not blocking; revisit deliberately, not as a side effect of another change.
+
 ## #85 → #20 — reuse `services/shared/dbaccess`, don't re-derive
 
 - **What:** `#85` landed `services/shared/dbaccess` (pgx + sqlc + goose, `Connect`/`Migrate`)

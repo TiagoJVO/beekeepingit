@@ -23,11 +23,27 @@ flux check     # verify
 | [`clusters/dev/flux-system.yaml`](clusters/dev/flux-system.yaml)                   | `GitRepository` (this repo, `main`) + the self-referential `Kustomization` that keeps everything under `clusters/dev/` (including itself) reconciled from Git |
 | [`clusters/dev/apps.yaml`](clusters/dev/apps.yaml)                                 | `Kustomization` pointing Flux at `apps/dev/`                                                                                                                  |
 | [`apps/dev/beekeepingit-helmrelease.yaml`](apps/dev/beekeepingit-helmrelease.yaml) | `HelmRelease` deploying the umbrella chart into `beekeepingit-dev`, mirroring `environments/dev.yaml`                                                         |
+| [`apps/dev/keycloak-helmrelease.yaml`](apps/dev/keycloak-helmrelease.yaml)         | `HelmRepository` (codecentric) + `HelmRelease` deploying Keycloak (keycloakx) directly, not nested in the umbrella chart, see ADR-0012                        |
+| [`apps/dev/minio-helmrelease.yaml`](apps/dev/minio-helmrelease.yaml)               | `HelmRepository` (minio) + `HelmRelease` deploying MinIO directly, same reasoning, ADR-0012                                                                   |
 
 Adding `staging`/`prod` later means adding `clusters/staging/`, `clusters/prod/` (own
 `GitRepository`/bootstrap `Kustomization`, likely pointing at a release branch/tag instead of
 `main`) and `apps/staging/`, `apps/prod/` `HelmRelease`s — mirroring how
 `environments/{staging,prod}.yaml` already exist as unused overlays on the Helm chart.
+
+### Why Keycloak/MinIO are separate `HelmRelease`s, not umbrella subcharts
+
+The umbrella chart is sourced by Flux straight from this `GitRepository` — its source-controller
+only resolves the umbrella's own top-level dependencies from what's checked into Git; it does not
+recursively `helm dependency build` into a subchart's own nested vendored dependency (verified
+directly: a pristine checkout without one, once vendored inline, rendered zero of that vendored
+chart's actual resources, silently). Keycloak (codecentric/keycloakx) and MinIO (charts.min.io)
+are consumed instead the way Flux's own docs describe: a `HelmRepository` + `HelmRelease` per
+upstream chart, with `dependsOn: [beekeepingit]` so the umbrella release's generated credential
+Secret/realm ConfigMap exist first. See
+[ADR-0012](../../docs/adr/0012-keycloak-minio-standalone-helmreleases.md) for the full reasoning
+(and [ADR-0010](../../docs/adr/0010-platform-backing-services-provisioning.md) for what it
+supersedes).
 
 ## One-time bootstrap
 
