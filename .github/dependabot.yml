@@ -1,7 +1,8 @@
 # Dependency scanning half of the CI supply-chain story (EPIC-13 #88 / EPIC-14 #89): Dependabot
 # opens a PR per update for each ecosystem below. It bumps the SHA-pinned `uses:` refs (and the
-# version comment) for Actions, and `go.mod`/`go.sum` for Go. Add `docker` (per-service
-# Dockerfiles), `npm` (admin app) and `pub` (Flutter client) ecosystems as those packages land.
+# version comment) for Actions, `go.mod`/`go.sum` for Go, and `pubspec.yaml`/`pubspec.lock` for
+# the Flutter client. Add `docker` (per-service Dockerfiles) and `npm` (admin app) ecosystems as
+# those packages land.
 #
 # `commit-message.prefix` keeps PR titles Conventional-Commits-compliant so they pass the
 # "PR Title Semantics" check (`ci:` for Actions, `build:` for app dependencies).
@@ -22,6 +23,16 @@ updates:
     directories:
       - "/services/shared"
       - "/services/servicetemplate"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "build"
+    labels:
+      - "type/chore"
+
+  # Flutter client (#21).
+  - package-ecosystem: "pub"
+    directory: "/client"
     schedule:
       interval: "weekly"
     commit-message:

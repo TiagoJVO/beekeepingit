@@ -10,6 +10,7 @@
 # --- Language toolchains (baseline for the first services/apps) ---
 go = "1.25"   # bumped from 1.24 landing services/shared (#85): pgx v5/minio-go v7 require it
 node = "22"
+flutter = "3.35.5"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed
 
 # --- Task runner & git hooks ---
 task = "3"          # go-task — the monorepo task runner (Taskfile.yml)

@@ -7,7 +7,10 @@ version: "3"
 silent: true
 
 vars:
-  FIND_PKGS: >-
+  # Named FIND_WEB_PKGS (not FIND_PKGS) — Task merges `vars:` from included
+  # taskfiles into one global namespace, so a name shared with another
+  # included taskfile (e.g. dart.yml's package search) silently clobbers it.
+  FIND_WEB_PKGS: >-
     find . -type f -name package.json
     -not -path '*/node_modules/*'
     -not -path '*/.git/*'
@@ -19,7 +22,7 @@ tasks:
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [web] lint $d"; (cd "$d" && npm run lint --if-present); done
 
@@ -28,7 +31,7 @@ tasks:
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [web] format $d"; (cd "$d" && npm run format --if-present); done
 
@@ -37,7 +40,7 @@ tasks:
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [web] test $d"; (cd "$d" && npm test --if-present); done
 
@@ -46,6 +49,6 @@ tasks:
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [web] build $d"; (cd "$d" && npm run build --if-present); done

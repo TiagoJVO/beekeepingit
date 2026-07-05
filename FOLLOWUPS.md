@@ -7,11 +7,33 @@
 
 ## Tooling — deferred (post-#19)
 
-- **Add `flutter`/`dart` to [`mise.toml`](mise.toml)** when the Flutter client package lands (D-10);
-  wire `dart:build` and have the client `include:` the shared `analysis_options.yaml` +
-  `flutter_lints`.
 - **Pinned-tool updates** — Dependabot covers GitHub Actions + Go modules (`gomod`, #88); add a
-  mechanism (renovate/mise) to bump the `mise.toml` tool pins, which Dependabot can't.
+  mechanism (renovate/mise) to bump the `mise.toml` tool pins, which Dependabot can't. `flutter`
+  landed pinned in `mise.toml` with `#21` — include it once such a mechanism exists.
+
+## #21 — client/ follow-ups
+
+- **Visual rendering verified after-the-fact, PWA install/offline QA still not done** — a
+  manual pass (screenshot + DOM inspection of a built/served bundle) confirmed the home
+  screen actually renders (title, subtitle, gateway status, themed button) and found/fixed
+  a real bug (see below); a human should still `flutter run -d chrome` once to confirm the
+  PWA installs and the service worker caches the app shell offline, before/soon after this
+  merges.
+- **Fixed: the app rendered blank without `--no-web-resources-cdn`** — `flutter build
+web`/`flutter run` default to fetching CanvasKit/fonts from Google's CDN
+  (`www.gstatic.com`) at runtime; wherever that CDN is unreachable, the Flutter engine never
+  paints and the page is blank (only the bootstrap `<script>` tag in the DOM, no
+  `flutter-view`/canvas). Fixed by always passing `--no-web-resources-cdn` in
+  `task dart:build` (bundles CanvasKit/fonts locally instead) — genuinely required for an
+  offline-first PWA, not just a workaround for this session's sandboxed network. Pass the
+  same flag with `flutter run` for local dev (documented in `client/README.md`).
+- **App icons are Flutter's default template icons** — `client/web/icons/*` and
+  `favicon.png` are `flutter create`'s stock icon, not project artwork (none exists yet);
+  swap for a real logo whenever the project gets a brand pass.
+- **State management: Riverpod** — chosen and documented in
+  [`client/README.md`](client/README.md) (AC: "a chosen state-management pattern is
+  established and documented"). Revisit only if a concrete need pushes against it once real
+  offline/PowerSync state lands (`#23`).
 
 ## EPIC-13 (platform) — wire API-contract tooling into CI
 
@@ -55,8 +77,8 @@ lands; none blocks #88's merge:
   `{"$imagepolicy": ...}` setter marker to the service's deploy manifest. Steps in that dir's README.
 - **Trivy `config` → blocking** — flip `security-scan.yml`'s `trivy-config` job `exit-code` to `1`
   once #89 triages the pre-existing Helm/k8s misconfig baseline. Owned by #89.
-- **Dependabot ecosystems** — add `docker` (per-service Dockerfiles), `npm` (admin app), and `pub`
-  (Flutter client) to `.github/dependabot.yml` as those packages land.
+- **Dependabot ecosystems** — add `docker` (per-service Dockerfiles) and `npm` (admin app) to
+  `.github/dependabot.yml` as those packages land. `pub` (Flutter client) is done (`#21`).
 - **macOS/iOS CI** — the disabled `ios-build` placeholder in `build-publish.yml` is enabled at
   **M5 by EPIC-15** (needs an Apple Developer account + macOS runners); do not enable before then.
 
