@@ -1,13 +1,18 @@
 # Dart/Flutter tasks — discover every package (pubspec.yaml) and run the tool inside each.
-# No-ops until the Flutter client is scaffolded (e.g. clients/app/pubspec.yaml). When it
-# lands, add `flutter`/`dart` to mise.toml and the client's analysis_options.yaml includes
-# the shared baseline at repo root.
+# `lint`/`format` use plain `dart` (works for both pure-Dart and Flutter packages — no
+# engine needed for static analysis/formatting). `test`/`build` need the Flutter-specific
+# runner for Flutter packages (dart:ui isn't available under plain `dart test`), detected by
+# grepping the package's pubspec.yaml for `sdk: flutter`.
 version: "3"
 
 silent: true
 
 vars:
-  FIND_PKGS: >-
+  # Named FIND_DART_PKGS (not FIND_PKGS) — Task merges `vars:` from included
+  # taskfiles into one global namespace, so a name shared with another
+  # included taskfile (e.g. web.yml) silently clobbers it. go.yml's FIND_MODS
+  # already follows this per-language-unique naming; web.yml now does too.
+  FIND_DART_PKGS: >-
     find . -type f -name pubspec.yaml
     -not -path '*/.dart_tool/*'
     -not -path '*/.git/*'
@@ -19,7 +24,7 @@ tasks:
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_DART_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [dart] analyze $d"; (cd "$d" && dart pub get && dart analyze); done
 
@@ -28,20 +33,36 @@ tasks:
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_DART_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [dart] format $d"; (cd "$d" && dart format .); done
 
   test:
-    desc: "Test Dart packages (dart test)"
+    desc: "Test Dart/Flutter packages (flutter test / dart test)"
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_DART_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
-        for p in $pkgs; do d=$(dirname "$p"); echo "› [dart] test $d"; (cd "$d" && dart test); done
+        for p in $pkgs; do
+          d=$(dirname "$p")
+          echo "› [dart] test $d"
+          if grep -q 'sdk: *flutter' "$p"; then (cd "$d" && flutter test); else (cd "$d" && dart test); fi
+        done
 
   build:
-    desc: "Build placeholder — platform-specific build wiring lands with the client"
+    desc: "Build Dart/Flutter packages (flutter build web for Flutter apps)"
     cmds:
-      - echo "› [dart] build is wired per-package when the Flutter client lands — skipping"
+      - |
+        set -e
+        pkgs=$({{.FIND_DART_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
+        for p in $pkgs; do
+          d=$(dirname "$p")
+          if grep -q 'sdk: *flutter' "$p"; then
+            echo "› [dart] build $d (flutter build web)"
+            (cd "$d" && flutter build web)
+          else
+            echo "› [dart] $d is a pure-Dart package — nothing to build, skipping"
+          fi
+        done
