@@ -1,0 +1,408 @@
+# Base/default values for the observability chart (#87, NFR-OBS-1/NFR-PER-1) — see
+# docs/architecture/platform.md#observability for the full design/rationale, and
+# ADR-0013 for why this is its own chart/HelmRelease instead of part of the
+# beekeepingit umbrella (short version: Loki/Tempo need MinIO, MinIO's HelmRelease
+# needs the umbrella — nesting this stack in the umbrella deadlocks a fresh install).
+#
+# The four vendored charts below get `fullnameOverride` so the in-cluster Service
+# names they use to reach each other (kube-prometheus-stack-prometheus, loki,
+# tempo, otel-collector, alert-webhook-sink) are fixed and predictable rather than
+# derived from the release name.
+
+global:
+  # Target namespace for this release — same one the beekeepingit umbrella deploys
+  # into (this stack reads its root-credentials Secret, created there).
+  namespace: beekeepingit
+
+  # Resource-request/limit preset consumed by the alert-webhook-sink subchart via
+  # `.Values.global.resources.<tier>` (same convention as the beekeepingit
+  # umbrella). The vendored charts size themselves with their own native resource
+  # fields instead — values.yaml isn't templated, so they can't consume this.
+  resources:
+    small:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 64Mi }
+
+# Prometheus + Alertmanager + Grafana + kube-state-metrics + node-exporter, one chart.
+kube-prometheus-stack:
+  enabled: true
+  fullnameOverride: kube-prometheus-stack
+
+  crds:
+    enabled: true
+
+  prometheus:
+    prometheusSpec:
+      # Lets the OTel Collector push metrics via Prometheus's remote-write API
+      # instead of (only) being scraped, so it can forward whatever it receives
+      # over OTLP without every metric needing its own scrape target.
+      enableRemoteWriteReceiver: true
+      # Select ALL ServiceMonitors in the namespace, not only ones labeled with
+      # this Helm release's name (the chart's default) — the otel-collector and
+      # tempo charts create their own ServiceMonitors without that label, and
+      # were silently never scraped (verified live: absent from /api/v1/targets).
+      serviceMonitorSelectorNilUsesHelmValues: false
+      retention: 6h
+      resources:
+        requests: { cpu: 100m, memory: 512Mi }
+        limits: { cpu: 500m, memory: 1Gi }
+      # Single-node dev cluster: no need for extra replicas/HA.
+      replicas: 1
+
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { cpu: 100m, memory: 64Mi }
+      replicas: 1
+    # Values-driven Alertmanager config: route every alert (including the chart's
+    # built-in always-firing `Watchdog`, which itself proves the pipeline is
+    # alive) to the in-cluster webhook sink — no external account/secret needed
+    # for local/dev alerting.
+    config:
+      route:
+        receiver: webhook-sink
+        group_by: ["alertname"]
+        group_wait: 10s
+        group_interval: 1m
+        repeat_interval: 1h
+      receivers:
+        # Helm merge trap (verified live): this ARRAY replaces the chart default's
+        # receivers wholesale, but the default `route.routes` (a map key we don't
+        # set) survives the merge — and it routes Watchdog to a receiver named
+        # "null". Without re-declaring that receiver here, Alertmanager rejects
+        # the whole config ("undefined receiver \"null\" used in route") and the
+        # operator never creates its StatefulSet at all.
+        - name: "null"
+        - name: webhook-sink
+          webhook_configs:
+            # The sink subchart's pinned name (fullnameOverride below) — a bare
+            # same-namespace DNS name; `alertmanager.config` is plain values, not
+            # templated, so it can't derive this.
+            - url: "http://alert-webhook-sink:8080/alert"
+              send_resolved: true
+
+  # Custom PrometheusRule injected without a hand-written CRD template: fires when
+  # the OTel Collector's own scrape target goes down — simulate with
+  # `kubectl scale deploy/otel-collector --replicas=0` (see platform.md's alerting
+  # walkthrough).
+  additionalPrometheusRulesMap:
+    observability-platform-rules:
+      groups:
+        - name: observability-platform
+          rules:
+            - alert: OtelCollectorDown
+              # absent(), not `up == 0` (verified live): scaling the collector to 0
+              # removes its Endpoints, so the scrape target — and with it the whole
+              # `up` series — disappears entirely; `up == 0` can then never match.
+              # absent() also fires if the target was never scraped in the first
+              # place (e.g. its ServiceMonitor isn't selected).
+              expr: absent(up{job=~".*otel-collector.*"}) == 1
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                summary: "OTel Collector target down"
+                description: >-
+                  The OpenTelemetry Collector has been down (or unscraped) for more
+                  than 1 minute (#87 — simulated failure for the alerting-pipeline
+                  verification).
+
+  grafana:
+    fullnameOverride: kube-prometheus-stack-grafana
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 200m, memory: 256Mi }
+    # Prometheus is auto-provisioned as the default datasource by this chart;
+    # Loki/Tempo are added here with fixed `uid`s so they can cross-reference each
+    # other for trace<->log correlation.
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        uid: loki
+        url: http://loki:3100
+        access: proxy
+        jsonData:
+          derivedFields:
+            - datasourceUid: tempo
+              matcherRegex: "trace_id=(\\w+)"
+              name: TraceID
+              url: "$${__value.raw}"
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        url: http://tempo:3200
+        access: proxy
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: "-5m"
+            spanEndTimeShift: "5m"
+            filterByTraceID: true
+    # Starter dashboard (AC: "at least one starter dashboard") — values-driven, no
+    # hand-written ConfigMap template. Covers collector throughput + target health;
+    # extend once #23's walking-skeleton services exist.
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+          - name: default
+            orgId: 1
+            folder: ""
+            type: file
+            disableDeletion: false
+            editable: true
+            options:
+              path: /var/lib/grafana/dashboards/default
+    dashboards:
+      default:
+        platform-overview:
+          json: |
+            {
+              "title": "BeekeepingIT Platform Overview",
+              "uid": "beekeepingit-platform-overview",
+              "schemaVersion": 39,
+              "version": 1,
+              "editable": true,
+              "timezone": "browser",
+              "panels": [
+                {
+                  "id": 1,
+                  "title": "Scrape targets up",
+                  "type": "stat",
+                  "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+                  "targets": [{ "expr": "sum(up)", "refId": "A" }]
+                },
+                {
+                  "id": 2,
+                  "title": "OTel Collector - accepted spans/s",
+                  "type": "timeseries",
+                  "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+                  "targets": [{ "expr": "sum(rate(otelcol_receiver_accepted_spans_total[5m]))", "refId": "A" }]
+                },
+                {
+                  "id": 3,
+                  "title": "OTel Collector - accepted log records/s",
+                  "type": "timeseries",
+                  "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+                  "targets": [{ "expr": "sum(rate(otelcol_receiver_accepted_log_records_total[5m]))", "refId": "A" }]
+                },
+                {
+                  "id": 4,
+                  "title": "OTel Collector - accepted metric points/s",
+                  "type": "timeseries",
+                  "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+                  "targets": [{ "expr": "sum(rate(otelcol_receiver_accepted_metric_points_total[5m]))", "refId": "A" }]
+                }
+              ]
+            }
+
+  kube-state-metrics:
+    resources:
+      requests: { cpu: 20m, memory: 48Mi }
+      # Verified live: at a 50m CPU limit its initial sync of the (now sizeable)
+      # cluster gets throttled past the liveness-probe deadline and kubelet
+      # kill-loops it. 150m gives the sync headroom; steady-state usage is tiny.
+      limits: { cpu: 150m, memory: 128Mi }
+
+  prometheus-node-exporter:
+    resources:
+      requests: { cpu: 10m, memory: 16Mi }
+      limits: { cpu: 50m, memory: 32Mi }
+
+# Logs. SingleBinary mode, MinIO-backed object storage — credentials come from the
+# beekeepingit umbrella's generated `root-credentials` Secret via env vars, never a
+# literal value here (NFR-SEC).
+loki:
+  enabled: true
+  fullnameOverride: loki
+  deploymentMode: SingleBinary
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+    storage:
+      bucketNames:
+        chunks: loki
+        ruler: loki
+        admin: loki
+      type: s3
+      s3:
+        # MinIO runs as its own standalone Flux HelmRelease with a pinned
+        # releaseName "minio" (ADR-0012), same namespace — bare short DNS name.
+        # Its loki/tempo buckets are configured on that HelmRelease's values
+        # (infra/gitops/apps/dev/minio-helmrelease.yaml).
+        endpoint: minio:9000
+        region: us-east-1
+        # Credentials come from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (env, below)
+        # — the Go S3 client falls back to them when these are left unset.
+        secretAccessKey: null
+        accessKeyId: null
+        s3ForcePathStyle: true
+        insecure: true
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+  singleBinary:
+    replicas: 1
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 512Mi }
+    persistence:
+      enabled: true
+      size: 5Gi
+    # MinIO's root user/password, reused here — single-tenant dev cluster,
+    # no per-service MinIO users provisioned yet.
+    extraEnv:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: root-credentials
+            key: rootUser
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: root-credentials
+            key: rootPassword
+  # Not used in SingleBinary mode.
+  read: { replicas: 0 }
+  write: { replicas: 0 }
+  backend: { replicas: 0 }
+  minio: { enabled: false }
+  gateway: { enabled: false }
+  chunksCache: { enabled: false }
+  resultsCache: { enabled: false }
+  test: { enabled: false }
+  lokiCanary: { enabled: false }
+  monitoring:
+    selfMonitoring: { enabled: false }
+    lokiCanary: { enabled: false }
+    serviceMonitor: { enabled: false }
+
+# Traces. Monolithic chart, MinIO-backed object storage — same credentials-via-env
+# approach as Loki above (NFR-SEC). NOTE: Tempo validates its bucket eagerly at
+# boot and hard-fails if it doesn't exist — this is exactly why this chart deploys
+# AFTER MinIO (the HelmRelease's dependsOn), see ADR-0013.
+tempo:
+  enabled: true
+  fullnameOverride: tempo
+  tempo:
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }
+    storage:
+      trace:
+        backend: s3
+        s3:
+          bucket: tempo
+          # Same standalone-MinIO note as loki's endpoint above.
+          endpoint: minio:9000
+          # `${...}` needs -config.expand-env (extraArgs below) — Tempo's own config
+          # loader doesn't fall back to AWS_* env vars the way Loki's S3 client does.
+          access_key: "${AWS_ACCESS_KEY_ID}"
+          secret_key: "${AWS_SECRET_ACCESS_KEY}"
+          insecure: true
+        wal:
+          path: /var/tempo/wal
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    extraArgs:
+      config.expand-env: "true"
+    # MinIO's root user/password, reused here — same note as Loki above.
+    extraEnv:
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: root-credentials
+            key: rootUser
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: root-credentials
+            key: rootPassword
+  # WAL is always local (Tempo architecture) — small since the trace backend
+  # itself is MinIO, not local disk.
+  persistence:
+    enabled: true
+    size: 2Gi
+  serviceMonitor:
+    enabled: true
+
+# Single collector deployment (no DaemonSet needed on a single-node dev cluster):
+# receives OTLP, fans out metrics->Prometheus (remote-write), traces->Tempo,
+# logs->Loki (native OTLP ingestion, Loki 3.x+).
+opentelemetry-collector:
+  enabled: true
+  fullnameOverride: otel-collector
+  mode: deployment
+  # -contrib, not -k8s/core: the `prometheusremotewrite` exporter used below is a
+  # contrib-only component.
+  image:
+    repository: "otel/opentelemetry-collector-contrib"
+  replicaCount: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+  # The chart's ServiceMonitor scrapes a Service port named `metrics` that is
+  # NOT exposed by default (verified live: no such port, so Prometheus had no
+  # target even with the ServiceMonitor selected) — expose the collector's
+  # internal telemetry endpoint (8888) as that port.
+  ports:
+    metrics:
+      enabled: true
+  serviceMonitor:
+    enabled: true
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch: {}
+    exporters:
+      prometheusremotewrite:
+        endpoint: "http://kube-prometheus-stack-prometheus:9090/api/v1/write"
+      otlp/tempo:
+        endpoint: "tempo:4317"
+        tls:
+          insecure: true
+      otlphttp/loki:
+        endpoint: "http://loki:3100/otlp"
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp/tempo]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheusremotewrite]
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlphttp/loki]
+
+# Alertmanager receiver for local/dev — logs every received webhook POST to
+# stdout, no external account/secret needed. Not production alerting.
+alert-webhook-sink:
+  enabled: true
+  # Pinned so Alertmanager's webhook URL above stays valid whatever the release
+  # is called.
+  fullnameOverride: alert-webhook-sink

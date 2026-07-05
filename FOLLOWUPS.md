@@ -52,6 +52,21 @@
 - **Status:** pending #86/#88 — until then, exercised manually against the local `beekeeping`
   k3d cluster (see `infra/README.md`).
 
+## EPIC-13 (#87) — verify real walking-skeleton telemetry once #23 lands
+
+- **What:** once `#23`'s Go service ships and its OTel SDK is wired to
+  `otel-collector:4317` (in-cluster OTLP endpoint), re-run the
+  [`infra/observability-smoke-test.sh`](infra/observability-smoke-test.sh) checks against
+  its real traffic instead of the `telemetrygen` stand-in, and confirm its traces/logs
+  show up correlated in Grafana.
+- **Why:** `#87`'s AC "the walking-skeleton slice shows its traces and logs in this stack"
+  can't be literally satisfied until a real service emits telemetry — `#23` was still
+  pending when `#87` landed. The `telemetrygen` script proves the pipeline works now; this
+  item closes the AC for real.
+- **Where:** [`docs/architecture/platform.md#observability`](docs/architecture/platform.md#observability),
+  [ADR-0013](docs/adr/0013-observability-stack.md).
+- **Status:** pending `#23`.
+
 ## #84 — verified live against the local `beekeeping` k3d cluster (2026-07-04)
 
 Full `helm install`/`helm test` verification from WSL2 caught and fixed two real bugs before

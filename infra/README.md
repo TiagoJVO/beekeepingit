@@ -14,7 +14,11 @@ for the as-built design; intent/decisions live in
 #    subchart (see charts/postgres/Chart.yaml and ADR-0010)
 infra/cluster/up.sh
 
-# 2. Install (or upgrade) the platform
+# 2. Fetch chart dependencies (local + vendored third-party, see the chart's README) —
+#    re-run after cloning or whenever a dependency version changes.
+helm dependency build infra/helm/beekeepingit
+
+# 3. Install (or upgrade) the platform
 infra/cluster/with-lock.sh helm install beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
   --namespace beekeepingit-dev --create-namespace
@@ -24,12 +28,14 @@ infra/cluster/with-lock.sh helm upgrade beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
   --namespace beekeepingit-dev
 
-# 3. Keycloak/MinIO are separate Flux HelmReleases (ADR-0012), not part of the
-#    umbrella release above — either let Flux reconcile them (if bootstrapped,
-#    see infra/gitops/README.md) or apply them directly for local-only testing:
+# 3. Keycloak/MinIO/observability are separate Flux HelmReleases (ADR-0012,
+#    ADR-0013), not part of the umbrella release above — either let Flux
+#    reconcile them (if bootstrapped, see infra/gitops/README.md) or apply them
+#    directly for local-only testing:
 infra/cluster/with-lock.sh kubectl apply \
   -f infra/gitops/apps/dev/keycloak-helmrelease.yaml \
-  -f infra/gitops/apps/dev/minio-helmrelease.yaml
+  -f infra/gitops/apps/dev/minio-helmrelease.yaml \
+  -f infra/gitops/apps/dev/observability-helmrelease.yaml
 
 # 4. Smoke-test the backing services (Postgres/PostGIS; #84)
 helm test beekeepingit --namespace beekeepingit-dev
@@ -69,12 +75,20 @@ filesystem with this machine or across concurrent runs, so `flock` wouldn't appl
 
 ## Layout
 
-| Path                                       | What it is                                                                                                                         |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [`cluster/`](cluster/)                     | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`)                                                                |
-| [`helm/beekeepingit/`](helm/beekeepingit/) | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                |
-| [`gitops/`](gitops/)                       | **Flux** GitOps wiring that reconciles the umbrella chart onto the cluster from this repo — see its own [README](gitops/README.md) |
+| Path                                                         | What it is                                                                                                                                 |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`)                                                                        |
+| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                        |
+| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md) |
+| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                 |
+| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry             |
+| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                 |
 
 Postgres+PostGIS, Keycloak, MinIO and the gateway (**#84**) are the umbrella chart's first real
 subcharts; the walking-skeleton services + PowerSync + PWA subcharts land with **#23**. Both wire
 into this umbrella chart rather than standing up their own release.
+
+The **observability stack** (OTel Collector, Prometheus, Grafana, Loki, Tempo — `NFR-OBS-1`)
+landed with **#87**: see
+[`docs/architecture/platform.md#observability`](../docs/architecture/platform.md#observability)
+for the design.

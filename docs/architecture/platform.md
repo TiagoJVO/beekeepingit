@@ -1,9 +1,10 @@
 # Platform: single k8s cluster + Helm umbrella chart
 
-> **Status:** As-built (EPIC-13 #83). Intent: `NFR-ARC-1` (microservices, clear APIs),
+> **Status:** As-built (EPIC-13 #83, #87). Intent: `NFR-ARC-1` (microservices, clear APIs),
 > `NFR-ARC-3` (single cluster for v1, design for future scaling without forcing it),
-> `D-1` (full microservices, still one cluster). Tech choice:
-> [`requirements/tech-stack.md`](../../requirements/tech-stack.md) (`k8s + Helm`).
+> `NFR-OBS-1`/`NFR-PER-1` (observability), `D-1` (full microservices, still one
+> cluster). Tech choice: [`requirements/tech-stack.md`](../../requirements/tech-stack.md)
+> (`k8s + Helm`; `OpenTelemetry + Prometheus + Grafana + Loki/Tempo`).
 
 ## Cluster
 
@@ -60,12 +61,103 @@ section covers the _why_.
 - **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0010](../adr/0010-platform-backing-services-provisioning.md)):
   `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
   portable `Ingress` + self-signed TLS Secret, reusing k3d's Traefik) are hand-rolled — there's
-  nothing to vendor for either. `keycloak` and `minio` are thin **wrapper charts**: each declares
-  a real upstream chart (`codecentric/keycloakx`, the official `charts.min.io` MinIO chart) as its
-  own nested dependency, adding only what the vendored chart can't own itself (a generated
-  credential Secret; for Keycloak, also the dev/CI-grade realm import). The former `charts/smoke/`
-  placeholder that originally proved this wiring end-to-end has been removed now that real
-  subcharts exist.
+  nothing to vendor for either. `keycloak` and `minio` only hold what a vendored chart can't own
+  itself (a generated credential Secret; for Keycloak, also the dev/CI-grade realm import) — the
+  actual vendored charts (`codecentric/keycloakx`, the official `charts.min.io` MinIO chart) run as
+  their own standalone Flux `HelmRelease`s (`infra/gitops/apps/dev/`), not nested here, since
+  Flux's GitRepository-sourced charts don't recursively resolve a subchart's own vendored
+  dependency (the original nested-wrapper approach silently deployed zero of the vendored chart's
+  workload) — see [ADR-0012](../adr/0012-keycloak-minio-standalone-helmreleases.md), which
+  supersedes the wrapper-chart part of ADR-0010.
+- The former `charts/smoke/` placeholder (proved the umbrella→subchart wiring before any real
+  service existed) was removed once `#84`/`#87` added the first real subcharts.
+
+## Observability
+
+Stack per `requirements/tech-stack.md`: **OpenTelemetry Collector → Prometheus (metrics) /
+Loki (logs) / Tempo (traces) → Grafana**, satisfying `NFR-OBS-1` (logging, monitoring,
+alerting) and contributing to `NFR-PER-1`.
+
+It is **its own chart** ([`infra/helm/observability/`](../../infra/helm/observability/)) +
+**its own Flux `HelmRelease`**
+([`infra/gitops/apps/dev/observability-helmrelease.yaml`](../../infra/gitops/apps/dev/observability-helmrelease.yaml),
+`dependsOn: [beekeepingit, minio]`), **not part of the beekeepingit umbrella** — its
+Loki/Tempo need MinIO's buckets at boot (Tempo hard-fails without its bucket, confirmed
+live), and MinIO's own `HelmRelease` depends on the umbrella for the `root-credentials`
+Secret; nesting the stack in the umbrella therefore deadlocks a fresh install
+([ADR-0013](../adr/0013-observability-stack.md)). The four upstream charts are **direct
+remote dependencies** of the observability chart (`repository: https://...`, no local
+wrapper — Flux resolves a git-sourced chart's own top-level remote dependencies fine;
+only _nested_ ones break, ADR-0012), each with `fullnameOverride` set so the in-cluster
+Service names they use to reach each other (`kube-prometheus-stack-prometheus`, `loki`,
+`tempo`, `otel-collector`, `alert-webhook-sink`) are fixed rather than derived from the
+release name. Config lives in that chart's `values.yaml` under each dependency's name.
+
+- **`prometheus-community/kube-prometheus-stack`** bundles Prometheus, Alertmanager,
+  Grafana, kube-state-metrics and node-exporter (plus the `PrometheusRule`/
+  `ServiceMonitor`/etc. CRDs, shipped as its own `crds` sub-dependency so `helm install`
+  handles their lifecycle) — one chart covers metrics, infra metrics (via
+  kube-state-metrics/node-exporter), Grafana, and the alerting machinery. Chosen over
+  hand-rolling any of this: it's the standard, well-tested way to get this exact
+  combination, and using the operator's `PrometheusRule`/Alertmanager-config values
+  avoids writing and maintaining custom CRD templates.
+- **`grafana/loki`** (`SingleBinary` deployment mode) and **`grafana/tempo`** (the monolithic
+  chart) — right-sized for one small dev cluster, both **MinIO-backed** (`minio:9000`, MinIO's
+  own standalone Flux `HelmRelease`, ADR-0012; buckets `loki`/`tempo`, created idempotently by
+  its post-install job — configured on that `HelmRelease`'s `values:`).
+  Credentials come from MinIO's generated `root-credentials` Secret via env vars
+  (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`), never a literal value in `values.yaml`
+  (`NFR-SEC`) — Loki's S3 client falls back to them automatically; Tempo needs
+  `-config.expand-env=true` plus `${AWS_ACCESS_KEY_ID}`/`${AWS_SECRET_ACCESS_KEY}` placeholders
+  in its own config, since its config loader (unlike Loki's) doesn't fall back to them itself.
+- **`open-telemetry/opentelemetry-collector`** runs as a single `Deployment` (not a
+  per-node `DaemonSet` — unnecessary on a single-node cluster), receiving OTLP
+  (gRPC 4317 / HTTP 4318) and exporting: traces → Tempo (`otlp`), metrics → Prometheus
+  (`prometheusremotewrite`, via `prometheus.prometheusSpec.enableRemoteWriteReceiver`),
+  logs → Loki (`otlphttp`, Loki's native OTLP ingestion at `/otlp/v1/logs`, Loki 3.x+).
+
+**Resource sizing deviation:** unlike our own custom subcharts, the vendored charts don't
+use `global.resources.{small,medium,large}` — those tiers are sized for tiny Go services
+(25m/32Mi …), not a real Prometheus/Grafana/Loki/Tempo stack. Each component sets its
+own native `resources:` fields directly in `values.yaml` instead, sized for a small dev
+cluster (the local `alert-webhook-sink` subchart still uses the tier convention).
+Documented here rather than silently diverging.
+
+**Correlation (trace ↔ log ↔ metric):** Grafana's Loki datasource has a `derivedFields`
+regex that extracts `trace_id` from a log line and links to the Tempo datasource
+(fixed `uid: tempo`/`uid: loki` on both so the cross-reference is stable); Tempo's
+datasource has `tracesToLogsV2` pointing back at Loki. The Prometheus datasource is
+auto-provisioned by kube-prometheus-stack. One starter dashboard ("BeekeepingIT
+Platform Overview" — collector accepted spans/logs/metric-points per second + scrape
+targets up) is added via Grafana's values-driven `dashboards`/`dashboardProviders`
+keys, no hand-written ConfigMap template.
+
+Since no service emits real telemetry yet (`#23`, the walking-skeleton services, is
+still pending), [`infra/observability-smoke-test.sh`](../../infra/observability-smoke-test.sh)
+fires one correlated trace+log+metric through the collector (via OTel's `telemetrygen`)
+as a stand-in, to prove the pipeline and the trace↔log correlation end-to-end now. The
+literal "walking-skeleton traces visible" AC gets closed for real once `#23` ships and
+wires its Go service's OTel SDK to `otel-collector:4317` (tracked in
+[`FOLLOWUPS.md`](../../FOLLOWUPS.md)).
+
+[`infra/grafana-open.sh`](../../infra/grafana-open.sh) is a dev convenience for reaching
+Grafana itself: it reads the chart-generated admin password out of the
+`kube-prometheus-stack-grafana` Secret (never committed — see below), port-forwards the
+service, and opens it in a browser.
+
+**Alerting demo:** a custom `PrometheusRule` (injected via
+`additionalPrometheusRulesMap`, no hand-written CRD template) fires `OtelCollectorDown`
+when the collector's own scrape target goes down; Alertmanager's default route sends
+every alert to `alert-webhook-sink` — a tiny local subchart
+(`mendhak/http-https-echo`) that just logs each received webhook POST to stdout, so
+delivery can be observed with no external account/secret. To simulate:
+`kubectl scale deploy/otel-collector --replicas=0 -n beekeepingit-dev`, wait ~1 minute,
+check `kubectl logs deploy/alert-webhook-sink -n beekeepingit-dev` for the
+alert payload, then scale back to `1`.
+
+**Not production alerting**: `alert-webhook-sink` is a local/dev verification aid, not
+a real notification channel — wiring a real receiver (Slack/PagerDuty/email) is future
+work, deliberately out of scope here (no external account/secret exists to wire yet).
 
 ## CI gate
 

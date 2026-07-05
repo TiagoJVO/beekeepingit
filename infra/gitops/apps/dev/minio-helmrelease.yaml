@@ -54,3 +54,13 @@ spec:
       enabled: false
     consoleIngress:
       enabled: false
+    # One bucket per object-storage consumer (created idempotently via the
+    # chart's post-install job) — currently the observability stack's Loki/Tempo
+    # (#87, docs/architecture/platform.md#observability).
+    buckets:
+      - name: loki
+        policy: none
+        purge: false
+      - name: tempo
+        policy: none
+        purge: false

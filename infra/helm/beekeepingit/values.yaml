@@ -25,6 +25,8 @@ global:
 
 # Platform backing services (#84) — see each subchart's own values.yaml for the
 # full set of overridable fields; only the wiring-relevant ones are set here.
+# The observability stack (#87) is NOT part of this umbrella — it's its own chart
+# (infra/helm/observability) + Flux HelmRelease, deployed after MinIO (ADR-0013).
 
 postgres:
   enabled: true
@@ -52,7 +54,9 @@ keycloak:
 minio:
   enabled: true
   # No workload of its own (just the root-credentials Secret) — MinIO itself is
-  # a separate Flux HelmRelease, see ADR-0012.
+  # a separate Flux HelmRelease, see ADR-0012. Its buckets (loki/tempo, #87) are
+  # configured on that standalone HelmRelease
+  # (infra/gitops/apps/dev/minio-helmrelease.yaml), not here.
 
 gateway:
   enabled: true

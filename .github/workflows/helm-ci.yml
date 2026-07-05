@@ -1,9 +1,11 @@
 name: Helm CI
 
-# Validates the platform umbrella chart on every change: dependency build,
-# `helm lint`, and a `helm template` dry-run for the base values and every
-# per-environment overlay. No live cluster is used here — deploying to the
-# cluster is a separate concern (EPIC-13 #86/#88).
+# Validates the platform charts on every change: dependency build, `helm lint`,
+# and a `helm template` dry-run — for the beekeepingit umbrella chart (base
+# values + every per-environment overlay) and the observability chart (#87,
+# base values only; per-environment config lives on its Flux HelmRelease's
+# `values:`, not overlay files — ADR-0013). No live cluster is used here —
+# deploying to the cluster is a separate concern (EPIC-13 #86/#88).
 #
 # This is a required status check on `main`, so the job runs on EVERY PR/push (no path filter
 # on the trigger) — otherwise a PR that doesn't touch infra/helm/** would never get a run for
@@ -79,3 +81,22 @@ jobs:
             helm template beekeepingit . -f "environments/$env.yaml"
             echo "::endgroup::"
           done
+
+      # Unlike the umbrella above, this chart's four vendored dependencies are
+      # remote (prometheus-community / grafana / open-telemetry chart repos), so
+      # this step DOES need network access — same as any local `helm dependency
+      # build` of it.
+      - name: helm dependency build (observability)
+        if: steps.changes.outputs.helm == 'true'
+        working-directory: infra/helm/observability
+        run: helm dependency build .
+
+      - name: helm lint (observability)
+        if: steps.changes.outputs.helm == 'true'
+        working-directory: infra/helm/observability
+        run: helm lint .
+
+      - name: helm template dry-run (observability)
+        if: steps.changes.outputs.helm == 'true'
+        working-directory: infra/helm/observability
+        run: helm template observability .

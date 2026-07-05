@@ -18,13 +18,14 @@ flux check     # verify
 
 ## Layout
 
-| Path                                                                               | What it is                                                                                                                                                    |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`clusters/dev/flux-system.yaml`](clusters/dev/flux-system.yaml)                   | `GitRepository` (this repo, `main`) + the self-referential `Kustomization` that keeps everything under `clusters/dev/` (including itself) reconciled from Git |
-| [`clusters/dev/apps.yaml`](clusters/dev/apps.yaml)                                 | `Kustomization` pointing Flux at `apps/dev/`                                                                                                                  |
-| [`apps/dev/beekeepingit-helmrelease.yaml`](apps/dev/beekeepingit-helmrelease.yaml) | `HelmRelease` deploying the umbrella chart into `beekeepingit-dev`, mirroring `environments/dev.yaml`                                                         |
-| [`apps/dev/keycloak-helmrelease.yaml`](apps/dev/keycloak-helmrelease.yaml)         | `HelmRepository` (codecentric) + `HelmRelease` deploying Keycloak (keycloakx) directly, not nested in the umbrella chart, see ADR-0012                        |
-| [`apps/dev/minio-helmrelease.yaml`](apps/dev/minio-helmrelease.yaml)               | `HelmRepository` (minio) + `HelmRelease` deploying MinIO directly, same reasoning, ADR-0012                                                                   |
+| Path                                                                                 | What it is                                                                                                                                                    |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`clusters/dev/flux-system.yaml`](clusters/dev/flux-system.yaml)                     | `GitRepository` (this repo, `main`) + the self-referential `Kustomization` that keeps everything under `clusters/dev/` (including itself) reconciled from Git |
+| [`clusters/dev/apps.yaml`](clusters/dev/apps.yaml)                                   | `Kustomization` pointing Flux at `apps/dev/`                                                                                                                  |
+| [`apps/dev/beekeepingit-helmrelease.yaml`](apps/dev/beekeepingit-helmrelease.yaml)   | `HelmRelease` deploying the umbrella chart into `beekeepingit-dev`, mirroring `environments/dev.yaml`                                                         |
+| [`apps/dev/keycloak-helmrelease.yaml`](apps/dev/keycloak-helmrelease.yaml)           | `HelmRepository` (codecentric) + `HelmRelease` deploying Keycloak (keycloakx) directly, not nested in the umbrella chart, see ADR-0012                        |
+| [`apps/dev/minio-helmrelease.yaml`](apps/dev/minio-helmrelease.yaml)                 | `HelmRepository` (minio) + `HelmRelease` deploying MinIO directly, same reasoning, ADR-0012                                                                   |
+| [`apps/dev/observability-helmrelease.yaml`](apps/dev/observability-helmrelease.yaml) | `HelmRelease` deploying the observability chart (`infra/helm/observability`, #87) after MinIO (`dependsOn`) — see ADR-0013                                    |
 
 Adding `staging`/`prod` later means adding `clusters/staging/`, `clusters/prod/` (own
 `GitRepository`/bootstrap `Kustomization`, likely pointing at a release branch/tag instead of

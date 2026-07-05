@@ -16,6 +16,9 @@ appVersion: "0.1.0"
 # (`infra/gitops/apps/dev/`), not nested here, since Flux's GitRepository-sourced
 # charts don't recursively resolve a subchart's own vendored dependency — see
 # ADR-0012 (supersedes the ADR-0010 wrapper-chart approach for these two).
+# The observability stack (#87) is its own chart entirely
+# (infra/helm/observability, own Flux HelmRelease) — its Loki/Tempo depend on
+# MinIO, so it can't live in this umbrella without a dependency cycle (ADR-0013).
 # Each subchart's values live under a top-level key matching its name, and it
 # reads shared config via `.Values.global` (see values.yaml, README.md).
 dependencies:

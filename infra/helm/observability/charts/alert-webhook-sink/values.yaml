@@ -1,0 +1,21 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the observability chart, these are
+# overridden by the `alert-webhook-sink:` key in the parent's values.yaml.
+enabled: true
+replicaCount: 1
+image:
+  repository: mendhak/http-https-echo
+  tag: "41"
+resourceTier: small
+# Set by the parent to pin the Service name Alertmanager's webhook URL targets
+# (independent of the release name); empty means "<release>-alert-webhook-sink".
+fullnameOverride: ""
+
+# Placeholder for standalone rendering only — the parent always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit
+  resources:
+    small:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 64Mi }
