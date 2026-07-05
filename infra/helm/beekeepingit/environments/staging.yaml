@@ -8,16 +8,3 @@ global:
     small:
       requests: { cpu: 50m, memory: 64Mi }
       limits: { cpu: 150m, memory: 128Mi }
-
-# Observability stack (#87) is only actually deployed in dev today — disable it here
-# so this overlay only proves the override mechanism (NFR-ARC-2), not a real rollout.
-kube-prometheus-stack:
-  enabled: false
-loki:
-  enabled: false
-tempo:
-  enabled: false
-opentelemetry-collector:
-  enabled: false
-alert-webhook-sink:
-  enabled: false

@@ -5,21 +5,25 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
-## #87 — verify Loki/Tempo's MinIO-backed storage live
+## #87 — re-verify the split observability release live (+ correlation/alerting walkthroughs)
 
-- **What:** confirm on the local `beekeeping` k3d cluster that Loki and Tempo actually
-  start and write/read successfully against MinIO (`minio:9000`, the standalone Flux
-  `HelmRelease` — ADR-0012, buckets `loki`/`tempo`) — that the `root-credentials` Secret
-  env injection resolves correctly, Tempo's `-config.expand-env=true` substitution works
-  as expected, and `infra/observability-smoke-test.sh` still shows correlated data
-  end-to-end.
-- **Why:** this wiring ([ADR-0013](docs/adr/0013-observability-stack.md), renumbered
-  twice already from the original ADR-0008 to dodge collisions with `#130`'s and then
-  `#138`'s own ADR-0008/0012) was verified via `helm lint`/`helm template` (real rendered
-  manifests) but not against a live cluster — no cluster is available in this sandbox.
-- **Where:** `infra/helm/beekeepingit/values.yaml` (`loki:`/`tempo:` blocks),
-  `infra/gitops/apps/dev/minio-helmrelease.yaml` (buckets).
-- **Status:** pending a live `helm upgrade` + smoke test on `beekeepingit-dev`.
+- **What:** deploy the final layout (umbrella → `minio` → `observability`, three Flux
+  `HelmRelease`s) on the local `beekeeping` k3d cluster and confirm: Tempo now starts
+  cleanly (buckets exist first — the whole point of the split), Loki writes to MinIO,
+  `infra/observability-smoke-test.sh` shows correlated trace↔log data in Grafana, the
+  `OtelCollectorDown` alert reaches `alert-webhook-sink`, and `infra/grafana-open.sh`
+  works end-to-end.
+- **Why:** a first live test (Flux pointed at this branch, pre-split) already validated
+  most of the stack — Loki/Prometheus/Grafana/OTel Collector/kube-state-metrics/
+  node-exporter/alert sink all `Running`, datasources + starter dashboard provisioned —
+  and caught the fresh-install deadlock that ADR-0013's split fixes (Tempo crash-looped
+  on the missing bucket; MinIO's `dependsOn` could never fire). The split layout itself
+  hasn't run live yet, and the correlation/alerting walkthroughs were cut short by the
+  deadlock.
+- **Where:** [`infra/helm/observability/`](infra/helm/observability/),
+  [`infra/gitops/apps/dev/observability-helmrelease.yaml`](infra/gitops/apps/dev/observability-helmrelease.yaml),
+  [ADR-0013](docs/adr/0013-observability-stack.md).
+- **Status:** pending the next live test window on the shared dev cluster.
 
 ## #85 → #20 — reuse `services/shared/dbaccess`, don't re-derive
 

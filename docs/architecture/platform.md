@@ -69,12 +69,6 @@ section covers the _why_.
   dependency (the original nested-wrapper approach silently deployed zero of the vendored chart's
   workload) — see [ADR-0012](../adr/0012-keycloak-minio-standalone-helmreleases.md), which
   supersedes the wrapper-chart part of ADR-0010.
-- **Vendoring a third-party chart with no wrapper at all**: see Observability below, which pulls
-  `kube-prometheus-stack`/`loki`/`tempo`/`opentelemetry-collector` straight from their upstream
-  repos as direct `Chart.yaml` dependencies (`repository: https://...`, not even a local
-  `charts/<name>/` wrapper — there's nothing for one to add). This sits alongside the wrapper
-  pattern above and the "own custom subchart" pattern (`charts/alert-webhook-sink/` is a live
-  example of that shape) — all three are documented in the chart's own README.
 - The former `charts/smoke/` placeholder (proved the umbrella→subchart wiring before any real
   service existed) was removed once `#84`/`#87` added the first real subcharts.
 
@@ -82,11 +76,22 @@ section covers the _why_.
 
 Stack per `requirements/tech-stack.md`: **OpenTelemetry Collector → Prometheus (metrics) /
 Loki (logs) / Tempo (traces) → Grafana**, satisfying `NFR-OBS-1` (logging, monitoring,
-alerting) and contributing to `NFR-PER-1`. All four components are vendored upstream
-charts (see above), each with `fullnameOverride` set so the in-cluster Service names
-they reference to reach each other (`kube-prometheus-stack-prometheus`, `loki`, `tempo`,
-`otel-collector`) are fixed rather than derived from each chart's own naming template.
-Config lives in the umbrella's `values.yaml` under each chart's name.
+alerting) and contributing to `NFR-PER-1`.
+
+It is **its own chart** ([`infra/helm/observability/`](../../infra/helm/observability/)) +
+**its own Flux `HelmRelease`**
+([`infra/gitops/apps/dev/observability-helmrelease.yaml`](../../infra/gitops/apps/dev/observability-helmrelease.yaml),
+`dependsOn: [beekeepingit, minio]`), **not part of the beekeepingit umbrella** — its
+Loki/Tempo need MinIO's buckets at boot (Tempo hard-fails without its bucket, confirmed
+live), and MinIO's own `HelmRelease` depends on the umbrella for the `root-credentials`
+Secret; nesting the stack in the umbrella therefore deadlocks a fresh install
+([ADR-0013](../adr/0013-observability-stack.md)). The four upstream charts are **direct
+remote dependencies** of the observability chart (`repository: https://...`, no local
+wrapper — Flux resolves a git-sourced chart's own top-level remote dependencies fine;
+only _nested_ ones break, ADR-0012), each with `fullnameOverride` set so the in-cluster
+Service names they use to reach each other (`kube-prometheus-stack-prometheus`, `loki`,
+`tempo`, `otel-collector`, `alert-webhook-sink`) are fixed rather than derived from the
+release name. Config lives in that chart's `values.yaml` under each dependency's name.
 
 - **`prometheus-community/kube-prometheus-stack`** bundles Prometheus, Alertmanager,
   Grafana, kube-state-metrics and node-exporter (plus the `PrometheusRule`/
@@ -99,7 +104,7 @@ Config lives in the umbrella's `values.yaml` under each chart's name.
 - **`grafana/loki`** (`SingleBinary` deployment mode) and **`grafana/tempo`** (the monolithic
   chart) — right-sized for one small dev cluster, both **MinIO-backed** (`minio:9000`, MinIO's
   own standalone Flux `HelmRelease`, ADR-0012; buckets `loki`/`tempo`, created idempotently by
-  its post-install job — configured on that `HelmRelease`'s `values:`, not this umbrella's).
+  its post-install job — configured on that `HelmRelease`'s `values:`).
   Credentials come from MinIO's generated `root-credentials` Secret via env vars
   (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`), never a literal value in `values.yaml`
   (`NFR-SEC`) — Loki's S3 client falls back to them automatically; Tempo needs
@@ -111,12 +116,12 @@ Config lives in the umbrella's `values.yaml` under each chart's name.
   (`prometheusremotewrite`, via `prometheus.prometheusSpec.enableRemoteWriteReceiver`),
   logs → Loki (`otlphttp`, Loki's native OTLP ingestion at `/otlp/v1/logs`, Loki 3.x+).
 
-**Resource sizing deviation:** unlike our own custom subcharts, these don't use
-`global.resources.{small,medium,large}` — those tiers are sized for tiny Go services
+**Resource sizing deviation:** unlike our own custom subcharts, the vendored charts don't
+use `global.resources.{small,medium,large}` — those tiers are sized for tiny Go services
 (25m/32Mi …), not a real Prometheus/Grafana/Loki/Tempo stack. Each component sets its
 own native `resources:` fields directly in `values.yaml` instead, sized for a small dev
-cluster. Documented here rather than silently diverging from the shared-tiers
-convention.
+cluster (the local `alert-webhook-sink` subchart still uses the tier convention).
+Documented here rather than silently diverging.
 
 **Correlation (trace ↔ log ↔ metric):** Grafana's Loki datasource has a `derivedFields`
 regex that extracts `trace_id` from a log line and links to the Tempo datasource
@@ -147,7 +152,7 @@ every alert to `alert-webhook-sink` — a tiny local subchart
 (`mendhak/http-https-echo`) that just logs each received webhook POST to stdout, so
 delivery can be observed with no external account/secret. To simulate:
 `kubectl scale deploy/otel-collector --replicas=0 -n beekeepingit-dev`, wait ~1 minute,
-check `kubectl logs deploy/beekeepingit-alert-webhook-sink -n beekeepingit-dev` for the
+check `kubectl logs deploy/alert-webhook-sink -n beekeepingit-dev` for the
 alert payload, then scale back to `1`.
 
 **Not production alerting**: `alert-webhook-sink` is a local/dev verification aid, not

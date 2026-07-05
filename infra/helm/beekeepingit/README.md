@@ -6,14 +6,17 @@ Composes the whole BeekeepingIT platform into **one Helm release** on the single
 
 ## Adding a new service subchart
 
-Three shapes, depending on whether the service needs a maintained upstream chart, and if so
-whether that chart can be vendored straight in or needs its own standalone Flux release (see
+Two shapes, depending on whether the service needs a maintained upstream chart (see
 [ADR-0012](../../../docs/adr/0012-keycloak-minio-standalone-helmreleases.md) for the
 standalone-release reasoning, and
 [ADR-0010](../../../docs/adr/0010-platform-backing-services-provisioning.md) for what it
-supersedes for `keycloak`/`minio`):
+supersedes for `keycloak`/`minio`). A third shape — a chart of directly-vendored upstream
+dependencies deployed as its own Flux `HelmRelease` — exists as the separate
+[`infra/helm/observability/`](../observability/) chart (#87,
+[ADR-0013](../../../docs/adr/0013-observability-stack.md)); use that as the model for any
+future stack that must deploy **after** something this umbrella's dependents create.
 
-### Hand-rolled (no upstream chart, or not worth vendoring — e.g. `postgres`, `gateway`, `alert-webhook-sink`)
+### Hand-rolled (no upstream chart, or not worth vendoring — e.g. `postgres`, `gateway`)
 
 1. Create `charts/<service>/` as a normal Helm chart (its own `Chart.yaml`, `values.yaml`,
    `templates/`). Helm composes anything under `charts/` automatically.
@@ -29,8 +32,8 @@ file://charts/<service>`) — `helm lint` requires every subchart under `charts/
 5. Reuse the shared label helper: `{{- include "beekeepingit.labels" . | nindent 4 }}` (defined
    in `templates/_helpers.tpl`), plus your own `app.kubernetes.io/name`.
 
-`charts/postgres/`, `charts/gateway/`, and `charts/alert-webhook-sink/` (#87 — a local/dev
-Alertmanager receiver) are live examples of this pattern — copy whichever shape fits.
+`charts/postgres/` and `charts/gateway/` are live examples of this pattern (so is the
+observability chart's `charts/alert-webhook-sink/`) — copy whichever shape fits.
 
 Note: a cluster-scoped **operator** (e.g. CloudNativePG, which `postgres`'s `Cluster` CR depends
 on) is _not_ a subchart at all — it's installed once per cluster by `infra/cluster/up.sh`, the
@@ -62,30 +65,6 @@ no Helm templating inside a `HelmRelease`'s `values:` block), e.g.
 `beekeepingit-dev-beekeepingit-keycloak-admin-credentials`; confirmed against the live cluster).
 Pin `spec.releaseName` on any new `HelmRelease` too, for the same reason (ADR-0012).
 
-### Direct vendored dependency, no wrapper (the upstream chart needs no glue at all — e.g. the observability stack)
-
-Off-the-shelf components that need nothing beyond values don't need a local `charts/<name>/`
-directory at all — not even a wrapper:
-
-1. Add it directly to this chart's `Chart.yaml` `dependencies:` with the upstream
-   `repository:` URL (e.g. `https://prometheus-community.github.io/helm-charts`) and a
-   pinned `version:` — `helm dependency build` fetches the `.tgz` straight from there
-   (gitignored, like every subchart archive — see below).
-2. Give it a top-level key in `values.yaml` matching its chart `name`, same as a local
-   subchart — that's the config the upstream chart itself reads.
-3. Set `fullnameOverride` on it (and on any of _its own_ nested subcharts you need a fixed
-   name for, e.g. `grafana.fullnameOverride` inside `kube-prometheus-stack`) so the
-   in-cluster Service names other components reference are fixed, not derived from the
-   chart's default naming template — one less thing to reverse-engineer from generated
-   output.
-4. `condition: <name>.enabled` in the dependency entry gates the whole subchart the same
-   way it does for a local one — set it `false` per environment in `environments/*.yaml`.
-
-The observability stack (`kube-prometheus-stack`, `loki`, `tempo`,
-`opentelemetry-collector` — #87, see
-[`docs/architecture/platform.md#observability`](../../../docs/architecture/platform.md#observability))
-is a live example of this pattern.
-
 ## Namespace & environments
 
 `global.namespace` names the target namespace; it's created at install time
@@ -109,17 +88,16 @@ and the three resource tiers (`requests`/`limits` × `cpu`/`memory`) — enforce
 
 ## Current subcharts
 
-| Subchart                  | What it is                                                                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `postgres`                | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials                                       |
-| `keycloak`                | Generated admin credential + dev/CI-grade realm import for OIDC IdP Keycloak (D-7) — Keycloak itself is a separate Flux `HelmRelease` (ADR-0012) |
-| `minio`                   | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)        |
-| `gateway`                 | Ingress + self-signed TLS, reusing k3d's Traefik                                                                                                 |
-| `kube-prometheus-stack`   | Prometheus + Alertmanager + Grafana + kube-state-metrics + node-exporter (`NFR-OBS-1`, #87)                                                      |
-| `loki`                    | Logs (`NFR-OBS-1`, #87) — `SingleBinary` mode, MinIO-backed (the standalone `minio` `HelmRelease` above)                                         |
-| `tempo`                   | Traces (`NFR-OBS-1`, #87) — monolithic chart, same MinIO-backed storage as `loki`                                                                |
-| `opentelemetry-collector` | OTLP receiver fanning out to the three above (#87)                                                                                               |
-| `alert-webhook-sink`      | Local/dev-only Alertmanager receiver (#87) — not production alerting                                                                             |
+| Subchart   | What it is                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `postgres` | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials                                       |
+| `keycloak` | Generated admin credential + dev/CI-grade realm import for OIDC IdP Keycloak (D-7) — Keycloak itself is a separate Flux `HelmRelease` (ADR-0012) |
+| `minio`    | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)        |
+| `gateway`  | Ingress + self-signed TLS, reusing k3d's Traefik                                                                                                 |
+
+The observability stack (`NFR-OBS-1`, #87) is deliberately **not** in this table — it's the
+separate [`infra/helm/observability/`](../observability/) chart, deployed by its own Flux
+`HelmRelease` _after_ MinIO (ADR-0013).
 
 The former `charts/smoke/` placeholder that originally proved the umbrella-to-subchart wiring
 (dependency declaration, values overrides, global resource tiers) before any real service existed
@@ -127,7 +105,8 @@ has been removed now that the ones above are real (`#84`, `#87`).
 
 ## Chart dependency archives aren't committed
 
-`helm dependency build` fetches every dependency (local and third-party) into
-`charts/*.tgz` — gitignored (`**/charts/*.tgz`, along with `Chart.lock`), so run it
-yourself after cloning or changing a dependency version before `lint`/`template`/`install`
-(the CI job does this automatically — see [`platform.md`](../../../docs/architecture/platform.md)).
+`helm dependency build` packages every dependency into `charts/*.tgz` — gitignored
+(`**/charts/*.tgz`, along with `Chart.lock`), so run it yourself after cloning or
+changing a dependency before `lint`/`template`/`install` (the CI job does this
+automatically). For this chart it resolves purely from the local `charts/` directories,
+no network; the observability chart's build is the one fetching from upstream repos.
