@@ -7,14 +7,17 @@ type: application
 version: 0.1.0
 appVersion: "0.1.0"
 # Every subchart is declared here so `helm dependency build`/`helm lint` can see
-# it, all as local file:// deps. `postgres`/`gateway` are entirely hand-rolled.
-# `keycloak`/`minio` are thin *wrapper* charts: each has its own nested
-# dependency on a real vendored upstream chart (codecentric/keycloakx,
-# charts.min.io) plus our own supplementary templates (generated credentials,
-# realm import) that a vendored chart can't own itself — see ADR-0010 and each
-# wrapper's own Chart.yaml. Each subchart's values live under a top-level key
-# matching its name, and it reads shared config via `.Values.global` (see
-# values.yaml, README.md).
+# it, all as local file:// deps — none of them have their own nested
+# dependencies, so this always resolves purely from what's checked into Git,
+# no network fetch. `postgres`/`gateway` are entirely hand-rolled.
+# `keycloak`/`minio` only hold our own supplementary templates (generated
+# credentials, realm import) — the actual vendored charts (codecentric/keycloakx,
+# charts.min.io) are deployed separately as their own Flux `HelmRelease`s
+# (`infra/gitops/apps/dev/`), not nested here, since Flux's GitRepository-sourced
+# charts don't recursively resolve a subchart's own vendored dependency — see
+# ADR-0012 (supersedes the ADR-0010 wrapper-chart approach for these two).
+# Each subchart's values live under a top-level key matching its name, and it
+# reads shared config via `.Values.global` (see values.yaml, README.md).
 dependencies:
   - name: postgres
     version: "0.1.0"

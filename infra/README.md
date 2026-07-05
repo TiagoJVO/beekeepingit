@@ -24,10 +24,17 @@ infra/cluster/with-lock.sh helm upgrade beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
   --namespace beekeepingit-dev
 
-# 3. Smoke-test the backing services (Postgres/PostGIS; #84)
+# 3. Keycloak/MinIO are separate Flux HelmReleases (ADR-0012), not part of the
+#    umbrella release above — either let Flux reconcile them (if bootstrapped,
+#    see infra/gitops/README.md) or apply them directly for local-only testing:
+infra/cluster/with-lock.sh kubectl apply \
+  -f infra/gitops/apps/dev/keycloak-helmrelease.yaml \
+  -f infra/gitops/apps/dev/minio-helmrelease.yaml
+
+# 4. Smoke-test the backing services (Postgres/PostGIS; #84)
 helm test beekeepingit --namespace beekeepingit-dev
 
-# 4. Tear down
+# 5. Tear down
 infra/cluster/with-lock.sh helm uninstall beekeepingit --namespace beekeepingit-dev
 infra/cluster/down.sh
 ```

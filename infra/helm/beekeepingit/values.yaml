@@ -46,11 +46,13 @@ postgres:
 
 keycloak:
   enabled: true
-  resourceTier: medium
+  # No workload of its own (just the admin-credential Secret + realm ConfigMap)
+  # — Keycloak itself is a separate Flux HelmRelease, see ADR-0012.
 
 minio:
   enabled: true
-  resourceTier: small
+  # No workload of its own (just the root-credentials Secret) — MinIO itself is
+  # a separate Flux HelmRelease, see ADR-0012.
 
 gateway:
   enabled: true

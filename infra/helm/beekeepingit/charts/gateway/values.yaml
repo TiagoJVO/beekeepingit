@@ -8,13 +8,14 @@ enabled: true
 host: keycloak.beekeepingit.local
 
 # The one real backend that exists after #84 — domain services/PWA land later
-# (#23). Routes to the keycloak subchart's "http" Service (name confirmed via a
-# live `helm template` render: keycloakx creates both a "-headless" Service, for
-# StatefulSet DNS, and this "-http" one, which is the one that actually serves
-# traffic — not a plain "<release>-keycloakx" as the naming convention alone
-# would suggest).
+# (#23). Routes to Keycloak's "http" Service. Keycloak is now its own Flux
+# HelmRelease named "keycloak" (ADR-0012), not nested in this umbrella release
+# — so the vendored keycloakx chart's fullname is "keycloak-keycloakx-*", not
+# "beekeepingit-keycloakx-*". Confirmed via a standalone `helm template` render:
+# keycloakx creates both a "-headless" Service, for StatefulSet DNS, and this
+# "-http" one, which is the one that actually serves traffic.
 backend:
-  serviceName: beekeepingit-keycloakx-http
+  serviceName: keycloak-keycloakx-http
   servicePort: 80
 
 ingressClassName: traefik

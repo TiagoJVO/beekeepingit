@@ -1,14 +1,12 @@
 apiVersion: v2
 name: minio
 description: >-
-  Wraps the official MinIO Inc. `minio` chart (charts.min.io) — S3-compatible
-  object storage (NFR-ARC-2) — with the one thing it can't own itself: a
-  generated root-credentials Secret (never a literal value in git, NFR-SEC).
-  See ADR-0010.
+  BeekeepingIT-specific supplementary resource for MinIO (NFR-ARC-2): a generated
+  root-credentials Secret (never a literal value in git, NFR-SEC). MinIO itself (the
+  official `charts.min.io` chart) is deployed separately as its own Flux `HelmRelease`
+  (`infra/gitops/apps/dev/minio-helmrelease.yaml`) — not nested here — since Flux's
+  GitRepository-sourced charts don't recursively resolve a subchart's own vendored
+  dependency. See ADR-0012.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-dependencies:
-  - name: minio
-    version: "5.4.0"
-    repository: "https://charts.min.io/"
