@@ -1,0 +1,48 @@
+{
+  "@@locale": "en",
+  "appTitle": "BeekeepingIT",
+  "@appTitle": {
+    "description": "App title, shown in the browser tab and app switcher"
+  },
+  "homeTitle": "Apiaries",
+  "@homeTitle": {
+    "description": "Home screen app bar title"
+  },
+  "homeSubtitle": "Walking-skeleton scaffold — routing, theming, state and i18n are wired; real apiary data lands with the walking skeleton.",
+  "@homeSubtitle": {
+    "description": "Home screen placeholder body copy"
+  },
+  "homeOpenSampleApiaryButton": "View sample apiary",
+  "@homeOpenSampleApiaryButton": {
+    "description": "Button that navigates to the placeholder apiary detail route"
+  },
+  "gatewayStatusLabel": "Gateway",
+  "@gatewayStatusLabel": {
+    "description": "Label in front of the backend-through-gateway reachability indicator"
+  },
+  "gatewayStatusChecking": "Checking…",
+  "@gatewayStatusChecking": {
+    "description": "Gateway reachability check in progress"
+  },
+  "gatewayStatusReachable": "Reachable",
+  "@gatewayStatusReachable": {
+    "description": "The gateway responded successfully"
+  },
+  "gatewayStatusUnreachable": "Unreachable",
+  "@gatewayStatusUnreachable": {
+    "description": "The gateway did not respond"
+  },
+  "apiaryDetailTitle": "Apiary detail",
+  "@apiaryDetailTitle": {
+    "description": "Apiary detail screen app bar title"
+  },
+  "apiaryDetailBody": "Placeholder detail route for apiary {id}. The real apiary read/edit form lands with the walking skeleton (#23).",
+  "@apiaryDetailBody": {
+    "description": "Apiary detail screen placeholder body copy",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  }
+}

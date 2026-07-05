@@ -1,0 +1,6 @@
+# Flutter's recommended lints, layered on the repo-wide shared baseline
+# (../analysis_options.yaml — coding-standards.md; strict-casts/raw-types,
+# require_trailing_commas, etc.).
+include:
+  - package:flutter_lints/flutter.yaml
+  - ../analysis_options.yaml

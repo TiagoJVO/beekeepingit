@@ -1,0 +1,13 @@
+{
+  "@@locale": "pt",
+  "appTitle": "BeekeepingIT",
+  "homeTitle": "Apiários",
+  "homeSubtitle": "Esqueleto do fluxo — routing, tema, estado e i18n já estão ligados; os dados reais de apiário chegam com o walking skeleton.",
+  "homeOpenSampleApiaryButton": "Ver apiário de exemplo",
+  "gatewayStatusLabel": "Gateway",
+  "gatewayStatusChecking": "A verificar…",
+  "gatewayStatusReachable": "Acessível",
+  "gatewayStatusUnreachable": "Inacessível",
+  "apiaryDetailTitle": "Detalhe do apiário",
+  "apiaryDetailBody": "Rota de detalhe placeholder para o apiário {id}. O formulário real de leitura/edição chega com o walking skeleton (#23)."
+}
