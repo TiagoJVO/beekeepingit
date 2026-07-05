@@ -5,21 +5,6 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
-## #84 (ADR-0012) — before-merge: run the release-name migration once
-
-- **What:** this branch pins `spec.releaseName: beekeepingit` on the umbrella `HelmRelease`
-  (previously Flux-defaulted to `beekeepingit-dev-beekeepingit`). Because the release already runs
-  on the `dev` cluster under the old name, Flux's first reconcile of this change would fail with a
-  Helm ownership conflict — the old release must be uninstalled first.
-- **Runbook (run once, right after merge to `main`):** the exact `flux suspend` / `helm uninstall`
-  / `flux resume` / `flux reconcile` sequence is in
-  [`docs/adr/0012-keycloak-minio-standalone-helmreleases.md`](docs/adr/0012-keycloak-minio-standalone-helmreleases.md)
-  → "Release-name migration runbook". Non-destructive in practice (empty #84 scaffold data,
-  regenerated identically).
-- **Status:** verified once on the live cluster during implementation (the renamed releases
-  install clean and Keycloak/MinIO pick up the `beekeepingit-*` Secrets); still owed as the
-  merge-time step on `main`, since the live cluster reconciles from `main`, not this branch.
-
 ## #85 → #20 — reuse `services/shared/dbaccess`, don't re-derive
 
 - **What:** `#85` landed `services/shared/dbaccess` (pgx + sqlc + goose, `Connect`/`Migrate`)
