@@ -181,8 +181,11 @@ kube-prometheus-stack:
 
   kube-state-metrics:
     resources:
-      requests: { cpu: 10m, memory: 32Mi }
-      limits: { cpu: 50m, memory: 64Mi }
+      requests: { cpu: 20m, memory: 48Mi }
+      # Verified live: at a 50m CPU limit its initial sync of the (now sizeable)
+      # cluster gets throttled past the liveness-probe deadline and kubelet
+      # kill-loops it. 150m gives the sync headroom; steady-state usage is tiny.
+      limits: { cpu: 150m, memory: 128Mi }
 
   prometheus-node-exporter:
     resources:
