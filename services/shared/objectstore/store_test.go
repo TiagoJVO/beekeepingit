@@ -5,8 +5,11 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
+	"github.com/testcontainers/testcontainers-go"
 	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/TiagoJVO/beekeepingit/services/shared/objectstore"
 )
@@ -18,7 +21,19 @@ import (
 func TestStore_PutGetDelete(t *testing.T) {
 	ctx := context.Background()
 
-	container, err := tcminio.Run(ctx, "minio/minio:RELEASE.2025-04-08T15-41-24Z")
+	// The minio module's default wait strategy is wait.ForHTTP("/minio/health/live"):
+	// liveness returns 200 as soon as the HTTP listener is up, which is *before* the
+	// object layer finishes initializing. Under CI load the test then races ahead and
+	// the S3 API answers "Server not initialized yet, please try again". Override with
+	// the /minio/health/ready (readiness) endpoint, which only returns 200 once the
+	// server can actually serve requests.
+	container, err := tcminio.Run(ctx, "minio/minio:RELEASE.2025-04-08T15-41-24Z",
+		testcontainers.WithWaitStrategy(
+			wait.ForHTTP("/minio/health/ready").
+				WithPort("9000/tcp").
+				WithStartupTimeout(60*time.Second),
+		),
+	)
 	if err != nil {
 		t.Fatalf("start minio container: %v", err)
 	}
@@ -44,7 +59,11 @@ func TestStore_PutGetDelete(t *testing.T) {
 	}
 
 	const bucket = "beekeepingit-test"
-	if err := store.EnsureBucket(ctx, bucket); err != nil {
+	// Belt-and-suspenders around the readiness gate: the very first S3 call can still
+	// briefly race the server's initialization under heavy CI load, so retry it with a
+	// short backoff before treating an error as a real failure. Subsequent calls below
+	// exercise the adapter without retries.
+	if err := retry(t, func() error { return store.EnsureBucket(ctx, bucket) }); err != nil {
 		t.Fatalf("ensure bucket: %v", err)
 	}
 	// EnsureBucket must be idempotent.
@@ -84,4 +103,21 @@ func TestStore_PutGetDelete(t *testing.T) {
 	if _, err := io.ReadAll(deletedObj); err == nil {
 		t.Fatal("expected error reading deleted object, got nil")
 	}
+}
+
+// retry runs fn until it succeeds or a short deadline elapses, backing off between
+// attempts. It exists to absorb the transient "Server not initialized yet" error the
+// MinIO server can return for the first request or two right after startup.
+func retry(t *testing.T, fn func() error) error {
+	t.Helper()
+	const attempts = 10
+	var err error
+	for i := 0; i < attempts; i++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		t.Logf("attempt %d/%d failed, retrying: %v", i+1, attempts, err)
+		time.Sleep(500 * time.Millisecond)
+	}
+	return err
 }
