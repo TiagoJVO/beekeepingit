@@ -64,7 +64,12 @@ spec:
       enabled: false
     resources:
       requests: { cpu: 100m, memory: 512Mi }
-      limits: { cpu: 250m, memory: 1Gi }
+      # 750m, not 250m (verified live): Keycloak's start-dev boot (JVM + liquibase
+      # schema init + realm import) pins the 250m ceiling and can't finish inside
+      # the chart's ~5min startup-probe window, so kubelet kill-loops it while the
+      # node sits >90% idle. Steady-state usage is far below this — the limit only
+      # matters at startup.
+      limits: { cpu: 750m, memory: 1Gi }
     # extraEnv/extraVolumes/extraVolumeMounts are raw YAML-as-string in this
     # chart (rendered via `tpl`, not native lists) — a quirk of keycloakx
     # itself. The names below are literal (no Helm templating applies inside
