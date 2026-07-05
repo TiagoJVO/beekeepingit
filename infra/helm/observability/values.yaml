@@ -37,6 +37,11 @@ kube-prometheus-stack:
       # instead of (only) being scraped, so it can forward whatever it receives
       # over OTLP without every metric needing its own scrape target.
       enableRemoteWriteReceiver: true
+      # Select ALL ServiceMonitors in the namespace, not only ones labeled with
+      # this Helm release's name (the chart's default) — the otel-collector and
+      # tempo charts create their own ServiceMonitors without that label, and
+      # were silently never scraped (verified live: absent from /api/v1/targets).
+      serviceMonitorSelectorNilUsesHelmValues: false
       retention: 6h
       resources:
         requests: { cpu: 100m, memory: 512Mi }
@@ -62,6 +67,13 @@ kube-prometheus-stack:
         group_interval: 1m
         repeat_interval: 1h
       receivers:
+        # Helm merge trap (verified live): this ARRAY replaces the chart default's
+        # receivers wholesale, but the default `route.routes` (a map key we don't
+        # set) survives the merge — and it routes Watchdog to a receiver named
+        # "null". Without re-declaring that receiver here, Alertmanager rejects
+        # the whole config ("undefined receiver \"null\" used in route") and the
+        # operator never creates its StatefulSet at all.
+        - name: "null"
         - name: webhook-sink
           webhook_configs:
             # The sink subchart's pinned name (fullnameOverride below) — a bare
@@ -80,15 +92,21 @@ kube-prometheus-stack:
         - name: observability-platform
           rules:
             - alert: OtelCollectorDown
-              expr: up{job=~".*otel-collector.*"} == 0
+              # absent(), not `up == 0` (verified live): scaling the collector to 0
+              # removes its Endpoints, so the scrape target — and with it the whole
+              # `up` series — disappears entirely; `up == 0` can then never match.
+              # absent() also fires if the target was never scraped in the first
+              # place (e.g. its ServiceMonitor isn't selected).
+              expr: absent(up{job=~".*otel-collector.*"}) == 1
               for: 1m
               labels:
                 severity: critical
               annotations:
                 summary: "OTel Collector target down"
                 description: >-
-                  The OpenTelemetry Collector has been down for more than 1 minute
-                  (#87 — simulated failure for the alerting-pipeline verification).
+                  The OpenTelemetry Collector has been down (or unscraped) for more
+                  than 1 minute (#87 — simulated failure for the alerting-pipeline
+                  verification).
 
   grafana:
     fullnameOverride: kube-prometheus-stack-grafana
