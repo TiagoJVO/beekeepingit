@@ -354,6 +354,13 @@ opentelemetry-collector:
   resources:
     requests: { cpu: 50m, memory: 128Mi }
     limits: { cpu: 250m, memory: 256Mi }
+  # The chart's ServiceMonitor scrapes a Service port named `metrics` that is
+  # NOT exposed by default (verified live: no such port, so Prometheus had no
+  # target even with the ServiceMonitor selected) — expose the collector's
+  # internal telemetry endpoint (8888) as that port.
+  ports:
+    metrics:
+      enabled: true
   serviceMonitor:
     enabled: true
   config:
