@@ -85,8 +85,10 @@ filesystem with this machine or across concurrent runs, so `flock` wouldn't appl
 | [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                 |
 
 Postgres+PostGIS, Keycloak, MinIO and the gateway (**#84**) are the umbrella chart's first real
-subcharts; the walking-skeleton services + PowerSync + PWA subcharts land with **#23**. Both wire
-into this umbrella chart rather than standing up their own release.
+subcharts. **PowerSync** (self-hosted Open Edition, [ADR-0005](../docs/adr/0005-sync-engine-choice.md))
+lands with **#22** — see [`docs/architecture/walking-skeleton.md`](../docs/architecture/walking-skeleton.md)
+§7.1. The walking-skeleton services + PWA subcharts land with **#23**, wiring into this umbrella
+chart rather than standing up their own release.
 
 The **observability stack** (OTel Collector, Prometheus, Grafana, Loki, Tempo — `NFR-OBS-1`)
 landed with **#87**: see
