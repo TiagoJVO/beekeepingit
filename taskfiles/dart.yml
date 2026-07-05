@@ -71,7 +71,11 @@ tasks:
           d=$(dirname "$p")
           if grep -q 'sdk: *flutter' "$p"; then
             echo "› [dart] build $d (flutter build web)"
-            (cd "$d" && flutter build web)
+            # --no-web-resources-cdn: bundle CanvasKit/fonts locally instead of fetching
+            # from Google's CDN at runtime — required for an offline-first PWA (the app
+            # must not depend on external network reachability just to paint its first
+            # frame), and avoids a blank page wherever that CDN is unreachable/blocked.
+            (cd "$d" && flutter build web --no-web-resources-cdn)
           else
             echo "› [dart] $d is a pure-Dart package — nothing to build, skipping"
           fi

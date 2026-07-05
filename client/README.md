@@ -9,19 +9,25 @@ see [`docs/architecture/walking-skeleton.md`](../docs/architecture/walking-skele
 
 ```sh
 flutter pub get
-flutter run -d chrome
+flutter run -d chrome --no-web-resources-cdn
 ```
+
+`--no-web-resources-cdn` bundles CanvasKit/fonts locally instead of fetching them from
+Google's CDN at runtime (`www.gstatic.com`) — without it the app renders a blank page
+wherever that CDN is unreachable (corporate networks, offline). `task dart:build` /
+`flutter build web` already always pass this flag; it matters for `flutter run` too, since
+an offline-first field app must not depend on external network reachability just to paint
+its first frame.
 
 To point at a gateway host other than the local k3d dev mapping
 (`https://keycloak.beekeepingit.local:8443`, see `infra/README.md`), pass:
 
 ```sh
-flutter run -d chrome --dart-define=GATEWAY_BASE_URL=https://your-gateway-host
+flutter run -d chrome --no-web-resources-cdn --dart-define=GATEWAY_BASE_URL=https://your-gateway-host
 ```
 
-`flutter build web` produces the installable PWA bundle (`build/web/`) — web app manifest
-
-- the service worker Flutter generates at build time for app-shell caching.
+`flutter build web` produces the installable PWA bundle (`build/web/`): web app manifest
+and the service worker Flutter generates at build time for app-shell caching.
 
 ## Structure
 
