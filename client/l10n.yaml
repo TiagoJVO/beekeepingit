@@ -1,0 +1,7 @@
+# Flutter intl i18n scaffold (EN default, PT stub) — NFR-I18N, coding-standards.md.
+# Regenerates on `flutter gen-l10n` / automatically before `flutter run`/`build`/`test`.
+arb-dir: lib/l10n/arb
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-dir: lib/l10n/gen
+nullable-getter: false
