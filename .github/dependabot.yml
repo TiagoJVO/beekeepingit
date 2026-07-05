@@ -1,9 +1,10 @@
-# Keeps GitHub Actions up to date. Dependabot bumps the SHA-pinned `uses:` refs and
-# updates the version comment, opening a PR per update.
+# Dependency scanning half of the CI supply-chain story (EPIC-13 #88 / EPIC-14 #89): Dependabot
+# opens a PR per update for each ecosystem below. It bumps the SHA-pinned `uses:` refs (and the
+# version comment) for Actions, and `go.mod`/`go.sum` for Go. Add `docker` (per-service
+# Dockerfiles), `npm` (admin app) and `pub` (Flutter client) ecosystems as those packages land.
 #
-# `commit-message.prefix: ci` makes Dependabot's PR titles Conventional-Commits-compliant
-# (e.g. "ci: bump amannn/action-semantic-pull-request …") so they pass the
-# "PR Title Semantics" check.
+# `commit-message.prefix` keeps PR titles Conventional-Commits-compliant so they pass the
+# "PR Title Semantics" check (`ci:` for Actions, `build:` for app dependencies).
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -12,5 +13,16 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
+    labels:
+      - "type/chore"
+
+  # Go backend modules — services/shared today (#85); each new service is its own module.
+  - package-ecosystem: "gomod"
+    directories:
+      - "/services/shared"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "build"
     labels:
       - "type/chore"

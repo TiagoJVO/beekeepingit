@@ -159,12 +159,30 @@ alert payload, then scale back to `1`.
 a real notification channel — wiring a real receiver (Slack/PagerDuty/email) is future
 work, deliberately out of scope here (no external account/secret exists to wire yet).
 
-## CI gate
+## CI/CD
 
-[`.github/workflows/helm-ci.yml`](../../.github/workflows/helm-ci.yml) runs on any change under
-`infra/helm/**`: `helm dependency build`, `helm lint` (base + each environment overlay), and
-`helm template` (base + each environment overlay) as a manifest-rendering dry-run. No live
-cluster is involved — deploying to the cluster from CI is `#86` (GitOps)/`#88` (CI/CD pipeline).
+GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
+[ADR-0014](../adr/0014-cicd-pipeline.md)). Workflows are split by concern:
+
+- [`ci.yml`](../../.github/workflows/ci.yml) — repo-wide `task ci` (hygiene + per-language lint +
+  test), self-discovering and green before any code lands.
+- [`security-scan.yml`](../../.github/workflows/security-scan.yml) — supply-chain scanning:
+  **Trivy `fs`** (dependency + secret, blocking on HIGH,CRITICAL) + **`govulncheck`** over every Go
+  module, with **Trivy `config`** (IaC misconfig) report-only until #89 triages the baseline. This
+  is the scanning stage EPIC-14 #89 shares and tunes.
+- [`build-publish.yml`](../../.github/workflows/build-publish.yml) — a `detect` job emits a matrix
+  of only the changed directories containing a `Dockerfile`; each builds → **Trivy image scan** →
+  on merge to `main`, publishes to **ghcr.io** tagged by commit. **Dormant** until the first
+  service ships a `Dockerfile` (empty matrix ⇒ skipped). macOS/iOS runners are deferred to M5 /
+  EPIC-15 (a disabled placeholder job records this).
+- [`helm-ci.yml`](../../.github/workflows/helm-ci.yml) — on any change under `infra/helm/**`:
+  `helm dependency build`, `helm lint`, and `helm template` (base + each environment overlay) as a
+  manifest-rendering dry-run. No live cluster is involved.
+- [`gitops-ci.yml`](../../.github/workflows/gitops-ci.yml) — kubeconform-validates the Flux
+  manifests under `infra/gitops/**` (including the image-automation templates).
+
+Deploy is **not** done from CI: on merge, CI publishes an image and **Flux image-automation**
+commits the new tag into Git for Flux to reconcile — see GitOps below.
 
 ## GitOps (Flux)
 
@@ -174,11 +192,21 @@ change is merged to `main`. See the directory's own
 [README](../../infra/gitops/README.md) for layout and day-to-day operation, and
 [ADR-0009](../adr/0009-gitops-flux.md) for why Flux and why hand-wired (not `flux bootstrap`).
 
+**Image-automation** closes the CI/CD loop (#88, [ADR-0014](../adr/0014-cicd-pipeline.md)): the
+image-reflector + image-automation controllers watch ghcr.io and commit each new commit-tagged
+image into `apps/dev/`, which Flux reconciles — so a merge deploys with no manual `kubectl`. The
+engine + per-service templates live in
+[`infra/gitops/image-automation/`](../../infra/gitops/image-automation/), **dormant** (outside the
+reconciled paths) until the first service publishes an image and a Git write-credential is
+provisioned (an EPIC-14 #89 secrets task).
+
 ## Not yet covered here
 
 - Production-grade Keycloak realm/RBAC hardening and trusted-CA TLS for the gateway (both
   EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0010).
-- The full path-filtered monorepo CI/CD pipeline (`#88`) — `helm-ci.yml` only covers the chart
-  itself, and has no live cluster to run the `postgres` subchart's `helm test` smoke-query hook
-  against yet (that's a developer's local `beekeeping` k3d cluster today); CI publishing images
-  and updating manifests for Flux to pick up also lands with `#88`.
+- Live `helm test` from CI — `helm-ci.yml` is a lint/template dry-run, so the `postgres` subchart's
+  `helm test` smoke-query hook still only runs against a developer's local `beekeeping` k3d cluster,
+  not CI (no live cluster in CI). The #88 pipeline publishes images and lets Flux image-automation
+  update manifests, but it is **dormant until the first service ships a `Dockerfile`** — the
+  end-to-end publish→deploy path is exercised then (see
+  [ADR-0014](../adr/0014-cicd-pipeline.md) and `FOLLOWUPS.md`).

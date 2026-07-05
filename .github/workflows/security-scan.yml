@@ -1,0 +1,70 @@
+# Security / supply-chain scan stage for the monorepo CI (EPIC-13 #88; requirement NFR-TST-1,
+# and the scanning half of EPIC-14 #89 — this workflow WIRES the CI stage, #89 owns the final
+# severity policy). Container-IMAGE scanning lives in build-publish.yml (it needs a built image);
+# this file covers repo-level dependency + secret + IaC scanning that runs today.
+#
+# Three independent gates so a failure points at one cause:
+#   trivy-deps   — dependency (SBOM) + secret scan of the working tree  → BLOCKING (HIGH,CRITICAL)
+#   govulncheck  — Go call-graph-aware vuln scan of every module        → BLOCKING
+#   trivy-config — IaC/misconfig scan (Helm, k8s, Actions, Dockerfiles) → REPORT-ONLY for now
+#
+# Why config is report-only: gating it on the pre-existing Helm/k8s baseline would fail unrelated
+# PRs on findings this story didn't introduce. #89 triages the baseline, then flips exit-code to 1.
+# Tools (Trivy) and the HIGH,CRITICAL default are the "mechanism shared with EPIC-14".
+name: security-scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  trivy-deps:
+    name: trivy (dependencies + secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          # Only fail on vulns that actually have a fix available — unactionable
+          # "no fixed version yet" findings shouldn't block a merge.
+          ignore-unfixed: true
+          exit-code: "1"
+
+  govulncheck:
+    name: govulncheck (Go modules)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up toolchains from mise.toml
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      # Same discover-and-no-op pattern as taskfiles/go.yml — runs against every go.mod
+      # (services/shared today) and exits 0 cleanly when no Go module exists yet.
+      - name: govulncheck
+        run: task go:vuln
+
+  trivy-config:
+    name: trivy (IaC / misconfig) — report only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          # Report-only until #89 triages the Helm/k8s baseline, then this becomes "1".
+          exit-code: "0"

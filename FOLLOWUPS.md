@@ -25,8 +25,8 @@
 - **Add `flutter`/`dart` to [`mise.toml`](mise.toml)** when the Flutter client package lands (D-10);
   wire `dart:build` and have the client `include:` the shared `analysis_options.yaml` +
   `flutter_lints`.
-- **Pinned-tool updates** — Dependabot covers GitHub Actions only; add a mechanism (renovate/mise)
-  to bump `mise.toml` pins.
+- **Pinned-tool updates** — Dependabot covers GitHub Actions + Go modules (`gomod`, #88); add a
+  mechanism (renovate/mise) to bump the `mise.toml` tool pins, which Dependabot can't.
 
 ## EPIC-13 (platform) — wire API-contract tooling into CI
 
@@ -46,11 +46,34 @@
   liveness checks for `keycloak`/`minio`/`gateway`) only run against a real cluster
   (`helm test beekeepingit -n beekeepingit-dev`), not in CI — `.github/workflows/helm-ci.yml` is a
   `helm lint`/`helm template` dry-run with no live cluster.
-- **Why:** deploying to a live cluster from CI is `#86` (GitOps)/`#88` (CI/CD pipeline), still
-  pending — same limitation `docs/architecture/platform.md` already notes for the whole chart.
+- **Why:** #86 (GitOps) and #88 (CI/CD) have both landed, but neither gives CI a **live cluster** —
+  `helm-ci.yml` is still a dry-run and `build-publish.yml` publishes images for Flux to deploy, it
+  doesn't run `helm test`. So this stays a manual/local step (or a future ephemeral-cluster CI job),
+  independent of the now-closed #86/#88.
 - **Where:** [`infra/helm/beekeepingit/charts/postgres/templates/tests/`](infra/helm/beekeepingit/charts/postgres/templates/tests/).
-- **Status:** pending #86/#88 — until then, exercised manually against the local `beekeeping`
-  k3d cluster (see `infra/README.md`).
+- **Status:** open (not blocked by #86/#88) — exercised manually against the local `beekeeping`
+  k3d cluster (see `infra/README.md`); revisit if an ephemeral-cluster CI job is added.
+
+## EPIC-13 (#88) — CI/CD pipeline: dormant-activation ledger
+
+The path-filtered pipeline landed as a **ready-but-dormant framework** (no component is
+container-buildable yet — see [ADR-0014](docs/adr/0014-cicd-pipeline.md)). Activate these as code
+lands; none blocks #88's merge:
+
+- **First service `Dockerfile`** — `build-publish.yml`'s `detect` job auto-picks up any directory
+  with a `Dockerfile`; no workflow edit needed. This is when publish→scan→deploy is first exercised
+  end-to-end. Also move per-component lint/test from the global `task ci` into the matrix via scoped
+  targets (e.g. `task go:test -- <dir>`) when services add them.
+- **Flux image-automation activation** (`infra/gitops/image-automation/`) — install the two extra
+  controllers, provision the **Git write-credential** secret (an EPIC-14 #89 secrets task), copy the
+  `example-service-image.yaml` per service, move the objects under a reconciled path, and add the
+  `{"$imagepolicy": ...}` setter marker to the service's deploy manifest. Steps in that dir's README.
+- **Trivy `config` → blocking** — flip `security-scan.yml`'s `trivy-config` job `exit-code` to `1`
+  once #89 triages the pre-existing Helm/k8s misconfig baseline. Owned by #89.
+- **Dependabot ecosystems** — add `docker` (per-service Dockerfiles), `npm` (admin app), and `pub`
+  (Flutter client) to `.github/dependabot.yml` as those packages land.
+- **macOS/iOS CI** — the disabled `ios-build` placeholder in `build-publish.yml` is enabled at
+  **M5 by EPIC-15** (needs an Apple Developer account + macOS runners); do not enable before then.
 
 ## EPIC-13 (#87) — verify real walking-skeleton telemetry once #23 lands
 
