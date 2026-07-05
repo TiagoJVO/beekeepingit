@@ -10,6 +10,16 @@ metadata:
 spec:
   interval: 5m
   targetNamespace: beekeepingit-dev
+  # Pinned so the Helm release name is a stable, predictable `beekeepingit`
+  # rather than Flux's default of `<targetNamespace>-<HelmRelease name>`
+  # (`beekeepingit-dev-beekeepingit`). This keeps the generated
+  # Secret/ConfigMap names — which the keycloak/minio HelmReleases reference by
+  # literal name (ADR-0012) — matching a plain `helm install beekeepingit`, and
+  # keeps them short. NOTE: changing this on an already-installed release is a
+  # one-time migration, not a hot edit — Helm won't adopt resources owned by a
+  # differently-named release; see the "release-name migration" note in the
+  # README before this lands on a cluster that already ran the old name.
+  releaseName: beekeepingit
   install:
     createNamespace: true
   chart:

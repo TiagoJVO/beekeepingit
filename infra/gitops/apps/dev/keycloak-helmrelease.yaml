@@ -69,22 +69,20 @@ spec:
     # chart (rendered via `tpl`, not native lists) — a quirk of keycloakx
     # itself. The names below are literal (no Helm templating applies inside
     # a HelmRelease's `values:`) and must exactly match what the umbrella
-    # release's `keycloak` subchart creates. That release's own name is
-    # Flux-auto-generated as "beekeepingit-dev-beekeepingit" (targetNamespace +
-    # HelmRelease name, since beekeepingit-helmrelease.yaml doesn't pin
-    # releaseName) — confirmed against the live cluster, not "beekeepingit".
+    # release's `keycloak` subchart creates. The umbrella HelmRelease pins
+    # `releaseName: beekeepingit` (ADR-0012), so those are `beekeepingit-*`.
     extraEnv: |
       - name: KEYCLOAK_ADMIN
         value: admin
       - name: KEYCLOAK_ADMIN_PASSWORD
         valueFrom:
           secretKeyRef:
-            name: beekeepingit-dev-beekeepingit-keycloak-admin-credentials
+            name: beekeepingit-keycloak-admin-credentials
             key: password
     extraVolumes: |
       - name: realm-import
         configMap:
-          name: beekeepingit-dev-beekeepingit-keycloak-realm-import
+          name: beekeepingit-keycloak-realm-import
     extraVolumeMounts: |
       - name: realm-import
         mountPath: /opt/keycloak/data/import

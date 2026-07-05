@@ -5,22 +5,20 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
-## #84 (ADR-0012) — pin `releaseName` on the umbrella `HelmRelease`
+## #84 (ADR-0012) — before-merge: run the release-name migration once
 
-- **What:** `infra/gitops/apps/dev/beekeepingit-helmrelease.yaml` doesn't set `spec.releaseName`,
-  so Flux's helm-controller defaults it to `<targetNamespace>-<HelmRelease name>` —
-  `beekeepingit-dev-beekeepingit` in practice (confirmed on the live cluster), not
-  `beekeepingit`. The new `keycloak`/`minio` `HelmRelease`s hardcode references to that actual
-  name (`beekeepingit-dev-beekeepingit-keycloak-admin-credentials`, etc.).
-- **Why it matters:** if this ever changes (releaseName pinned, targetNamespace altered), those
-  hardcoded references go stale silently. Pinning `spec.releaseName: beekeepingit` there would
-  make the name match direct `helm install beekeepingit` too — but the release is already live
-  under the auto-generated name, so renaming it needs a deliberate migration (old release
-  cleanup), not a drive-by edit.
-- **Where:** `infra/gitops/apps/dev/beekeepingit-helmrelease.yaml`,
+- **What:** this branch pins `spec.releaseName: beekeepingit` on the umbrella `HelmRelease`
+  (previously Flux-defaulted to `beekeepingit-dev-beekeepingit`). Because the release already runs
+  on the `dev` cluster under the old name, Flux's first reconcile of this change would fail with a
+  Helm ownership conflict — the old release must be uninstalled first.
+- **Runbook (run once, right after merge to `main`):** the exact `flux suspend` / `helm uninstall`
+  / `flux resume` / `flux reconcile` sequence is in
   [`docs/adr/0012-keycloak-minio-standalone-helmreleases.md`](docs/adr/0012-keycloak-minio-standalone-helmreleases.md)
-  Follow-ups.
-- **Status:** not blocking; revisit deliberately, not as a side effect of another change.
+  → "Release-name migration runbook". Non-destructive in practice (empty #84 scaffold data,
+  regenerated identically).
+- **Status:** verified once on the live cluster during implementation (the renamed releases
+  install clean and Keycloak/MinIO pick up the `beekeepingit-*` Secrets); still owed as the
+  merge-time step on `main`, since the live cluster reconciles from `main`, not this branch.
 
 ## #85 → #20 — reuse `services/shared/dbaccess`, don't re-derive
 

@@ -46,20 +46,24 @@ chart repos via a `HelmRepository` — not nested inside the umbrella chart at a
   admin-credential Secret + realm-import ConfigMap (keycloak), the generated root-credentials
   Secret (minio). The standalone `HelmRelease`s' `values:` reference these by a **literal** name
   (`extraEnv`/`existingSecret`) — there's no Helm templating inside a `HelmRelease`'s `values:`
-  block, so this coupling is now explicit, not implicit. Confirmed against the live cluster, that
-  literal name is **not** simply `beekeepingit-*`: the umbrella `HelmRelease` doesn't pin
-  `releaseName`, so Flux's helm-controller defaults it to `<targetNamespace>-<HelmRelease name>`
-  when they differ — the actual running release (and thus Secret names) is
-  `beekeepingit-dev-beekeepingit`, e.g. `beekeepingit-dev-beekeepingit-keycloak-admin-credentials`.
+  block, so this coupling is explicit, not implicit.
+- **All three `HelmRelease`s pin `spec.releaseName`** (`beekeepingit`, `keycloak`, `minio`).
+  Without it, Flux's helm-controller defaults the Helm release name to
+  `<targetNamespace>-<HelmRelease name>` when they differ — confirmed against the live cluster,
+  the umbrella release originally ran as `beekeepingit-dev-beekeepingit`, so its generated Secrets
+  were `beekeepingit-dev-beekeepingit-keycloak-admin-credentials`, not the `beekeepingit-*` a
+  plain `helm install beekeepingit` (or a local `helm template`) produces. Pinning makes all three
+  names stable, predictable, and consistent between Flux and direct Helm — and keeps the literal
+  cross-references above short (`beekeepingit-keycloak-admin-credentials`,
+  `beekeepingit-keycloak-realm-import`). It also keeps the vendored charts' own generated resource
+  names deterministic — e.g. the `gateway` subchart's backend `Service` reference is
+  `keycloak-keycloakx-http` (confirmed via a standalone render), not the
+  `beekeepingit-dev-keycloak-keycloakx-http` the default would produce. Pinning `releaseName` on
+  an **already-installed** release is a one-time migration, not a hot edit (Helm won't adopt
+  resources annotated with a different release name) — see the runbook below.
 - `dependsOn: [beekeepingit]` on both new releases orders Flux's apply: the umbrella release
   (which creates those Secrets/ConfigMap) must be `Ready` before Keycloak/MinIO install, or
   `extraEnv`'s `secretKeyRef`/`existingSecret` would reference something that doesn't exist yet.
-- The same auto-naming behavior would otherwise apply to the new `keycloak`/`minio` releases too
-  (defaulting to `beekeepingit-dev-keycloak`/`beekeepingit-dev-minio`), making the vendored
-  chart's generated resource names unpredictable — so both `HelmRelease`s **pin
-  `spec.releaseName`** explicitly (`keycloak`, `minio`) rather than relying on the default. That
-  keeps e.g. the `gateway` subchart's backend `Service` reference
-  (`keycloak-keycloakx-http`, confirmed via a standalone render) deterministic.
 - The vendored `.tgz` files and the `.gitignore` exception from the first fix are removed; nothing
   is committed for either chart anymore. `helm-ci.yml` drops the `helm repo add`
   codecentric/minio steps — the umbrella's own `helm dependency build` is back to pure local
@@ -92,14 +96,40 @@ chart repos via a `HelmRepository` — not nested inside the umbrella chart at a
 infra/gitops/apps/dev/minio-helmrelease.yaml`) — works because the Flux controllers (CRDs +
   helm-controller) are already installed on the dev cluster (ADR-0009), independent of the full
   `GitRepository`/`Kustomization` reconciliation chain; see `infra/README.md`.
-- The literal-name coupling is a real, if narrow, footgun: if the umbrella `HelmRelease`'s
-  behavior ever changes (e.g. someone pins `spec.releaseName` there, or `targetNamespace` is
-  changed to match the `HelmRelease`'s own namespace, which would change Flux's default), the
-  hardcoded `beekeepingit-dev-beekeepingit-*` references in `keycloak-helmrelease.yaml` silently
-  go stale. Acceptable for now (the umbrella release's naming is exercised constantly via the
-  live `dev` cluster, so breakage would surface immediately) — see the Follow-ups note about
-  pinning it there too, which wasn't done in this PR to avoid touching an already-running release
-  out of scope.
+- The literal-name coupling (keycloak's `extraEnv`/`extraVolumes` hardcode
+  `beekeepingit-keycloak-*` Secret/ConfigMap names) is a real, if narrow, footgun: if the umbrella
+  `HelmRelease`'s `releaseName` or `targetNamespace` ever changes, those references silently go
+  stale. Mitigated by pinning all three release names (below) so the names are fixed by explicit
+  config, not by Flux's defaulting behavior — but still a coupling to keep in mind when touching
+  any of the three `HelmRelease`s.
+- Pinning `releaseName` on the **already-running** umbrella release is a one-time migration with a
+  brief window of downtime — Helm won't let a `beekeepingit` release adopt resources annotated for
+  the old `beekeepingit-dev-beekeepingit` release, so the old release must be removed first. See
+  the runbook below. (Data-wise this is a non-event at this stage: the postgres schemas are empty
+  #84 scaffold with no tables yet, MinIO has no buckets, Keycloak is H2 + realm-import — everything
+  is regenerated identically on reinstall.)
+
+## Release-name migration runbook (one-time, at merge)
+
+Because this pins `releaseName: beekeepingit` on a release that already exists on the `dev`
+cluster under the Flux-defaulted name `beekeepingit-dev-beekeepingit`, a plain reconcile of this
+change would fail with a Helm ownership conflict (the existing postgres `Cluster`, Secrets, etc.
+are annotated `meta.helm.sh/release-name: beekeepingit-dev-beekeepingit`). Migrate once, right
+after this lands on `main`:
+
+```sh
+# Stop Flux fighting the migration, remove the old-named release (deletes its
+# resources — empty scaffold data at this stage, all regenerated below), then
+# let Flux reinstall everything under the pinned names.
+flux suspend helmrelease beekeepingit keycloak minio -n flux-system
+infra/cluster/with-lock.sh helm uninstall keycloak minio -n beekeepingit-dev
+infra/cluster/with-lock.sh helm uninstall beekeepingit-dev-beekeepingit -n beekeepingit-dev
+flux resume helmrelease beekeepingit keycloak minio -n flux-system
+flux reconcile helmrelease beekeepingit -n flux-system   # then keycloak/minio via dependsOn
+```
+
+After this, `helm list -n beekeepingit-dev` shows `beekeepingit`/`keycloak`/`minio`, and no
+further migration is ever needed — the names are pinned.
 
 ## Alternatives considered
 
@@ -120,10 +150,9 @@ infra/gitops/apps/dev/minio-helmrelease.yaml`) — works because the Flux contro
 
 - If `keycloakx`/`minio` need version bumps, only `infra/gitops/apps/dev/*-helmrelease.yaml`'s
   `chart.spec.version` changes — no local `helm dependency build`/re-vendor step exists anymore.
-- EPIC-14 (#15): the literal Secret/ConfigMap name coupling should be revisited if the umbrella
-  release is ever renamed or multi-tenant per-org releases are introduced.
-- Consider pinning `spec.releaseName: beekeepingit` on the existing
-  `infra/gitops/apps/dev/beekeepingit-helmrelease.yaml` too, so its name stops depending on Flux's
-  default and matches direct `helm install beekeepingit` naming — not done here since the release
-  is already live under the auto-generated name and renaming would orphan it (needs a deliberate,
-  coordinated migration, tracked in `FOLLOWUPS.md`).
+- EPIC-14 (#15): the literal Secret/ConfigMap name coupling should be revisited if multi-tenant
+  per-org releases are introduced (the release names are pinned now, so a straight rename is no
+  longer the risk — a per-org fan-out would be).
+- **Merge-time:** run the release-name migration runbook above once, right after this lands on
+  `main`, before Flux next reconciles the umbrella (or the reconcile fails on a Helm ownership
+  conflict). Tracked in `FOLLOWUPS.md`.
