@@ -48,6 +48,8 @@ skeleton, so they have no client-facing spec yet beyond the `organizations` skel
   (`task openapi:generate-go`, `oapi-codegen`) is wired too but no-ops until a service adds
   `internal/api/oapi-codegen.yaml`. Dart/TS typed-client codegen is deferred — no client
   consumes a generated client yet and no tool is decided.
-- **Contract tests at service boundaries** still need a real deployed service to test
-  against — tracked on [#153](https://github.com/TiagoJVO/beekeepingit/issues/153), blocked on
-  the walking skeleton ([#23](https://github.com/TiagoJVO/beekeepingit/issues/23)).
+- **Contract tests at service boundaries** (#153) run as part of the owning service's own
+  integration tests, via `services/servicetemplate/contracttest` — it validates a real HTTP
+  response against the service's spec ($ref/allOf-aware). See
+  `services/apiaries/main_test.go`'s `TestApiariesSlice_ResponsesConformToOpenAPIContract` for
+  the pattern; extend it to other services as each grows a client-facing surface.

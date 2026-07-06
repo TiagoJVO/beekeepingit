@@ -72,10 +72,10 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 **Negative / risks**
 
 - **Discipline-dependent:** contract-first only holds if CI enforces spec↔code parity and
-  breaking-change detection. **Mitigation:** lint + `oasdiff` + Go codegen wired in
-  [#153](https://github.com/TiagoJVO/beekeepingit/issues/153); contract tests at boundaries
-  remain until the walking skeleton ([#23](https://github.com/TiagoJVO/beekeepingit/issues/23))
-  gives them a service to test against.
+  breaking-change detection. **Mitigation:** lint, `oasdiff`, Go codegen, and contract tests at
+  boundaries all wired in [#153](https://github.com/TiagoJVO/beekeepingit/issues/153) (the
+  latter caught a real spec/implementation drift on first run — `apiaries`' `location` field
+  was emitted as `null` against a non-nullable schema, fixed alongside).
 - **Split-file `$ref` needs bundling** before codegen/publish, and `security` scheme names can't
   be cross-file `$ref`s (each spec re-declares `bearerAuth` as a `$ref` to the shared def).
   Accepted — it is the standard contract-first workflow and keeps a single source of truth.
@@ -107,8 +107,8 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 - **#106 / SP-1** — the sync write-back protocol over these REST writes (atomic push, D-12).
 - **#109** — JWT validation placement, claims→`organization_id`, admin scope (Q-AUTH/Q-ROLE).
 - **#107** — the async event/outbox contract for cross-service reactions (history capture).
-- **#153** — CI: OpenAPI lint and `oasdiff` breaking-change gate landed; Go server-stub codegen
-  wired (no-ops until a service adopts it); Dart/TS client codegen and contract tests at
-  boundaries remain (the latter blocked on #23, the walking skeleton).
+- **#153 (closed)** — CI: OpenAPI lint, `oasdiff` breaking-change gate, Go server-stub codegen
+  (no-ops until a service adopts it), and contract tests at boundaries all landed. Dart/TS
+  client codegen remains deferred — no consumer yet, tool undecided.
 - **Per service epic** — author the full spec from the template as each service is built
   (`identity`, `activities`, `journeys`, `todos`, `ai`, `history`).

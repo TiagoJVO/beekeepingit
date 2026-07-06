@@ -21,6 +21,7 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/authn"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/config"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/contracttest"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/health"
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 	"github.com/TiagoJVO/beekeepingit/services/shared/devseed"
@@ -213,6 +214,50 @@ func TestApiariesSlice_ValidateRejectsBadOps(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("validate status = %d, want 422, body = %s", rec.Code, rec.Body.String())
 	}
+}
+
+// TestApiariesSlice_ResponsesConformToOpenAPIContract exercises the
+// client-facing read surface (GET /v1/apiaries[/{id}]) through the real
+// server and validates each response against contracts/openapi/apiaries —
+// the "contract tests at boundaries" AC of #153. It's a boundary test, not a
+// functional one: TestApiariesSlice_CreateReadLWWConflictIdempotencyTombstone
+// already covers the read/apply semantics this reuses.
+func TestApiariesSlice_ResponsesConformToOpenAPIContract(t *testing.T) {
+	doc, err := contracttest.Load("../../contracts/openapi/apiaries.openapi.yaml")
+	if err != nil {
+		t.Fatalf("load contract: %v", err)
+	}
+
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	if got := f.apply(t, putOp(id, "Quinta do Vale", 3, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+
+	getPath := "/v1/apiaries/" + id
+	recGet := f.do(t, http.MethodGet, getPath, nil)
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200", recGet.Code)
+	}
+	doc.ValidateResponseBody(t, http.MethodGet, getPath, http.StatusOK, recGet.Body.Bytes())
+
+	recList := f.do(t, http.MethodGet, "/v1/apiaries", nil)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200", recList.Code)
+	}
+	doc.ValidateResponseBody(t, http.MethodGet, "/v1/apiaries", http.StatusOK, recList.Body.Bytes())
+
+	// A deleted resource's 404 must still be a well-formed Problem response.
+	delOp := api.Op{Op: "delete", EntityType: "apiary", ID: id, UpdatedAt: t0.Add(time.Minute)}
+	if got := f.apply(t, delOp); got.Results[0].Result != "applied" {
+		t.Fatalf("delete result = %q, want applied", got.Results[0].Result)
+	}
+	recGone := f.do(t, http.MethodGet, getPath, nil)
+	if recGone.Code != http.StatusNotFound {
+		t.Fatalf("get-after-delete status = %d, want 404", recGone.Code)
+	}
+	doc.ValidateResponseBody(t, http.MethodGet, getPath, http.StatusNotFound, recGone.Body.Bytes())
 }
 
 // --- small read helpers ---

@@ -16,16 +16,17 @@ policy matrix) is still a later concern (EPIC-01/#28).
 
 ## Packages
 
-| Package    | What it provides                                                                                                                                                                                                                   |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config`   | Env-var loader; aggregates every missing required value into one error                                                                                                                                                             |
-| `problem`  | RFC 9457 error format (`application/problem+json`) + panic-recovery middleware                                                                                                                                                     |
-| `health`   | `Checker` registry backing `/healthz` (liveness) and `/readyz` (readiness)                                                                                                                                                         |
-| `logging`  | `log/slog` JSON to stdout, fanned out to the OTel collector, trace-correlated                                                                                                                                                      |
-| `otelboot` | Bootstraps OTel traces/metrics/logs (OTLP/gRPC) against the collector                                                                                                                                                              |
-| `authn`    | JWT/JWKS bearer-token verification middleware (Keycloak, via `coreos/go-oidc`); `NewOrgResolver` enriches `Claims` with `organization_id`/`role` from membership (§4.2); `authn/authtest` is a reusable fake OIDC issuer for tests |
-| (root)     | Wires the above into a `chi` HTTP server: `New`/`Mount`/`Router`/`Run`/`Shutdown`                                                                                                                                                  |
-| `example`  | Runnable reference (`go run ./example`) every domain service's `main.go` copies                                                                                                                                                    |
+| Package        | What it provides                                                                                                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `config`       | Env-var loader; aggregates every missing required value into one error                                                                                                                                                                     |
+| `problem`      | RFC 9457 error format (`application/problem+json`) + panic-recovery middleware                                                                                                                                                             |
+| `health`       | `Checker` registry backing `/healthz` (liveness) and `/readyz` (readiness)                                                                                                                                                                 |
+| `logging`      | `log/slog` JSON to stdout, fanned out to the OTel collector, trace-correlated                                                                                                                                                              |
+| `otelboot`     | Bootstraps OTel traces/metrics/logs (OTLP/gRPC) against the collector                                                                                                                                                                      |
+| `authn`        | JWT/JWKS bearer-token verification middleware (Keycloak, via `coreos/go-oidc`); `NewOrgResolver` enriches `Claims` with `organization_id`/`role` from membership (§4.2); `authn/authtest` is a reusable fake OIDC issuer for tests         |
+| (root)         | Wires the above into a `chi` HTTP server: `New`/`Mount`/`Router`/`Run`/`Shutdown`                                                                                                                                                          |
+| `example`      | Runnable reference (`go run ./example`) every domain service's `main.go` copies                                                                                                                                                            |
+| `contracttest` | Validates a real HTTP response against a `contracts/openapi/*.openapi.yaml` spec ($ref/allOf-aware) — the "contract tests at boundaries" helper (#153); used from a service's own integration tests, e.g. `services/apiaries/main_test.go` |
 
 ## Configuration (env vars)
 

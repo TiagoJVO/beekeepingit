@@ -22,13 +22,16 @@ const (
 )
 
 // apiaryDTO is the client-facing apiary shape (contracts/openapi/apiaries).
-// `location` is always null in the walking skeleton (PostGIS unused, §4.1).
+// `location` is always unset in the walking skeleton (PostGIS unused, §4.1);
+// omitempty leaves it out of the response entirely rather than emitting
+// `"location": null`, which the GeoPoint schema (an object, no null variant)
+// doesn't allow for a present-but-null value.
 type apiaryDTO struct {
 	ID             string    `json:"id"`
 	OrganizationID string    `json:"organization_id"`
 	Name           string    `json:"name"`
 	HiveCount      int32     `json:"hive_count"`
-	Location       any       `json:"location"`
+	Location       any       `json:"location,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }

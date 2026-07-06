@@ -253,8 +253,9 @@ flowchart TD
   [`taskfiles/openapi.yml`](../../taskfiles/openapi.yml). **Server-stub codegen** (Go
   `oapi-codegen`) is wired but no-ops until a service adds an `oapi-codegen.yaml` config;
   **Dart/TS typed-client codegen** is deferred (no consumer yet, tool undecided). **Contract
-  tests** at boundaries need a running service — still blocked on the walking skeleton
-  ([#23](https://github.com/TiagoJVO/beekeepingit/issues/23)).
+  tests** at boundaries run inside the owning service's own integration tests via
+  `services/servicetemplate/contracttest`, which validates a real HTTP response against the
+  service's OpenAPI spec — see `services/apiaries/main_test.go`.
 
 ---
 
