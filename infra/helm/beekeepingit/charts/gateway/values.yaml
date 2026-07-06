@@ -12,19 +12,26 @@ host: keycloak.beekeepingit.local
 # significant to k8s Ingress; listed specific→general for readability.
 # Keycloak is its own Flux HelmRelease "keycloak" (ADR-0012) → Service
 # "keycloak-keycloakx-http". The Go services / PWA use the bare Service names
-# from the `services`/`pwa` subcharts.
-#
-# NOTE: `/sync-stream` → PowerSync is a naive prefix route. PowerSync's client
-# appends its own paths to the endpoint, so a StripPrefix (Traefik middleware)
-# or a dedicated host may be needed — validated at deploy (#23 e2e), see
-# FOLLOWUPS.md.
+# from the `services`/`pwa`/`powersync` subcharts.
 routes:
   - { path: /realms, service: keycloak-keycloakx-http, port: 80 }
   - { path: /resources, service: keycloak-keycloakx-http, port: 80 }
   - { path: /v1/apiaries, service: apiaries, port: 8080 }
   - { path: /v1/sync, service: sync, port: 8080 }
-  - { path: /sync-stream, service: powersync, port: 8080 }
   - { path: /, service: pwa, port: 80 }
+
+# PowerSync's client appends its own paths (e.g. `/sync/stream`) to the endpoint,
+# and the PowerSync service serves those at the **root** — so this `/sync-stream`
+# prefix must be **stripped** before the request reaches it. Validated live (#23):
+# without stripping, the request fell through to the PWA SPA fallback (200 HTML)
+# and download sync silently never ran. Rendered as its own Ingress + a Traefik
+# StripPrefix Middleware (templates/powersync-route.yaml) so the main Ingress
+# above stays a plain, controller-agnostic object; only this one route is
+# Traefik-specific.
+powersyncRoute:
+  path: /sync-stream
+  service: powersync
+  port: 8080
 
 ingressClassName: traefik
 selfSignedCertDays: 365

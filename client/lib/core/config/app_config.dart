@@ -28,10 +28,15 @@ abstract final class AppConfig {
   );
 
   /// PowerSync sync-stream endpoint (gateway route `/sync-stream/**` → the
-  /// PowerSync service). The SDK appends its own paths.
+  /// PowerSync service). The **trailing slash is required**: the SDK builds each
+  /// request as `Uri.parse(endpoint).resolve('sync/stream')`, and RFC 3986
+  /// resolution against a base without a trailing slash *replaces* the last path
+  /// segment — dropping `/sync-stream` and POSTing to `/sync/stream`, which
+  /// misses the gateway route and hits the PWA (405). With the slash it resolves
+  /// to `/sync-stream/sync/stream`, which the gateway strips before PowerSync.
   static const String powerSyncUrl = String.fromEnvironment(
     'POWERSYNC_URL',
-    defaultValue: 'https://keycloak.beekeepingit.local:8443/sync-stream',
+    defaultValue: 'https://keycloak.beekeepingit.local:8443/sync-stream/',
   );
 
   /// OIDC endpoints derived from the issuer.

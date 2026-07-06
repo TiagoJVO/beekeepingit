@@ -16,6 +16,13 @@ const TEST_USER = process.env.E2E_USER ?? "test.beekeeper@beekeepingit.local";
 const TEST_PASS = process.env.E2E_PASS ?? "dev-password123";
 const apiaryName = `Encosta Nova ${Date.now()}`;
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// The apiaries list row for `name`, as a Flutter semantics button. Scoped by the
+// unique name because download sync legitimately fills the list with the org's
+// other apiaries (several of which also read "12 hives").
+const apiaryRow = (page: Page, name: string) =>
+  page.getByRole("button", { name: new RegExp(escapeRe(name)) });
+
 async function enableSemantics(page: Page) {
   // Flutter builds its semantics DOM (what Playwright selects against) only
   // after its "Enable accessibility" placeholder is activated. A direct DOM
@@ -59,7 +66,7 @@ async function login(page: Page) {
   await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible();
 }
 
-test("login → create → offline edit → sync", async ({ page, context }) => {
+test("login → create → offline edit → sync", async ({ page, context, browser }) => {
   // Capture the Keycloak access token from the app's own requests (the
   // realm disallows direct grant, so we don't mint one out-of-band).
   let capturedToken = "";
@@ -98,7 +105,7 @@ test("login → create → offline edit → sync", async ({ page, context }) => 
   await page.getByText("Save", { exact: true }).click();
 
   // The edit is applied locally while offline (local-first, FR-OF-1).
-  await expect(page.getByText("12 hives")).toBeVisible();
+  await expect(apiaryRow(page, apiaryName)).toContainText("12 hives");
 
   // ── Reconnect → the queued change syncs ───────────────────────────────
   await context.setOffline(false);
@@ -111,8 +118,23 @@ test("login → create → offline edit → sync", async ({ page, context }) => 
   // ── Reload → local state converged (#23 AC) ───────────────────────────
   await page.reload();
   await enableSemantics(page);
-  await expect(page.getByText(apiaryName)).toBeVisible();
-  await expect(page.getByText("12 hives")).toBeVisible();
+  await expect(apiaryRow(page, apiaryName)).toContainText("12 hives");
+
+  // ── A second, fresh client converges via download sync ────────────────
+  // Guards the server→client half of sync: a brand-new context has an empty
+  // local SQLite, so it can only show this apiary if PowerSync *downloaded* it
+  // from the server (not local persistence). This is what catches a broken
+  // download stream — e.g. the gateway/endpoint bugs that let the reload above
+  // still pass on stale local state (#23).
+  const fresh = await browser.newContext();
+  try {
+    const p2 = await fresh.newPage();
+    await login(p2);
+    await expect(apiaryRow(p2, apiaryName)).toBeVisible({ timeout: 30_000 });
+    await expect(apiaryRow(p2, apiaryName)).toContainText("12 hives");
+  } finally {
+    await fresh.close();
+  }
 });
 
 async function serverHiveCount(page: Page, token: string, name: string): Promise<number | null> {

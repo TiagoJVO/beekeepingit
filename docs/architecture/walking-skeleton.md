@@ -529,3 +529,26 @@ Two coupled facts drove the final dev wiring:
    internal-HTTP (reachable) while `issuer`/`authorization_endpoint` stay the external
    HTTPS URL. This replaces the earlier in-cluster issuer-alias (CoreDNS rewrite +
    `keycloak-oidc` Service) approach, which is removed.
+
+### 11.2 PowerSync `/sync-stream` gateway route (download sync)
+
+The client → server **write-back** goes through the `sync` service (`/v1/sync/batch`), but
+the server → client **download** goes through PowerSync directly at the gateway's
+`/sync-stream` route. Two bugs there let the download silently never run while the rest of the
+slice looked healthy (the e2e's reload step passed on same-session local state):
+
+1. **Service name.** The gateway route targeted a Service `powersync`, but the PowerSync chart
+   named its Service release-prefixed (`beekeepingit-powersync`) — so the route resolved to
+   nothing and `/sync-stream` fell through to the PWA SPA fallback. Fixed by giving the
+   PowerSync Service a **stable bare name** (`powersync`), like its `apiaries`/`sync`/`pwa`
+   siblings, so it resolves the same under local Helm and Flux (different release names).
+2. **Endpoint trailing slash + prefix strip.** The PowerSync SDK builds each request as
+   `Uri.parse(endpoint).resolve('sync/stream')`; against a base **without** a trailing slash,
+   RFC 3986 resolution replaces the last path segment and drops `/sync-stream`, POSTing to
+   `/sync/stream` (→ PWA, 405). The client endpoint now ends in `/sync-stream/`, and the
+   gateway route is a dedicated Ingress with a Traefik **StripPrefix** middleware so PowerSync
+   receives its paths at the root (it has no configurable base path). The gateway's other
+   routes stay a plain, controller-agnostic Ingress.
+
+The e2e now asserts a **second, fresh browser context** (empty local SQLite) converges to a
+server-created apiary — directly exercising the download half so this class of bug can't hide.

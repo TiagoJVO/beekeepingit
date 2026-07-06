@@ -11,23 +11,17 @@
 
 The slice was **deployed to a live k3d cluster** and driven **in a real browser**: the full
 Playwright e2e — **OIDC login (Keycloak PKCE) → create an apiary → offline edit → reconnect →
-server-side assertion (`GET /v1/apiaries` reflects the edit) → reload convergence** — passes
-end-to-end, including the **PowerSync browser → server write-back**. Deploy bugs found and
+server-side assertion (`GET /v1/apiaries` reflects the edit) → reload convergence → a second
+fresh client converges via download sync** — passes end-to-end, exercising **both** the
+PowerSync browser → server write-back and the server → client download. Deploy bugs found and
 **fixed in this branch**: PowerSync sync-rules → `bucket_definitions`; DB `search_path` + schema
-provisioned-by-infra; the `powersync` role as a member of the `*_svc` roles; and the OIDC
-topology (see below). What remains:
+provisioned-by-infra; the `powersync` role as a member of the `*_svc` roles; the OIDC topology
+(see below); and the two stacked download-sync bugs (gateway route targeted a non-existent
+`powersync` Service so `/sync-stream` fell through to the PWA; and the client's PowerSync
+endpoint lacked a trailing slash, so the SDK's `Uri.resolve` dropped the `/sync-stream` prefix
+and POSTed to `/sync/stream` → PWA 405 — both fixed, plus a Traefik StripPrefix for the route).
+What remains:
 
-- **PowerSync download sync (server → client) does not deliver rows to a fresh client.** A brand-new
-  browser session (empty local SQLite) that logs in as the seeded user sees an **empty** apiaries
-  list even after ~12 s, though the org's rows exist server-side (`GET /v1/apiaries` returns them).
-  Only the **write-back (client → server)** path is truly proven; the e2e's "reload convergence"
-  assertion is satisfied by same-session OPFS persistence, not a real download, so it masked this.
-  Token→bucket wiring looks correct (the sync token carries `organization_id`; the bucket is
-  parameterized on it), so suspects are: Postgres **logical replication → PowerSync bucket storage**
-  not flowing for `apiaries.apiaries`; a **uuid/text** mismatch in the sync-rules data query
-  (`organization_id = bucket.organization_id`); or the client not consuming the `/sync-stream`
-  download. **Fix + strengthen the e2e** to assert a _second, fresh_ client receives a
-  server-created row (true bidirectional convergence). Blocks the core FR-OF sync claim.
 - **e2e in CI.** `client/e2e` (Playwright) needs the full slice deployed; wire a CI job that
   stands up the cluster (or targets a deployed env). The Go integration tests cover the
   server-side apply/coordinator semantics in CI now.
