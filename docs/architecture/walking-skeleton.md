@@ -552,3 +552,20 @@ slice looked healthy (the e2e's reload step passed on same-session local state):
 
 The e2e now asserts a **second, fresh browser context** (empty local SQLite) converges to a
 server-created apiary — directly exercising the download half so this class of bug can't hide.
+
+### 11.3 Observability verified against the real stack (NFR-OBS-1)
+
+The M0 exit criterion — the slice's traces/logs visible in the observability stack — was
+verified **live**, not just emitted. With the observability stack (`infra/helm/observability`:
+OTel Collector + Tempo + Loki + Grafana, #87) deployed alongside the slice and e2e traffic
+driven through it:
+
+- **Tempo** holds a single distributed trace spanning **gateway → sync → apiaries**: a
+  `traefik` root span for `POST /v1/sync/batch` continuing into the `sync` service and its
+  `/internal/sync/validate` + `/internal/sync/apply` fan-out to `apiaries` (W3C `traceparent`
+  propagated across the internal REST calls). Traefik's own span is enabled by
+  [`traefik-tracing.yaml`](../../infra/gitops/apps/dev/traefik-tracing.yaml).
+- **Loki** holds per-service structured logs (`service_name` = `identity`/`organizations`/
+  `apiaries`/`sync`) carrying `trace_id`/`span_id`, so a log line links back to its trace.
+- `infra/observability-smoke-test.sh` passes against this collector, closing #87's deferred
+  `telemetrygen` verification.

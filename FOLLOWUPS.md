@@ -28,9 +28,11 @@ What remains:
 - **`powersync` publication scope change.** The postgres chart now publishes `FOR TABLES IN
 SCHEMA apiaries, organizations` (was `FOR ALL TABLES`) per walking-skeleton.md §5.3. If the
   infra owner prefers the broader publication, this is a one-line revert — flag in review.
-- **Full observability stack (Tempo/Loki/Grafana) is still deferred (#87)** — the dev bring-up
-  deliberately skips it. The **distributed trace was verified live** against a throwaway OTLP
-  collector (debug exporter): a single trace spans `sync → apiaries → identity → organizations`
-  on the `/v1/sync/batch` write-back (W3C `traceparent` propagated across the internal REST
-  calls), satisfying NFR-OBS-1's east-west requirement. The Tempo/Grafana _visualization_ +
-  `infra/observability-smoke-test.sh` on real traffic still ride on the #87 stack deploy.
+- **Observability stack lives in its own release (#87), not the dev bring-up.** NFR-OBS-1 is
+  **verified live**: with `infra/helm/observability` (OTel Collector + Tempo + Loki + Grafana)
+  deployed and e2e traffic driven through it, Tempo holds a single **gateway → sync → apiaries**
+  trace (Traefik span via [`traefik-tracing.yaml`](infra/gitops/apps/dev/traefik-tracing.yaml)),
+  Loki holds trace-correlated per-service structured logs, and `observability-smoke-test.sh`
+  passes (see walking-skeleton.md §11.3). The remaining follow-up is purely wiring the stack
+  into the standard bring-up / GitOps sync so it comes up automatically (owned by #87), rather
+  than the manual `helm upgrade --install observability` used to verify here.
