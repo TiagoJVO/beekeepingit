@@ -65,7 +65,7 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 	}
 	// Migrations no longer create the schema (that's infra's job in-cluster);
 	// provision it here as the postgres chart's bootstrap would.
-	createSchema(t, ctx, dbCfg, "identity")
+	createSchema(ctx, t, dbCfg, "identity")
 	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 
 // createSchema provisions the service's schema before migrating, standing in
 // for the postgres chart's bootstrap (migrations no longer create it).
-func createSchema(t *testing.T, ctx context.Context, cfg dbaccess.Config, name string) {
+func createSchema(ctx context.Context, t *testing.T, cfg dbaccess.Config, name string) {
 	t.Helper()
 	conn, err := pgx.Connect(ctx, cfg.DSN())
 	if err != nil {

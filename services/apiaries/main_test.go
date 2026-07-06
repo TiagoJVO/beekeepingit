@@ -77,7 +77,7 @@ func newApiariesFixture(t *testing.T) *apiariesFixture {
 
 	dbCfg := dbaccess.Config{Host: host, Port: port.Port(), User: dbUser, Password: dbPass, Database: dbName, SSLMode: "disable"}
 	// Migrations no longer create the schema (infra's job in-cluster).
-	createSchema(t, ctx, dbCfg, "apiaries")
+	createSchema(ctx, t, dbCfg, "apiaries")
 	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -259,7 +259,7 @@ func (f *apiariesFixture) listApiaries(t *testing.T) listView {
 
 // createSchema provisions the service's schema before migrating, standing in
 // for the postgres chart's bootstrap (migrations no longer create it).
-func createSchema(t *testing.T, ctx context.Context, cfg dbaccess.Config, name string) {
+func createSchema(ctx context.Context, t *testing.T, cfg dbaccess.Config, name string) {
 	t.Helper()
 	conn, err := pgx.Connect(ctx, cfg.DSN())
 	if err != nil {
