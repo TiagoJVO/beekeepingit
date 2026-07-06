@@ -21,7 +21,7 @@ starts deploying to a live cluster (`#86`/`#88`).
   flags any orphaned k3d docker volumes.
 
 Postgres+PostGIS, Keycloak, MinIO and the gateway landed with `#84` (see below); PowerSync's
-*infra* (self-hosted service + Postgres storage backend, D-6/ADR-0005) landed with `#22`, with a
+_infra_ (self-hosted service + Postgres storage backend, D-6/ADR-0005) landed with `#22`, with a
 placeholder sync-config and a Keycloak-JWKS stopgap since no domain tables/connector exist yet
 (see `FOLLOWUPS.md`). The walking-skeleton Go services, the PWA, and PowerSync's real org-scoped
 Sync Rules + connector land with `#23`/`#106`. All deploy through the umbrella chart below rather

@@ -127,15 +127,15 @@ chart's steady-state behavior:
   `powersync` role can't pass its `powersync_storage` permission check (see the crash below) until
   `charts/postgres/templates/schema-grants-job.yaml`'s Job — a `post-install` hook, since that
   role doesn't exist yet at install time — grants it. But Helm only runs post-install hooks
-  *after* `--wait` is satisfied for the main release resources, so PowerSync wondering "am I
+  _after_ `--wait` is satisfied for the main release resources, so PowerSync wondering "am I
   ready?" and the hook that would make it ready were waiting on each other; `--wait` would
   eventually time out and fail the whole release. Fixed by dropping `--wait` from the umbrella
   `helm upgrade --install` in `dev-up.sh`/`infra/README.md` and waiting on each component
   explicitly afterward instead (which the script already did for PowerSync/Keycloak/MinIO; added
   the same for Postgres).
   - Symptom while broken: `beekeepingit-powersync` `CrashLoopBackOff`, logs showing `Fatal startup
-    error - exiting with code 150. permission denied for database powersync_storage`.
-- **`kubectl wait` doesn't wait for a pod to *exist*.** It errors immediately with "no matching
+error - exiting with code 150. permission denied for database powersync_storage`.
+- **`kubectl wait` doesn't wait for a pod to _exist_.** It errors immediately with "no matching
   resources found" if its selector currently matches zero pods, rather than polling for one to
   appear — a real race against the Deployment/StatefulSet/Flux HelmRelease that creates the pod
   a moment after the resource owning it is applied. Fixed with a small `wait_for_pod` helper in
@@ -175,7 +175,7 @@ Findings from the runs so far (not just `helm lint`/`template`):
   cost real time to diagnose.
 - **The documented "apply Keycloak/MinIO HelmReleases directly for local-only testing" step
   (previously in `infra/README.md`) never actually worked standalone.** Both files'
-  `dependsOn: [beekeepingit]` targets the *HelmRelease object* named `beekeepingit`, which only
+  `dependsOn: [beekeepingit]` targets the _HelmRelease object_ named `beekeepingit`, which only
   exists once the cluster is GitOps-bootstrapped (`infra/gitops/clusters/dev/`) — bootstrapping
   that, though, makes Flux deploy the umbrella chart from `main`, defeating local branch testing.
   `dev-up.sh`/`dev-down.sh` (`#22`) fix this by stripping `dependsOn` at apply-time for this
