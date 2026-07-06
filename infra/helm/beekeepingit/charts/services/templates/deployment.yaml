@@ -24,7 +24,11 @@ spec:
     spec:
       containers:
         - name: {{ $name }}
-          image: "{{ $root.Values.image.registry }}/{{ $svc.component }}:{{ $root.Values.image.tag }}"
+          # Per-service `tag` overrides the shared `image.tag` when set — so Flux
+          # image-automation can bump each service independently (they publish on
+          # their own path-filtered CI legs). Defaults to the shared tag (`latest`
+          # locally), so the manual dev deploy is unaffected. See #23 / #88.
+          image: "{{ $root.Values.image.registry }}/{{ $svc.component }}:{{ $svc.tag | default $root.Values.image.tag }}"
           imagePullPolicy: {{ $root.Values.image.pullPolicy }}
           ports:
             - containerPort: {{ $svc.port }}

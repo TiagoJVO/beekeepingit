@@ -1,0 +1,136 @@
+# Per-service image tracking for the M0 walking-skeleton (#23) — the first services
+# that ship a Dockerfile and publish to ghcr.io via build-publish.yml. One
+# ImageRepository (polls the registry) + ImagePolicy (picks the newest build) per
+# published image; the matching setter markers live on the tags in
+# `../apps/dev/beekeepingit-helmrelease.yaml`.
+#
+# DORMANT, exactly like example-service-image.yaml: this directory is outside the
+# Flux Kustomization paths, so nothing here is reconciled until activation (README
+# "Activation" — needs the #89 Git-write credential + moving these under a
+# reconciled path). Committed now so the wiring is ready + version-controlled.
+#
+# build-publish.yml tags main images `<YYYYMMDDHHMMSS>-<sha>`; the shared
+# ImagePolicy shape below extracts the 14-digit timestamp and orders numerically so
+# the most recently built image wins (commit SHAs alone are NOT chronologically
+# sortable).
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: services-identity
+  namespace: flux-system
+spec:
+  image: ghcr.io/tiagojvo/beekeepingit/services-identity
+  interval: 5m
+  # Once images are private, add `secretRef: { name: ghcr-pull }` (EPIC-14 #89).
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: services-identity
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: services-identity
+  filterTags:
+    pattern: "^(?P<ts>[0-9]{14})-[0-9a-f]+$"
+    extract: "$ts"
+  policy:
+    numerical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: services-organizations
+  namespace: flux-system
+spec:
+  image: ghcr.io/tiagojvo/beekeepingit/services-organizations
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: services-organizations
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: services-organizations
+  filterTags:
+    pattern: "^(?P<ts>[0-9]{14})-[0-9a-f]+$"
+    extract: "$ts"
+  policy:
+    numerical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: services-apiaries
+  namespace: flux-system
+spec:
+  image: ghcr.io/tiagojvo/beekeepingit/services-apiaries
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: services-apiaries
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: services-apiaries
+  filterTags:
+    pattern: "^(?P<ts>[0-9]{14})-[0-9a-f]+$"
+    extract: "$ts"
+  policy:
+    numerical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: services-sync
+  namespace: flux-system
+spec:
+  image: ghcr.io/tiagojvo/beekeepingit/services-sync
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: services-sync
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: services-sync
+  filterTags:
+    pattern: "^(?P<ts>[0-9]{14})-[0-9a-f]+$"
+    extract: "$ts"
+  policy:
+    numerical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: client
+  namespace: flux-system
+spec:
+  image: ghcr.io/tiagojvo/beekeepingit/client
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: client
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: client
+  filterTags:
+    pattern: "^(?P<ts>[0-9]{14})-[0-9a-f]+$"
+    extract: "$ts"
+  policy:
+    numerical:
+      order: asc
