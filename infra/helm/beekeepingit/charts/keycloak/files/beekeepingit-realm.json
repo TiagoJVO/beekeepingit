@@ -18,6 +18,7 @@
       "serviceAccountsEnabled": false,
       "redirectUris": [
         "http://localhost:*",
+        "http://keycloak.beekeepingit.local:8080/*",
         "https://keycloak.beekeepingit.local/*",
         "https://*.beekeepingit.local/*"
       ],

@@ -9,29 +9,31 @@
 
 ## Before merging the walking-skeleton slice (#23)
 
-The slice was **deployed to a live k3d cluster** during development: the whole backend stack
-(postgres, keycloak, minio, identity, organizations, apiaries, sync, powersync, pwa) comes up
-1/1, services are DB-connected (`/readyz` 200), `sync` serves its JWKS, and **PowerSync
-replicates the synced tables** (snapshot done, checkpoints). Several deploy-time bugs found
-there are **fixed in this branch** (PowerSync sync-rules → `bucket_definitions`; DB
-`search_path` + schema provisioned-by-infra, not by migrations; the `powersync` role made a
-member of the `*_svc` roles for snapshot SELECT). What remains:
+The slice was **deployed to a live k3d cluster** and driven **in a real browser** during
+development. Working live: the whole backend stack (postgres, keycloak, minio, identity,
+organizations, apiaries, sync, powersync, pwa) up 1/1; services DB-connected (`/readyz` 200);
+`sync` serving its JWKS; **PowerSync replicating the synced tables**; and in the browser (via
+the Playwright e2e) **OIDC login (Keycloak PKCE) → create an apiary → offline edit → local
+persistence** all work end-to-end. Deploy bugs found and **fixed in this branch**: PowerSync
+sync-rules → `bucket_definitions`; DB `search_path` + schema provisioned-by-infra; the
+`powersync` role as a member of the `*_svc` roles; the OIDC issuer split-horizon (Keycloak
+`KC_HOSTNAME` + the `keycloak-oidc` alias Service + CoreDNS rewrite + dev-overlay issuer +
+realm redirect URI, so browser and in-cluster tokens agree); and `powersync:setup_web` folded
+into the client build. What remains:
 
-- **Full browser auth — OIDC issuer split-horizon.** Services validate tokens against
-  `OIDC_ISSUER_URL`, but in k3d the external host+port (`keycloak.beekeepingit.local:8443`)
-  isn't reachable in-cluster (Traefik is on 443, not 8443). The live deploy worked around it by
-  pointing services at the internal Keycloak Service (`--set services.oidc.issuerUrl=...`) — but
-  then a browser-obtained token's `iss` (external) won't match. To make the PWA→services auth
-  path work end-to-end, align on one issuer: expose the Keycloak Service on the k3d-mapped port
-  (8080), set Keycloak's frontend URL to `http://keycloak.beekeepingit.local:8080`, add
-  `hostAliases` on the service pods, and point both `OIDC_ISSUER_URL` and the PWA there; then
-  drop the dev override.
-- **Browser → gateway reachability for the Playwright e2e.** The headless browser must resolve
-  `keycloak.beekeepingit.local` → 127.0.0.1 (hosts file, or Chromium `--host-resolver-rules`)
-  and trust the self-signed cert. Wire this into the e2e run/CI.
+- **PowerSync browser → server write-back.** The one part not yet working live: after login the
+  local-first create/edit persists in the browser's SQLite, but PowerSync's **sync client never
+  starts** over the k3d **plain-HTTP** origin — `connect()` returns, the sync worker isn't
+  spawned, the locks fallback emits no status, and `fetchCredentials`/`uploadData` never fire,
+  so nothing reaches `/v1/sync/batch`. Root cause is the non-trustworthy HTTP origin (COOP/COEP
+  are ignored ⇒ no cross-origin isolation ⇒ no SharedArrayBuffer). Fix by serving the dev PWA +
+  gateway over **HTTPS** (or a trustworthy origin) so PowerSync's web sync runs; then the e2e's
+  server-side + reload-convergence assertions pass. `client/e2e` already sets a
+  `--host-resolver-rules` + `--unsafely-treat-insecure-origin-as-secure` launch flag; the
+  remaining gap is the HTTPS/cross-origin-isolation topology, not the test.
 - **Gateway `/sync-stream` → PowerSync** is a naive prefix route; PowerSync appends its own
-  paths, so confirm the PWA↔PowerSync connection and add a Traefik `StripPrefix`/dedicated host
-  if needed.
+  paths, so confirm the PWA↔PowerSync connection (once write-back runs) and add a Traefik
+  `StripPrefix`/dedicated host if needed.
 - **e2e in CI.** `client/e2e` (Playwright) needs the full slice deployed; wire a CI job that
   stands up the cluster (or targets a deployed env). The Go integration tests cover the
   server-side apply/coordinator semantics in CI now.

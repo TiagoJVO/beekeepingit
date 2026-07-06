@@ -15,7 +15,8 @@ final powerSyncProvider = FutureProvider<PowerSyncDatabase>((ref) async {
   await db.initialize();
 
   final connector = BeekeepingitConnector(
-    getAccessToken: () => ref.read(authControllerProvider.notifier).accessToken(),
+    getAccessToken: () =>
+        ref.read(authControllerProvider.notifier).accessToken(),
   );
   await db.connect(connector: connector);
 

@@ -84,6 +84,16 @@ spec:
           secretKeyRef:
             name: beekeepingit-keycloak-admin-credentials
             key: password
+      # Fixed issuer so a token's `iss` is identical whether it was obtained by
+      # the browser (via the gateway) or discovered in-cluster by a service
+      # (#23). The k3d dev cluster maps host :8080 → Traefik, and CoreDNS +
+      # the keycloak-oidc alias Service make the same host:port resolve
+      # in-cluster — so both sides agree on this URL. (The chart already sets
+      # KC_PROXY_HEADERS, so it is not repeated here.)
+      - name: KC_HOSTNAME
+        value: http://keycloak.beekeepingit.local:8080
+      - name: KC_HOSTNAME_STRICT
+        value: "false"
     extraVolumes: |
       - name: realm-import
         configMap:

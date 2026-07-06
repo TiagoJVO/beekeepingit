@@ -17,12 +17,19 @@ const TEST_PASS = process.env.E2E_PASS ?? "dev-password123";
 const apiaryName = `Encosta Nova ${Date.now()}`;
 
 async function enableSemantics(page: Page) {
-  // Flutter renders a hidden "Enable accessibility" placeholder; clicking it
-  // builds the semantics DOM Playwright selects against.
-  const placeholder = page.locator("flt-semantics-placeholder");
-  if (await placeholder.count()) {
-    await placeholder.first().click({ force: true }).catch(() => {});
-  }
+  // Flutter builds its semantics DOM (what Playwright selects against) only
+  // after its "Enable accessibility" placeholder is activated. A direct DOM
+  // click fires the handler regardless of the element's (1x1, offscreen)
+  // geometry. Reappears after each full page load (e.g. the OIDC redirect).
+  await page
+    .evaluate(() => {
+      const el =
+        (document.querySelector("flt-semantics-placeholder") as HTMLElement | null) ??
+        (document.querySelector('[aria-label="Enable accessibility"]') as HTMLElement | null);
+      el?.click();
+    })
+    .catch(() => {});
+  await page.waitForTimeout(1200); // let Flutter build the semantic tree
 }
 
 async function login(page: Page) {
@@ -38,7 +45,7 @@ async function login(page: Page) {
   // Back on the PWA (apiaries list).
   await page.waitForURL(/\/apiaries/);
   await enableSemantics(page);
-  await expect(page.getByText("Apiaries")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible();
 }
 
 test("login → create → offline edit → sync", async ({ page, context }) => {
@@ -55,7 +62,7 @@ test("login → create → offline edit → sync", async ({ page, context }) => 
   await login(page);
 
   // ── Create an apiary ──────────────────────────────────────────────────
-  await page.getByText("Add apiary").click();
+  await page.getByRole("button", { name: "Add apiary" }).click();
   await enableSemantics(page);
   await page.getByLabel("Name").click();
   await page.keyboard.type(apiaryName);
@@ -71,8 +78,12 @@ test("login → create → offline edit → sync", async ({ page, context }) => 
   await enableSemantics(page);
   const hives = page.getByLabel("Number of hives");
   await hives.click();
+  // Clear the field reliably before typing (Flutter web can drop the first
+  // keystroke after a select-all), then type digit-by-digit.
   await page.keyboard.press("Control+A");
-  await page.keyboard.type("12");
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type("12", { delay: 80 });
   await page.getByText("Save", { exact: true }).click();
 
   // The edit is applied locally while offline (local-first, FR-OF-1).
@@ -95,12 +106,18 @@ test("login → create → offline edit → sync", async ({ page, context }) => 
 
 async function serverHiveCount(page: Page, token: string, name: string): Promise<number | null> {
   const apiURL = process.env.E2E_API_URL ?? "";
-  const res = await page.request.get(`${apiURL}/v1/apiaries`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    ignoreHTTPSErrors: true,
-  });
-  if (!res.ok()) return null;
-  const body = await res.json();
-  const found = (body.data ?? []).find((a: { name: string }) => a.name === name);
-  return found ? found.hive_count : null;
+  // Run the request INSIDE the page: same-origin (no CORS) and it uses the
+  // browser's host-resolver rule, unlike Playwright's Node-side request context.
+  return page.evaluate(
+    async ({ apiURL, token, name }) => {
+      const res = await fetch(`${apiURL}/v1/apiaries`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      const found = (body.data ?? []).find((a: { name: string }) => a.name === name);
+      return found ? (found.hive_count as number) : null;
+    },
+    { apiURL, token, name },
+  );
 }

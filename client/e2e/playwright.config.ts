@@ -9,6 +9,11 @@ import { defineConfig, devices } from "@playwright/test";
  */
 const baseURL = process.env.E2E_BASE_URL ?? "https://keycloak.beekeepingit.local:8443";
 
+// Map the gateway host to loopback in the browser itself (no /etc/hosts edit
+// needed) so `keycloak.beekeepingit.local` reaches the k3d host port. Override
+// E2E_HOST_MAP to point elsewhere.
+const hostMap = process.env.E2E_HOST_MAP ?? "MAP keycloak.beekeepingit.local 127.0.0.1";
+
 export default defineConfig({
   testDir: "./tests",
   timeout: 120_000,
@@ -22,6 +27,18 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    launchOptions: {
+      args: [
+        `--host-resolver-rules=${hostMap}`,
+        "--ignore-certificate-errors",
+        // Treat the plain-HTTP dev origin as a secure context so COOP/COEP are
+        // honored → cross-origin isolation → PowerSync's web sync worker (which
+        // needs SharedArrayBuffer) starts. Production serves over HTTPS, where
+        // this is unnecessary.
+        `--unsafely-treat-insecure-origin-as-secure=${process.env.E2E_BASE_URL ?? baseURL}`,
+        "--disable-site-isolation-trials",
+      ],
+    },
   },
   projects: [
     {

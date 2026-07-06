@@ -27,7 +27,9 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
       headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
     if (resp.statusCode != 200) {
-      throw http.ClientException('sync token request failed: ${resp.statusCode}');
+      throw http.ClientException(
+        'sync token request failed: ${resp.statusCode}',
+      );
     }
     final json = jsonDecode(resp.body) as Map<String, dynamic>;
     return PowerSyncCredentials(
@@ -58,7 +60,8 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
       await tx.complete();
       return;
     }
-    if (resp.statusCode == 422 || (resp.statusCode >= 400 && resp.statusCode < 500)) {
+    if (resp.statusCode == 422 ||
+        (resp.statusCode >= 400 && resp.statusCode < 500)) {
       // A client/validation error can't heal on retry. The user-facing
       // notify-and-fix flow is EPIC-06 (#58); the skeleton drops the op so
       // the queue doesn't wedge, and lets it be re-observed via the logs.
@@ -77,7 +80,8 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     // skeleton doesn't preserve offline-delete time — offline edits, which the
     // e2e exercises, do carry it).
     final updatedAt =
-        (data?['updated_at'] as String?) ?? DateTime.now().toUtc().toIso8601String();
+        (data?['updated_at'] as String?) ??
+        DateTime.now().toUtc().toIso8601String();
     return {
       'op': _opName(e.op),
       'entity_type': apiaryEntityType,

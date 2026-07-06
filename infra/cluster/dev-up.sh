@@ -97,6 +97,13 @@ for f in keycloak-helmrelease.yaml minio-helmrelease.yaml; do
 done
 
 echo
+echo "applying the OIDC issuer alias (keycloak-oidc Service + CoreDNS rewrite, #23)"
+# Makes the browser-facing issuer host:port (keycloak.beekeepingit.local:8080)
+# also resolve in-cluster, so services' OIDC discovery matches browser tokens.
+"$script_dir/with-lock.sh" kubectl apply -f "$repo_root/infra/gitops/apps/dev/keycloak-oidc-alias.yaml"
+kubectl -n kube-system rollout restart deployment/coredns >/dev/null 2>&1 || true
+
+echo
 echo "waiting for the PowerSync rollout"
 kubectl -n "$namespace" rollout status deployment/beekeepingit-powersync --timeout=180s
 
