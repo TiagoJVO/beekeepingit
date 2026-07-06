@@ -9,8 +9,14 @@ Uses a Traefik StripPrefix Middleware — the one Traefik-specific piece of the
 otherwise controller-agnostic gateway (NFR-ARC-2). If the ingress controller is
 swapped, this route's rewrite is what needs a per-controller equivalent; the main
 Ingress does not.
+
+Gated on the Traefik CRD being present (`.Capabilities.APIVersions.Has`): on a
+bare cluster without Traefik installed — e.g. the CI `helm test` k3d node — the
+`Middleware` kind is unresolvable and would fail `helm install` before any pod
+starts. Skipping this route there is fine (that job validates install + PostGIS,
+not gateway routing); real dev/prod clusters ship Traefik, so it renders normally.
 */}}
-{{- if .Values.enabled }}
+{{- if and .Values.enabled (.Capabilities.APIVersions.Has "traefik.io/v1alpha1/Middleware") }}
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
