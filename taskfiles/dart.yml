@@ -1,13 +1,20 @@
 # Dart/Flutter tasks — discover every package (pubspec.yaml) and run the tool inside each.
-# No-ops until the Flutter client is scaffolded (e.g. clients/app/pubspec.yaml). When it
-# lands, add `flutter`/`dart` to mise.toml and the client's analysis_options.yaml includes
-# the shared baseline at repo root.
+# Flutter packages (detected by grepping pubspec.yaml for `sdk: flutter`) need the
+# Flutter-specific runner throughout, not just for `test`/`build`: `dart pub get` can't
+# resolve `sdk: flutter` dependencies (flutter_test, flutter_localizations) on a fresh
+# checkout — "version solving failed ... Flutter users should use `flutter pub` instead of
+# `dart pub`" — and plain `dart test` can't load `dart:ui`. `dart format` is fine either way
+# (pure syntax formatting, no dependency resolution).
 version: "3"
 
 silent: true
 
 vars:
-  FIND_PKGS: >-
+  # Named FIND_DART_PKGS (not FIND_PKGS) — Task merges `vars:` from included
+  # taskfiles into one global namespace, so a name shared with another
+  # included taskfile (e.g. web.yml) silently clobbers it. go.yml's FIND_MODS
+  # already follows this per-language-unique naming; web.yml now does too.
+  FIND_DART_PKGS: >-
     find . -type f -name pubspec.yaml
     -not -path '*/.dart_tool/*'
     -not -path '*/.git/*'
@@ -15,33 +22,61 @@ vars:
 
 tasks:
   lint:
-    desc: "Analyze Dart packages (dart analyze)"
+    desc: "Analyze Dart/Flutter packages (flutter analyze / dart analyze)"
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_DART_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
-        for p in $pkgs; do d=$(dirname "$p"); echo "› [dart] analyze $d"; (cd "$d" && dart pub get && dart analyze); done
+        for p in $pkgs; do
+          d=$(dirname "$p")
+          echo "› [dart] analyze $d"
+          if grep -q 'sdk: *flutter' "$p"; then
+            (cd "$d" && flutter pub get && flutter analyze)
+          else
+            (cd "$d" && dart pub get && dart analyze)
+          fi
+        done
 
   format:
     desc: "Format Dart packages (dart format)"
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_DART_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
         for p in $pkgs; do d=$(dirname "$p"); echo "› [dart] format $d"; (cd "$d" && dart format .); done
 
   test:
-    desc: "Test Dart packages (dart test)"
+    desc: "Test Dart/Flutter packages (flutter test / dart test)"
     cmds:
       - |
         set -e
-        pkgs=$({{.FIND_PKGS}})
+        pkgs=$({{.FIND_DART_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
-        for p in $pkgs; do d=$(dirname "$p"); echo "› [dart] test $d"; (cd "$d" && dart test); done
+        for p in $pkgs; do
+          d=$(dirname "$p")
+          echo "› [dart] test $d"
+          if grep -q 'sdk: *flutter' "$p"; then (cd "$d" && flutter test); else (cd "$d" && dart test); fi
+        done
 
   build:
-    desc: "Build placeholder — platform-specific build wiring lands with the client"
+    desc: "Build Dart/Flutter packages (flutter build web for Flutter apps)"
     cmds:
-      - echo "› [dart] build is wired per-package when the Flutter client lands — skipping"
+      - |
+        set -e
+        pkgs=$({{.FIND_DART_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
+        for p in $pkgs; do
+          d=$(dirname "$p")
+          if grep -q 'sdk: *flutter' "$p"; then
+            echo "› [dart] build $d (flutter build web)"
+            # --no-web-resources-cdn: bundle CanvasKit/fonts locally instead of fetching
+            # from Google's CDN at runtime — required for an offline-first PWA (the app
+            # must not depend on external network reachability just to paint its first
+            # frame), and avoids a blank page wherever that CDN is unreachable/blocked.
+            (cd "$d" && flutter build web --no-web-resources-cdn)
+          else
+            echo "› [dart] $d is a pure-Dart package — nothing to build, skipping"
+          fi
+        done
