@@ -88,8 +88,9 @@ Adopt three composable, single-binary tools plus per-language linter configs:
   `services/shared`'s real dependencies pulled in transitive `golang.org/x/*` requiring Go
   1.25+, which v1's last release (built with go1.24.1) can't lint. See
   [ADR-0011](0011-infra-abstraction-object-storage-db-access.md#golangci-lint-v1-v2-unplanned-but-forced-by-this-task).
-- **Version pins need periodic bumps** (Dependabot covers Actions, not mise yet) — tracked as a
-  follow-up.
+- ~~**Version pins need periodic bumps** (Dependabot covers Actions, not mise yet)~~
+  **Superseded:** Renovate covers `mise.toml` pins — see #155 and
+  [docs/development/tooling.md#dependency-updates](../development/tooling.md#dependency-updates).
 - **First run must normalize existing docs** to be Prettier/Markdown-clean (`task format`), a
   one-time cost captured in [FOLLOWUPS.md](../../FOLLOWUPS.md).
 
@@ -120,4 +121,5 @@ Adopt three composable, single-binary tools plus per-language linter configs:
 - **When the Flutter client lands (D-10)** — add `flutter`/`dart` to `mise.toml`; the client's
   `analysis_options.yaml` includes this baseline + `flutter_lints`.
 - ~~**golangci-lint v1 → v2** config migration.~~ **Done** — see #85 / ADR-0011.
-- Consider a mise/Dependabot equivalent for pinned-tool updates.
+- ~~Consider a mise/Dependabot equivalent for pinned-tool updates.~~ **Done** — see #155
+  (Renovate, scoped to its built-in `mise` manager).

@@ -83,6 +83,25 @@ template syntax (`{{ .Values.x }}`) inside `.yaml` files, which is not valid sta
 a generic formatter would corrupt. Those files are linted/rendered by `helm lint`/`helm template`
 in [`helm-ci.yml`](../../.github/workflows/helm-ci.yml) instead, not by `task lint`.
 
+## Dependency updates
+
+Two bots split coverage by ecosystem — neither touches the other's files:
+
+| Ecosystem                               | Tool       | Config                                                   |
+| --------------------------------------- | ---------- | -------------------------------------------------------- |
+| GitHub Actions, Go modules, Flutter pub | Dependabot | [`.github/dependabot.yml`](../../.github/dependabot.yml) |
+| `mise.toml` tool pins                   | Renovate   | [`renovate.json`](../../renovate.json)                   |
+
+Dependabot has no ecosystem for `mise.toml`'s pin format (bare pins plus `go:`/`npm:`
+backend-prefixed keys), so Renovate covers it instead via its built-in `mise` manager —
+`renovate.json` restricts Renovate to that one manager so it never proposes an update
+Dependabot already owns. Both open weekly PRs labeled `type/chore`, titled to pass the
+"PR Title Semantics" check.
+
+Renovate only runs once the [Renovate GitHub App](https://github.com/apps/renovate) is
+installed on this repository (Settings → GitHub Apps); the config takes effect immediately
+on install, no onboarding PR needed.
+
 ## Infra toolchain
 
 [`infra/`](../../infra/) (the single-cluster k8s platform, [ADR — platform.md](../architecture/platform.md))

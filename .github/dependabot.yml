@@ -6,6 +6,9 @@
 #
 # `commit-message.prefix` keeps PR titles Conventional-Commits-compliant so they pass the
 # "PR Title Semantics" check (`ci:` for Actions, `build:` for app dependencies).
+#
+# `mise.toml`'s tool pins have no ecosystem here — Dependabot doesn't understand that pin
+# format. They're bumped by Renovate instead (../renovate.json, #155).
 version: 2
 updates:
   - package-ecosystem: "github-actions"
