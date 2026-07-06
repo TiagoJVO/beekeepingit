@@ -5,6 +5,9 @@
 #
 # This file GROWS as packages land (D-9: dirs/toolchains created as work needs them).
 # e.g. add `flutter = "…"` when the Flutter client package is scaffolded.
+#
+# Pinned versions below get automated bump PRs from Renovate (renovate.json — Dependabot
+# doesn't understand this file's pin format). See docs/development/tooling.md#dependency-updates.
 
 [tools]
 # --- Language toolchains (baseline for the first services/apps) ---
