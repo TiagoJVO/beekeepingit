@@ -72,8 +72,10 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 **Negative / risks**
 
 - **Discipline-dependent:** contract-first only holds if CI enforces spec↔code parity and
-  breaking-change detection. **Mitigation:** lint + `oasdiff` + codegen + contract tests wired in
-  EPIC-13 (tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)); until then specs are hand-linted.
+  breaking-change detection. **Mitigation:** lint, `oasdiff`, Go codegen, and contract tests at
+  boundaries all wired in [#153](https://github.com/TiagoJVO/beekeepingit/issues/153) (the
+  latter caught a real spec/implementation drift on first run — `apiaries`' `location` field
+  was emitted as `null` against a non-nullable schema, fixed alongside).
 - **Split-file `$ref` needs bundling** before codegen/publish, and `security` scheme names can't
   be cross-file `$ref`s (each spec re-declares `bearerAuth` as a `$ref` to the shared def).
   Accepted — it is the standard contract-first workflow and keeps a single source of truth.
@@ -105,7 +107,8 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 - **#106 / SP-1** — the sync write-back protocol over these REST writes (atomic push, D-12).
 - **#109** — JWT validation placement, claims→`organization_id`, admin scope (Q-AUTH/Q-ROLE).
 - **#107** — the async event/outbox contract for cross-service reactions (history capture).
-- **EPIC-13** — CI: OpenAPI lint, `oasdiff` breaking-change gate, server/client codegen, and
-  contract tests at boundaries (tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)).
+- **#153 (closed)** — CI: OpenAPI lint, `oasdiff` breaking-change gate, Go server-stub codegen
+  (no-ops until a service adopts it), and contract tests at boundaries all landed. Dart/TS
+  client codegen remains deferred — no consumer yet, tool undecided.
 - **Per service epic** — author the full spec from the template as each service is built
   (`identity`, `activities`, `journeys`, `todos`, `ai`, `history`).

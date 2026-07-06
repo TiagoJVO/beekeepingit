@@ -1,0 +1,77 @@
+# OpenAPI contract tasks (#153, ADR-0003 §11) — lint, breaking-change diff, Go codegen.
+# Dart/TS typed-client codegen is deferred: no client consumes a generated client yet and no
+# tool is decided (contracts/README.md notes this as a follow-up once one lands).
+version: "3"
+
+silent: true
+
+vars:
+  # Service specs only — _shared/ is a partial template, not independently lintable/diffable.
+  FIND_SPECS: find contracts/openapi -maxdepth 1 -type f -name "*.openapi.yaml"
+
+tasks:
+  lint:
+    desc: "Lint OpenAPI specs (Redocly CLI, recommended ruleset)"
+    cmds:
+      - |
+        set -e
+        specs=$({{.FIND_SPECS}})
+        if [ -z "$specs" ]; then echo "› [openapi] no service specs yet — skipping"; exit 0; fi
+        for spec in $specs; do echo "› [openapi] lint $spec"; redocly lint "$spec"; done
+
+  bundle:
+    desc: "Bundle a split-file spec into one self-contained document (SPEC=path OUT=path)"
+    cmds:
+      - |
+        set -e
+        : "${SPEC:?usage: task openapi:bundle SPEC=contracts/openapi/apiaries.openapi.yaml OUT=/tmp/apiaries.bundled.yaml}"
+        : "${OUT:?usage: task openapi:bundle SPEC=... OUT=...}"
+        redocly bundle "$SPEC" -o "$OUT"
+
+  breaking-diff:
+    desc: "Fail if any service spec changed vs BASE (default origin/main) has a breaking change"
+    vars:
+      BASE: '{{.BASE | default "origin/main"}}'
+    cmds:
+      - |
+        set -e
+        base="{{.BASE}}"
+        changed=$(git diff --name-only "$base"...HEAD -- 'contracts/openapi/*.openapi.yaml' | grep -v '/_shared/' || true)
+        if [ -z "$changed" ]; then echo "› [openapi] no service spec changed vs $base — skipping"; exit 0; fi
+
+        fail=0
+        for spec in $changed; do
+          if ! git cat-file -e "${base}:${spec}" 2>/dev/null; then
+            echo "› [openapi] $spec is new — nothing to diff"
+            continue
+          fi
+          echo "› [openapi] breaking-diff $spec vs $base"
+          workdir=$(mktemp -d)
+          git worktree add -q "$workdir/base-tree" "$base"
+          redocly bundle "$workdir/base-tree/$spec" -o "$workdir/base.yaml"
+          redocly bundle "$spec" -o "$workdir/head.yaml"
+          git worktree remove -f "$workdir/base-tree"
+          if ! oasdiff breaking "$workdir/base.yaml" "$workdir/head.yaml" --fail-on ERR; then
+            echo "::error file=${spec}::breaking change detected vs $base"
+            fail=1
+          fi
+          rm -rf "$workdir"
+        done
+        exit $fail
+
+  generate-go:
+    desc: "Generate Go server stubs/models from OpenAPI (oapi-codegen); no-ops until a service adds internal/api/oapi-codegen.yaml"
+    cmds:
+      - |
+        set -e
+        cfgs=$(find services -type f -name 'oapi-codegen.yaml' -not -path '*/vendor/*' 2>/dev/null || true)
+        if [ -z "$cfgs" ]; then echo "› [openapi] no oapi-codegen.yaml under services/ yet — skipping"; exit 0; fi
+        for cfg in $cfgs; do
+          service=$(echo "$cfg" | sed -n 's|^services/\([^/]*\)/.*|\1|p')
+          spec="contracts/openapi/${service}.openapi.yaml"
+          if [ ! -f "$spec" ]; then echo "› [openapi] no spec for '$service' ($spec) — skipping $cfg"; continue; fi
+          echo "› [openapi] generate-go $service"
+          bundled="$(mktemp -d)/${service}.bundled.yaml"
+          redocly bundle "$spec" -o "$bundled"
+          oapi-codegen -config "$cfg" "$bundled"
+        done

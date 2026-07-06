@@ -42,6 +42,16 @@ skeleton, so they have no client-facing spec yet beyond the `organizations` skel
   > `$ref` — so each service spec declares `bearerAuth` locally as a `$ref` to the shared
   > definition (single source of truth, name resolves locally).
 
-- **Contract tests + `spectral`/`redocly` lint in CI** are wired with the platform in
-  **EPIC-13** (see [`FOLLOWUPS.md`](../FOLLOWUPS.md)); until then, lint locally with the
-  command above.
+- **Lint + the breaking-change gate run in CI** (`task openapi:lint` in `task ci`;
+  `contracts-ci.yml` runs `task openapi:breaking-diff` on PRs touching `contracts/openapi/**`)
+  — see [`taskfiles/openapi.yml`](../taskfiles/openapi.yml). Go server-stub/model codegen
+  (`task openapi:generate-go`, `oapi-codegen`) is wired too but no-ops until a service adds
+  `internal/api/oapi-codegen.yaml`. Dart/TS typed-client codegen is deferred — no client
+  consumes a generated client yet and no tool is decided.
+- **Contract tests at service boundaries** (#153) run as part of the owning service's own
+  integration tests, via `services/servicetemplate/contracttest` — it validates a real HTTP
+  response against the service's spec ($ref/allOf-aware). See
+  `services/apiaries/main_test.go`'s `TestApiariesSlice_ResponsesConformToOpenAPIContract` and
+  `services/sync/main_test.go`'s `TestSyncSlice_ResponsesConformToOpenAPIContract`; extend the
+  same pattern to `organizations`/`identity` once they grow a real client-facing surface (today
+  they only expose internal resolve endpoints — nothing to validate against a public spec yet).

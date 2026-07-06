@@ -1,0 +1,57 @@
+# Breaking-change gate for OpenAPI contracts (#153; NFR-TST-1, ADR-0003 §8/§11).
+#
+# Path-filtered: only runs when contracts/openapi/** changes. OpenAPI lint runs unconditionally
+# as part of `task ci` (see ci.yml, taskfiles/openapi.yml) — this workflow adds the one check
+# that needs two refs to compare: it diffs each changed service spec (bundled, so cross-file
+# $refs resolve) between the base ref and HEAD with oasdiff, and fails if a breaking change is
+# found, so a `/v1` break can't merge silently (ADR-0003 §8).
+#
+# Base-ref resolution mirrors build-publish.yml's `detect` job (PR base for PRs, previous tip
+# for pushes, falling back to the parent commit on a branch's first push).
+name: contracts-ci
+
+on:
+  pull_request:
+    paths: ["contracts/openapi/**"]
+  push:
+    branches: [main]
+    paths: ["contracts/openapi/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  breaking-diff:
+    name: OpenAPI breaking-change gate (oasdiff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # full history: need the base commit to diff against
+
+      - name: Set up toolchains from mise.toml
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Resolve base ref and run the breaking-change diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="$BASE_SHA"
+          else
+            base="$BEFORE_SHA"
+          fi
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base="$(git rev-parse "${HEAD_SHA}~1" 2>/dev/null || true)"
+          fi
+          if [ -z "$base" ]; then
+            echo "No base commit to diff against (repo's first commit) — skipping."
+            exit 0
+          fi
+
+          task openapi:breaking-diff BASE="$base"
