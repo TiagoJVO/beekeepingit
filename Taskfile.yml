@@ -16,6 +16,7 @@ includes:
   go: ./taskfiles/go.yml
   web: ./taskfiles/web.yml
   dart: ./taskfiles/dart.yml
+  openapi: ./taskfiles/openapi.yml
 
 tasks:
   default:
@@ -40,6 +41,7 @@ tasks:
       - task: go:lint
       - task: web:lint
       - task: dart:lint
+      - task: openapi:lint
 
   format:
     desc: Auto-format everything (writes changes)

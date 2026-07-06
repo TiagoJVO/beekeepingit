@@ -247,11 +247,14 @@ flowchart TD
 - **The reusable contract template** is `_shared/components.openapi.yaml` — security scheme,
   pagination params, standard headers (`ETag`, `Idempotency-Key`, `If-Match`, `X-Request-Id`),
   the `Problem` error schema and standard responses. New services are stamped from it.
-- **To wire in CI (EPIC-13, tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)):** spec **lint**
-  (Redocly/Spectral), **breaking-change** diff (`oasdiff`) on PRs, **server-stub + typed-client
-  codegen** (Go `oapi-codegen`; Dart/TS clients), and **contract tests** at boundaries
-  (coding-standards / NFR-TST-1). Until then, lint locally (`npx @redocly/cli lint …`) — the two
-  committed skeletons pass the recommended ruleset.
+- **Wired in CI ([#153](https://github.com/TiagoJVO/beekeepingit/issues/153)):** spec **lint**
+  (Redocly, `task openapi:lint` in `task ci`) and a **breaking-change** diff (`oasdiff`,
+  `contracts-ci.yml`) on PRs touching `contracts/openapi/**` — see
+  [`taskfiles/openapi.yml`](../../taskfiles/openapi.yml). **Server-stub codegen** (Go
+  `oapi-codegen`) is wired but no-ops until a service adds an `oapi-codegen.yaml` config;
+  **Dart/TS typed-client codegen** is deferred (no consumer yet, tool undecided). **Contract
+  tests** at boundaries need a running service — still blocked on the walking skeleton
+  ([#23](https://github.com/TiagoJVO/beekeepingit/issues/23)).
 
 ---
 

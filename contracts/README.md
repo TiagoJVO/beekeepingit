@@ -40,6 +40,12 @@ template as their epics start.
   > `$ref` — so each service spec declares `bearerAuth` locally as a `$ref` to the shared
   > definition (single source of truth, name resolves locally).
 
-- **Contract tests + `spectral`/`redocly` lint in CI** are wired with the platform in
-  **EPIC-13** (see [`FOLLOWUPS.md`](../FOLLOWUPS.md)); until then, lint locally with the
-  command above.
+- **Lint + the breaking-change gate run in CI** (`task openapi:lint` in `task ci`;
+  `contracts-ci.yml` runs `task openapi:breaking-diff` on PRs touching `contracts/openapi/**`)
+  — see [`taskfiles/openapi.yml`](../taskfiles/openapi.yml). Go server-stub/model codegen
+  (`task openapi:generate-go`, `oapi-codegen`) is wired too but no-ops until a service adds
+  `internal/api/oapi-codegen.yaml`. Dart/TS typed-client codegen is deferred — no client
+  consumes a generated client yet and no tool is decided.
+- **Contract tests at service boundaries** still need a real deployed service to test
+  against — tracked on [#153](https://github.com/TiagoJVO/beekeepingit/issues/153), blocked on
+  the walking skeleton ([#23](https://github.com/TiagoJVO/beekeepingit/issues/23)).
