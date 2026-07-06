@@ -1,0 +1,36 @@
+{{- if .Values.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pwa
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: pwa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pwa
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pwa
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: pwa
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.port }}
+          livenessProbe:
+            httpGet: { path: /, port: {{ .Values.port }} }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /, port: {{ .Values.port }} }
+            periodSeconds: 5
+          resources:
+            {{- index .Values.global.resources .Values.resourceTier | toYaml | nindent 12 }}
+{{- end }}

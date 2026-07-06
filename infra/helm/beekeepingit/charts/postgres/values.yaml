@@ -21,6 +21,14 @@ schemas:
   - todos
   - ai
 
+# Schemas whose tables are streamed to devices via the `powersync` publication
+# (walking-skeleton.md §5.3, sync.md §3.2). Deliberately a SUBSET of `schemas`
+# — non-synced schemas (identity, ai, …) stay out of PowerSync's replication so
+# its bucket storage never shadows them. Grows as syncable services land.
+syncedSchemas:
+  - apiaries
+  - organizations
+
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.
 global:

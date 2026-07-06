@@ -84,6 +84,24 @@ spec:
           secretKeyRef:
             name: beekeepingit-keycloak-admin-credentials
             key: password
+      # Frontend URL (browser-facing): the HTTPS gateway origin (#23). The PWA is
+      # served over HTTPS so the browser is a *trustworthy origin* — required for
+      # cross-origin isolation (COOP/COEP → SharedArrayBuffer) that PowerSync's
+      # web sync worker needs. This pins the token `iss` + authorization_endpoint
+      # to this URL. The k3d dev cluster maps host :8443 → Traefik (TLS via the
+      # gateway self-signed cert). (The chart already sets KC_PROXY_HEADERS, so
+      # X-Forwarded-Proto=https is trusted; not repeated here.)
+      - name: KC_HOSTNAME
+        value: https://keycloak.beekeepingit.local:8443
+      - name: KC_HOSTNAME_STRICT
+        value: "false"
+      # Backchannel endpoints (token, jwks) follow the *request* host instead of
+      # KC_HOSTNAME. So in-cluster services discovering at the internal HTTP
+      # Service (OIDC_DISCOVERY_URL) get an internal-HTTP jwks_uri they can reach,
+      # while issuer stays the external HTTPS URL. The browser, discovering via
+      # the gateway, gets the gateway host for its token exchange. (#23)
+      - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+        value: "true"
     extraVolumes: |
       - name: realm-import
         configMap:

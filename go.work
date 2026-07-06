@@ -1,6 +1,10 @@
 go 1.25.0
 
 use (
+	./services/apiaries
+	./services/identity
+	./services/organizations
 	./services/servicetemplate
 	./services/shared
+	./services/sync
 )

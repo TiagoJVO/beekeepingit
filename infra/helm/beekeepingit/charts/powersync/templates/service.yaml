@@ -2,7 +2,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "powersync.fullname" . }}
+  # Bare, release-independent name (like the sibling `apiaries`/`sync`/`pwa`
+  # Services) so the gateway route + PWA endpoint resolve it identically whether
+  # the umbrella runs as `beekeepingit` (local helm) or `beekeepingit-dev-
+  # beekeepingit` (Flux). The Deployment/ConfigMap keep the fullname; only this
+  # Service name is a stable contract other components depend on (#23).
+  name: powersync
   namespace: {{ .Values.global.namespace }}
   labels:
     {{- include "beekeepingit.labels" . | nindent 4 }}

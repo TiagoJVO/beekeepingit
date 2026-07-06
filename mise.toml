@@ -13,7 +13,7 @@
 # --- Language toolchains (baseline for the first services/apps) ---
 go = "1.25"   # bumped from 1.24 landing services/shared (#85): pgx v5/minio-go v7 require it
 node = "22"
-flutter = "3.35.5"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed
+flutter = "3.44.4"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed. Bumped from 3.35.5 for #23: PowerSync's powersync_core needs a Dart with `Deprecated.subclass` (>=3.10), which 3.35.5's Dart 3.9.2 lacks.
 
 # --- Task runner & git hooks ---
 task = "3"          # go-task — the monorepo task runner (Taskfile.yml)

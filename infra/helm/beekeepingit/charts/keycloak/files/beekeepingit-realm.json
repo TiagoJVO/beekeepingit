@@ -18,17 +18,33 @@
       "serviceAccountsEnabled": false,
       "redirectUris": [
         "http://localhost:*",
+        "http://keycloak.beekeepingit.local:8080/*",
+        "https://keycloak.beekeepingit.local:8443/*",
         "https://keycloak.beekeepingit.local/*",
         "https://*.beekeepingit.local/*"
       ],
       "webOrigins": ["+"],
       "attributes": {
         "pkce.code.challenge.method": "S256"
-      }
+      },
+      "protocolMappers": [
+        {
+          "name": "beekeepingit-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "beekeepingit",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [
     {
+      "id": "11111111-1111-4111-8111-111111111111",
       "username": "test.beekeeper@beekeepingit.local",
       "email": "test.beekeeper@beekeepingit.local",
       "emailVerified": true,

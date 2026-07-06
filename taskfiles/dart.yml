@@ -24,10 +24,13 @@ tasks:
   lint:
     desc: "Analyze Dart/Flutter packages (flutter analyze / dart analyze)"
     cmds:
+      # Skip deployable components (a dir with a Dockerfile, e.g. client/): they
+      # are analyzed/tested per-component in build-publish.yml, not repo-wide in
+      # `task ci` (#23) — mirrors go.yml.
       - |
         set -e
-        pkgs=$({{.FIND_DART_PKGS}})
-        if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
+        pkgs=$({{.FIND_DART_PKGS}} | while read -r p; do d=$(dirname "$p"); [ -f "$d/Dockerfile" ] || echo "$p"; done)
+        if [ -z "$pkgs" ]; then echo "› [dart] no non-component pubspec.yaml — skipping"; exit 0; fi
         for p in $pkgs; do
           d=$(dirname "$p")
           echo "› [dart] analyze $d"
@@ -50,10 +53,11 @@ tasks:
   test:
     desc: "Test Dart/Flutter packages (flutter test / dart test)"
     cmds:
+      # Skip deployable components (tested per-component in build-publish.yml).
       - |
         set -e
-        pkgs=$({{.FIND_DART_PKGS}})
-        if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
+        pkgs=$({{.FIND_DART_PKGS}} | while read -r p; do d=$(dirname "$p"); [ -f "$d/Dockerfile" ] || echo "$p"; done)
+        if [ -z "$pkgs" ]; then echo "› [dart] no non-component pubspec.yaml — skipping"; exit 0; fi
         for p in $pkgs; do
           d=$(dirname "$p")
           echo "› [dart] test $d"

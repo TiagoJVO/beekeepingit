@@ -50,10 +50,15 @@ spec:
         {{- range .Values.schemas }}
         - CREATE SCHEMA IF NOT EXISTS {{ . }} AUTHORIZATION beekeepingit;
         {{- end }}
-        # `FOR ALL TABLES` (not a fixed table list) so every domain service's
-        # tables are replicated automatically as they land (#23+) — no
-        # follow-up SQL needed when a new schema grows its first table.
-        - CREATE PUBLICATION powersync FOR ALL TABLES;
+        # Scoped to the SYNCABLE schemas only — NOT `FOR ALL TABLES`
+        # (walking-skeleton.md §5.3, sync.md §3.4): PowerSync's bucket-storage
+        # DB must not become a shadow copy of non-synced data (identity, ai,
+        # invitations, …). `FOR TABLES IN SCHEMA` (PG15+) is createable at
+        # bootstrap because the schemas already exist (above) even though their
+        # tables don't yet, and it auto-includes future additive tables in
+        # those schemas — so a new syncable service only extends the
+        # `syncedSchemas` list here, no post-migration ALTER PUBLICATION.
+        - CREATE PUBLICATION powersync FOR TABLES IN SCHEMA {{ join ", " .Values.syncedSchemas }};
   managed:
     roles:
       {{- range .Values.schemas }}
@@ -73,6 +78,14 @@ spec:
         ensure: present
         login: true
         replication: true
+        # Member of each synced schema's owning service role, so it inherits
+        # SELECT on those tables for the initial replication snapshot — they're
+        # owned by the least-privilege per-service `*_svc` roles, which neither
+        # the app owner nor a non-superuser can GRANT on (#23 deploy).
+        inRoles:
+          {{- range .Values.syncedSchemas }}
+          - {{ . }}_svc
+          {{- end }}
         passwordSecret:
           name: powersync-credentials
 {{- end }}

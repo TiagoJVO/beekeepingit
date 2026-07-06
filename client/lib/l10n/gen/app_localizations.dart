@@ -104,59 +104,101 @@ abstract class AppLocalizations {
   /// **'BeekeepingIT'**
   String get appTitle;
 
-  /// Home screen app bar title
+  /// Text above the login button
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to manage your apiaries.'**
+  String get loginPrompt;
+
+  /// Primary login action
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with Keycloak'**
+  String get loginButton;
+
+  /// Sign-out action in the app bar
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get logout;
+
+  /// Apiaries list screen app bar title
   ///
   /// In en, this message translates to:
   /// **'Apiaries'**
-  String get homeTitle;
+  String get apiariesTitle;
 
-  /// Home screen placeholder body copy
+  /// Empty state on the apiaries list
   ///
   /// In en, this message translates to:
-  /// **'Walking-skeleton scaffold — routing, theming, state and i18n are wired; real apiary data lands with the walking skeleton.'**
-  String get homeSubtitle;
+  /// **'No apiaries yet. Tap “Add apiary” to create one.'**
+  String get apiariesEmpty;
 
-  /// Button that navigates to the placeholder apiary detail route
+  /// Error state on the apiaries list
   ///
   /// In en, this message translates to:
-  /// **'View sample apiary'**
-  String get homeOpenSampleApiaryButton;
+  /// **'Could not load apiaries: {error}'**
+  String apiariesError(String error);
 
-  /// Label in front of the backend-through-gateway reachability indicator
+  /// Floating action button to create an apiary
   ///
   /// In en, this message translates to:
-  /// **'Gateway'**
-  String get gatewayStatusLabel;
+  /// **'Add apiary'**
+  String get addApiary;
 
-  /// Gateway reachability check in progress
+  /// Hive count subtitle on a list row
   ///
   /// In en, this message translates to:
-  /// **'Checking…'**
-  String get gatewayStatusChecking;
+  /// **'{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}'**
+  String hiveCountValue(int count);
 
-  /// The gateway responded successfully
+  /// Create form app bar title
   ///
   /// In en, this message translates to:
-  /// **'Reachable'**
-  String get gatewayStatusReachable;
+  /// **'New apiary'**
+  String get newApiaryTitle;
 
-  /// The gateway did not respond
+  /// Edit form app bar title
   ///
   /// In en, this message translates to:
-  /// **'Unreachable'**
-  String get gatewayStatusUnreachable;
+  /// **'Edit apiary'**
+  String get editApiaryTitle;
 
-  /// Apiary detail screen app bar title
+  /// Apiary name field label
   ///
   /// In en, this message translates to:
-  /// **'Apiary detail'**
-  String get apiaryDetailTitle;
+  /// **'Name'**
+  String get apiaryNameLabel;
 
-  /// Apiary detail screen placeholder body copy
+  /// Validation message for an empty apiary name
   ///
   /// In en, this message translates to:
-  /// **'Placeholder detail route for apiary {id}. The real apiary read/edit form lands with the walking skeleton (#23).'**
-  String apiaryDetailBody(String id);
+  /// **'Enter a name.'**
+  String get apiaryNameRequired;
+
+  /// Hive count field label
+  ///
+  /// In en, this message translates to:
+  /// **'Number of hives'**
+  String get hiveCountLabel;
+
+  /// Validation message for an invalid hive count
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a number of 0 or more.'**
+  String get hiveCountInvalid;
+
+  /// Save the apiary form
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get saveButton;
+
+  /// Delete an apiary from the edit form
+  ///
+  /// In en, this message translates to:
+  /// **'Delete apiary'**
+  String get deleteApiary;
 }
 
 class _AppLocalizationsDelegate

@@ -1,0 +1,76 @@
+# Defaults for standalone `helm template`/`helm lint`. The umbrella overrides
+# via the `services:` key in its own values.yaml / environments/*.yaml.
+enabled: true
+resourceTier: small
+
+# Container image coordinates. `registry` + each service's `component` form the
+# repo path published by build-publish.yml (ghcr.io/<owner>/beekeepingit/<component>).
+image:
+  registry: ghcr.io/tiagojvo/beekeepingit
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Shared wiring every service inherits (env below). `issuerUrl` is the token's
+# `iss` (the external HTTPS gateway URL, unreachable in-cluster); `discoveryUrl`
+# is the internal HTTP Keycloak Service where services actually fetch the OIDC
+# discovery document, trusting `issuerUrl` as the issuer (see #23 / dev.yaml).
+oidc:
+  issuerUrl: https://keycloak.beekeepingit.local:8443/realms/beekeepingit
+  discoveryUrl: http://keycloak-keycloakx-http/realms/beekeepingit
+  audience: beekeepingit
+otelEndpoint: otel-collector:4317
+logLevel: info
+
+# Postgres connection shared by the DB-backed services. `db.host` is the CNPG
+# primary (read-write) Service; confirm the exact name at deploy time.
+db:
+  host: beekeepingit-postgres-rw
+  port: "5432"
+  name: beekeepingit
+  sslmode: require
+
+# The services to render. `name` is also the in-cluster Service name (stable
+# DNS: http://<name>:8080), which the resolver/coordinator/powersync configs
+# depend on.
+services:
+  identity:
+    component: services-identity
+    port: 8080
+    db: { enabled: true, role: identity_svc, secret: identity-svc-credentials, schema: identity }
+    seedDevData: true
+  organizations:
+    component: services-organizations
+    port: 8080
+    db:
+      {
+        enabled: true,
+        role: organizations_svc,
+        secret: organizations-svc-credentials,
+        schema: organizations,
+      }
+    seedDevData: true
+  apiaries:
+    component: services-apiaries
+    port: 8080
+    db: { enabled: true, role: apiaries_svc, secret: apiaries-svc-credentials, schema: apiaries }
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
+      INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+  sync:
+    component: services-sync
+    port: 8080
+    db: { enabled: false }
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
+      INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+      INTERNAL_APIARIES_URL: http://apiaries:8080
+      SYNC_TOKEN_ISSUER: http://sync:8080
+      SYNC_TOKEN_AUDIENCE: powersync
+
+# Placeholder for standalone rendering only — the umbrella injects real global.*.
+global:
+  namespace: beekeepingit
+  resources:
+    small:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 64Mi }

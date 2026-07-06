@@ -1,0 +1,165 @@
+# Sync service — client-facing REST contract.
+# The write-back seam of the offline-sync architecture (walking-skeleton.md §4.3/§5,
+# sync.md §3.4/§6, ADR-0006). Two endpoints the PowerSync web SDK calls:
+#   - GET  /v1/sync/token  → fetchCredentials (short-TTL, org-scoped sync token)
+#   - POST /v1/sync/batch  → uploadData      (the single write-back seam)
+# Stamped from ./_shared/components.openapi.yaml; conventions in
+# docs/architecture/api-contracts.md. Requirements: FR-OF-1/2, NFR-ARC-2.
+openapi: 3.1.0
+info:
+  title: BeekeepingIT — Sync API
+  version: 0.1.0
+  description: >-
+    The offline-sync write-back seam. `GET /v1/sync/token` mints the short-lived,
+    org-scoped PowerSync sync token (org resolved from membership server-side, never a
+    client parameter — ADR-0002/auth.md §3.4). `POST /v1/sync/batch` is the single
+    endpoint the field client posts a whole client transaction to; the coordinator
+    validates-all then applies via owning services (sync.md §6). This service owns no
+    domain data.
+  license:
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
+
+servers:
+  - url: /v1
+    description: Served through the API gateway, which routes `/v1/sync/**` here (ADR-0003).
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Sync
+    description: Offline-sync token + write-back (FR-OF).
+
+paths:
+  /sync/token:
+    get:
+      operationId: getSyncToken
+      summary: Mint a short-lived, org-scoped PowerSync sync token
+      description: >-
+        Resolves the caller's active organization from membership (auth.md §5) and returns a
+        short-TTL RS256 sync token carrying the `organization_id` claim PowerSync
+        parameterizes its Sync Rules on (sync.md §3.4). The SDK calls this from
+        `fetchCredentials` and auto-refreshes before expiry.
+      tags: [Sync]
+      responses:
+        '200':
+          description: A freshly minted sync token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncToken'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+
+  /sync/batch:
+    post:
+      operationId: postSyncBatch
+      summary: Apply a client transaction (the single write-back seam)
+      description: >-
+        The field client's one write path (walking-skeleton.md §4.4): PowerSync's `uploadData`
+        posts the whole queued client transaction here. The coordinator validates every op
+        first (any failure ⇒ nothing is written, `422`), then applies via the owning services'
+        internal endpoints with record-level LWW (sync.md §6). Idempotent on the client UUID
+        PK, so a re-sent batch rolls forward safely.
+      tags: [Sync]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncBatch'
+      responses:
+        '200':
+          description: Per-op apply results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncBatchResult'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+        '502':
+          description: An owning service was unavailable applying the batch; safe to retry.
+          content:
+            application/problem+json:
+              schema:
+                $ref: './_shared/components.openapi.yaml#/components/schemas/Problem'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.openapi.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    SyncToken:
+      type: object
+      description: A short-lived PowerSync sync token and its expiry.
+      properties:
+        token:
+          type: string
+          description: RS256 JWT validated by PowerSync against this service's JWKS.
+        expires_at:
+          type: string
+          format: date-time
+          description: Absolute expiry; the SDK refreshes before this.
+      required: [token, expires_at]
+
+    SyncOp:
+      type: object
+      description: One CRUD op in a client transaction.
+      properties:
+        op:
+          type: string
+          enum: [put, patch, delete]
+        entity_type:
+          type: string
+          description: Owning entity, e.g. `apiary`.
+        id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        data:
+          type: [object, "null"]
+          description: The row payload for put/patch (omitted/null for delete).
+        updated_at:
+          type: string
+          format: date-time
+          description: Device edit time; the LWW comparator (sync.md §4.3).
+      required: [op, entity_type, id, updated_at]
+
+    SyncBatch:
+      type: object
+      description: One client transaction — the batch of ops to apply atomically-in-intent.
+      properties:
+        ops:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOp'
+      required: [ops]
+
+    SyncOpResult:
+      type: object
+      properties:
+        id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        op:
+          type: string
+          enum: [put, patch, delete]
+        result:
+          type: string
+          enum: [applied, superseded]
+          description: '`applied` = written (or idempotent no-op); `superseded` = lost LWW, server value kept + conflict logged.'
+      required: [id, op, result]
+
+    SyncBatchResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOpResult'
+      required: [results]

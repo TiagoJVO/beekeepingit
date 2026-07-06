@@ -44,3 +44,14 @@ dependencies:
     version: "0.1.0"
     repository: "file://charts/powersync"
     condition: powersync.enabled
+  # The Go domain/platform services (#23) — one values-driven subchart renders
+  # identity/organizations/apiaries/sync (each a Deployment + Service).
+  - name: services
+    version: "0.1.0"
+    repository: "file://charts/services"
+    condition: services.enabled
+  # The Flutter Web PWA static bundle (#21/#23).
+  - name: pwa
+    version: "0.1.0"
+    repository: "file://charts/pwa"
+    condition: pwa.enabled
