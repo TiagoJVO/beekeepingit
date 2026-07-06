@@ -20,30 +20,22 @@ provisioned-by-infra; the `powersync` role as a member of the `*_svc` roles; the
 `powersync` Service so `/sync-stream` fell through to the PWA; and the client's PowerSync
 endpoint lacked a trailing slash, so the SDK's `Uri.resolve` dropped the `/sync-stream` prefix
 and POSTed to `/sync/stream` → PWA 405 — both fixed, plus a Traefik StripPrefix for the route).
-What remains:
+What remains — all tracked elsewhere; nothing blocks the merge:
 
-- **e2e in CI.** `client/e2e` (Playwright) needs the full slice deployed; wire a CI job that
-  stands up the cluster (or targets a deployed env). The Go integration tests cover the
-  server-side apply/coordinator semantics in CI now.
-- **CI/CD deploy — auto-deploy loop is merge-gated + blocked on EPIC-14 #89.** AC#5's build/
-  publish half is done and verified: `build-publish.yml` builds, tests, Trivy-scans, and (on
-  merge to `main`) **publishes** SHA-timestamp-tagged images to ghcr.io. The **deploy** half is
-  Flux image-automation (`infra/gitops/image-automation/`) — engine + convention committed and
-  CI-schema-valid, but deliberately **dormant**: activating it needs (a) a merge so ghcr images
-  exist, and (b) a Flux **Git-write credential**, which the image-automation README itself pins
-  to **EPIC-14 [#89](https://github.com/TiagoJVO/beekeepingit/issues/89)** (secrets), out of #23.
-  It also still needs the per-service `ImageRepository`/`ImagePolicy` (copied from the `gateway`
-  example) + setter markers on the slice's image tags — and a decision on the local-`:latest`
-  vs GitOps-SHA-tag split so activation doesn't break the manual dev loop. Pre-merge the slice is
-  deployed via the manual `helm upgrade` path (dev-up.sh), by design.
-- **`powersync` publication scope change.** The postgres chart now publishes `FOR TABLES IN
-SCHEMA apiaries, organizations` (was `FOR ALL TABLES`) per walking-skeleton.md §5.3. If the
-  infra owner prefers the broader publication, this is a one-line revert — flag in review.
-- **Observability stack lives in its own release (#87), not the dev bring-up.** NFR-OBS-1 is
-  **verified live**: with `infra/helm/observability` (OTel Collector + Tempo + Loki + Grafana)
-  deployed and e2e traffic driven through it, Tempo holds a single **gateway → sync → apiaries**
-  trace (Traefik span via [`traefik-tracing.yaml`](infra/gitops/apps/dev/traefik-tracing.yaml)),
-  Loki holds trace-correlated per-service structured logs, and `observability-smoke-test.sh`
-  passes (see walking-skeleton.md §11.3). The remaining follow-up is purely wiring the stack
-  into the standard bring-up / GitOps sync so it comes up automatically (owned by #87), rather
-  than the manual `helm upgrade --install observability` used to verify here.
+- **e2e in CI** → promoted to **[#162](https://github.com/TiagoJVO/beekeepingit/issues/162)**.
+  The Playwright e2e passes live but isn't a CI job yet (Go integration tests cover the
+  server-side semantics in CI now); that issue also folds in per-run test-data teardown.
+- **CI/CD auto-deploy — post-merge, gated on EPIC-14 [#89](https://github.com/TiagoJVO/beekeepingit/issues/89).**
+  Build/publish is done and verified (`build-publish.yml` publishes SHA-tagged images on merge).
+  The deploy half — Flux image-automation for the slice's 5 images — is **wired but dormant**
+  (`infra/gitops/image-automation/slice-service-images.yaml` + setter markers in the umbrella
+  HelmRelease); activation needs a merge (so ghcr images exist) + a Flux Git-write credential
+  (#89), and moving those objects into a reconciled path. Documented in that directory's README.
+- **Observability into the standard bring-up (#87).** NFR-OBS-1 is **verified live** (Tempo holds
+  the gateway → sync → apiaries trace, Loki holds trace-correlated per-service logs,
+  `observability-smoke-test.sh` passes — walking-skeleton.md §11.3). The stack was deployed by
+  hand; folding it into `dev-up.sh`/GitOps so it comes up automatically is #87.
+
+_Confirmed (no longer open): the `powersync` publication is intentionally scoped to
+`FOR TABLES IN SCHEMA apiaries, organizations` (least-privilege, not `FOR ALL TABLES`) —
+walking-skeleton.md §5.3._
