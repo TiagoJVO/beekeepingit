@@ -7,4 +7,9 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-_No open follow-ups._
+## Before/after merging `renovate.json` (#155)
+
+- **Install the [Renovate GitHub App](https://github.com/apps/renovate)** on this repo
+  (Settings → GitHub Apps) — a one-time manual step in the GitHub UI that can't be scripted
+  from here. `renovate.json` takes effect as soon as it's installed (no onboarding PR). Until
+  then the config sits inert. Prune this entry once installed.
