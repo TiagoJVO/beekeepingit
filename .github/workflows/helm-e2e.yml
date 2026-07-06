@@ -1,0 +1,113 @@
+name: Helm E2E
+
+# Live-cluster counterpart to helm-ci.yml's dry-run (NFR-TST-1, #154): stands up an
+# ephemeral k3d cluster, installs the umbrella chart, and runs `helm test` against it
+# — so the `postgres` subchart's PostGIS smoke-query hook (#84) is exercised in CI, not
+# only manually against a developer's local cluster.
+#
+# Like helm-ci.yml, this is designed to be a REQUIRED status check on `main`, so the job
+# runs on EVERY PR/push (no path filter on the trigger) — otherwise a PR that doesn't
+# touch infra/** would never start the job, its required "Expected" status would never
+# report, and it would block merging forever. Path-relevance is instead checked INSIDE
+# the job (dorny/paths-filter): on an irrelevant PR every real step is skipped — not
+# absent — so the check reports success in seconds without spinning up a cluster; only a
+# PR that changes the charts/cluster scripts pays for the (minutes-long) live bring-up.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  live-cluster-test:
+    name: k3d cluster + helm test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Check for relevant changes
+        id: changes
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        with:
+          filters: |
+            infra:
+              - 'infra/helm/**'
+              - 'infra/cluster/**'
+              - '.github/workflows/helm-e2e.yml'
+
+      # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
+      # local dev (infra/cluster/*.sh) and the rest of CI use.
+      - name: Set up toolchains from mise.toml
+        if: steps.changes.outputs.infra == 'true'
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      # Create the k3d cluster and install the CNPG operator by running the exact
+      # script developers run locally, so CI validates the real bring-up path
+      # rather than a CI-only copy that can silently drift from it. (`up.sh` takes a
+      # flock lock — harmless here: an ephemeral runner is a single, isolated user.)
+      - name: Bring up the cluster (k3d + CNPG operator)
+        if: steps.changes.outputs.infra == 'true'
+        run: infra/cluster/up.sh
+
+      # Install the packaged subchart snapshots under charts/*.tgz (see the chart's
+      # README) — the umbrella's deps are all local file:// / vendored, so no chart
+      # repo network access is needed.
+      - name: Fetch umbrella chart dependencies
+        if: steps.changes.outputs.infra == 'true'
+        run: helm dependency build infra/helm/beekeepingit
+
+      # No --wait, matching dev-up.sh: with --wait, Helm blocks on the main resources
+      # (incl. PowerSync) becoming ready *before* running the postgres schema-grants
+      # post-install hook — but PowerSync can't become ready until that hook has run,
+      # a deadlock. Without --wait, Helm applies the resources then runs the hook,
+      # which blocks (retrying) until Postgres is serving and the grants land — so by
+      # the time this returns, Postgres is already up. A generous --timeout covers the
+      # first CNPG/PostGIS image pull on a cold runner.
+      - name: Install the umbrella release
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          helm upgrade --install beekeepingit infra/helm/beekeepingit \
+            -f infra/helm/beekeepingit/environments/dev.yaml \
+            --namespace beekeepingit-dev --create-namespace \
+            --timeout 10m
+
+      # Explicit readiness gate (the install above already blocked on the grants hook,
+      # so the pod exists by now — but assert condition=ready before testing against it).
+      - name: Wait for Postgres
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          kubectl -n beekeepingit-dev wait --for=condition=ready pod \
+            -l cnpg.io/cluster=beekeepingit-postgres --timeout=300s
+
+      # The AC: the postgres PostGIS smoke-query hook runs automatically. As
+      # keycloak/minio/gateway grow their own `helm test` liveness hooks, they run here
+      # too — those components are separate Flux HelmReleases today (see infra/README.md's
+      # step-by-step), so bring them up above first when their hooks land.
+      - name: helm test (PostGIS smoke query)
+        if: steps.changes.outputs.infra == 'true'
+        run: helm test beekeepingit --namespace beekeepingit-dev
+
+      # Make a red run debuggable without re-running locally. Gated on the filter too:
+      # on an irrelevant PR the tools were never installed, so these kubectl calls would
+      # error on a missing binary rather than help.
+      - name: Diagnostics (on failure)
+        if: failure() && steps.changes.outputs.infra == 'true'
+        run: |
+          kubectl get pods -A || true
+          kubectl -n beekeepingit-dev describe pods || true
+          kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
+          kubectl -n beekeepingit-dev get events --sort-by=.lastTimestamp || true
+
+      # Tear down regardless of pass/fail (AC). Gated on the filter (else down.sh runs on
+      # an irrelevant PR where k3d was never installed and fails on the missing binary).
+      # The runner is ephemeral, but deleting the cluster explicitly keeps the job honest
+      # and mirrors down.sh's cleanup.
+      - name: Tear down the cluster
+        if: always() && steps.changes.outputs.infra == 'true'
+        run: infra/cluster/down.sh

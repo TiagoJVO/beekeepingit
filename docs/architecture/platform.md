@@ -185,6 +185,13 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
 - [`helm-ci.yml`](../../.github/workflows/helm-ci.yml) — on any change under `infra/helm/**`:
   `helm dependency build`, `helm lint`, and `helm template` (base + each environment overlay) as a
   manifest-rendering dry-run. No live cluster is involved.
+- [`helm-e2e.yml`](../../.github/workflows/helm-e2e.yml) — the live-cluster counterpart (`#154`):
+  stands up an ephemeral k3d cluster via `infra/cluster/up.sh`, installs the umbrella release, runs
+  `helm test` (the `postgres` PostGIS smoke-query hook), and tears the cluster down regardless of
+  outcome. Like `helm-ci.yml` it runs on every PR/push and checks path-relevance _inside_ the job
+  (`dorny/paths-filter`) rather than on the trigger — so it can be a required check while still
+  skipping the (minutes-long) live bring-up on PRs that don't touch `infra/helm/**` or
+  `infra/cluster/**`, reporting success in seconds for those.
 - [`gitops-ci.yml`](../../.github/workflows/gitops-ci.yml) — kubeconform-validates the Flux
   manifests under `infra/gitops/**` (including the image-automation templates).
 
@@ -214,9 +221,8 @@ provisioned (an EPIC-14 #89 secrets task).
 - PowerSync's real org-scoped Sync Rules and per-org sync-token connector (`docs/architecture/sync.md`,
   ADR-0006) — `#22` ships a placeholder sync-config and a Keycloak-JWKS stopgap (see
   `FOLLOWUPS.md`) since `apiaries`/`organizations` don't exist until `#23`/`#106`.
-- Live `helm test` from CI — `helm-ci.yml` is a lint/template dry-run, so the `postgres` subchart's
-  `helm test` smoke-query hook still only runs against a developer's local `beekeeping` k3d cluster,
-  not CI (no live cluster in CI). The #88 pipeline publishes images and lets Flux image-automation
-  update manifests, but it is **dormant until the first service ships a `Dockerfile`** — the
-  end-to-end publish→deploy path is exercised then (see
-  [ADR-0014](../adr/0014-cicd-pipeline.md) and `FOLLOWUPS.md`).
+- End-to-end **publish→deploy** from CI — the #88 pipeline publishes images and lets Flux
+  image-automation update manifests, but it is **dormant until the first service ships a
+  `Dockerfile`**; that path is exercised then (see [ADR-0014](../adr/0014-cicd-pipeline.md)). Note
+  the `postgres` subchart's `helm test` smoke-query hook _does_ now run against a live cluster in CI
+  (`helm-e2e.yml`, `#154`) — it's no longer local-only.

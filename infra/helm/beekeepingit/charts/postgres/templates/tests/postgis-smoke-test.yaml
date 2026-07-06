@@ -1,8 +1,9 @@
 {{/*
-The "smoke query confirms PostGIS is available" AC — run explicitly against a
-live cluster via `helm test <release> -n <namespace>` (this repo's CI has no
-live cluster yet, see FOLLOWUPS.md). Uses the app-owner credentials CNPG
-auto-generates for the bootstrap database (<cluster-fullname>-app Secret).
+The "smoke query confirms PostGIS is available" AC — run against a live cluster
+via `helm test <release> -n <namespace>`: manually against the local `beekeeping`
+k3d cluster, and automatically in CI on infra PRs (helm-e2e.yml, #154). Uses the
+app-owner credentials CNPG auto-generates for the bootstrap database
+(<cluster-fullname>-app Secret).
 */}}
 {{- if .Values.enabled }}
 apiVersion: v1
