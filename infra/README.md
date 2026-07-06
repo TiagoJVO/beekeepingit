@@ -147,9 +147,11 @@ infra/cluster/with-lock.sh helm install beekeepingit infra/helm/beekeepingit -f 
 
 Read-only commands (`kubectl get`, `helm test`, `helm lint`/`template`) don't need the lock.
 
-This is a **local-dev-only** convention — it has no bearing on CI (`.github/workflows/helm-ci.yml`
-never touches a live cluster, and future live-cluster CI on GitHub-hosted runners doesn't share a
-filesystem with this machine or across concurrent runs, so `flock` wouldn't apply there anyway).
+This is a **local-dev-only** convention — it has no bearing on CI. Live-cluster CI does exist
+(`.github/workflows/helm-e2e.yml`, `#154`, which even runs `up.sh`/`down.sh` themselves), but each
+GitHub-hosted runner is a fresh, isolated machine that shares no filesystem with this one or with
+other concurrent runs, so the `flock` serialization simply no-ops there — the lock protects the one
+shared local cluster, and CI has no such shared resource to protect.
 
 ## Layout
 
