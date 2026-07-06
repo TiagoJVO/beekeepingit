@@ -1,0 +1,85 @@
+{{- if .Values.enabled }}
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $root.Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: "{{ $root.Values.image.registry }}/{{ $svc.component }}:{{ $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ $svc.port }}
+          env:
+            - name: SERVICE_NAME
+              value: {{ $name | quote }}
+            - name: HTTP_ADDR
+              value: ":{{ $svc.port }}"
+            - name: LOG_LEVEL
+              value: {{ $root.Values.logLevel | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ $root.Values.otelEndpoint | quote }}
+            - name: OIDC_ISSUER_URL
+              value: {{ $root.Values.oidc.issuerUrl | quote }}
+            - name: OIDC_AUDIENCE
+              value: {{ $root.Values.oidc.audience | quote }}
+            {{- if $svc.db.enabled }}
+            - name: DB_HOST
+              value: {{ $root.Values.db.host | quote }}
+            - name: DB_PORT
+              value: {{ $root.Values.db.port | quote }}
+            - name: DB_NAME
+              value: {{ $root.Values.db.name | quote }}
+            - name: DB_SSLMODE
+              value: {{ $root.Values.db.sslmode | quote }}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $svc.db.secret }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $svc.db.secret }}
+                  key: password
+            {{- end }}
+            {{- if $svc.seedDevData }}
+            - name: SEED_DEV_DATA
+              value: "true"
+            {{- end }}
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          startupProbe:
+            httpGet: { path: /readyz, port: {{ $svc.port }} }
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /healthz, port: {{ $svc.port }} }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: {{ $svc.port }} }
+            periodSeconds: 5
+          resources:
+            {{- index $root.Values.global.resources $root.Values.resourceTier | toYaml | nindent 12 }}
+{{- end }}
+{{- end }}

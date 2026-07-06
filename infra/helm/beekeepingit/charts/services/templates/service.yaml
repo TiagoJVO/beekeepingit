@@ -1,0 +1,25 @@
+{{- if .Values.enabled }}
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Bare service name = stable in-cluster DNS (http://<name>:8080), which the
+  # org-resolver, sync coordinator and PowerSync JWKS URL all depend on.
+  name: {{ $name }}
+  namespace: {{ $root.Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+{{- end }}
+{{- end }}

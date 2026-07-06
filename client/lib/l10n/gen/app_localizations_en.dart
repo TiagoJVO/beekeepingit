@@ -12,32 +12,62 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
-  String get homeTitle => 'Apiaries';
+  String get loginPrompt => 'Sign in to manage your apiaries.';
 
   @override
-  String get homeSubtitle =>
-      'Walking-skeleton scaffold — routing, theming, state and i18n are wired; real apiary data lands with the walking skeleton.';
+  String get loginButton => 'Sign in with Keycloak';
 
   @override
-  String get homeOpenSampleApiaryButton => 'View sample apiary';
+  String get logout => 'Sign out';
 
   @override
-  String get gatewayStatusLabel => 'Gateway';
+  String get apiariesTitle => 'Apiaries';
 
   @override
-  String get gatewayStatusChecking => 'Checking…';
+  String get apiariesEmpty =>
+      'No apiaries yet. Tap “Add apiary” to create one.';
 
   @override
-  String get gatewayStatusReachable => 'Reachable';
-
-  @override
-  String get gatewayStatusUnreachable => 'Unreachable';
-
-  @override
-  String get apiaryDetailTitle => 'Apiary detail';
-
-  @override
-  String apiaryDetailBody(String id) {
-    return 'Placeholder detail route for apiary $id. The real apiary read/edit form lands with the walking skeleton (#23).';
+  String apiariesError(String error) {
+    return 'Could not load apiaries: $error';
   }
+
+  @override
+  String get addApiary => 'Add apiary';
+
+  @override
+  String hiveCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count hives',
+      one: '1 hive',
+      zero: 'No hives',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get newApiaryTitle => 'New apiary';
+
+  @override
+  String get editApiaryTitle => 'Edit apiary';
+
+  @override
+  String get apiaryNameLabel => 'Name';
+
+  @override
+  String get apiaryNameRequired => 'Enter a name.';
+
+  @override
+  String get hiveCountLabel => 'Number of hives';
+
+  @override
+  String get hiveCountInvalid => 'Enter a number of 0 or more.';
+
+  @override
+  String get saveButton => 'Save';
+
+  @override
+  String get deleteApiary => 'Delete apiary';
 }

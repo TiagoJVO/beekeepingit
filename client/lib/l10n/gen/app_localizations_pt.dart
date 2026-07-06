@@ -12,32 +12,62 @@ class AppLocalizationsPt extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
-  String get homeTitle => 'Apiários';
+  String get loginPrompt => 'Inicie sessão para gerir os seus apiários.';
 
   @override
-  String get homeSubtitle =>
-      'Esqueleto do fluxo — routing, tema, estado e i18n já estão ligados; os dados reais de apiário chegam com o walking skeleton.';
+  String get loginButton => 'Entrar com Keycloak';
 
   @override
-  String get homeOpenSampleApiaryButton => 'Ver apiário de exemplo';
+  String get logout => 'Terminar sessão';
 
   @override
-  String get gatewayStatusLabel => 'Gateway';
+  String get apiariesTitle => 'Apiários';
 
   @override
-  String get gatewayStatusChecking => 'A verificar…';
+  String get apiariesEmpty =>
+      'Ainda não há apiários. Toque em “Adicionar apiário” para criar um.';
 
   @override
-  String get gatewayStatusReachable => 'Acessível';
-
-  @override
-  String get gatewayStatusUnreachable => 'Inacessível';
-
-  @override
-  String get apiaryDetailTitle => 'Detalhe do apiário';
-
-  @override
-  String apiaryDetailBody(String id) {
-    return 'Rota de detalhe placeholder para o apiário $id. O formulário real de leitura/edição chega com o walking skeleton (#23).';
+  String apiariesError(String error) {
+    return 'Não foi possível carregar os apiários: $error';
   }
+
+  @override
+  String get addApiary => 'Adicionar apiário';
+
+  @override
+  String hiveCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count colmeias',
+      one: '1 colmeia',
+      zero: 'Sem colmeias',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get newApiaryTitle => 'Novo apiário';
+
+  @override
+  String get editApiaryTitle => 'Editar apiário';
+
+  @override
+  String get apiaryNameLabel => 'Nome';
+
+  @override
+  String get apiaryNameRequired => 'Introduza um nome.';
+
+  @override
+  String get hiveCountLabel => 'Número de colmeias';
+
+  @override
+  String get hiveCountInvalid => 'Introduza um número igual ou superior a 0.';
+
+  @override
+  String get saveButton => 'Guardar';
+
+  @override
+  String get deleteApiary => 'Eliminar apiário';
 }

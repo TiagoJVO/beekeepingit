@@ -477,3 +477,32 @@ operational NFR clarifications owned by EPIC-13/14.
   (NFR-ARC, NFR-TST, NFR-OBS)
 - Build: **EPIC-00 #23** (+ #19–#22 prerequisites; EPIC-13 #83/#84/#87/#88) — then EPIC-01/02/06/07
   extend the slice
+
+---
+
+## 11. As built (#23)
+
+The slice was implemented per §7.2. Concrete artifacts:
+
+| §7.2 item               | Where it landed                                                                                                                                                                                                                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2. `identity`           | [`services/identity`](../../services/identity) — `identity.users`, `GET /internal/users/by-sub/{sub}`, dev seed                                                                                                                               |
+| 3. `organizations`      | [`services/organizations`](../../services/organizations) — `organizations`+`memberships`, `GET /internal/memberships/active`, dev seed                                                                                                        |
+| §4.2 resolve middleware | [`services/servicetemplate/authn`](../../services/servicetemplate/authn) `NewOrgResolver` (+ `authn/authtest`); dev-seed constants in [`services/shared/devseed`](../../services/shared/devseed)                                              |
+| 4. `apiaries`           | [`services/apiaries`](../../services/apiaries) — `apiaries`+`sync_conflict_log`, `GET /v1/apiaries[/{id}]`, `POST /internal/sync/{validate,apply}` (LWW + conflict log + tombstones + idempotency, §4.6)                                      |
+| 5. `sync` + contract    | [`services/sync`](../../services/sync) — `/v1/sync/token` (+ JWKS), `/v1/sync/batch` coordinator; [`contracts/openapi/sync.openapi.yaml`](../../contracts/openapi/sync.openapi.yaml)                                                          |
+| 6. PowerSync config     | [`charts/powersync/values.yaml`](../../infra/helm/beekeepingit/charts/powersync/values.yaml) org-scoped Sync Rules + `sync` JWKS; scoped `powersync` publication in [`charts/postgres`](../../infra/helm/beekeepingit/charts/postgres) (§5.3) |
+| 1. Keycloak realm       | [`charts/keycloak/files/beekeepingit-realm.json`](../../infra/helm/beekeepingit/charts/keycloak/files/beekeepingit-realm.json) — test user pinned to the seed `sub`, audience mapper                                                          |
+| 7. PWA slice UI         | [`client/lib`](../../client/lib) — OIDC-PKCE login, PowerSync web SDK connector, apiary list + create/edit form (local-first), EN/PT                                                                                                          |
+| 8. Deploy               | [`charts/services`](../../infra/helm/beekeepingit/charts/services) + [`charts/pwa`](../../infra/helm/beekeepingit/charts/pwa) subcharts, gateway multi-route; per-component `Dockerfile`s                                                     |
+| 9. Test                 | [`client/e2e`](../../client/e2e) Playwright full-slice test; per-service Go integration tests (LWW/conflict/idempotency matrix + coordinator)                                                                                                 |
+| 9. CI scoping           | scoped `task go:test -- <dir>` ([`taskfiles/go.yml`](../../taskfiles/go.yml)); `build-publish.yml` per-component build; `docker` + new `gomod` in `dependabot.yml`                                                                            |
+
+**Slice-scoping impl notes** (beyond §4): the `apiaries` table omits the
+`location geography` column (PostGIS unexercised in the slice, §4.1 — EPIC-02
+adds it additively); the `powersync` publication is scoped `FOR TABLES IN SCHEMA
+apiaries, organizations` (§5.3, was `FOR ALL TABLES`); Go service images package
+a workspace-built static binary (distroless); the Flutter pin was bumped to
+3.44.4 (Dart ≥3.10, required by `powersync_core`). **Deploy-time validation
+items** (need the live cluster) are tracked in
+[`FOLLOWUPS.md`](../../FOLLOWUPS.md).

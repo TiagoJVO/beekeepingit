@@ -4,45 +4,78 @@
   "@appTitle": {
     "description": "App title, shown in the browser tab and app switcher"
   },
-  "homeTitle": "Apiaries",
-  "@homeTitle": {
-    "description": "Home screen app bar title"
+  "loginPrompt": "Sign in to manage your apiaries.",
+  "@loginPrompt": {
+    "description": "Text above the login button"
   },
-  "homeSubtitle": "Walking-skeleton scaffold — routing, theming, state and i18n are wired; real apiary data lands with the walking skeleton.",
-  "@homeSubtitle": {
-    "description": "Home screen placeholder body copy"
+  "loginButton": "Sign in with Keycloak",
+  "@loginButton": {
+    "description": "Primary login action"
   },
-  "homeOpenSampleApiaryButton": "View sample apiary",
-  "@homeOpenSampleApiaryButton": {
-    "description": "Button that navigates to the placeholder apiary detail route"
+  "logout": "Sign out",
+  "@logout": {
+    "description": "Sign-out action in the app bar"
   },
-  "gatewayStatusLabel": "Gateway",
-  "@gatewayStatusLabel": {
-    "description": "Label in front of the backend-through-gateway reachability indicator"
+  "apiariesTitle": "Apiaries",
+  "@apiariesTitle": {
+    "description": "Apiaries list screen app bar title"
   },
-  "gatewayStatusChecking": "Checking…",
-  "@gatewayStatusChecking": {
-    "description": "Gateway reachability check in progress"
+  "apiariesEmpty": "No apiaries yet. Tap “Add apiary” to create one.",
+  "@apiariesEmpty": {
+    "description": "Empty state on the apiaries list"
   },
-  "gatewayStatusReachable": "Reachable",
-  "@gatewayStatusReachable": {
-    "description": "The gateway responded successfully"
-  },
-  "gatewayStatusUnreachable": "Unreachable",
-  "@gatewayStatusUnreachable": {
-    "description": "The gateway did not respond"
-  },
-  "apiaryDetailTitle": "Apiary detail",
-  "@apiaryDetailTitle": {
-    "description": "Apiary detail screen app bar title"
-  },
-  "apiaryDetailBody": "Placeholder detail route for apiary {id}. The real apiary read/edit form lands with the walking skeleton (#23).",
-  "@apiaryDetailBody": {
-    "description": "Apiary detail screen placeholder body copy",
+  "apiariesError": "Could not load apiaries: {error}",
+  "@apiariesError": {
+    "description": "Error state on the apiaries list",
     "placeholders": {
-      "id": {
+      "error": {
         "type": "String"
       }
     }
+  },
+  "addApiary": "Add apiary",
+  "@addApiary": {
+    "description": "Floating action button to create an apiary"
+  },
+  "hiveCountValue": "{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}",
+  "@hiveCountValue": {
+    "description": "Hive count subtitle on a list row",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "newApiaryTitle": "New apiary",
+  "@newApiaryTitle": {
+    "description": "Create form app bar title"
+  },
+  "editApiaryTitle": "Edit apiary",
+  "@editApiaryTitle": {
+    "description": "Edit form app bar title"
+  },
+  "apiaryNameLabel": "Name",
+  "@apiaryNameLabel": {
+    "description": "Apiary name field label"
+  },
+  "apiaryNameRequired": "Enter a name.",
+  "@apiaryNameRequired": {
+    "description": "Validation message for an empty apiary name"
+  },
+  "hiveCountLabel": "Number of hives",
+  "@hiveCountLabel": {
+    "description": "Hive count field label"
+  },
+  "hiveCountInvalid": "Enter a number of 0 or more.",
+  "@hiveCountInvalid": {
+    "description": "Validation message for an invalid hive count"
+  },
+  "saveButton": "Save",
+  "@saveButton": {
+    "description": "Save the apiary form"
+  },
+  "deleteApiary": "Delete apiary",
+  "@deleteApiary": {
+    "description": "Delete an apiary from the edit form"
   }
 }

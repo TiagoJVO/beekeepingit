@@ -9,35 +9,38 @@ image:
 resourceTier: medium
 port: 8080
 
-# LOCAL-DEV STOPGAP (#22): no per-org sync-token connector exists yet (that's
-# #23/#106's job — docs/architecture/sync.md, ADR-0006). jwksUrl below points
-# at Keycloak's own realm JWKS endpoint instead, so the service has *a*
-# working JWKS source to validate against — this accepts any token signed by
-# that realm's keys, not a sync-scoped token. Replace with the real
-# `/v1/sync/token` connector endpoint once #23/#106 land (see FOLLOWUPS.md).
+# Real sync-token JWKS (#23/#106, replaces #22's Keycloak-realm stopgap): the
+# `sync` service mints the short-TTL, org-scoped PowerSync token
+# (GET /v1/sync/token) and serves the matching public keys here. `audience`
+# must match the sync service's SYNC_TOKEN_AUDIENCE. `allow_local_jwks: true`
+# (set in the configmap) permits this internal `http://` URL.
 auth:
-  jwksUrl: http://keycloak-keycloakx-http/realms/beekeepingit/protocol/openid-connect/certs
+  jwksUrl: http://sync:8080/internal/sync/jwks.json
   audience:
-    - powersync-dev
     - powersync
 
-# Placeholder sync-config (#22): no domain tables exist yet (apiaries/
-# organizations land with #23), so this can't reference them like the SP-1
-# spike's prototype config did. PowerSync's sync-rules query validator
-# requires a result column selecting from an actual table (a literal
-# `SELECT 1 WHERE false` fails that static check), so this points at
-# Postgres's own always-present `pg_catalog.pg_tables` — `WHERE false` means
-# it never actually returns/replicates a row. `auto_subscribe: false` keeps
-# any client from subscribing to it. Replaced by the real org-scoped Sync
-# Rules design (ADR-0006, docs/architecture/sync.md) once #23 lands — tracked
-# in FOLLOWUPS.md.
+# Real org-scoped Sync Rules (#23/#106, replaces #22's pg_tables placeholder —
+# docs/architecture/sync.md §3.4, ADR-0006). A device receives ONLY its active
+# organization's data: every `apiaries` row of that org plus the one
+# `organizations` row. The org is taken from the sync token's `organization_id`
+# claim (`request.jwt()`), so tenancy layer 3 (ADR-0002) is exercised even with
+# a single seeded org.
+#
+# NOTE: PowerSync validates these rules against the live schema at startup; the
+# stream syntax is validated end-to-end when the slice is deployed (#23 obs/e2e
+# ACs), not by `helm lint`. See FOLLOWUPS.md.
 syncConfig:
   config:
     edition: 3
   streams:
-    placeholder:
-      auto_subscribe: false
-      query: "SELECT schemaname AS id FROM pg_catalog.pg_tables WHERE false"
+    apiaries:
+      auto_subscribe: true
+      queries:
+        - "SELECT * FROM apiaries.apiaries WHERE organization_id = request.jwt() ->> 'organization_id'"
+    organization:
+      auto_subscribe: true
+      queries:
+        - "SELECT * FROM organizations.organizations WHERE id = request.jwt() ->> 'organization_id'"
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.

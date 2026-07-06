@@ -107,11 +107,27 @@ jobs:
       - name: Set up toolchains from mise.toml
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
-      # AC #2: lint → unit/integration tests → build, before the image is built/published.
-      # Today these run the repo-wide discovering targets; they gain per-component scoping
-      # (e.g. `task go:test -- ${{ matrix.path }}`) when the first service adds scoped targets.
-      - name: Lint & test (affected component)
-        run: task ci
+      # AC #2: lint → test → build the deployable artifact, scoped to just this
+      # component (#23) — the repo-wide hygiene + library-module checks run in
+      # ci.yml. The artifact (a static Go binary, or the Flutter web bundle) is
+      # produced here with the Go workspace / Flutter toolchain, then packaged
+      # by the component's Dockerfile (which only COPYs the prebuilt artifact —
+      # the per-component build context can't resolve sibling Go modules).
+      - name: Lint, test & build artifact (affected component)
+        env:
+          COMPONENT_PATH: ${{ matrix.path }}
+        run: |
+          set -euo pipefail
+          if [ -f "$COMPONENT_PATH/go.mod" ]; then
+            task go:lint -- "$COMPONENT_PATH"
+            task go:test -- "$COMPONENT_PATH"
+            ( cd "$COMPONENT_PATH" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app . )
+          elif [ -f "$COMPONENT_PATH/pubspec.yaml" ]; then
+            ( cd "$COMPONENT_PATH" && flutter analyze && flutter test && flutter build web --release )
+          else
+            echo "::error::unknown component type at $COMPONENT_PATH (no go.mod or pubspec.yaml)"
+            exit 1
+          fi
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
