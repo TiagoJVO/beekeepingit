@@ -29,6 +29,27 @@ for bin in k3d kubectl helm flux flock; do
   fi
 done
 
+# `kubectl wait` errors immediately with "no matching resources found" if zero
+# pods currently match its selector — it only polls a matched pod's condition,
+# not whether one exists yet. Since these selectors target pods a Deployment/
+# StatefulSet/Flux HelmRelease creates asynchronously (a moment after the
+# resource that owns them is applied), wait for at least one match to exist
+# first, then wait for it to be ready. Bounded by the same timeout as the
+# subsequent `wait` (in 2s steps) so a wrong/stale selector fails loudly
+# instead of hanging forever.
+wait_for_pod() {
+  local selector="$1" timeout="$2" elapsed=0 timeout_s="${2%s}"
+  until kubectl -n "$namespace" get pod -l "$selector" --no-headers 2>/dev/null | grep -q .; do
+    elapsed=$((elapsed + 2))
+    if [ "$elapsed" -ge "$timeout_s" ]; then
+      echo "error: no pod matching '$selector' appeared within ${timeout}" >&2
+      exit 1
+    fi
+    sleep 2
+  done
+  kubectl -n "$namespace" wait --for=condition=ready pod -l "$selector" --timeout="$timeout"
+}
+
 "$script_dir/up.sh"
 
 echo
@@ -42,9 +63,21 @@ helm dependency build "$chart_dir"
 
 echo
 echo "installing/upgrading the beekeepingit umbrella release"
+# Deliberately no `--wait` here: PowerSync can't pass its readiness probe until
+# the postgres subchart's schema-grants Job (a post-install hook, since the
+# `powersync` role doesn't exist yet at helm-install time — see that chart's
+# templates/schema-grants-job.yaml) has granted it access to `powersync_storage`.
+# Helm only runs post-install hooks *after* `--wait` is satisfied for the main
+# release resources, so waiting here would deadlock: PowerSync waiting on a
+# hook that waits on PowerSync. Readiness is instead waited on explicitly below,
+# per component, after the hook has had a chance to run.
 "$script_dir/with-lock.sh" helm upgrade --install beekeepingit "$chart_dir" \
   -f "$chart_dir/environments/dev.yaml" \
-  --namespace "$namespace" --create-namespace --wait
+  --namespace "$namespace" --create-namespace
+
+echo
+echo "waiting for postgres"
+wait_for_pod cnpg.io/cluster=beekeepingit-postgres 180s
 
 echo
 echo "applying the Keycloak/MinIO Flux HelmReleases directly (local-only, not GitOps-synced)"
@@ -52,8 +85,9 @@ echo "applying the Keycloak/MinIO Flux HelmReleases directly (local-only, not Gi
 # named "beekeepingit" that only exists once the cluster is GitOps-bootstrapped
 # (infra/gitops/clusters/dev/) — which this script deliberately skips (see the
 # note above). Stripped here for this direct-apply path only (committed files
-# are untouched): the umbrella release just installed with `--wait` already
-# guarantees the credential Secret/ConfigMap these reference exist, which is
+# are untouched): the umbrella release install above already guarantees the
+# credential Secret/ConfigMap these reference exist (created synchronously as
+# part of applying the release's resources, independent of `--wait`), which is
 # all `dependsOn` was ensuring in the first place. Applied one file at a time
 # (not piped together) since neither file ends with its own trailing `---`, so
 # concatenating them loses the document boundary between the two.
@@ -68,8 +102,11 @@ kubectl -n "$namespace" rollout status deployment/beekeepingit-powersync --timeo
 
 echo
 echo "waiting for Keycloak/MinIO (Keycloak's JVM boot + realm import can take a couple of minutes)"
-kubectl -n "$namespace" wait --for=condition=ready pod -l app.kubernetes.io/instance=keycloak --timeout=300s
-kubectl -n "$namespace" wait --for=condition=ready pod -l app.kubernetes.io/instance=minio --timeout=180s
+# MinIO's vendored chart (see infra/gitops/apps/dev/minio-helmrelease.yaml) predates
+# the app.kubernetes.io/* label convention Keycloak's chart follows — it only sets
+# the legacy app=minio,release=<release-name> labels.
+wait_for_pod app.kubernetes.io/instance=keycloak 300s
+wait_for_pod app=minio,release=minio 180s
 
 echo
 echo "running helm test (PostGIS smoke query)"

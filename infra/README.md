@@ -45,27 +45,50 @@ flux install --components-extra=image-reflector-controller,image-automation-cont
 #    installs old content otherwise, see FOLLOWUPS.md).
 helm dependency build infra/helm/beekeepingit
 
-# 4. Install (or upgrade) the platform
+# 4. Install (or upgrade) the platform. Deliberately no `--wait`: PowerSync can't
+#    pass its readiness probe until the postgres subchart's schema-grants Job (a
+#    post-install hook, since the `powersync` role doesn't exist yet at install
+#    time) has granted it access to `powersync_storage` — and Helm only runs
+#    post-install hooks *after* `--wait` is satisfied for the main resources, so
+#    waiting here would deadlock PowerSync against its own grant.
 infra/cluster/with-lock.sh helm upgrade --install beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
-  --namespace beekeepingit-dev --create-namespace --wait
+  --namespace beekeepingit-dev --create-namespace
 
-# 5. Keycloak/MinIO are separate Flux HelmReleases (ADR-0012), not part of the
+# 5. Wait for postgres explicitly instead (see step 4's note). `dev-up.sh`'s
+#    actual `wait_for_pod` helper polls until a matching pod exists before this
+#    call — `kubectl wait` errors immediately ("no matching resources found")
+#    rather than waiting, if the Deployment/StatefulSet/HelmRelease that owns
+#    the pod hasn't created it yet:
+kubectl -n beekeepingit-dev wait --for=condition=ready pod \
+  -l cnpg.io/cluster=beekeepingit-postgres --timeout=180s
+
+# 6. Keycloak/MinIO are separate Flux HelmReleases (ADR-0012), not part of the
 #    umbrella release above — either let Flux reconcile them (if bootstrapped, see
 #    infra/gitops/README.md) or apply them directly for local-only testing. Their
 #    `dependsOn: [beekeepingit]` targets a HelmRelease *object* that only exists
 #    once bootstrapped, so strip it for this direct-apply path (committed files
-#    untouched) — step 4's `--wait` already guarantees what dependsOn was protecting
-#    (the credential Secret/ConfigMap these reference):
+#    untouched) — step 4's install already guarantees what dependsOn was
+#    protecting (the credential Secret/ConfigMap these reference are created
+#    synchronously when the release's resources are applied, independent of
+#    `--wait`):
 for f in keycloak-helmrelease.yaml minio-helmrelease.yaml; do
   sed '/^  dependsOn:$/,+1d' "infra/gitops/apps/dev/$f" \
     | infra/cluster/with-lock.sh kubectl apply -f -
 done
 
-# 6. Smoke-test the backing services (Postgres/PostGIS; #84)
+# 7. Wait for the PowerSync rollout (now unblocked by the schema-grants hook above)
+kubectl -n beekeepingit-dev rollout status deployment/beekeepingit-powersync --timeout=180s
+
+# 8. Wait for Keycloak/MinIO (see step 5's note on the pod-exists-first race), then
+#    smoke-test the backing services (Postgres/PostGIS; #84). MinIO's vendored
+#    chart predates the app.kubernetes.io/* label convention Keycloak's chart
+#    follows — it only sets the legacy app=minio,release=<release-name> labels.
+kubectl -n beekeepingit-dev wait --for=condition=ready pod -l app.kubernetes.io/instance=keycloak --timeout=300s
+kubectl -n beekeepingit-dev wait --for=condition=ready pod -l app=minio,release=minio --timeout=180s
 helm test beekeepingit --namespace beekeepingit-dev
 
-# 7. Tear down
+# 9. Tear down
 infra/cluster/with-lock.sh kubectl delete --ignore-not-found \
   -f infra/gitops/apps/dev/keycloak-helmrelease.yaml \
   -f infra/gitops/apps/dev/minio-helmrelease.yaml

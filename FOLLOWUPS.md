@@ -115,22 +115,47 @@ lands; none blocks #88's merge:
   (`syncConfig`, `auth.jwksUrl`).
 - **Status:** pending `#23`/`#106`.
 
-## #22 (before merge) — one clean end-to-end `dev-up.sh` reproducibility run still owed
+## #22 — verified live against the local `beekeeping` k3d cluster (2026-07-06)
 
-Two full `dev-up.sh` runs from a torn-down cluster (below) already caught and fixed real bugs —
-each individual piece (Postgres config, PowerSync, Keycloak, MinIO, teardown) has been directly
-observed working live. What's still outstanding: a single, uninterrupted `dev-down.sh` →
-`dev-up.sh` pass start-to-finish, to confirm the whole script (not just its parts) is reproducible
-in one go. The last attempt was interrupted mid-run by the local `beekeeping` k3d cluster's own
-container(s) restarting unprompted several times in the same session (see the
-`k3d-docker-restart-flakiness` memory — concurrent sessions on the shared cluster, not this PR's
-changes) — recovery via plain `up.sh` worked every time and lost no data, but never stayed up long
-enough for one fully clean, uninterrupted timed run. Re-run `infra/cluster/dev-down.sh` then
-`infra/cluster/dev-up.sh` once, ideally with no other session touching the `beekeeping` cluster
-concurrently, before considering `#22` fully done.
+A clean, uninterrupted `infra/cluster/dev-down.sh` → `infra/cluster/dev-up.sh` pass from a
+torn-down cluster now completes successfully end-to-end (`real 3m4s`), closing out the one item
+this PR's own description flagged as not yet done. Getting there surfaced three more real bugs
+beyond the two full runs already recorded below — all in `dev-up.sh`'s own orchestration, not the
+chart's steady-state behavior:
 
-**Status:** functionally verified piece-by-piece (see below); one clean end-to-end timing run
-pending before merge.
+- **Deadlock: `helm upgrade --install --wait` vs. the schema-grants post-install hook.** The
+  `powersync` role can't pass its `powersync_storage` permission check (see the crash below) until
+  `charts/postgres/templates/schema-grants-job.yaml`'s Job — a `post-install` hook, since that
+  role doesn't exist yet at install time — grants it. But Helm only runs post-install hooks
+  *after* `--wait` is satisfied for the main release resources, so PowerSync wondering "am I
+  ready?" and the hook that would make it ready were waiting on each other; `--wait` would
+  eventually time out and fail the whole release. Fixed by dropping `--wait` from the umbrella
+  `helm upgrade --install` in `dev-up.sh`/`infra/README.md` and waiting on each component
+  explicitly afterward instead (which the script already did for PowerSync/Keycloak/MinIO; added
+  the same for Postgres).
+  - Symptom while broken: `beekeepingit-powersync` `CrashLoopBackOff`, logs showing `Fatal startup
+    error - exiting with code 150. permission denied for database powersync_storage`.
+- **`kubectl wait` doesn't wait for a pod to *exist*.** It errors immediately with "no matching
+  resources found" if its selector currently matches zero pods, rather than polling for one to
+  appear — a real race against the Deployment/StatefulSet/Flux HelmRelease that creates the pod
+  a moment after the resource owning it is applied. Fixed with a small `wait_for_pod` helper in
+  `dev-up.sh` that polls for a match first (bounded by the same timeout, so a wrong/stale selector
+  still fails loudly instead of hanging forever — see the next finding for why that bound mattered
+  in practice).
+- **Wrong MinIO readiness selector.** `dev-up.sh` waited on `app.kubernetes.io/instance=minio`,
+  but the vendored `charts.min.io` chart (`infra/gitops/apps/dev/minio-helmrelease.yaml`) predates
+  that label convention and only sets legacy `app=minio,release=minio` labels — confirmed via
+  `kubectl get pod --show-labels` against the live pod. The selector never matched, so this step
+  either failed outright (before the `wait_for_pod` fix above) or would have hung indefinitely
+  (after it, until the bounded timeout was added). Fixed the selector to match the real labels.
+
+All of #22's acceptance checks reconfirmed on that clean run: `wal_level=logical` +
+`powersync_storage` DB + `powersync` role (`replication=t`, and now confirmed able to `CONNECT` to
+`powersync_storage`) + `powersync` publication (`puballtables=t`, in the `beekeepingit` database)
+all present; PowerSync reaches a clean steady state (one expected restart from the race above,
+then stable liveness 200s); `helm test` (PostGIS smoke query) succeeds; Keycloak realm reachable
+through the gateway (200); MinIO health endpoint returns 200; `dev-down.sh` tears down with zero
+orphaned k3d volumes/containers afterward.
 
 Findings from the runs so far (not just `helm lint`/`template`):
 
@@ -154,9 +179,10 @@ Findings from the runs so far (not just `helm lint`/`template`):
   exists once the cluster is GitOps-bootstrapped (`infra/gitops/clusters/dev/`) — bootstrapping
   that, though, makes Flux deploy the umbrella chart from `main`, defeating local branch testing.
   `dev-up.sh`/`dev-down.sh` (`#22`) fix this by stripping `dependsOn` at apply-time for this
-  direct-install path only (committed files untouched) — the umbrella release's own `--wait`
-  already guarantees the Secret/ConfigMap these referenced exist, which is all `dependsOn` was
-  protecting in the first place.
+  direct-install path only (committed files untouched) — the umbrella release install already
+  guarantees the Secret/ConfigMap these referenced exist (created synchronously when its resources
+  are applied, independent of `--wait` — see the deadlock finding above for why `--wait` itself
+  was later dropped), which is all `dependsOn` was protecting in the first place.
 - Confirmed end-to-end from an empty cluster: `wal_level=logical` + `powersync_storage` DB +
   `powersync` role (`Replication` attribute) + `powersync` publication (`puballtables=t`) all
   present; PowerSync pod reaches a clean steady state (replication slot active, storage
