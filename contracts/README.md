@@ -18,10 +18,12 @@ work needs them), so each service epic implements _against a committed contract_
 | `openapi/_shared/components.openapi.yaml` | The reusable **contract template**: security scheme (Keycloak JWT), pagination params, standard headers, the RFC 9457 `Problem` error schema, and shared responses. Every service spec `$ref`s this — it is _not_ a deployable API on its own (a partial). |
 | `openapi/apiaries.openapi.yaml`           | Skeleton for the **apiaries** service (FR-AP) — the walking-skeleton's "create" target (#110).                                                                                                                                                             |
 | `openapi/organizations.openapi.yaml`      | Skeleton for the **organizations** service (onboarding + admin surface, FR-ONB / NFR-ROL).                                                                                                                                                                 |
+| `openapi/sync.openapi.yaml`               | The **sync** service (#23) — the offline write-back seam: `GET /v1/sync/token` (PowerSync `fetchCredentials`) + `POST /v1/sync/batch` (`uploadData`). See [sync.md](../docs/architecture/sync.md) §3.4/§6.                                                 |
 
 The remaining services from the [service decomposition](../docs/architecture/service-decomposition.md)
-(`identity`, `activities`, `journeys`, `todos`, `ai`, `history`) are stamped from the same
-template as their epics start.
+(`activities`, `journeys`, `todos`, `ai`, `history`) are stamped from the same template as
+their epics start. (`identity`/`organizations` expose only internal resolve endpoints in the
+skeleton, so they have no client-facing spec yet beyond the `organizations` skeleton above.)
 
 ## Working with the specs
 

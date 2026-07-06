@@ -70,7 +70,16 @@ powersync:
     repository: journeyapps/powersync-service
     tag: "1.23.2"
   resourceTier: medium
-  # Local-dev stopgap JWKS source (Keycloak's realm) + placeholder sync-config
-  # (no domain tables exist yet) — see the subchart's own values.yaml for why,
-  # and FOLLOWUPS.md for what #23/#106 still need to wire up (real org-scoped
-  # Sync Rules, real connector).
+  # Real org-scoped Sync Rules + the `sync` service's JWKS connector now wired
+  # in the subchart's own values.yaml (#23/#106) — the #22 stopgaps (Keycloak
+  # realm JWKS, pg_tables placeholder) are gone.
+
+# The Go services (#23) — identity/organizations/apiaries/sync. Image tag +
+# per-service wiring live in the subchart's own values.yaml; overlays/CI bump
+# the tag. On merge, Flux image-automation reconciles the published tag.
+services:
+  enabled: true
+
+# The Flutter Web PWA static bundle (#21/#23), served behind the gateway's `/`.
+pwa:
+  enabled: true

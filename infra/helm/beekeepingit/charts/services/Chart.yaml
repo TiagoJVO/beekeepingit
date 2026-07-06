@@ -1,0 +1,10 @@
+apiVersion: v2
+name: services
+description: >-
+  The BeekeepingIT Go domain/platform services for the M0 walking skeleton
+  (#23) — identity, organizations, apiaries, sync — rendered from one
+  values-driven template (each is a Deployment + Service stamped from the same
+  shared service template, so a per-service chart would be pure duplication).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

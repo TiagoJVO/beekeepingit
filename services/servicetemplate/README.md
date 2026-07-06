@@ -8,21 +8,24 @@ rationale and [`docs/architecture/auth.md`](../../docs/architecture/auth.md) §4
 design this implements. This is not a deployable service itself — it's a library other
 `services/*` modules import, plus a runnable [`example/`](example/) demonstrating the wiring.
 
-Org-scoped tenancy authorization (which organization, which role) is **not** here — that's built
-on top of this package's `authn.Claims` in EPIC-01.
+Org-scoped tenancy resolution (which organization, which role) is now also here, as the
+`authn.NewOrgResolver` middleware layered on top of `authn.Claims` — it resolves the request's
+`organization_id` + `role` from membership via internal calls to the `identity`/`organizations`
+services (walking-skeleton.md §4.2). Role-differentiated authorization (the `admin` vs `user`
+policy matrix) is still a later concern (EPIC-01/#28).
 
 ## Packages
 
-| Package    | What it provides                                                                  |
-| ---------- | --------------------------------------------------------------------------------- |
-| `config`   | Env-var loader; aggregates every missing required value into one error            |
-| `problem`  | RFC 9457 error format (`application/problem+json`) + panic-recovery middleware    |
-| `health`   | `Checker` registry backing `/healthz` (liveness) and `/readyz` (readiness)        |
-| `logging`  | `log/slog` JSON to stdout, fanned out to the OTel collector, trace-correlated     |
-| `otelboot` | Bootstraps OTel traces/metrics/logs (OTLP/gRPC) against the collector             |
-| `authn`    | JWT/JWKS bearer-token verification middleware (Keycloak, via `coreos/go-oidc`)    |
-| (root)     | Wires the above into a `chi` HTTP server: `New`/`Mount`/`Router`/`Run`/`Shutdown` |
-| `example`  | Runnable reference (`go run ./example`) every domain service's `main.go` copies   |
+| Package    | What it provides                                                                                                                                                                                                                   |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config`   | Env-var loader; aggregates every missing required value into one error                                                                                                                                                             |
+| `problem`  | RFC 9457 error format (`application/problem+json`) + panic-recovery middleware                                                                                                                                                     |
+| `health`   | `Checker` registry backing `/healthz` (liveness) and `/readyz` (readiness)                                                                                                                                                         |
+| `logging`  | `log/slog` JSON to stdout, fanned out to the OTel collector, trace-correlated                                                                                                                                                      |
+| `otelboot` | Bootstraps OTel traces/metrics/logs (OTLP/gRPC) against the collector                                                                                                                                                              |
+| `authn`    | JWT/JWKS bearer-token verification middleware (Keycloak, via `coreos/go-oidc`); `NewOrgResolver` enriches `Claims` with `organization_id`/`role` from membership (§4.2); `authn/authtest` is a reusable fake OIDC issuer for tests |
+| (root)     | Wires the above into a `chi` HTTP server: `New`/`Mount`/`Router`/`Run`/`Shutdown`                                                                                                                                                  |
+| `example`  | Runnable reference (`go run ./example`) every domain service's `main.go` copies                                                                                                                                                    |
 
 ## Configuration (env vars)
 

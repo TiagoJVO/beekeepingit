@@ -10,11 +10,15 @@ vars:
   # Named FIND_WEB_PKGS (not FIND_PKGS) — Task merges `vars:` from included
   # taskfiles into one global namespace, so a name shared with another
   # included taskfile (e.g. dart.yml's package search) silently clobbers it.
+  # `*/e2e/*` is excluded: end-to-end suites (e.g. client/e2e — Playwright)
+  # need the full slice deployed + browsers, so they run in their own job, not
+  # the repo-wide `task ci` (#23).
   FIND_WEB_PKGS: >-
     find . -type f -name package.json
     -not -path '*/node_modules/*'
     -not -path '*/.git/*'
     -not -path '*/.claude/worktrees/*'
+    -not -path '*/e2e/*'
 
 tasks:
   lint:

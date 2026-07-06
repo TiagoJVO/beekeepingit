@@ -477,3 +477,95 @@ operational NFR clarifications owned by EPIC-13/14.
   (NFR-ARC, NFR-TST, NFR-OBS)
 - Build: **EPIC-00 #23** (+ #19–#22 prerequisites; EPIC-13 #83/#84/#87/#88) — then EPIC-01/02/06/07
   extend the slice
+
+---
+
+## 11. As built (#23)
+
+The slice was implemented per §7.2. Concrete artifacts:
+
+| §7.2 item               | Where it landed                                                                                                                                                                                                                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2. `identity`           | [`services/identity`](../../services/identity) — `identity.users`, `GET /internal/users/by-sub/{sub}`, dev seed                                                                                                                               |
+| 3. `organizations`      | [`services/organizations`](../../services/organizations) — `organizations`+`memberships`, `GET /internal/memberships/active`, dev seed                                                                                                        |
+| §4.2 resolve middleware | [`services/servicetemplate/authn`](../../services/servicetemplate/authn) `NewOrgResolver` (+ `authn/authtest`); dev-seed constants in [`services/shared/devseed`](../../services/shared/devseed)                                              |
+| 4. `apiaries`           | [`services/apiaries`](../../services/apiaries) — `apiaries`+`sync_conflict_log`, `GET /v1/apiaries[/{id}]`, `POST /internal/sync/{validate,apply}` (LWW + conflict log + tombstones + idempotency, §4.6)                                      |
+| 5. `sync` + contract    | [`services/sync`](../../services/sync) — `/v1/sync/token` (+ JWKS), `/v1/sync/batch` coordinator; [`contracts/openapi/sync.openapi.yaml`](../../contracts/openapi/sync.openapi.yaml)                                                          |
+| 6. PowerSync config     | [`charts/powersync/values.yaml`](../../infra/helm/beekeepingit/charts/powersync/values.yaml) org-scoped Sync Rules + `sync` JWKS; scoped `powersync` publication in [`charts/postgres`](../../infra/helm/beekeepingit/charts/postgres) (§5.3) |
+| 1. Keycloak realm       | [`charts/keycloak/files/beekeepingit-realm.json`](../../infra/helm/beekeepingit/charts/keycloak/files/beekeepingit-realm.json) — test user pinned to the seed `sub`, audience mapper                                                          |
+| 7. PWA slice UI         | [`client/lib`](../../client/lib) — OIDC-PKCE login, PowerSync web SDK connector, apiary list + create/edit form (local-first), EN/PT                                                                                                          |
+| 8. Deploy               | [`charts/services`](../../infra/helm/beekeepingit/charts/services) + [`charts/pwa`](../../infra/helm/beekeepingit/charts/pwa) subcharts, gateway multi-route; per-component `Dockerfile`s                                                     |
+| 9. Test                 | [`client/e2e`](../../client/e2e) Playwright full-slice test; per-service Go integration tests (LWW/conflict/idempotency matrix + coordinator)                                                                                                 |
+| 9. CI scoping           | scoped `task go:test -- <dir>` ([`taskfiles/go.yml`](../../taskfiles/go.yml)); `build-publish.yml` per-component build; `docker` + new `gomod` in `dependabot.yml`                                                                            |
+
+**Slice-scoping impl notes** (beyond §4): the `apiaries` table omits the
+`location geography` column (PostGIS unexercised in the slice, §4.1 — EPIC-02
+adds it additively); the `powersync` publication is scoped `FOR TABLES IN SCHEMA
+apiaries, organizations` (§5.3, was `FOR ALL TABLES`); Go service images package
+a workspace-built static binary (distroless); the Flutter pin was bumped to
+3.44.4 (Dart ≥3.10, required by `powersync_core`). **Deploy-time validation
+items** (need the live cluster) are tracked in
+[`FOLLOWUPS.md`](../../FOLLOWUPS.md).
+
+### 11.1 Dev OIDC topology (resolved at live deploy)
+
+Two coupled facts drove the final dev wiring:
+
+1. **The PWA + gateway are served over HTTPS** (k3d maps host `:8443` → Traefik,
+   self-signed cert). PowerSync's web sync worker needs `SharedArrayBuffer`, which
+   requires **cross-origin isolation** (`COOP: same-origin` + `COEP: require-corp`,
+   set in [`client/nginx.conf`](../../client/nginx.conf)) — and those headers are
+   only honored on a **trustworthy origin**. Over plain HTTP the worker never
+   starts and no write-back reaches `/v1/sync/batch`; over HTTPS `crossOriginIsolated`
+   is `true` and the full sync path runs.
+2. **OIDC discovery and issuer are split.** A browser token's `iss` is the external
+   HTTPS gateway URL (`https://keycloak.beekeepingit.local:8443/realms/beekeepingit`,
+   pinned by Keycloak `KC_HOSTNAME`), which services **cannot reach over HTTPS
+   in-cluster**. So services fetch the OIDC discovery document from the **internal
+   HTTP** Keycloak Service (`OIDC_DISCOVERY_URL`) while still validating tokens
+   against the external issuer (`OIDC_ISSUER_URL`), bridged by go-oidc's
+   `InsecureIssuerURLContext` ([`authn.NewMiddleware`](../../services/servicetemplate/authn/authn.go)).
+   Keycloak's `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` keeps the discovered `jwks_uri`
+   internal-HTTP (reachable) while `issuer`/`authorization_endpoint` stay the external
+   HTTPS URL. This replaces the earlier in-cluster issuer-alias (CoreDNS rewrite +
+   `keycloak-oidc` Service) approach, which is removed.
+
+### 11.2 PowerSync `/sync-stream` gateway route (download sync)
+
+The client → server **write-back** goes through the `sync` service (`/v1/sync/batch`), but
+the server → client **download** goes through PowerSync directly at the gateway's
+`/sync-stream` route. Two bugs there let the download silently never run while the rest of the
+slice looked healthy (the e2e's reload step passed on same-session local state):
+
+1. **Service name.** The gateway route targeted a Service `powersync`, but the PowerSync chart
+   named its Service release-prefixed (`beekeepingit-powersync`) — so the route resolved to
+   nothing and `/sync-stream` fell through to the PWA SPA fallback. Fixed by giving the
+   PowerSync Service a **stable bare name** (`powersync`), like its `apiaries`/`sync`/`pwa`
+   siblings, so it resolves the same under local Helm and Flux (different release names).
+2. **Endpoint trailing slash + prefix strip.** The PowerSync SDK builds each request as
+   `Uri.parse(endpoint).resolve('sync/stream')`; against a base **without** a trailing slash,
+   RFC 3986 resolution replaces the last path segment and drops `/sync-stream`, POSTing to
+   `/sync/stream` (→ PWA, 405). The client endpoint now ends in `/sync-stream/`, and the
+   gateway route is a dedicated Ingress with a Traefik **StripPrefix** middleware so PowerSync
+   receives its paths at the root (it has no configurable base path). The gateway's other
+   routes stay a plain, controller-agnostic Ingress.
+
+The e2e now asserts a **second, fresh browser context** (empty local SQLite) converges to a
+server-created apiary — directly exercising the download half so this class of bug can't hide.
+
+### 11.3 Observability verified against the real stack (NFR-OBS-1)
+
+The M0 exit criterion — the slice's traces/logs visible in the observability stack — was
+verified **live**, not just emitted. With the observability stack (`infra/helm/observability`:
+OTel Collector + Tempo + Loki + Grafana, #87) deployed alongside the slice and e2e traffic
+driven through it:
+
+- **Tempo** holds a single distributed trace spanning **gateway → sync → apiaries**: a
+  `traefik` root span for `POST /v1/sync/batch` continuing into the `sync` service and its
+  `/internal/sync/validate` + `/internal/sync/apply` fan-out to `apiaries` (W3C `traceparent`
+  propagated across the internal REST calls). Traefik's own span is enabled by
+  [`traefik-tracing.yaml`](../../infra/gitops/apps/dev/traefik-tracing.yaml).
+- **Loki** holds per-service structured logs (`service_name` = `identity`/`organizations`/
+  `apiaries`/`sync`) carrying `trace_id`/`span_id`, so a log line links back to its trace.
+- `infra/observability-smoke-test.sh` passes against this collector, closing #87's deferred
+  `telemetrygen` verification.

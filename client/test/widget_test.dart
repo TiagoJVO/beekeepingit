@@ -1,56 +1,60 @@
 import 'package:beekeepingit_client/app.dart';
-import 'package:beekeepingit_client/core/network/gateway_status.dart';
-import 'package:beekeepingit_client/features/home/home_screen.dart';
+import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-// Overridden in every test so no test depends on real network access.
-Widget buildApp({GatewayReachability status = GatewayReachability.reachable}) {
+/// Builds the app with auth + the local apiaries stream overridden, so no test
+/// touches real OIDC or PowerSync.
+Widget buildApp({required bool authed, List<Apiary>? apiaries}) {
   return ProviderScope(
     overrides: [
-      gatewayReachabilityProvider.overrideWith((ref) async => status),
+      isAuthenticatedProvider.overrideWithValue(authed),
+      if (apiaries != null)
+        apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
     ],
     child: const BeekeepingitApp(),
   );
 }
 
 void main() {
-  testWidgets('home screen renders title, subtitle and gateway status', (
+  testWidgets('unauthenticated users land on the login screen', (tester) async {
+    await tester.pumpWidget(buildApp(authed: false));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('login-button')), findsOneWidget);
+    expect(find.text('Sign in with Keycloak'), findsOneWidget);
+  });
+
+  testWidgets('authenticated users see the apiaries list from local data', (
     tester,
   ) async {
-    await tester.pumpWidget(buildApp());
+    await tester.pumpWidget(
+      buildApp(
+        authed: true,
+        apiaries: const [
+          Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+        ],
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Apiaries'), findsOneWidget);
-    expect(find.textContaining('Gateway'), findsOneWidget);
-    expect(find.textContaining('Reachable'), findsOneWidget);
+    expect(find.text('Serra Norte'), findsOneWidget);
+    expect(find.text('3 hives'), findsOneWidget);
+    expect(find.byKey(const Key('add-apiary-fab')), findsOneWidget);
   });
 
-  testWidgets('shows the unreachable gateway status when the check fails', (
-    tester,
-  ) async {
-    await tester.pumpWidget(buildApp(status: GatewayReachability.unreachable));
+  testWidgets('empty local data shows the empty state', (tester) async {
+    await tester.pumpWidget(buildApp(authed: true, apiaries: const []));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Unreachable'), findsOneWidget);
-  });
-
-  testWidgets('navigates from home to the apiary detail placeholder route', (
-    tester,
-  ) async {
-    await tester.pumpWidget(buildApp());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('View sample apiary'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Apiary detail'), findsOneWidget);
-    expect(find.textContaining(sampleApiaryId), findsOneWidget);
+    expect(find.textContaining('No apiaries yet'), findsOneWidget);
   });
 
   testWidgets('light and dark themes are both wired', (tester) async {
-    await tester.pumpWidget(buildApp());
+    await tester.pumpWidget(buildApp(authed: false));
     await tester.pumpAndSettle();
 
     final app = tester.widget<MaterialApp>(find.byType(MaterialApp));

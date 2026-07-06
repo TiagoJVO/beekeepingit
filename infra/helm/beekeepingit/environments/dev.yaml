@@ -2,3 +2,15 @@
 global:
   environment: dev
   namespace: beekeepingit-dev
+
+services:
+  oidc:
+    # Split discovery from issuer (#23). A browser token's `iss` is the external
+    # HTTPS gateway URL (Keycloak's KC_HOSTNAME); services must validate against
+    # that exact string. But services can't reach that URL over HTTPS in-cluster,
+    # so they fetch the discovery document from the internal HTTP Keycloak Service
+    # and trust `issuerUrl` as the issuer (go-oidc InsecureIssuerURLContext).
+    # Keycloak's KC_HOSTNAME_BACKCHANNEL_DYNAMIC keeps the discovered jwks_uri
+    # internal-HTTP (reachable) while issuer stays the external HTTPS URL.
+    issuerUrl: https://keycloak.beekeepingit.local:8443/realms/beekeepingit
+    discoveryUrl: http://keycloak-keycloakx-http/realms/beekeepingit
