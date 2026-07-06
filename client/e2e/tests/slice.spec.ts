@@ -21,6 +21,13 @@ async function enableSemantics(page: Page) {
   // after its "Enable accessibility" placeholder is activated. A direct DOM
   // click fires the handler regardless of the element's (1x1, offscreen)
   // geometry. Reappears after each full page load (e.g. the OIDC redirect).
+  //
+  // Wait for Flutter to actually bootstrap first: over HTTPS (cross-origin
+  // isolated), the PowerSync/SQLite worker startup pushes first paint out, so
+  // clicking the placeholder immediately after goto() lands before it exists
+  // and no tree is built. Wait for the glass pane, click, then poll until the
+  // semantic tree materializes — no fixed sleeps.
+  await page.waitForSelector("flt-glass-pane, flutter-view", { timeout: 30_000 }).catch(() => {});
   await page
     .evaluate(() => {
       const el =
@@ -29,7 +36,11 @@ async function enableSemantics(page: Page) {
       el?.click();
     })
     .catch(() => {});
-  await page.waitForTimeout(1200); // let Flutter build the semantic tree
+  await page
+    .waitForFunction(() => document.querySelectorAll("flt-semantics").length > 1, null, {
+      timeout: 15_000,
+    })
+    .catch(() => {});
 }
 
 async function login(page: Page) {

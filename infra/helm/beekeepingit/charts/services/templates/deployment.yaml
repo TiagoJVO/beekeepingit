@@ -41,6 +41,10 @@ spec:
               value: {{ $root.Values.oidc.issuerUrl | quote }}
             - name: OIDC_AUDIENCE
               value: {{ $root.Values.oidc.audience | quote }}
+            {{- if $root.Values.oidc.discoveryUrl }}
+            - name: OIDC_DISCOVERY_URL
+              value: {{ $root.Values.oidc.discoveryUrl | quote }}
+            {{- end }}
             {{- if $svc.db.enabled }}
             - name: DB_HOST
               value: {{ $root.Values.db.host | quote }}

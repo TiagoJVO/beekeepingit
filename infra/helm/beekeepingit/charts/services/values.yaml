@@ -10,11 +10,13 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-# Shared wiring every service inherits (env below). OIDC issuer is the token's
-# `iss` (the external gateway URL); services must be able to resolve it in
-# cluster — see FOLLOWUPS.md for the Keycloak hostname/hostAliases step.
+# Shared wiring every service inherits (env below). `issuerUrl` is the token's
+# `iss` (the external HTTPS gateway URL, unreachable in-cluster); `discoveryUrl`
+# is the internal HTTP Keycloak Service where services actually fetch the OIDC
+# discovery document, trusting `issuerUrl` as the issuer (see #23 / dev.yaml).
 oidc:
   issuerUrl: https://keycloak.beekeepingit.local:8443/realms/beekeepingit
+  discoveryUrl: http://keycloak-keycloakx-http/realms/beekeepingit
   audience: beekeepingit
 otelEndpoint: otel-collector:4317
 logLevel: info

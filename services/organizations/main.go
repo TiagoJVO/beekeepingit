@@ -67,7 +67,11 @@ func run(ctx context.Context) error {
 		logger.Info("seeded dev organizations data")
 	}
 
-	authnMW, err := authn.NewMiddleware(ctx, authn.Config{IssuerURL: cfg.OIDCIssuerURL, Audience: cfg.OIDCAudience})
+	authnMW, err := authn.NewMiddleware(ctx, authn.Config{
+		IssuerURL:    cfg.OIDCIssuerURL,
+		Audience:     cfg.OIDCAudience,
+		DiscoveryURL: cfg.OIDCDiscoveryURL,
+	})
 	if err != nil {
 		return fmt.Errorf("build authn middleware: %w", err)
 	}

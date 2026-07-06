@@ -506,3 +506,26 @@ a workspace-built static binary (distroless); the Flutter pin was bumped to
 3.44.4 (Dart ≥3.10, required by `powersync_core`). **Deploy-time validation
 items** (need the live cluster) are tracked in
 [`FOLLOWUPS.md`](../../FOLLOWUPS.md).
+
+### 11.1 Dev OIDC topology (resolved at live deploy)
+
+Two coupled facts drove the final dev wiring:
+
+1. **The PWA + gateway are served over HTTPS** (k3d maps host `:8443` → Traefik,
+   self-signed cert). PowerSync's web sync worker needs `SharedArrayBuffer`, which
+   requires **cross-origin isolation** (`COOP: same-origin` + `COEP: require-corp`,
+   set in [`client/nginx.conf`](../../client/nginx.conf)) — and those headers are
+   only honored on a **trustworthy origin**. Over plain HTTP the worker never
+   starts and no write-back reaches `/v1/sync/batch`; over HTTPS `crossOriginIsolated`
+   is `true` and the full sync path runs.
+2. **OIDC discovery and issuer are split.** A browser token's `iss` is the external
+   HTTPS gateway URL (`https://keycloak.beekeepingit.local:8443/realms/beekeepingit`,
+   pinned by Keycloak `KC_HOSTNAME`), which services **cannot reach over HTTPS
+   in-cluster**. So services fetch the OIDC discovery document from the **internal
+   HTTP** Keycloak Service (`OIDC_DISCOVERY_URL`) while still validating tokens
+   against the external issuer (`OIDC_ISSUER_URL`), bridged by go-oidc's
+   `InsecureIssuerURLContext` ([`authn.NewMiddleware`](../../services/servicetemplate/authn/authn.go)).
+   Keycloak's `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` keeps the discovered `jwks_uri`
+   internal-HTTP (reachable) while `issuer`/`authorization_endpoint` stay the external
+   HTTPS URL. This replaces the earlier in-cluster issuer-alias (CoreDNS rewrite +
+   `keycloak-oidc` Service) approach, which is removed.

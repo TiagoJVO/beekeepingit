@@ -5,8 +5,12 @@ global:
 
 services:
   oidc:
-    # The k3d-local aligned issuer (#23): the same host:port resolves both from
-    # the browser (k3d maps host :8080 → Traefik) and in-cluster (CoreDNS +
-    # the keycloak-oidc alias Service), and Keycloak's KC_HOSTNAME pins tokens
-    # to it — so a browser-issued token's `iss` matches what services discover.
-    issuerUrl: http://keycloak.beekeepingit.local:8080/realms/beekeepingit
+    # Split discovery from issuer (#23). A browser token's `iss` is the external
+    # HTTPS gateway URL (Keycloak's KC_HOSTNAME); services must validate against
+    # that exact string. But services can't reach that URL over HTTPS in-cluster,
+    # so they fetch the discovery document from the internal HTTP Keycloak Service
+    # and trust `issuerUrl` as the issuer (go-oidc InsecureIssuerURLContext).
+    # Keycloak's KC_HOSTNAME_BACKCHANNEL_DYNAMIC keeps the discovered jwks_uri
+    # internal-HTTP (reachable) while issuer stays the external HTTPS URL.
+    issuerUrl: https://keycloak.beekeepingit.local:8443/realms/beekeepingit
+    discoveryUrl: http://keycloak-keycloakx-http/realms/beekeepingit

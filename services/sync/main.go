@@ -73,7 +73,11 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("build coordinator: %w", err)
 	}
 
-	authnMW, err := authn.NewMiddleware(ctx, authn.Config{IssuerURL: env.oidcIssuerURL, Audience: env.oidcAudience})
+	authnMW, err := authn.NewMiddleware(ctx, authn.Config{
+		IssuerURL:    env.oidcIssuerURL,
+		Audience:     env.oidcAudience,
+		DiscoveryURL: env.oidcDiscoveryURL,
+	})
 	if err != nil {
 		return fmt.Errorf("build authn middleware: %w", err)
 	}
@@ -109,6 +113,7 @@ type env struct {
 	otelEndpoint     string
 	oidcIssuerURL    string
 	oidcAudience     string
+	oidcDiscoveryURL string
 	identityURL      string
 	organizationsURL string
 	apiariesURL      string
@@ -141,6 +146,7 @@ func loadEnv() (env, error) {
 		otelEndpoint:     def("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
 		oidcIssuerURL:    req("OIDC_ISSUER_URL"),
 		oidcAudience:     req("OIDC_AUDIENCE"),
+		oidcDiscoveryURL: os.Getenv("OIDC_DISCOVERY_URL"),
 		identityURL:      req("INTERNAL_IDENTITY_URL"),
 		organizationsURL: req("INTERNAL_ORGANIZATIONS_URL"),
 		apiariesURL:      req("INTERNAL_APIARIES_URL"),

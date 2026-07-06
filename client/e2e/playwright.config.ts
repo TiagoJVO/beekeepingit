@@ -30,13 +30,12 @@ export default defineConfig({
     launchOptions: {
       args: [
         `--host-resolver-rules=${hostMap}`,
+        // The dev gateway serves the PWA over HTTPS with a self-signed cert;
+        // accept it. HTTPS makes the origin trustworthy, so the PWA's COOP/COEP
+        // headers are honored → cross-origin isolation → PowerSync's web sync
+        // worker (which needs SharedArrayBuffer) starts. (Do NOT disable site
+        // isolation — cross-origin isolation depends on it.)
         "--ignore-certificate-errors",
-        // Treat the plain-HTTP dev origin as a secure context so COOP/COEP are
-        // honored → cross-origin isolation → PowerSync's web sync worker (which
-        // needs SharedArrayBuffer) starts. Production serves over HTTPS, where
-        // this is unnecessary.
-        `--unsafely-treat-insecure-origin-as-secure=${process.env.E2E_BASE_URL ?? baseURL}`,
-        "--disable-site-isolation-trials",
       ],
     },
   },

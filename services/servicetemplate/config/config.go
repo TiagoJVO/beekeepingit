@@ -17,13 +17,14 @@ import (
 // Config is the environment-driven configuration every service built on the
 // template needs.
 type Config struct {
-	ServiceName   string
-	HTTPAddr      string
-	LogLevel      slog.Level
-	OTelEndpoint  string
-	OIDCIssuerURL string
-	OIDCAudience  string
-	DB            dbaccess.Config
+	ServiceName      string
+	HTTPAddr         string
+	LogLevel         slog.Level
+	OTelEndpoint     string
+	OIDCIssuerURL    string
+	OIDCAudience     string
+	OIDCDiscoveryURL string
+	DB               dbaccess.Config
 }
 
 // Load reads Config from the process environment.
@@ -38,11 +39,12 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		ServiceName:   req("SERVICE_NAME"),
-		HTTPAddr:      envDefault("HTTP_ADDR", ":8080"),
-		OTelEndpoint:  envDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
-		OIDCIssuerURL: req("OIDC_ISSUER_URL"),
-		OIDCAudience:  req("OIDC_AUDIENCE"),
+		ServiceName:      req("SERVICE_NAME"),
+		HTTPAddr:         envDefault("HTTP_ADDR", ":8080"),
+		OTelEndpoint:     envDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
+		OIDCIssuerURL:    req("OIDC_ISSUER_URL"),
+		OIDCAudience:     req("OIDC_AUDIENCE"),
+		OIDCDiscoveryURL: os.Getenv("OIDC_DISCOVERY_URL"),
 		DB: dbaccess.Config{
 			Host:       req("DB_HOST"),
 			Port:       envDefault("DB_PORT", "5432"),
