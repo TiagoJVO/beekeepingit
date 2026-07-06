@@ -49,5 +49,6 @@ failure returns `502` and heals on PowerSync's idempotent forward-retry.
 ```sh
 cd services/sync
 go build ./...
-go test ./...   # pure unit tests (token minting/JWKS + coordinator orchestration) — no Docker needed
+go test ./...   # unit tests (token minting/JWKS + coordinator orchestration) + an OpenAPI
+                # contract test against the real HTTP surface (main_test.go) — no Docker needed
 ```

@@ -51,5 +51,7 @@ skeleton, so they have no client-facing spec yet beyond the `organizations` skel
 - **Contract tests at service boundaries** (#153) run as part of the owning service's own
   integration tests, via `services/servicetemplate/contracttest` — it validates a real HTTP
   response against the service's spec ($ref/allOf-aware). See
-  `services/apiaries/main_test.go`'s `TestApiariesSlice_ResponsesConformToOpenAPIContract` for
-  the pattern; extend it to other services as each grows a client-facing surface.
+  `services/apiaries/main_test.go`'s `TestApiariesSlice_ResponsesConformToOpenAPIContract` and
+  `services/sync/main_test.go`'s `TestSyncSlice_ResponsesConformToOpenAPIContract`; extend the
+  same pattern to `organizations`/`identity` once they grow a real client-facing surface (today
+  they only expose internal resolve endpoints — nothing to validate against a public spec yet).
