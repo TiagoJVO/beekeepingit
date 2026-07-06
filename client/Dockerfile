@@ -5,7 +5,7 @@
 #
 #   flutter build web --dart-define=GATEWAY_BASE_URL=...   # + PowerSync web assets (see README)
 #   docker build -t <image> client
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 # Patch base-image OS packages (openssl et al.) to the latest Alpine security
 # releases so the image clears the CI Trivy HIGH/CRITICAL gate (#88).
 RUN apk --no-cache upgrade
