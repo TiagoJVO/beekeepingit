@@ -21,6 +21,8 @@ appVersion: "0.1.0"
 # MinIO, so it can't live in this umbrella without a dependency cycle (ADR-0013).
 # Each subchart's values live under a top-level key matching its name, and it
 # reads shared config via `.Values.global` (see values.yaml, README.md).
+# `powersync` (#22, D-6/ADR-0005) is hand-rolled too — PowerSync ships as a
+# bare Docker image, not a Helm chart of its own.
 dependencies:
   - name: postgres
     version: "0.1.0"
@@ -38,3 +40,7 @@ dependencies:
     version: "0.1.0"
     repository: "file://charts/gateway"
     condition: gateway.enabled
+  - name: powersync
+    version: "0.1.0"
+    repository: "file://charts/powersync"
+    condition: powersync.enabled

@@ -1,0 +1,33 @@
+{{/*
+PowerSync's own config format (not a Helm values schema) — `!env VAR` is
+PowerSync's YAML tag for substituting an env var at container startup
+(docs/spikes/sp-1-powersync-vs-electricsql.md §4, the SP-1 spike's proven
+config). storage.type=postgresql (not MongoDB, PowerSync's historical
+default) to avoid adding a second datastore technology — matches the spike.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "powersync.fullname" . }}-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: powersync
+data:
+  service.yaml: |
+    replication:
+      connections: [{ type: postgresql, uri: !env PS_DATA_SOURCE_URI, sslmode: disable }]
+    storage: { type: postgresql, uri: !env PS_STORAGE_SOURCE_URI, sslmode: disable }
+    port: !env PS_PORT
+    sync_config: { path: /config/sync-config.yaml }
+    client_auth:
+      jwks_uri: !env PS_JWKS_URL
+      allow_local_jwks: true # required for an internal http:// JWKS URL — local-dev stopgap, see values.yaml
+      audience:
+        {{- range .Values.auth.audience }}
+        - {{ . | quote }}
+        {{- end }}
+  sync-config.yaml: |
+    {{- .Values.syncConfig | toYaml | nindent 4 }}
+{{- end }}
