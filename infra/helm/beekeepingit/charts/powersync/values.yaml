@@ -26,21 +26,19 @@ auth:
 # claim (`request.jwt()`), so tenancy layer 3 (ADR-0002) is exercised even with
 # a single seeded org.
 #
-# NOTE: PowerSync validates these rules against the live schema at startup; the
-# stream syntax is validated end-to-end when the slice is deployed (#23 obs/e2e
-# ACs), not by `helm lint`. See FOLLOWUPS.md.
+# Uses classic `bucket_definitions` (the documented org-scoping pattern):
+# `request.jwt()` is only valid there, NOT in edition-3 streams (validated live
+# — the engine rejects `request.jwt()` in a stream query with "Invalid schema in
+# function name", #23 deploy). The bucket is parameterized on the sync token's
+# `organization_id` claim; `deleted_at IS NULL` drops tombstoned rows so a
+# server-side delete propagates as a local delete (sync.md §4.5).
 syncConfig:
-  config:
-    edition: 3
-  streams:
-    apiaries:
-      auto_subscribe: true
-      queries:
-        - "SELECT * FROM apiaries.apiaries WHERE organization_id = request.jwt() ->> 'organization_id'"
-    organization:
-      auto_subscribe: true
-      queries:
-        - "SELECT * FROM organizations.organizations WHERE id = request.jwt() ->> 'organization_id'"
+  bucket_definitions:
+    by_organization:
+      parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
+      data:
+        - SELECT * FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        - SELECT * FROM organizations.organizations WHERE id = bucket.organization_id
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.

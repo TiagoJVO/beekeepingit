@@ -2,10 +2,10 @@
 -- organizations schema — the tenant root and its memberships (data-model.md
 -- §3). The shared auth middleware resolves a user to an active membership
 -- here (auth.md §5.1 steps 2–3) to get the request's organization_id + role.
--- Schema created IF NOT EXISTS so integration tests run on a bare Postgres;
--- in-cluster the postgres chart pre-creates it.
-CREATE SCHEMA IF NOT EXISTS organizations;
-
+--
+-- The `organizations` SCHEMA is provisioned by infra (postgres chart bootstrap),
+-- not here, so the least-privilege per-service role needs no CREATE-on-database
+-- right (D-6). Integration tests create it in setup before migrating.
 CREATE TABLE organizations.organizations (
     id         UUID PRIMARY KEY,
     name       TEXT NOT NULL,
@@ -35,4 +35,3 @@ CREATE INDEX idx_memberships_user_active
 -- +goose Down
 DROP TABLE IF EXISTS organizations.memberships;
 DROP TABLE IF EXISTS organizations.organizations;
-DROP SCHEMA IF EXISTS organizations;

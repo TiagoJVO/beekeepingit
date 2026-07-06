@@ -34,17 +34,23 @@ services:
   identity:
     component: services-identity
     port: 8080
-    db: { enabled: true, role: identity_svc, secret: identity-svc-credentials }
+    db: { enabled: true, role: identity_svc, secret: identity-svc-credentials, schema: identity }
     seedDevData: true
   organizations:
     component: services-organizations
     port: 8080
-    db: { enabled: true, role: organizations_svc, secret: organizations-svc-credentials }
+    db:
+      {
+        enabled: true,
+        role: organizations_svc,
+        secret: organizations-svc-credentials,
+        schema: organizations,
+      }
     seedDevData: true
   apiaries:
     component: services-apiaries
     port: 8080
-    db: { enabled: true, role: apiaries_svc, secret: apiaries-svc-credentials }
+    db: { enabled: true, role: apiaries_svc, secret: apiaries-svc-credentials, schema: apiaries }
     env:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080

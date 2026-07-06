@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/TiagoJVO/beekeepingit/services/identity/api"
@@ -62,6 +63,9 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 	dbCfg := dbaccess.Config{
 		Host: host, Port: port.Port(), User: dbUser, Password: dbPass, Database: dbName, SSLMode: "disable",
 	}
+	// Migrations no longer create the schema (that's infra's job in-cluster);
+	// provision it here as the postgres chart's bootstrap would.
+	createSchema(t, ctx, dbCfg, "identity")
 	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -128,5 +132,19 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 	unknown := idp.Mint(t, "00000000-0000-0000-0000-000000000000", testAudience)
 	if rec := get("/internal/users/by-sub/00000000-0000-0000-0000-000000000000", "Bearer "+unknown); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown sub status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// createSchema provisions the service's schema before migrating, standing in
+// for the postgres chart's bootstrap (migrations no longer create it).
+func createSchema(t *testing.T, ctx context.Context, cfg dbaccess.Config, name string) {
+	t.Helper()
+	conn, err := pgx.Connect(ctx, cfg.DSN())
+	if err != nil {
+		t.Fatalf("connect to create schema: %v", err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+name); err != nil {
+		t.Fatalf("create schema %s: %v", name, err)
 	}
 }

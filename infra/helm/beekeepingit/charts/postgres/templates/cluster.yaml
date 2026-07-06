@@ -78,6 +78,14 @@ spec:
         ensure: present
         login: true
         replication: true
+        # Member of each synced schema's owning service role, so it inherits
+        # SELECT on those tables for the initial replication snapshot — they're
+        # owned by the least-privilege per-service `*_svc` roles, which neither
+        # the app owner nor a non-superuser can GRANT on (#23 deploy).
+        inRoles:
+          {{- range .Values.syncedSchemas }}
+          - {{ . }}_svc
+          {{- end }}
         passwordSecret:
           name: powersync-credentials
 {{- end }}

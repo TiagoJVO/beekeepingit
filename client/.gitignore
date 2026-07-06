@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# PowerSync web assets — downloaded by `dart run powersync:setup_web`
+# (regenerated at build time, not committed; #23).
+/web/sqlite3.wasm
+/web/powersync_db.worker.js
+/web/powersync_sync.worker.js

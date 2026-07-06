@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/TiagoJVO/beekeepingit/services/organizations/api"
@@ -62,6 +63,8 @@ func TestOrganizationsService_ResolveActiveMembership(t *testing.T) {
 	dbCfg := dbaccess.Config{
 		Host: host, Port: port.Port(), User: dbUser, Password: dbPass, Database: dbName, SSLMode: "disable",
 	}
+	// Migrations no longer create the schema (infra's job in-cluster).
+	createSchema(t, ctx, dbCfg, "organizations")
 	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -134,5 +137,19 @@ func TestOrganizationsService_ResolveActiveMembership(t *testing.T) {
 	// Missing user_id → 422.
 	if rec := get("/internal/memberships/active", token); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("missing user_id status = %d, want %d", rec.Code, http.StatusUnprocessableEntity)
+	}
+}
+
+// createSchema provisions the service's schema before migrating, standing in
+// for the postgres chart's bootstrap (migrations no longer create it).
+func createSchema(t *testing.T, ctx context.Context, cfg dbaccess.Config, name string) {
+	t.Helper()
+	conn, err := pgx.Connect(ctx, cfg.DSN())
+	if err != nil {
+		t.Fatalf("connect to create schema: %v", err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+name); err != nil {
+		t.Fatalf("create schema %s: %v", name, err)
 	}
 }

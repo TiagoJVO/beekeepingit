@@ -44,12 +44,13 @@ func Load() (Config, error) {
 		OIDCIssuerURL: req("OIDC_ISSUER_URL"),
 		OIDCAudience:  req("OIDC_AUDIENCE"),
 		DB: dbaccess.Config{
-			Host:     req("DB_HOST"),
-			Port:     envDefault("DB_PORT", "5432"),
-			User:     req("DB_USER"),
-			Password: os.Getenv("DB_PASSWORD"),
-			Database: req("DB_NAME"),
-			SSLMode:  envDefault("DB_SSLMODE", "require"),
+			Host:       req("DB_HOST"),
+			Port:       envDefault("DB_PORT", "5432"),
+			User:       req("DB_USER"),
+			Password:   os.Getenv("DB_PASSWORD"),
+			Database:   req("DB_NAME"),
+			SSLMode:    envDefault("DB_SSLMODE", "require"),
+			SearchPath: os.Getenv("DB_SEARCH_PATH"),
 		},
 	}
 

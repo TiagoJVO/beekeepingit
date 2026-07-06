@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pwa-static",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "--yes",
+        "http-server",
+        "client/build/web",
+        "-p",
+        "8087",
+        "-a",
+        "127.0.0.1",
+        "-c-1"
+      ],
+      "port": 8087
+    }
+  ]
+}

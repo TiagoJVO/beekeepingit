@@ -9,31 +9,32 @@
 
 ## Before merging the walking-skeleton slice (#23)
 
-These are **deploy-time validation** items — the code/config/charts build, lint, render and
-unit/integration-test green, but the following can only be confirmed against the live k3d
-cluster (out of scope for the offline dev session; validate during the deploy/e2e/observability
-ACs and adjust):
+The slice was **deployed to a live k3d cluster** during development: the whole backend stack
+(postgres, keycloak, minio, identity, organizations, apiaries, sync, powersync, pwa) comes up
+1/1, services are DB-connected (`/readyz` 200), `sync` serves its JWKS, and **PowerSync
+replicates the synced tables** (snapshot done, checkpoints). Several deploy-time bugs found
+there are **fixed in this branch** (PowerSync sync-rules → `bucket_definitions`; DB
+`search_path` + schema provisioned-by-infra, not by migrations; the `powersync` role made a
+member of the `*_svc` roles for snapshot SELECT). What remains:
 
-- **PowerSync Sync Rules** in `charts/powersync/values.yaml` (`request.jwt() ->>
-'organization_id'`, edition-3 streams) are validated by PowerSync **at startup against the
-  live schema**, not by `helm lint`. Confirm `powersync-service:1.23.2` accepts the stream
-  syntax + token-claim accessor; adjust if rejected.
-- **Keycloak issuer vs in-cluster reachability.** Services set `OIDC_ISSUER_URL` to the external
-  gateway issuer (matching the token `iss`); in-cluster they must resolve that hostname. Add
-  Keycloak `KC_HOSTNAME`/frontend-url config or `hostAliases` (→ the Traefik ClusterIP) so
-  `go-oidc` discovery + issuer check pass. Classic Keycloak split-horizon wiring.
-- **Postgres Service name + credential secret keys.** `charts/services/values.yaml`'s
-  `db.host: beekeepingit-postgres-rw` and the `*-svc-credentials` `username`/`password` keys are
-  the expected CNPG shapes — confirm against the live `Cluster` and adjust if they differ.
+- **Full browser auth — OIDC issuer split-horizon.** Services validate tokens against
+  `OIDC_ISSUER_URL`, but in k3d the external host+port (`keycloak.beekeepingit.local:8443`)
+  isn't reachable in-cluster (Traefik is on 443, not 8443). The live deploy worked around it by
+  pointing services at the internal Keycloak Service (`--set services.oidc.issuerUrl=...`) — but
+  then a browser-obtained token's `iss` (external) won't match. To make the PWA→services auth
+  path work end-to-end, align on one issuer: expose the Keycloak Service on the k3d-mapped port
+  (8080), set Keycloak's frontend URL to `http://keycloak.beekeepingit.local:8080`, add
+  `hostAliases` on the service pods, and point both `OIDC_ISSUER_URL` and the PWA there; then
+  drop the dev override.
+- **Browser → gateway reachability for the Playwright e2e.** The headless browser must resolve
+  `keycloak.beekeepingit.local` → 127.0.0.1 (hosts file, or Chromium `--host-resolver-rules`)
+  and trust the self-signed cert. Wire this into the e2e run/CI.
 - **Gateway `/sync-stream` → PowerSync** is a naive prefix route; PowerSync appends its own
-  paths, so it likely needs a Traefik `StripPrefix` middleware or a dedicated host. Validate the
-  PWA↔PowerSync connection and add the middleware/host if needed.
-- **PowerSync web assets.** `flutter build web` does not bundle the wasm SQLite + PowerSync
-  workers; add the PowerSync web-asset copy step to the client build/Dockerfile so the PWA runs
-  in the browser.
+  paths, so confirm the PWA↔PowerSync connection and add a Traefik `StripPrefix`/dedicated host
+  if needed.
 - **e2e in CI.** `client/e2e` (Playwright) needs the full slice deployed; wire a CI job that
-  stands up the cluster (or targets a deployed env) and runs it. Until then it's a manual/local
-  gate; the Go integration tests cover the server-side apply/coordinator semantics in CI now.
+  stands up the cluster (or targets a deployed env). The Go integration tests cover the
+  server-side apply/coordinator semantics in CI now.
 - **`powersync` publication scope change.** The postgres chart now publishes `FOR TABLES IN
 SCHEMA apiaries, organizations` (was `FOR ALL TABLES`) per walking-skeleton.md §5.3. If the
   infra owner prefers the broader publication, this is a one-line revert — flag in review.

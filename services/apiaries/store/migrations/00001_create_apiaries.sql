@@ -4,8 +4,10 @@
 -- UUIDv7 PK, organization_id on every row, created_at/updated_at, deleted_at
 -- tombstone. `updated_at` is the device wall-clock LWW comparator (§4.3);
 -- `recorded_at` is the server receive time.
-CREATE SCHEMA IF NOT EXISTS apiaries;
-
+--
+-- The `apiaries` SCHEMA is provisioned by infra (postgres chart bootstrap), not
+-- here, so the least-privilege per-service role needs no CREATE-on-database
+-- right (D-6). Integration tests create it in setup before migrating.
 CREATE TABLE apiaries.apiaries (
     id              UUID PRIMARY KEY,
     organization_id UUID NOT NULL,
@@ -49,4 +51,3 @@ CREATE INDEX idx_conflict_org_entity
 -- +goose Down
 DROP TABLE IF EXISTS apiaries.sync_conflict_log;
 DROP TABLE IF EXISTS apiaries.apiaries;
-DROP SCHEMA IF EXISTS apiaries;
