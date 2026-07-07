@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -99,8 +100,12 @@ func NewHTTPUserResolver(identityBaseURL string, client *http.Client) *HTTPUserR
 }
 
 func (h *HTTPUserResolver) ResolveUserID(ctx context.Context, bearer, sub string) (string, error) {
-	url := h.IdentityBaseURL + "/internal/users/by-sub/" + sub
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	// url.PathEscape (not raw concatenation) matches authn.NewOrgResolver's
+	// own resolveUser step — both correctness (a sub could contain
+	// URL-meaningful characters) and what satisfies gosec's G704 (SSRF via
+	// taint analysis) check on the request URL.
+	reqURL := h.IdentityBaseURL + "/internal/users/by-sub/" + url.PathEscape(sub)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return "", err
 	}
