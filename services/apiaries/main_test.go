@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,16 +28,36 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/shared/devseed"
 )
 
+// testOrgHeader lets a test request stand in as a caller resolved to a
+// different org/user/role than the devseed default — the only way these
+// in-process tests can exercise TestApiariesSlice_CrossOrg* (#28 AC:
+// "automated tests including cross-organization access attempts") without a
+// live identity/organizations pair to resolve against. It's a test-only
+// escape hatch on the fake injectClaims middleware, never read by
+// production code (authn.NewOrgResolver derives Claims from the verified
+// token + membership, never a header).
+const testOrgHeader = "X-Test-Org-Claims"
+
 // injectClaims stands in for the authn + org-resolver chain so these tests
-// exercise the read + sync-apply logic directly with a known org/user.
+// exercise the read + sync-apply logic directly with a known org/user. By
+// default it uses the devseed principal; a request carrying testOrgHeader
+// ("sub|userID|orgID|role") overrides it, so a single fixture/server can
+// serve two distinct callers in the same test (cross-org assertions).
 func injectClaims(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := authn.ContextWithClaims(r.Context(), authn.Claims{
+		claims := authn.Claims{
 			Sub:            devseed.KeycloakSub,
 			UserID:         devseed.UserID,
 			OrganizationID: devseed.OrganizationID,
 			Role:           devseed.MembershipRole,
-		})
+		}
+		if override := r.Header.Get(testOrgHeader); override != "" {
+			parts := strings.SplitN(override, "|", 4)
+			if len(parts) == 4 {
+				claims = authn.Claims{Sub: parts[0], UserID: parts[1], OrganizationID: parts[2], Role: parts[3]}
+			}
+		}
+		ctx := authn.ContextWithClaims(r.Context(), claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -104,6 +125,15 @@ func newApiariesFixture(t *testing.T) *apiariesFixture {
 
 func (f *apiariesFixture) do(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
+	return f.doAs(t, "", method, path, body)
+}
+
+// doAs is like do, but callerHeader (built by callerClaims) stands the
+// request in as a different resolved caller — the escape hatch
+// injectClaims reads to let a single fixture serve two distinct
+// orgs/users/roles in one test (cross-org assertions, #28 AC).
+func (f *apiariesFixture) doAs(t *testing.T, callerHeader, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -114,13 +144,27 @@ func (f *apiariesFixture) do(t *testing.T, method, path string, body any) *httpt
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, path, r)
+	if callerHeader != "" {
+		req.Header.Set(testOrgHeader, callerHeader)
+	}
 	f.srv.Router().ServeHTTP(rec, req)
 	return rec
 }
 
+// callerClaims builds the testOrgHeader value for a synthetic caller
+// distinct from the devseed default (a second org/user for cross-org tests).
+func callerClaims(sub, userID, orgID, role string) string {
+	return strings.Join([]string{sub, userID, orgID, role}, "|")
+}
+
 func (f *apiariesFixture) apply(t *testing.T, ops ...api.Op) api.ApplyResponse {
 	t.Helper()
-	rec := f.do(t, http.MethodPost, "/internal/sync/apply", api.Batch{Ops: ops})
+	return f.applyAs(t, "", ops...)
+}
+
+func (f *apiariesFixture) applyAs(t *testing.T, callerHeader string, ops ...api.Op) api.ApplyResponse {
+	t.Helper()
+	rec := f.doAs(t, callerHeader, http.MethodPost, "/internal/sync/apply", api.Batch{Ops: ops})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
@@ -213,6 +257,121 @@ func TestApiariesSlice_ValidateRejectsBadOps(t *testing.T) {
 	rec := f.do(t, http.MethodPost, "/internal/sync/validate", api.Batch{Ops: []api.Op{bad}})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("validate status = %d, want 422, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// otherOrgCaller is a second, distinct principal (org B) used by the
+// cross-org tests below — a different sub/user/org from devseed's (org A),
+// so the two calls in each test are genuinely two different tenants, not
+// just two requests with the same claims.
+func otherOrgCaller() string {
+	return callerClaims(
+		"22222222-2222-4222-8222-222222222222",
+		"a0000000-0000-7000-8000-000000000002",
+		"b0000000-0000-7000-8000-000000000002",
+		"admin",
+	)
+}
+
+// TestApiariesSlice_CrossOrg_GetReturns404NotFound is the #28 AC's
+// "requests for resources outside the caller's organization are denied
+// (403/404)" case for apiaries: org B must not be able to read org A's
+// apiary by id, and the response must be 404 (ADR-0002 scope-hiding), not a
+// distinguishable "exists but forbidden" signal.
+func TestApiariesSlice_CrossOrg_GetReturns404NotFound(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	// devseed's org (org A) creates an apiary.
+	if got := f.apply(t, putOp(id, "Org A Apiary", 5, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+
+	// Org B (a different caller entirely) tries to read it directly by id.
+	other := otherOrgCaller()
+	rec := f.doAs(t, other, http.MethodGet, "/v1/apiaries/"+id, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-org get status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestApiariesSlice_CrossOrg_ListNeverIncludesOtherOrgsRows guards the list
+// endpoint the same way: org B's list must never contain org A's rows, even
+// though both orgs have data.
+func TestApiariesSlice_CrossOrg_ListNeverIncludesOtherOrgsRows(t *testing.T) {
+	f := newApiariesFixture(t)
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	other := otherOrgCaller()
+
+	idA := uuid.NewString()
+	if got := f.apply(t, putOp(idA, "Org A Apiary", 1, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create org A apiary result = %q, want applied", got.Results[0].Result)
+	}
+	idB := uuid.NewString()
+	if got := f.applyAs(t, other, putOp(idB, "Org B Apiary", 2, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create org B apiary result = %q, want applied", got.Results[0].Result)
+	}
+
+	// Org A's list contains only its own apiary.
+	listA := f.listApiaries(t)
+	if len(listA.Data) != 1 || listA.Data[0].ID != idA {
+		t.Fatalf("org A list = %+v, want exactly [%s]", listA.Data, idA)
+	}
+
+	// Org B's list contains only its own apiary — never org A's.
+	rec := f.doAs(t, other, http.MethodGet, "/v1/apiaries", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("org B list status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var listB listView
+	if err := json.Unmarshal(rec.Body.Bytes(), &listB); err != nil {
+		t.Fatalf("decode org B list: %v", err)
+	}
+	if len(listB.Data) != 1 || listB.Data[0].ID != idB {
+		t.Fatalf("org B list = %+v, want exactly [%s]", listB.Data, idB)
+	}
+}
+
+// TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow is the write
+// half of the same guarantee: org B's sync-apply batch addressing org A's
+// apiary id must not mutate — or delete — it. GetApiaryForUpdate is
+// org-scoped (sync.go's applyOp), so from org B's perspective org A's row
+// simply doesn't exist; a delete op against it is the safe, PK-collision-free
+// way to prove that (applyOp's "missing row + delete ⇒ nothing to tombstone"
+// branch never touches the database). A put/patch op would instead attempt
+// an INSERT reusing org A's id as the (bare, non-org-scoped) primary key,
+// which collides at the DB level — a real but separate schema question
+// (whether apiaries.apiaries should be keyed by (organization_id, id)) that's
+// #30's tenancy-model territory, not this test's concern. Confirms FR-TEN-2
+// holds on the write path, not just reads.
+func TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow(t *testing.T) {
+	f := newApiariesFixture(t)
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	other := otherOrgCaller()
+
+	id := uuid.NewString()
+	if got := f.apply(t, putOp(id, "Org A Apiary", 5, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create org A apiary result = %q, want applied", got.Results[0].Result)
+	}
+
+	// Org B "deletes" org A's id — from org B's org-scoped view the row
+	// doesn't exist, so this must be a no-op against the database, not an
+	// actual delete of org A's apiary.
+	delOp := api.Op{Op: "delete", EntityType: "apiary", ID: id, UpdatedAt: t0.Add(time.Minute)}
+	if got := f.applyAs(t, other, delOp); got.Results[0].Result != "applied" {
+		t.Fatalf("org B delete-of-unknown-id result = %q, want applied (no-op)", got.Results[0].Result)
+	}
+
+	// Org A's own apiary is untouched and still live.
+	if a := f.getApiary(t, id); a.HiveCount != 5 {
+		t.Fatalf("org A apiary hive_count = %d, want 5 (untouched by org B's delete attempt)", a.HiveCount)
+	}
+
+	// Org B still can't see it either (it was never org B's to begin with).
+	recB := f.doAs(t, other, http.MethodGet, "/v1/apiaries/"+id, nil)
+	if recB.Code != http.StatusNotFound {
+		t.Fatalf("org B get status = %d, want 404, body = %s", recB.Code, recB.Body.String())
 	}
 }
 
