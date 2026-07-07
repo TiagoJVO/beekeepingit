@@ -12,3 +12,10 @@ LIMIT 1;
 SELECT id, name, address, created_by, created_at, updated_at
 FROM organizations.organizations
 WHERE id = $1;
+
+-- name: CreateMembership :one
+-- Inserts the org creator's active admin membership (D-3). Called in the same
+-- DB transaction as CreateOrganization (api/organizations.go).
+INSERT INTO organizations.memberships (id, organization_id, user_id, role, status)
+VALUES ($1, $2, $3, 'admin', 'active')
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at;

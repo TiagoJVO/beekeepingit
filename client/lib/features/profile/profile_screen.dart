@@ -63,10 +63,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ).showSnackBar(SnackBar(content: Text(l10n.profileSaveSuccess)));
       final complete = ref.read(profileCompleteProvider);
       if (complete) {
-        // Placeholder next onboarding step: organization creation/join
-        // (#26/#27) isn't built yet, so fall through to today's home. The
-        // org-membership teammate should redirect to org creation/join here
-        // instead once that exists.
+        // Next onboarding step: the router's own redirect (app_router.dart)
+        // sends a profile-complete, no-organization user to
+        // /organization/new (FR-ONB-2, #26) and everyone else to /apiaries,
+        // so a plain '/apiaries' navigation here always lands wherever the
+        // router's gates currently require.
         context.go('/apiaries');
       }
     } on ApiException catch (e) {

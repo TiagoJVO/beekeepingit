@@ -27,5 +27,13 @@
   "profileLocaleLabel": "Idioma preferido",
   "profileSaveButton": "Guardar perfil",
   "profileSaveSuccess": "Perfil guardado.",
-  "profileSaveError": "Não foi possível guardar o seu perfil: {error}"
+  "profileSaveError": "Não foi possível guardar o seu perfil: {error}",
+  "organizationTitle": "A sua organização",
+  "organizationOnboardingIntro": "Crie a sua organização para começar a gerir apiários.",
+  "organizationNameLabel": "Nome da organização",
+  "organizationNameRequired": "Introduza o nome da organização.",
+  "organizationAddressLabel": "Morada (opcional)",
+  "organizationSaveButton": "Criar organização",
+  "organizationSaveSuccess": "Organização criada.",
+  "organizationSaveError": "Não foi possível criar a sua organização: {error}"
 }

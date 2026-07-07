@@ -1,12 +1,12 @@
-// Package api holds the organizations service's HTTP surface. In the walking
-// skeleton that is a single internal, east-west endpoint: resolve a user to
-// its active membership (organization_id + role), called by the shared auth
-// middleware of other services (auth.md §5.1 steps 2–3, walking-skeleton.md
-// §5.2). It is never exposed through the gateway.
+// Package api holds the organizations service's HTTP surface: this file is
+// the internal, east-west endpoint other services' shared auth middleware
+// calls to resolve a user to its active membership (organization_id + role,
+// auth.md §5.1 steps 2–3, walking-skeleton.md §5.2) — never exposed through
+// the gateway. The client-facing organization routes (organizations.go) are
+// a separate concern; see that file's own package doc.
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -65,10 +65,4 @@ func getActiveMembership(q *sqlcgen.Queries) http.HandlerFunc {
 			Role:           m.Role,
 		})
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }

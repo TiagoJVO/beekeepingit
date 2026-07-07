@@ -265,6 +265,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not save your profile: {error}'**
   String profileSaveError(String error);
+
+  /// Organization creation screen app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Your organization'**
+  String get organizationTitle;
+
+  /// Intro text shown when the user has no organization yet
+  ///
+  /// In en, this message translates to:
+  /// **'Create your organization to start managing apiaries.'**
+  String get organizationOnboardingIntro;
+
+  /// Organization name field label
+  ///
+  /// In en, this message translates to:
+  /// **'Organization name'**
+  String get organizationNameLabel;
+
+  /// Validation message for an empty organization name
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an organization name.'**
+  String get organizationNameRequired;
+
+  /// Organization address field label
+  ///
+  /// In en, this message translates to:
+  /// **'Address (optional)'**
+  String get organizationAddressLabel;
+
+  /// Submit button on the organization creation form
+  ///
+  /// In en, this message translates to:
+  /// **'Create organization'**
+  String get organizationSaveButton;
+
+  /// Snackbar shown after successfully creating an organization
+  ///
+  /// In en, this message translates to:
+  /// **'Organization created.'**
+  String get organizationSaveSuccess;
+
+  /// Error shown after a failed organization save that isn't a field-level validation error
+  ///
+  /// In en, this message translates to:
+  /// **'Could not create your organization: {error}'**
+  String organizationSaveError(String error);
 }
 
 class _AppLocalizationsDelegate

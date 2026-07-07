@@ -62,3 +62,32 @@ func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (Organiza
 	)
 	return i, err
 }
+
+const createMembership = `-- name: CreateMembership :one
+INSERT INTO organizations.memberships (id, organization_id, user_id, role, status)
+VALUES ($1, $2, $3, 'admin', 'active')
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at
+`
+
+type CreateMembershipParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+// Inserts the org creator's active admin membership (D-3). Called in the same
+// DB transaction as CreateOrganization (api/organizations.go).
+func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, createMembership, arg.ID, arg.OrganizationID, arg.UserID)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

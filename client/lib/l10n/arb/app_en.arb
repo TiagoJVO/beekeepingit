@@ -126,5 +126,42 @@
         "type": "String"
       }
     }
+  },
+  "organizationTitle": "Your organization",
+  "@organizationTitle": {
+    "description": "Organization creation screen app bar title"
+  },
+  "organizationOnboardingIntro": "Create your organization to start managing apiaries.",
+  "@organizationOnboardingIntro": {
+    "description": "Intro text shown when the user has no organization yet"
+  },
+  "organizationNameLabel": "Organization name",
+  "@organizationNameLabel": {
+    "description": "Organization name field label"
+  },
+  "organizationNameRequired": "Enter an organization name.",
+  "@organizationNameRequired": {
+    "description": "Validation message for an empty organization name"
+  },
+  "organizationAddressLabel": "Address (optional)",
+  "@organizationAddressLabel": {
+    "description": "Organization address field label"
+  },
+  "organizationSaveButton": "Create organization",
+  "@organizationSaveButton": {
+    "description": "Submit button on the organization creation form"
+  },
+  "organizationSaveSuccess": "Organization created.",
+  "@organizationSaveSuccess": {
+    "description": "Snackbar shown after successfully creating an organization"
+  },
+  "organizationSaveError": "Could not create your organization: {error}",
+  "@organizationSaveError": {
+    "description": "Error shown after a failed organization save that isn't a field-level validation error",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   }
 }

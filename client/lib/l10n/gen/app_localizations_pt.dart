@@ -106,4 +106,31 @@ class AppLocalizationsPt extends AppLocalizations {
   String profileSaveError(String error) {
     return 'Não foi possível guardar o seu perfil: $error';
   }
+
+  @override
+  String get organizationTitle => 'A sua organização';
+
+  @override
+  String get organizationOnboardingIntro =>
+      'Crie a sua organização para começar a gerir apiários.';
+
+  @override
+  String get organizationNameLabel => 'Nome da organização';
+
+  @override
+  String get organizationNameRequired => 'Introduza o nome da organização.';
+
+  @override
+  String get organizationAddressLabel => 'Morada (opcional)';
+
+  @override
+  String get organizationSaveButton => 'Criar organização';
+
+  @override
+  String get organizationSaveSuccess => 'Organização criada.';
+
+  @override
+  String organizationSaveError(String error) {
+    return 'Não foi possível criar a sua organização: $error';
+  }
 }
