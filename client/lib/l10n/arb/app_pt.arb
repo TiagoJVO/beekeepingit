@@ -16,5 +16,16 @@
   "hiveCountLabel": "Número de colmeias",
   "hiveCountInvalid": "Introduza um número igual ou superior a 0.",
   "saveButton": "Guardar",
-  "deleteApiary": "Eliminar apiário"
+  "deleteApiary": "Eliminar apiário",
+  "profileTitle": "O seu perfil",
+  "profileOnboardingIntro": "Conte-nos um pouco sobre si para começar.",
+  "profileNameLabel": "Nome",
+  "profileNameRequired": "Introduza o seu nome.",
+  "profileEmailLabel": "Email",
+  "profileEmailRequired": "Introduza o seu email.",
+  "profileEmailInvalid": "Introduza um endereço de email válido.",
+  "profileLocaleLabel": "Idioma preferido",
+  "profileSaveButton": "Guardar perfil",
+  "profileSaveSuccess": "Perfil guardado.",
+  "profileSaveError": "Não foi possível guardar o seu perfil: {error}"
 }

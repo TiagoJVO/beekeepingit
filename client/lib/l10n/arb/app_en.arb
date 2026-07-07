@@ -77,5 +77,54 @@
   "deleteApiary": "Delete apiary",
   "@deleteApiary": {
     "description": "Delete an apiary from the edit form"
+  },
+  "profileTitle": "Your profile",
+  "@profileTitle": {
+    "description": "Profile screen app bar title"
+  },
+  "profileOnboardingIntro": "Tell us a bit about yourself to get started.",
+  "@profileOnboardingIntro": {
+    "description": "Intro text shown when the profile is not yet complete"
+  },
+  "profileNameLabel": "Name",
+  "@profileNameLabel": {
+    "description": "Profile name field label"
+  },
+  "profileNameRequired": "Enter your name.",
+  "@profileNameRequired": {
+    "description": "Validation message for an empty profile name"
+  },
+  "profileEmailLabel": "Email",
+  "@profileEmailLabel": {
+    "description": "Profile email field label"
+  },
+  "profileEmailRequired": "Enter your email.",
+  "@profileEmailRequired": {
+    "description": "Validation message for an empty profile email"
+  },
+  "profileEmailInvalid": "Enter a valid email address.",
+  "@profileEmailInvalid": {
+    "description": "Validation message for a malformed profile email"
+  },
+  "profileLocaleLabel": "Preferred language",
+  "@profileLocaleLabel": {
+    "description": "Profile locale picker label"
+  },
+  "profileSaveButton": "Save profile",
+  "@profileSaveButton": {
+    "description": "Submit button on the profile form"
+  },
+  "profileSaveSuccess": "Profile saved.",
+  "@profileSaveSuccess": {
+    "description": "Snackbar shown after a successful profile save"
+  },
+  "profileSaveError": "Could not save your profile: {error}",
+  "@profileSaveError": {
+    "description": "Error shown after a failed profile save that isn't a field-level validation error",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   }
 }

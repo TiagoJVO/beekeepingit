@@ -70,4 +70,40 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteApiary => 'Eliminar apiário';
+
+  @override
+  String get profileTitle => 'O seu perfil';
+
+  @override
+  String get profileOnboardingIntro =>
+      'Conte-nos um pouco sobre si para começar.';
+
+  @override
+  String get profileNameLabel => 'Nome';
+
+  @override
+  String get profileNameRequired => 'Introduza o seu nome.';
+
+  @override
+  String get profileEmailLabel => 'Email';
+
+  @override
+  String get profileEmailRequired => 'Introduza o seu email.';
+
+  @override
+  String get profileEmailInvalid => 'Introduza um endereço de email válido.';
+
+  @override
+  String get profileLocaleLabel => 'Idioma preferido';
+
+  @override
+  String get profileSaveButton => 'Guardar perfil';
+
+  @override
+  String get profileSaveSuccess => 'Perfil guardado.';
+
+  @override
+  String profileSaveError(String error) {
+    return 'Não foi possível guardar o seu perfil: $error';
+  }
 }
