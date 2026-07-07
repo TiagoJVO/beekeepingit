@@ -335,10 +335,16 @@ func TestApiariesSlice_CrossOrg_ListNeverIncludesOtherOrgsRows(t *testing.T) {
 
 // TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow is the write
 // half of the same guarantee: org B's sync-apply batch addressing org A's
-// apiary id must not mutate it — it's invisible to org B, so the op is
-// treated as "no stored row" (an offline create under org B's own
-// organization_id), never an edit of org A's data. Confirms FR-TEN-2 holds
-// on the write path, not just reads.
+// apiary id must not mutate — or delete — it. GetApiaryForUpdate is
+// org-scoped (sync.go's applyOp), so from org B's perspective org A's row
+// simply doesn't exist; a delete op against it is the safe, PK-collision-free
+// way to prove that (applyOp's "missing row + delete ⇒ nothing to tombstone"
+// branch never touches the database). A put/patch op would instead attempt
+// an INSERT reusing org A's id as the (bare, non-org-scoped) primary key,
+// which collides at the DB level — a real but separate schema question
+// (whether apiaries.apiaries should be keyed by (organization_id, id)) that's
+// #30's tenancy-model territory, not this test's concern. Confirms FR-TEN-2
+// holds on the write path, not just reads.
 func TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow(t *testing.T) {
 	f := newApiariesFixture(t)
 	t0 := time.Now().UTC().Truncate(time.Millisecond)
@@ -349,29 +355,23 @@ func TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow(t *testing.T) 
 		t.Fatalf("create org A apiary result = %q, want applied", got.Results[0].Result)
 	}
 
-	// Org B "edits" the same id — from org B's perspective the row doesn't
-	// exist, so this creates a *new*, org-B-scoped row rather than touching
-	// org A's.
-	if got := f.applyAs(t, other, patchHive(id, 999, t0.Add(time.Minute))); got.Results[0].Result != "applied" {
-		t.Fatalf("org B apply result = %q, want applied", got.Results[0].Result)
+	// Org B "deletes" org A's id — from org B's org-scoped view the row
+	// doesn't exist, so this must be a no-op against the database, not an
+	// actual delete of org A's apiary.
+	delOp := api.Op{Op: "delete", EntityType: "apiary", ID: id, UpdatedAt: t0.Add(time.Minute)}
+	if got := f.applyAs(t, other, delOp); got.Results[0].Result != "applied" {
+		t.Fatalf("org B delete-of-unknown-id result = %q, want applied (no-op)", got.Results[0].Result)
 	}
 
-	// Org A's own copy is untouched.
+	// Org A's own apiary is untouched and still live.
 	if a := f.getApiary(t, id); a.HiveCount != 5 {
-		t.Fatalf("org A apiary hive_count = %d, want 5 (untouched by org B's apply)", a.HiveCount)
+		t.Fatalf("org A apiary hive_count = %d, want 5 (untouched by org B's delete attempt)", a.HiveCount)
 	}
 
-	// Org B now sees its own row at that id, scoped to org B.
+	// Org B still can't see it either (it was never org B's to begin with).
 	recB := f.doAs(t, other, http.MethodGet, "/v1/apiaries/"+id, nil)
-	if recB.Code != http.StatusOK {
-		t.Fatalf("org B get status = %d, want 200, body = %s", recB.Code, recB.Body.String())
-	}
-	var b apiaryView
-	if err := json.Unmarshal(recB.Body.Bytes(), &b); err != nil {
-		t.Fatalf("decode org B apiary: %v", err)
-	}
-	if b.HiveCount != 999 {
-		t.Fatalf("org B apiary hive_count = %d, want 999", b.HiveCount)
+	if recB.Code != http.StatusNotFound {
+		t.Fatalf("org B get status = %d, want 404, body = %s", recB.Code, recB.Body.String())
 	}
 }
 
