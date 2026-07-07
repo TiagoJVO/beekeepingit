@@ -512,6 +512,54 @@ admin-only routes and one accept-on-login step:
 - History recording (FR-HIS-1) for invite/accept/revoke is deferred, same as #26; tracked in
   #165.
 
+## 8.8 As built (#28)
+
+Roles & permissions + the shared org-scoped authorization middleware (NFR-ROL-1, FR-TEN) landed
+as a small addition on top of what #24–#27 already built, not a rebuild: §5.1's "role resolved per
+request" was already implemented by `authn.NewOrgResolver` (`sub → user → active membership →
+organization_id + role`, cached), and #27's `organizations/api/invitations.go` had already proved
+out the role/org-scope check pattern (`requireOrgAdmin`) for its own admin-only routes. #28's job
+was generalizing that pattern into a genuinely **shared** mechanism and closing the one real gap
+— **denial logging** (§5.2's "403 Forbidden (logged)" was previously unimplemented; nothing in the
+codebase logged an authz denial anywhere before this issue).
+
+- **`authn.RequireRole(...roles)`** ([`services/servicetemplate/authn/authz.go`](../../services/servicetemplate/authn/authz.go)) —
+  reusable role-gating middleware mounted after `NewOrgResolver`. Rejects a caller whose resolved
+  `Claims.Role` isn't in the allow-list with `403` (§5.3: "admin-only operations are rejected for
+  non-admins"); a request reaching it with no resolved role at all is a **wiring bug**, not a
+  legitimate caller, and fails closed as `500` rather than silently admitting anyone. Every denial
+  is logged via the request-scoped logger (`servicetemplate/logging.FromContext`), satisfying the
+  AC's "the denial is logged" for the role dimension.
+- **`authn.RequireOrgPath(orgIDParam, urlParam)`** (same file) — the generalized form of
+  `requireOrgAdmin`'s "does `{orgId}` match my own resolved org" assertion (§5.1 step 2), for any
+  future service exposing an org-management path parameter. Parses both sides as UUIDs before
+  comparing (not a raw string match), matching every existing `{orgId}` handler. A mismatch is
+  `404`, not `403` (ADR-0002 scope-hiding — the API never confirms another org's existence), and
+  is logged the same way `RequireRole` is. `organizations/api/invitations.go`'s own
+  `requireOrgAdmin` is left as-is (out of this issue's file ownership) — this is the mechanism new
+  and future services build on, not a forced refactor of already-shipped, working code.
+- **Denial logging also added to `NewOrgResolver` itself**
+  ([`resolver.go`](../../services/servicetemplate/authn/resolver.go)): the two existing 403 cases
+  (unknown user, no active membership) are now logged with the caller's verified `sub` and the
+  problem detail — closing §5.2's "403 Forbidden (logged)" gap for the org-resolution step, not
+  just the new role/path checks layered on top of it.
+- **`services/apiaries`** wires `RequireRole("admin", "user")` into its middleware chain
+  (`main.go`). Apiary CRUD is shared by both roles in v1 (§5.3 — there is no admin-only apiary
+  operation), so this isn't gating any behavior differently than before; it's the explicit,
+  auditable "the caller's role resolved to a known value" check the AC calls for, and it closes a
+  latent gap where a wiring regression leaving `Role` unresolved would otherwise pass through
+  unnoticed (the pre-existing `requireOrg` helper only ever checked `OrganizationID`).
+  Cross-organization access attempts against `apiaries` — a second org's caller reading another
+  org's apiary by id, listing apiaries, and attempting a sync-apply batch against another org's
+  apiary id — are covered by new tests in
+  [`services/apiaries/main_test.go`](../../services/apiaries/main_test.go)
+  (`TestApiariesSlice_CrossOrg_*`); `apiaries` had org-scoped queries already (from the M0 slice)
+  but no test had exercised the cross-org case before.
+- **What #28 deliberately does not do:** it does not touch tenancy enforcement's own scope —
+  `organization_id` on every owned row, the RLS decision, and tenancy-context propagation through
+  the data layer are #30 (§8's hand-off table), tracked separately and building on the same
+  `RequireRole`/`RequireOrgPath` mechanism where relevant.
+
 ## 9. Acceptance-criteria traceability (#109)
 
 - [x] **Keycloak realm + client + roles (`admin`/`user`)** documented (NFR-ROL) — §3

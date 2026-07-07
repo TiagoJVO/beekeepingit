@@ -2,8 +2,9 @@
 // record. It exposes the client-facing read surface (GET /v1/apiaries[/{id}])
 // and the internal sync validate/apply endpoints the write-back coordinator
 // calls (walking-skeleton.md §4.4/§5, sync.md §5.2). Both surfaces run behind
-// Keycloak authn + the org-resolver so every request is org-scoped. Online
-// REST write handlers are EPIC-02 (#31), not the skeleton. Wiring follows
+// Keycloak authn + the org-resolver + authn.RequireRole (#28) so every
+// request is org-scoped and carries a resolved membership role. Online REST
+// write handlers are EPIC-02 (#31), not the skeleton. Wiring follows
 // services/servicetemplate/example/main.go.
 package main
 
@@ -81,7 +82,14 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("build org resolver: %w", err)
 	}
-	scoped := func(h http.Handler) http.Handler { return authnMW(orgMW(h)) }
+	// Apiary CRUD is shared by both membership roles (auth.md §5.3 — no
+	// admin-only apiary operation exists in v1); RequireRole here still adds
+	// real enforcement, not a no-op: it's the explicit, auditable "role must
+	// have resolved to a known value" gate (#28 AC), closing the latent gap
+	// where a wiring regression leaving Role unresolved would otherwise pass
+	// through unnoticed (requireOrg only ever checked OrganizationID).
+	roleMW := authn.RequireRole("admin", "user")
+	scoped := func(h http.Handler) http.Handler { return authnMW(orgMW(roleMW(h))) }
 
 	checks := health.NewRegistry()
 	checks.Register("db", func(ctx context.Context) error { return pool.Ping(ctx) })

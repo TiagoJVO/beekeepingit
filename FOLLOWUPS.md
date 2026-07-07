@@ -7,24 +7,16 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## Before merging `feat/EPIC-01-org-invitations` (#27)
+## Before merging `feat/EPIC-01-rbac-middleware` (#28)
 
-- **No local Go/Flutter toolchain in this sandbox**: `go`, `sqlc`, and `flutter` are not
-  installed in the environment this branch was authored in, so
-  `services/organizations/store/sqlc/gen/{invitations,memberships}.sql.go`'s new/changed
-  queries (`CreateInvitation`, `ListInvitations`, `GetInvitation`, `RevokeInvitation`,
-  `GetPendingInvitationByEmail`, `AcceptInvitation`, `CreateMembershipWithRole`, `ListMembers`)
-  were **hand-written** to match `sqlc generate`'s output conventions rather than generated,
-  and `go test`/`go vet`/`flutter analyze`/`flutter test` could not be run locally. CI
-  (`build-publish.yml`'s per-component matrix, which covers both `services/organizations` and
-  `client`) is the first real compile/test of this code — **check that it's green before
-  merging**, and if `sqlc generate` output differs from the hand-written files, regenerate
-  them for real and commit the diff. Prune this entry once CI has passed on the PR.
-- **No in-app navigation entry point to `/organization/members`** (the new admin
-  members/invitations screen, `client/lib/features/members/`) — the route is wired in
-  `app_router.dart` and fully functional, but nothing links to it from the apiaries home
-  (`client/lib/features/apiaries/apiaries_list_screen.dart`'s app bar), which is outside this
-  branch's file ownership (another teammate's territory per the task assignment). Someone with
-  access to that file (or a quick follow-up) should add a "Manage members" action once #27
-  lands. Prune this entry once that navigation link exists, or promote it to a small GitHub
-  issue if it doesn't happen soon.
+- **No local Go toolchain in this sandbox**: `go`, `golangci-lint`, and Docker (for
+  testcontainers-go) are not installed in the environment this branch was authored in, so
+  `authn.RequireRole`/`authn.RequireOrgPath` ([`services/servicetemplate/authn/authz.go`](services/servicetemplate/authn/authz.go)),
+  their tests ([`authz_test.go`](services/servicetemplate/authn/authz_test.go)), the
+  `resolver.go` denial-logging change, and the new `apiaries` cross-org tests
+  ([`main_test.go`](services/apiaries/main_test.go)) were written carefully by hand against the
+  existing conventions but never compiled, vetted, or run locally. CI is the first real
+  compile/test/lint pass — `ci.yml`'s repo-wide `task ci` covers `services/servicetemplate`
+  (no Dockerfile ⇒ linted/tested once repo-wide, per `taskfiles/go.yml`), and
+  `build-publish.yml`'s per-component matrix covers `services/apiaries` (has a Dockerfile).
+  **Check both are green before merging.** Prune this entry once they've passed on the PR.

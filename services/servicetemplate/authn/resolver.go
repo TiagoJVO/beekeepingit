@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
@@ -81,6 +83,23 @@ func NewOrgResolver(cfg ResolveConfig) (func(http.Handler) http.Handler, error) 
 
 			enriched, prob := r.resolve(req.Context(), claims, req.Header.Get("Authorization"))
 			if prob != nil {
+				// AC (#28): a denial here — no known user, or no active org
+				// membership — is logged, not just returned to the caller.
+				// sub is a verified JWT claim (safe to log, not
+				// client-controlled free text); no token/bearer material is
+				// ever logged. A transient upstream failure (500, e.g.
+				// identity/organizations unreachable) is logged too, but
+				// distinguished from a genuine denial so on-call doesn't
+				// mistake infra flakiness for an authz event.
+				msg := "authz denied: org resolution failed"
+				if prob.Status >= 500 {
+					msg = "org resolution failed: upstream error"
+				}
+				logging.FromContext(req.Context()).WarnContext(req.Context(), msg,
+					slog.String("sub", claims.Sub),
+					slog.Int("status", prob.Status),
+					slog.String("detail", prob.Detail),
+				)
 				problem.Write(w, req, *prob)
 				return
 			}
