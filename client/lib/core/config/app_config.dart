@@ -51,6 +51,12 @@ abstract final class AppConfig {
   static String get oidcEndSessionUrl =>
       '$oidcIssuer/protocol/openid-connect/logout';
 
+  /// Keycloak's built-in Account Console — where password change is
+  /// delegated to (FR-AU-1, #29), per auth.md §7's "use Keycloak's built-ins,
+  /// no custom auth build" stance. Served under the same `/realms/<realm>`
+  /// path the gateway already proxies to Keycloak (no new route needed).
+  static String get oidcAccountConsoleUrl => '$oidcIssuer/account';
+
   /// Sync service client-facing endpoints (gateway route `/v1/sync/**`).
   static String get syncTokenUrl => '$gatewayBaseUrl/v1/sync/token';
   static String get syncBatchUrl => '$gatewayBaseUrl/v1/sync/batch';

@@ -6,6 +6,10 @@ import '../../core/auth/auth_controller.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
 
+// Note: a "Manage members" nav entry to /organization/members (#27) is still
+// missing from this app bar — tracked in FOLLOWUPS.md, not added here to keep
+// this change scoped to #29's own account-settings entry point.
+
 /// The home screen: the org's apiaries, read live from local SQLite (works
 /// offline). Tapping a row opens the edit form; the FAB creates a new one.
 class ApiariesListScreen extends ConsumerWidget {
@@ -20,6 +24,12 @@ class ApiariesListScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(l10n.apiariesTitle),
         actions: [
+          IconButton(
+            key: const Key('account-settings-button'),
+            tooltip: l10n.accountTitle,
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: () => context.go('/account'),
+          ),
           IconButton(
             key: const Key('logout-button'),
             tooltip: l10n.logout,

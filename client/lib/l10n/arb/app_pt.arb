@@ -48,5 +48,10 @@
   "invitationsSectionTitle": "Convites",
   "invitationsEmpty": "Ainda não há convites.",
   "membersRevokeButton": "Revogar convite",
-  "membersRevokeSuccess": "Convite revogado."
+  "membersRevokeSuccess": "Convite revogado.",
+  "accountTitle": "Definições da conta",
+  "accountProfileSectionTitle": "Perfil",
+  "accountSecuritySectionTitle": "Segurança",
+  "accountChangePasswordHint": "As alterações de palavra-passe são geridas pelo nosso fornecedor de login, numa nova aba.",
+  "accountChangePasswordButton": "Alterar palavra-passe"
 }

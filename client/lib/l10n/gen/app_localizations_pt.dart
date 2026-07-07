@@ -176,4 +176,20 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get membersRevokeSuccess => 'Convite revogado.';
+
+  @override
+  String get accountTitle => 'Definições da conta';
+
+  @override
+  String get accountProfileSectionTitle => 'Perfil';
+
+  @override
+  String get accountSecuritySectionTitle => 'Segurança';
+
+  @override
+  String get accountChangePasswordHint =>
+      'As alterações de palavra-passe são geridas pelo nosso fornecedor de login, numa nova aba.';
+
+  @override
+  String get accountChangePasswordButton => 'Alterar palavra-passe';
 }

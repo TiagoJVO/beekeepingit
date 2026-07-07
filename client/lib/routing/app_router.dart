@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/auth/auth_controller.dart';
+import '../features/account/account_screen.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
@@ -12,18 +13,17 @@ import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
 
-/// App routing for the walking-skeleton slice plus profile (FR-ONB-1, #25)
-/// and organization (FR-ONB-2, FR-TEN-2, NFR-ROL-1, #26) onboarding
-/// enforcement. Unauthenticated users are sent to /login; once logged in, an
-/// incomplete profile is routed to /profile; once the profile is complete but
-/// there's no organization yet, /organization/new; both gates block every
-/// other route (AC bullet 3) until satisfied. Once both are done, the
-/// apiaries list is home. /organization/members (#27, admin-only
-/// server-side) is reachable once onboarded — it isn't part of the
-/// onboarding gate itself, just a normal authenticated route; no in-app nav
-/// entry point links to it yet (that's `apiaries_list_screen.dart`'s app bar,
-/// outside this teammate's file ownership — flagged in FOLLOWUPS.md).
-/// Exposed as a provider so widget tests can override auth/profile/organization.
+/// App routing for the walking-skeleton slice plus profile (FR-ONB-1, #25),
+/// organization (FR-ONB-2, FR-TEN-2, NFR-ROL-1, #26) onboarding enforcement,
+/// and account settings (FR-AU-1, #29). Unauthenticated users are sent to
+/// /login; once logged in, an incomplete profile is routed to /profile; once
+/// the profile is complete but there's no organization yet, /organization/new;
+/// both gates block every other route (AC bullet 3) until satisfied. Once both
+/// are done, the apiaries list is home. /organization/members (#27,
+/// admin-only server-side) and /account (#29) are reachable once onboarded —
+/// neither is part of the onboarding gate itself, just normal authenticated
+/// routes. Exposed as a provider so widget tests can override
+/// auth/profile/organization.
 final routerProvider = Provider<GoRouter>((ref) {
   // Re-evaluate redirects whenever auth, the profile fetch, or the
   // organization fetch itself changes (listening to the raw providers, not
@@ -87,6 +87,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/organization/members',
         name: 'organizationMembers',
         builder: (context, state) => const MembersScreen(),
+      ),
+      GoRoute(
+        path: '/account',
+        name: 'account',
+        builder: (context, state) => const AccountScreen(),
       ),
       GoRoute(
         path: '/apiaries',

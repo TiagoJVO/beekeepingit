@@ -391,6 +391,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Invitation revoked.'**
   String get membersRevokeSuccess;
+
+  /// Account settings screen app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Account settings'**
+  String get accountTitle;
+
+  /// Heading above the profile fields on the account settings screen
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get accountProfileSectionTitle;
+
+  /// Heading above the change-password action on the account settings screen
+  ///
+  /// In en, this message translates to:
+  /// **'Security'**
+  String get accountSecuritySectionTitle;
+
+  /// Explanatory text above the change-password button
+  ///
+  /// In en, this message translates to:
+  /// **'Password changes are handled by our sign-in provider, in a new tab.'**
+  String get accountChangePasswordHint;
+
+  /// Button that opens Keycloak's Account Console to change password
+  ///
+  /// In en, this message translates to:
+  /// **'Change password'**
+  String get accountChangePasswordButton;
 }
 
 class _AppLocalizationsDelegate
