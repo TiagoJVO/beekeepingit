@@ -200,6 +200,29 @@ void main() {
     expect(find.text('Invitation revoked.'), findsOneWidget);
   });
 
+  testWidgets('surfaces an error when revoking fails', (tester) async {
+    final controller = _FakeMembersController(
+      MembersState(members: const [], invitations: [_invitation()]),
+      onRevoke: (invitationId) async {
+        throw const ApiException(
+          statusCode: 404,
+          code: 'resource.not_found',
+          detail: 'invitation is no longer pending',
+        );
+      },
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('revoke-invitation-inv-1')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('invitation is no longer pending'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('an accepted invitation has no revoke action', (tester) async {
     await tester.pumpWidget(
       _buildScreen(

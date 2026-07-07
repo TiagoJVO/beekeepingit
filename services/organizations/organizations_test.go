@@ -42,19 +42,11 @@ type stubIdentity struct {
 	users map[string]stubUser // sub -> user
 }
 
-// newStubIdentity takes sub -> user_id for tests that don't care about email
-// (most of organizations_test.go's coverage predates #27's accept-on-login
-// path); newStubIdentityWithEmails below is the #27 fixture.
-func newStubIdentity(t *testing.T, userIDs map[string]string) *stubIdentity {
-	t.Helper()
-	users := make(map[string]stubUser, len(userIDs))
-	for sub, userID := range userIDs {
-		users[sub] = stubUser{UserID: userID}
-	}
-	return newStubIdentityWithEmails(t, users)
-}
-
-func newStubIdentityWithEmails(t *testing.T, users map[string]stubUser) *stubIdentity {
+// newStubIdentity starts the stub identity server backing users (sub ->
+// user). Called from newOrgFixtureWithEmails; newOrgFixture (sub -> user_id
+// only, most of this file's coverage predates #27's accept-on-login path)
+// converts its simpler map and delegates to newOrgFixtureWithEmails.
+func newStubIdentity(t *testing.T, users map[string]stubUser) *stubIdentity {
 	t.Helper()
 	s := &stubIdentity{users: users}
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +141,7 @@ func newOrgFixtureWithEmails(t *testing.T, users map[string]stubUser) *orgFixtur
 	if err != nil {
 		t.Fatalf("build authn middleware: %v", err)
 	}
-	identity := newStubIdentityWithEmails(t, users)
+	identity := newStubIdentity(t, users)
 
 	cfg := config.Config{ServiceName: "organizations-test", HTTPAddr: ":0", LogLevel: slog.LevelInfo, DB: dbCfg}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
