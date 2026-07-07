@@ -482,13 +482,23 @@ admin-only routes and one accept-on-login step:
 - **Accept-on-login, not a separate "accept" endpoint.** FR-ONB-3's AC ("an invited user who
   logs in is joined to the inviting organization rather than prompted to create a new one") is
   implemented as a fallback inside `getMyOrganization` (§8.6): when the caller has no active
-  membership, `organizations` looks up a pending invitation matching the caller's own verified
-  profile **email** (from the same internal `identity` resolve call §8.6 already makes — no new
-  east-west hop, `email` was just added to what's read out of that response) and, if found,
-  accepts it and creates the membership at the invitation's role in one DB transaction — the
-  same atomicity pattern as #26's create-org-and-membership. No client-visible "accept"
-  operation exists; polling `GET /organizations/me` (which the org-completion gate already
-  does) is what surfaces it.
+  membership, `organizations` looks up a pending invitation matching the caller's own email
+  and, if found, accepts it and creates the membership at the invitation's role in one DB
+  transaction — the same atomicity pattern as #26's create-org-and-membership. No client-visible
+  "accept" operation exists; polling `GET /organizations/me` (which the org-completion gate
+  already does) is what surfaces it.
+- **The matched email is the JWT's verified `claims.Email` (+ `claims.EmailVerified` gate),
+  never `identity.users.email`.** An earlier version of this matched against the internal
+  `identity` resolve response's `email` field — but that field mirrors
+  `identity.users.email`, the mutable profile value `PATCH /v1/profile` (#25) lets any caller
+  set to an arbitrary string with no tie back to Keycloak. Matching on it would let a caller
+  self-edit their profile email to someone else's pending invitation and auto-join that org at
+  the invited role (including `admin`) without ever controlling that address — an
+  unauthorized-org-join / privilege-escalation path found in #170 review. Fixed to use the
+  token's verified `email` claim (§3.4) instead, gated on `email_verified` per §3.4's "gate
+  sensitive flows on it" guidance: an unverified email is treated identically to "no pending
+  invitation" (falls through to the ordinary 404), not a distinguishable error, so verification
+  state isn't observable through this endpoint.
 - **Single-org-per-user invariant, closed on both sides.** `POST /organizations` now checks
   for an existing active membership first and 409s rather than letting a direct API call give
   one user two active memberships (the client router gate already prevents the normal UI path

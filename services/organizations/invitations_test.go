@@ -10,9 +10,14 @@ import (
 )
 
 // TestInvitations_AdminInvitesAndMemberAccepts is the end-to-end #27 AC path:
-// the admin invites an email, and a different user whose profile has that
-// email is joined to the inviting organization the next time it polls
-// GET /organizations/me, rather than being prompted to create a new one.
+// the admin invites an email, and a different user whose *verified JWT
+// email claim* matches it is joined to the inviting organization the next
+// time it polls GET /organizations/me, rather than being prompted to create
+// a new one. Uses newOrgFixtureWithEmailClaims (not newOrgFixtureWithEmails)
+// specifically so the invitee's identity.users profile email
+// (stubUser.Email) can be asserted as irrelevant to acceptance — only the
+// token claim drives it; see TestGetMyOrganization_ProfileEmailCannotClaimInvitation
+// for the regression test that email deliberately differs in.
 func TestInvitations_AdminInvitesAndMemberAccepts(t *testing.T) {
 	adminSub := "a1111111-1111-4111-8111-111111111111"
 	adminUserID := "a0000000-0000-7000-8000-0000000000a1"
@@ -20,10 +25,15 @@ func TestInvitations_AdminInvitesAndMemberAccepts(t *testing.T) {
 	inviteeUserID := "a0000000-0000-7000-8000-0000000000b2"
 	inviteeEmail := "invitee@example.com"
 
-	f := newOrgFixtureWithEmails(t, map[string]stubUser{
-		adminSub:   {UserID: adminUserID},
-		inviteeSub: {UserID: inviteeUserID, Email: inviteeEmail},
-	})
+	f := newOrgFixtureWithEmailClaims(t,
+		map[string]stubUser{
+			adminSub:   {UserID: adminUserID},
+			inviteeSub: {UserID: inviteeUserID, Email: inviteeEmail},
+		},
+		map[string]tokenClaim{
+			inviteeSub: {Email: inviteeEmail, EmailVerified: true},
+		},
+	)
 	adminBearer := f.token(t, adminSub)
 	inviteeBearer := f.token(t, inviteeSub)
 
@@ -128,6 +138,110 @@ func TestInvitations_AdminInvitesAndMemberAccepts(t *testing.T) {
 	}
 }
 
+// TestGetMyOrganization_ProfileEmailCannotClaimInvitation is the regression
+// test for the vulnerability found in #170 review: an attacker cannot
+// self-edit their identity.users profile email (PATCH /v1/profile, #25) to
+// match someone else's pending invitation and auto-join that org. The
+// attacker's stub identity profile email is set to the victim's invited
+// address, but their JWT's verified email claim is their own, different,
+// verified address — acceptPendingInvitationByEmail must be driven by the
+// token claim, so this must come back 404 ("no org yet"), never 200 with
+// the target org.
+func TestGetMyOrganization_ProfileEmailCannotClaimInvitation(t *testing.T) {
+	adminSub := "22222222-3333-4222-8222-222222222233"
+	victimEmail := "victim@example.com" // the address the org actually invited
+	attackerSub := "33333333-4444-4333-8333-333333333344"
+	attackerUserID := "a0000000-0000-7000-8000-0000000000aa"
+	attackerOwnEmail := "attacker@example.com" // the attacker's own, verified address
+
+	f := newOrgFixtureWithEmailClaims(t,
+		map[string]stubUser{
+			adminSub: {UserID: "a0000000-0000-7000-8000-0000000000bb"},
+			// The attacker's identity.users profile email is set to the
+			// VICTIM's address (as if PATCH /v1/profile were abused) — this
+			// is exactly the field the pre-fix code matched invitations
+			// against.
+			attackerSub: {UserID: attackerUserID, Email: victimEmail},
+		},
+		map[string]tokenClaim{
+			// The attacker's JWT carries their OWN verified email, not the
+			// victim's — a real Keycloak token always does, since it's
+			// signed server-side and not derived from the mutable profile.
+			attackerSub: {Email: attackerOwnEmail, EmailVerified: true},
+		},
+	)
+	adminBearer := f.token(t, adminSub)
+	attackerBearer := f.token(t, attackerSub)
+
+	orgID := "b0000000-0000-7000-8000-000000000107"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{"id": orgID, "name": "Victim Org"}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	// The admin invites the victim's address (never the attacker's).
+	if rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{
+		"email": victimEmail, "role": "admin",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("invite status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// The attacker polls GET /organizations/me hoping their profile-email
+	// match auto-joins them (at the invited admin role, no less). It must
+	// not: their verified token email doesn't match the invitation.
+	rec := f.do(t, http.MethodGet, "/v1/organizations/me", attackerBearer, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("attacker GET /organizations/me status = %d, want 404 (no unauthorized join), body = %s", rec.Code, rec.Body.String())
+	}
+
+	// The invitation is still pending — untouched by the attempt.
+	recList := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/invitations", adminBearer, nil)
+	var list struct {
+		Data []api.InvitationResponse `json:"data"`
+	}
+	if err := json.Unmarshal(recList.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(list.Data) != 1 || list.Data[0].Status != "pending" {
+		t.Errorf("invitations after attack attempt = %+v, want the one invitation still pending", list.Data)
+	}
+}
+
+// TestGetMyOrganization_UnverifiedEmailCannotClaimInvitation covers the
+// auth.md §3.4 "gate sensitive flows on email_verified" requirement: even
+// when the token's email claim textually matches a pending invitation,
+// EmailVerified=false must not auto-accept it — treated identically to "no
+// pending invitation" (a plain 404, not a distinguishable error).
+func TestGetMyOrganization_UnverifiedEmailCannotClaimInvitation(t *testing.T) {
+	adminSub := "44444444-5555-4444-8444-444444444455"
+	inviteeSub := "55555555-6666-4555-8555-555555555566"
+	inviteeEmail := "unverified@example.com"
+
+	f := newOrgFixtureWithEmailClaims(t,
+		map[string]stubUser{
+			adminSub:   {UserID: "a0000000-0000-7000-8000-0000000000cc"},
+			inviteeSub: {UserID: "a0000000-0000-7000-8000-0000000000dd", Email: inviteeEmail},
+		},
+		map[string]tokenClaim{
+			// Email matches the invitation exactly, but is NOT verified.
+			inviteeSub: {Email: inviteeEmail, EmailVerified: false},
+		},
+	)
+	adminBearer := f.token(t, adminSub)
+	inviteeBearer := f.token(t, inviteeSub)
+
+	orgID := "b0000000-0000-7000-8000-000000000108"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{"id": orgID, "name": "Org"}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{"email": inviteeEmail}); rec.Code != http.StatusCreated {
+		t.Fatalf("invite status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodGet, "/v1/organizations/me", inviteeBearer, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unverified-email invitee GET /organizations/me status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestCreateInvitation_NonAdmin_Returns403 covers auth.md §5.3: member and
 // invitation management endpoints are admin-only, 403 for a plain user.
 func TestCreateInvitation_NonAdmin_Returns403(t *testing.T) {
@@ -135,10 +249,15 @@ func TestCreateInvitation_NonAdmin_Returns403(t *testing.T) {
 	memberSub := "d4444444-4444-4444-8444-444444444444"
 	memberEmail := "member@example.com"
 
-	f := newOrgFixtureWithEmails(t, map[string]stubUser{
-		adminSub:  {UserID: "a0000000-0000-7000-8000-0000000000c3"},
-		memberSub: {UserID: "a0000000-0000-7000-8000-0000000000d4", Email: memberEmail},
-	})
+	f := newOrgFixtureWithEmailClaims(t,
+		map[string]stubUser{
+			adminSub:  {UserID: "a0000000-0000-7000-8000-0000000000c3"},
+			memberSub: {UserID: "a0000000-0000-7000-8000-0000000000d4", Email: memberEmail},
+		},
+		map[string]tokenClaim{
+			memberSub: {Email: memberEmail, EmailVerified: true},
+		},
+	)
 	adminBearer := f.token(t, adminSub)
 	memberBearer := f.token(t, memberSub)
 

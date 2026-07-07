@@ -18,6 +18,11 @@
 // org-completion gate can distinguish from any other failure (mirrors
 // profile's GET-as-completeness-probe pattern, client-side) — after first
 // trying the accept-on-login fallback in getMyOrganization (#27, FR-ONB-3).
+// That fallback matches a pending invitation against the caller's verified
+// JWT claims.Email, never identity's resolve-response Email (the mutable
+// PATCH /v1/profile field, #25) — see ResolvedUser's and
+// getMyOrganization's doc comments for why that distinction is
+// security-critical, not stylistic.
 //
 // POST /organizations additionally rejects a caller who already has an
 // active membership (409) — the client router gate keeps the normal UI path
@@ -82,12 +87,17 @@ type organizationCreateRequest struct {
 }
 
 // ResolvedUser is what identity's internal resolve endpoint tells us about a
-// verified OIDC subject. Email is included alongside UserID (not just the id)
-// because the invitation accept-on-login path (#27, FR-ONB-3 AC 2) matches a
-// pending invitation by the caller's own verified profile email — this
-// avoids a second internal call, or worse, organizations trying to read
-// identity.users directly (forbidden — cross-schema, service-decomposition.md
-// rule 2).
+// verified OIDC subject: identity.users' current row. UserID is the only
+// field used for anything security-sensitive. Email mirrors
+// identity.users.email — the profile field PATCH /v1/profile (#25) lets the
+// caller set to an arbitrary string with no tie back to Keycloak — so it
+// MUST NOT be used to decide access (e.g. which invitation to auto-accept):
+// doing so would let a caller self-edit their profile email to someone
+// else's pending invitation and join that org at the invited role. Use the
+// JWT's verified claims.Email (via resolveCaller's verifiedCaller) for
+// anything security-sensitive instead. Kept here only because it's part of
+// identity's resolve response and may be useful for non-security display
+// purposes later.
 type ResolvedUser struct {
 	UserID string
 	Email  string
@@ -238,29 +248,48 @@ func activeMembershipFor(r *http.Request, q *sqlcgen.Queries, userID pgtype.UUID
 	return callerMembership{OrgID: m.OrganizationID, UserID: userID, Role: m.Role}, nil
 }
 
+// verifiedCaller carries the token-verified identity facts resolveCaller
+// hands back, alongside the DB-resolved userID: VerifiedEmail/EmailVerified
+// come straight from the JWT claims (auth.md §3.4), never from identity's
+// resolve response, which reflects the mutable identity.users.email profile
+// field a caller can PATCH to any string via PATCH /v1/profile (#25). Using
+// the profile email for anything security-sensitive — like matching a
+// pending invitation — would let a caller claim any org's invitation just by
+// setting their profile email to match it. See acceptPendingInvitationByEmail.
+type verifiedCaller struct {
+	ResolvedUser
+	VerifiedEmail string
+	EmailVerified bool
+}
+
 // resolveCaller resolves the request's verified sub to its identity.users
 // row (auth.md §5.1 step 1) — the shared first step behind
 // resolveActiveMembership and acceptPendingInvitationByEmail. Writes the
 // appropriate problem and returns ok=false on any failure; callers must stop
 // on !ok exactly like resolveActiveMembership's other callers do.
-func resolveCaller(w http.ResponseWriter, r *http.Request, resolver UserResolver) (ResolvedUser, pgtype.UUID, bool) {
+func resolveCaller(w http.ResponseWriter, r *http.Request, resolver UserResolver) (verifiedCaller, pgtype.UUID, bool) {
 	claims, found := authn.FromContext(r.Context())
 	if !found {
 		problem.Write(w, r, problem.Internal())
-		return ResolvedUser{}, pgtype.UUID{}, false
+		return verifiedCaller{}, pgtype.UUID{}, false
 	}
 
 	resolved, err := resolver.Resolve(r.Context(), r.Header.Get("Authorization"), claims.Sub)
 	if err != nil {
 		problem.Write(w, r, problem.NotFound("no organization found for the caller"))
-		return ResolvedUser{}, pgtype.UUID{}, false
+		return verifiedCaller{}, pgtype.UUID{}, false
 	}
 	userID, err := uuid.Parse(resolved.UserID)
 	if err != nil {
 		problem.Write(w, r, problem.Internal())
-		return ResolvedUser{}, pgtype.UUID{}, false
+		return verifiedCaller{}, pgtype.UUID{}, false
 	}
-	return resolved, pgtype.UUID{Bytes: userID, Valid: true}, true
+	caller := verifiedCaller{
+		ResolvedUser:  resolved,
+		VerifiedEmail: claims.Email,
+		EmailVerified: claims.EmailVerified,
+	}
+	return caller, pgtype.UUID{Bytes: userID, Valid: true}, true
 }
 
 func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
@@ -377,15 +406,26 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 // router's org-completion redirect gates on.
 //
 // Before giving up with a 404, it checks for a pending invitation matching
-// the caller's own verified profile email and auto-accepts it (FR-ONB-3 AC:
-// "an invited user who logs in is joined to the inviting organization rather
-// than prompted to create a new one") — see acceptPendingInvitationByEmail.
-// This is the only place that lookup happens: getOrganization's "does {orgId}
-// match my org" question has nothing to do with whether the caller has *any*
-// org, so it stays a plain membership check.
+// the caller's own email and auto-accepts it (FR-ONB-3 AC: "an invited user
+// who logs in is joined to the inviting organization rather than prompted to
+// create a new one") — see acceptPendingInvitationByEmail. This is the only
+// place that lookup happens: getOrganization's "does {orgId} match my org"
+// question has nothing to do with whether the caller has *any* org, so it
+// stays a plain membership check.
+//
+// Security-critical: the email matched against is the JWT's verified
+// claims.Email (via resolveCaller's verifiedCaller), never
+// identity.users.email (the mutable PATCH /v1/profile field, #25) — using
+// the latter would let any authenticated caller self-edit their profile
+// email to someone else's pending invitation and auto-join that org at the
+// invited role (including admin) without ever controlling that address.
+// EmailVerified is checked too (auth.md §3.4: gate sensitive flows on it) —
+// an unverified email is treated exactly like "no pending invitation" (falls
+// through to the ordinary 404), not a distinguishable error, so the client
+// can't probe verification state through this endpoint.
 func getMyOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		resolved, userID, ok := resolveCaller(w, r, resolver)
+		caller, userID, ok := resolveCaller(w, r, resolver)
 		if !ok {
 			return
 		}
@@ -394,7 +434,14 @@ func getMyOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserReso
 		if errors.Is(err, pgx.ErrNoRows) {
 			// No membership yet — try the accept-on-login fallback (FR-ONB-3
 			// AC 2) before deciding this is genuinely "no org" for the caller.
-			accepted, acceptErr := acceptPendingInvitationByEmail(r, pool, q, userID, resolved.Email)
+			// An unverified email can't claim any invitation — treat it the
+			// same as "none pending" rather than skipping the lookup with a
+			// different error, so verification state isn't observable here.
+			email := ""
+			if caller.EmailVerified {
+				email = caller.VerifiedEmail
+			}
+			accepted, acceptErr := acceptPendingInvitationByEmail(r, pool, q, userID, email)
 			if acceptErr != nil {
 				if errors.Is(acceptErr, pgx.ErrNoRows) {
 					problem.Write(w, r, problem.NotFound("no organization found for the caller"))

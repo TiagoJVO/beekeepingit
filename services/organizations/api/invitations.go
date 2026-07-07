@@ -10,7 +10,11 @@
 // acceptPendingInvitationByEmail (called from organizations.go's
 // getMyOrganization) is the other half of the invitation lifecycle: it is
 // not itself an HTTP handler, just the accept-on-login step "an invited user
-// who logs in is joined to the inviting organization" (FR-ONB-3 AC).
+// who logs in is joined to the inviting organization" (FR-ONB-3 AC). The
+// email it matches against must already be the caller's JWT-verified,
+// email_verified-gated address — never identity.users.email — see its own
+// doc comment and organizations.go's getMyOrganization/ResolvedUser comments
+// for the security reasoning (a #170-review-found vulnerability, now fixed).
 //
 // History recording (FR-HIS-1) for invite/accept/revoke is explicitly
 // deferred — see organizations.go's package doc; tracked in #165.
@@ -312,7 +316,11 @@ func revokeInvitationHandler(q *sqlcgen.Queries, resolver UserResolver) http.Han
 // atomicity pattern as organizations.go's CreateOrganization+CreateMembership
 // (D-3), so an invitation is never left pending after its membership exists,
 // or vice versa. Returns pgx.ErrNoRows when there is no pending invitation
-// for email (the ordinary "not invited" case, not a server fault).
+// for email (the ordinary "not invited" case, not a server fault). email
+// must already be the caller's verified email (getMyOrganization passes ""
+// when claims.EmailVerified is false, deliberately routing an unverified
+// caller through this same "nothing pending" path rather than a distinct
+// one) — see getMyOrganization's security-critical doc comment.
 func acceptPendingInvitationByEmail(r *http.Request, pool *pgxpool.Pool, q *sqlcgen.Queries, userID pgtype.UUID, email string) (callerMembership, error) {
 	if email == "" {
 		return callerMembership{}, pgx.ErrNoRows

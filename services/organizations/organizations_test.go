@@ -93,6 +93,43 @@ func newOrgFixture(t *testing.T, users map[string]string) *orgFixture {
 // the accept-on-login path (invitations_test.go) needs.
 func newOrgFixtureWithEmails(t *testing.T, users map[string]stubUser) *orgFixture {
 	t.Helper()
+	return newOrgFixtureInternal(t, users, nil)
+}
+
+// tokenClaim is the JWT-level email/email_verified pair a test controls,
+// deliberately independent of stubUser.Email (the identity.users profile
+// field the internal resolve response carries). The security regression
+// test in invitations_test.go needs to set these differently from the
+// profile email to prove getMyOrganization matches invitations against the
+// verified token claim, never the mutable profile field.
+type tokenClaim struct {
+	Email         string
+	EmailVerified bool
+}
+
+// newOrgFixtureWithEmailClaims is newOrgFixtureWithEmails' security-test
+// counterpart: users carries the identity.users profile email (mutable,
+// PATCH /v1/profile, #25) per stubUser.Email, while claimsBySub carries the
+// JWT-verified email/email_verified pair per sub — independently, so a test
+// can make them disagree and assert only the verified claim is honored.
+func newOrgFixtureWithEmailClaims(t *testing.T, users map[string]stubUser, claimsBySub map[string]tokenClaim) *orgFixture {
+	t.Helper()
+	return newOrgFixtureInternal(t, users, claimsBySub)
+}
+
+// newOrgFixtureInternal is the one shared constructor behind newOrgFixture,
+// newOrgFixtureWithEmails and newOrgFixtureWithEmailClaims. When
+// claimsBySub is non-nil, the mounted authn chain is wrapped with a layer
+// that enriches the verified Claims with a per-sub Email/EmailVerified pair,
+// standing in for what a real Keycloak token's email/email_verified claims
+// would carry — authtest.Mint (services/servicetemplate/authn/authtest,
+// shared infra outside this branch's ownership) only sets the standard
+// sub/aud/exp claims, so this is the sanctioned test-only seam, mirroring
+// services/apiaries/main_test.go and services/sync/main_test.go's own
+// injectClaims (which also layers directly on authn.Claims rather than
+// extending authtest).
+func newOrgFixtureInternal(t *testing.T, users map[string]stubUser, claimsBySub map[string]tokenClaim) *orgFixture {
+	t.Helper()
 	ctx := context.Background()
 
 	const (
@@ -141,6 +178,9 @@ func newOrgFixtureWithEmails(t *testing.T, users map[string]stubUser) *orgFixtur
 	if err != nil {
 		t.Fatalf("build authn middleware: %v", err)
 	}
+	if claimsBySub != nil {
+		authnMW = withEmailClaims(authnMW, claimsBySub)
+	}
 	identity := newStubIdentity(t, users)
 
 	cfg := config.Config{ServiceName: "organizations-test", HTTPAddr: ":0", LogLevel: slog.LevelInfo, DB: dbCfg}
@@ -156,6 +196,28 @@ func newOrgFixtureWithEmails(t *testing.T, users map[string]stubUser) *orgFixtur
 	srv.Mount("/v1", authnMW(api.PublicRouter(pool, userResolver)))
 
 	return &orgFixture{srv: srv, idp: idp, identity: identity}
+}
+
+// withEmailClaims wraps authnMW with a layer that overrides the verified
+// Claims' Email/EmailVerified per-sub, after real JWT signature/issuer/
+// audience verification has already populated Claims from the token's
+// standard claims — see newOrgFixtureInternal's doc comment.
+func withEmailClaims(authnMW func(http.Handler) http.Handler, claimsBySub map[string]tokenClaim) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return authnMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := authn.FromContext(r.Context())
+			if !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if tc, found := claimsBySub[claims.Sub]; found {
+				claims.Email = tc.Email
+				claims.EmailVerified = tc.EmailVerified
+			}
+			ctx := authn.ContextWithClaims(r.Context(), claims)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		}))
+	}
 }
 
 func (f *orgFixture) do(t *testing.T, method, path, bearer string, body any) *httptest.ResponseRecorder {
