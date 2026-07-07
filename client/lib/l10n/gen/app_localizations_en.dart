@@ -176,4 +176,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get membersRevokeSuccess => 'Invitation revoked.';
+
+  @override
+  String get accountTitle => 'Account settings';
+
+  @override
+  String get accountProfileSectionTitle => 'Profile';
+
+  @override
+  String get accountSecuritySectionTitle => 'Security';
+
+  @override
+  String get accountChangePasswordHint =>
+      'Password changes are handled by our sign-in provider, in a new tab.';
+
+  @override
+  String get accountChangePasswordButton => 'Change password';
 }
