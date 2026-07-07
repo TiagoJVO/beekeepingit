@@ -106,4 +106,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String profileSaveError(String error) {
     return 'Could not save your profile: $error';
   }
+
+  @override
+  String get organizationTitle => 'Your organization';
+
+  @override
+  String get organizationOnboardingIntro =>
+      'Create your organization to start managing apiaries.';
+
+  @override
+  String get organizationNameLabel => 'Organization name';
+
+  @override
+  String get organizationNameRequired => 'Enter an organization name.';
+
+  @override
+  String get organizationAddressLabel => 'Address (optional)';
+
+  @override
+  String get organizationSaveButton => 'Create organization';
+
+  @override
+  String get organizationSaveSuccess => 'Organization created.';
+
+  @override
+  String organizationSaveError(String error) {
+    return 'Could not create your organization: $error';
+  }
 }

@@ -17,6 +17,7 @@ routes:
   - { path: /realms, service: keycloak-keycloakx-http, port: 80 }
   - { path: /resources, service: keycloak-keycloakx-http, port: 80 }
   - { path: /v1/apiaries, service: apiaries, port: 8080 }
+  - { path: /v1/organizations, service: organizations, port: 8080 }
   - { path: /v1/profile, service: identity, port: 8080 }
   - { path: /v1/sync, service: sync, port: 8080 }
   - { path: /, service: pwa, port: 80 }

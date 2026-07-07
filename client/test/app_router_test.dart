@@ -1,6 +1,7 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,13 +25,40 @@ class _FixedProfileController extends ProfileController {
   );
 }
 
-Widget _buildApp({required bool profileComplete}) {
+/// A no-op controller that reports a fixed organization (or none), so the
+/// router's org-completion gate (#26) can be exercised without a real
+/// ApiClient/network call.
+class _FixedOrganizationController extends OrganizationController {
+  _FixedOrganizationController(this._hasOrganization);
+  final bool _hasOrganization;
+
+  @override
+  Future<Organization?> build() async {
+    if (!_hasOrganization) return null;
+    return Organization(
+      id: 'org-1',
+      name: 'Dev Apiary Co.',
+      address: '',
+      createdBy: 'u1',
+      createdAt: DateTime.utc(2026, 1, 1),
+      updatedAt: DateTime.utc(2026, 1, 1),
+    );
+  }
+}
+
+Widget _buildApp({
+  required bool profileComplete,
+  bool hasOrganization = true,
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
       profileProvider.overrideWith(
         () => _FixedProfileController(profileComplete),
+      ),
+      organizationProvider.overrideWith(
+        () => _FixedOrganizationController(hasOrganization),
       ),
     ],
     child: const BeekeepingitApp(),
@@ -50,13 +78,30 @@ void main() {
   );
 
   testWidgets(
-    'an authenticated user with a complete profile reaches the apiaries home',
+    'a profile-complete user with no organization is redirected to /organization/new',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildApp(profileComplete: true, hasOrganization: false),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('organization-name-field')),
+        findsOneWidget,
+      );
+      expect(find.text('Apiaries'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'an authenticated user with a complete profile and an organization reaches the apiaries home',
     (tester) async {
       await tester.pumpWidget(_buildApp(profileComplete: true));
       await tester.pumpAndSettle();
 
       expect(find.text('Apiaries'), findsOneWidget);
       expect(find.byKey(const Key('profile-name-field')), findsNothing);
+      expect(find.byKey(const Key('organization-name-field')), findsNothing);
     },
   );
 }

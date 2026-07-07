@@ -49,6 +49,8 @@ services:
         schema: organizations,
       }
     seedDevData: true
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
   apiaries:
     component: services-apiaries
     port: 8080

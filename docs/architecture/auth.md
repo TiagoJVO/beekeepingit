@@ -444,6 +444,31 @@ membership-scoped, resolved server-side per request (§5.1).
 
 ---
 
+## 8.6 As built (#26)
+
+Organization creation (FR-ONB-2, FR-TEN-2, NFR-ROL-1) landed per §7's "Registration" row —
+`POST /v1/organizations` creates the org and the creator's active `admin` membership in one DB
+transaction (D-3), and `GET /v1/organizations/me`/`GET /v1/organizations/{orgId}` read it back.
+One implementation detail worth recording here since it looks like it should use the shared
+middleware but deliberately doesn't:
+
+- **None of `organizations`' own `/v1` routes run behind `authn.NewOrgResolver`.** That
+  middleware's second call (§5.1 step 3) is `GET /internal/memberships/active` on the
+  **`organizations` service itself** — for every other domain service that's the correct
+  east-west hop, but here it would be `organizations` calling back into its own process over
+  HTTP to ask a question its own database already answers directly. Each handler instead
+  resolves `sub → user_id` via one internal call to `identity` (§5.1 step 1) plus a direct
+  `sqlc` lookup of `organizations.memberships` (step 3) — the same two facts, minus the
+  redundant hop. See [`services/organizations/api/organizations.go`](../../services/organizations/api/organizations.go)'s
+  package doc.
+- This also sidesteps a real blocker: `NewOrgResolver` 403s a caller with **no** active
+  membership, but `POST /organizations` must succeed for exactly that caller (a brand-new user
+  onboarding). `GET /organizations/me` returning **404** (not 403) for "no org yet" is likewise
+  deliberate — it's the signal the client's org-completion gate (mirrors the profile
+  completeness probe, FR-ONB-1) distinguishes from every other failure.
+- Membership invitations (FR-ONB-3, D-3's "invites others by email") are **not** built here —
+  that is #27, which depends on #26 merging first (same files, same service).
+
 ## 9. Acceptance-criteria traceability (#109)
 
 - [x] **Keycloak realm + client + roles (`admin`/`user`)** documented (NFR-ROL) — §3

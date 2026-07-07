@@ -6,23 +6,30 @@ import '../core/auth/auth_controller.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/organization/organization_repository.dart';
+import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
 
-/// App routing for the walking-skeleton slice plus profile onboarding
-/// enforcement (FR-ONB-1, #25). Unauthenticated users are sent to /login;
-/// once logged in, an incomplete profile is routed to /profile and blocked
-/// from everything else (AC bullet 3); once complete, the apiaries list is
-/// home. Exposed as a provider so widget tests can override auth/profile.
+/// App routing for the walking-skeleton slice plus profile (FR-ONB-1, #25)
+/// and organization (FR-ONB-2, FR-TEN-2, NFR-ROL-1, #26) onboarding
+/// enforcement. Unauthenticated users are sent to /login; once logged in, an
+/// incomplete profile is routed to /profile; once the profile is complete but
+/// there's no organization yet, /organization/new; both gates block every
+/// other route (AC bullet 3) until satisfied. Once both are done, the
+/// apiaries list is home. Exposed as a provider so widget tests can override
+/// auth/profile/organization.
 final routerProvider = Provider<GoRouter>((ref) {
-  // Re-evaluate redirects whenever auth or the profile fetch itself changes
-  // (listening to profileProvider directly, not the derived completeness
-  // bool, so a loading->resolved transition always re-triggers redirect even
-  // when the resolved value happens to equal the loading-time default).
+  // Re-evaluate redirects whenever auth, the profile fetch, or the
+  // organization fetch itself changes (listening to the raw providers, not
+  // their derived completeness bools, so a loading->resolved transition
+  // always re-triggers redirect even when the resolved value happens to
+  // equal the loading-time default — see profileProvider's own note).
   final refresh = ValueNotifier<int>(0);
   ref.onDispose(refresh.dispose);
   ref.listen(isAuthenticatedProvider, (_, __) => refresh.value++);
   ref.listen(profileProvider, (_, __) => refresh.value++);
+  ref.listen(organizationProvider, (_, __) => refresh.value++);
 
   return GoRouter(
     initialLocation: '/apiaries',
@@ -42,6 +49,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       final profileComplete = profileAsync.value?.profileComplete ?? false;
       if (!profileComplete) return atProfile ? null : '/profile';
 
+      final atOrganization = state.matchedLocation == '/organization/new';
+      final organizationAsync = ref.read(organizationProvider);
+      // Same "don't gate on loading" rule as the profile check above: only
+      // react once the fetch has actually resolved, one way or the other.
+      if (organizationAsync.isLoading) return null;
+      final hasOrganization = organizationAsync.value != null;
+      if (!hasOrganization) {
+        return atOrganization ? null : '/organization/new';
+      }
+      if (atOrganization) return '/apiaries';
+
       return null;
     },
     routes: [
@@ -54,6 +72,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/profile',
         name: 'profile',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/organization/new',
+        name: 'organizationNew',
+        builder: (context, state) => const OrganizationScreen(),
       ),
       GoRoute(
         path: '/apiaries',

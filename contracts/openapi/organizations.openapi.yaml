@@ -64,6 +64,33 @@ paths:
         '422':
           $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
 
+  /organizations/me:
+    get:
+      operationId: getMyOrganization
+      summary: Get the caller's own organization
+      description: >-
+        Resolves the organization from the caller's own active membership — no
+        {orgId} needed. `404` when the caller has no active membership yet
+        (FR-ONB-2): the client's org-completion gate (mirrors the profile
+        completeness probe, FR-ONB-1) uses this to learn whether onboarding
+        must still create or join an organization before the caller can reach
+        apiaries/main features.
+      tags: [Organizations]
+      responses:
+        '200':
+          description: The caller's organization.
+          headers:
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+
   /organizations/{orgId}:
     parameters:
       - $ref: '#/components/parameters/OrgId'

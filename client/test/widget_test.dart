@@ -1,6 +1,7 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,10 +24,26 @@ class _CompleteProfileController extends ProfileController {
   );
 }
 
+/// An organization that always exists, so these pre-existing "authenticated"
+/// tests reach the apiaries home rather than being redirected to
+/// /organization/new by the org-completion gate (#26) — this file predates
+/// org onboarding and isn't testing it, so it stubs the org as already there.
+class _ExistingOrganizationController extends OrganizationController {
+  @override
+  Future<Organization?> build() async => Organization(
+    id: 'test-org',
+    name: 'Test Apiary Co.',
+    address: '',
+    createdBy: 'test-user',
+    createdAt: DateTime.utc(2026, 1, 1),
+    updatedAt: DateTime.utc(2026, 1, 1),
+  );
+}
+
 /// Builds the app with auth + the local apiaries stream overridden, so no test
-/// touches real OIDC or PowerSync. Profile is stubbed as complete when authed
-/// so the router's completion gate (#25) doesn't redirect these pre-existing
-/// tests to /profile.
+/// touches real OIDC or PowerSync. Profile and organization are stubbed as
+/// already complete when authed so the router's completion gates (#25, #26)
+/// don't redirect these pre-existing tests to /profile or /organization/new.
 Widget buildApp({required bool authed, List<Apiary>? apiaries}) {
   return ProviderScope(
     overrides: [
@@ -34,6 +51,8 @@ Widget buildApp({required bool authed, List<Apiary>? apiaries}) {
       if (apiaries != null)
         apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
       if (authed) profileProvider.overrideWith(_CompleteProfileController.new),
+      if (authed)
+        organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
     child: const BeekeepingitApp(),
   );
