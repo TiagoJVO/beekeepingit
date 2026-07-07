@@ -76,7 +76,11 @@ class ProfileController extends AsyncNotifier<Profile> {
   /// server's response. Rethrows on failure (e.g. [ApiException] for a 422)
   /// so the calling screen can surface field errors; state is left as the
   /// last-known-good profile.
-  Future<void> update({String? name, String? email, String? locale}) async {
+  ///
+  /// Named `submit`, not `update` — `AsyncNotifier` already declares an
+  /// `update(fn)` helper with an incompatible signature, and reusing that
+  /// name here is a Dart `invalid_override` compile error.
+  Future<void> submit({String? name, String? email, String? locale}) async {
     final repo = ref.read(profileRepositoryProvider);
     final updated = await repo.update(name: name, email: email, locale: locale);
     state = AsyncData(updated);

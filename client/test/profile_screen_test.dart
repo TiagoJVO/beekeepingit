@@ -37,7 +37,7 @@ class _FakeProfileController extends ProfileController {
   Future<Profile> build() async => _initial;
 
   @override
-  Future<void> update({String? name, String? email, String? locale}) async {
+  Future<void> submit({String? name, String? email, String? locale}) async {
     if (onUpdate != null) {
       await onUpdate!(name: name, email: email, locale: locale);
       return;
@@ -57,10 +57,10 @@ class _FakeProfileController extends ProfileController {
 Widget _buildScreen(ProfileController controller) {
   return ProviderScope(
     overrides: [profileProvider.overrideWith(() => controller)],
-    child: MaterialApp(
+    child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: const ProfileScreen(),
+      home: ProfileScreen(),
     ),
   );
 }

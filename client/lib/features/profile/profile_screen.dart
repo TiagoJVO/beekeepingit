@@ -52,7 +52,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     try {
       await ref
           .read(profileProvider.notifier)
-          .update(
+          .submit(
             name: _nameController.text.trim(),
             email: _emailController.text.trim(),
             locale: _locale,
