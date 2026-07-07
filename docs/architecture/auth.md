@@ -378,15 +378,17 @@ are settled by **using Keycloak's built-ins** plus the token policy above — **
 
 | Item                      | Decision                                                                                                                                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Email verification**    | Keycloak **"Verify Email"** required action; SMTP configured in EPIC-14. App may gate sensitive flows on `email_verified`.                                                                                     |
+| **Email verification**    | Keycloak **"Verify Email"** required action; SMTP configured in EPIC-14. App may gate sensitive flows on `email_verified`. **As-configured (#24):** `verifyEmail: true` set on the realm; the seeded dev/CI test user keeps `emailVerified: true` so the walking-skeleton e2e doesn't regress. SMTP delivery itself is still EPIC-14. |
 | **Password reset**        | Keycloak **"Forgot password"** flow (self-service, email link).                                                                                                                                                |
 | **Registration**          | Keycloak credential auth; **first login** triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on. |
-| **Access-token lifetime** | **short, ≈ 5–15 min** (limits exposure; forces refresh). _Proposed; tune in EPIC-14._                                                                                                                          |
-| **Refresh / SSO session** | **sliding, ≈ 30 days** (field convenience). _Proposed; tune in EPIC-14._                                                                                                                                       |
-| **Offline grace window**  | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._                                                                                                                                                  |
+| **Access-token lifetime** | **short, ≈ 5–15 min** (limits exposure; forces refresh). **As-configured (#24):** `accessTokenLifespan: 900` (15 min) in the realm import. _Exact value still tuned/security-reviewed in EPIC-14._            |
+| **Refresh / SSO session** | **sliding, ≈ 30 days** (field convenience). **As-configured (#24):** `ssoSessionIdleTimeout`/`ssoSessionMaxLifespan: 2592000` (30 days) in the realm import. _Exact value still tuned/security-reviewed in EPIC-14._ |
+| **Offline grace window**  | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._ Unaffected by #24 (native-phase, D-10 — out of scope for the PWA-phase hardening pass).                                                        |
+| **Logout**                | **As-configured (#24):** the PWA calls Keycloak's **RP-initiated logout** (`end_session_endpoint`) with the cached refresh token on logout, revoking the **server-side SSO session** — not just clearing local tokens. Network failure (offline logout) still degrades to locally-logged-out. Also invalidates the local PowerSync database on logout so a second user on the same shared device doesn't see the previous session's replicated rows before the next sync. |
 
 > Lifetimes are **starting points**, to be confirmed against a **security review** (EPIC-14, #15) and
-> field-UX testing — not hard requirements.
+> field-UX testing — not hard requirements. The realm import now sets these as concrete values (#24)
+> rather than leaving Keycloak's stock defaults in place, but they remain **subject to EPIC-14 sign-off**.
 
 ---
 
@@ -410,6 +412,35 @@ are settled by **using Keycloak's built-ins** plus the token policy above — **
 security review). The middleware here is also the **producer** of the `organization_id` consumed by
 [#30](https://github.com/TiagoJVO/beekeepingit/issues/30) /
 [data-model.md §5](data-model.md#5-multi-tenancy-model-fr-ten).
+
+---
+
+## 8.5 As built (#24)
+
+The M0 slice (#23) already stood up the realm/client/PKCE login this design specifies; #24
+**hardens** it — a real RP-initiated logout, realm role/lifecycle config, and client-side test
+coverage the slice shipped without. Concrete artifacts:
+
+| §7/§3.3 item                       | Where it landed                                                                                                                                                                                            |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Logout — RP-initiated (NFR-SEC-1)** | [`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) `logout()` — POSTs to Keycloak's `end_session_endpoint` (`AppConfig.oidcEndSessionUrl`) with the cached refresh token, revoking the **server-side SSO session**; degrades to local-only clearing if the call fails (offline logout, D-10) |
+| **PowerSync disconnect on logout**  | Same `logout()` invalidates [`powerSyncProvider`](../../client/lib/core/sync/powersync_service.dart) (its existing `onDispose` already calls `disconnect()`+`close()`) so a second user on shared hardware doesn't see stale replicated rows before the next sync |
+| **Defensive local-session sweep**   | `logout()` clears all three session-storage keys (`bk.pkce_verifier`, `bk.oauth_state`, `bk.refresh_token`), not just the refresh token, covering an abandoned mid-flow login                                |
+| **`platform-operator` realm role**  | [`charts/keycloak/files/beekeepingit-realm.json`](../../infra/helm/beekeepingit/charts/keycloak/files/beekeepingit-realm.json) `roles.realm` — unassigned, ops-only, per §3.3 (**not** literal `admin`/`user` realm roles — see the AC note below) |
+| **Email verification (flow wired)** | `verifyEmail: true` on the realm; seeded dev/CI user keeps `emailVerified: true`. SMTP delivery is still EPIC-14 (#15)                                                                                     |
+| **Token lifetimes (as-configured)** | `accessTokenLifespan: 900` (15 min); `ssoSessionIdleTimeout`/`ssoSessionMaxLifespan: 2592000` (30 days) — the §7 proposed defaults, now concrete values; still subject to EPIC-14 security sign-off        |
+| **Theming (narrow scope)**          | Realm `displayName`/`displayNameHtml` + built-in `loginTheme: keycloak.v2` variant. A custom FTL theme is **out of scope** (design-owned effort, follow-up if needed)                                     |
+| **`sslRequired`**                   | Left `none` for local k3d dev (some redirect URIs still use plain HTTP); the client itself is served over HTTPS at the gateway. Revisited in EPIC-14                                                      |
+| **Client-side tests**               | [`client/test/core/auth/auth_controller_test.dart`](../../client/test/core/auth/auth_controller_test.dart) (login/PKCE, code exchange incl. CSRF-state rejection, token refresh, refresh-rejected, logout incl. end-session + offline-degrade); logout widget interaction in `client/test/widget_test.dart`; logout e2e in [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts) |
+
+**AC note (realm roles).** Issue #24's acceptance criteria literally reads "`admin` and `user`
+realm roles are defined." Per §3.3's already-settled design (and ADR-0004), `admin`/`user` is the
+**`organizations.memberships.role`** app-layer value, deliberately kept **out of** Keycloak and out
+of the token (staleness argument, §3.4) — adding them as literal Keycloak realm roles would
+contradict that design without adding capability. This PR satisfies the AC's **intent** (a realm
+role model that supports the admin/user distinction) via the already-decided mechanism: only the
+ops-only `platform-operator` role is added at the Keycloak layer; `admin`/`user` remains
+membership-scoped, resolved server-side per request (§5.1).
 
 ---
 
