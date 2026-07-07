@@ -137,11 +137,22 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// Defensive sweep of every local-storage key this controller ever writes —
   /// not just the refresh token — so an abandoned mid-flow login (PKCE
   /// verifier/state written but never exchanged) can't leave stale entries.
+  ///
+  /// Swallows `UnsupportedError` from the non-web stub [AuthPlatform] (widget
+  /// tests run on the VM, where `_platform` is a working object but every
+  /// method throws by design — see `auth_platform_stub.dart`) so `logout()`
+  /// stays a no-throw local state transition there, matching `build()`'s own
+  /// non-web handling.
   void _clearLocalSession() {
     final platform = _platform;
-    platform?.removeSession(_kVerifier);
-    platform?.removeSession(_kState);
-    platform?.removeSession(_kRefresh);
+    if (platform == null) return;
+    try {
+      platform.removeSession(_kVerifier);
+      platform.removeSession(_kState);
+      platform.removeSession(_kRefresh);
+    } on UnsupportedError {
+      // Non-web target: there is no real session storage to clear.
+    }
   }
 
   /// A valid access token, refreshed if within 30s of expiry, or null when
