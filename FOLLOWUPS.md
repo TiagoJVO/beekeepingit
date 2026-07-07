@@ -24,7 +24,7 @@
   `helm lint & template dry-run`) is now green and **did** catch two real bugs a local run would
   have (an invalid `const` in a test, and the new logout session-sweep throwing on the non-web
   stub platform in a widget test) — both fixed, CI re-run green. What CI's `k3d cluster + helm
-  test` job does **not** exercise is an actual browser-driven OIDC login → logout → reload against
+test` job does **not** exercise is an actual browser-driven OIDC login → logout → reload against
   the deployed Keycloak (it only asserts the chart installs and a Postgres smoke query passes) —
   that's the Playwright e2e's job (`client/e2e/tests/slice.spec.ts`'s new logout test), which isn't
   wired into this repo's PR-triggered CI (run manually/per `client/e2e/README.md`). **Before
