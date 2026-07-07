@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -101,35 +102,53 @@ func NewHTTPUserResolver(identityBaseURL string, client *http.Client) *HTTPUserR
 
 func (h *HTTPUserResolver) ResolveUserID(ctx context.Context, bearer, sub string) (string, error) {
 	// url.PathEscape (not raw concatenation) matches authn.NewOrgResolver's
-	// own resolveUser step — both correctness (a sub could contain
-	// URL-meaningful characters) and what satisfies gosec's G704 (SSRF via
-	// taint analysis) check on the request URL.
+	// own resolveUser step: sub is a verified JWT claim, not free-form
+	// user input, and escaping it is a correctness fix regardless (a sub
+	// could contain URL-meaningful characters).
 	reqURL := h.IdentityBaseURL + "/internal/users/by-sub/" + url.PathEscape(sub)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	status, body, err := h.getJSON(ctx, reqURL, bearer)
 	if err != nil {
 		return "", err
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("api: resolve user by sub: identity responded %d", status)
+	}
+	var out struct {
+		UserID string `json:"user_id"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", err
+	}
+	return out.UserID, nil
+}
+
+// getJSON issues an authenticated GET against rawURL — an internal,
+// operator-controlled service base URL (from config, never a client
+// request field) plus a URL-escaped path segment, the same trust boundary
+// authn.NewOrgResolver's own internal calls cross. Factored out to its own
+// function (mirroring that resolver's getJSON) rather than inlined in
+// ResolveUserID.
+func (h *HTTPUserResolver) getJSON(ctx context.Context, rawURL, bearer string) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil) //nolint:gosec // G704: rawURL is built from an operator-configured internal base URL (INTERNAL_IDENTITY_URL) + a url.PathEscape'd JWT sub, not a client-supplied request field — see doc above.
+	if err != nil {
+		return 0, nil, err
 	}
 	if bearer != "" {
 		req.Header.Set("Authorization", bearer)
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := h.Client.Do(req)
+	resp, err := h.Client.Do(req) //nolint:gosec // G704: same internal-base-URL + escaped-path-segment reqURL as above, not a client-supplied request field.
 	if err != nil {
-		return "", err
+		return 0, nil, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("api: resolve user by sub: identity responded %d", resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, nil, err
 	}
-	var out struct {
-		UserID string `json:"user_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
-	}
-	return out.UserID, nil
+	return resp.StatusCode, body, nil
 }
 
 // PublicRouter returns the client-facing /v1 organization routes backed by
