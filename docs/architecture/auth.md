@@ -560,6 +560,42 @@ codebase logged an authz denial anywhere before this issue).
   the data layer are #30 (§8's hand-off table), tracked separately and building on the same
   `RequireRole`/`RequireOrgPath` mechanism where relevant.
 
+## 8.9 As built (#30)
+
+Tenancy enforcement (FR-TEN-2) closes out EPIC-01: confirming/automating what #28 already relied
+on rather than building it fresh, and making the one call this design left open.
+
+- **Every owned row carries `organization_id` — now automated, not just manually reviewed.**
+  `dbaccess.UnscopedTables` ([`services/shared/dbaccess/tenancy.go`](../../services/shared/dbaccess/tenancy.go))
+  queries `information_schema` for a service's schema and flags any base table missing the column
+  (an exemption list covers the documented exceptions — a global identity table, or the tenant
+  root itself). `services/apiaries`'s own test suite asserts this against its real migrated
+  schema (`TestApiariesSchema_EveryOwnedTableCarriesOrganizationID`), so a future migration
+  regresses in CI, not in a manual read. `identity`/`organizations` weren't touched (outside this
+  issue's file ownership) — both were manually reviewed and are correctly scoped/exempt already
+  (data-model.md §5's tenancy exception), but haven't yet adopted the automated check themselves;
+  tracked in [#175](https://github.com/TiagoJVO/beekeepingit/issues/175).
+- **Tenancy context propagation, end to end:** the verified token's `sub` → `authn.NewOrgResolver`
+  → `Claims.OrganizationID` (§5.1) → each handler's own `requireOrg`-equivalent → an explicit
+  `organization_id` parameter on every sqlc query. This path was already real (built alongside
+  #23/#26–#28); #30's job was confirming and documenting it precisely, not introducing a new
+  abstraction — a generic cross-service wrapper type would duplicate what sqlc's per-service
+  generated params already enforce at compile time, for no added safety.
+- **The RLS decision is made, not left silent:** deferred for v1, with the rationale recorded in
+  [ADR-0002's RLS decision](../adr/0002-multi-tenancy.md#rls-decision-layer-2-resolved-in-30) and
+  summarized in [data-model.md §5](data-model.md#5-multi-tenancy-model-fr-ten) — every service's
+  DB role both owns its tables and runs its own queries (D-6's per-service role), so plain RLS
+  would silently no-op for exactly the role executing every query; making it bind needs
+  `FORCE ROW LEVEL SECURITY` plus separating table ownership from the query role, work this issue
+  doesn't do given app-layer scoping (layer 1) and the sync publication (layer 3) are both already
+  implemented and tested.
+- **Cross-organization tests:** `services/apiaries/main_test.go`'s `TestApiariesSlice_CrossOrg_*`
+  (added in #28, read/list/write) plus `services/organizations`'s existing
+  `TestGetOrganization_OtherOrg_Returns404` together satisfy #30's "a user in organization A
+  cannot read or modify organization B's data" AC across the services that own real domain data
+  today. `activities`/`journeys`/`todos` don't exist yet (future EPICs) — their own cross-org
+  tests land with those services, following this same pattern.
+
 ## 9. Acceptance-criteria traceability (#109)
 
 - [x] **Keycloak realm + client + roles (`admin`/`user`)** documented (NFR-ROL) — §3

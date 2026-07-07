@@ -375,6 +375,27 @@ func TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow(t *testing.T) 
 	}
 }
 
+// TestApiariesSchema_EveryOwnedTableCarriesOrganizationID is the automated
+// form of #30's AC "every owned row (apiary, activity, journey, and other
+// org-owned entities) carries an organization_id": rather than a one-time
+// manual read of the migration files, this runs against the real, migrated
+// apiaries schema so a future migration that adds a table without
+// organization_id fails CI (dbaccess.UnscopedTables, shared across services).
+// apiaries has no exempt (tenant-root/global-identity) tables of its own —
+// unlike identity.users or organizations.organizations — so every base
+// table here is expected to be scoped.
+func TestApiariesSchema_EveryOwnedTableCarriesOrganizationID(t *testing.T) {
+	f := newApiariesFixture(t)
+
+	unscoped, err := dbaccess.UnscopedTables(context.Background(), f.pool, "apiaries")
+	if err != nil {
+		t.Fatalf("UnscopedTables: %v", err)
+	}
+	if len(unscoped) != 0 {
+		t.Fatalf("apiaries schema has table(s) missing organization_id: %v", unscoped)
+	}
+}
+
 // TestApiariesSlice_ResponsesConformToOpenAPIContract exercises the
 // client-facing read surface (GET /v1/apiaries[/{id}]) through the real
 // server and validates each response against contracts/openapi/apiaries —
