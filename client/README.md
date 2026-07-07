@@ -40,7 +40,8 @@ and the service worker Flutter generates at build time for app-shell caching.
 | `lib/core/config/`          | Compile-time config (`--dart-define`) — gateway/OIDC/PowerSync URLs                                                                                                                                          |
 | `lib/core/auth/`            | OIDC Authorization Code + PKCE flow (web redirect behind a conditional import so widget tests compile on the VM)                                                                                             |
 | `lib/core/sync/`            | PowerSync schema + backend connector (`fetchCredentials`→`/v1/sync/token`, `uploadData`→`/v1/sync/batch`) + the DB provider                                                                                  |
-| `lib/features/`             | One folder per screen/feature (`auth`, `apiaries`)                                                                                                                                                           |
+| `lib/core/api/`             | Generic REST scaffold (`ApiClient`) — base URL + bearer injection (reuses `core/auth`'s access token), typed JSON, RFC 9457 `ApiException` mapping. Not profile-specific — other features reuse it (`#25`) |
+| `lib/features/`             | One folder per screen/feature (`auth`, `apiaries`, `profile`)                                                                                                                                                |
 
 ## Decisions this scaffold makes (AC of `#21`)
 

@@ -52,3 +52,82 @@ func (q *Queries) GetUserByKeycloakSub(ctx context.Context, keycloakSub string) 
 	)
 	return i, err
 }
+
+const upsertUserOnFirstSeen = `-- name: UpsertUserOnFirstSeen :one
+INSERT INTO identity.users (id, keycloak_sub, name, email, locale)
+VALUES ($1, $2, '', '', 'en')
+ON CONFLICT (keycloak_sub) DO UPDATE SET updated_at = identity.users.updated_at
+RETURNING id, keycloak_sub, name, email, locale, created_at, updated_at
+`
+
+type UpsertUserOnFirstSeenParams struct {
+	ID          pgtype.UUID `json:"id"`
+	KeycloakSub string      `json:"keycloak_sub"`
+}
+
+// Get-or-create on first authenticated profile read (#25, FR-ONB-1): if no row
+// exists yet for keycloak_sub, insert one with empty name/email so the client
+// can detect an incomplete profile and prompt onboarding. The ON CONFLICT
+// branch is a no-op update (bumps nothing semantically — updated_at is
+// reassigned to itself) purely so RETURNING gives back the existing row.
+func (q *Queries) UpsertUserOnFirstSeen(ctx context.Context, arg UpsertUserOnFirstSeenParams) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, upsertUserOnFirstSeen, arg.ID, arg.KeycloakSub)
+	var i IdentityUser
+	err := row.Scan(
+		&i.ID,
+		&i.KeycloakSub,
+		&i.Name,
+		&i.Email,
+		&i.Locale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE identity.users
+SET name       = CASE WHEN $1::bool THEN $2 ELSE name END,
+    email      = CASE WHEN $3::bool THEN $4 ELSE email END,
+    locale     = CASE WHEN $5::bool THEN $6 ELSE locale END,
+    updated_at = now()
+WHERE keycloak_sub = $7
+RETURNING id, keycloak_sub, name, email, locale, created_at, updated_at
+`
+
+type UpdateUserProfileParams struct {
+	SetName     bool   `json:"set_name"`
+	Name        string `json:"name"`
+	SetEmail    bool   `json:"set_email"`
+	Email       string `json:"email"`
+	SetLocale   bool   `json:"set_locale"`
+	Locale      string `json:"locale"`
+	KeycloakSub string `json:"keycloak_sub"`
+}
+
+// Partial update backing PATCH /v1/profile: each column is set to the
+// provided value only when its companion `set_x` flag is true, otherwise it
+// keeps the current value (COALESCE-free — the CASE form makes an
+// all-optional partial update explicit at the call site).
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile,
+		arg.SetName,
+		arg.Name,
+		arg.SetEmail,
+		arg.Email,
+		arg.SetLocale,
+		arg.Locale,
+		arg.KeycloakSub,
+	)
+	var i IdentityUser
+	err := row.Scan(
+		&i.ID,
+		&i.KeycloakSub,
+		&i.Name,
+		&i.Email,
+		&i.Locale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

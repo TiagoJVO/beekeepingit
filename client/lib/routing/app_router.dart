@@ -6,15 +6,20 @@ import '../core/auth/auth_controller.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/profile/profile_repository.dart';
+import '../features/profile/profile_screen.dart';
 
-/// App routing for the walking-skeleton slice. Unauthenticated users are sent
-/// to /login; once logged in, the apiaries list is home. Exposed as a provider
-/// so widget tests can override auth.
+/// App routing for the walking-skeleton slice plus profile onboarding
+/// enforcement (FR-ONB-1, #25). Unauthenticated users are sent to /login;
+/// once logged in, an incomplete profile is routed to /profile and blocked
+/// from everything else (AC bullet 3); once complete, the apiaries list is
+/// home. Exposed as a provider so widget tests can override auth/profile.
 final routerProvider = Provider<GoRouter>((ref) {
-  // Re-evaluate redirects whenever auth changes (login/logout/refresh).
+  // Re-evaluate redirects whenever auth or profile-completeness changes.
   final refresh = ValueNotifier<int>(0);
   ref.onDispose(refresh.dispose);
   ref.listen(isAuthenticatedProvider, (_, __) => refresh.value++);
+  ref.listen(profileCompleteProvider, (_, __) => refresh.value++);
 
   return GoRouter(
     initialLocation: '/apiaries',
@@ -24,6 +29,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       final atLogin = state.matchedLocation == '/login';
       if (!authed) return atLogin ? null : '/login';
       if (atLogin) return '/apiaries';
+
+      final atProfile = state.matchedLocation == '/profile';
+      final profileComplete = ref.read(profileCompleteProvider);
+      if (!profileComplete) return atProfile ? null : '/profile';
+
       return null;
     },
     routes: [
@@ -31,6 +41,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/login',
         name: 'login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/profile',
+        name: 'profile',
+        builder: (context, state) => const ProfileScreen(),
       ),
       GoRoute(
         path: '/apiaries',

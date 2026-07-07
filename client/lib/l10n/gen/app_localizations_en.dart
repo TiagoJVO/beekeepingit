@@ -70,4 +70,40 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteApiary => 'Delete apiary';
+
+  @override
+  String get profileTitle => 'Your profile';
+
+  @override
+  String get profileOnboardingIntro =>
+      'Tell us a bit about yourself to get started.';
+
+  @override
+  String get profileNameLabel => 'Name';
+
+  @override
+  String get profileNameRequired => 'Enter your name.';
+
+  @override
+  String get profileEmailLabel => 'Email';
+
+  @override
+  String get profileEmailRequired => 'Enter your email.';
+
+  @override
+  String get profileEmailInvalid => 'Enter a valid email address.';
+
+  @override
+  String get profileLocaleLabel => 'Preferred language';
+
+  @override
+  String get profileSaveButton => 'Save profile';
+
+  @override
+  String get profileSaveSuccess => 'Profile saved.';
+
+  @override
+  String profileSaveError(String error) {
+    return 'Could not save your profile: $error';
+  }
 }

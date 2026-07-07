@@ -1,18 +1,39 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// A profile that is always complete, so these pre-existing "authenticated"
+/// tests reach the apiaries home rather than being redirected to /profile by
+/// the completion gate (#25) — this file predates profile onboarding and
+/// isn't testing it, so it stubs profile as already done.
+class _CompleteProfileController extends ProfileController {
+  @override
+  Future<Profile> build() async => Profile(
+    id: 'test-user',
+    name: 'Test User',
+    email: 'test@example.com',
+    locale: 'en',
+    profileComplete: true,
+    createdAt: DateTime.utc(2026, 1, 1),
+    updatedAt: DateTime.utc(2026, 1, 1),
+  );
+}
+
 /// Builds the app with auth + the local apiaries stream overridden, so no test
-/// touches real OIDC or PowerSync.
+/// touches real OIDC or PowerSync. Profile is stubbed as complete when authed
+/// so the router's completion gate (#25) doesn't redirect these pre-existing
+/// tests to /profile.
 Widget buildApp({required bool authed, List<Apiary>? apiaries}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(authed),
       if (apiaries != null)
         apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      if (authed) profileProvider.overrideWith(_CompleteProfileController.new),
     ],
     child: const BeekeepingitApp(),
   );

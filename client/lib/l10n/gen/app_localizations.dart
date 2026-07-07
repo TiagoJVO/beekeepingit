@@ -199,6 +199,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete apiary'**
   String get deleteApiary;
+
+  /// Profile screen app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Your profile'**
+  String get profileTitle;
+
+  /// Intro text shown when the profile is not yet complete
+  ///
+  /// In en, this message translates to:
+  /// **'Tell us a bit about yourself to get started.'**
+  String get profileOnboardingIntro;
+
+  /// Profile name field label
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get profileNameLabel;
+
+  /// Validation message for an empty profile name
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your name.'**
+  String get profileNameRequired;
+
+  /// Profile email field label
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get profileEmailLabel;
+
+  /// Validation message for an empty profile email
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your email.'**
+  String get profileEmailRequired;
+
+  /// Validation message for a malformed profile email
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid email address.'**
+  String get profileEmailInvalid;
+
+  /// Profile locale picker label
+  ///
+  /// In en, this message translates to:
+  /// **'Preferred language'**
+  String get profileLocaleLabel;
+
+  /// Submit button on the profile form
+  ///
+  /// In en, this message translates to:
+  /// **'Save profile'**
+  String get profileSaveButton;
+
+  /// Snackbar shown after a successful profile save
+  ///
+  /// In en, this message translates to:
+  /// **'Profile saved.'**
+  String get profileSaveSuccess;
+
+  /// Error shown after a failed profile save that isn't a field-level validation error
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save your profile: {error}'**
+  String profileSaveError(String error);
 }
 
 class _AppLocalizationsDelegate
