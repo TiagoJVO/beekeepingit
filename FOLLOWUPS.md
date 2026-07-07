@@ -13,3 +13,19 @@
   (Settings → GitHub Apps) — a one-time manual step in the GitHub UI that can't be scripted
   from here. `renovate.json` takes effect as soon as it's installed (no onboarding PR). Until
   then the config sits inert. Prune this entry once installed.
+
+## Before merging `feat/EPIC-01-keycloak-oidc-hardening` (#24)
+
+- **CI must confirm what this branch's sandbox couldn't run locally.** The implementation
+  session had no `flutter`/`helm`/`docker`/`k3d`/`kubectl`/`task` binaries available at all
+  (not just no live cluster — the toolchains themselves aren't installed in that sandbox), so
+  none of `flutter analyze`, `flutter test`, `helm lint`/`helm template`, or a live-cluster
+  logout/email-verification/token-lifetime check could be run before opening the PR. Everything
+  was reviewed statically (lint rules in `client/analysis_options.yaml` cross-checked by hand:
+  `require_trailing_commas`, `prefer_single_quotes`, `directives_ordering`; realm JSON validated
+  with a plain JSON parser only). **Before merge:** confirm `build-publish.yml`'s `client`
+  job (flutter analyze + flutter test) is green, and ideally have a teammate with cluster access
+  do one live pass — log in → log out → confirm the Keycloak SSO session is actually revoked
+  (not just the local token), and a reload doesn't silently re-auth — plus `helm lint`/
+  `helm template` on `infra/helm/beekeepingit/charts/keycloak`. Prune this entry once CI is green
+  and, ideally, that live pass has happened (or been consciously waived).
