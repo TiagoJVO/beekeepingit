@@ -1,10 +1,25 @@
 {
   "realm": "beekeepingit",
   "enabled": true,
+  "displayName": "BeekeepingIT",
+  "displayNameHtml": "<b>BeekeepingIT</b>",
+  "loginTheme": "keycloak.v2",
   "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
+  "verifyEmail": true,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 2592000,
+  "ssoSessionMaxLifespan": 2592000,
+  "roles": {
+    "realm": [
+      {
+        "name": "platform-operator",
+        "description": "Ops/superadmin role for managing Keycloak/infra (auth.md §3.3) — not the app-layer admin/user distinction, which is organizations.memberships.role (see ADR-0004). Unassigned by default; out of the app's authZ path."
+      }
+    ]
+  },
   "clients": [
     {
       "clientId": "beekeepingit-pwa",

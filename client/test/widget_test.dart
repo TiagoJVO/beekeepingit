@@ -82,4 +82,30 @@ void main() {
     expect(app.theme, isNotNull);
     expect(app.darkTheme, isNotNull);
   });
+
+  testWidgets('tapping logout calls the auth controller without throwing', (tester) async {
+    await tester.pumpWidget(
+      buildApp(
+        authed: true,
+        apiaries: const [
+          Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('logout-button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('logout-button')));
+    await tester.pumpAndSettle();
+
+    // isAuthenticatedProvider is overridden to a fixed `true` in this harness
+    // (see buildApp), so the router itself won't redirect on logout here —
+    // this test only exercises that the logout control is wired to the
+    // controller's logout() without throwing. The router's redirect-on-
+    // logout behavior is covered by the real end-session/session-clearing
+    // unit tests in test/core/auth/auth_controller_test.dart and by the
+    // Playwright e2e (client/e2e/tests/slice.spec.ts), which drive the real
+    // authControllerProvider end to end.
+  });
 }

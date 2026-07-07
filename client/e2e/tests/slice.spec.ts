@@ -137,6 +137,31 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   }
 });
 
+test("logout revokes the session — a reload does not silently re-authenticate (#24)", async ({
+  page,
+}) => {
+  // The most faithful check of the real Keycloak end-session round trip
+  // (auth_controller_test.dart's unit tests mock the network call; this
+  // exercises the actual RP-initiated logout against Keycloak).
+  await login(page);
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+
+  // The app-side session is cleared and the router sends us back to /login.
+  await page.waitForURL(/\/login/);
+  await enableSemantics(page);
+  await expect(page.getByText("Sign in with Keycloak")).toBeVisible();
+
+  // A fresh reload must NOT silently restore the session (no refresh token
+  // survives logout, and the Keycloak SSO cookie/session was revoked
+  // server-side, not just locally forgotten) — still on /login, not bounced
+  // back into the app.
+  await page.reload();
+  await enableSemantics(page);
+  await expect(page.getByText("Sign in with Keycloak")).toBeVisible();
+  expect(page.url()).toMatch(/\/login/);
+});
+
 async function serverHiveCount(page: Page, token: string, name: string): Promise<number | null> {
   const apiURL = process.env.E2E_API_URL ?? "";
   // Run the request INSIDE the page: same-origin (no CORS) and it uses the

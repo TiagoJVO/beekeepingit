@@ -13,8 +13,8 @@
   installed in the environment this branch was authored in, so
   `services/identity/store/sqlc/gen/users.sql.go`'s two new queries
   (`UpsertUserOnFirstSeen`, `UpdateUserProfile`) were **hand-written** to match `sqlc
-generate`'s output conventions rather than generated, and `go test`/`go vet`/`flutter
-analyze`/`flutter test` could not be run locally. CI (`build-publish.yml`'s per-component
+  generate`'s output conventions rather than generated, and `go test`/`go vet`/`flutter
+  analyze`/`flutter test` could not be run locally. CI (`build-publish.yml`'s per-component
   matrix, which covers both `services/identity` and `client` since each has a Dockerfile/
   pubspec.yaml) is the first real compile/test of this code — **check that it's green before
   merging**, and if `sqlc generate` output differs from the hand-written file, regenerate it

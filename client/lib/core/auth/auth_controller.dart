@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
+import '../sync/powersync_service.dart';
 import 'auth_platform.dart';
 import 'pkce.dart';
 
@@ -40,14 +41,24 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
 /// Drives the OIDC Authorization Code + PKCE flow (auth.md §3.2) for the PWA
 /// public client, entirely client-side (no server session in the skeleton).
 class AuthController extends AsyncNotifier<AuthSession?> {
+  /// Test-only seams: production always uses the defaults (`createAuthPlatform()`
+  /// / a real `http.Client`); unit tests pass a fake [AuthPlatform] and a
+  /// `package:http/testing.dart` `MockClient` (e.g. via
+  /// `authControllerProvider.overrideWith(() => AuthController(...))`) without
+  /// touching the redirect-based web platform or the network.
+  AuthController({AuthPlatform? platform, http.Client? httpClient})
+    : _injectedPlatform = platform,
+      _http = httpClient ?? http.Client();
+
+  final AuthPlatform? _injectedPlatform;
   AuthPlatform? _platform;
-  final http.Client _http = http.Client();
+  final http.Client _http;
 
   @override
   Future<AuthSession?> build() async {
     ref.onDispose(_http.close);
     try {
-      final platform = _platform = createAuthPlatform();
+      final platform = _platform = _injectedPlatform ?? createAuthPlatform();
       final uri = platform.currentUri;
       final code = uri.queryParameters['code'];
       if (code != null) {
@@ -67,7 +78,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
 
   /// Starts login by redirecting the browser to Keycloak's authorize endpoint.
   Future<void> login() async {
-    final platform = _platform ??= createAuthPlatform();
+    final platform = _platform ??= _injectedPlatform ?? createAuthPlatform();
     final pkce = Pkce.generate();
     final state = randomState();
     platform.writeSession(_kVerifier, pkce.verifier);
@@ -87,11 +98,61 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     platform.assignLocation(authorize.toString());
   }
 
-  /// Clears the session (the SPA-level logout; a full Keycloak logout is a
-  /// later concern).
+  /// Logs out: revokes the server-side Keycloak SSO session via **RP-initiated
+  /// logout** (`end_session_endpoint`, NFR-SEC-1) so a stolen/replayed refresh
+  /// token can't outlive a "local-only" logout, then clears all local session
+  /// state regardless of whether the network call succeeded (offline logout
+  /// still degrades to locally-logged-out — D-10 doesn't require offline
+  /// logout to reach Keycloak).
+  ///
+  /// Also disconnects/tears down the local PowerSync database (invalidating
+  /// [powerSyncProvider], whose `onDispose` already calls `disconnect()` +
+  /// `close()`) so a second user logging in on the same shared browser/device
+  /// doesn't see the previous session's replicated rows before the next sync
+  /// reconciles — the tenancy-holds-offline guarantee (auth.md §6.5) extends
+  /// to the moment **between** sessions, not just within one.
   Future<void> logout() async {
-    _platform?.removeSession(_kRefresh);
+    final refreshToken = state.value?.refreshToken;
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      try {
+        await _http.post(
+          Uri.parse(AppConfig.oidcEndSessionUrl),
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: {
+            'client_id': AppConfig.oidcClientId,
+            'refresh_token': refreshToken,
+          },
+        );
+      } catch (_) {
+        // Offline logout: still clear local state below so the user isn't
+        // stuck "logged in" locally. The Keycloak SSO session/cookie will
+        // outlive this device until it expires naturally.
+      }
+    }
+    _clearLocalSession();
+    ref.invalidate(powerSyncProvider);
     state = const AsyncData(null);
+  }
+
+  /// Defensive sweep of every local-storage key this controller ever writes —
+  /// not just the refresh token — so an abandoned mid-flow login (PKCE
+  /// verifier/state written but never exchanged) can't leave stale entries.
+  ///
+  /// Swallows `UnsupportedError` from the non-web stub [AuthPlatform] (widget
+  /// tests run on the VM, where `_platform` is a working object but every
+  /// method throws by design — see `auth_platform_stub.dart`) so `logout()`
+  /// stays a no-throw local state transition there, matching `build()`'s own
+  /// non-web handling.
+  void _clearLocalSession() {
+    final platform = _platform;
+    if (platform == null) return;
+    try {
+      platform.removeSession(_kVerifier);
+      platform.removeSession(_kState);
+      platform.removeSession(_kRefresh);
+    } on UnsupportedError {
+      // Non-web target: there is no real session storage to clear.
+    }
   }
 
   /// A valid access token, refreshed if within 30s of expiry, or null when
