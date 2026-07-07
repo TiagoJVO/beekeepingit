@@ -92,8 +92,11 @@ final profileProvider = AsyncNotifierProvider<ProfileController, Profile>(
 );
 
 /// Whether the caller's profile is complete — derived from [profileProvider],
-/// defaulting to `false` while loading/erroring so the router's completion
-/// gate fails closed (blocks access) rather than open. Only watches
+/// defaulting to `false` while loading/erroring. The router gates on
+/// [profileProvider]'s own `AsyncValue` directly (so it can tell "still
+/// loading" apart from "resolved incomplete" and avoid bouncing to /profile
+/// on a loading flicker); this provider is for callers, like the profile
+/// screen, that only care about the resolved-or-default answer. Only watches
 /// [profileProvider] once authenticated: reading it while logged out would
 /// otherwise fire an unauthenticated (401) GET /v1/profile for no reason —
 /// there is nothing to gate before a session exists (the router already
