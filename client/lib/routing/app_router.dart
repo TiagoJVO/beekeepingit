@@ -6,6 +6,7 @@ import '../core/auth/auth_controller.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/members/members_screen.dart';
 import '../features/organization/organization_repository.dart';
 import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
@@ -17,8 +18,12 @@ import '../features/profile/profile_screen.dart';
 /// incomplete profile is routed to /profile; once the profile is complete but
 /// there's no organization yet, /organization/new; both gates block every
 /// other route (AC bullet 3) until satisfied. Once both are done, the
-/// apiaries list is home. Exposed as a provider so widget tests can override
-/// auth/profile/organization.
+/// apiaries list is home. /organization/members (#27, admin-only
+/// server-side) is reachable once onboarded — it isn't part of the
+/// onboarding gate itself, just a normal authenticated route; no in-app nav
+/// entry point links to it yet (that's `apiaries_list_screen.dart`'s app bar,
+/// outside this teammate's file ownership — flagged in FOLLOWUPS.md).
+/// Exposed as a provider so widget tests can override auth/profile/organization.
 final routerProvider = Provider<GoRouter>((ref) {
   // Re-evaluate redirects whenever auth, the profile fetch, or the
   // organization fetch itself changes (listening to the raw providers, not
@@ -77,6 +82,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/organization/new',
         name: 'organizationNew',
         builder: (context, state) => const OrganizationScreen(),
+      ),
+      GoRoute(
+        path: '/organization/members',
+        name: 'organizationMembers',
+        builder: (context, state) => const MembersScreen(),
       ),
       GoRoute(
         path: '/apiaries',

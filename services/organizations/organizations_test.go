@@ -25,16 +25,36 @@ import (
 
 const organizationsTestAudience = "beekeepingit-organizations"
 
+// stubUser is what the stub identity server knows about a subject —
+// mirrors identity's real UserResponse (user_id + email; #27's
+// accept-on-login path needs the email half too).
+type stubUser struct {
+	UserID string
+	Email  string
+}
+
 // stubIdentity stands in for the identity service's internal resolve
 // endpoint (GET /internal/users/by-sub/{sub}) — mirrors
 // servicetemplate/authn's own stubResolveServers pattern. Every sub not in
 // users gets a 404, matching identity's real "unknown subject" response.
 type stubIdentity struct {
 	srv   *httptest.Server
-	users map[string]string // sub -> user_id
+	users map[string]stubUser // sub -> user
 }
 
-func newStubIdentity(t *testing.T, users map[string]string) *stubIdentity {
+// newStubIdentity takes sub -> user_id for tests that don't care about email
+// (most of organizations_test.go's coverage predates #27's accept-on-login
+// path); newStubIdentityWithEmails below is the #27 fixture.
+func newStubIdentity(t *testing.T, userIDs map[string]string) *stubIdentity {
+	t.Helper()
+	users := make(map[string]stubUser, len(userIDs))
+	for sub, userID := range userIDs {
+		users[sub] = stubUser{UserID: userID}
+	}
+	return newStubIdentityWithEmails(t, users)
+}
+
+func newStubIdentityWithEmails(t *testing.T, users map[string]stubUser) *stubIdentity {
 	t.Helper()
 	s := &stubIdentity{users: users}
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,12 +64,12 @@ func newStubIdentity(t *testing.T, users map[string]string) *stubIdentity {
 		}
 		const prefix = "/internal/users/by-sub/"
 		sub := r.URL.Path[len(prefix):]
-		userID, ok := s.users[sub]
+		u, ok := s.users[sub]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"user_id": userID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"user_id": u.UserID, "email": u.Email})
 	}))
 	t.Cleanup(s.srv.Close)
 	return s
@@ -68,6 +88,18 @@ type orgFixture struct {
 // identity/profile_test.go's newProfileFixture and this package's own
 // main_test.go Postgres/createSchema setup.
 func newOrgFixture(t *testing.T, users map[string]string) *orgFixture {
+	t.Helper()
+	stubUsers := make(map[string]stubUser, len(users))
+	for sub, userID := range users {
+		stubUsers[sub] = stubUser{UserID: userID}
+	}
+	return newOrgFixtureWithEmails(t, stubUsers)
+}
+
+// newOrgFixtureWithEmails is newOrgFixture's #27 counterpart: identical
+// wiring, but the stub identity server also returns each user's email, which
+// the accept-on-login path (invitations_test.go) needs.
+func newOrgFixtureWithEmails(t *testing.T, users map[string]stubUser) *orgFixture {
 	t.Helper()
 	ctx := context.Background()
 
@@ -117,7 +149,7 @@ func newOrgFixture(t *testing.T, users map[string]string) *orgFixture {
 	if err != nil {
 		t.Fatalf("build authn middleware: %v", err)
 	}
-	identity := newStubIdentity(t, users)
+	identity := newStubIdentityWithEmails(t, users)
 
 	cfg := config.Config{ServiceName: "organizations-test", HTTPAddr: ":0", LogLevel: slog.LevelInfo, DB: dbCfg}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -271,6 +303,32 @@ func TestCreateOrganization_DuplicateID_Returns409(t *testing.T) {
 	}
 
 	second := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{"id": orgID, "name": "Second"})
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second POST status = %d, want 409, body = %s", second.Code, second.Body.String())
+	}
+}
+
+// TestCreateOrganization_CallerAlreadyHasOrg_Returns409 covers the
+// single-org-per-user invariant (C-1): a caller who already has an active
+// membership (from an earlier create) cannot create a second organization —
+// the client router gate keeps the normal UI path away from this, but a
+// direct API call must still be rejected rather than silently giving the
+// caller two active memberships (#26 follow-up flagged during #27 review).
+func TestCreateOrganization_CallerAlreadyHasOrg_Returns409(t *testing.T) {
+	sub := "99999999-9999-4999-8999-999999999999"
+	f := newOrgFixture(t, map[string]string{sub: "a0000000-0000-7000-8000-000000000009"})
+	bearer := f.token(t, sub)
+
+	first := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": "b0000000-0000-7000-8000-000000000009", "name": "First Org",
+	})
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first POST status = %d, want 201, body = %s", first.Code, first.Body.String())
+	}
+
+	second := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": "b0000000-0000-7000-8000-00000000000a", "name": "Second Org",
+	})
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second POST status = %d, want 409, body = %s", second.Code, second.Body.String())
 	}

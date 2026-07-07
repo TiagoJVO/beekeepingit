@@ -466,8 +466,41 @@ middleware but deliberately doesn't:
   onboarding). `GET /organizations/me` returning **404** (not 403) for "no org yet" is likewise
   deliberate — it's the signal the client's org-completion gate (mirrors the profile
   completeness probe, FR-ONB-1) distinguishes from every other failure.
-- Membership invitations (FR-ONB-3, D-3's "invites others by email") are **not** built here —
-  that is #27, which depends on #26 merging first (same files, same service).
+- Membership invitations (FR-ONB-3, D-3's "invites others by email") land in #27 — see §8.7.
+
+## 8.7 As built (#27)
+
+Org membership listing + email invitations (FR-ONB-3, FR-TEN-2, NFR-ROL-1, D-3) landed as
+`organizations.invitations` (new table, `data-model.md` §3's `INVITATIONS` shape) plus four
+admin-only routes and one accept-on-login step:
+
+- `GET /v1/organizations/{orgId}/members`, `GET`/`POST /v1/organizations/{orgId}/invitations`,
+  `DELETE /v1/organizations/{orgId}/invitations/{invitationId}` — all require the caller to be
+  an **active admin of exactly that org**: a different org (or no org at all) is 404 (§5.1's
+  scope-hiding rule, unchanged), a same-org non-admin caller is 403 (§5.3's already-declared
+  contract behavior — the OpenAPI spec listed this before either #26 or #27 had handlers).
+- **Accept-on-login, not a separate "accept" endpoint.** FR-ONB-3's AC ("an invited user who
+  logs in is joined to the inviting organization rather than prompted to create a new one") is
+  implemented as a fallback inside `getMyOrganization` (§8.6): when the caller has no active
+  membership, `organizations` looks up a pending invitation matching the caller's own verified
+  profile **email** (from the same internal `identity` resolve call §8.6 already makes — no new
+  east-west hop, `email` was just added to what's read out of that response) and, if found,
+  accepts it and creates the membership at the invitation's role in one DB transaction — the
+  same atomicity pattern as #26's create-org-and-membership. No client-visible "accept"
+  operation exists; polling `GET /organizations/me` (which the org-completion gate already
+  does) is what surfaces it.
+- **Single-org-per-user invariant, closed on both sides.** `POST /organizations` now checks
+  for an existing active membership first and 409s rather than letting a direct API call give
+  one user two active memberships (the client router gate already prevents the normal UI path
+  from re-reaching org creation, but that's not a server-side guarantee by itself). The
+  accept-on-login path only ever runs from the "caller has **no** active membership" branch,
+  so it can't create a second membership for an already-a-member caller either.
+- Member **removal**, invitation **expiry/re-invite**, and admin **transfer** are explicitly
+  **not** built — D-3 and FR-ONB-3 both flag these as open detail beyond "implement the core
+  invite/join now." `DELETE .../invitations/{id}` only revokes a still-**pending** invitation
+  (not a way to remove an active member).
+- History recording (FR-HIS-1) for invite/accept/revoke is deferred, same as #26; tracked in
+  #165.
 
 ## 9. Acceptance-criteria traceability (#109)
 

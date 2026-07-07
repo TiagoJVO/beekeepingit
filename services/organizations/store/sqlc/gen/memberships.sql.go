@@ -91,3 +91,90 @@ func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipPara
 	)
 	return i, err
 }
+
+const createMembershipWithRole = `-- name: CreateMembershipWithRole :one
+INSERT INTO organizations.memberships (id, organization_id, user_id, role, status)
+VALUES ($1, $2, $3, $4, 'active')
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at
+`
+
+type CreateMembershipWithRoleParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Role           string      `json:"role"`
+}
+
+// Inserts an active membership at the given role — the accept-invitation
+// path (#27, FR-ONB-3), where the role comes from the invitation rather
+// than always being 'admin'. Called in the same DB transaction as
+// AcceptInvitation (api/invitations.go acceptPendingInvitation), same D-3
+// atomicity pattern as CreateOrganization+CreateMembership.
+func (q *Queries) CreateMembershipWithRole(ctx context.Context, arg CreateMembershipWithRoleParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, createMembershipWithRole,
+		arg.ID,
+		arg.OrganizationID,
+		arg.UserID,
+		arg.Role,
+	)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listMembers = `-- name: ListMembers :many
+SELECT id, organization_id, user_id, role, status, created_at, updated_at
+FROM organizations.memberships
+WHERE organization_id = $1
+  AND status != 'removed'
+  AND ($3::uuid IS NULL OR id < $3::uuid)
+ORDER BY id DESC
+LIMIT $2
+`
+
+type ListMembersParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	Limit          int32       `json:"limit"`
+	Cursor         pgtype.UUID `json:"cursor"`
+}
+
+// Keyset-paginated by id — the admin-facing member list (NFR-ROL-1, #27 AC:
+// "membership is enforced for data access" / management surface). Excludes
+// 'removed' memberships (not built yet — #27 explicitly defers member
+// removal — but the CHECK constraint already allows the value and the
+// Member.status schema enum lists it, so this filter is future-proofed).
+func (q *Queries) ListMembers(ctx context.Context, arg ListMembersParams) ([]OrganizationsMembership, error) {
+	rows, err := q.db.Query(ctx, listMembers, arg.OrganizationID, arg.Limit, arg.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrganizationsMembership
+	for rows.Next() {
+		var i OrganizationsMembership
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.UserID,
+			&i.Role,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

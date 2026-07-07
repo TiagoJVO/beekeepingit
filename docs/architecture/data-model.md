@@ -160,6 +160,14 @@ its **own** append-only `audit_log` in its **own** schema, written in the same l
 the change (capture mechanism + retention/immutability decided in **#107** → [history.md](history.md)
 / [ADR-0007](../adr/0007-history-audit.md)).
 
+**As built (#27):** `INVITATIONS` landed without the `expires_at` column shown above —
+invitation expiry/re-invite is explicitly still-open detail (D-3, FR-ONB-3), so #27 implements
+only `pending|accepted|revoked` (no automatic `expired` transition, no expiry column to drive
+it yet). `invited_by` (soft ref → `identity.users`, the inviting admin) was added instead,
+needed to populate the invitation record but not shown in the ERD above. A partial unique index
+on `(organization_id, lower(email))` scoped to `status = 'pending'` enforces "at most one
+pending invite per address per org" without needing an `expires_at`-driven cleanup job.
+
 ---
 
 ## 4. Schema ownership

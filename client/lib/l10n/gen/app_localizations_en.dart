@@ -133,4 +133,47 @@ class AppLocalizationsEn extends AppLocalizations {
   String organizationSaveError(String error) {
     return 'Could not create your organization: $error';
   }
+
+  @override
+  String get membersTitle => 'Members & invitations';
+
+  @override
+  String membersLoadError(String error) {
+    return 'Could not load members: $error';
+  }
+
+  @override
+  String get membersInviteEmailLabel => 'Email to invite';
+
+  @override
+  String get membersInviteEmailRequired => 'Enter an email address.';
+
+  @override
+  String get membersInviteButton => 'Invite';
+
+  @override
+  String get membersInviteSuccess => 'Invitation sent.';
+
+  @override
+  String membersInviteError(String error) {
+    return 'Could not complete the request: $error';
+  }
+
+  @override
+  String get membersSectionTitle => 'Members';
+
+  @override
+  String get membersEmpty => 'No members yet.';
+
+  @override
+  String get invitationsSectionTitle => 'Invitations';
+
+  @override
+  String get invitationsEmpty => 'No invitations yet.';
+
+  @override
+  String get membersRevokeButton => 'Revoke invitation';
+
+  @override
+  String get membersRevokeSuccess => 'Invitation revoked.';
 }

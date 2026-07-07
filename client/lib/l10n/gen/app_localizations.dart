@@ -313,6 +313,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not create your organization: {error}'**
   String organizationSaveError(String error);
+
+  /// Members/invitations management screen app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Members & invitations'**
+  String get membersTitle;
+
+  /// Error state on the members screen
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load members: {error}'**
+  String membersLoadError(String error);
+
+  /// Invite-by-email field label
+  ///
+  /// In en, this message translates to:
+  /// **'Email to invite'**
+  String get membersInviteEmailLabel;
+
+  /// Validation message for an empty invite email
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an email address.'**
+  String get membersInviteEmailRequired;
+
+  /// Submit button to send an invitation
+  ///
+  /// In en, this message translates to:
+  /// **'Invite'**
+  String get membersInviteButton;
+
+  /// Snackbar shown after successfully sending an invitation
+  ///
+  /// In en, this message translates to:
+  /// **'Invitation sent.'**
+  String get membersInviteSuccess;
+
+  /// Error shown after a failed invite/revoke action that isn't a field-level validation error
+  ///
+  /// In en, this message translates to:
+  /// **'Could not complete the request: {error}'**
+  String membersInviteError(String error);
+
+  /// Heading above the members list
+  ///
+  /// In en, this message translates to:
+  /// **'Members'**
+  String get membersSectionTitle;
+
+  /// Empty state for the members list
+  ///
+  /// In en, this message translates to:
+  /// **'No members yet.'**
+  String get membersEmpty;
+
+  /// Heading above the invitations list
+  ///
+  /// In en, this message translates to:
+  /// **'Invitations'**
+  String get invitationsSectionTitle;
+
+  /// Empty state for the invitations list
+  ///
+  /// In en, this message translates to:
+  /// **'No invitations yet.'**
+  String get invitationsEmpty;
+
+  /// Tooltip/action to revoke a pending invitation
+  ///
+  /// In en, this message translates to:
+  /// **'Revoke invitation'**
+  String get membersRevokeButton;
+
+  /// Snackbar shown after successfully revoking an invitation
+  ///
+  /// In en, this message translates to:
+  /// **'Invitation revoked.'**
+  String get membersRevokeSuccess;
 }
 
 class _AppLocalizationsDelegate

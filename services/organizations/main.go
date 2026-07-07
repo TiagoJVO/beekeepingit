@@ -1,9 +1,12 @@
-// Command organizations owns organizations + memberships. Besides the
-// internal, in-cluster GET /internal/memberships/active (auth.md §5.1 steps
-// 2–3; never exposed via the gateway), it exposes the client-facing
-// organization surface (POST /organizations, GET /organizations/me[/{orgId}],
-// FR-ONB-2/FR-TEN-2/NFR-ROL-1, #26), mounted behind the gateway. Wiring
-// follows services/servicetemplate/example/main.go.
+// Command organizations owns organizations, memberships and invitations.
+// Besides the internal, in-cluster GET /internal/memberships/active (auth.md
+// §5.1 steps 2–3; never exposed via the gateway), it exposes the
+// client-facing organization surface: create/read (POST /organizations,
+// GET /organizations/me[/{orgId}], FR-ONB-2/FR-TEN-2/NFR-ROL-1, #26) and
+// admin-only membership + email invitations (GET .../members,
+// GET/POST .../invitations, DELETE .../invitations/{id}, FR-ONB-3, D-3, #27),
+// mounted behind the gateway. Wiring follows
+// services/servicetemplate/example/main.go.
 package main
 
 import (

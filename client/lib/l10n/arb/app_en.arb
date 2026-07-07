@@ -163,5 +163,67 @@
         "type": "String"
       }
     }
+  },
+  "membersTitle": "Members & invitations",
+  "@membersTitle": {
+    "description": "Members/invitations management screen app bar title"
+  },
+  "membersLoadError": "Could not load members: {error}",
+  "@membersLoadError": {
+    "description": "Error state on the members screen",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "membersInviteEmailLabel": "Email to invite",
+  "@membersInviteEmailLabel": {
+    "description": "Invite-by-email field label"
+  },
+  "membersInviteEmailRequired": "Enter an email address.",
+  "@membersInviteEmailRequired": {
+    "description": "Validation message for an empty invite email"
+  },
+  "membersInviteButton": "Invite",
+  "@membersInviteButton": {
+    "description": "Submit button to send an invitation"
+  },
+  "membersInviteSuccess": "Invitation sent.",
+  "@membersInviteSuccess": {
+    "description": "Snackbar shown after successfully sending an invitation"
+  },
+  "membersInviteError": "Could not complete the request: {error}",
+  "@membersInviteError": {
+    "description": "Error shown after a failed invite/revoke action that isn't a field-level validation error",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "membersSectionTitle": "Members",
+  "@membersSectionTitle": {
+    "description": "Heading above the members list"
+  },
+  "membersEmpty": "No members yet.",
+  "@membersEmpty": {
+    "description": "Empty state for the members list"
+  },
+  "invitationsSectionTitle": "Invitations",
+  "@invitationsSectionTitle": {
+    "description": "Heading above the invitations list"
+  },
+  "invitationsEmpty": "No invitations yet.",
+  "@invitationsEmpty": {
+    "description": "Empty state for the invitations list"
+  },
+  "membersRevokeButton": "Revoke invitation",
+  "@membersRevokeButton": {
+    "description": "Tooltip/action to revoke a pending invitation"
+  },
+  "membersRevokeSuccess": "Invitation revoked.",
+  "@membersRevokeSuccess": {
+    "description": "Snackbar shown after successfully revoking an invitation"
   }
 }

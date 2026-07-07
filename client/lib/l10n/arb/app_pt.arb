@@ -35,5 +35,18 @@
   "organizationAddressLabel": "Morada (opcional)",
   "organizationSaveButton": "Criar organização",
   "organizationSaveSuccess": "Organização criada.",
-  "organizationSaveError": "Não foi possível criar a sua organização: {error}"
+  "organizationSaveError": "Não foi possível criar a sua organização: {error}",
+  "membersTitle": "Membros e convites",
+  "membersLoadError": "Não foi possível carregar os membros: {error}",
+  "membersInviteEmailLabel": "Email a convidar",
+  "membersInviteEmailRequired": "Introduza um endereço de email.",
+  "membersInviteButton": "Convidar",
+  "membersInviteSuccess": "Convite enviado.",
+  "membersInviteError": "Não foi possível concluir o pedido: {error}",
+  "membersSectionTitle": "Membros",
+  "membersEmpty": "Ainda não há membros.",
+  "invitationsSectionTitle": "Convites",
+  "invitationsEmpty": "Ainda não há convites.",
+  "membersRevokeButton": "Revogar convite",
+  "membersRevokeSuccess": "Convite revogado."
 }

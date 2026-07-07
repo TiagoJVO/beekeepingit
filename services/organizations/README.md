@@ -1,13 +1,15 @@
 # services/organizations
 
 The **organizations** service. It owns the `organizations.organizations`
-(tenant root) and `organizations.memberships` tables, resolves a user to its
-**active membership** — the `organization_id` + `role` the request runs under
-— for the shared auth middleware's org/role resolution
-([auth.md](../../docs/architecture/auth.md) §5.1 steps 2–3,
+(tenant root), `organizations.memberships` and `organizations.invitations`
+tables, resolves a user to its **active membership** (the `organization_id`
+and `role` the request runs under) for the shared auth middleware's org/role
+resolution ([auth.md](../../docs/architecture/auth.md) §5.1 steps 2–3,
 [walking-skeleton.md](../../docs/architecture/walking-skeleton.md) §4.2/§5.2),
 and exposes the client-facing organization-creation surface (FR-ONB-2,
-FR-TEN-2, NFR-ROL-1, [#26](https://github.com/TiagoJVO/beekeepingit/issues/26)).
+FR-TEN-2, NFR-ROL-1, [#26](https://github.com/TiagoJVO/beekeepingit/issues/26))
+plus admin-only membership + email invitations (FR-ONB-3, D-3,
+[#27](https://github.com/TiagoJVO/beekeepingit/issues/27)).
 
 Stamped from [`services/servicetemplate`](../servicetemplate/README.md); DB
 access via [`services/shared/dbaccess`](../shared/README.md). Its own Go module,
@@ -15,32 +17,40 @@ linked through the repo-root `go.work`.
 
 ## Surface
 
-| Route                                       | Auth         | Purpose                                                                                                                                                               |
-| ------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /v1/organizations`                    | Keycloak JWT | Create an organization; the caller becomes its first `admin` member, in the same DB transaction (D-3). No org-membership requirement — this is how a caller gets one. |
-| `GET /v1/organizations/me`                  | Keycloak JWT | The caller's own organization, resolved from their active membership. `404` when the caller has none yet — the signal the client's org-completion gate probes for.    |
-| `GET /v1/organizations/{orgId}`             | Keycloak JWT | An organization by id; `404` (not `403`) unless `{orgId}` is the caller's own org (ADR-0002 — the path never widens scope).                                           |
-| `GET /internal/memberships/active?user_id=` | Keycloak JWT | Resolve a user → `{ organization_id, role }` for its active membership / 404. **Internal only** — never routed through the gateway.                                   |
-| `GET /healthz`, `GET /readyz`               | none         | Liveness / readiness (readiness pings the DB).                                                                                                                        |
+| Route                                                         | Auth         | Purpose                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /v1/organizations`                                      | Keycloak JWT | Create an organization; the caller becomes its first `admin` member, in the same DB transaction (D-3). `409` if the caller already has an active membership elsewhere.                                                                                      |
+| `GET /v1/organizations/me`                                    | Keycloak JWT | The caller's own organization, resolved from their active membership. Before a `404`, auto-accepts a pending invitation matching the caller's own verified profile email (FR-ONB-3) if one exists — the signal the client's org-completion gate probes for. |
+| `GET /v1/organizations/{orgId}`                               | Keycloak JWT | An organization by id; `404` (not `403`) unless `{orgId}` is the caller's own org (ADR-0002 — the path never widens scope).                                                                                                                                 |
+| `GET /v1/organizations/{orgId}/members`                       | Keycloak JWT | List the org's members (admin only, `403` for a non-admin member). Keyset-paginated.                                                                                                                                                                        |
+| `GET /v1/organizations/{orgId}/invitations`                   | Keycloak JWT | List the org's invitations, any status (admin only). Keyset-paginated.                                                                                                                                                                                      |
+| `POST /v1/organizations/{orgId}/invitations`                  | Keycloak JWT | Invite an email to join at a role (default `user`, admin only). `409` if that email already has a pending invitation to this org.                                                                                                                           |
+| `DELETE /v1/organizations/{orgId}/invitations/{invitationId}` | Keycloak JWT | Revoke a still-pending invitation (admin only); `404` if it's already resolved or doesn't exist in this org.                                                                                                                                                |
+| `GET /internal/memberships/active?user_id=`                   | Keycloak JWT | Resolve a user → `{ organization_id, role }` for its active membership / 404. **Internal only** — never routed through the gateway.                                                                                                                         |
+| `GET /healthz`, `GET /readyz`                                 | none         | Liveness / readiness (readiness pings the DB).                                                                                                                                                                                                              |
 
-The three `/v1` routes run behind Keycloak authn only, **not** the shared
+All `/v1` routes run behind Keycloak authn only, **not** the shared
 `authn.NewOrgResolver` — see `api/organizations.go`'s package doc for why (a
 brand-new caller must reach `POST /organizations`, and looping back into this
 same service's own membership table over HTTP would be redundant).
 
-History recording (FR-HIS-1) for organization create/update is deferred —
-tracked in [#165](https://github.com/TiagoJVO/beekeepingit/issues/165), same as
-profile's (#25).
+Member removal, invitation expiry/re-invite, and admin transfer are **not**
+built — D-3 and FR-ONB-3 both flag these as still-open detail beyond "implement
+the core invite/join now."
+
+History recording (FR-HIS-1) for organization/membership/invitation changes is
+deferred — tracked in [#165](https://github.com/TiagoJVO/beekeepingit/issues/165),
+same as profile's (#25).
 
 ## Configuration
 
 Inherits the template's env vars (see
 [servicetemplate/README.md](../servicetemplate/README.md)). Additionally:
 
-| Variable                | Notes                                                                                                          |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `SEED_DEV_DATA`         | When `true`, idempotently seeds the dev/CI org + active admin membership (`shared/devseed`). Dev/CI only.      |
-| `INTERNAL_IDENTITY_URL` | The identity service's in-cluster base URL — resolves the caller's `sub` to a `user_id` (auth.md §5.1 step 1). |
+| Variable                | Notes                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SEED_DEV_DATA`         | When `true`, idempotently seeds the dev/CI org + active admin membership (`shared/devseed`). Dev/CI only.                                                                |
+| `INTERNAL_IDENTITY_URL` | The identity service's in-cluster base URL — resolves the caller's `sub` to a `user_id` + `email` (auth.md §5.1 step 1; email is used by the accept-on-login path, #27). |
 
 ## Development
 

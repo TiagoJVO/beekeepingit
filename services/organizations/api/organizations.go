@@ -1,13 +1,14 @@
 // Package api (this file) — client-facing organization routes (FR-ONB-2,
-// FR-TEN-2, NFR-ROL-1, #26). All three routes run behind authn.NewMiddleware
-// only (no authn.NewOrgResolver): that middleware calls out to identity AND
-// back into this same service's own /internal/memberships/active over HTTP,
-// which would be a needless self-loopback here — organizations already owns
-// the memberships table it would be asking itself about. Instead every
-// handler resolves org context with resolveActiveMembership below: one
-// internal call to identity (sub → user_id, auth.md §5.1 step 1) plus a
-// direct DB lookup of the caller's own active membership (step 3) — the same
-// two facts NewOrgResolver would produce, minus the redundant HTTP hop.
+// FR-TEN-2, NFR-ROL-1, #26; member/invitation routes for #27 live in
+// invitations.go). All routes run behind authn.NewMiddleware only (no
+// authn.NewOrgResolver): that middleware calls out to identity AND back into
+// this same service's own /internal/memberships/active over HTTP, which
+// would be a needless self-loopback here — organizations already owns the
+// memberships table it would be asking itself about. Instead every handler
+// resolves org context with resolveActiveMembership/resolveCaller below: one
+// internal call to identity (sub → user_id + email, auth.md §5.1 step 1)
+// plus a direct DB lookup of the caller's own active membership (step 3) —
+// the same facts NewOrgResolver would produce, minus the redundant HTTP hop.
 //
 // This also means a brand-new caller (no identity.users row yet, or no active
 // membership) is never blanket-403'd by shared middleware before reaching a
@@ -15,12 +16,21 @@
 // point of onboarding), and GET /organizations/me's "no active membership"
 // case must come back as a normal, handler-level 404 the client's
 // org-completion gate can distinguish from any other failure (mirrors
-// profile's GET-as-completeness-probe pattern, client-side).
+// profile's GET-as-completeness-probe pattern, client-side) — after first
+// trying the accept-on-login fallback in getMyOrganization (#27, FR-ONB-3).
 //
-// History recording (FR-HIS-1) for organization create/update is explicitly
-// deferred — EPIC-07's audit log isn't built yet. Tracked in
-// https://github.com/TiagoJVO/beekeepingit/issues/165; this is the seam where
-// an audit write would go once that lands (same deferral as #25's profile).
+// POST /organizations additionally rejects a caller who already has an
+// active membership (409) — the client router gate keeps the normal UI path
+// away from a second create, but a direct API call must not be allowed to
+// give one user two active memberships, which would break the
+// single-org-per-user invariant (C-1) this whole file — and invitations.go's
+// acceptance path — assumes.
+//
+// History recording (FR-HIS-1) for organization/membership/invitation
+// changes is explicitly deferred — EPIC-07's audit log isn't built yet.
+// Tracked in https://github.com/TiagoJVO/beekeepingit/issues/165; this is
+// the seam where audit writes would go once that lands (same deferral as
+// #25's profile and #26's organization create).
 package api
 
 import (
@@ -71,12 +81,25 @@ type organizationCreateRequest struct {
 	Address string `json:"address"`
 }
 
-// UserResolver maps a verified OIDC subject to its identity.users user_id —
-// the one internal call CreateOrganization needs before it can own a row
-// (auth.md §5.1 step 1). A small local interface (rather than importing
-// authn's private resolver) so it's trivially fakeable in tests.
+// ResolvedUser is what identity's internal resolve endpoint tells us about a
+// verified OIDC subject. Email is included alongside UserID (not just the id)
+// because the invitation accept-on-login path (#27, FR-ONB-3 AC 2) matches a
+// pending invitation by the caller's own verified profile email — this
+// avoids a second internal call, or worse, organizations trying to read
+// identity.users directly (forbidden — cross-schema, service-decomposition.md
+// rule 2).
+type ResolvedUser struct {
+	UserID string
+	Email  string
+}
+
+// UserResolver maps a verified OIDC subject to its identity.users row — the
+// one internal call CreateOrganization needs before it can own a row
+// (auth.md §5.1 step 1), and the one resolveActiveMembership needs for the
+// accept-on-login email match. A small local interface (rather than
+// importing authn's private resolver) so it's trivially fakeable in tests.
 type UserResolver interface {
-	ResolveUserID(ctx context.Context, bearer, sub string) (string, error)
+	Resolve(ctx context.Context, bearer, sub string) (ResolvedUser, error)
 }
 
 // HTTPUserResolver calls identity's internal resolve endpoint directly —
@@ -100,7 +123,7 @@ func NewHTTPUserResolver(identityBaseURL string, client *http.Client) *HTTPUserR
 	return &HTTPUserResolver{IdentityBaseURL: identityBaseURL, Client: client}
 }
 
-func (h *HTTPUserResolver) ResolveUserID(ctx context.Context, bearer, sub string) (string, error) {
+func (h *HTTPUserResolver) Resolve(ctx context.Context, bearer, sub string) (ResolvedUser, error) {
 	// url.PathEscape (not raw concatenation) matches authn.NewOrgResolver's
 	// own resolveUser step: sub is a verified JWT claim, not free-form
 	// user input, and escaping it is a correctness fix regardless (a sub
@@ -108,18 +131,19 @@ func (h *HTTPUserResolver) ResolveUserID(ctx context.Context, bearer, sub string
 	reqURL := h.IdentityBaseURL + "/internal/users/by-sub/" + url.PathEscape(sub)
 	status, body, err := h.getJSON(ctx, reqURL, bearer)
 	if err != nil {
-		return "", err
+		return ResolvedUser{}, err
 	}
 	if status != http.StatusOK {
-		return "", fmt.Errorf("api: resolve user by sub: identity responded %d", status)
+		return ResolvedUser{}, fmt.Errorf("api: resolve user by sub: identity responded %d", status)
 	}
 	var out struct {
 		UserID string `json:"user_id"`
+		Email  string `json:"email"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return "", err
+		return ResolvedUser{}, err
 	}
-	return out.UserID, nil
+	return ResolvedUser{UserID: out.UserID, Email: out.Email}, nil
 }
 
 // getJSON issues an authenticated GET against rawURL — an internal,
@@ -127,7 +151,7 @@ func (h *HTTPUserResolver) ResolveUserID(ctx context.Context, bearer, sub string
 // request field) plus a URL-escaped path segment, the same trust boundary
 // authn.NewOrgResolver's own internal calls cross. Factored out to its own
 // function (mirroring that resolver's getJSON) rather than inlined in
-// ResolveUserID.
+// Resolve.
 func (h *HTTPUserResolver) getJSON(ctx context.Context, rawURL, bearer string) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil) //nolint:gosec // G704: rawURL is built from an operator-configured internal base URL (INTERNAL_IDENTITY_URL) + a url.PathEscape'd JWT sub, not a client-supplied request field — see doc above.
 	if err != nil {
@@ -154,13 +178,23 @@ func (h *HTTPUserResolver) getJSON(ctx context.Context, rawURL, bearer string) (
 // PublicRouter returns the client-facing /v1 organization routes backed by
 // pool, mounted under "/v1" behind authn.NewMiddleware only (see package doc
 // for why no authn.NewOrgResolver sits in front of any of these routes).
+// Member/invitation routes are registered in invitations.go's registerMemberAndInvitationRoutes.
 func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
 	r.Post("/organizations", createOrganization(pool, q, resolver))
-	r.Get("/organizations/me", getMyOrganization(q, resolver))
+	r.Get("/organizations/me", getMyOrganization(pool, q, resolver))
 	r.Get("/organizations/{orgId}", getOrganization(q, resolver))
+	registerMemberAndInvitationRoutes(r, q, resolver)
 	return r
+}
+
+// callerMembership is the resolved (org, user, role) tuple resolveActiveMembership
+// produces for the caller of the current request.
+type callerMembership struct {
+	OrgID  pgtype.UUID
+	UserID pgtype.UUID
+	Role   string
 }
 
 // resolveActiveMembership maps the request's verified sub to its active
@@ -173,34 +207,60 @@ func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 // caller-supplied id to withhold the existence of, and the client's
 // org-completion gate needs a clean, distinguishable "you have no org yet"
 // signal (mirrors profile's lazy-GET pattern) rather than a blanket 403.
-func resolveActiveMembership(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, resolver UserResolver) (orgID pgtype.UUID, ok bool) {
+func resolveActiveMembership(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, resolver UserResolver) (callerMembership, bool) {
+	_, userID, ok := resolveCaller(w, r, resolver)
+	if !ok {
+		return callerMembership{}, false
+	}
+	member, err := activeMembershipFor(r, q, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		problem.Write(w, r, problem.NotFound("no organization found for the caller"))
+		return callerMembership{}, false
+	}
+	if err != nil {
+		problem.Write(w, r, problem.Internal())
+		return callerMembership{}, false
+	}
+	return member, true
+}
+
+// activeMembershipFor looks up userID's active membership, returning
+// pgx.ErrNoRows as-is (no response written) rather than a wrapped Problem —
+// unlike resolveActiveMembership, getMyOrganization needs to try the
+// accept-on-login fallback before deciding this is a genuine 404, so it
+// can't have a response already committed to the ResponseWriter at this
+// point.
+func activeMembershipFor(r *http.Request, q *sqlcgen.Queries, userID pgtype.UUID) (callerMembership, error) {
+	m, err := q.GetActiveMembershipByUser(r.Context(), userID)
+	if err != nil {
+		return callerMembership{}, err
+	}
+	return callerMembership{OrgID: m.OrganizationID, UserID: userID, Role: m.Role}, nil
+}
+
+// resolveCaller resolves the request's verified sub to its identity.users
+// row (auth.md §5.1 step 1) — the shared first step behind
+// resolveActiveMembership and acceptPendingInvitationByEmail. Writes the
+// appropriate problem and returns ok=false on any failure; callers must stop
+// on !ok exactly like resolveActiveMembership's other callers do.
+func resolveCaller(w http.ResponseWriter, r *http.Request, resolver UserResolver) (ResolvedUser, pgtype.UUID, bool) {
 	claims, found := authn.FromContext(r.Context())
 	if !found {
 		problem.Write(w, r, problem.Internal())
-		return pgtype.UUID{}, false
+		return ResolvedUser{}, pgtype.UUID{}, false
 	}
 
-	userIDStr, err := resolver.ResolveUserID(r.Context(), r.Header.Get("Authorization"), claims.Sub)
+	resolved, err := resolver.Resolve(r.Context(), r.Header.Get("Authorization"), claims.Sub)
 	if err != nil {
 		problem.Write(w, r, problem.NotFound("no organization found for the caller"))
-		return pgtype.UUID{}, false
+		return ResolvedUser{}, pgtype.UUID{}, false
 	}
-	userID, err := uuid.Parse(userIDStr)
+	userID, err := uuid.Parse(resolved.UserID)
 	if err != nil {
 		problem.Write(w, r, problem.Internal())
-		return pgtype.UUID{}, false
+		return ResolvedUser{}, pgtype.UUID{}, false
 	}
-
-	m, err := q.GetActiveMembershipByUser(r.Context(), pgtype.UUID{Bytes: userID, Valid: true})
-	if errors.Is(err, pgx.ErrNoRows) {
-		problem.Write(w, r, problem.NotFound("no organization found for the caller"))
-		return pgtype.UUID{}, false
-	}
-	if err != nil {
-		problem.Write(w, r, problem.Internal())
-		return pgtype.UUID{}, false
-	}
-	return m.OrganizationID, true
+	return resolved, pgtype.UUID{Bytes: userID, Valid: true}, true
 }
 
 func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
@@ -239,13 +299,29 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 		// with no known identity.users row is authenticated but not a
 		// recognized user — 403, matching NewOrgResolver's own semantics for
 		// the same failure mode.
-		userIDStr, err := resolver.ResolveUserID(r.Context(), r.Header.Get("Authorization"), claims.Sub)
+		resolved, err := resolver.Resolve(r.Context(), r.Header.Get("Authorization"), claims.Sub)
 		if err != nil {
 			problem.Write(w, r, problem.Forbidden("caller is not a known user"))
 			return
 		}
-		userID, err := uuid.Parse(userIDStr)
+		userID, err := uuid.Parse(resolved.UserID)
 		if err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		// Reject a second org for a caller who already has an active
+		// membership: the client-side router gate steers the normal UI path
+		// away from this (an org-complete user never reaches the creation
+		// form), but nothing stops a direct API call otherwise, and a second
+		// active membership would violate the single-org-per-user invariant
+		// (C-1) the rest of the system — including #27's own invitation
+		// acceptance below — assumes. pgx.ErrNoRows (no existing membership)
+		// is the expected, successful case here, not a failure.
+		if _, err := q.GetActiveMembershipByUser(r.Context(), pgtype.UUID{Bytes: userID, Valid: true}); err == nil {
+			problem.Write(w, r, problem.Conflict("caller already belongs to an organization"))
+			return
+		} else if !errors.Is(err, pgx.ErrNoRows) {
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -299,13 +375,41 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 // profileProvider) calls this to learn "do I have an org" without needing to
 // know its id up front — a 404 here means "none yet", the exact signal the
 // router's org-completion redirect gates on.
-func getMyOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
+//
+// Before giving up with a 404, it checks for a pending invitation matching
+// the caller's own verified profile email and auto-accepts it (FR-ONB-3 AC:
+// "an invited user who logs in is joined to the inviting organization rather
+// than prompted to create a new one") — see acceptPendingInvitationByEmail.
+// This is the only place that lookup happens: getOrganization's "does {orgId}
+// match my org" question has nothing to do with whether the caller has *any*
+// org, so it stays a plain membership check.
+func getMyOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		org, ok := resolveActiveMembership(w, r, q, resolver)
+		resolved, userID, ok := resolveCaller(w, r, resolver)
 		if !ok {
 			return
 		}
-		row, err := q.GetOrganization(r.Context(), org)
+
+		member, err := activeMembershipFor(r, q, userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No membership yet — try the accept-on-login fallback (FR-ONB-3
+			// AC 2) before deciding this is genuinely "no org" for the caller.
+			accepted, acceptErr := acceptPendingInvitationByEmail(r, pool, q, userID, resolved.Email)
+			if acceptErr != nil {
+				if errors.Is(acceptErr, pgx.ErrNoRows) {
+					problem.Write(w, r, problem.NotFound("no organization found for the caller"))
+					return
+				}
+				problem.Write(w, r, problem.Internal())
+				return
+			}
+			member = accepted
+		} else if err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		row, err := q.GetOrganization(r.Context(), member.OrgID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem.Write(w, r, problem.NotFound("organization not found"))
 			return
@@ -324,17 +428,17 @@ func getMyOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFu
 // another org's existence.
 func getOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		org, ok := resolveActiveMembership(w, r, q, resolver)
+		member, ok := resolveActiveMembership(w, r, q, resolver)
 		if !ok {
 			return
 		}
 		requested, err := uuid.Parse(chi.URLParam(r, "orgId"))
-		if err != nil || requested != uuid.UUID(org.Bytes) {
+		if err != nil || requested != uuid.UUID(member.OrgID.Bytes) {
 			problem.Write(w, r, problem.NotFound("organization not found"))
 			return
 		}
 
-		row, err := q.GetOrganization(r.Context(), org)
+		row, err := q.GetOrganization(r.Context(), member.OrgID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem.Write(w, r, problem.NotFound("organization not found"))
 			return
