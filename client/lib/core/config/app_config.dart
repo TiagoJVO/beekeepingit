@@ -45,6 +45,12 @@ abstract final class AppConfig {
       '$oidcIssuer/protocol/openid-connect/auth';
   static String get oidcTokenUrl => '$oidcIssuer/protocol/openid-connect/token';
 
+  /// RP-initiated logout (OIDC session management) — revokes the Keycloak
+  /// SSO session server-side on logout (auth.md §7, NFR-SEC-1), not just the
+  /// client's local token cache.
+  static String get oidcEndSessionUrl =>
+      '$oidcIssuer/protocol/openid-connect/logout';
+
   /// Sync service client-facing endpoints (gateway route `/v1/sync/**`).
   static String get syncTokenUrl => '$gatewayBaseUrl/v1/sync/token';
   static String get syncBatchUrl => '$gatewayBaseUrl/v1/sync/batch';
