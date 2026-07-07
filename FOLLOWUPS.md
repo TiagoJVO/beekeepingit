@@ -16,16 +16,19 @@
 
 ## Before merging `feat/EPIC-01-keycloak-oidc-hardening` (#24)
 
-- **CI must confirm what this branch's sandbox couldn't run locally.** The implementation
-  session had no `flutter`/`helm`/`docker`/`k3d`/`kubectl`/`task` binaries available at all
-  (not just no live cluster — the toolchains themselves aren't installed in that sandbox), so
-  none of `flutter analyze`, `flutter test`, `helm lint`/`helm template`, or a live-cluster
-  logout/email-verification/token-lifetime check could be run before opening the PR. Everything
-  was reviewed statically (lint rules in `client/analysis_options.yaml` cross-checked by hand:
-  `require_trailing_commas`, `prefer_single_quotes`, `directives_ordering`; realm JSON validated
-  with a plain JSON parser only). **Before merge:** confirm `build-publish.yml`'s `client`
-  job (flutter analyze + flutter test) is green, and ideally have a teammate with cluster access
-  do one live pass — log in → log out → confirm the Keycloak SSO session is actually revoked
-  (not just the local token), and a reload doesn't silently re-auth — plus `helm lint`/
-  `helm template` on `infra/helm/beekeepingit/charts/keycloak`. Prune this entry once CI is green
-  and, ideally, that live pass has happened (or been consciously waived).
+- **Live OIDC login→logout round trip against the real Keycloak is still unverified.** The
+  implementation session's sandbox had no `flutter`/`helm`/`docker`/`k3d`/`kubectl`/`task`
+  binaries installed at all, so nothing could be run locally before opening PR #166 — CI
+  (`build client`: flutter analyze + flutter test + flutter build web; `k3d cluster + helm test`:
+  full umbrella-chart install incl. the hardened realm ConfigMap into an ephemeral k3d cluster;
+  `helm lint & template dry-run`) is now green and **did** catch two real bugs a local run would
+  have (an invalid `const` in a test, and the new logout session-sweep throwing on the non-web
+  stub platform in a widget test) — both fixed, CI re-run green. What CI's `k3d cluster + helm
+  test` job does **not** exercise is an actual browser-driven OIDC login → logout → reload against
+  the deployed Keycloak (it only asserts the chart installs and a Postgres smoke query passes) —
+  that's the Playwright e2e's job (`client/e2e/tests/slice.spec.ts`'s new logout test), which isn't
+  wired into this repo's PR-triggered CI (run manually/per `client/e2e/README.md`). **Before
+  merge:** ideally have a teammate with cluster access run the e2e suite (or eyeball a manual
+  login/logout) at least once against a live deploy of this branch, to confirm the RP-initiated
+  end-session call actually revokes the Keycloak SSO session end-to-end (not just that the unit
+  tests' mocked network call was made). Prune this entry once that's done or consciously waived.
