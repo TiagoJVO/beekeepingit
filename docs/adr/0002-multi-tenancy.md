@@ -90,9 +90,10 @@ beyond the general "connection pooler" risk this ADR already flagged:
   RUNS THE MIGRATIONS that `CREATE TABLE` the schema's own tables** (`dbaccess.Migrate` and
   `dbaccess.Connect` share one `Config`/DSN — `services/servicetemplate/config/config.go`). That
   makes `<schema>_svc` the **table owner** for every table it queries.
-- **Postgres table owners bypass RLS by default** — a plain `ALTER TABLE ... ENABLE ROW LEVEL
-  SECURITY` would be **silently ineffective** for exactly the role that runs every application
-  query, giving a false sense of a working backstop. Making RLS actually bind here needs
+- **Postgres table owners bypass RLS by default** — a plain
+  `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` would be **silently ineffective** for exactly the
+  role that runs every application query, giving a false sense of a working backstop. Making
+  RLS actually bind here needs
   `FORCE ROW LEVEL SECURITY` (still bypassed by a table's owner unless forced) **and** either (a)
   separating table ownership from the querying role (a bootstrap/infra change — who owns the
   table vs. who's granted DML — not a per-service code change) or (b) auditing that `FORCE` is
