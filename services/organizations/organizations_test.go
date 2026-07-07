@@ -25,16 +25,28 @@ import (
 
 const organizationsTestAudience = "beekeepingit-organizations"
 
+// stubUser is what the stub identity server knows about a subject —
+// mirrors identity's real UserResponse (user_id + email; #27's
+// accept-on-login path needs the email half too).
+type stubUser struct {
+	UserID string
+	Email  string
+}
+
 // stubIdentity stands in for the identity service's internal resolve
 // endpoint (GET /internal/users/by-sub/{sub}) — mirrors
 // servicetemplate/authn's own stubResolveServers pattern. Every sub not in
 // users gets a 404, matching identity's real "unknown subject" response.
 type stubIdentity struct {
 	srv   *httptest.Server
-	users map[string]string // sub -> user_id
+	users map[string]stubUser // sub -> user
 }
 
-func newStubIdentity(t *testing.T, users map[string]string) *stubIdentity {
+// newStubIdentity starts the stub identity server backing users (sub ->
+// user). Called from newOrgFixtureWithEmails; newOrgFixture (sub -> user_id
+// only, most of this file's coverage predates #27's accept-on-login path)
+// converts its simpler map and delegates to newOrgFixtureWithEmails.
+func newStubIdentity(t *testing.T, users map[string]stubUser) *stubIdentity {
 	t.Helper()
 	s := &stubIdentity{users: users}
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,12 +56,12 @@ func newStubIdentity(t *testing.T, users map[string]string) *stubIdentity {
 		}
 		const prefix = "/internal/users/by-sub/"
 		sub := r.URL.Path[len(prefix):]
-		userID, ok := s.users[sub]
+		u, ok := s.users[sub]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"user_id": userID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"user_id": u.UserID, "email": u.Email})
 	}))
 	t.Cleanup(s.srv.Close)
 	return s
@@ -68,6 +80,55 @@ type orgFixture struct {
 // identity/profile_test.go's newProfileFixture and this package's own
 // main_test.go Postgres/createSchema setup.
 func newOrgFixture(t *testing.T, users map[string]string) *orgFixture {
+	t.Helper()
+	stubUsers := make(map[string]stubUser, len(users))
+	for sub, userID := range users {
+		stubUsers[sub] = stubUser{UserID: userID}
+	}
+	return newOrgFixtureWithEmails(t, stubUsers)
+}
+
+// newOrgFixtureWithEmails is newOrgFixture's #27 counterpart: identical
+// wiring, but the stub identity server also returns each user's email, which
+// the accept-on-login path (invitations_test.go) needs.
+func newOrgFixtureWithEmails(t *testing.T, users map[string]stubUser) *orgFixture {
+	t.Helper()
+	return newOrgFixtureInternal(t, users, nil)
+}
+
+// tokenClaim is the JWT-level email/email_verified pair a test controls,
+// deliberately independent of stubUser.Email (the identity.users profile
+// field the internal resolve response carries). The security regression
+// test in invitations_test.go needs to set these differently from the
+// profile email to prove getMyOrganization matches invitations against the
+// verified token claim, never the mutable profile field.
+type tokenClaim struct {
+	Email         string
+	EmailVerified bool
+}
+
+// newOrgFixtureWithEmailClaims is newOrgFixtureWithEmails' security-test
+// counterpart: users carries the identity.users profile email (mutable,
+// PATCH /v1/profile, #25) per stubUser.Email, while claimsBySub carries the
+// JWT-verified email/email_verified pair per sub — independently, so a test
+// can make them disagree and assert only the verified claim is honored.
+func newOrgFixtureWithEmailClaims(t *testing.T, users map[string]stubUser, claimsBySub map[string]tokenClaim) *orgFixture {
+	t.Helper()
+	return newOrgFixtureInternal(t, users, claimsBySub)
+}
+
+// newOrgFixtureInternal is the one shared constructor behind newOrgFixture,
+// newOrgFixtureWithEmails and newOrgFixtureWithEmailClaims. When
+// claimsBySub is non-nil, the mounted authn chain is wrapped with a layer
+// that enriches the verified Claims with a per-sub Email/EmailVerified pair,
+// standing in for what a real Keycloak token's email/email_verified claims
+// would carry — authtest.Mint (services/servicetemplate/authn/authtest,
+// shared infra outside this branch's ownership) only sets the standard
+// sub/aud/exp claims, so this is the sanctioned test-only seam, mirroring
+// services/apiaries/main_test.go and services/sync/main_test.go's own
+// injectClaims (which also layers directly on authn.Claims rather than
+// extending authtest).
+func newOrgFixtureInternal(t *testing.T, users map[string]stubUser, claimsBySub map[string]tokenClaim) *orgFixture {
 	t.Helper()
 	ctx := context.Background()
 
@@ -117,6 +178,9 @@ func newOrgFixture(t *testing.T, users map[string]string) *orgFixture {
 	if err != nil {
 		t.Fatalf("build authn middleware: %v", err)
 	}
+	if claimsBySub != nil {
+		authnMW = withEmailClaims(authnMW, claimsBySub)
+	}
 	identity := newStubIdentity(t, users)
 
 	cfg := config.Config{ServiceName: "organizations-test", HTTPAddr: ":0", LogLevel: slog.LevelInfo, DB: dbCfg}
@@ -132,6 +196,28 @@ func newOrgFixture(t *testing.T, users map[string]string) *orgFixture {
 	srv.Mount("/v1", authnMW(api.PublicRouter(pool, userResolver)))
 
 	return &orgFixture{srv: srv, idp: idp, identity: identity}
+}
+
+// withEmailClaims wraps authnMW with a layer that overrides the verified
+// Claims' Email/EmailVerified per-sub, after real JWT signature/issuer/
+// audience verification has already populated Claims from the token's
+// standard claims — see newOrgFixtureInternal's doc comment.
+func withEmailClaims(authnMW func(http.Handler) http.Handler, claimsBySub map[string]tokenClaim) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return authnMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := authn.FromContext(r.Context())
+			if !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if tc, found := claimsBySub[claims.Sub]; found {
+				claims.Email = tc.Email
+				claims.EmailVerified = tc.EmailVerified
+			}
+			ctx := authn.ContextWithClaims(r.Context(), claims)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		}))
+	}
 }
 
 func (f *orgFixture) do(t *testing.T, method, path, bearer string, body any) *httptest.ResponseRecorder {
@@ -271,6 +357,32 @@ func TestCreateOrganization_DuplicateID_Returns409(t *testing.T) {
 	}
 
 	second := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{"id": orgID, "name": "Second"})
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second POST status = %d, want 409, body = %s", second.Code, second.Body.String())
+	}
+}
+
+// TestCreateOrganization_CallerAlreadyHasOrg_Returns409 covers the
+// single-org-per-user invariant (C-1): a caller who already has an active
+// membership (from an earlier create) cannot create a second organization —
+// the client router gate keeps the normal UI path away from this, but a
+// direct API call must still be rejected rather than silently giving the
+// caller two active memberships (#26 follow-up flagged during #27 review).
+func TestCreateOrganization_CallerAlreadyHasOrg_Returns409(t *testing.T) {
+	sub := "99999999-9999-4999-8999-999999999999"
+	f := newOrgFixture(t, map[string]string{sub: "a0000000-0000-7000-8000-000000000009"})
+	bearer := f.token(t, sub)
+
+	first := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": "b0000000-0000-7000-8000-000000000009", "name": "First Org",
+	})
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first POST status = %d, want 201, body = %s", first.Code, first.Body.String())
+	}
+
+	second := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": "b0000000-0000-7000-8000-00000000000a", "name": "Second Org",
+	})
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second POST status = %d, want 409, body = %s", second.Code, second.Body.String())
 	}

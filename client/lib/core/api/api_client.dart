@@ -85,6 +85,15 @@ class ApiClient {
     return _decode(resp);
   }
 
+  /// For endpoints with no request body and a `204 No Content` success
+  /// response (e.g. revoking an invitation, #27) — `_decode` already treats
+  /// an empty response body as `{}` on a 2xx, so no separate no-content
+  /// handling is needed here.
+  Future<void> deleteJson(String path) async {
+    final resp = await _http.delete(_uri(path), headers: await _headers());
+    _decode(resp);
+  }
+
   Map<String, dynamic> _decode(http.Response resp) {
     final isJson = resp.body.isNotEmpty;
     final decoded = isJson ? jsonDecode(resp.body) as Map<String, dynamic> : <String, dynamic>{};

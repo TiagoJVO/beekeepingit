@@ -133,4 +133,47 @@ class AppLocalizationsPt extends AppLocalizations {
   String organizationSaveError(String error) {
     return 'Não foi possível criar a sua organização: $error';
   }
+
+  @override
+  String get membersTitle => 'Membros e convites';
+
+  @override
+  String membersLoadError(String error) {
+    return 'Não foi possível carregar os membros: $error';
+  }
+
+  @override
+  String get membersInviteEmailLabel => 'Email a convidar';
+
+  @override
+  String get membersInviteEmailRequired => 'Introduza um endereço de email.';
+
+  @override
+  String get membersInviteButton => 'Convidar';
+
+  @override
+  String get membersInviteSuccess => 'Convite enviado.';
+
+  @override
+  String membersInviteError(String error) {
+    return 'Não foi possível concluir o pedido: $error';
+  }
+
+  @override
+  String get membersSectionTitle => 'Membros';
+
+  @override
+  String get membersEmpty => 'Ainda não há membros.';
+
+  @override
+  String get invitationsSectionTitle => 'Convites';
+
+  @override
+  String get invitationsEmpty => 'Ainda não há convites.';
+
+  @override
+  String get membersRevokeButton => 'Revogar convite';
+
+  @override
+  String get membersRevokeSuccess => 'Convite revogado.';
 }

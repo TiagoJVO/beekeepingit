@@ -1,6 +1,8 @@
-# Organizations service — client-facing REST contract (SKELETON).
+# Organizations service — client-facing REST contract.
 # Onboarding (FR-ONB) + the management surface the React Admin App consumes (NFR-ROL-2).
-# Demonstrates nested sub-resources (members, invitations) and the role model (NFR-ROL-1).
+# Organization create/read (#26), membership listing and email invitations (#27) are built;
+# organization update (PATCH) and member removal/role changes remain a skeleton (still-open
+# detail per D-3/FR-ONB-3 — invite expiry, re-invite, removing members, transferring admin).
 # Stamped from ./_shared/components.openapi.yaml; conventions in
 # docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email).
 openapi: 3.1.0
@@ -9,7 +11,9 @@ info:
   version: 0.1.0
   description: >-
     Organization CRUD, membership and email invitations. The user who creates an
-    organization becomes its admin and invites others by email (D-3). Org scope and role
+    organization becomes its admin and invites others by email (D-3); an invited user who
+    logs in is auto-joined to the inviting organization on their first `GET /organizations/me`
+    poll rather than being prompted to create a new one (FR-ONB-3). Org scope and role
     are derived from the JWT (ADR-0002); `{orgId}` in the path must match the caller's org.
   license:
     name: AGPL-3.0-only
@@ -150,7 +154,7 @@ paths:
       - $ref: '#/components/parameters/OrgId'
     get:
       operationId: listMembers
-      summary: List organization members
+      summary: List organization members (admin only)
       tags: [Members]
       parameters:
         - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
