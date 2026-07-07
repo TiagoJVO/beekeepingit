@@ -225,5 +225,25 @@
   "membersRevokeSuccess": "Invitation revoked.",
   "@membersRevokeSuccess": {
     "description": "Snackbar shown after successfully revoking an invitation"
+  },
+  "accountTitle": "Account settings",
+  "@accountTitle": {
+    "description": "Account settings screen app bar title"
+  },
+  "accountProfileSectionTitle": "Profile",
+  "@accountProfileSectionTitle": {
+    "description": "Heading above the profile fields on the account settings screen"
+  },
+  "accountSecuritySectionTitle": "Security",
+  "@accountSecuritySectionTitle": {
+    "description": "Heading above the change-password action on the account settings screen"
+  },
+  "accountChangePasswordHint": "Password changes are handled by our sign-in provider, in a new tab.",
+  "@accountChangePasswordHint": {
+    "description": "Explanatory text above the change-password button"
+  },
+  "accountChangePasswordButton": "Change password",
+  "@accountChangePasswordButton": {
+    "description": "Button that opens Keycloak's Account Console to change password"
   }
 }

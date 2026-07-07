@@ -104,4 +104,18 @@ void main() {
       expect(find.byKey(const Key('organization-name-field')), findsNothing);
     },
   );
+
+  testWidgets(
+    'tapping the account-settings action from the apiaries home reaches /account (#29)',
+    (tester) async {
+      await tester.pumpWidget(_buildApp(profileComplete: true));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('account-settings-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('account-name-field')), findsOneWidget);
+      expect(find.text('Apiaries'), findsNothing);
+    },
+  );
 }
