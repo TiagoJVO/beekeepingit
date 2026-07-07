@@ -262,7 +262,7 @@ void main() {
     test('degrades gracefully to locally-logged-out when the network call fails', () async {
       final client = MockClient((req) async {
         if (req.url.toString() == AppConfig.oidcEndSessionUrl) {
-          throw const http.ClientException('offline');
+          throw http.ClientException('offline');
         }
         return _tokenResponse(); // seed code-exchange
       });
