@@ -19,9 +19,16 @@ import (
 
 const entityTypeApiary = "apiary"
 
-// requireOrg pulls the resolved org (and caller user id) off the request's
-// Claims. The org-resolver middleware guarantees these are present; a missing
-// value is a wiring bug, surfaced as 500.
+// requireOrg is the tenancy-context hand-off point (FR-TEN-2, #30 AC:
+// "a tenancy context is propagated from the validated token through the
+// service layer to the data layer"): it pulls the org id
+// authn.NewOrgResolver already derived server-side from the verified
+// token + membership (never a client-supplied header/body/query value) off
+// the request's Claims, parses it once, and every handler in this package
+// passes the result straight into its sqlc query's OrganizationID param —
+// the one point where "token claim" becomes "data-layer filter". The
+// org-resolver middleware guarantees these are present; a missing value is
+// a wiring bug, surfaced as 500.
 func requireOrg(w http.ResponseWriter, r *http.Request) (orgID pgtype.UUID, userID string, ok bool) {
 	claims, found := authn.FromContext(r.Context())
 	if !found || claims.OrganizationID == "" {

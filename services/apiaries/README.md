@@ -56,5 +56,19 @@ in-cluster URLs of the resolve services:
 cd services/apiaries
 sqlc generate -f store/sqlc/sqlc.yaml
 go build ./...
-go test ./...   # httptest + testcontainers/Postgres; LWW/conflict/idempotency/tombstone matrix
+go test ./...   # httptest + testcontainers/Postgres; LWW/conflict/idempotency/tombstone matrix,
+                # cross-org access-denial (#28), and org-scoping schema check (#30)
 ```
+
+## Tenancy (FR-TEN-2, #28/#30)
+
+Every route runs behind Keycloak authn + `authn.NewOrgResolver` + `authn.RequireRole` (#28), and
+every query is scoped by the server-derived `organization_id` (`api/common.go`'s `requireOrg` —
+never a client-supplied value). `apiaries.apiaries`/`apiaries.sync_conflict_log` both carry
+`organization_id`, verified both by reading the migration and by an automated schema check
+(`TestApiariesSchema_EveryOwnedTableCarriesOrganizationID`, using
+[`dbaccess.UnscopedTables`](../shared/dbaccess/tenancy.go)) so a future migration can't drop the
+column unnoticed. Cross-organization access attempts (read, list, and a sync-apply write) are
+covered by `TestApiariesSlice_CrossOrg_*` in `main_test.go`. See
+[ADR-0002](../../docs/adr/0002-multi-tenancy.md) for the tenancy model and the RLS-deferral
+decision.
