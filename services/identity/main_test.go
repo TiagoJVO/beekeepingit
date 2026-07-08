@@ -135,6 +135,68 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 	}
 }
 
+// TestIdentitySchema_UsersIsTheDocumentedTenancyException is the automated
+// form of FR-TEN-2's "every owned row carries an organization_id" check
+// (dbaccess.UnscopedTables, shared across services, added in #30) for this
+// service: identity.users is the one documented tenancy exception (a global
+// identity table, ADR-0002) rather than something owned by an organization,
+// so it's passed as the exempt table — the assertion is that it's still the
+// *only* unscoped table, i.e. a future migration adding some other
+// identity-owned table without organization_id fails this test instead of
+// depending on a manual read (#175).
+func TestIdentitySchema_UsersIsTheDocumentedTenancyException(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		dbUser = "beekeepingit_test"
+		dbPass = "beekeepingit_test"
+		dbName = "beekeepingit_test"
+	)
+	pg, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+		tcpostgres.WithUsername(dbUser),
+		tcpostgres.WithPassword(dbPass),
+		tcpostgres.WithDatabase(dbName),
+		tcpostgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		t.Fatalf("start postgres container: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := pg.Terminate(ctx); err != nil {
+			t.Logf("terminate postgres container: %v", err)
+		}
+	})
+	host, err := pg.Host(ctx)
+	if err != nil {
+		t.Fatalf("container host: %v", err)
+	}
+	port, err := pg.MappedPort(ctx, "5432/tcp")
+	if err != nil {
+		t.Fatalf("container mapped port: %v", err)
+	}
+
+	dbCfg := dbaccess.Config{
+		Host: host, Port: port.Port(), User: dbUser, Password: dbPass, Database: dbName, SSLMode: "disable",
+	}
+	createSchema(ctx, t, dbCfg, "identity")
+	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := dbaccess.Connect(ctx, dbCfg)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	unscoped, err := dbaccess.UnscopedTables(ctx, pool, "identity", "users")
+	if err != nil {
+		t.Fatalf("UnscopedTables: %v", err)
+	}
+	if len(unscoped) != 0 {
+		t.Fatalf("identity schema has table(s) missing organization_id beyond the documented users exception: %v", unscoped)
+	}
+}
+
 // createSchema provisions the service's schema before migrating, standing in
 // for the postgres chart's bootstrap (migrations no longer create it).
 func createSchema(ctx context.Context, t *testing.T, cfg dbaccess.Config, name string) {
