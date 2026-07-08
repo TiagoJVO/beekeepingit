@@ -65,12 +65,19 @@ import (
 const maxOrgNameLength = 200
 
 // OrganizationResponse is the client-facing organization shape
-// (contracts/openapi/organizations.openapi.yaml's Organization schema).
+// (contracts/openapi/organizations.openapi.yaml's Organization schema). Role
+// is the caller's own membership role in this org (admin/user, #27's Role
+// enum) — added for #172, so the client can decide whether to show
+// admin-only navigation (e.g. the members/invitations screen) without a
+// separate request. It is always the resolved caller's role, never a
+// property of the organization itself (two callers viewing the same org see
+// their own, possibly different, role here).
 type OrganizationResponse struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Address   string    `json:"address"`
 	CreatedBy string    `json:"created_by"`
+	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -395,7 +402,9 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 		}
 
 		w.Header().Set("Location", "/v1/organizations/"+uuidString(org.ID))
-		writeJSON(w, http.StatusCreated, toOrganizationResponse(org))
+		// The creator is always admin (D-3) — no extra lookup needed for the
+		// role this response reports.
+		writeJSON(w, http.StatusCreated, toOrganizationResponse(org, "admin"))
 	}
 }
 
@@ -465,7 +474,7 @@ func getMyOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserReso
 			problem.Write(w, r, problem.Internal())
 			return
 		}
-		writeJSON(w, http.StatusOK, toOrganizationResponse(row))
+		writeJSON(w, http.StatusOK, toOrganizationResponse(row, member.Role))
 	}
 }
 
@@ -494,14 +503,14 @@ func getOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc
 			problem.Write(w, r, problem.Internal())
 			return
 		}
-		writeJSON(w, http.StatusOK, toOrganizationResponse(row))
+		writeJSON(w, http.StatusOK, toOrganizationResponse(row, member.Role))
 	}
 }
 
 // writeJSON and uuidString are defined once in common.go and shared with
 // memberships.go.
 
-func toOrganizationResponse(o sqlcgen.OrganizationsOrganization) OrganizationResponse {
+func toOrganizationResponse(o sqlcgen.OrganizationsOrganization, callerRole string) OrganizationResponse {
 	var createdBy string
 	if o.CreatedBy.Valid {
 		createdBy = uuidString(o.CreatedBy)
@@ -511,6 +520,7 @@ func toOrganizationResponse(o sqlcgen.OrganizationsOrganization) OrganizationRes
 		Name:      o.Name,
 		Address:   o.Address,
 		CreatedBy: createdBy,
+		Role:      callerRole,
 		CreatedAt: o.CreatedAt.Time,
 		UpdatedAt: o.UpdatedAt.Time,
 	}

@@ -226,6 +226,10 @@
   "@membersRevokeSuccess": {
     "description": "Snackbar shown after successfully revoking an invitation"
   },
+  "manageMembers": "Manage members",
+  "@manageMembers": {
+    "description": "Admin-only app-bar action on the apiaries home, linking to the members/invitations screen (#172)"
+  },
   "accountTitle": "Account settings",
   "@accountTitle": {
     "description": "Account settings screen app bar title"

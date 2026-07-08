@@ -92,6 +92,9 @@ func TestInvitations_AdminInvitesAndMemberAccepts(t *testing.T) {
 	if org.ID != orgID {
 		t.Errorf("invitee's org id = %q, want %q", org.ID, orgID)
 	}
+	if org.Role != "user" {
+		t.Errorf("invitee's role via accept-on-login = %q, want %q (invited role, #172)", org.Role, "user")
+	}
 
 	// The membership now shows up in the admin-facing member list, with the
 	// invited role, and the invitation has flipped to accepted.

@@ -28,13 +28,21 @@ class _CompleteProfileController extends ProfileController {
 /// tests reach the apiaries home rather than being redirected to
 /// /organization/new by the org-completion gate (#26) — this file predates
 /// org onboarding and isn't testing it, so it stubs the org as already there.
+/// Role defaults to "admin" (#172) so the manage-members app-bar action is
+/// visible by default, matching this file's tests' original expectations
+/// (written before that button existed) rather than silently hiding a
+/// control they don't assert on either way.
 class _ExistingOrganizationController extends OrganizationController {
+  _ExistingOrganizationController({this.role = 'admin'});
+  final String role;
+
   @override
   Future<Organization?> build() async => Organization(
     id: 'test-org',
     name: 'Test Apiary Co.',
     address: '',
     createdBy: 'test-user',
+    role: role,
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
   );
@@ -44,7 +52,13 @@ class _ExistingOrganizationController extends OrganizationController {
 /// touches real OIDC or PowerSync. Profile and organization are stubbed as
 /// already complete when authed so the router's completion gates (#25, #26)
 /// don't redirect these pre-existing tests to /profile or /organization/new.
-Widget buildApp({required bool authed, List<Apiary>? apiaries}) {
+/// [orgRole] lets a test choose "admin" (default) or "user" to exercise
+/// #172's admin-only nav gating.
+Widget buildApp({
+  required bool authed,
+  List<Apiary>? apiaries,
+  String orgRole = 'admin',
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(authed),
@@ -52,7 +66,9 @@ Widget buildApp({required bool authed, List<Apiary>? apiaries}) {
         apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
       if (authed) profileProvider.overrideWith(_CompleteProfileController.new),
       if (authed)
-        organizationProvider.overrideWith(_ExistingOrganizationController.new),
+        organizationProvider.overrideWith(
+          () => _ExistingOrganizationController(role: orgRole),
+        ),
     ],
     child: const BeekeepingitApp(),
   );
@@ -127,4 +143,27 @@ void main() {
     // Playwright e2e (client/e2e/tests/slice.spec.ts), which drive the real
     // authControllerProvider end to end.
   });
+
+  testWidgets('org admins see the manage-members action', (tester) async {
+    await tester.pumpWidget(
+      buildApp(authed: true, apiaries: const [], orgRole: 'admin'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('manage-members-button')), findsOneWidget);
+  });
+
+  testWidgets(
+    'non-admin org members do not see the manage-members action (#172)',
+    (tester) async {
+      await tester.pumpWidget(
+        buildApp(authed: true, apiaries: const [], orgRole: 'user'),
+      );
+      await tester.pumpAndSettle();
+
+      // The link would only lead to a 403 for a non-admin (auth.md §5.3) —
+      // hidden, not just disabled.
+      expect(find.byKey(const Key('manage-members-button')), findsNothing);
+    },
+  );
 }
