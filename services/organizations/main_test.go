@@ -140,6 +140,68 @@ func TestOrganizationsService_ResolveActiveMembership(t *testing.T) {
 	}
 }
 
+// TestOrganizationsSchema_OrganizationsIsTheDocumentedTenancyException is the
+// automated form of FR-TEN-2's "every owned row carries an organization_id"
+// check (dbaccess.UnscopedTables, shared across services, added in #30) for
+// this service: organizations.organizations is the one documented tenancy
+// exception — it IS the tenant root, not something owned BY a tenant
+// (ADR-0002) — so it's passed as the exempt table; memberships and
+// invitations are expected to be scoped like any other owned table. A future
+// migration adding some other org-owned table without organization_id fails
+// this test instead of depending on a manual read (#175).
+func TestOrganizationsSchema_OrganizationsIsTheDocumentedTenancyException(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		dbUser = "beekeepingit_test"
+		dbPass = "beekeepingit_test"
+		dbName = "beekeepingit_test"
+	)
+	pg, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+		tcpostgres.WithUsername(dbUser),
+		tcpostgres.WithPassword(dbPass),
+		tcpostgres.WithDatabase(dbName),
+		tcpostgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		t.Fatalf("start postgres container: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := pg.Terminate(ctx); err != nil {
+			t.Logf("terminate postgres container: %v", err)
+		}
+	})
+	host, err := pg.Host(ctx)
+	if err != nil {
+		t.Fatalf("container host: %v", err)
+	}
+	port, err := pg.MappedPort(ctx, "5432/tcp")
+	if err != nil {
+		t.Fatalf("container mapped port: %v", err)
+	}
+
+	dbCfg := dbaccess.Config{
+		Host: host, Port: port.Port(), User: dbUser, Password: dbPass, Database: dbName, SSLMode: "disable",
+	}
+	createSchema(ctx, t, dbCfg, "organizations")
+	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := dbaccess.Connect(ctx, dbCfg)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	unscoped, err := dbaccess.UnscopedTables(ctx, pool, "organizations", "organizations")
+	if err != nil {
+		t.Fatalf("UnscopedTables: %v", err)
+	}
+	if len(unscoped) != 0 {
+		t.Fatalf("organizations schema has table(s) missing organization_id beyond the documented tenant-root exception: %v", unscoped)
+	}
+}
+
 // createSchema provisions the service's schema before migrating, standing in
 // for the postgres chart's bootstrap (migrations no longer create it).
 func createSchema(ctx context.Context, t *testing.T, cfg dbaccess.Config, name string) {
