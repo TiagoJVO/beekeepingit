@@ -4,11 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../organization/organization_repository.dart';
 import 'apiaries_repository.dart';
-
-// Note: a "Manage members" nav entry to /organization/members (#27) is still
-// missing from this app bar — tracked in FOLLOWUPS.md, not added here to keep
-// this change scoped to #29's own account-settings entry point.
 
 /// The home screen: the org's apiaries, read live from local SQLite (works
 /// offline). Tapping a row opens the edit form; the FAB creates a new one.
@@ -19,11 +16,23 @@ class ApiariesListScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final apiaries = ref.watch(apiariesStreamProvider);
+    final isOrgAdmin = ref.watch(isOrgAdminProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.apiariesTitle),
         actions: [
+          // Admin-only (#172): the destination screen's endpoints are
+          // admin-only server-side (auth.md §5.3), so a non-admin would only
+          // hit a dead-end 403 — hide the entry point rather than show one
+          // that never works.
+          if (isOrgAdmin)
+            IconButton(
+              key: const Key('manage-members-button'),
+              tooltip: l10n.manageMembers,
+              icon: const Icon(Icons.group_outlined),
+              onPressed: () => context.go('/organization/members'),
+            ),
           IconButton(
             key: const Key('account-settings-button'),
             tooltip: l10n.accountTitle,

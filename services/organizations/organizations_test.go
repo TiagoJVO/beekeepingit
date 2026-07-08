@@ -285,6 +285,9 @@ func TestCreateOrganization_MakesCreatorAdmin(t *testing.T) {
 	if org.CreatedBy != userID {
 		t.Errorf("created_by = %q, want %q", org.CreatedBy, userID)
 	}
+	if org.Role != "admin" {
+		t.Errorf("POST /organizations role = %q, want %q (D-3, #172)", org.Role, "admin")
+	}
 
 	// The creator can immediately fetch their own org (D-3 admin membership
 	// is visible in the very same request cycle, per the AC).
@@ -299,11 +302,21 @@ func TestCreateOrganization_MakesCreatorAdmin(t *testing.T) {
 	if me.ID != orgID {
 		t.Errorf("GET /organizations/me id = %q, want %q", me.ID, orgID)
 	}
+	if me.Role != "admin" {
+		t.Errorf("GET /organizations/me role = %q, want %q (#172)", me.Role, "admin")
+	}
 
 	// GET /organizations/{orgId} for the caller's own org succeeds too.
 	recByID := f.do(t, http.MethodGet, "/v1/organizations/"+orgID, bearer, nil)
 	if recByID.Code != http.StatusOK {
 		t.Fatalf("GET /organizations/%s status = %d, want 200, body = %s", orgID, recByID.Code, recByID.Body.String())
+	}
+	var byID api.OrganizationResponse
+	if err := json.Unmarshal(recByID.Body.Bytes(), &byID); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if byID.Role != "admin" {
+		t.Errorf("GET /organizations/%s role = %q, want %q (#172)", orgID, byID.Role, "admin")
 	}
 
 	// That the internal /internal/memberships/active resolve endpoint (which

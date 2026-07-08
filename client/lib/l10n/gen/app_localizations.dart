@@ -392,6 +392,12 @@ abstract class AppLocalizations {
   /// **'Invitation revoked.'**
   String get membersRevokeSuccess;
 
+  /// Admin-only app-bar action on the apiaries home, linking to the members/invitations screen (#172)
+  ///
+  /// In en, this message translates to:
+  /// **'Manage members'**
+  String get manageMembers;
+
   /// Account settings screen app bar title
   ///
   /// In en, this message translates to:

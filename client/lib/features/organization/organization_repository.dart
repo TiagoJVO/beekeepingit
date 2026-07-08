@@ -13,6 +13,7 @@ class Organization {
     required this.name,
     required this.address,
     required this.createdBy,
+    required this.role,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -22,6 +23,7 @@ class Organization {
     name: json['name'] as String? ?? '',
     address: json['address'] as String? ?? '',
     createdBy: json['created_by'] as String? ?? '',
+    role: json['role'] as String? ?? 'user',
     createdAt: DateTime.parse(json['created_at'] as String),
     updatedAt: DateTime.parse(json['updated_at'] as String),
   );
@@ -30,6 +32,10 @@ class Organization {
   final String name;
   final String address;
   final String createdBy;
+
+  /// The caller's own membership role in this org (admin/user) — not a
+  /// property of the organization itself (#172).
+  final String role;
   final DateTime createdAt;
   final DateTime updatedAt;
 }
@@ -117,4 +123,17 @@ final organizationProvider =
 final hasOrganizationProvider = Provider<bool>((ref) {
   if (!ref.watch(isAuthenticatedProvider)) return false;
   return ref.watch(organizationProvider).value != null;
+});
+
+/// Whether the caller is an admin of their own org — derived from
+/// [organizationProvider]'s resolved `role`, defaulting to `false` while
+/// loading/erroring/absent (fails closed: admin-only UI stays hidden until
+/// proven otherwise, same posture as [profileCompleteProvider]/
+/// [hasOrganizationProvider]). Used to gate admin-only navigation (#172) —
+/// the server independently enforces the same admin-only rule on the
+/// destination endpoints (auth.md §5.3), so this is a UX nicety (don't show
+/// a link that would just 403), not the security boundary itself.
+final isOrgAdminProvider = Provider<bool>((ref) {
+  if (!ref.watch(isAuthenticatedProvider)) return false;
+  return ref.watch(organizationProvider).value?.role == 'admin';
 });
