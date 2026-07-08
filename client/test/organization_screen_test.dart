@@ -30,6 +30,7 @@ class _FakeOrganizationController extends OrganizationController {
         name: name,
         address: address ?? '',
         createdBy: 'u1',
+        role: 'admin', // the creator is always admin (D-3)
         createdAt: DateTime.utc(2026, 1, 1),
         updatedAt: DateTime.utc(2026, 1, 1),
       ),

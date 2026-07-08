@@ -178,6 +178,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get membersRevokeSuccess => 'Invitation revoked.';
 
   @override
+  String get manageMembers => 'Manage members';
+
+  @override
   String get accountTitle => 'Account settings';
 
   @override

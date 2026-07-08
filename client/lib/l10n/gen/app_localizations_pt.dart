@@ -178,6 +178,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get membersRevokeSuccess => 'Convite revogado.';
 
   @override
+  String get manageMembers => 'Gerir membros';
+
+  @override
   String get accountTitle => 'Definições da conta';
 
   @override

@@ -281,7 +281,14 @@ components:
                 - $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
               readOnly: true
               description: The first admin (D-3).
-          required: [id, name]
+            role:
+              allOf:
+                - $ref: '#/components/schemas/Role'
+              readOnly: true
+              description: >-
+                The caller's own membership role in this organization — not a property of the
+                organization itself (#172).
+          required: [id, name, role]
 
     OrganizationCreate:
       type: object
