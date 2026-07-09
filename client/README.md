@@ -36,14 +36,14 @@ identity comes entirely from OIDC **discovery** off `OIDC_ISSUER` — no provide
 hard-coded, so swapping the identity provider is just changing `OIDC_ISSUER`
 (see [`docs/architecture/oidc-integration.md`](../docs/architecture/oidc-integration.md) §7).
 
-| dart-define         | Default (local k3d dev)                                              | What it points at                                                       |
-| ------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `GATEWAY_BASE_URL`  | `https://app.beekeepingit.local:8443`                               | App host — Go APIs (`/v1/*`) + PowerSync (`/sync-stream`)                |
-| `POWERSYNC_URL`     | `https://app.beekeepingit.local:8443/sync-stream/`                  | PowerSync sync-stream endpoint (trailing slash required)                |
-| `OIDC_ISSUER`       | `https://auth.beekeepingit.local:8443/application/o/beekeepingit/`  | OIDC issuer (auth host) — **all** endpoints read from its `.well-known` |
-| `OIDC_CLIENT_ID`    | `beekeepingit-pwa`                                                   | Public client id registered with the provider                           |
-| `OIDC_ACCOUNT_URL`  | `https://auth.beekeepingit.local:8443/if/user/#/settings`           | Provider self-service page (password change), opened in a new tab       |
-| `OIDC_REDIRECT_URI` | _(empty → the app's own origin)_                                    | Post-login redirect URI                                                 |
+| dart-define         | Default (local k3d dev)                                            | What it points at                                                       |
+| ------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `GATEWAY_BASE_URL`  | `https://app.beekeepingit.local:8443`                              | App host — Go APIs (`/v1/*`) + PowerSync (`/sync-stream`)               |
+| `POWERSYNC_URL`     | `https://app.beekeepingit.local:8443/sync-stream/`                 | PowerSync sync-stream endpoint (trailing slash required)                |
+| `OIDC_ISSUER`       | `https://auth.beekeepingit.local:8443/application/o/beekeepingit/` | OIDC issuer (auth host) — **all** endpoints read from its `.well-known` |
+| `OIDC_CLIENT_ID`    | `beekeepingit-pwa`                                                 | Public client id registered with the provider                           |
+| `OIDC_ACCOUNT_URL`  | `https://auth.beekeepingit.local:8443/if/user/#/settings`          | Provider self-service page (password change), opened in a new tab       |
+| `OIDC_REDIRECT_URI` | _(empty → the app's own origin)_                                   | Post-login redirect URI                                                 |
 
 ## Structure
 
