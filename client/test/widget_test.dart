@@ -80,7 +80,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('login-button')), findsOneWidget);
-    expect(find.text('Sign in with Keycloak'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
   });
 
   testWidgets('authenticated users see the apiaries list from local data', (

@@ -17,9 +17,11 @@ the sync coordinator are additionally covered by fast **Go integration tests**
 cd client/e2e
 npm install
 npm run install-browsers          # chromium
-# Point at the deployed stack (defaults target the local k3d gateway):
-E2E_BASE_URL=https://keycloak.beekeepingit.local:8443 \
-E2E_API_URL=https://keycloak.beekeepingit.local:8443 \
+# Point at the deployed stack (defaults target the local k3d gateway; the OIDC
+# provider lives on the separate auth.beekeepingit.local host — the test's
+# host-resolver rule maps both to loopback):
+E2E_BASE_URL=https://app.beekeepingit.local:8443 \
+E2E_API_URL=https://app.beekeepingit.local:8443 \
 npm test
 ```
 
