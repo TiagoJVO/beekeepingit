@@ -139,7 +139,7 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 }
 
 // TestGetUserByOidcSub_ResolvesOnRenamedColumn is the focused guard for the
-// keycloak_sub → oidc_sub rename (00002, oidc-integration.md §6): it migrates
+// oidc_sub column rename (00002, oidc-integration.md §6): it migrates
 // the full chain (so 00002's ALTER ... RENAME COLUMN actually runs), seeds the
 // dev user, and calls the regenerated GetUserByOidcSub directly — proving the
 // query targets the renamed column and that a seeded `sub` resolves to its row
