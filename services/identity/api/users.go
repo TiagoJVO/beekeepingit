@@ -21,15 +21,15 @@ import (
 
 // UserResponse is the internal resolve payload other services consume.
 type UserResponse struct {
-	UserID      string `json:"user_id"`
-	KeycloakSub string `json:"keycloak_sub"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Locale      string `json:"locale"`
+	UserID  string `json:"user_id"`
+	OidcSub string `json:"oidc_sub"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Locale  string `json:"locale"`
 }
 
 // InternalRouter returns the /internal resolve routes, backed by pool. Mount
-// it under "/internal" behind the Keycloak authn middleware.
+// it under "/internal" behind the OIDC authn middleware.
 func InternalRouter(pool *pgxpool.Pool) http.Handler {
 	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
@@ -45,7 +45,7 @@ func getUserBySub(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		u, err := q.GetUserByKeycloakSub(r.Context(), sub)
+		u, err := q.GetUserByOidcSub(r.Context(), sub)
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem.Write(w, r, problem.NotFound("no user for the given subject"))
 			return
@@ -56,11 +56,11 @@ func getUserBySub(q *sqlcgen.Queries) http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, UserResponse{
-			UserID:      uuid.UUID(u.ID.Bytes).String(),
-			KeycloakSub: u.KeycloakSub,
-			Name:        u.Name,
-			Email:       u.Email,
-			Locale:      u.Locale,
+			UserID:  uuid.UUID(u.ID.Bytes).String(),
+			OidcSub: u.OidcSub,
+			Name:    u.Name,
+			Email:   u.Email,
+			Locale:  u.Locale,
 		})
 	}
 }

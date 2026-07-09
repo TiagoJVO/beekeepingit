@@ -121,7 +121,7 @@ func newOrgFixtureWithEmailClaims(t *testing.T, users map[string]stubUser, claim
 // newOrgFixtureWithEmails and newOrgFixtureWithEmailClaims. When
 // claimsBySub is non-nil, the mounted authn chain is wrapped with a layer
 // that enriches the verified Claims with a per-sub Email/EmailVerified pair,
-// standing in for what a real Keycloak token's email/email_verified claims
+// standing in for what a real OIDC token's email/email_verified claims
 // would carry — authtest.Mint (services/servicetemplate/authn/authtest,
 // shared infra outside this branch's ownership) only sets the standard
 // sub/aud/exp claims, so this is the sanctioned test-only seam, mirroring

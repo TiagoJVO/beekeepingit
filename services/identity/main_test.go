@@ -3,17 +3,20 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/TiagoJVO/beekeepingit/services/identity/api"
 	"github.com/TiagoJVO/beekeepingit/services/identity/store"
+	sqlcgen "github.com/TiagoJVO/beekeepingit/services/identity/store/sqlc/gen"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/authn"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/authn/authtest"
@@ -106,14 +109,14 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 	}
 
 	// Unauthenticated → 401.
-	if rec := get("/internal/users/by-sub/"+devseed.KeycloakSub, ""); rec.Code != http.StatusUnauthorized {
+	if rec := get("/internal/users/by-sub/"+devseed.OidcSub, ""); rec.Code != http.StatusUnauthorized {
 		t.Errorf("unauthenticated status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 
-	token := idp.Mint(t, devseed.KeycloakSub, testAudience)
+	token := idp.Mint(t, devseed.OidcSub, testAudience)
 
 	// Seeded sub → 200 with the resolved user.
-	rec := get("/internal/users/by-sub/"+devseed.KeycloakSub, "Bearer "+token)
+	rec := get("/internal/users/by-sub/"+devseed.OidcSub, "Bearer "+token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("resolve status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -124,14 +127,88 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 	if got.UserID != devseed.UserID {
 		t.Errorf("user_id = %q, want %q", got.UserID, devseed.UserID)
 	}
-	if got.KeycloakSub != devseed.KeycloakSub {
-		t.Errorf("keycloak_sub = %q, want %q", got.KeycloakSub, devseed.KeycloakSub)
+	if got.OidcSub != devseed.OidcSub {
+		t.Errorf("oidc_sub = %q, want %q", got.OidcSub, devseed.OidcSub)
 	}
 
 	// Unknown sub → 404.
 	unknown := idp.Mint(t, "00000000-0000-0000-0000-000000000000", testAudience)
 	if rec := get("/internal/users/by-sub/00000000-0000-0000-0000-000000000000", "Bearer "+unknown); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown sub status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestGetUserByOidcSub_ResolvesOnRenamedColumn is the focused guard for the
+// keycloak_sub → oidc_sub rename (00002, oidc-integration.md §6): it migrates
+// the full chain (so 00002's ALTER ... RENAME COLUMN actually runs), seeds the
+// dev user, and calls the regenerated GetUserByOidcSub directly — proving the
+// query targets the renamed column and that a seeded `sub` resolves to its row
+// while an unknown one is pgx.ErrNoRows. The HTTP-level resolve path is covered
+// by TestIdentityService_ResolveBySub above; this pins the query/column itself.
+func TestGetUserByOidcSub_ResolvesOnRenamedColumn(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		dbUser = "beekeepingit_test"
+		dbPass = "beekeepingit_test"
+		dbName = "beekeepingit_test"
+	)
+	pg, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+		tcpostgres.WithUsername(dbUser),
+		tcpostgres.WithPassword(dbPass),
+		tcpostgres.WithDatabase(dbName),
+		tcpostgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		t.Fatalf("start postgres container: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := pg.Terminate(ctx); err != nil {
+			t.Logf("terminate postgres container: %v", err)
+		}
+	})
+	host, err := pg.Host(ctx)
+	if err != nil {
+		t.Fatalf("container host: %v", err)
+	}
+	port, err := pg.MappedPort(ctx, "5432/tcp")
+	if err != nil {
+		t.Fatalf("container mapped port: %v", err)
+	}
+
+	dbCfg := dbaccess.Config{
+		Host: host, Port: port.Port(), User: dbUser, Password: dbPass, Database: dbName, SSLMode: "disable",
+	}
+	createSchema(ctx, t, dbCfg, "identity")
+	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := dbaccess.Connect(ctx, dbCfg)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := store.Seed(ctx, pool); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	q := sqlcgen.New(pool)
+
+	// The seeded sub resolves via the renamed column to the seeded user row.
+	u, err := q.GetUserByOidcSub(ctx, devseed.OidcSub)
+	if err != nil {
+		t.Fatalf("GetUserByOidcSub(seeded): %v", err)
+	}
+	if u.OidcSub != devseed.OidcSub {
+		t.Errorf("OidcSub = %q, want %q", u.OidcSub, devseed.OidcSub)
+	}
+	if got := uuid.UUID(u.ID.Bytes).String(); got != devseed.UserID {
+		t.Errorf("resolved user id = %q, want %q", got, devseed.UserID)
+	}
+
+	// An unknown sub is a clean no-rows, not some other error.
+	if _, err := q.GetUserByOidcSub(ctx, "99999999-9999-4999-8999-999999999999"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("GetUserByOidcSub(unknown) error = %v, want pgx.ErrNoRows", err)
 	}
 }
 

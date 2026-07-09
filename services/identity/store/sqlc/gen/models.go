@@ -9,11 +9,11 @@ import (
 )
 
 type IdentityUser struct {
-	ID          pgtype.UUID        `json:"id"`
-	KeycloakSub string             `json:"keycloak_sub"`
-	Name        string             `json:"name"`
-	Email       string             `json:"email"`
-	Locale      string             `json:"locale"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID        pgtype.UUID        `json:"id"`
+	OidcSub   string             `json:"oidc_sub"`
+	Name      string             `json:"name"`
+	Email     string             `json:"email"`
+	Locale    string             `json:"locale"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }

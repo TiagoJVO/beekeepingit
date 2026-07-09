@@ -27,7 +27,7 @@ type MembershipResponse struct {
 }
 
 // InternalRouter returns the /internal resolve routes, backed by pool. Mount
-// it under "/internal" behind the Keycloak authn middleware.
+// it under "/internal" behind the OIDC authn middleware.
 func InternalRouter(pool *pgxpool.Pool) http.Handler {
 	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
