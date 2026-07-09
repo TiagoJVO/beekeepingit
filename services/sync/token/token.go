@@ -1,7 +1,7 @@
 // Package token mints the short-lived, org-scoped PowerSync sync token and
 // serves the JWKS PowerSync validates it against (sync.md §3.4, walking-
 // skeleton.md §4.3). The token is deliberately separate from the long-lived
-// Keycloak access token: it is short-TTL so the org claim (mutable domain
+// OIDC access token: it is short-TTL so the org claim (mutable domain
 // data) can't go stale (auth.md §3.4).
 package token
 

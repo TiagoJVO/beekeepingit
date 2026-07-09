@@ -2,7 +2,7 @@ package authn
 
 import "context"
 
-// Claims is the verified caller identity extracted from a Keycloak access
+// Claims is the verified caller identity extracted from an OIDC access
 // token, optionally enriched with the request's org-scoped authorization.
 //
 // NewMiddleware populates only the authentication fields (Sub, Email, …).

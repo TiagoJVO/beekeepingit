@@ -94,7 +94,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("build server: %w", err)
 	}
 
-	// Client-facing sync endpoints: Keycloak-authenticated + org-resolved.
+	// Client-facing sync endpoints: OIDC-authenticated + org-resolved.
 	srv.Router().Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler { return authnMW(orgMW(next)) })
 		r.Get("/v1/sync/token", api.TokenHandler(minter))

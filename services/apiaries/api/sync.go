@@ -56,7 +56,7 @@ type ApplyResponse struct {
 }
 
 // InternalSyncRouter returns the internal sync validate/apply routes. Mount it
-// under "/internal/sync" behind the Keycloak authn + org-resolver middleware
+// under "/internal/sync" behind the OIDC authn + org-resolver middleware
 // so the caller's org is resolved and re-checked here (zero-trust, §4.3).
 func InternalSyncRouter(pool *pgxpool.Pool) http.Handler {
 	r := chi.NewRouter()

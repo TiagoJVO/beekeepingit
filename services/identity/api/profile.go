@@ -80,8 +80,8 @@ func getProfile(q *sqlcgen.Queries) http.HandlerFunc {
 		}
 
 		u, err := q.UpsertUserOnFirstSeen(r.Context(), sqlcgen.UpsertUserOnFirstSeenParams{
-			ID:          pgtype.UUID{Bytes: uuid.New(), Valid: true},
-			KeycloakSub: claims.Sub,
+			ID:      pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			OidcSub: claims.Sub,
 		})
 		if err != nil {
 			problem.Write(w, r, problem.Internal())
@@ -112,7 +112,7 @@ func updateProfile(q *sqlcgen.Queries) http.HandlerFunc {
 		}
 
 		var fieldErrs []problem.FieldError
-		params := sqlcgen.UpdateUserProfileParams{KeycloakSub: claims.Sub}
+		params := sqlcgen.UpdateUserProfileParams{OidcSub: claims.Sub}
 
 		if body.Name != nil {
 			name := strings.TrimSpace(*body.Name)

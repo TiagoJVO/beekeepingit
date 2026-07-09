@@ -168,7 +168,7 @@ func TestGetMyOrganization_ProfileEmailCannotClaimInvitation(t *testing.T) {
 		},
 		map[string]tokenClaim{
 			// The attacker's JWT carries their OWN verified email, not the
-			// victim's — a real Keycloak token always does, since it's
+			// victim's — a real OIDC token always does, since it's
 			// signed server-side and not derived from the mutable profile.
 			attackerSub: {Email: attackerOwnEmail, EmailVerified: true},
 		},
