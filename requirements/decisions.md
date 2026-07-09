@@ -6,7 +6,7 @@ wins over earlier requirement wording.
 > Decisions are the working **default, not immutable**. If contradicting one makes sense,
 > propose it to the user; on confirmation, update it here (and the affected requirements).
 
-_Last updated: 2026-06-27._
+_Last updated: 2026-07-10._
 
 ---
 
@@ -98,13 +98,23 @@ Core technology decisions (2026-06-27). Detail and rationale in
   [ADR-0006](../docs/adr/0006-sync-conflict-resolution.md) (#106). Field-level merge / compensation
   are documented future refinements, not open items.
 
-## D-7 — Identity & auth: Keycloak (self-hosted)
+## D-7 — Identity & auth: Authentik (self-hosted), behind a provider-agnostic OIDC boundary
 
-- **Keycloak** (OIDC/OAuth2) on the k8s cluster; **realms + roles** for RBAC
-  (NFR-ROL); **offline token caching** for field login; **app-level org-scoped
-  authorization** layered on top (FR-TEN).
-- **Supersedes:** Q-AUTH — mechanism **and** offline-login now designed in
-  [`docs/architecture/auth.md`](../docs/architecture/auth.md) / [ADR-0004](../docs/adr/0004-authn-authz.md).
+- **Revised 2026-07-10 (was Keycloak) — user-confirmed.** The mechanism is now
+  **Authentik** (OIDC/OAuth2) on the k8s cluster, adopted behind an **IdP-agnostic
+  boundary**: the app depends only on **standard OIDC** — the discovery document, JWKS,
+  and standard claims — so the identity provider is a **swappable deployment detail**, not
+  baked into code. Rationale + what changes: [ADR-0016](../docs/adr/0016-replace-keycloak-with-authentik.md),
+  which supersedes the **Keycloak-specific** parts of [ADR-0004](../docs/adr/0004-authn-authz.md)
+  and [ADR-0012](../docs/adr/0012-keycloak-minio-standalone-helmreleases.md).
+- **Unchanged by the swap:** **offline token caching** for field login and the **app-level
+  org-scoped authorization** layered on top (FR-TEN) — the two-layer model in
+  [`docs/architecture/auth.md`](../docs/architecture/auth.md) is provider-neutral and stands
+  as-is. RBAC roles (NFR-ROL) remain **app-side** (`organizations.memberships`), never IdP roles.
+- **Frozen integration contract** (issuer/discovery, `sub`/`aud`, endpoints, blueprint, naming):
+  [`docs/architecture/oidc-integration.md`](../docs/architecture/oidc-integration.md).
+- **Supersedes:** Q-AUTH — mechanism **and** offline-login designed in `auth.md` (provider-neutral)
+  + ADR-0016 (Authentik specifics).
 
 ## D-8 — AI: NL→structured-query, cloud model first (on-device later)
 
