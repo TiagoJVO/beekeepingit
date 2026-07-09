@@ -1,0 +1,29 @@
+# gitleaks config — extends the built-in default ruleset (`useDefault = true`)
+# with a small allowlist for known false positives. Run via `task repo:secrets`
+# (`gitleaks detect --no-git`). See https://github.com/gitleaks/gitleaks.
+#
+# Why this exists: the local **dev** OIDC issuer URL
+# `https://auth.beekeepingit.local:8443/application/o/beekeepingit/` (the
+# Authentik application path, Keycloak→Authentik migration — D-7,
+# docs/architecture/oidc-integration.md §7) trips the heuristic
+# `generic-api-key` rule: the `8443/application/o/beekeepingit/` path segment
+# reads as a high-entropy token. It is **not a secret** — it's a non-sensitive,
+# reproducible local hostname baked into `--dart-define` defaults and docs. We
+# allowlist the `beekeepingit.local` dev host specifically so real secret
+# detection is unweakened.
+
+title = "beekeepingit gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Non-secret local dev hostnames/URLs (false positives)"
+# Match against the whole matched string (default target is the extracted
+# secret, which here is just the `8443/application/o/beekeepingit/` path and
+# omits the `.local` host) so the dev-domain check actually sees the hostname.
+regexTarget = "match"
+# Any match containing the local dev domain is a dev URL, not a credential.
+regexes = [
+  '''beekeepingit\.local''',
+]
