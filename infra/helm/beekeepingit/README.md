@@ -10,7 +10,9 @@ Two shapes, depending on whether the service needs a maintained upstream chart (
 [ADR-0012](../../../docs/adr/0012-keycloak-minio-standalone-helmreleases.md) for the
 standalone-release reasoning, and
 [ADR-0010](../../../docs/adr/0010-platform-backing-services-provisioning.md) for what it
-supersedes for `keycloak`/`minio`). A third shape — a chart of directly-vendored upstream
+supersedes for `authentik`/`minio`, and
+[ADR-0016](../../../docs/adr/0016-replace-keycloak-with-authentik.md) for the Keycloak→Authentik
+swap). A third shape — a chart of directly-vendored upstream
 dependencies deployed as its own Flux `HelmRelease` — exists as the separate
 [`infra/helm/observability/`](../observability/) chart (#87,
 [ADR-0013](../../../docs/adr/0013-observability-stack.md)); use that as the model for any
@@ -39,7 +41,7 @@ Note: a cluster-scoped **operator** (e.g. CloudNativePG, which `postgres`'s `Clu
 on) is _not_ a subchart at all — it's installed once per cluster by `infra/cluster/up.sh`, the
 same way k3d itself bundles Traefik. See `charts/postgres/Chart.yaml` and ADR-0010.
 
-### Standalone Flux release (a maintained upstream chart exists, but Flux can't resolve it nested — e.g. `keycloak`, `minio`)
+### Standalone Flux release (a maintained upstream chart exists, but Flux can't resolve it nested — e.g. `authentik`, `minio`)
 
 **Don't** nest a vendored chart as a Helm dependency of anything in this umbrella if the umbrella
 itself is deployed by Flux straight from Git (see [`infra/gitops/`](../../gitops/)) — its
@@ -50,19 +52,19 @@ actual resources, silently — see ADR-0012, which supersedes the wrapper-chart 
 repo used at first).
 
 Instead: deploy the vendored chart as its **own standalone Flux `HelmRepository` + `HelmRelease`**
-under [`infra/gitops/apps/dev/`](../../gitops/apps/dev/) (`keycloak-helmrelease.yaml`,
+under [`infra/gitops/apps/dev/`](../../gitops/apps/dev/) (`authentik-helmrelease.yaml`,
 `minio-helmrelease.yaml` are live examples), with `dependsOn: [beekeepingit]` if it needs a
 Secret/ConfigMap this umbrella creates. If the service needs supplementary resources the vendored
 chart can't own itself (a generated-credential Secret — the standard `lookup` + `randAlphaNum`
 idiom used throughout: preserve on `helm upgrade`, generate on first install, never a literal
-value in git), add a **thin local chart** here (`charts/keycloak/`, `charts/minio/` are live
+value in git), add a **thin local chart** here (`charts/authentik/`, `charts/minio/` are live
 examples) with just those templates — no `dependencies:` section, nothing vendored. The standalone
 `HelmRelease`'s `values:` then references those Secrets/ConfigMaps by their literal name (there's
 no Helm templating inside a `HelmRelease`'s `values:` block), e.g.
-`beekeepingit-keycloak-admin-credentials`. That name is only stable because all three
+`beekeepingit-authentik-config`. That name is only stable because all three
 `HelmRelease`s **pin `spec.releaseName`** — Flux otherwise defaults an unset `releaseName` to
 `<targetNamespace>-<HelmRelease name>` when they differ (which would make it
-`beekeepingit-dev-beekeepingit-keycloak-admin-credentials`; confirmed against the live cluster).
+`beekeepingit-dev-beekeepingit-authentik-config`; confirmed against the live cluster).
 Pin `spec.releaseName` on any new `HelmRelease` too, for the same reason (ADR-0012).
 
 ## Namespace & environments
@@ -91,9 +93,9 @@ and the three resource tiers (`requests`/`limits` × `cpu`/`memory`) — enforce
 | Subchart    | What it is                                                                                                                                               |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `postgres`  | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials                                               |
-| `keycloak`  | Generated admin credential + dev/CI-grade realm import for OIDC IdP Keycloak (D-7) — Keycloak itself is a separate Flux `HelmRelease` (ADR-0012)         |
+| `authentik` | Generated config/Postgres Secrets + dev/CI-grade blueprint (provider/app/group/seed user) for OIDC IdP Authentik (D-7, ADR-0016) — Authentik itself is a separate Flux `HelmRelease` (ADR-0012) |
 | `minio`     | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)                |
-| `gateway`   | Ingress + self-signed TLS, reusing k3d's Traefik; path-based routes fan the one host out to the services + PWA (#23)                                     |
+| `gateway`   | Ingress + self-signed TLS (SAN covers both hosts), reusing k3d's Traefik; the app host fans path-based routes out to the services + PWA, the auth host routes to Authentik (#23, ADR-0016) |
 | `powersync` | Self-hosted PowerSync sync engine (D-6/ADR-0005), Postgres storage backend — real org-scoped Sync Rules + the `sync` service's JWKS connector (#23/#106) |
 | `services`  | The Go domain/platform services (#23) — `identity`/`organizations`/`apiaries`/`sync`, rendered from one values-driven Deployment+Service template        |
 | `pwa`       | The Flutter Web PWA static bundle (#21/#23) served behind nginx at the gateway's `/`                                                                     |

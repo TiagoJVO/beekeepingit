@@ -1,0 +1,23 @@
+{{/*
+`beekeepingit-authentik-blueprint` — the declarative blueprint (OAuth2 provider +
+application + `platform-operator` group + seed user), the analogue of Keycloak's realm
+import. Delivered to the Authentik worker via the Flux HelmRelease's
+`blueprints.configMaps: [beekeepingit-authentik-blueprint]`, which mounts every key of
+this ConfigMap into the worker's blueprint file-discovery dir; the worker then applies
+`beekeepingit.yaml` idempotently. See files/beekeepingit.blueprint.yaml and
+docs/architecture/oidc-integration.md §8. The key is `beekeepingit.yaml` (the mounted
+filename) regardless of the source file's name.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beekeepingit-authentik-blueprint
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: authentik
+data:
+  beekeepingit.yaml: |
+    {{- .Files.Get (printf "files/%s" .Values.blueprintFile) | nindent 4 }}
+{{- end }}

@@ -11,13 +11,15 @@ image:
   pullPolicy: IfNotPresent
 
 # Shared wiring every service inherits (env below). `issuerUrl` is the token's
-# `iss` (the external HTTPS gateway URL, unreachable in-cluster); `discoveryUrl`
-# is the internal HTTP Keycloak Service where services actually fetch the OIDC
-# discovery document, trusting `issuerUrl` as the issuer (see #23 / dev.yaml).
+# `iss` (the external HTTPS auth-host issuer, unreachable in-cluster); `discoveryUrl`
+# is the internal HTTP Authentik Service where services actually fetch the OIDC
+# discovery document, trusting `issuerUrl` as the issuer (see #23 / dev.yaml,
+# ADR-0016, oidc-integration.md §6). `audience` is Authentik's default `aud` (the
+# client id).
 oidc:
-  issuerUrl: https://keycloak.beekeepingit.local:8443/realms/beekeepingit
-  discoveryUrl: http://keycloak-keycloakx-http/realms/beekeepingit
-  audience: beekeepingit
+  issuerUrl: https://auth.beekeepingit.local:8443/application/o/beekeepingit/
+  discoveryUrl: http://authentik-server/application/o/beekeepingit/.well-known/openid-configuration
+  audience: beekeepingit-pwa
 otelEndpoint: otel-collector:4317
 logLevel: info
 

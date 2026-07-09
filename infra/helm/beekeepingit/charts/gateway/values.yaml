@@ -3,24 +3,33 @@
 # `gateway:` key in the parent's values.yaml/environments/*.yaml.
 enabled: true
 
-# Local dev hostname (k3d maps host 8443 -> 443, see infra/README.md). Add it to
-# /etc/hosts (or use `curl --resolve`) to reach it from outside the cluster.
-host: keycloak.beekeepingit.local
+# Two local dev hostnames (k3d maps host 8443 -> 443, see infra/README.md). Add
+# BOTH to /etc/hosts (or use `curl --resolve`) to reach them from outside the
+# cluster. Split per ADR-0016 / oidc-integration.md §2:
+#   appHost  — the PWA (`/`) + Go APIs (`/v1/*`) + PowerSync (`/sync-stream`).
+#   authHost — Authentik (issuer + all its paths), routed to its own Service.
+# A dedicated auth origin keeps the app origin cross-origin-isolated (COOP/COEP →
+# SharedArrayBuffer for PowerSync) and avoids Authentik's broad root paths
+# (/api, /static, /media, /-, /if, root files) colliding with the PWA `/` catch-all.
+appHost: app.beekeepingit.local
+authHost: auth.beekeepingit.local
 
-# Path-based routes fanned out from the single gateway host to the slice's
-# services (walking-skeleton.md §5.3). Longest-prefix wins, so order is not
-# significant to k8s Ingress; listed specific→general for readability.
-# Keycloak is its own Flux HelmRelease "keycloak" (ADR-0012) → Service
-# "keycloak-keycloakx-http". The Go services / PWA use the bare Service names
-# from the `services`/`pwa`/`powersync` subcharts.
+# App-host path-based routes fanned out to the slice's services
+# (walking-skeleton.md §5.3). Longest-prefix wins, so order is not significant to
+# k8s Ingress; listed specific→general for readability. The Go services / PWA use
+# the bare Service names from the `services`/`pwa` subcharts.
 routes:
-  - { path: /realms, service: keycloak-keycloakx-http, port: 80 }
-  - { path: /resources, service: keycloak-keycloakx-http, port: 80 }
   - { path: /v1/apiaries, service: apiaries, port: 8080 }
   - { path: /v1/organizations, service: organizations, port: 8080 }
   - { path: /v1/profile, service: identity, port: 8080 }
   - { path: /v1/sync, service: sync, port: 8080 }
   - { path: /, service: pwa, port: 80 }
+
+# Auth-host catch-all → the Authentik server Service (its own Flux HelmRelease
+# "authentik", ADR-0012/ADR-0016 → Service "authentik-server"). Authentik serves
+# the issuer and all its endpoints under root, so this host routes everything to it.
+authRoutes:
+  - { path: /, service: authentik-server, port: 80 }
 
 # PowerSync's client appends its own paths (e.g. `/sync/stream`) to the endpoint,
 # and the PowerSync service serves those at the **root** — so this `/sync-stream`
@@ -29,7 +38,7 @@ routes:
 # and download sync silently never ran. Rendered as its own Ingress + a Traefik
 # StripPrefix Middleware (templates/powersync-route.yaml) so the main Ingress
 # above stays a plain, controller-agnostic object; only this one route is
-# Traefik-specific.
+# Traefik-specific. Served on the app host.
 powersyncRoute:
   path: /sync-stream
   service: powersync

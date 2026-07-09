@@ -1,0 +1,25 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by the
+# `authentik:` key in the parent's values.yaml/environments/*.yaml.
+#
+# This chart only creates the supplementary config/Postgres Secrets and the
+# blueprint ConfigMap — Authentik itself is a separate Flux `HelmRelease`
+# (infra/gitops/apps/dev/authentik-helmrelease.yaml) that references these
+# resources by name. See ADR-0012 (pattern) and ADR-0016 (the swap).
+enabled: true
+
+# Dev/CI-grade declarative blueprint (OAuth2 provider + application + group + seed
+# user) — the analogue of Keycloak's realm import, delivered as a ConfigMap the
+# Authentik worker discovers via `blueprints.configMaps`. Production
+# config/hardening is EPIC-14 (#15). See docs/architecture/oidc-integration.md §8.
+blueprintFile: beekeepingit.blueprint.yaml
+
+# Bootstrap admin identity seeded on first boot (AUTHENTIK_BOOTSTRAP_*). The
+# password/token are generated (never a literal in git — NFR-SEC); only the
+# non-secret email is a stable default here.
+bootstrapEmail: admin@beekeepingit.local
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit
