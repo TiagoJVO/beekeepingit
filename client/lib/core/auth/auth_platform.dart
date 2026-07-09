@@ -5,14 +5,14 @@ import 'auth_platform_stub.dart'
 /// web implementation (package:web) stays out of VM-run widget tests. On the
 /// VM a stub is used (auth is never exercised there).
 abstract interface class AuthPlatform {
-  /// The redirect URI registered with Keycloak — the app's own origin unless
-  /// overridden by `--dart-define=OIDC_REDIRECT_URI`.
+  /// The redirect URI registered with the identity provider — the app's own
+  /// origin unless overridden by `--dart-define=OIDC_REDIRECT_URI`.
   String get redirectUri;
 
   /// Current page URL (to read the `?code=`/`?state=` callback params).
   Uri get currentUri;
 
-  /// Navigate the browser to [url] (the Keycloak authorize endpoint).
+  /// Navigate the browser to [url] (the provider's authorize/end-session URL).
   void assignLocation(String url);
 
   /// Replace the current URL without reloading (to strip callback params).
