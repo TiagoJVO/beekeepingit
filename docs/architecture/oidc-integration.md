@@ -23,10 +23,10 @@ authZ + offline model in [auth.md](auth.md) is provider-neutral and unchanged.
 
 ## 2. Topology & hosts (replaces the single `keycloak.beekeepingit.local`)
 
-| Host | Serves |
-| ---- | ------ |
-| **`auth.beekeepingit.local:8443`** | Authentik (issuer + all its paths) |
-| **`app.beekeepingit.local:8443`** | PWA (`/`) + Go APIs (`/v1/*`) + PowerSync (`/sync-stream`) |
+| Host                               | Serves                                                     |
+| ---------------------------------- | ---------------------------------------------------------- |
+| **`auth.beekeepingit.local:8443`** | Authentik (issuer + all its paths)                         |
+| **`app.beekeepingit.local:8443`**  | PWA (`/`) + Go APIs (`/v1/*`) + PowerSync (`/sync-stream`) |
 
 Dedicated auth host: avoids Authentik's broad root paths (`/api`, `/static`, `/media`, `/-`,
 `/if`, root files) colliding with the PWA `/` catch-all, and keeps the app origin
@@ -112,8 +112,8 @@ optional.
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
   `redirect_uris` object form, the `email_verified` mapping.
 - **CI** — `helm-e2e`: timeout 20→30m, install `--timeout` →15m, apply the Authentik `HelmRelease`
-  + `rollout status` before `helm test`; `helm test` hook curls `/-/health/ready/`. `helm-ci`: swap
-  the `codecentric` repo add for the `authentik` repo where a lint/template needs it.
+  - `rollout status` before `helm test`; `helm test` hook curls `/-/health/ready/`. `helm-ci`: swap
+    the `codecentric` repo add for the `authentik` repo where a lint/template needs it.
 
 ## 9. Cluster access during implementation (coordinator semaphore)
 
@@ -126,13 +126,13 @@ unit tests, docs, backlog) needs **no** token.
 
 ## 10. Workstream ownership & final gate
 
-| WS | Owns | Touches cluster |
-| -- | ---- | --------------- |
-| **A — Infra/Deploy** | `infra/**`, `.github/workflows/helm-*.yml` | ✅ (semaphore) |
-| **B — Backend** | `services/**` | ❌ |
-| **C — Client** | `client/**` | e2e ✅ (semaphore) |
-| **D — Docs** | `docs/**`, `README.md`, `CLAUDE.md`, requirements sweep | ❌ |
-| **E — Backlog** | GitHub Issues, `FOLLOWUPS.md` (coordinator-run) | ❌ |
+| WS                   | Owns                                                    | Touches cluster    |
+| -------------------- | ------------------------------------------------------- | ------------------ |
+| **A — Infra/Deploy** | `infra/**`, `.github/workflows/helm-*.yml`              | ✅ (semaphore)     |
+| **B — Backend**      | `services/**`                                           | ❌                 |
+| **C — Client**       | `client/**`                                             | e2e ✅ (semaphore) |
+| **D — Docs**         | `docs/**`, `README.md`, `CLAUDE.md`, requirements sweep | ❌                 |
+| **E — Backlog**      | GitHub Issues, `FOLLOWUPS.md` (coordinator-run)         | ❌                 |
 
 Shared files are single-owner to avoid conflicts: `README.md`/`CLAUDE.md`/all `docs/**` → **WS-D**;
 `FOLLOWUPS.md` + GitHub → **WS-E/coordinator**. **Final gate:** `grep -ri keycloak` == 0.

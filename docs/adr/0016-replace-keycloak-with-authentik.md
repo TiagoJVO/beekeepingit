@@ -27,7 +27,7 @@ Two forces framed the decision:
   (`keycloak_sub`), the **client's hard-coded URL scheme**, the **realm-import** provisioning, and
   the **`keycloak.*` gateway host**.
 - **The two-layer authZ + offline model must not change.** Org membership/role stays app-side
-  (`organizations.memberships`), never an IdP concern — so the swap touches *authentication plumbing*,
+  (`organizations.memberships`), never an IdP concern — so the swap touches _authentication plumbing_,
   not authorization or tenancy.
 
 Three empirical spikes stood Authentik up, drove a real Authorization-Code+PKCE login, and

@@ -114,7 +114,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Frozen integration contract** (issuer/discovery, `sub`/`aud`, endpoints, blueprint, naming):
   [`docs/architecture/oidc-integration.md`](../docs/architecture/oidc-integration.md).
 - **Supersedes:** Q-AUTH — mechanism **and** offline-login designed in `auth.md` (provider-neutral)
-  + ADR-0016 (Authentik specifics).
+  - ADR-0016 (Authentik specifics).
 
 ## D-8 — AI: NL→structured-query, cloud model first (on-device later)
 

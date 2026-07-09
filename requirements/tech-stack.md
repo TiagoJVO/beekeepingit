@@ -10,23 +10,23 @@ The reasoning behind the intended stack, and the input to a future service decom
 
 ## Summary
 
-| Layer                 | Choice                                                                                | Status               |
-| --------------------- | ------------------------------------------------------------------------------------- | -------------------- |
-| Client                | **Flutter (Dart)** — Web/PWA first, native later                                      | Decided (D-5, D-10)  |
-| Backend microservices | **Go**                                                                                | Decided (D-5)        |
-| Admin web app         | **React + TypeScript**                                                                | Decided (D-5)        |
-| Primary database      | **PostgreSQL + PostGIS**                                                              | Decided (D-6)        |
-| On-device store       | **SQLite**                                                                            | Decided (D-6)        |
-| Offline sync engine   | **PowerSync** (self-hosted, Open Edition)                                             | Decided (SP-1 → D-6) |
+| Layer                 | Choice                                                                                | Status                  |
+| --------------------- | ------------------------------------------------------------------------------------- | ----------------------- |
+| Client                | **Flutter (Dart)** — Web/PWA first, native later                                      | Decided (D-5, D-10)     |
+| Backend microservices | **Go**                                                                                | Decided (D-5)           |
+| Admin web app         | **React + TypeScript**                                                                | Decided (D-5)           |
+| Primary database      | **PostgreSQL + PostGIS**                                                              | Decided (D-6)           |
+| On-device store       | **SQLite**                                                                            | Decided (D-6)           |
+| Offline sync engine   | **PowerSync** (self-hosted, Open Edition)                                             | Decided (SP-1 → D-6)    |
 | Identity / auth       | **Authentik (self-hosted, OIDC)** — provider-agnostic OIDC boundary                   | Decided (D-7, ADR-0016) |
-| AI assistant          | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11)  |
-| API style             | REST + OpenAPI (client); gRPC optional (inter-service)                                | Proposed             |
-| Orchestration         | Kubernetes + Helm                                                                     | Decided (NFR-ARC)    |
-| Observability         | OpenTelemetry + Prometheus + Grafana + Loki/Tempo                                     | Proposed             |
-| Object storage        | MinIO (S3-compatible)                                                                 | Proposed             |
-| CI/CD                 | GitHub Actions                                                                        | Proposed             |
-| Repo                  | Monorepo                                                                              | Decided (D-9)        |
-| Platform rollout      | PWA → Android → iOS (native only when needed)                                         | Decided (D-10)       |
+| AI assistant          | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11)     |
+| API style             | REST + OpenAPI (client); gRPC optional (inter-service)                                | Proposed                |
+| Orchestration         | Kubernetes + Helm                                                                     | Decided (NFR-ARC)       |
+| Observability         | OpenTelemetry + Prometheus + Grafana + Loki/Tempo                                     | Proposed                |
+| Object storage        | MinIO (S3-compatible)                                                                 | Proposed                |
+| CI/CD                 | GitHub Actions                                                                        | Proposed                |
+| Repo                  | Monorepo                                                                              | Decided (D-9)           |
+| Platform rollout      | PWA → Android → iOS (native only when needed)                                         | Decided (D-10)          |
 
 > **Versions are intentionally unpinned here.** Pin them in each app/service manifest
 > when scaffolded.
