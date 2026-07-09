@@ -4,9 +4,9 @@
 # controllers (a previously-manual prerequisite, see infra/gitops/README.md —
 # made idempotent here so this script is genuinely self-contained from an
 # empty cluster), the beekeepingit umbrella release (Postgres+PostGIS,
-# Keycloak creds/realm, MinIO creds, gateway, PowerSync), the standalone
-# Keycloak/MinIO Flux HelmReleases (applied directly, not via the `main`-
-# tracking GitOps bootstrap — see the note below), and a smoke test.
+# Authentik config/Postgres creds + blueprint, MinIO creds, gateway, PowerSync),
+# the standalone Authentik/MinIO Flux HelmReleases (applied directly, not via the
+# `main`-tracking GitOps bootstrap — see the note below), and a smoke test.
 #
 # Deliberately does NOT apply `infra/gitops/clusters/dev/` (the one-time
 # GitOps bootstrap that makes Flux auto-sync from this repo's `main` branch):
@@ -80,7 +80,7 @@ echo "waiting for postgres"
 wait_for_pod cnpg.io/cluster=beekeepingit-postgres 180s
 
 echo
-echo "applying the Keycloak/MinIO Flux HelmReleases directly (local-only, not GitOps-synced)"
+echo "applying the Authentik/MinIO Flux HelmReleases directly (local-only, not GitOps-synced)"
 # Both files' `dependsOn: [beekeepingit]` targets the *HelmRelease object*
 # named "beekeepingit" that only exists once the cluster is GitOps-bootstrapped
 # (infra/gitops/clusters/dev/) — which this script deliberately skips (see the
@@ -91,7 +91,7 @@ echo "applying the Keycloak/MinIO Flux HelmReleases directly (local-only, not Gi
 # all `dependsOn` was ensuring in the first place. Applied one file at a time
 # (not piped together) since neither file ends with its own trailing `---`, so
 # concatenating them loses the document boundary between the two.
-for f in keycloak-helmrelease.yaml minio-helmrelease.yaml; do
+for f in authentik-helmrelease.yaml minio-helmrelease.yaml; do
   sed '/^  dependsOn:$/,+1d' "$repo_root/infra/gitops/apps/dev/$f" \
     | "$script_dir/with-lock.sh" kubectl apply -f -
 done
@@ -101,11 +101,16 @@ echo "waiting for the PowerSync rollout"
 kubectl -n "$namespace" rollout status deployment/beekeepingit-powersync --timeout=180s
 
 echo
-echo "waiting for Keycloak/MinIO (Keycloak's JVM boot + realm import can take a couple of minutes)"
-# MinIO's vendored chart (see infra/gitops/apps/dev/minio-helmrelease.yaml) predates
-# the app.kubernetes.io/* label convention Keycloak's chart follows — it only sets
-# the legacy app=minio,release=<release-name> labels.
-wait_for_pod app.kubernetes.io/instance=keycloak 300s
+echo "waiting for Authentik (bundled-Postgres init + DB migrations + blueprint apply"
+echo "can take a few minutes on a cold pull) and MinIO"
+# Authentik's server Deployment is created by its Flux HelmRelease a moment after
+# the HelmRelease is applied; wait for the rollout to complete (the server pod only
+# goes ready once Postgres is up, migrations have run, and it can serve). A longer
+# timeout than the previous IdP's wait — Authentik + its own Postgres is heavier to
+# boot (ADR-0016). MinIO's vendored chart predates the app.kubernetes.io/* label
+# convention — it only sets the legacy app=minio,release=<release-name> labels.
+wait_for_pod app.kubernetes.io/instance=authentik 420s
+kubectl -n "$namespace" rollout status deployment/authentik-server --timeout=420s
 wait_for_pod app=minio,release=minio 180s
 
 echo
@@ -115,5 +120,5 @@ helm test beekeepingit --namespace "$namespace"
 cat <<EOF
 
 Local dev environment ready. See infra/README.md#verify-the-environment for
-the PostGIS/Keycloak/MinIO/PowerSync/gateway smoke checks.
+the PostGIS/Authentik/MinIO/PowerSync/gateway smoke checks.
 EOF

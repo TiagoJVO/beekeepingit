@@ -1,0 +1,22 @@
+apiVersion: v2
+name: authentik
+description: >-
+  BeekeepingIT-specific supplementary resources for Authentik (D-7, ADR-0016): the
+  generated config Secret (server/worker secret key, bootstrap admin creds, and the
+  bundled-Postgres connection), the matching Postgres password Secret, and a dev/CI-grade
+  declarative blueprint (OAuth2 provider `beekeepingit-pwa`, application `beekeepingit`,
+  the `platform-operator` group, and one seed user) — the analogue of Keycloak's realm
+  import. Authentik itself (the upstream `authentik/authentik` chart, with bundled Postgres)
+  is deployed separately as its own Flux `HelmRelease`
+  (`infra/gitops/apps/dev/authentik-helmrelease.yaml`) — not nested here — since Flux's
+  GitRepository-sourced charts don't recursively resolve a subchart's own vendored
+  dependency. See ADR-0012 (pattern) and ADR-0016 (the Keycloak→Authentik swap) plus the
+  frozen contract in docs/architecture/oidc-integration.md. Production hardening (real
+  email_verified mapping, recovery/password-reset, SMTP, external/CNPG Postgres, security
+  review) stays EPIC-14 (#15).
+type: application
+version: 0.1.0
+# Aligned with the pinned upstream Authentik chart/app version validated end-to-end
+# with the blueprint (files/beekeepingit.blueprint.yaml) — see the Flux HelmRelease
+# and oidc-integration.md §8.
+appVersion: "2026.5.4"

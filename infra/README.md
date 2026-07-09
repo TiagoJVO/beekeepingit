@@ -9,7 +9,7 @@ for the as-built design; intent/decisions live in
 ## Quickstart
 
 A single command brings up the whole local dev environment (`#22`, `NFR-ARC-2`/`NFR-ARC-3`) —
-Postgres+PostGIS, Keycloak, PowerSync, MinIO, and the gateway/ingress — and another tears it down:
+Postgres+PostGIS, Authentik, PowerSync, MinIO, and the gateway/ingress — and another tears it down:
 
 ```sh
 infra/cluster/dev-up.sh    # idempotent: safe to re-run against an already-provisioned cluster
@@ -34,7 +34,7 @@ HelmRelease depends on that same bootstrap `GitRepository`. See
 #    subchart (see charts/postgres/Chart.yaml and ADR-0010)
 infra/cluster/up.sh
 
-# 2. Install/upgrade the Flux controllers (idempotent) — keycloak/minio below are
+# 2. Install/upgrade the Flux controllers (idempotent) — authentik/minio below are
 #    Flux HelmReleases, so this is a real prerequisite, not optional.
 flux install --components-extra=image-reflector-controller,image-automation-controller
 
@@ -63,16 +63,16 @@ infra/cluster/with-lock.sh helm upgrade --install beekeepingit infra/helm/beekee
 kubectl -n beekeepingit-dev wait --for=condition=ready pod \
   -l cnpg.io/cluster=beekeepingit-postgres --timeout=180s
 
-# 6. Keycloak/MinIO are separate Flux HelmReleases (ADR-0012), not part of the
-#    umbrella release above — either let Flux reconcile them (if bootstrapped, see
-#    infra/gitops/README.md) or apply them directly for local-only testing. Their
+# 6. Authentik/MinIO are separate Flux HelmReleases (ADR-0012/ADR-0016), not part
+#    of the umbrella release above — either let Flux reconcile them (if bootstrapped,
+#    see infra/gitops/README.md) or apply them directly for local-only testing. Their
 #    `dependsOn: [beekeepingit]` targets a HelmRelease *object* that only exists
 #    once bootstrapped, so strip it for this direct-apply path (committed files
 #    untouched) — step 4's install already guarantees what dependsOn was
-#    protecting (the credential Secret/ConfigMap these reference are created
-#    synchronously when the release's resources are applied, independent of
-#    `--wait`):
-for f in keycloak-helmrelease.yaml minio-helmrelease.yaml; do
+#    protecting (the config/Postgres Secrets + blueprint ConfigMap these reference
+#    are created synchronously when the release's resources are applied, independent
+#    of `--wait`):
+for f in authentik-helmrelease.yaml minio-helmrelease.yaml; do
   sed '/^  dependsOn:$/,+1d' "infra/gitops/apps/dev/$f" \
     | infra/cluster/with-lock.sh kubectl apply -f -
 done
@@ -80,17 +80,19 @@ done
 # 7. Wait for the PowerSync rollout (now unblocked by the schema-grants hook above)
 kubectl -n beekeepingit-dev rollout status deployment/beekeepingit-powersync --timeout=180s
 
-# 8. Wait for Keycloak/MinIO (see step 5's note on the pod-exists-first race), then
-#    smoke-test the backing services (Postgres/PostGIS; #84). MinIO's vendored
-#    chart predates the app.kubernetes.io/* label convention Keycloak's chart
-#    follows — it only sets the legacy app=minio,release=<release-name> labels.
-kubectl -n beekeepingit-dev wait --for=condition=ready pod -l app.kubernetes.io/instance=keycloak --timeout=300s
+# 8. Wait for Authentik/MinIO (see step 5's note on the pod-exists-first race), then
+#    smoke-test the backing services (Postgres/PostGIS; #84). Authentik + its bundled
+#    Postgres takes a few minutes to boot (bootstrap migrations + blueprint apply), so
+#    allow more time. MinIO's vendored chart predates the app.kubernetes.io/* label
+#    convention — it only sets the legacy app=minio,release=<release-name> labels.
+kubectl -n beekeepingit-dev wait --for=condition=ready pod -l app.kubernetes.io/instance=authentik --timeout=420s
+kubectl -n beekeepingit-dev rollout status deployment/authentik-server --timeout=420s
 kubectl -n beekeepingit-dev wait --for=condition=ready pod -l app=minio,release=minio --timeout=180s
 helm test beekeepingit --namespace beekeepingit-dev
 
 # 9. Tear down
 infra/cluster/with-lock.sh kubectl delete --ignore-not-found \
-  -f infra/gitops/apps/dev/keycloak-helmrelease.yaml \
+  -f infra/gitops/apps/dev/authentik-helmrelease.yaml \
   -f infra/gitops/apps/dev/minio-helmrelease.yaml
 infra/cluster/with-lock.sh helm uninstall beekeepingit --namespace beekeepingit-dev
 infra/cluster/down.sh
@@ -105,10 +107,12 @@ Each of `#22`'s acceptance checks, in one place (all assume `dev-up.sh` finished
 kubectl -n beekeepingit-dev exec beekeepingit-postgres-1 -- \
   psql -U postgres -d beekeepingit -c "SELECT postgis_version();"
 
-# Keycloak: seeded realm reachable through the gateway (add keycloak.beekeepingit.local
-# to /etc/hosts pointing at 127.0.0.1, or use --resolve like this)
-curl -sk --resolve keycloak.beekeepingit.local:8443:127.0.0.1 \
-  https://keycloak.beekeepingit.local:8443/realms/beekeepingit/.well-known/openid-configuration
+# Authentik: seeded OIDC provider's discovery doc reachable through the gateway on
+# the dedicated auth host (add BOTH app.beekeepingit.local and auth.beekeepingit.local
+# to /etc/hosts pointing at 127.0.0.1, or use --resolve like this). The issuer is
+# https://auth.beekeepingit.local:8443/application/o/beekeepingit/ (oidc-integration.md §6).
+curl -sk --resolve auth.beekeepingit.local:8443:127.0.0.1 \
+  https://auth.beekeepingit.local:8443/application/o/beekeepingit/.well-known/openid-configuration
 
 # MinIO: reachable via an S3-compatible client (health endpoint shown here; `mc`/`aws s3`
 # work the same way once port-forwarded)
@@ -119,12 +123,14 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9000/minio/health/live
 kubectl -n beekeepingit-dev get pods -l app.kubernetes.io/name=powersync
 kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=powersync --tail=50
 
-# Gateway: routes to a backend service (Keycloak, today's only one — #23 adds more)
-# — same curl as the Keycloak check above exercises this.
+# Gateway: routes to backend services on two hosts (ADR-0016) — the auth host to
+# Authentik (the curl above exercises this) and the app host to the PWA + Go APIs
+# (/v1/*) + PowerSync (/sync-stream).
 ```
 
-PowerSync's placeholder sync-config and Keycloak-JWKS stopgap are intentional local-dev
-limitations (`#22`), not bugs — see `FOLLOWUPS.md` for what `#23`/`#106` still need to wire up.
+PowerSync's real org-scoped Sync Rules + the `sync`-service JWKS connector landed with
+`#23`/`#106` (the `#22` placeholder sync-config + OIDC-JWKS stopgap are gone) — see
+`FOLLOWUPS.md` for any remaining wiring.
 
 ## Sharing the local cluster across concurrent sessions
 
@@ -164,13 +170,13 @@ shared local cluster, and CI has no such shared resource to protect.
 | [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                             |
 | [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                 |
 
-Postgres+PostGIS, Keycloak, MinIO and the gateway (**#84**) are the umbrella chart's first real
+Postgres+PostGIS, the OIDC provider (Authentik — [ADR-0016](../docs/adr/0016-replace-keycloak-with-authentik.md),
+originally Keycloak at **#84**), MinIO and the gateway are the umbrella chart's first real
 subcharts. **PowerSync** (self-hosted Open Edition, [ADR-0005](../docs/adr/0005-sync-engine-choice.md))
 lands with **#22** — see [`docs/architecture/walking-skeleton.md`](../docs/architecture/walking-skeleton.md)
-§7.1 — with a placeholder sync-config and a Keycloak-JWKS stopgap until real domain tables and a
-connector exist. The walking-skeleton services + PWA subcharts, plus PowerSync's real org-scoped
-Sync Rules, land with **#23**/**#106**, wiring into this umbrella chart rather than standing up
-their own release.
+§7.1. The walking-skeleton services + PWA subcharts, plus PowerSync's real org-scoped
+Sync Rules and the `sync`-service JWKS connector, land with **#23**/**#106**, wiring into this
+umbrella chart rather than standing up their own release.
 
 The **observability stack** (OTel Collector, Prometheus, Grafana, Loki, Tempo — `NFR-OBS-1`)
 landed with **#87**: see

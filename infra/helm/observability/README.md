@@ -40,7 +40,8 @@ helm template observability infra/helm/observability
 
 No `environments/` overlays — per-environment config lives on the Flux `HelmRelease`'s
 `values:` (only `dev` deploys this today). Deploying without full GitOps mirrors the
-Keycloak/MinIO pattern (`infra/README.md`): apply its `HelmRelease` manifest directly.
+standalone-`HelmRelease` pattern of Authentik/MinIO (`infra/README.md`): apply its
+`HelmRelease` manifest directly.
 
 ## Credentials
 
