@@ -8,9 +8,9 @@
   "@loginPrompt": {
     "description": "Text above the login button"
   },
-  "loginButton": "Sign in with Keycloak",
+  "loginButton": "Sign in",
   "@loginButton": {
-    "description": "Primary login action"
+    "description": "Primary login action — starts the OIDC redirect to the identity provider"
   },
   "logout": "Sign out",
   "@logout": {
@@ -248,6 +248,6 @@
   },
   "accountChangePasswordButton": "Change password",
   "@accountChangePasswordButton": {
-    "description": "Button that opens Keycloak's Account Console to change password"
+    "description": "Button that opens the identity provider's account page to change password"
   }
 }

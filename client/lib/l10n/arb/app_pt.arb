@@ -2,7 +2,7 @@
   "@@locale": "pt",
   "appTitle": "BeekeepingIT",
   "loginPrompt": "Inicie sessão para gerir os seus apiários.",
-  "loginButton": "Entrar com Keycloak",
+  "loginButton": "Iniciar sessão",
   "logout": "Terminar sessão",
   "apiariesTitle": "Apiários",
   "apiariesEmpty": "Ainda não há apiários. Toque em “Adicionar apiário” para criar um.",
