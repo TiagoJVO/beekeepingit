@@ -16,8 +16,8 @@ entries:
       email: test.beekeeper@beekeepingit.local
       is_active: true
       path: users
-      attributes: { upn: "11111111-1111-4111-8111-111111111111" }   # sub_mode=user_upn => sub = this UUID (devseed pins it)
-      groups: [ !KeyOf group-platform-operator ]
+      attributes: { upn: "11111111-1111-4111-8111-111111111111" } # sub_mode=user_upn => sub = this UUID (devseed pins it)
+      groups: [!KeyOf group-platform-operator]
       password: dev-password123
   - model: authentik_providers_oauth2.oauth2provider
     id: provider-beekeepingit
@@ -26,9 +26,11 @@ entries:
       name: beekeepingit-pwa
       client_type: public
       client_id: beekeepingit-pwa
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      authorization_flow:
+        !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      signing_key:
+        !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
       sub_mode: user_upn
       issuer_mode: per_provider
       include_claims_in_id_token: true
@@ -36,13 +38,25 @@ entries:
       access_token_validity: minutes=15
       refresh_token_validity: days=30
       redirect_uris:
-        - { matching_mode: regex, url: 'http://localhost:.*' }
+        - { matching_mode: regex, url: "http://localhost:.*" }
         - { matching_mode: regex, url: 'https://app\.beekeepingit\.local:8443/.*' }
       property_mappings:
-        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
-        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
-        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
-        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-email],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-offline_access],
+          ]
   - model: authentik_core.application
     id: app-beekeepingit
     identifiers: { slug: beekeepingit }
