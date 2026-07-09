@@ -108,7 +108,7 @@ jobs:
           # HelmRelease reconciles; wait for it to appear, then for the rollout (the
           # server only goes ready once its Postgres is up, migrations have run, and the
           # blueprint applied). Generous timeout for a cold image pull + bootstrap.
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             kubectl -n beekeepingit-dev get deploy/authentik-server >/dev/null 2>&1 && break
             sleep 5
           done

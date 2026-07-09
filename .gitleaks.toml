@@ -1,0 +1,18 @@
+# Gitleaks configuration — extends the built-in ruleset with allowlists for
+# known non-secret false positives. Loaded automatically by `task repo:secrets`
+# (`gitleaks detect --no-git`) from the repo root.
+title = "BeekeepingIT gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Non-secret false positives"
+regexTarget = "match"
+regexes = [
+  # Authentik OIDC issuer/discovery URL — a PUBLIC endpoint path
+  # (docs/architecture/oidc-integration.md, D-7), not a credential. gitleaks'
+  # generic-api-key entropy heuristic trips on the "/application/o/beekeepingit/"
+  # application-slug path. Appears in docs, infra values, and client config.
+  '''application/o/beekeepingit''',
+]
