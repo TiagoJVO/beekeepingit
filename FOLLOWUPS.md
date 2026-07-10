@@ -5,6 +5,24 @@
 > **Not the backlog** (GitHub Issues is) — this is the pre-merge checklist + cross-session
 > handoff for in-flight branches. Promote durable items to Issues; tick/prune as they land.
 
+## Branch `claude/distracted-mendel-473cac` — milestone/stream regroom (2026-07-11)
+
+Flat **M0–M5** re-sliced into a per-feature incremental ladder + cross-cutting streams (**D-14**),
+applied directly to GitHub Issues/Milestones. Pre-change backup lives at
+`scratchpad/backlog-backup-2026-07-11/` (with `RESTORE.md`).
+
+- **Done (live on GitHub):** removed backward dep `#16◂#9` + epic-level offline gates
+  (`#3/#13/#16 ◂ #7`), repointed `#31◂#55`; unpinned stream epics `#7 #8 #12 #15 #16` (+`stream`
+  label); created `M2 · Apiaries` … `M11 · iOS & on-device AI`, renamed `M0`/`M1`, deleted empty old
+  `M2–M5`, moved ~55 open issues.
+- **Scope gates (settle before sizing a feature's stories):** `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2 (do
+  first), `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6, `Q-AICLOUD` → M8, `Q-NOTIF` → M9. Resolve via
+  the `requirements-folder` skill (answer → `D-*`/`FR-*`, then delete the `Q-*`).
+- **Provisional placements:** stream stories `#56–62` and `#165` → M2, and `#90`/`#92` → M6, by
+  "first need"; revisit if a thinner M2 (the declined vertical-slice option) is wanted later.
+- **Housekeeping:** re-check any Project board views that filtered the now-deleted `M2–M5`; sync the
+  new `stream` label if a label-sync tool is used.
+
 ## Tooling — deferred (post-#19)
 
 - **Pinned-tool updates** — Dependabot covers GitHub Actions + Go modules (`gomod`, #88); add a

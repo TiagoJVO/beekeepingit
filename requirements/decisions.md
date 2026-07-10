@@ -208,6 +208,30 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - See [`infra/gitops/README.md`](../infra/gitops/README.md) and
   [ADR-0009](../docs/adr/0009-gitops-flux.md). Touches `NFR-ARC-3`, `NFR-MNT-1`, `#86`.
 
+## D-14 — Delivery model: per-feature milestones + cross-cutting streams
+
+- **Decision:** Milestones are **thin, incremental, per-feature delivery slices**, each independently
+  pickable: **M0** Walking Skeleton (done) → **M1** Identity & Onboarding (done) → **M2** Apiaries →
+  **M3** Activities → **M4** Journeys ∥ **M5** Todos → **M6** Import/Export → **M7** Admin App →
+  **M8** AI Assistant → **M9** Settings & Notifications → **M10** Android → **M11** iOS & on-device AI.
+- **Streams:** the cross-cutting concerns — **offline/sync (EPIC-06)**, **history/audit (EPIC-07)**,
+  **i18n/a11y (EPIC-11)**, **security/compliance/DR (EPIC-14)**, **platform rollout (EPIC-15)** — are
+  **continuous streams, not milestones**: their epics carry **no milestone** (labeled **`stream`**) and
+  their sub-issues take the **milestone of first need**. Feature epics keep their first milestone.
+- **Dependencies at leaf level:** sequencing is between **stories**, not epic→epic — a whole-epic
+  `blocked-by` over-constrains and is what made the board look tangled.
+- **Why:** the earlier flat **M0–M5** conflated capability-grouping (epics) with time-ordering
+  (milestones). Spanning epics pinned to M0 and epic-level edges left milestones non-incremental — a
+  single true backward edge (`#16 ◂ #9`, an M0 epic blocked by an M3 epic) plus several whole-epic
+  gates. Splitting the two axes makes each milestone buildable on its own.
+- **Scope gating:** a feature milestone's **story-level** scope is finalized only when its open `Q-*`
+  resolves — `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2, `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6,
+  `Q-AICLOUD` → M8, `Q-NOTIF` → M9 (resolve per the `requirements-folder` skill).
+- **Keeps:** the **D-10** rollout order (PWA → Android → iOS) and **D-4** deferrals (billing/quotas
+  EPIC-90/91 stay milestone-less) unchanged — this only re-slices *how* the work is bucketed.
+- **Refines:** the flat-milestone framing and the `backlog-management` skill (streams are now a
+  first-class kind). Touches D-4, D-10, EPIC-06/07/11/14/15. Applied to GitHub Issues 2026-07-11.
+
 ---
 
 ## Open Spikes
