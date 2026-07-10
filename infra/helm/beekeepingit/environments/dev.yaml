@@ -15,9 +15,10 @@ services:
     # jwks_uri (reachable) while `issuerUrl` stays the external HTTPS URL — no
     # KC_HOSTNAME-style config needed.
     issuerUrl: https://auth.beekeepingit.local:8443/application/o/beekeepingit/
-    # Full .well-known URL (Authentik's discovery path), fetched at the internal
-    # authentik-server Service.
-    discoveryUrl: http://authentik-server/application/o/beekeepingit/.well-known/openid-configuration
+    # Issuer BASE at the internal authentik-server Service. go-oidc's NewProvider
+    # appends /.well-known/openid-configuration itself, so this must NOT include it
+    # (a full .well-known URL here double-appends the path → 404, crashing the service).
+    discoveryUrl: http://authentik-server/application/o/beekeepingit/
     # Authentik's default `aud` is the client id; services must expect it (a stale
     # value = silent 401s).
     audience: beekeepingit-pwa
