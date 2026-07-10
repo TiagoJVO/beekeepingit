@@ -127,8 +127,9 @@ does not exist`, crash-loop — confirmed live) until MinIO exists. So the umbre
   network access to the three upstream chart repos (`prometheus-community`, `grafana`,
   `open-telemetry`) — `helm-ci.yml` validates both.
 - A plain `helm install` of the umbrella **no longer deploys any observability
-  workload** — like Keycloak/MinIO (ADR-0012), getting the stack without full GitOps
-  means applying its `HelmRelease` manifest directly (see `infra/README.md`).
+  workload** — like the standalone IdP/MinIO releases (ADR-0012), getting the stack
+  without full GitOps means applying its `HelmRelease` manifest directly (see
+  `infra/README.md`).
 - CRD lifecycle caveat: `kube-prometheus-stack`'s CRDs install cleanly via `helm install`
   (its own `crds` sub-dependency) but, like all Helm CRDs, aren't auto-upgraded by
   `helm upgrade` — a future chart-version bump needing new/changed CRDs will need a

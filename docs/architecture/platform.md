@@ -20,9 +20,11 @@ starts deploying to a live cluster (`#86`/`#88`).
 - Teardown: [`infra/cluster/down.sh`](../../infra/cluster/down.sh) — deletes the cluster and
   flags any orphaned k3d docker volumes.
 
-Postgres+PostGIS, Keycloak, MinIO and the gateway landed with `#84` (see below); PowerSync's
+Postgres+PostGIS, the OIDC IdP, MinIO and the gateway landed with `#84` (see below); the IdP was
+**Keycloak** at `#84` and was later **replaced by Authentik** (D-7 revised,
+[ADR-0016](../adr/0016-replace-keycloak-with-authentik.md)). PowerSync's
 _infra_ (self-hosted service + Postgres storage backend, D-6/ADR-0005) landed with `#22`, with a
-placeholder sync-config and a Keycloak-JWKS stopgap since no domain tables/connector exist yet
+placeholder sync-config and an IdP-JWKS stopgap since no domain tables/connector exist yet
 (see `FOLLOWUPS.md`). The walking-skeleton Go services, the PWA, and PowerSync's real org-scoped
 Sync Rules + connector land with `#23`/`#106`. All deploy through the umbrella chart below rather
 than standing up their own release.
@@ -64,14 +66,17 @@ section covers the _why_.
 - **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0010](../adr/0010-platform-backing-services-provisioning.md)):
   `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
   portable `Ingress` + self-signed TLS Secret, reusing k3d's Traefik) are hand-rolled — there's
-  nothing to vendor for either. `keycloak` and `minio` only hold what a vendored chart can't own
-  itself (a generated credential Secret; for Keycloak, also the dev/CI-grade realm import) — the
-  actual vendored charts (`codecentric/keycloakx`, the official `charts.min.io` MinIO chart) run as
-  their own standalone Flux `HelmRelease`s (`infra/gitops/apps/dev/`), not nested here, since
-  Flux's GitRepository-sourced charts don't recursively resolve a subchart's own vendored
-  dependency (the original nested-wrapper approach silently deployed zero of the vendored chart's
-  workload) — see [ADR-0012](../adr/0012-keycloak-minio-standalone-helmreleases.md), which
-  supersedes the wrapper-chart part of ADR-0010.
+  nothing to vendor for either. `authentik` and `minio` only hold what a vendored chart can't own
+  itself (generated config/credential Secrets; for the IdP, also the declarative **blueprint**
+  ConfigMap — the analogue of a realm import) — the actual vendored charts (the `authentik` chart
+  from `charts.goauthentik.io`, the official `charts.min.io` MinIO chart) run as their own
+  standalone Flux `HelmRelease`s (`infra/gitops/apps/dev/`), not nested here, since Flux's
+  GitRepository-sourced charts don't recursively resolve a subchart's own vendored dependency (the
+  original nested-wrapper approach silently deployed zero of the vendored chart's workload) — see
+  [ADR-0012](../adr/0012-keycloak-minio-standalone-helmreleases.md) (which set this standalone
+  pattern for the then-Keycloak IdP + MinIO and supersedes the wrapper-chart part of ADR-0010) and
+  [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md) (which swapped that IdP to Authentik,
+  same pattern).
 - `powersync` (`#22`, D-6/[ADR-0005](../adr/0005-sync-engine-choice.md)) is hand-rolled too —
   PowerSync's self-hosted Open Edition ships as a bare Docker image, not a Helm chart, and its
   bucket-storage backend is Postgres (not MongoDB, PowerSync's historical default), matching the
@@ -216,10 +221,10 @@ provisioned (an EPIC-14 #89 secrets task).
 
 ## Not yet covered here
 
-- Production-grade Keycloak realm/RBAC hardening and trusted-CA TLS for the gateway (both
+- Production-grade IdP (Authentik) flow/RBAC hardening and trusted-CA TLS for the gateway (both
   EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0010).
 - PowerSync's real org-scoped Sync Rules and per-org sync-token connector (`docs/architecture/sync.md`,
-  ADR-0006) — `#22` ships a placeholder sync-config and a Keycloak-JWKS stopgap (see
+  ADR-0006) — `#22` ships a placeholder sync-config and an IdP-JWKS stopgap (see
   `FOLLOWUPS.md`) since `apiaries`/`organizations` don't exist until `#23`/`#106`.
 - End-to-end **publish→deploy** from CI — the #88 pipeline publishes images and lets Flux
   image-automation update manifests, but it is **dormant until the first service ships a
