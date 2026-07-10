@@ -15,7 +15,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get loginPrompt => 'Inicie sessão para gerir os seus apiários.';
 
   @override
-  String get loginButton => 'Entrar com Keycloak';
+  String get loginButton => 'Iniciar sessão';
 
   @override
   String get logout => 'Terminar sessão';

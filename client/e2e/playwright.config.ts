@@ -4,15 +4,18 @@ import { defineConfig, devices } from "@playwright/test";
  * Playwright config for the walking-skeleton e2e (#23 §7.3). Points at the
  * deployed PWA through the gateway; override with env vars in CI / local runs.
  *
- *   E2E_BASE_URL   the PWA origin (through the gateway)   default: https://keycloak.beekeepingit.local:8443
+ *   E2E_BASE_URL   the PWA origin (through the gateway)   default: https://app.beekeepingit.local:8443
  *   E2E_API_URL    gateway base for server-side asserts   default: same as base
  */
-const baseURL = process.env.E2E_BASE_URL ?? "https://keycloak.beekeepingit.local:8443";
+const baseURL = process.env.E2E_BASE_URL ?? "https://app.beekeepingit.local:8443";
 
-// Map the gateway host to loopback in the browser itself (no /etc/hosts edit
-// needed) so `keycloak.beekeepingit.local` reaches the k3d host port. Override
-// E2E_HOST_MAP to point elsewhere.
-const hostMap = process.env.E2E_HOST_MAP ?? "MAP keycloak.beekeepingit.local 127.0.0.1";
+// Map both the app host (PWA/APIs/sync) and the auth host (the OIDC provider,
+// on its own origin — see docs/architecture/oidc-integration.md §2) to loopback
+// in the browser itself (no /etc/hosts edit needed) so the OIDC redirect
+// resolves to the k3d host port. Override E2E_HOST_MAP to point elsewhere.
+const hostMap =
+  process.env.E2E_HOST_MAP ??
+  "MAP app.beekeepingit.local 127.0.0.1, MAP auth.beekeepingit.local 127.0.0.1";
 
 export default defineConfig({
   testDir: "./tests",

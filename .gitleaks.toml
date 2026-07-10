@@ -1,18 +1,26 @@
-# Gitleaks configuration — extends the built-in ruleset with allowlists for
-# known non-secret false positives. Loaded automatically by `task repo:secrets`
+# gitleaks config — extends the built-in default ruleset (`useDefault = true`)
+# with a small allowlist for known false positives. Run via `task repo:secrets`
 # (`gitleaks detect --no-git`) from the repo root.
+#
+# Why this exists: the local dev OIDC issuer/discovery URL
+# `https://auth.beekeepingit.local:8443/application/o/beekeepingit/` (the Authentik
+# application path — D-7, docs/architecture/oidc-integration.md) trips gitleaks'
+# heuristic `generic-api-key` rule: the high-entropy `application/o/beekeepingit/`
+# path segment reads as a token. It is NOT a secret — it's a public, reproducible
+# local hostname baked into `--dart-define` defaults, infra values, and docs, so we
+# allowlist the `beekeepingit.local` dev host and that slug path. Real secret
+# detection is unweakened.
 title = "BeekeepingIT gitleaks config"
 
 [extend]
 useDefault = true
 
 [allowlist]
-description = "Non-secret false positives"
+description = "Non-secret local dev hostnames / Authentik issuer URL (false positives)"
+# Match against the whole matched string (default target is the extracted secret,
+# which omits the `.local` host) so the dev-domain check sees the hostname.
 regexTarget = "match"
 regexes = [
-  # Authentik OIDC issuer/discovery URL — a PUBLIC endpoint path
-  # (docs/architecture/oidc-integration.md, D-7), not a credential. gitleaks'
-  # generic-api-key entropy heuristic trips on the "/application/o/beekeepingit/"
-  # application-slug path. Appears in docs, infra values, and client config.
+  '''beekeepingit\.local''',
   '''application/o/beekeepingit''',
 ]

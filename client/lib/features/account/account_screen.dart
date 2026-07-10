@@ -9,12 +9,14 @@ import '../profile/profile_repository.dart';
 import 'account_platform.dart';
 
 /// Account settings screen (FR-AU-1, #29): update profile information
-/// in-app, and change password by delegating to Keycloak's own Account
-/// Console (auth.md §7 — "use Keycloak's built-ins, no custom auth build";
-/// Keycloak's console already requires re-entering + confirming the new
-/// password and surfaces policy-violation/wrong-current-password errors
-/// itself, so those ACs are satisfied by that built-in flow, not a form
-/// built here). Reuses `features/profile`'s `profileProvider`/
+/// in-app, and change password by delegating to the identity provider's own
+/// self-service account page (auth.md §7 — "use the provider's built-ins, no
+/// custom auth build"; the provider's page already requires re-entering +
+/// confirming the new password and surfaces policy-violation/wrong-current-
+/// password errors itself, so those ACs are satisfied by that built-in flow,
+/// not a form built here — opened via `AppConfig.oidcAccountUrl`, a config
+/// value so the app stays provider-agnostic). Reuses `features/profile`'s
+/// `profileProvider`/
 /// `ProfileController` directly rather than duplicating profile state —
 /// this screen is a second **place** to edit the same profile, not a
 /// second **model** of it.
@@ -95,7 +97,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 
   void _openChangePassword() {
-    createAccountPlatform().openInNewTab(AppConfig.oidcAccountConsoleUrl);
+    createAccountPlatform().openInNewTab(AppConfig.oidcAccountUrl);
   }
 
   @override

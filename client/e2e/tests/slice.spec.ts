@@ -2,7 +2,7 @@ import { test, expect, Page } from "@playwright/test";
 
 /**
  * The M0 walking-skeleton end-to-end test (#23 §7.3):
- *   log in (Keycloak OIDC) → create an apiary → go offline → edit it →
+ *   log in (OIDC, provider-agnostic) → create an apiary → go offline → edit it →
  *   verify the edit is local-only → reconnect → assert it synced to the
  *   server → reload and assert the local state converged.
  *
@@ -50,15 +50,49 @@ async function enableSemantics(page: Page) {
     .catch(() => {});
 }
 
+// Provider-agnostic IdP login. The app only redirects to the discovered OIDC
+// provider, so this test must not depend on any one provider's page markup
+// (fixed element ids like `#username`/`#kc-login`, etc.). Locate fields by
+// their accessible label/role — Playwright pierces shadow DOM (Authentik
+// renders its login as lit web components) — and tolerate a two-step
+// (identify → password) flow: submit after the identifier if the password
+// field isn't shown yet.
+const submitButton = (page: Page) =>
+  page.getByRole("button", { name: /log ?in|sign in|continue|next/i });
+
+async function fillIfPresent(
+  page: Page,
+  locator: ReturnType<Page["getByLabel"]>,
+  value: string,
+): Promise<boolean> {
+  try {
+    await locator.first().waitFor({ state: "visible", timeout: 15_000 });
+  } catch {
+    return false;
+  }
+  await locator.first().fill(value);
+  return true;
+}
+
 async function login(page: Page) {
   await page.goto("/");
   await enableSemantics(page);
-  await page.getByText("Sign in with Keycloak").click();
+  await page.getByRole("button", { name: /sign in/i }).click();
 
-  // Keycloak's login page is standard HTML.
-  await page.locator("#username").fill(TEST_USER);
-  await page.locator("#password").fill(TEST_PASS);
-  await page.locator("#kc-login").click();
+  // ── Step 1: identifier (username/email) ───────────────────────────────
+  await fillIfPresent(page, page.getByLabel(/username|email/i), TEST_USER);
+
+  // Two-step providers (e.g. Authentik) show the password only after the
+  // identifier is submitted; a single-step page already has it, so only click
+  // through if the password field isn't visible yet.
+  const password = page.getByLabel(/password/i);
+  if (!(await password.first().isVisible().catch(() => false))) {
+    await submitButton(page).first().click();
+  }
+
+  // ── Step 2: password ──────────────────────────────────────────────────
+  await fillIfPresent(page, password, TEST_PASS);
+  await submitButton(page).first().click();
 
   // Back on the PWA (apiaries list).
   await page.waitForURL(/\/apiaries/);
@@ -67,8 +101,8 @@ async function login(page: Page) {
 }
 
 test("login → create → offline edit → sync", async ({ page, context, browser }) => {
-  // Capture the Keycloak access token from the app's own requests (the
-  // realm disallows direct grant, so we don't mint one out-of-band).
+  // Capture the OIDC access token from the app's own requests (the provider
+  // disallows direct grant, so we don't mint one out-of-band).
   let capturedToken = "";
   page.on("request", (req) => {
     const auth = req.headers()["authorization"];
@@ -140,25 +174,28 @@ test("login → create → offline edit → sync", async ({ page, context, brows
 test("logout revokes the session — a reload does not silently re-authenticate (#24)", async ({
   page,
 }) => {
-  // The most faithful check of the real Keycloak end-session round trip
-  // (auth_controller_test.dart's unit tests mock the network call; this
-  // exercises the actual RP-initiated logout against Keycloak).
+  // The most faithful check of the real OIDC end-session round trip
+  // (auth_controller_test.dart's unit tests stub the network; this exercises
+  // the actual front-channel RP-initiated logout against the live provider,
+  // which clears local state, redirects to end_session_endpoint with the
+  // id_token_hint, then back to the app's post_logout_redirect_uri).
   await login(page);
 
   await page.getByRole("button", { name: "Sign out" }).click();
 
-  // The app-side session is cleared and the router sends us back to /login.
+  // The app-side session is cleared and (after the end-session round trip
+  // returns to the app origin) the router sends us back to /login.
   await page.waitForURL(/\/login/);
   await enableSemantics(page);
-  await expect(page.getByText("Sign in with Keycloak")).toBeVisible();
+  await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
 
   // A fresh reload must NOT silently restore the session (no refresh token
-  // survives logout, and the Keycloak SSO cookie/session was revoked
+  // survives logout, and the provider SSO cookie/session was ended
   // server-side, not just locally forgotten) — still on /login, not bounced
   // back into the app.
   await page.reload();
   await enableSemantics(page);
-  await expect(page.getByText("Sign in with Keycloak")).toBeVisible();
+  await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
   expect(page.url()).toMatch(/\/login/);
 });
 

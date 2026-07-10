@@ -110,10 +110,10 @@ abstract class AppLocalizations {
   /// **'Sign in to manage your apiaries.'**
   String get loginPrompt;
 
-  /// Primary login action
+  /// Primary login action — starts the OIDC redirect to the identity provider
   ///
   /// In en, this message translates to:
-  /// **'Sign in with Keycloak'**
+  /// **'Sign in'**
   String get loginButton;
 
   /// Sign-out action in the app bar
@@ -422,7 +422,7 @@ abstract class AppLocalizations {
   /// **'Password changes are handled by our sign-in provider, in a new tab.'**
   String get accountChangePasswordHint;
 
-  /// Button that opens Keycloak's Account Console to change password
+  /// Button that opens the identity provider's account page to change password
   ///
   /// In en, this message translates to:
   /// **'Change password'**

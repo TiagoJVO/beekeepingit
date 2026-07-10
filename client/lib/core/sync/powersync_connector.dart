@@ -9,7 +9,7 @@ import 'powersync_schema.dart';
 /// Bridges PowerSync to the BeekeepingIT backend (walking-skeleton.md §4.4):
 ///   - fetchCredentials → GET /v1/sync/token (the short-TTL sync token).
 ///   - uploadData       → POST /v1/sync/batch (the single write-back seam).
-/// Both authenticate with the caller's Keycloak access token.
+/// Both authenticate with the caller's OIDC access token.
 class BeekeepingitConnector extends PowerSyncBackendConnector {
   BeekeepingitConnector({required this.getAccessToken, http.Client? client})
     : _http = client ?? http.Client();
