@@ -22,7 +22,7 @@ source of record.
 
 Requirements refined and ID'd; **core product + tech decisions resolved**
 (`D-1`…`D-10` in [decisions.md](decisions.md)): scope, hive model, org invites, full
-microservices, Flutter (PWA-first → native), Postgres + sync, Keycloak, cloud-AI.
+microservices, Flutter (PWA-first → native), Postgres + sync, Authentik (OIDC), cloud-AI.
 
 **Remaining (before / early in planning)** — highest-impact open items in
 [open-questions.md](open-questions.md):

@@ -116,7 +116,7 @@ today.)
 - **`invitations`** — an online admin flow (email round-trip); not a field entity.
 - **`identity.entitlements`** — feature-toggle flags **may** replicate down **read-only** (small,
   useful offline for gating UI), but are never client-writable (D-4 stub).
-- Keycloak internals, PowerSync bucket-storage DB, and any other service's private schema.
+- IdP internals, PowerSync bucket-storage DB, and any other service's private schema.
 
 ### 3.4 How the slice is defined & scoped — PowerSync Sync Rules + a short-lived sync token
 
@@ -126,7 +126,7 @@ rows (the on-device projection of the tenancy model, [data-model.md](data-model.
 [ADR-0002](../adr/0002-multi-tenancy.md)).
 
 PowerSync parameterizes the slice off **JWT claims**, but [auth.md](auth.md) §3.4 **deliberately
-keeps `organization_id` / role out of the long-lived Keycloak access token** (membership is
+keeps `organization_id` / role out of the long-lived OIDC access token** (membership is
 mutable domain data; a cached token would go stale). We reconcile this cleanly:
 
 > **A separate, short-lived PowerSync _sync token_** is minted server-side by the connector's

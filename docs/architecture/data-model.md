@@ -64,7 +64,7 @@ erDiagram
 
     USERS {
         uuid id PK
-        text keycloak_sub UK "OIDC subject (D-7)"
+        text oidc_sub UK "OIDC subject (D-7)"
         text name
         text email
         text locale "EN/PT (NFR-I18N)"

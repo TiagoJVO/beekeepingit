@@ -7,7 +7,7 @@
 
 **Issue:** #104 · **Epic:** #103 (EPIC-DESIGN) · **Milestone:** M0
 **Requirements:** NFR-ARC-1, NFR-ARC-2, NFR-ARC-3, FR-TEN, FR-HIS, NFR-ROL-1, NFR-OBS-1
-**Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture) (full microservices), [D-2](../../requirements/decisions.md) (hive count, not entity), [D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-6](../../requirements/decisions.md) (Postgres + schema-per-service + sync), [D-7](../../requirements/decisions.md) (Keycloak), [D-9](../../requirements/decisions.md) (monorepo), [D-10](../../requirements/decisions.md) (PWA-first)
+**Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture) (full microservices), [D-2](../../requirements/decisions.md) (hive count, not entity), [D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-6](../../requirements/decisions.md) (Postgres + schema-per-service + sync), [D-7](../../requirements/decisions.md) (Authentik OIDC), [D-9](../../requirements/decisions.md) (monorepo), [D-10](../../requirements/decisions.md) (PWA-first)
 **ADR:** [0001-service-decomposition](../adr/0001-service-decomposition.md)
 
 ---
@@ -74,7 +74,7 @@ named contexts. Each domain service is a **Go** service (D-5) owning **one Postg
 
 | #   | Service (schema)                    | Responsibility                                                                                                                                                                                                            | Owns                                                                                     | Key requirements                                         |
 | --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| 1   | **identity** (`identity`)           | App-side user **profile** & account settings; maps the Keycloak subject → app user. AuthN itself is Keycloak. Holds the subscription **feature-toggle stub** (no billing).                                                | `users` (profile, keyed by Keycloak `sub`), account settings, feature-toggle flags       | FR-ONB-1, FR-AU-1, FR-AU-2 (stub, D-4)                   |
+| 1   | **identity** (`identity`)           | App-side user **profile** & account settings; maps the OIDC subject → app user. AuthN itself is the OIDC IdP (Authentik). Holds the subscription **feature-toggle stub** (no billing).                                    | `users` (profile, keyed by OIDC `sub` in `oidc_sub`), account settings, feature-toggle flags | FR-ONB-1, FR-AU-1, FR-AU-2 (stub, D-4)                   |
 | 2   | **organizations** (`organizations`) | Organization CRUD; **membership** (user↔org + role); **invitations**; system of record for **org-scoped authorization** (who is in which org, with what role).                                                            | `organizations`, `memberships`, `invitations`                                            | FR-ONB-2, FR-ONB-3, FR-TEN-1/2, NFR-ROL-1 (D-3)          |
 | 3   | **apiaries** (`apiaries`)           | Apiary CRUD; **hive count** (D-2); **geo** (PostGIS) for proximity ordering & distance; search.                                                                                                                           | `apiaries` (incl. `location geography(Point)`, `hive_count`)                             | FR-AP-1..7                                               |
 | 4   | **activities** (`activities`)       | Activity CRUD with **per-type JSONB attributes**; recorded against the **performing user** and referencing an apiary.                                                                                                     | `activities` (`apiary_id` ref, `performed_by` ref, `type`, `attributes jsonb`)           | FR-AC-1..6 (D-2)                                         |
@@ -147,17 +147,18 @@ graph TB
         core["Flutter PWA + React Admin App<br/>+ Go microservices on one k8s cluster"]
     end
 
-    keycloak["🔐 Keycloak<br/><i>Identity Provider (OIDC) — self-hosted</i>"]
+    idp["🔐 Authentik<br/><i>Identity Provider (OIDC) — self-hosted</i>"]
     llm["☁️ Cloud LLM provider<br/><i>e.g. Claude API — external processor</i>"]
 
     beekeeper -->|"manage apiaries, activities,<br/>journeys, todos — offline-first"| sys
     admin -->|"manage orgs, members, roles<br/>(online-only)"| sys
-    sys -->|"authenticate users (OIDC),<br/>cache tokens for field login"| keycloak
+    sys -->|"authenticate users (OIDC),<br/>cache tokens for field login"| idp
     sys -->|"NL→query/action assistant —<br/>consent-gated, online-only"| llm
 ```
 
 **Actors:** field **Beekeepers** (offline-first PWA) and **Organization Admins** (online-only
-web app). **Supporting systems:** **Keycloak** (authN; D-7) and an **external Cloud LLM**
+web app). **Supporting systems:** an **OIDC IdP** (Authentik; authN; D-7, behind a
+provider-agnostic boundary) and an **external Cloud LLM**
 (the AI assistant's processor; D-8 — gated by consent/DPA per
 [Q-AICLOUD](../../requirements/open-questions.md#q-aicloud--cloud-ai-privacy--gdpr-now-near-term-per-d-8)).
 
@@ -178,7 +179,7 @@ graph TB
 
     subgraph cluster["Single Kubernetes cluster (NFR-ARC-3)"]
         gw["🚪 API Gateway / Ingress<br/><i>Traefik/NGINX — TLS, routing, JWT</i>"]
-        keycloak["🔐 Keycloak<br/><i>OIDC IdP, realm + roles</i>"]
+        idp["🔐 Authentik<br/><i>OIDC IdP — application + provider</i>"]
 
         subgraph services["Domain services — Go (pgx/sqlc, OpenAPI)"]
             identity["identity"]
@@ -204,8 +205,8 @@ graph TB
     pwa <-->|"replicate org/user slice +<br/>upload offline writes"| sync
 
     gw -->|"REST (org-scoped, JWT)"| services
-    pwa -.->|"OIDC login"| keycloak
-    services -.->|"validate JWT via JWKS"| keycloak
+    pwa -.->|"OIDC login"| idp
+    services -.->|"validate JWT via JWKS"| idp
     services -->|"owns one schema<br/>(no cross-schema writes)"| pg
     sync -->|"publish slice / apply writes"| pg
     ai -->|"read-only, scoped"| pg
@@ -243,7 +244,7 @@ hand-off #104 owes EPIC-13):
 | Subchart        | Purpose                                                                                   | Requirement / source                                                           |
 | --------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `gateway`       | Ingress, TLS, routing, edge JWT                                                           | NFR-ARC, #84                                                                   |
-| `keycloak`      | OIDC IdP, realm + roles                                                                   | D-7, #84                                                                       |
+| `authentik`     | OIDC IdP (application + provider, blueprint-provisioned)                                  | D-7, ADR-0016                                                                  |
 | `postgres`      | PostgreSQL + **PostGIS**, schema-per-service                                              | D-6, #84                                                                       |
 | `sync-engine`   | **PowerSync** (self-hosted, Open Edition)                                                 | D-6, ADR-0005 (SP-1 #54)                                                       |
 | `sync`          | Thin stateless Go service: sync-token mint + write-back coordinator (owns no domain data) | D-12, [sync.md](sync.md) §6.4, [walking-skeleton.md](walking-skeleton.md) §4.3 |
