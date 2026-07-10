@@ -9,25 +9,17 @@
 
 ---
 
-## Branch `feat/replace-keycloak-with-authentik` — Keycloak → Authentik migration (coordinator-run)
+## Keycloak → Authentik migration — post-merge follow-ups
 
-Full E2E replacement of Keycloak with **Authentik** behind a provider-agnostic OIDC boundary.
-Contract: [`docs/architecture/oidc-integration.md`](docs/architecture/oidc-integration.md) · decision:
-[ADR-0016](docs/adr/0016-replace-keycloak-with-authentik.md) · [D-7](requirements/decisions.md#d-7).
-Phase 0 (contract + ADR + D-7 + tech-stack) is **committed** (`0df098e`). Workstreams land as PRs
-into this integration branch; it merges to `main` once coherent and green.
+The migration (contract + ADR-0016 + D-7; WS-A infra, WS-B backend, WS-C client, WS-D docs) ships in
+**#191** — CI-green, including a live Authentik deploy passing the helm-e2e readiness check. Remaining
+coordinator follow-ups (to promote to GitHub Issues, then prune here):
 
-- **WS-A infra** (`feat/authentik-ws-a` → PR): Authentik Flux HelmRelease + wrapper subchart +
-  blueprint + `auth.beekeepingit.local` gateway host + dev scripts + CI. **Status:** agent in progress.
-- **WS-B backend** (`feat/authentik-ws-b` → PR): `keycloak_sub`→`oidc_sub` migration + sqlc regen,
-  devseed, comment/config sweep, tests. **Status:** agent in progress.
-- **WS-C client** (`feat/authentik-ws-c` → PR): discovery-driven `openid_client`, front-channel
-  logout, account URL, l10n, unit + e2e. **Status:** agent in progress.
-- **WS-D docs** (pending): rewrite `auth.md` + architecture docs + root README/CLAUDE sweep — spawned
-  after A/B/C so it documents as-built. **Status:** not started.
-- **WS-E backlog** (coordinator): rename **#72** (Keycloak→OIDC), sweep **#98**/EPIC-14 **#15** auth
-  scope to Authentik flows/blueprints, create the migration epic. **Status:** recon done, edits pending.
-- **Live-cluster OIDC re-validation** (coordinator, via cluster semaphore): on the pinned Authentik
-  version, confirm blueprint applies clean + full PKCE login/logout end-to-end (WS-A flags the exact
-  items in its PR: `offline_access` consent stage, blueprint `password`/`upn`). **Status:** pending.
-- **Phase 2 gate:** `grep -ri keycloak` == 0 across the repo before the integration→`main` PR.
+- **Live browser-login re-validation** — stand the full stack up on k3d and drive a real PKCE
+  login/logout against Authentik through the dual-host gateway (`app.` / `auth.`). CI proved deploy
+  health and the OIDC spike proved token → `go-oidc` validation; the full browser round-trip is the
+  last check. WS-A also flagged `offline_access` consent-stage + blueprint `password`/`upn` to confirm
+  live on the pinned version.
+- **Backlog grooming** — rename **#72** (Keycloak → OIDC auth), retarget **#98** / EPIC-14 **#15**
+  auth-hardening scope to Authentik (flows/blueprints/secrets), reconcile other open Keycloak-mentioning
+  issues.
