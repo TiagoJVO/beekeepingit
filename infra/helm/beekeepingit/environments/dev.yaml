@@ -5,12 +5,19 @@ global:
 
 services:
   oidc:
-    # Split discovery from issuer (#23). A browser token's `iss` is the external
-    # HTTPS gateway URL (Keycloak's KC_HOSTNAME); services must validate against
-    # that exact string. But services can't reach that URL over HTTPS in-cluster,
-    # so they fetch the discovery document from the internal HTTP Keycloak Service
-    # and trust `issuerUrl` as the issuer (go-oidc InsecureIssuerURLContext).
-    # Keycloak's KC_HOSTNAME_BACKCHANNEL_DYNAMIC keeps the discovered jwks_uri
-    # internal-HTTP (reachable) while issuer stays the external HTTPS URL.
-    issuerUrl: https://keycloak.beekeepingit.local:8443/realms/beekeepingit
-    discoveryUrl: http://keycloak-keycloakx-http/realms/beekeepingit
+    # Split discovery from issuer (#23, ADR-0016, oidc-integration.md §6). A browser
+    # token's `iss` is the external HTTPS auth-host issuer; services must validate
+    # against that exact string. But services can't reach that URL over HTTPS
+    # in-cluster, so they fetch the discovery document from the internal HTTP
+    # Authentik Service and trust `issuerUrl` as the issuer (go-oidc
+    # InsecureIssuerURLContext). Authentik derives the issuer from the request host
+    # (issuer_mode: per_provider), so the internal fetch yields an internal-HTTP
+    # jwks_uri (reachable) while `issuerUrl` stays the external HTTPS URL — no
+    # KC_HOSTNAME-style config needed.
+    issuerUrl: https://auth.beekeepingit.local:8443/application/o/beekeepingit/
+    # Full .well-known URL (Authentik's discovery path), fetched at the internal
+    # authentik-server Service.
+    discoveryUrl: http://authentik-server/application/o/beekeepingit/.well-known/openid-configuration
+    # Authentik's default `aud` is the client id; services must expect it (a stale
+    # value = silent 401s).
+    audience: beekeepingit-pwa

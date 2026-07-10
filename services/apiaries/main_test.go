@@ -46,7 +46,7 @@ const testOrgHeader = "X-Test-Org-Claims"
 func injectClaims(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := authn.Claims{
-			Sub:            devseed.KeycloakSub,
+			Sub:            devseed.OidcSub,
 			UserID:         devseed.UserID,
 			OrganizationID: devseed.OrganizationID,
 			Role:           devseed.MembershipRole,

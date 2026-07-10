@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../l10n/gen/app_localizations.dart';
 
-/// Login entry point: a single "sign in with Keycloak" action that starts the
-/// OIDC Authorization Code + PKCE redirect (auth.md §3.2).
+/// Login entry point: a single "sign in" action that starts the OIDC
+/// Authorization Code + PKCE redirect to the identity provider (auth.md §3.2).
 class LoginScreen extends ConsumerWidget {
   const LoginScreen({super.key});
 

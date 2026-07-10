@@ -47,7 +47,7 @@ type listDTO struct {
 }
 
 // ReadRouter returns the client-facing read routes (GET /v1/apiaries[/{id}]).
-// Mount it behind the Keycloak authn + org-resolver middleware so requests are
+// Mount it behind the OIDC authn + org-resolver middleware so requests are
 // org-scoped from the resolved Claims.
 func ReadRouter(pool *pgxpool.Pool) http.Handler {
 	q := sqlcgen.New(pool)

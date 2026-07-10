@@ -19,9 +19,9 @@ import (
 
 const testAudience = "beekeepingit-example"
 
-// testIDP is a minimal stand-in for Keycloak's OIDC discovery + JWKS
+// testIDP is a minimal stand-in for an OIDC provider's discovery + JWKS
 // endpoints, serving a JWKS that tests can mutate at runtime to exercise
-// key-rotation ("unknown kid") handling — no real Keycloak container needed.
+// key-rotation ("unknown kid") handling — no real IdP container needed.
 type testIDP struct {
 	mu   sync.Mutex
 	keys []jose.JSONWebKey

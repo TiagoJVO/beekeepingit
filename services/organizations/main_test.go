@@ -106,7 +106,7 @@ func TestOrganizationsService_ResolveActiveMembership(t *testing.T) {
 
 	// Any valid token authenticates these internal calls; the sub is not the
 	// membership key (user_id is), so authtest's default sub is fine.
-	token := "Bearer " + idp.Mint(t, devseed.KeycloakSub, testAudience)
+	token := "Bearer " + idp.Mint(t, devseed.OidcSub, testAudience)
 
 	// Unauthenticated → 401.
 	if rec := get("/internal/memberships/active?user_id="+devseed.UserID, ""); rec.Code != http.StatusUnauthorized {

@@ -14,7 +14,8 @@ appVersion: "0.1.0"
 # The four vendored charts are direct remote dependencies (`helm dependency build`
 # fetches them; Flux's source-controller resolves a GitRepository-sourced chart's
 # own top-level remote dependencies the same way — verified live, unlike the
-# *nested* subchart-of-a-subchart case that broke keycloak/minio, ADR-0012).
+# *nested* subchart-of-a-subchart case that broke the vendored backing services
+# (now standalone Flux HelmReleases — authentik/minio), ADR-0012).
 # alert-webhook-sink is our own local chart. Each dependency's values live under
 # a top-level key matching its `name` (see values.yaml).
 dependencies:

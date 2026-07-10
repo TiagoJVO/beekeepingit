@@ -13,12 +13,12 @@ Go module, linked through the repo-root `go.work`.
 
 ## Surface
 
-| Route                          | Auth                     | Purpose                                                                                            |
-| ------------------------------ | ------------------------ | -------------------------------------------------------------------------------------------------- |
-| `GET /v1/sync/token`           | Keycloak JWT + org scope | Mint a short-TTL RS256 sync token carrying the `organization_id` claim PowerSync parameterizes on. |
-| `POST /v1/sync/batch`          | Keycloak JWT + org scope | The single write-back seam: validate-all → apply via owning services, forwarding the bearer.       |
-| `GET /internal/sync/jwks.json` | none (public key set)    | JWKS PowerSync validates sync tokens against. **Internal** — never via the gateway.                |
-| `GET /healthz`, `GET /readyz`  | none                     | Liveness / readiness.                                                                              |
+| Route                          | Auth                  | Purpose                                                                                            |
+| ------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------- |
+| `GET /v1/sync/token`           | OIDC JWT + org scope  | Mint a short-TTL RS256 sync token carrying the `organization_id` claim PowerSync parameterizes on. |
+| `POST /v1/sync/batch`          | OIDC JWT + org scope  | The single write-back seam: validate-all → apply via owning services, forwarding the bearer.       |
+| `GET /internal/sync/jwks.json` | none (public key set) | JWKS PowerSync validates sync tokens against. **Internal** — never via the gateway.                |
+| `GET /healthz`, `GET /readyz`  | none                  | Liveness / readiness.                                                                              |
 
 The coordinator fans out to exactly one owning service today (`apiaries`), but
 implements the two-phase validate-then-apply contract as specified, so adding a
@@ -34,7 +34,7 @@ failure returns `502` and heals on PowerSync's idempotent forward-retry.
 | `HTTP_ADDR`                   | no       | `:8080`          |                                                                                                 |
 | `LOG_LEVEL`                   | no       | `info`           |                                                                                                 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | no       | `localhost:4317` |                                                                                                 |
-| `OIDC_ISSUER_URL`             | yes      | —                | Keycloak realm issuer (validates the caller's access token).                                    |
+| `OIDC_ISSUER_URL`             | yes      | —                | OIDC issuer (validates the caller's access token).                                              |
 | `OIDC_AUDIENCE`               | yes      | —                | Expected access-token audience.                                                                 |
 | `INTERNAL_IDENTITY_URL`       | yes      | —                | Identity service base URL (org resolver).                                                       |
 | `INTERNAL_ORGANIZATIONS_URL`  | yes      | —                | Organizations service base URL (org resolver).                                                  |

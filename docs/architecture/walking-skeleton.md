@@ -12,7 +12,7 @@
 **Requirements:** NFR-ARC-1, NFR-TST-1 (+ NFR-ARC-3, NFR-OBS-1, FR-OF-1/2 via #23)
 **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture) (microservices),
 [D-5](../../requirements/decisions.md) (Flutter/Go), [D-6](../../requirements/decisions.md#d-6--data--offline-sync-postgresql--postgis-sqlite-on-device-managed-sync) (Postgres + PowerSync),
-[D-7](../../requirements/decisions.md#d-7--identity--auth-keycloak-self-hosted) (Keycloak),
+[D-7](../../requirements/decisions.md#d-7) (Authentik OIDC),
 [D-10](../../requirements/decisions.md) (PWA-first),
 [D-12](../../requirements/decisions.md#d-12--offline-sync-write-back-atomic-validation-parity-notify-and-fix) (write-back)
 **Depends on:** #104, #105, #106, #107, #108, #109, #54 (SP-1)
@@ -27,7 +27,7 @@ recorded here as their place of record.
 ## 1. Purpose & scope
 
 The walking skeleton is the **M0 exit-criteria slice** (#23): one thin vertical path that proves
-the architecture end-to-end **before scaling out** — a user logs in via Keycloak from the Flutter
+the architecture end-to-end **before scaling out** — a user logs in via the OIDC IdP from the Flutter
 PWA, creates a trivial record persisted through a Go service into Postgres, edits it offline,
 and the edit syncs when connectivity returns; the whole slice is deployed via CI/CD with
 traces/logs visible (NFR-OBS-1), and an automated test exercises the path (NFR-TST-1).
@@ -85,7 +85,7 @@ cluster.
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | **Flutter PWA** (from #21)                | Login, apiary list + create/edit form (name, hive count), PowerSync web SDK (local SQLite via OPFS/IndexedDB)                                           | D-5/D-10, [tech-stack](../../requirements/tech-stack.md), ADR-0005             |
 | **API Gateway** (Traefik/NGINX)           | TLS, `/v1` routing (§5.3), optional edge JWT check                                                                                                      | [service-decomposition.md](service-decomposition.md) §6, [auth.md](auth.md) §4 |
-| **Keycloak**                              | Realm `beekeepingit`, public client `beekeepingit-pwa` (Auth Code + PKCE), JWKS                                                                         | [auth.md](auth.md) §3                                                          |
+| **Authentik** (OIDC IdP)                  | Application `beekeepingit` + OAuth2 provider `beekeepingit-pwa` (public, Auth Code + PKCE), JWKS                                                        | [auth.md](auth.md) §3, [oidc-integration.md](oidc-integration.md)              |
 | **`identity` service** (minimal)          | `identity.users` + the internal **sub → user** resolve endpoint (§5.2)                                                                                  | [auth.md](auth.md) §5.1 step 1                                                 |
 | **`organizations` service** (minimal)     | `organizations.organizations` + `memberships`; internal **active-membership** resolve endpoint (§5.2)                                                   | [auth.md](auth.md) §5.1 steps 2–3                                              |
 | **`apiaries` service**                    | The owning service of the trivial record: migrations, `GET /v1/apiaries` (+`/{id}`), internal sync **validate/apply** with LWW + `sync_conflict_log`    | [data-model.md](data-model.md), [sync.md](sync.md) §4–§5                       |
@@ -120,7 +120,7 @@ graph TB
 
     subgraph cluster["Single k8s cluster — deployed via CI/CD"]
         gw["🚪 Gateway (/v1)"]
-        kc["🔐 Keycloak<br/>realm beekeepingit"]
+        kc["🔐 Authentik (OIDC)<br/>app beekeepingit"]
         syncsvc["sync service<br/>/v1/sync/token · /v1/sync/batch"]
         apisvc["apiaries service<br/>GET /v1/apiaries · internal validate/apply"]
         idsvc["identity (minimal)<br/>sub→user"]
@@ -226,15 +226,16 @@ REST API per D-11). Consequences:
 #23's AC starts at "a user can log in" — profile/org onboarding is EPIC-01 (#25–#27). The
 skeleton **seeds** what login needs:
 
-- **Keycloak realm import** (dev/CI-grade): realm `beekeepingit`, client `beekeepingit-pwa`,
-  one test user (password credential, email pre-verified);
-- **SQL seed** (idempotent, dev/CI-only): the matching `identity.users` row (by `keycloak_sub`),
+- **IdP blueprint** (dev/CI-grade): the Authentik application `beekeepingit` + provider
+  `beekeepingit-pwa`, the `platform-operator` group, one seed test user (its `upn` = the seed
+  UUID `sub`, email pre-verified via the cosmetic default mapping);
+- **SQL seed** (idempotent, dev/CI-only): the matching `identity.users` row (by `oidc_sub`),
   one `organizations` row, one **active `admin` membership** — exactly the rows the §4.2
   resolve path needs.
 
 This still exercises the full authN/authZ pipeline on every request (nothing is stubbed); it
 only skips the _creation UX_. EPIC-01 replaces the seed with real onboarding; EPIC-14 (#15)
-owns production realm config and secrets.
+owns production IdP flow config and secrets.
 
 ### 4.6 What the apply path includes in the skeleton: **LWW + conflict log, no audit log**
 
@@ -260,8 +261,8 @@ errors, `snake_case`, UUID v7 ids, bearer JWT, tenancy never a client parameter)
 
 | Contract                                        | Consumer → Provider                            | Shape                                                                                                                                                                                                                                                               |
 | ----------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **OIDC login**                                  | PWA → Keycloak                                 | Authorization Code + **PKCE**, public client `beekeepingit-pwa` ([auth.md](auth.md) §3.2)                                                                                                                                                                           |
-| **`GET /v1/sync/token`**                        | PWA (PowerSync `fetchCredentials`) → `sync`    | Bearer (Keycloak JWT) → `200 { token, expires_at }`; token = RS256 sync token, TTL minutes, org claim from membership ([sync.md](sync.md) §3.4)                                                                                                                     |
+| **OIDC login**                                  | PWA → OIDC IdP                                 | Authorization Code + **PKCE**, public client `beekeepingit-pwa` ([auth.md](auth.md) §3.2)                                                                                                                                                                           |
+| **`GET /v1/sync/token`**                        | PWA (PowerSync `fetchCredentials`) → `sync`    | Bearer (OIDC JWT) → `200 { token, expires_at }`; token = RS256 sync token, TTL minutes, org claim from membership ([sync.md](sync.md) §3.4)                                                                                                                         |
 | **`POST /v1/sync/batch`**                       | PWA (PowerSync `uploadData`) → `sync`          | Bearer → body = one client transaction: `{ ops: [ { op: put\|patch\|delete, entity_type, id, data, updated_at } ] }`; `200` per-op results (`applied` · `superseded` · rejected detail) or `422` problem+json with the offending op(s) ([sync.md](sync.md) §5.2/§6) |
 | **`GET /v1/apiaries`, `GET /v1/apiaries/{id}`** | PWA (e2e assertions; later Admin) → `apiaries` | Existing contract [`apiaries.openapi.yaml`](../../contracts/openapi/apiaries.openapi.yaml); cursor pagination                                                                                                                                                       |
 | **Sync stream**                                 | PWA (PowerSync web SDK) ↔ PowerSync service    | Engine protocol (behind the ADR-0005/NFR-ARC-2 boundary), authenticated by the **sync token**; org-parameterized stream over `apiaries` + the active `organizations` row                                                                                            |
@@ -278,7 +279,7 @@ contract and must be authored contract-first like every other surface.
 | **Resolve membership**    | shared middleware → `organizations`              | `GET /internal/memberships/active?user_id=` → `200 { organization_id, role }` / `404` (→ caller returns `403`)                                                                                                                                                                                              |
 | **Sync validate / apply** | `sync` coordinator → owning service (`apiaries`) | `POST /internal/sync/validate` (dry-run all ops, field-level RFC 9457 detail on reject) and `POST /internal/sync/apply` (one local tx: LWW + conflict log; idempotent on `(PK, op)`; per-op results) — [sync.md](sync.md) §5.2/§6.2. Caller's bearer token forwarded; provider re-authenticates + re-scopes |
 | **JWKS (sync token)**     | PowerSync service → `sync`                       | `GET /internal/sync/jwks.json` (SP-1 `client_auth.jwks_uri`)                                                                                                                                                                                                                                                |
-| **JWKS (Keycloak)**       | every service → Keycloak                         | OIDC discovery → JWKS, cached, refetch on unknown `kid` ([auth.md](auth.md) §4)                                                                                                                                                                                                                             |
+| **JWKS (OIDC IdP)**       | every service → OIDC IdP                         | OIDC discovery → JWKS, cached, refetch on unknown `kid` ([auth.md](auth.md) §4)                                                                                                                                                                                                                             |
 
 ### 5.3 Gateway routes & data-plane wiring
 
@@ -287,7 +288,7 @@ contract and must be authored contract-first like every other surface.
 | `/v1/sync/**`                                                                                                                                  | `sync` service                                                                                             |
 | `/v1/apiaries/**`                                                                                                                              | `apiaries` service                                                                                         |
 | `/sync-stream/**` (PowerSync HTTP/WebSocket endpoint)                                                                                          | PowerSync service                                                                                          |
-| `/auth/**` (or dedicated host)                                                                                                                 | Keycloak                                                                                                   |
+| Dedicated auth host `auth.beekeepingit.local` (Authentik serves the issuer + all its paths under `/`)                                          | Authentik (OIDC IdP)                                                                                       |
 | `/` (static)                                                                                                                                   | PWA bundle (with #93)                                                                                      |
 | Postgres publication **`powersync`** — **only** the synced tables (`apiaries.apiaries`, `organizations.organizations`), _not_ `FOR ALL TABLES` | PowerSync logical replication (SP-1 §4; bucket storage in its own DB so the publication never captures it) |
 | W3C `traceparent` propagated PWA → gateway → `sync` → `apiaries`; OTel from all services                                                       | observability stack (#87)                                                                                  |
@@ -304,7 +305,7 @@ stream, not SP-1's `global` throwaway rule, so tenancy layer 3 (ADR-0002) is exe
 sequenceDiagram
     actor U as Beekeeper
     participant C as Flutter PWA<br/>(local SQLite + queue)
-    participant KC as Keycloak
+    participant KC as Authentik (OIDC IdP)
     participant GW as Gateway
     participant SY as sync service
     participant AR as identity + organizations<br/>(resolve, cached)
@@ -376,15 +377,17 @@ server behaviors; the _user-facing_ fix flow is EPIC-06.
 | #19                            | monorepo tooling (lint/format/task runner) the new dirs plug into                                                                                                                                     |
 | #20                            | the **shared Go service template** — health, config, structured logs, OTel, JWKS middleware + §4.2 resolve/cache, RFC 9457 errors, pgx/sqlc + migrations. All four slice services are stamped from it |
 | #21                            | the **Flutter PWA skeleton** — shell, routing, theming, state mgmt, i18n scaffold (slice strings EN/PT from day one)                                                                                  |
-| #22                            | **local dev environment**: Postgres+PostGIS (`wal_level=logical`), Keycloak, PowerSync (+ bucket-storage DB), gateway (MinIO not needed by the slice)                                                 |
+| #22                            | **local dev environment**: Postgres+PostGIS (`wal_level=logical`), the OIDC IdP (Authentik), PowerSync (+ bucket-storage DB), gateway (MinIO not needed by the slice)                                 |
 | EPIC-13 #83/#84/#87/#88 (+#86) | Helm umbrella + platform subcharts, observability stack, CI/CD pipeline to the cluster — #23's "deployed via CI/CD, traces visible" AC rides on these                                                 |
 
 ### 7.2 The #23 build list (this closes its "no unknowns" AC)
 
-1. **Keycloak realm import (dev/CI)** — realm `beekeepingit`, client `beekeepingit-pwa`
-   (PKCE), test user (§4.5). _Overlap note:_ EPIC-01 #24 owns the production-grade realm/login
-   story — #23 ships the dev-grade import + PWA login wiring; #24 hardens (flows, theming,
-   verification) without redoing it. Don't build it twice.
+1. **OIDC IdP provisioning (dev/CI)** — the provider's application `beekeepingit` + client
+   `beekeepingit-pwa` (PKCE), test user (§4.5). Provisioned by an **Authentik blueprint** (the
+   analogue of a realm import; the original slice used a Keycloak realm import, since replaced —
+   D-7/[ADR-0016](../adr/0016-replace-keycloak-with-authentik.md)). _Overlap note:_ EPIC-01 #24
+   owns the production-grade login story — #23 ships the dev-grade provisioning + PWA login
+   wiring; #24 hardens (flows, branding, verification) without redoing it. Don't build it twice.
 2. **`identity` service (minimal)** — `identity.users` migration; `GET /internal/users/by-sub/{sub}`; seed.
 3. **`organizations` service (minimal)** — `organizations` + `memberships` migrations;
    `GET /internal/memberships/active`; seed (org + admin membership).
@@ -484,19 +487,19 @@ operational NFR clarifications owned by EPIC-13/14.
 
 The slice was implemented per §7.2. Concrete artifacts:
 
-| §7.2 item               | Where it landed                                                                                                                                                                                                                               |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2. `identity`           | [`services/identity`](../../services/identity) — `identity.users`, `GET /internal/users/by-sub/{sub}`, dev seed                                                                                                                               |
-| 3. `organizations`      | [`services/organizations`](../../services/organizations) — `organizations`+`memberships`, `GET /internal/memberships/active`, dev seed                                                                                                        |
-| §4.2 resolve middleware | [`services/servicetemplate/authn`](../../services/servicetemplate/authn) `NewOrgResolver` (+ `authn/authtest`); dev-seed constants in [`services/shared/devseed`](../../services/shared/devseed)                                              |
-| 4. `apiaries`           | [`services/apiaries`](../../services/apiaries) — `apiaries`+`sync_conflict_log`, `GET /v1/apiaries[/{id}]`, `POST /internal/sync/{validate,apply}` (LWW + conflict log + tombstones + idempotency, §4.6)                                      |
-| 5. `sync` + contract    | [`services/sync`](../../services/sync) — `/v1/sync/token` (+ JWKS), `/v1/sync/batch` coordinator; [`contracts/openapi/sync.openapi.yaml`](../../contracts/openapi/sync.openapi.yaml)                                                          |
-| 6. PowerSync config     | [`charts/powersync/values.yaml`](../../infra/helm/beekeepingit/charts/powersync/values.yaml) org-scoped Sync Rules + `sync` JWKS; scoped `powersync` publication in [`charts/postgres`](../../infra/helm/beekeepingit/charts/postgres) (§5.3) |
-| 1. Keycloak realm       | [`charts/keycloak/files/beekeepingit-realm.json`](../../infra/helm/beekeepingit/charts/keycloak/files/beekeepingit-realm.json) — test user pinned to the seed `sub`, audience mapper                                                          |
-| 7. PWA slice UI         | [`client/lib`](../../client/lib) — OIDC-PKCE login, PowerSync web SDK connector, apiary list + create/edit form (local-first), EN/PT                                                                                                          |
-| 8. Deploy               | [`charts/services`](../../infra/helm/beekeepingit/charts/services) + [`charts/pwa`](../../infra/helm/beekeepingit/charts/pwa) subcharts, gateway multi-route; per-component `Dockerfile`s                                                     |
-| 9. Test                 | [`client/e2e`](../../client/e2e) Playwright full-slice test; per-service Go integration tests (LWW/conflict/idempotency matrix + coordinator)                                                                                                 |
-| 9. CI scoping           | scoped `task go:test -- <dir>` ([`taskfiles/go.yml`](../../taskfiles/go.yml)); `build-publish.yml` per-component build; `docker` + new `gomod` in `dependabot.yml`                                                                            |
+| §7.2 item               | Where it landed                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2. `identity`           | [`services/identity`](../../services/identity) — `identity.users`, `GET /internal/users/by-sub/{sub}`, dev seed                                                                                                                                                                                                                                                                                                                       |
+| 3. `organizations`      | [`services/organizations`](../../services/organizations) — `organizations`+`memberships`, `GET /internal/memberships/active`, dev seed                                                                                                                                                                                                                                                                                                |
+| §4.2 resolve middleware | [`services/servicetemplate/authn`](../../services/servicetemplate/authn) `NewOrgResolver` (+ `authn/authtest`); dev-seed constants in [`services/shared/devseed`](../../services/shared/devseed)                                                                                                                                                                                                                                      |
+| 4. `apiaries`           | [`services/apiaries`](../../services/apiaries) — `apiaries`+`sync_conflict_log`, `GET /v1/apiaries[/{id}]`, `POST /internal/sync/{validate,apply}` (LWW + conflict log + tombstones + idempotency, §4.6)                                                                                                                                                                                                                              |
+| 5. `sync` + contract    | [`services/sync`](../../services/sync) — `/v1/sync/token` (+ JWKS), `/v1/sync/batch` coordinator; [`contracts/openapi/sync.openapi.yaml`](../../contracts/openapi/sync.openapi.yaml)                                                                                                                                                                                                                                                  |
+| 6. PowerSync config     | [`charts/powersync/values.yaml`](../../infra/helm/beekeepingit/charts/powersync/values.yaml) org-scoped Sync Rules + `sync` JWKS; scoped `powersync` publication in [`charts/postgres`](../../infra/helm/beekeepingit/charts/postgres) (§5.3)                                                                                                                                                                                         |
+| 1. IdP provisioning     | The Authentik **blueprint** [`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml) — application `beekeepingit` + provider `beekeepingit-pwa`, `platform-operator` group, seed user pinned to the seed `sub` (`sub_mode: user_upn`). _Originally a Keycloak realm import; replaced per [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md)._ |
+| 7. PWA slice UI         | [`client/lib`](../../client/lib) — OIDC-PKCE login, PowerSync web SDK connector, apiary list + create/edit form (local-first), EN/PT                                                                                                                                                                                                                                                                                                  |
+| 8. Deploy               | [`charts/services`](../../infra/helm/beekeepingit/charts/services) + [`charts/pwa`](../../infra/helm/beekeepingit/charts/pwa) subcharts, gateway multi-route; per-component `Dockerfile`s                                                                                                                                                                                                                                             |
+| 9. Test                 | [`client/e2e`](../../client/e2e) Playwright full-slice test; per-service Go integration tests (LWW/conflict/idempotency matrix + coordinator)                                                                                                                                                                                                                                                                                         |
+| 9. CI scoping           | scoped `task go:test -- <dir>` ([`taskfiles/go.yml`](../../taskfiles/go.yml)); `build-publish.yml` per-component build; `docker` + new `gomod` in `dependabot.yml`                                                                                                                                                                                                                                                                    |
 
 **Slice-scoping impl notes** (beyond §4): the `apiaries` table omits the
 `location geography` column (PostGIS unexercised in the slice, §4.1 — EPIC-02
@@ -519,16 +522,17 @@ Two coupled facts drove the final dev wiring:
    starts and no write-back reaches `/v1/sync/batch`; over HTTPS `crossOriginIsolated`
    is `true` and the full sync path runs.
 2. **OIDC discovery and issuer are split.** A browser token's `iss` is the external
-   HTTPS gateway URL (`https://keycloak.beekeepingit.local:8443/realms/beekeepingit`,
-   pinned by Keycloak `KC_HOSTNAME`), which services **cannot reach over HTTPS
-   in-cluster**. So services fetch the OIDC discovery document from the **internal
-   HTTP** Keycloak Service (`OIDC_DISCOVERY_URL`) while still validating tokens
-   against the external issuer (`OIDC_ISSUER_URL`), bridged by go-oidc's
-   `InsecureIssuerURLContext` ([`authn.NewMiddleware`](../../services/servicetemplate/authn/authn.go)).
-   Keycloak's `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` keeps the discovered `jwks_uri`
-   internal-HTTP (reachable) while `issuer`/`authorization_endpoint` stay the external
-   HTTPS URL. This replaces the earlier in-cluster issuer-alias (CoreDNS rewrite +
-   `keycloak-oidc` Service) approach, which is removed.
+   HTTPS auth-host URL (`https://auth.beekeepingit.local:8443/application/o/beekeepingit/`),
+   which services **cannot reach over HTTPS in-cluster**. So services fetch the OIDC
+   discovery document from the **internal HTTP** `authentik-server` Service
+   (`OIDC_DISCOVERY_URL`) while still validating tokens against the external issuer
+   (`OIDC_ISSUER_URL`), bridged by go-oidc's `InsecureIssuerURLContext`
+   ([`authn.NewMiddleware`](../../services/servicetemplate/authn/authn.go)). Authentik
+   **derives the issuer from the request host**, so the internal discovery fetch already
+   returns an internal-HTTP `jwks_uri` (reachable) while the browser token's external `iss`
+   is trusted — **no `KC_HOSTNAME`-style pin is needed**. (Under the earlier Keycloak wiring
+   this required `KC_HOSTNAME`/`KC_HOSTNAME_BACKCHANNEL_DYNAMIC`; the request-host issuer
+   removes that knob — D-7/[ADR-0016](../adr/0016-replace-keycloak-with-authentik.md).)
 
 ### 11.2 PowerSync `/sync-stream` gateway route (download sync)
 

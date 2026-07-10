@@ -1,29 +1,14 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:crypto/crypto.dart';
-
-/// A PKCE (RFC 7636) verifier/challenge pair for the OIDC Authorization Code
-/// flow (auth.md §3.2 — the PWA is a public client, S256).
-class Pkce {
-  const Pkce({required this.verifier, required this.challenge});
-
-  final String verifier;
-  final String challenge;
-
-  static Pkce generate() {
-    final verifier = _randomUrlSafe(64);
-    final digest = sha256.convert(ascii.encode(verifier));
-    final challenge = base64UrlEncode(digest.bytes).replaceAll('=', '');
-    return Pkce(verifier: verifier, challenge: challenge);
-  }
-}
-
-/// A URL-safe random string (also used for the OAuth `state`).
-String randomState() => _randomUrlSafe(32);
-
-String _randomUrlSafe(int bytes) {
+/// A high-entropy PKCE `code_verifier` (RFC 7636 §4.1): 43–128 chars from the
+/// URL-safe unreserved set. We generate it ourselves and hand it to
+/// `openid_client`'s `Flow.authorizationCodeWithPKCE(codeVerifier: …)` — the
+/// library derives the S256 `code_challenge` and keeps the verifier private, so
+/// owning it here is what lets us persist it across the redirect and reconstruct
+/// the flow in the callback (auth.md §3.2 — the PWA is a public client, S256).
+String randomVerifier() {
   final rnd = Random.secure();
-  final data = List<int>.generate(bytes, (_) => rnd.nextInt(256));
+  final data = List<int>.generate(48, (_) => rnd.nextInt(256));
   return base64UrlEncode(data).replaceAll('=', '');
 }

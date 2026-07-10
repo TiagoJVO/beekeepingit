@@ -97,10 +97,11 @@ type organizationCreateRequest struct {
 // verified OIDC subject: identity.users' current row. UserID is the only
 // field used for anything security-sensitive. Email mirrors
 // identity.users.email — the profile field PATCH /v1/profile (#25) lets the
-// caller set to an arbitrary string with no tie back to Keycloak — so it
-// MUST NOT be used to decide access (e.g. which invitation to auto-accept):
-// doing so would let a caller self-edit their profile email to someone
-// else's pending invitation and join that org at the invited role. Use the
+// caller set to an arbitrary string with no tie back to the IdP-verified
+// identity — so it MUST NOT be used to decide access (e.g. which invitation
+// to auto-accept): doing so would let a caller self-edit their profile email
+// to someone else's pending invitation and join that org at the invited role.
+// Use the
 // JWT's verified claims.Email (via resolveCaller's verifiedCaller) for
 // anything security-sensitive instead. Kept here only because it's part of
 // identity's resolve response and may be useful for non-security display

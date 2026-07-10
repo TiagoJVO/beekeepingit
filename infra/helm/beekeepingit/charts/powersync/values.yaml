@@ -9,7 +9,7 @@ image:
 resourceTier: medium
 port: 8080
 
-# Real sync-token JWKS (#23/#106, replaces #22's Keycloak-realm stopgap): the
+# Real sync-token JWKS (#23/#106, replaces #22's OIDC-realm stopgap): the
 # `sync` service mints the short-TTL, org-scoped PowerSync token
 # (GET /v1/sync/token) and serves the matching public keys here. `audience`
 # must match the sync service's SYNC_TOKEN_AUDIENCE. `allow_local_jwks: true`

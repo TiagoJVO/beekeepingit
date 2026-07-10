@@ -18,7 +18,8 @@ a multi-organization path kept open.
 
 Direction we currently intend to take — revisitable, like the requirements: **Flutter**
 client (Web/PWA first → Android → iOS) · **Go** services · **React/TS** admin ·
-**PostgreSQL + PostGIS** with client offline sync · **Keycloak** · **cloud AI** first.
+**PostgreSQL + PostGIS** with client offline sync · **Authentik** (OIDC, provider-agnostic) ·
+**cloud AI** first.
 Reasoning and detail: [requirements/tech-stack.md](requirements/tech-stack.md); the
 decisions behind it: [requirements/decisions.md](requirements/decisions.md) (`D-5`…`D-10`).
 

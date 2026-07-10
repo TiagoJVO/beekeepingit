@@ -2,7 +2,7 @@
 // record. It exposes the client-facing read surface (GET /v1/apiaries[/{id}])
 // and the internal sync validate/apply endpoints the write-back coordinator
 // calls (walking-skeleton.md §4.4/§5, sync.md §5.2). Both surfaces run behind
-// Keycloak authn + the org-resolver + authn.RequireRole (#28) so every
+// OIDC authn + the org-resolver + authn.RequireRole (#28) so every
 // request is org-scoped and carries a resolved membership role. Online REST
 // write handlers are EPIC-02 (#31), not the skeleton. Wiring follows
 // services/servicetemplate/example/main.go.

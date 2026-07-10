@@ -20,7 +20,7 @@ type SyncTokenResponse struct {
 }
 
 // TokenHandler mints a short-lived, org-scoped sync token for the caller.
-// Mount behind Keycloak authn + the org-resolver so Claims carry sub + org.
+// Mount behind OIDC authn + the org-resolver so Claims carry sub + org.
 func TokenHandler(minter *token.Minter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn.FromContext(r.Context())
@@ -50,7 +50,7 @@ func JWKSHandler(minter *token.Minter) http.HandlerFunc {
 
 // BatchHandler is the single write-back seam: it forwards the caller's whole
 // client transaction (and bearer) through the coordinator. Mount behind
-// Keycloak authn + the org-resolver.
+// OIDC authn + the org-resolver.
 func BatchHandler(coord *Coordinator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Fail fast on an unauthenticated/unresolved caller; the owning

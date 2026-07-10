@@ -23,11 +23,11 @@ import (
 
 // injectClaims stands in for the authn + org-resolver chain (mirrors
 // services/apiaries/main_test.go) so these tests drive the handlers directly
-// with a known org/user, no live Keycloak needed.
+// with a known org/user, no live IdP needed.
 func injectClaims(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := authn.ContextWithClaims(r.Context(), authn.Claims{
-			Sub:            devseed.KeycloakSub,
+			Sub:            devseed.OidcSub,
 			UserID:         devseed.UserID,
 			OrganizationID: devseed.OrganizationID,
 			Role:           devseed.MembershipRole,

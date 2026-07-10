@@ -25,7 +25,10 @@ jobs:
   live-cluster-test:
     name: k3d cluster + helm test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Authentik + its own bundled Postgres is heavier to boot than the previous IdP
+    # (bootstrap migrations + blueprint apply), so the whole job gets more room
+    # (ADR-0016, oidc-integration.md §8).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -39,6 +42,7 @@ jobs:
             infra:
               - 'infra/helm/**'
               - 'infra/cluster/**'
+              - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
               - '.github/workflows/helm-e2e.yml'
 
       # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
@@ -75,7 +79,7 @@ jobs:
           helm upgrade --install beekeepingit infra/helm/beekeepingit \
             -f infra/helm/beekeepingit/environments/dev.yaml \
             --namespace beekeepingit-dev --create-namespace \
-            --timeout 10m
+            --timeout 15m
 
       # Explicit readiness gate (the install above already blocked on the grants hook,
       # so the pod exists by now — but assert condition=ready before testing against it).
@@ -85,11 +89,35 @@ jobs:
           kubectl -n beekeepingit-dev wait --for=condition=ready pod \
             -l cnpg.io/cluster=beekeepingit-postgres --timeout=300s
 
-      # The AC: the postgres PostGIS smoke-query hook runs automatically. As
-      # keycloak/minio/gateway grow their own `helm test` liveness hooks, they run here
-      # too — those components are separate Flux HelmReleases today (see infra/README.md's
-      # step-by-step), so bring them up above first when their hooks land.
-      - name: helm test (PostGIS smoke query)
+      # Authentik is its own Flux HelmRelease (ADR-0012/0016), so — to exercise its
+      # `helm test` readiness hook below — bring it up here the same way dev-up.sh does
+      # for the local loop: install the Flux controllers, then apply the HelmRelease with
+      # its `dependsOn: [beekeepingit]` stripped (that guard targets a GitOps-bootstrapped
+      # HelmRelease object this direct-apply path doesn't create; the umbrella install
+      # above already created the config/Postgres Secrets + blueprint ConfigMap it needs).
+      - name: Set up Flux CLI
+        if: steps.changes.outputs.infra == 'true'
+        uses: fluxcd/flux2/action@4a15fa6a023259353ef750acf1c98fe88407d4d0 # v2.7.2
+      - name: Bring up Authentik (Flux HelmRelease)
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          flux install
+          sed '/^  dependsOn:$/,+1d' infra/gitops/apps/dev/authentik-helmrelease.yaml \
+            | kubectl apply -f -
+          # The server Deployment is created by helm-controller a moment after the
+          # HelmRelease reconciles; wait for it to appear, then for the rollout (the
+          # server only goes ready once its Postgres is up, migrations have run, and the
+          # blueprint applied). Generous timeout for a cold image pull + bootstrap.
+          for _ in $(seq 1 60); do
+            kubectl -n beekeepingit-dev get deploy/authentik-server >/dev/null 2>&1 && break
+            sleep 5
+          done
+          kubectl -n beekeepingit-dev rollout status deployment/authentik-server --timeout=600s
+
+      # The AC: the postgres PostGIS smoke-query hook AND the authentik readiness hook run
+      # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
+      # here too.
+      - name: helm test (PostGIS smoke query + Authentik readiness)
         if: steps.changes.outputs.infra == 'true'
         run: helm test beekeepingit --namespace beekeepingit-dev
 
@@ -102,6 +130,9 @@ jobs:
           kubectl get pods -A || true
           kubectl -n beekeepingit-dev describe pods || true
           kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=server --tail=100 || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=worker --tail=100 || true
+          kubectl get helmrelease -A || true
           kubectl -n beekeepingit-dev get events --sort-by=.lastTimestamp || true
 
       # Tear down regardless of pass/fail (AC). Gated on the filter (else down.sh runs on

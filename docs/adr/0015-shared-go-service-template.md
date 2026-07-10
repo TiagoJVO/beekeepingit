@@ -10,7 +10,7 @@
   [NFR-OBS-1](../../requirements/non-functional-requirements.md)
 - **Decisions:** [D-5](../../requirements/decisions.md) (Go backend),
   [D-6](../../requirements/decisions.md) (Postgres + PostGIS, schema-per-service),
-  [D-7](../../requirements/decisions.md) (Keycloak)
+  [D-7](../../requirements/decisions.md) (Authentik OIDC)
 - **Related ADRs:** [0011-infra-abstraction-object-storage-db-access](0011-infra-abstraction-object-storage-db-access.md)
   (the follow-up this ADR executes), [0013-observability-stack](0013-observability-stack.md)
   (the collector this template exports to), [0004-authn-authz](0004-authn-authz.md) /

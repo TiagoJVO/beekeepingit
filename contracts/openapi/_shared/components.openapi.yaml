@@ -19,7 +19,7 @@ info:
     identifier: AGPL-3.0-only
 
 components:
-  # --- AuthN: Keycloak-issued JWT bearer (D-7). Tenancy (organization_id) is derived
+  # --- AuthN: OIDC JWT bearer (Authentik in v1) (D-7). Tenancy (organization_id) is derived
   #     server-side from the token + membership — never sent by the client (ADR-0002). ---
   securitySchemes:
     bearerAuth:
@@ -27,9 +27,10 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >-
-        OIDC access token issued by Keycloak (D-7). The owning service validates it via
-        JWKS and derives the caller's `organization_id` and role from the token +
-        membership; the org scope is **never** a path/query/body parameter (ADR-0002).
+        OIDC access token (issued by Authentik in v1, behind a provider-agnostic boundary — D-7).
+        The owning service validates it via JWKS and derives the caller's `organization_id` and
+        role from the token + membership; the org scope is **never** a path/query/body parameter
+        (ADR-0002).
 
   parameters:
     LimitParam:

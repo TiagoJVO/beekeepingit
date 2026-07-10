@@ -15,13 +15,13 @@ linked through the repo-root `go.work`.
 
 ## Surface
 
-| Route                          | Auth                     | Purpose                                                                               |
-| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------- |
-| `GET /v1/apiaries`             | Keycloak JWT + org scope | Cursor-paginated list of the org's live apiaries (FR-AP-7).                           |
-| `GET /v1/apiaries/{apiaryId}`  | Keycloak JWT + org scope | One apiary, or 404.                                                                   |
-| `POST /internal/sync/validate` | JWT + org scope          | Dry-run a batch; 200 if all valid, else 422 RFC 9457 with field detail. **Internal.** |
-| `GET /healthz`, `GET /readyz`  | none                     | Liveness / readiness.                                                                 |
-| `POST /internal/sync/apply`    | JWT + org scope          | Apply a batch in one tx: LWW + conflict log + tombstones + idempotency. **Internal.** |
+| Route                          | Auth                 | Purpose                                                                               |
+| ------------------------------ | -------------------- | ------------------------------------------------------------------------------------- |
+| `GET /v1/apiaries`             | OIDC JWT + org scope | Cursor-paginated list of the org's live apiaries (FR-AP-7).                           |
+| `GET /v1/apiaries/{apiaryId}`  | OIDC JWT + org scope | One apiary, or 404.                                                                   |
+| `POST /internal/sync/validate` | JWT + org scope      | Dry-run a batch; 200 if all valid, else 422 RFC 9457 with field detail. **Internal.** |
+| `GET /healthz`, `GET /readyz`  | none                 | Liveness / readiness.                                                                 |
+| `POST /internal/sync/apply`    | JWT + org scope      | Apply a batch in one tx: LWW + conflict log + tombstones + idempotency. **Internal.** |
 
 **No client-facing REST write handlers** (`POST/PATCH/DELETE /v1/apiaries`) —
 the field client is local-first through sync (§4.4); online writes are EPIC-02
@@ -62,7 +62,7 @@ go test ./...   # httptest + testcontainers/Postgres; LWW/conflict/idempotency/t
 
 ## Tenancy (FR-TEN-2, #28/#30)
 
-Every route runs behind Keycloak authn + `authn.NewOrgResolver` + `authn.RequireRole` (#28), and
+Every route runs behind OIDC authn + `authn.NewOrgResolver` + `authn.RequireRole` (#28), and
 every query is scoped by the server-derived `organization_id` (`api/common.go`'s `requireOrg` —
 never a client-supplied value). `apiaries.apiaries`/`apiaries.sync_conflict_log` both carry
 `organization_id`, verified both by reading the migration and by an automated schema check

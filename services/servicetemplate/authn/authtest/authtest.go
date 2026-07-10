@@ -1,7 +1,7 @@
-// Package authtest provides a minimal in-process stand-in for Keycloak's
-// OIDC discovery + JWKS endpoints, plus RS256 token minting, so services
+// Package authtest provides a minimal in-process stand-in for an OIDC
+// provider's discovery + JWKS endpoints, plus RS256 token minting, so services
 // built on the shared template can exercise their authn.NewMiddleware chain
-// over real HTTP in tests without a live Keycloak. It mirrors the inline
+// over real HTTP in tests without a live IdP. It mirrors the inline
 // helper in servicetemplate/example's own test, hoisted here so every domain
 // service (identity, organizations, apiaries, sync) reuses one implementation.
 package authtest

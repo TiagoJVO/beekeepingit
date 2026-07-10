@@ -26,7 +26,7 @@ flux check     # verify
 | [`clusters/dev/flux-system.yaml`](clusters/dev/flux-system.yaml)                     | `GitRepository` (this repo, `main`) + the self-referential `Kustomization` that keeps everything under `clusters/dev/` (including itself) reconciled from Git             |
 | [`clusters/dev/apps.yaml`](clusters/dev/apps.yaml)                                   | `Kustomization` pointing Flux at `apps/dev/`                                                                                                                              |
 | [`apps/dev/beekeepingit-helmrelease.yaml`](apps/dev/beekeepingit-helmrelease.yaml)   | `HelmRelease` deploying the umbrella chart into `beekeepingit-dev`, mirroring `environments/dev.yaml`                                                                     |
-| [`apps/dev/keycloak-helmrelease.yaml`](apps/dev/keycloak-helmrelease.yaml)           | `HelmRepository` (codecentric) + `HelmRelease` deploying Keycloak (keycloakx) directly, not nested in the umbrella chart, see ADR-0012                                    |
+| [`apps/dev/authentik-helmrelease.yaml`](apps/dev/authentik-helmrelease.yaml)         | `HelmRepository` (authentik) + `HelmRelease` deploying Authentik (bundled Postgres, no Redis) directly, not nested in the umbrella chart, see ADR-0012/ADR-0016           |
 | [`apps/dev/minio-helmrelease.yaml`](apps/dev/minio-helmrelease.yaml)                 | `HelmRepository` (minio) + `HelmRelease` deploying MinIO directly, same reasoning, ADR-0012                                                                               |
 | [`apps/dev/observability-helmrelease.yaml`](apps/dev/observability-helmrelease.yaml) | `HelmRelease` deploying the observability chart (`infra/helm/observability`, #87) after MinIO (`dependsOn`) — see ADR-0013                                                |
 | [`image-automation/`](image-automation/)                                             | CI/CD image-automation engine + per-service templates (#88); **dormant** — outside the reconciled paths above until the first service publishes an image (see its README) |
@@ -36,18 +36,19 @@ Adding `staging`/`prod` later means adding `clusters/staging/`, `clusters/prod/`
 `main`) and `apps/staging/`, `apps/prod/` `HelmRelease`s — mirroring how
 `environments/{staging,prod}.yaml` already exist as unused overlays on the Helm chart.
 
-### Why Keycloak/MinIO are separate `HelmRelease`s, not umbrella subcharts
+### Why Authentik/MinIO are separate `HelmRelease`s, not umbrella subcharts
 
 The umbrella chart is sourced by Flux straight from this `GitRepository` — its source-controller
 only resolves the umbrella's own top-level dependencies from what's checked into Git; it does not
 recursively `helm dependency build` into a subchart's own nested vendored dependency (verified
 directly: a pristine checkout without one, once vendored inline, rendered zero of that vendored
-chart's actual resources, silently). Keycloak (codecentric/keycloakx) and MinIO (charts.min.io)
+chart's actual resources, silently). Authentik (authentik/authentik) and MinIO (charts.min.io)
 are consumed instead the way Flux's own docs describe: a `HelmRepository` + `HelmRelease` per
 upstream chart, with `dependsOn: [beekeepingit]` so the umbrella release's generated credential
-Secret/realm ConfigMap exist first. See
+Secrets + Authentik blueprint ConfigMap exist first. See
 [ADR-0012](../../docs/adr/0012-keycloak-minio-standalone-helmreleases.md) for the full reasoning
-(and [ADR-0010](../../docs/adr/0010-platform-backing-services-provisioning.md) for what it
+(and [ADR-0016](../../docs/adr/0016-replace-keycloak-with-authentik.md) for the Keycloak→Authentik
+swap; [ADR-0010](../../docs/adr/0010-platform-backing-services-provisioning.md) for what ADR-0012
 supersedes).
 
 ## One-time bootstrap

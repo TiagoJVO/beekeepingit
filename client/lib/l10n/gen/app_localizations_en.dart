@@ -15,7 +15,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loginPrompt => 'Sign in to manage your apiaries.';
 
   @override
-  String get loginButton => 'Sign in with Keycloak';
+  String get loginButton => 'Sign in';
 
   @override
   String get logout => 'Sign out';
