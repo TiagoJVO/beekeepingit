@@ -18,8 +18,10 @@ applied directly to GitHub Issues/Milestones. Pre-change backup lives at
 - **Scope gates (settle before sizing a feature's stories):** `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2 (do
   first), `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6, `Q-AICLOUD` → M8, `Q-NOTIF` → M9. Resolve via
   the `requirements-folder` skill (answer → `D-*`/`FR-*`, then delete the `Q-*`).
-- **Provisional placements:** stream stories `#56–62` and `#165` → M2, and `#90`/`#92` → M6, by
-  "first need"; revisit if a thinner M2 (the declined vertical-slice option) is wanted later.
+- **Provisional placements:** stream stories `#56–59`, `#61–62` and `#165` → M2, and `#90`/`#92` →
+  M6, by "first need"; the cross-entity history **view** `#60` → M3 (it depends on Activities). The
+  broad "history view per apiary/activity/journey" `#60` may want splitting per entity during
+  grooming. Revisit if a thinner M2 (the declined vertical-slice option) is wanted later.
 - **Housekeeping:** re-check any Project board views that filtered the now-deleted `M2–M5`; sync the
   new `stream` label if a label-sync tool is used.
 
