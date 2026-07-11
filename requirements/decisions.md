@@ -242,6 +242,45 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Refines:** the flat-milestone framing and the `backlog-management` skill (streams are now a
   first-class kind). Touches D-4, D-10, EPIC-06/07/11/14/15. Applied to GitHub Issues 2026-07-11.
 
+## D-15 — Apiary distance: straight-line (haversine), offline
+
+- **Decision:** the two-apiary distance feature (FR-AP-5) computes **straight-line (haversine)
+  distance**, works **fully offline**, and is shown in **km**. The two apiaries are chosen by a
+  **tap-to-select** interaction on the map (tap two pins), per the Melargil prototype's "medir
+  distância" flow.
+- **Deferred:** **driving distance** (needs an online routing service) is not built in v1 — kept
+  as an optional future enhancement, revisit only if field feedback asks for it. Distance _from
+  the user's current location_ is already covered separately by proximity ordering (FR-AP-2) and
+  is not part of this feature.
+- **Supersedes:** Q-DIST. Touches FR-AP-5, #37.
+
+## D-16 — Map: `flutter_map` markers + user location + measure overlay; tile provider deferred
+
+- **Decision:** the apiary map view (FR-AP-3) renders **pin markers per apiary** (showing hive
+  count), a distinct **user-location marker**, and the tap-to-measure overlay (D-15), built on
+  `flutter_map` + MapLibre/OSM tiles (already the stack per `tech-stack.md`). This resolves the
+  map _interaction/UX_ shape.
+- **Still open (narrowed Q-MAP):** the **tile provider and offline-tile caching strategy** —
+  which has real licensing/cost implications for production traffic — is **not** decided here and
+  does **not** block M2: FR-AP-3's acceptance criteria only require the map to render online,
+  without error, for a reasonable marker count. M2 ships with the public OSM/MapLibre demo tile
+  endpoint (dev/low-traffic use, proper attribution), and offline-tile caching + a paid/self-hosted
+  tile provider decision is deferred to a follow-up (tracked as the narrowed Q-MAP below).
+- **Supersedes (partially):** Q-MAP — the marker/location/measure UX is resolved; the tile
+  provider/offline-tiles question is kept open (narrowed) in `open-questions.md`. Touches FR-AP-3,
+  FR-OF-1, #34.
+
+## D-17 — Apiary search: client-side, apiaries-only, by name/location
+
+- **Decision:** search (FR-AP-6) is scoped to **apiaries only** in v1, runs **client-side** over
+  the locally-synced apiary set (so it works fully offline per FR-OF-1), and matches on **name**
+  and **location** (the apiary's stored location label/address text, not free-text notes), per the
+  Melargil prototype's apiary-list search.
+- **Deferred:** extending search to activities/journeys/todos is out of scope for FR-AP-6 — it is
+  a separate, future cross-entity search requirement (not yet specified) to consider if/when those
+  domains land.
+- **Supersedes:** Q-SEARCH. Touches FR-AP-6, #36.
+
 ---
 
 ## Open Spikes
