@@ -314,7 +314,7 @@
   },
   "offlineBannerMessage": "{count, plural, =0{No connection — changes are saved locally} =1{No connection — changes are saved locally (1 to sync)} other{No connection — changes are saved locally ({count} to sync)}}",
   "@offlineBannerMessage": {
-    "description": "Offline banner shown below the app-shell header with the pending-change count (#197; real pending-count wiring is #58 — currently a stub default of 0/hidden)",
+    "description": "Offline banner shown below the app-shell header with the pending-change count (#197; real pending-count wiring is #58)",
     "placeholders": {
       "count": {
         "type": "int"
@@ -328,5 +328,52 @@
   "apiaryDeleteSuccess": "Apiary deleted.",
   "@apiaryDeleteSuccess": {
     "description": "Toast shown after successfully deleting an apiary (#197)"
+  },
+  "syncStatusSyncing": "Syncing…",
+  "@syncStatusSyncing": {
+    "description": "App-shell header sync-status pill label while an upload/download is in flight (#58)"
+  },
+  "syncSupersededNotice": "One of your offline changes was overwritten by a newer edit.",
+  "@syncSupersededNotice": {
+    "description": "Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)"
+  },
+  "accountSyncSectionTitle": "Sync",
+  "@accountSyncSectionTitle": {
+    "description": "Section heading on the account screen for sync status + manual sync (#58)"
+  },
+  "accountSyncStatusLabel": "Status: {status}",
+  "@accountSyncStatusLabel": {
+    "description": "Current sync status line on the account screen (#58)",
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "accountSyncPendingCount": "{count, plural, =0{Everything is synced.} =1{1 change waiting to sync.} other{{count} changes waiting to sync.}}",
+  "@accountSyncPendingCount": {
+    "description": "Pending-change count line on the account screen (#58)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "accountSyncNowButton": "Sync now",
+  "@accountSyncNowButton": {
+    "description": "Manual sync trigger button on the account screen — the prototype's “Sincronizar agora” (#58, sync.md §7.1 manual override)"
+  },
+  "accountSyncNowTriggered": "Sync requested.",
+  "@accountSyncNowTriggered": {
+    "description": "Toast shown after tapping “Sync now” (#58)"
+  },
+  "accountSyncNowError": "Could not sync right now: {error}",
+  "@accountSyncNowError": {
+    "description": "Toast shown when a manual sync attempt fails immediately (#58)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   }
 }

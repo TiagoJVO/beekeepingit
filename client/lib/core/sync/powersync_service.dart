@@ -10,7 +10,13 @@ const _dbFilename = 'beekeepingit.db';
 /// Opens the on-device PowerSync database (local SQLite over OPFS/IndexedDB on
 /// web) and connects it to the backend via [BeekeepingitConnector]. Read after
 /// login, so `fetchCredentials` has a valid access token to mint a sync token.
-final powerSyncProvider = FutureProvider<PowerSyncDatabase>((ref) async {
+///
+/// Exposes the live [BeekeepingitConnector] instance too (not just the db):
+/// #58's manual "sync now" needs to `disconnect()`/`connect()` the *same*
+/// connector — re-creating one would drop its request-level state for no
+/// reason and diverge from how `connect()` is normally called once at
+/// startup.
+final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   final db = PowerSyncDatabase(schema: appSchema, path: _dbFilename);
   await db.initialize();
 
@@ -23,6 +29,16 @@ final powerSyncProvider = FutureProvider<PowerSyncDatabase>((ref) async {
   ref.onDispose(() async {
     await db.disconnect();
     await db.close();
+    connector.dispose();
   });
-  return db;
+  return PowerSyncSession(db: db, connector: connector);
 });
+
+/// The open database plus the connector it was connected with (see
+/// [powerSyncProvider]'s doc comment for why both are needed).
+class PowerSyncSession {
+  const PowerSyncSession({required this.db, required this.connector});
+
+  final PowerSyncDatabase db;
+  final BeekeepingitConnector connector;
+}
