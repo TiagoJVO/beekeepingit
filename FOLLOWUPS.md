@@ -9,6 +9,23 @@
 
 ---
 
+## App shell IA (`feat/EPIC-11-app-shell-ia`, #197, FR-UX-2) — before-merge notes
+
+The 5-tab bottom nav + header + contextual FAB + offline banner ship in this branch. Two
+pieces are **stubbed on purpose** and already tracked by an existing issue — no new issue
+needed, just flagging for the next agent who picks up **#58**:
+
+- **Sync-status pill** (`client/lib/shell/sync_status.dart`'s `syncStatusProvider`) is a fixed
+  "online, nothing pending" `Provider`, not wired to PowerSync's real `statusStream`/upload-queue
+  depth. The pill's UI (color/label/tap→`/account`) is real; only the data source is a stub.
+- **Offline banner** reads the same stub, so it never renders in practice yet (hidden whenever
+  `SyncConnectivity.online`). Placement/shell wiring is done; #58 replaces the provider's body.
+
+Also relocated (not scope creep — the apiaries list lost its own `AppBar` to the shell's header,
+so these needed a new home): `manage-members` (#172) and `logout` moved from the apiaries
+app-bar actions to the account screen (`account-manage-members-button`,
+`account-logout-button`), matching the prototype's "Conta" screen.
+
 ## Keycloak → Authentik migration — post-merge follow-ups
 
 The migration (contract + ADR-0016 + D-7; WS-A infra, WS-B backend, WS-C client, WS-D docs) ships in

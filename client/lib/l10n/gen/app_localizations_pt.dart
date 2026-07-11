@@ -195,4 +195,66 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get accountChangePasswordButton => 'Alterar palavra-passe';
+
+  @override
+  String get accountOrganizationSectionTitle => 'Organização';
+
+  @override
+  String get activitiesTitle => 'Atividades';
+
+  @override
+  String get journeysTitle => 'Jornadas';
+
+  @override
+  String get todosTitle => 'Tarefas';
+
+  @override
+  String get assistantTitle => 'Assistente';
+
+  @override
+  String get activitiesComingSoon => 'Atividades — brevemente';
+
+  @override
+  String get journeysComingSoon => 'Jornadas — brevemente';
+
+  @override
+  String get todosComingSoon => 'Tarefas — brevemente';
+
+  @override
+  String get assistantComingSoon => 'Assistente — brevemente';
+
+  @override
+  String get syncStatusOnline => 'Online';
+
+  @override
+  String get syncStatusOffline => 'Offline';
+
+  @override
+  String syncStatusOfflinePending(int count) {
+    return 'Offline · $count';
+  }
+
+  @override
+  String syncStatusSemanticLabel(String label) {
+    return 'Estado de sincronização: $label. Abre as definições de sincronização.';
+  }
+
+  @override
+  String offlineBannerMessage(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Sem ligação — alterações guardadas localmente ($count por sincronizar)',
+      one: 'Sem ligação — alterações guardadas localmente (1 por sincronizar)',
+      zero: 'Sem ligação — alterações guardadas localmente',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get apiarySaveSuccess => 'Apiário guardado.';
+
+  @override
+  String get apiaryDeleteSuccess => 'Apiário eliminado.';
 }

@@ -392,7 +392,7 @@ abstract class AppLocalizations {
   /// **'Invitation revoked.'**
   String get membersRevokeSuccess;
 
-  /// Admin-only app-bar action on the apiaries home, linking to the members/invitations screen (#172)
+  /// Admin-only action on the account screen, linking to the members/invitations screen (#172, relocated from the apiaries app bar by #197)
   ///
   /// In en, this message translates to:
   /// **'Manage members'**
@@ -427,6 +427,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Change password'**
   String get accountChangePasswordButton;
+
+  /// Heading above the admin-only organization actions (manage members) on the account settings screen
+  ///
+  /// In en, this message translates to:
+  /// **'Organization'**
+  String get accountOrganizationSectionTitle;
+
+  /// Activities tab label and screen title (bottom nav, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Activities'**
+  String get activitiesTitle;
+
+  /// Journeys tab label and screen title (bottom nav, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Journeys'**
+  String get journeysTitle;
+
+  /// Todos tab label and screen title (bottom nav, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Todos'**
+  String get todosTitle;
+
+  /// Assistant tab label and screen title (bottom nav, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant'**
+  String get assistantTitle;
+
+  /// Placeholder shown on the Activities tab until its real screens land (M3, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Activities — coming soon'**
+  String get activitiesComingSoon;
+
+  /// Placeholder shown on the Journeys tab until its real screens land (M4, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Journeys — coming soon'**
+  String get journeysComingSoon;
+
+  /// Placeholder shown on the Todos tab until its real screens land (M5, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Todos — coming soon'**
+  String get todosComingSoon;
+
+  /// Placeholder shown on the Assistant tab until its real screens land (M8, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant — coming soon'**
+  String get assistantComingSoon;
+
+  /// App-shell header sync-status pill label when connected (#197; real connectivity wiring is #58 — currently a fixed stub)
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get syncStatusOnline;
+
+  /// App-shell header sync-status pill label when disconnected with nothing pending (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get syncStatusOffline;
+
+  /// App-shell header sync-status pill label when disconnected with pending local changes (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Offline · {count}'**
+  String syncStatusOfflinePending(int count);
+
+  /// Screen-reader label for the header sync-status pill (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync status: {label}. Opens sync settings.'**
+  String syncStatusSemanticLabel(String label);
+
+  /// Offline banner shown below the app-shell header with the pending-change count (#197; real pending-count wiring is #58 — currently a stub default of 0/hidden)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No connection — changes are saved locally} =1{No connection — changes are saved locally (1 to sync)} other{No connection — changes are saved locally ({count} to sync)}}'**
+  String offlineBannerMessage(int count);
+
+  /// Toast shown after successfully creating or updating an apiary (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary saved.'**
+  String get apiarySaveSuccess;
+
+  /// Toast shown after successfully deleting an apiary (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary deleted.'**
+  String get apiaryDeleteSuccess;
 }
 
 class _AppLocalizationsDelegate

@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -12,6 +12,23 @@ import '../features/organization/organization_repository.dart';
 import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
+import '../l10n/gen/app_localizations.dart';
+import '../shell/app_shell.dart';
+import '../shell/coming_soon_screen.dart';
+
+final _apiariesBranchKey = GlobalKey<NavigatorState>(
+  debugLabel: 'apiariesBranch',
+);
+final _activitiesBranchKey = GlobalKey<NavigatorState>(
+  debugLabel: 'activitiesBranch',
+);
+final _journeysBranchKey = GlobalKey<NavigatorState>(
+  debugLabel: 'journeysBranch',
+);
+final _todosBranchKey = GlobalKey<NavigatorState>(debugLabel: 'todosBranch');
+final _assistantBranchKey = GlobalKey<NavigatorState>(
+  debugLabel: 'assistantBranch',
+);
 
 /// App routing for the walking-skeleton slice plus profile (FR-ONB-1, #25),
 /// organization (FR-ONB-2, FR-TEN-2, NFR-ROL-1, #26) onboarding enforcement,
@@ -93,21 +110,92 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'account',
         builder: (context, state) => const AccountScreen(),
       ),
-      GoRoute(
-        path: '/apiaries',
-        name: 'apiaries',
-        builder: (context, state) => const ApiariesListScreen(),
-      ),
-      GoRoute(
-        path: '/apiaries/new',
-        name: 'apiaryNew',
-        builder: (context, state) => const ApiaryFormScreen(),
-      ),
-      GoRoute(
-        path: '/apiaries/:id',
-        name: 'apiaryEdit',
-        builder: (context, state) =>
-            ApiaryFormScreen(apiaryId: state.pathParameters['id']),
+      // The app shell (FR-UX-2, #197): 5-tab bottom nav, each tab its own
+      // navigation stack via StatefulShellRoute.indexedStack. Only Apiaries
+      // has real screens this milestone (M2) — Activities/Journeys/Todos are
+      // M3/M4/M5, Assistant is M8 (docs/design/prototype.md's feature->
+      // backlog map), so those four branches host a single honest
+      // ComingSoonScreen placeholder rather than faked functionality.
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            AppShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            navigatorKey: _apiariesBranchKey,
+            routes: [
+              GoRoute(
+                path: '/apiaries',
+                name: 'apiaries',
+                builder: (context, state) => const ApiariesListScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'new',
+                    name: 'apiaryNew',
+                    builder: (context, state) => const ApiaryFormScreen(),
+                  ),
+                  GoRoute(
+                    path: ':id',
+                    name: 'apiaryEdit',
+                    builder: (context, state) =>
+                        ApiaryFormScreen(apiaryId: state.pathParameters['id']),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _activitiesBranchKey,
+            routes: [
+              GoRoute(
+                path: '/activities',
+                name: 'activities',
+                builder: (context, state) => ComingSoonScreen(
+                  icon: Icons.event_note_outlined,
+                  title: AppLocalizations.of(context).activitiesComingSoon,
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _journeysBranchKey,
+            routes: [
+              GoRoute(
+                path: '/journeys',
+                name: 'journeys',
+                builder: (context, state) => ComingSoonScreen(
+                  icon: Icons.route_outlined,
+                  title: AppLocalizations.of(context).journeysComingSoon,
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _todosBranchKey,
+            routes: [
+              GoRoute(
+                path: '/todos',
+                name: 'todos',
+                builder: (context, state) => ComingSoonScreen(
+                  icon: Icons.task_alt_outlined,
+                  title: AppLocalizations.of(context).todosComingSoon,
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            navigatorKey: _assistantBranchKey,
+            routes: [
+              GoRoute(
+                path: '/assistant',
+                name: 'assistant',
+                builder: (context, state) => ComingSoonScreen(
+                  icon: Icons.forum_outlined,
+                  title: AppLocalizations.of(context).assistantComingSoon,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     ],
   );
