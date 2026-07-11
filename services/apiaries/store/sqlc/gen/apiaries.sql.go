@@ -109,6 +109,42 @@ func (q *Queries) InsertApiary(ctx context.Context, arg InsertApiaryParams) erro
 	return err
 }
 
+const insertAuditLog = `-- name: InsertAuditLog :exec
+INSERT INTO apiaries.audit_log
+    (id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, changed_fields, change)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+`
+
+type InsertAuditLogParams struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	ChangeType     string             `json:"change_type"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
+}
+
+// Append-only history row (history.md §3-§4, #59): one row per applied
+// create/update/delete, written in the same local transaction as the domain
+// write. changed_fields is null for create/delete (only update carries it).
+func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
+	_, err := q.db.Exec(ctx, insertAuditLog,
+		arg.ID,
+		arg.OrganizationID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.ChangeType,
+		arg.ActorUserID,
+		arg.OccurredAt,
+		arg.ChangedFields,
+		arg.Change,
+	)
+	return err
+}
+
 const insertConflict = `-- name: InsertConflict :exec
 INSERT INTO apiaries.sync_conflict_log
     (id, organization_id, entity_type, entity_id, winning_payload, losing_payload, winner, actor_user_id, occurred_at)
@@ -185,6 +221,54 @@ func (q *Queries) ListApiaries(ctx context.Context, arg ListApiariesParams) ([]L
 			&i.HiveCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditLog = `-- name: ListAuditLog :many
+SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+FROM apiaries.audit_log
+WHERE organization_id = $1 AND entity_type = $2 AND entity_id = $3
+ORDER BY recorded_at, id
+`
+
+type ListAuditLogParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	EntityType     string      `json:"entity_type"`
+	EntityID       pgtype.UUID `json:"entity_id"`
+}
+
+// The per-entity timeline read (FR-HIS-1, history.md §8): every history row
+// for one entity, oldest first. Not yet exposed via HTTP (no AC in this
+// milestone requires the view screens, history.md §8/§10) — kept as typed
+// groundwork for the entity-detail "history" screen.
+func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]ApiariesAuditLog, error) {
+	rows, err := q.db.Query(ctx, listAuditLog, arg.OrganizationID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ApiariesAuditLog
+	for rows.Next() {
+		var i ApiariesAuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ChangeType,
+			&i.ActorUserID,
+			&i.OccurredAt,
+			&i.RecordedAt,
+			&i.ChangedFields,
+			&i.Change,
 		); err != nil {
 			return nil, err
 		}
