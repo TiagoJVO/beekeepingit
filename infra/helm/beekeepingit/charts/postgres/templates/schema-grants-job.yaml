@@ -7,6 +7,32 @@ owns every schema per cluster.yaml's `AUTHORIZATION beekeepingit`, so it can
 GRANT without needing superuser access) — and retries each grant until the
 matching role exists, since the operator's role reconciliation is async
 relative to this hook firing.
+
+#62's audit-immutability lock-down (history.md §7.1) is a SEPARATE Job —
+see audit-immutability-job.yaml — deliberately not folded in here: it needs a
+much longer/looser retry budget (it waits on each service's own migration,
+which runs on pod startup, not on anything this install/upgrade directly
+controls) and must not delay or risk failing the powersync grant below, which
+PowerSync's rollout genuinely blocks on (infra/README.md step 4/7).
+
+That other Job needs `beekeepingit` to act with each `<schema>_svc` role's
+own privileges (the only way a non-superuser can `ALTER TABLE ... OWNER TO`
+a table it doesn't yet own) — so THIS job also grants `beekeepingit`
+permanent, plain (non-admin) membership in every `<schema>_svc` role, right
+alongside the existing schema-level grant below. This is the REVERSE
+direction of D-6's schema ownership (beekeepingit owns the schema;
+`<schema>_svc` is only ever granted USAGE/CREATE on it, never membership in
+beekeepingit) and is one-way in Postgres — `<schema>_svc` gains nothing from
+beekeepingit being its member, proven in
+services/shared/dbaccess/audit_immutability_test.go. It's granted PLAIN
+(not WITH ADMIN OPTION) because plain membership is all `ALTER TABLE OWNER
+TO`/GRANT need (verified empirically); ADMIN OPTION would let beekeepingit
+re-delegate membership in `<schema>_svc` to other roles too, which nothing
+here needs. It's left in place permanently (not granted-then-revoked around
+each use) because: (a) revoking a role's OWN plain membership requires ADMIN
+OPTION anyway — a bootstrap role never has by default in PG16, forcing an
+extra privileged step for zero security benefit, since (b) the grant is
+already one-way and inert for `<schema>_svc`.
 */}}
 {{- if .Values.enabled }}
 apiVersion: batch/v1
@@ -54,8 +80,17 @@ spec:
             - -c
             - |
               set -eu
+              # #62 (history.md §7.1): each `GRANT <schema>_svc TO
+              # beekeepingit` below is the permanent, one-way membership
+              # grant audit-immutability-job.yaml needs to move ownership of
+              # <schema>.audit_log/sync_conflict_log off <schema>_svc — see
+              # this file's header comment for the full why.
               {{- range .Values.schemas }}
               until psql -v ON_ERROR_STOP=1 -c "GRANT USAGE, CREATE ON SCHEMA {{ . }} TO {{ . }}_svc;"; do
+                echo "role {{ . }}_svc not ready yet, retrying in 5s..."
+                sleep 5
+              done
+              until psql -v ON_ERROR_STOP=1 -c "GRANT {{ . }}_svc TO beekeepingit;"; do
                 echo "role {{ . }}_svc not ready yet, retrying in 5s..."
                 sleep 5
               done

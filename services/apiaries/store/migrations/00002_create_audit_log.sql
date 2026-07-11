@@ -8,10 +8,19 @@
 -- own schema (ownership rule 1 — a service writes only its own schema), not
 -- a central history table.
 --
--- NOTE: append-only immutability (the runtime role losing UPDATE/DELETE
--- grants, history.md §7.1) is explicitly out of scope here — that's #62, a
--- later wave. This migration only creates the table + the INSERT/SELECT
--- access the current (unrestricted dev) role already has.
+-- Append-only immutability (history.md §7.1) is enforced OUTSIDE this
+-- migration, by infra/helm/beekeepingit/charts/postgres/templates/
+-- audit-immutability-job.yaml (#62): this migration runs as apiaries_svc
+-- (dbaccess.Migrate uses the same DSN/role as the runtime pool), so
+-- apiaries_svc is this table's owner immediately after CREATE TABLE, and a
+-- same-role REVOKE can't durably restrict an owner (it can always GRANT the
+-- privilege back to itself, or ALTER/DROP/TRUNCATE regardless of REVOKE).
+-- The privileged post-install/post-upgrade Job instead moves OWNERSHIP to
+-- beekeepingit and grants apiaries_svc only INSERT/SELECT — see that file's
+-- header comment for the full mechanism and services/shared/dbaccess/
+-- audit_immutability_test.go for the testcontainers proof. This migration
+-- itself grants nothing extra; the current (dev-cluster, pre-#62) role's
+-- INSERT/SELECT/UPDATE/DELETE stays as-is until that Job runs.
 CREATE TABLE apiaries.audit_log (
     id              UUID PRIMARY KEY,
     organization_id UUID NOT NULL,
