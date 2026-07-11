@@ -46,11 +46,11 @@ where there's a sensible one.
 
 ### Q-MAP — Offline-tile caching strategy & tile provider (narrowed, was: map provider & offline tiles)
 
-- **Affects:** FR-AP-3, FR-OF-1. The map *interaction* shape (markers, user location, measure
+- **Affects:** FR-AP-3, FR-OF-1. The map _interaction_ shape (markers, user location, measure
   overlay) and the base library (`flutter_map` + MapLibre/OSM) are **resolved** — see
   [D-16](decisions.md#d-16--map-flutter_map-markers--user-location--measure-overlay-tile-provider-deferred).
   Still open: a field-first map that works **offline** needs **cached map tiles** — which tile
-  *provider* to use at production traffic (the public OSM/MapLibre demo endpoint isn't meant for
+  _provider_ to use at production traffic (the public OSM/MapLibre demo endpoint isn't meant for
   that) and the **offline-tile caching strategy** (what to pre-cache, storage budget, refresh).
   This has licensing and cost implications; does not block M2 (online-only map ships first).
 

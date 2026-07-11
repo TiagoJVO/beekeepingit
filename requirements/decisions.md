@@ -249,8 +249,8 @@ Core technology decisions (2026-06-27). Detail and rationale in
   **tap-to-select** interaction on the map (tap two pins), per the Melargil prototype's "medir
   distância" flow.
 - **Deferred:** **driving distance** (needs an online routing service) is not built in v1 — kept
-  as an optional future enhancement, revisit only if field feedback asks for it. Distance *from
-  the user's current location* is already covered separately by proximity ordering (FR-AP-2) and
+  as an optional future enhancement, revisit only if field feedback asks for it. Distance _from
+  the user's current location_ is already covered separately by proximity ordering (FR-AP-2) and
   is not part of this feature.
 - **Supersedes:** Q-DIST. Touches FR-AP-5, #37.
 
@@ -259,7 +259,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Decision:** the apiary map view (FR-AP-3) renders **pin markers per apiary** (showing hive
   count), a distinct **user-location marker**, and the tap-to-measure overlay (D-15), built on
   `flutter_map` + MapLibre/OSM tiles (already the stack per `tech-stack.md`). This resolves the
-  map *interaction/UX* shape.
+  map _interaction/UX_ shape.
 - **Still open (narrowed Q-MAP):** the **tile provider and offline-tile caching strategy** —
   which has real licensing/cost implications for production traffic — is **not** decided here and
   does **not** block M2: FR-AP-3's acceptance criteria only require the map to render online,
