@@ -256,4 +256,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryDeleteSuccess => 'Apiary deleted.';
+
+  @override
+  String get apiariesSearchHint => 'Search apiaries by name';
+
+  @override
+  String get apiariesSearchNoResults => 'No apiaries match your search.';
+
+  @override
+  String get apiariesLocationServicesDisabled =>
+      'Location services are off — showing apiaries by name.';
+
+  @override
+  String get apiariesLocationPermissionDenied =>
+      'Location access denied — showing apiaries by name.';
+
+  @override
+  String get apiariesLocationUnavailable =>
+      'Location unavailable — showing apiaries by name.';
+
+  @override
+  String get apiariesLocationRetry => 'Retry';
 }

@@ -274,6 +274,9 @@ type ListApiariesRow struct {
 
 // Org-scoped, live-row keyset page ordered by id (UUIDv7 ⇒ chronological).
 // Pass a null cursor for the first page; fetch limit+1 to detect a next page.
+// Used when the contract's `near` param is absent (FR-AP-2/#33);
+// ListApiariesByProximity below is the `near`-supplied, distance-ordered
+// variant.
 func (q *Queries) ListApiaries(ctx context.Context, arg ListApiariesParams) ([]ListApiariesRow, error) {
 	rows, err := q.db.Query(ctx, listApiaries, arg.OrganizationID, arg.Limit, arg.Cursor)
 	if err != nil {
@@ -291,6 +294,106 @@ func (q *Queries) ListApiaries(ctx context.Context, arg ListApiariesParams) ([]L
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.LocationGeojson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listApiariesByProximity = `-- name: ListApiariesByProximity :many
+WITH ranked AS (
+    SELECT id, organization_id, name, hive_count, created_at, updated_at,
+           COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson,
+           ST_Distance(location, ST_SetSRID(ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography) AS distance_m,
+           location <-> ST_SetSRID(ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography AS knn_distance
+    FROM apiaries.apiaries
+    WHERE organization_id = $1
+      AND deleted_at IS NULL
+)
+SELECT id, organization_id, name, hive_count, created_at, updated_at, location_geojson, distance_m
+FROM ranked
+ORDER BY knn_distance ASC NULLS LAST, id
+LIMIT $2
+OFFSET $3
+`
+
+type ListApiariesByProximityParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	Limit          int32       `json:"limit"`
+	Offset         int32       `json:"offset"`
+	Lon            float64     `json:"lon"`
+	Lat            float64     `json:"lat"`
+}
+
+type ListApiariesByProximityRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	Name            string             `json:"name"`
+	HiveCount       int32              `json:"hive_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	LocationGeojson string             `json:"location_geojson"`
+	DistanceM       interface{}        `json:"distance_m"`
+}
+
+// Org-scoped list ordered by ascending distance to the `near` reference
+// point (FR-AP-2, #33; D-6/PostGIS). Not keyset-paginated like ListApiaries
+// above: proximity order has no stable monotonic key to page on (a
+// distance tie, or simply re-issuing the same page, doesn't have the "id
+// always increases" property keyset pagination relies on), so this variant
+// is offset-paginated — acceptable given the contract's default page size
+// (50) already covers a realistic per-org apiary count and proximity
+// listing isn't expected to page deeply. Rows without a location sort last
+// (NULLS LAST) rather than being dropped, so an apiary missing a location
+// still appears (with a null distance_m) instead of silently vanishing
+// from the list. `public.geography`/`ST_MakePoint` follow
+// 00003_add_apiary_location.sql's schema-qualification note (bare
+// `geography` fails to resolve under the service's restricted
+// search_path).
+//
+// ORDER BY uses the `<->` KNN distance operator rather than `distance_m`
+// itself: cheaper to evaluate (an index-accelerated bounding-box distance,
+// not the exact geodesic calculation), though the `organization_id`
+// equality filter here still forces a sequential scan over the org's own
+// rows rather than an index-only KNN traversal via idx_apiaries_location
+// (00003_add_apiary_location.sql) — confirmed with EXPLAIN: Postgres can't
+// combine "top-N nearest" index access with an arbitrary equality filter on
+// a different column without a matching partial/composite index, which
+// isn't worth adding for the realistic per-org apiary count this query
+// already assumes (see above). `<->` on `geography` is a fast
+// *approximate* distance (a few tenths of a percent off geodesic truth —
+// verified: ST_Distance and `<->` differ by ~0.1% at ~100km), fine for
+// ordering; the selected `distance_m` column still uses the exact
+// ST_Distance for the value actually returned to the client.
+func (q *Queries) ListApiariesByProximity(ctx context.Context, arg ListApiariesByProximityParams) ([]ListApiariesByProximityRow, error) {
+	rows, err := q.db.Query(ctx, listApiariesByProximity,
+		arg.OrganizationID,
+		arg.Limit,
+		arg.Offset,
+		arg.Lon,
+		arg.Lat,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListApiariesByProximityRow
+	for rows.Next() {
+		var i ListApiariesByProximityRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Name,
+			&i.HiveCount,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LocationGeojson,
+			&i.DistanceM,
 		); err != nil {
 			return nil, err
 		}

@@ -257,4 +257,26 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiaryDeleteSuccess => 'Apiário eliminado.';
+
+  @override
+  String get apiariesSearchHint => 'Pesquisar apiários por nome';
+
+  @override
+  String get apiariesSearchNoResults =>
+      'Nenhum apiário corresponde à pesquisa.';
+
+  @override
+  String get apiariesLocationServicesDisabled =>
+      'Os serviços de localização estão desativados — a mostrar apiários por nome.';
+
+  @override
+  String get apiariesLocationPermissionDenied =>
+      'Acesso à localização negado — a mostrar apiários por nome.';
+
+  @override
+  String get apiariesLocationUnavailable =>
+      'Localização indisponível — a mostrar apiários por nome.';
+
+  @override
+  String get apiariesLocationRetry => 'Tentar novamente';
 }

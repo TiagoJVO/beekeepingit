@@ -1,11 +1,14 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'widget_test.dart' show FakeDeviceLocationService;
 
 /// Fixtures mirroring widget_test.dart's/app_router_test.dart's own — kept
 /// local rather than imported since those files' fixtures are file-private.
@@ -43,6 +46,9 @@ Widget _buildShellApp({List<Apiary>? apiaries}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
+      deviceLocationServiceProvider.overrideWithValue(
+        const FakeDeviceLocationService(),
+      ),
       apiariesStreamProvider.overrideWith(
         (ref) => Stream.value(apiaries ?? const []),
       ),
