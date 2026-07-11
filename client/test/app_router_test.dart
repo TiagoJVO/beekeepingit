@@ -40,17 +40,15 @@ class _FixedOrganizationController extends OrganizationController {
       name: 'Dev Apiary Co.',
       address: '',
       createdBy: 'u1',
-      role: 'admin', // not under test here — this fixture only exercises has-org routing
+      role:
+          'admin', // not under test here — this fixture only exercises has-org routing
       createdAt: DateTime.utc(2026, 1, 1),
       updatedAt: DateTime.utc(2026, 1, 1),
     );
   }
 }
 
-Widget _buildApp({
-  required bool profileComplete,
-  bool hasOrganization = true,
-}) {
+Widget _buildApp({required bool profileComplete, bool hasOrganization = true}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
@@ -86,10 +84,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('organization-name-field')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('organization-name-field')), findsOneWidget);
       expect(find.text('Apiaries'), findsNothing);
     },
   );
@@ -100,19 +95,22 @@ void main() {
       await tester.pumpWidget(_buildApp(profileComplete: true));
       await tester.pumpAndSettle();
 
-      expect(find.text('Apiaries'), findsOneWidget);
+      // "Apiaries" now appears twice (shell header title + bottom-nav tab
+      // label, #197) — findsWidgets rather than findsOneWidget.
+      expect(find.text('Apiaries'), findsWidgets);
+      expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
       expect(find.byKey(const Key('profile-name-field')), findsNothing);
       expect(find.byKey(const Key('organization-name-field')), findsNothing);
     },
   );
 
   testWidgets(
-    'tapping the account-settings action from the apiaries home reaches /account (#29)',
+    'tapping the shell account action from the apiaries home reaches /account (#29)',
     (tester) async {
       await tester.pumpWidget(_buildApp(profileComplete: true));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('account-settings-button')));
+      await tester.tap(find.byKey(const Key('shell-account-button')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('account-name-field')), findsOneWidget);

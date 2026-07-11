@@ -195,4 +195,65 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get accountChangePasswordButton => 'Change password';
+
+  @override
+  String get accountOrganizationSectionTitle => 'Organization';
+
+  @override
+  String get activitiesTitle => 'Activities';
+
+  @override
+  String get journeysTitle => 'Journeys';
+
+  @override
+  String get todosTitle => 'Todos';
+
+  @override
+  String get assistantTitle => 'Assistant';
+
+  @override
+  String get activitiesComingSoon => 'Activities — coming soon';
+
+  @override
+  String get journeysComingSoon => 'Journeys — coming soon';
+
+  @override
+  String get todosComingSoon => 'Todos — coming soon';
+
+  @override
+  String get assistantComingSoon => 'Assistant — coming soon';
+
+  @override
+  String get syncStatusOnline => 'Online';
+
+  @override
+  String get syncStatusOffline => 'Offline';
+
+  @override
+  String syncStatusOfflinePending(int count) {
+    return 'Offline · $count';
+  }
+
+  @override
+  String syncStatusSemanticLabel(String label) {
+    return 'Sync status: $label. Opens sync settings.';
+  }
+
+  @override
+  String offlineBannerMessage(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'No connection — changes are saved locally ($count to sync)',
+      one: 'No connection — changes are saved locally (1 to sync)',
+      zero: 'No connection — changes are saved locally',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get apiarySaveSuccess => 'Apiary saved.';
+
+  @override
+  String get apiaryDeleteSuccess => 'Apiary deleted.';
 }

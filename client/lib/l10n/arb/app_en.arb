@@ -228,7 +228,7 @@
   },
   "manageMembers": "Manage members",
   "@manageMembers": {
-    "description": "Admin-only app-bar action on the apiaries home, linking to the members/invitations screen (#172)"
+    "description": "Admin-only action on the account screen, linking to the members/invitations screen (#172, relocated from the apiaries app bar by #197)"
   },
   "accountTitle": "Account settings",
   "@accountTitle": {
@@ -249,5 +249,84 @@
   "accountChangePasswordButton": "Change password",
   "@accountChangePasswordButton": {
     "description": "Button that opens the identity provider's account page to change password"
+  },
+  "accountOrganizationSectionTitle": "Organization",
+  "@accountOrganizationSectionTitle": {
+    "description": "Heading above the admin-only organization actions (manage members) on the account settings screen"
+  },
+  "activitiesTitle": "Activities",
+  "@activitiesTitle": {
+    "description": "Activities tab label and screen title (bottom nav, #197)"
+  },
+  "journeysTitle": "Journeys",
+  "@journeysTitle": {
+    "description": "Journeys tab label and screen title (bottom nav, #197)"
+  },
+  "todosTitle": "Todos",
+  "@todosTitle": {
+    "description": "Todos tab label and screen title (bottom nav, #197)"
+  },
+  "assistantTitle": "Assistant",
+  "@assistantTitle": {
+    "description": "Assistant tab label and screen title (bottom nav, #197)"
+  },
+  "activitiesComingSoon": "Activities — coming soon",
+  "@activitiesComingSoon": {
+    "description": "Placeholder shown on the Activities tab until its real screens land (M3, #197)"
+  },
+  "journeysComingSoon": "Journeys — coming soon",
+  "@journeysComingSoon": {
+    "description": "Placeholder shown on the Journeys tab until its real screens land (M4, #197)"
+  },
+  "todosComingSoon": "Todos — coming soon",
+  "@todosComingSoon": {
+    "description": "Placeholder shown on the Todos tab until its real screens land (M5, #197)"
+  },
+  "assistantComingSoon": "Assistant — coming soon",
+  "@assistantComingSoon": {
+    "description": "Placeholder shown on the Assistant tab until its real screens land (M8, #197)"
+  },
+  "syncStatusOnline": "Online",
+  "@syncStatusOnline": {
+    "description": "App-shell header sync-status pill label when connected (#197; real connectivity wiring is #58 — currently a fixed stub)"
+  },
+  "syncStatusOffline": "Offline",
+  "@syncStatusOffline": {
+    "description": "App-shell header sync-status pill label when disconnected with nothing pending (#197)"
+  },
+  "syncStatusOfflinePending": "Offline · {count}",
+  "@syncStatusOfflinePending": {
+    "description": "App-shell header sync-status pill label when disconnected with pending local changes (#197)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncStatusSemanticLabel": "Sync status: {label}. Opens sync settings.",
+  "@syncStatusSemanticLabel": {
+    "description": "Screen-reader label for the header sync-status pill (#197)",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "offlineBannerMessage": "{count, plural, =0{No connection — changes are saved locally} =1{No connection — changes are saved locally (1 to sync)} other{No connection — changes are saved locally ({count} to sync)}}",
+  "@offlineBannerMessage": {
+    "description": "Offline banner shown below the app-shell header with the pending-change count (#197; real pending-count wiring is #58 — currently a stub default of 0/hidden)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "apiarySaveSuccess": "Apiary saved.",
+  "@apiarySaveSuccess": {
+    "description": "Toast shown after successfully creating or updating an apiary (#197)"
+  },
+  "apiaryDeleteSuccess": "Apiary deleted.",
+  "@apiaryDeleteSuccess": {
+    "description": "Toast shown after successfully deleting an apiary (#197)"
   }
 }

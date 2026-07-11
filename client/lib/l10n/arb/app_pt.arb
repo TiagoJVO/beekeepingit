@@ -54,5 +54,21 @@
   "accountProfileSectionTitle": "Perfil",
   "accountSecuritySectionTitle": "Segurança",
   "accountChangePasswordHint": "As alterações de palavra-passe são geridas pelo nosso fornecedor de login, numa nova aba.",
-  "accountChangePasswordButton": "Alterar palavra-passe"
+  "accountChangePasswordButton": "Alterar palavra-passe",
+  "accountOrganizationSectionTitle": "Organização",
+  "activitiesTitle": "Atividades",
+  "journeysTitle": "Jornadas",
+  "todosTitle": "Tarefas",
+  "assistantTitle": "Assistente",
+  "activitiesComingSoon": "Atividades — brevemente",
+  "journeysComingSoon": "Jornadas — brevemente",
+  "todosComingSoon": "Tarefas — brevemente",
+  "assistantComingSoon": "Assistente — brevemente",
+  "syncStatusOnline": "Online",
+  "syncStatusOffline": "Offline",
+  "syncStatusOfflinePending": "Offline · {count}",
+  "syncStatusSemanticLabel": "Estado de sincronização: {label}. Abre as definições de sincronização.",
+  "offlineBannerMessage": "{count, plural, =0{Sem ligação — alterações guardadas localmente} =1{Sem ligação — alterações guardadas localmente (1 por sincronizar)} other{Sem ligação — alterações guardadas localmente ({count} por sincronizar)}}",
+  "apiarySaveSuccess": "Apiário guardado.",
+  "apiaryDeleteSuccess": "Apiário eliminado."
 }

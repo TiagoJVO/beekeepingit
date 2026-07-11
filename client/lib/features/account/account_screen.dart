@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../organization/organization_repository.dart';
 import '../profile/profile_repository.dart';
 import 'account_platform.dart';
 
@@ -82,9 +84,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         _fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
       });
       if (_fieldErrors.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.profileSaveError(e.detail))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.profileSaveError(e.detail))),
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -232,6 +234,51 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       onPressed: _openChangePassword,
                       icon: const Icon(Icons.lock_outline),
                       label: Text(l10n.accountChangePasswordButton),
+                    ),
+                    // Admin-only (#172): the destination screen's endpoints
+                    // are admin-only server-side (auth.md §5.3), so a
+                    // non-admin would only hit a dead-end 403 — hide the
+                    // entry point rather than show one that never works.
+                    // Relocated here from the apiaries list app bar (#197):
+                    // now that the app shell (FR-UX-2) owns that screen's
+                    // header, org/session actions live on the account
+                    // screen, matching the prototype's "Conta" screen
+                    // (docs/design/melargil-prototype).
+                    if (ref.watch(isOrgAdminProvider)) ...[
+                      const SizedBox(height: 32),
+                      const Divider(),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.accountOrganizationSectionTitle,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        key: const Key('account-manage-members-button'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(56),
+                        ),
+                        onPressed: () => context.go('/organization/members'),
+                        icon: const Icon(Icons.group_outlined),
+                        label: Text(l10n.manageMembers),
+                      ),
+                    ],
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      key: const Key('account-logout-button'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                      onPressed: () =>
+                          ref.read(authControllerProvider.notifier).logout(),
+                      icon: const Icon(Icons.logout),
+                      label: Text(l10n.logout),
                     ),
                   ],
                 ),
