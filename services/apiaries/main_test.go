@@ -637,6 +637,134 @@ func TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow(t *testing.T) 
 	}
 }
 
+// sameOrgOtherUserCaller is a second principal in the SAME org as devseed
+// (org A) but a distinct sub/user — used by
+// TestApiariesSlice_SameOrg_DifferentUsersSeeSameApiaries to prove the slice
+// is organization-first with no accidental per-user narrowing (sync.md §3.1,
+// #57 AC "activity ownership is preserved... without breaking
+// organization-wide sharing").
+func sameOrgOtherUserCaller() string {
+	return callerClaims(
+		"33333333-3333-4333-8333-333333333333",
+		"a0000000-0000-7000-8000-000000000003",
+		devseed.OrganizationID, // same org as the default devseed caller
+		"member",
+	)
+}
+
+// TestApiariesSlice_SameOrg_DifferentUsersSeeSameApiaries is #57's AC
+// "activity ownership is preserved by also scoping per user where required,
+// without breaking organization-wide sharing of apiaries" and sync.md §3.1's
+// "organization-first, user is attribution only": two distinct users who are
+// both active members of the SAME org must see the exact same apiaries list
+// — sync is org-scoped, never additionally filtered by the requesting user.
+// This guards against a regression that would (incorrectly) start scoping
+// reads by caller identity instead of by organization_id alone.
+func TestApiariesSlice_SameOrg_DifferentUsersSeeSameApiaries(t *testing.T) {
+	f := newApiariesFixture(t)
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	otherUser := sameOrgOtherUserCaller()
+
+	// One of the two same-org users creates the data (attribution differs;
+	// visibility must not).
+	idOne := uuid.NewString()
+	if got := f.apply(t, putOp(idOne, "Encosta Norte", 3, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)
+	}
+	idTwo := uuid.NewString()
+	if got := f.applyAs(t, otherUser, putOp(idTwo, "Encosta Sul", 7, t0.Add(time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("second same-org user create result = %q, want applied", got.Results[0].Result)
+	}
+
+	// Default devseed user's list contains BOTH apiaries...
+	listDefault := f.listApiaries(t)
+	if len(listDefault.Data) != 2 {
+		t.Fatalf("default user list = %+v, want 2 rows (both org apiaries)", listDefault.Data)
+	}
+
+	// ...and so does the other same-org user's list: identical membership,
+	// not a per-user subset.
+	recOther := f.doAs(t, otherUser, http.MethodGet, "/v1/apiaries", nil)
+	if recOther.Code != http.StatusOK {
+		t.Fatalf("other user list status = %d, want 200, body = %s", recOther.Code, recOther.Body.String())
+	}
+	var listOther listView
+	if err := json.Unmarshal(recOther.Body.Bytes(), &listOther); err != nil {
+		t.Fatalf("decode other user list: %v", err)
+	}
+	if len(listOther.Data) != 2 {
+		t.Fatalf("other same-org user list = %+v, want 2 rows (both org apiaries)", listOther.Data)
+	}
+
+	gotIDs := map[string]bool{listDefault.Data[0].ID: true, listDefault.Data[1].ID: true}
+	wantIDs := map[string]bool{idOne: true, idTwo: true}
+	if len(gotIDs) != 2 || !gotIDs[idOne] || !gotIDs[idTwo] {
+		t.Fatalf("default user list ids = %v, want %v", gotIDs, wantIDs)
+	}
+	otherIDs := map[string]bool{listOther.Data[0].ID: true, listOther.Data[1].ID: true}
+	if len(otherIDs) != 2 || !otherIDs[idOne] || !otherIDs[idTwo] {
+		t.Fatalf("other user list ids = %v, want %v", otherIDs, wantIDs)
+	}
+
+	// Each user can also directly GET the apiary the OTHER user created —
+	// same-org visibility is symmetric, not scoped to "my own rows".
+	if a := f.getApiary(t, idTwo); a.HiveCount != 7 {
+		t.Fatalf("default user reading other user's apiary hive_count = %d, want 7", a.HiveCount)
+	}
+	recCross := f.doAs(t, otherUser, http.MethodGet, "/v1/apiaries/"+idOne, nil)
+	if recCross.Code != http.StatusOK {
+		t.Fatalf("other user reading first user's apiary status = %d, want 200", recCross.Code)
+	}
+}
+
+// TestApiariesSlice_SyncApply_OrgIsAlwaysTokenResolved_NeverClientSupplied is
+// #57's AC "the replication scope is enforced server-side, not only filtered
+// on the client": the sync-apply Op/apiaryData wire shape (services/apiaries/
+// api/sync.go) carries no organization_id field at all — org-scoping comes
+// exclusively from requireOrg reading the token-resolved Claims in context
+// (common.go), never from anything in the request. This test proves a
+// forged "organization_id" smuggled into the op's data payload (as though a
+// compromised/buggy client tried to claim a different org) has zero effect:
+// the row is still created under the CALLER's real (token-resolved) org —
+// here, org B — not the org named in the payload (org A's id).
+func TestApiariesSlice_SyncApply_OrgIsAlwaysTokenResolved_NeverClientSupplied(t *testing.T) {
+	f := newApiariesFixture(t)
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	other := otherOrgCaller()
+
+	id := uuid.NewString()
+	// The payload smuggles an organization_id claiming devseed's org (org A),
+	// but the request is authenticated/resolved as org B (via testOrgHeader,
+	// standing in for the token-resolved claims in production). apiaryData
+	// has no OrganizationID field, so json.Unmarshal silently drops the
+	// unknown key — the same outcome a real client's forged field would get.
+	forgedData := json.RawMessage(`{"name":"Forged Org Claim","hive_count":9,"organization_id":"` + devseed.OrganizationID + `"}`)
+	op := api.Op{Op: "put", EntityType: "apiary", ID: id, Data: forgedData, UpdatedAt: t0}
+	if got := f.applyAs(t, other, op); got.Results[0].Result != "applied" {
+		t.Fatalf("apply with forged organization_id result = %q, want applied", got.Results[0].Result)
+	}
+
+	// The row lands under org B (the token-resolved caller), so org B can
+	// read it back...
+	recB := f.doAs(t, other, http.MethodGet, "/v1/apiaries/"+id, nil)
+	if recB.Code != http.StatusOK {
+		t.Fatalf("org B (real caller) get status = %d, want 200, body = %s", recB.Code, recB.Body.String())
+	}
+
+	// ...and org A (the org forged into the payload) must NOT see it: the
+	// forged field never reached the org-scoping query param.
+	recA := f.do(t, http.MethodGet, "/v1/apiaries/"+id, nil)
+	if recA.Code != http.StatusNotFound {
+		t.Fatalf("org A (forged target) get status = %d, want 404 — forged organization_id must have no effect, body = %s", recA.Code, recA.Body.String())
+	}
+	listA := f.listApiaries(t)
+	for _, a := range listA.Data {
+		if a.ID == id {
+			t.Fatalf("org A's list leaked the forged-org row %s; forged organization_id in op data must be ignored", id)
+		}
+	}
+}
+
 // TestApiariesSchema_EveryOwnedTableCarriesOrganizationID is the automated
 // form of #30's AC "every owned row (apiary, activity, journey, and other
 // org-owned entities) carries an organization_id": rather than a one-time
