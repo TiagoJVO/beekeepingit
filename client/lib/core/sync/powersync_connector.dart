@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:meta/meta.dart';
 import 'package:powersync/powersync.dart';
 
 import '../config/app_config.dart';
 import 'powersync_schema.dart';
+import 'sync_events.dart';
 
 /// Bridges PowerSync to the BeekeepingIT backend (walking-skeleton.md §4.4):
 ///   - fetchCredentials → GET /v1/sync/token (the short-TTL sync token).
@@ -16,6 +19,15 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
 
   final Future<String?> Function() getAccessToken;
   final http.Client _http;
+
+  /// Emits one event per op the server reports as `superseded` (sync.md
+  /// §4.2/§8 — this offline edit lost a last-write-wins conflict). The shell
+  /// listens to this to show a non-blocking "your change was overwritten"
+  /// notification (#58's AC); nothing here decides *how* it's surfaced.
+  final _superseded = StreamController<SupersededChange>.broadcast();
+  Stream<SupersededChange> get supersededChanges => _superseded.stream;
+
+  void dispose() => _superseded.close();
 
   @override
   Future<PowerSyncCredentials?> fetchCredentials() async {
@@ -57,6 +69,7 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     );
 
     if (resp.statusCode == 200) {
+      _notifySuperseded(resp.body);
       await tx.complete();
       return;
     }
@@ -96,4 +109,40 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     UpdateType.patch => 'patch',
     UpdateType.delete => 'delete',
   };
+
+  // Best-effort: a malformed/unexpected body must never fail the upload
+  // itself (the transaction already completed server-side), so parse errors
+  // are swallowed here rather than propagated.
+  void _notifySuperseded(String body) {
+    for (final change in parseSupersededChanges(body)) {
+      _superseded.add(change);
+    }
+  }
+}
+
+/// Parses the apply endpoint's `{"results": [{"id","op","result"}]}` body
+/// (services/apiaries/api/sync.go's `ApplyResponse`) and returns one
+/// [SupersededChange] per op the server reports as `superseded` (sync.md
+/// §4.2/§8 — an offline edit that lost a last-write-wins conflict). A pure
+/// function (no I/O) so it's unit-testable without a real HTTP call or
+/// PowerSync database; returns an empty list for a malformed/unexpected body
+/// rather than throwing, matching [BeekeepingitConnector.uploadData]'s
+/// best-effort handling of this response.
+@visibleForTesting
+List<SupersededChange> parseSupersededChanges(String body) {
+  try {
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    final results = json['results'] as List<dynamic>?;
+    if (results == null) return const [];
+    return [
+      for (final r in results)
+        if ((r as Map<String, dynamic>)['result'] == 'superseded')
+          SupersededChange(
+            entityType: apiaryEntityType,
+            entityId: r['id'] as String,
+          ),
+    ];
+  } catch (_) {
+    return const [];
+  }
 }

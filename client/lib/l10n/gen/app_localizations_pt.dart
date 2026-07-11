@@ -257,4 +257,42 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiaryDeleteSuccess => 'Apiário eliminado.';
+
+  @override
+  String get syncStatusSyncing => 'A sincronizar…';
+
+  @override
+  String get syncSupersededNotice =>
+      'Uma das suas alterações offline foi substituída por uma edição mais recente.';
+
+  @override
+  String get accountSyncSectionTitle => 'Sincronização';
+
+  @override
+  String accountSyncStatusLabel(String status) {
+    return 'Estado: $status';
+  }
+
+  @override
+  String accountSyncPendingCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count alterações por sincronizar.',
+      one: '1 alteração por sincronizar.',
+      zero: 'Tudo sincronizado.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get accountSyncNowButton => 'Sincronizar agora';
+
+  @override
+  String get accountSyncNowTriggered => 'Sincronização pedida.';
+
+  @override
+  String accountSyncNowError(String error) {
+    return 'Não foi possível sincronizar agora: $error';
+  }
 }
