@@ -36,11 +36,21 @@ same service's own membership table over HTTP would be redundant).
 
 Member removal, invitation expiry/re-invite, and admin transfer are **not**
 built — D-3 and FR-ONB-3 both flag these as still-open detail beyond "implement
-the core invite/join now."
+the core invite/join now." Because member removal doesn't exist yet, its history
+recording ([#165](https://github.com/TiagoJVO/beekeepingit/issues/165) AC) has
+nothing to wire into yet either — it lands with the removal endpoint itself,
+whenever that's built, using the same `organizations.audit_log` this service
+already has.
 
-History recording (FR-HIS-1) for organization/membership/invitation changes is
-deferred — tracked in [#165](https://github.com/TiagoJVO/beekeepingit/issues/165),
-same as profile's (#25).
+History recording (FR-HIS-1, [#165](https://github.com/TiagoJVO/beekeepingit/issues/165)):
+organization creation, membership creation (both in the same D-3 transaction),
+and invitation invite/accept/revoke each write one `organizations.audit_log` row
+in the same local transaction as their domain write
+([docs/architecture/history.md](../../docs/architecture/history.md) §4).
+`entity_type` (`organization` | `membership` | `invitation`) distinguishes the
+three entities sharing this one table (history.md §3/§9). Append-only
+immutability (DB role grants) is out of scope here — that's
+[#62](https://github.com/TiagoJVO/beekeepingit/issues/62).
 
 ## Configuration
 
