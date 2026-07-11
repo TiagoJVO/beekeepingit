@@ -21,19 +21,28 @@ const (
 	maxLimit     = 200
 )
 
+// geoPointDTO is the client-facing GeoJSON Point shape (GeoPoint schema,
+// contracts/openapi/_shared/components.openapi.yaml): `coordinates` are
+// `[longitude, latitude]` in WGS84 (EPSG:4326).
+type geoPointDTO struct {
+	Type        string     `json:"type"`
+	Coordinates [2]float64 `json:"coordinates"`
+}
+
 // apiaryDTO is the client-facing apiary shape (contracts/openapi/apiaries).
-// `location` is always unset in the walking skeleton (PostGIS unused, §4.1);
-// omitempty leaves it out of the response entirely rather than emitting
-// `"location": null`, which the GeoPoint schema (an object, no null variant)
-// doesn't allow for a present-but-null value.
+// `location` is populated with the real GeoJSON value when the apiary has
+// one set (#31 wires up the PostGIS column deferred by the walking
+// skeleton); omitempty leaves it out of the response entirely when unset,
+// rather than emitting `"location": null`, which the GeoPoint schema (an
+// object, no null variant) doesn't allow for a present-but-null value.
 type apiaryDTO struct {
-	ID             string    `json:"id"`
-	OrganizationID string    `json:"organization_id"`
-	Name           string    `json:"name"`
-	HiveCount      int32     `json:"hive_count"`
-	Location       any       `json:"location,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             string       `json:"id"`
+	OrganizationID string       `json:"organization_id"`
+	Name           string       `json:"name"`
+	HiveCount      int32        `json:"hive_count"`
+	Location       *geoPointDTO `json:"location,omitempty"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
 }
 
 type pageDTO struct {
@@ -48,12 +57,32 @@ type listDTO struct {
 
 // ReadRouter returns the client-facing read routes (GET /v1/apiaries[/{id}]).
 // Mount it behind the OIDC authn + org-resolver middleware so requests are
-// org-scoped from the resolved Claims.
+// org-scoped from the resolved Claims. Combined with the REST write routes
+// (POST/PATCH/DELETE, #31) by Router below — kept as its own exported
+// constructor since main_test.go's fixture (and any caller wanting read-only
+// wiring) mounts it standalone too.
 func ReadRouter(pool *pgxpool.Pool) http.Handler {
 	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
 	r.Get("/", listApiaries(q))
 	r.Get("/{apiaryId}", getApiary(q))
+	return r
+}
+
+// Router returns the full client-facing /v1/apiaries surface: the read
+// routes above plus the REST write routes (POST/PATCH/DELETE, write.go,
+// #31/FR-AP-1). This is what main.go mounts; chi doesn't support Mount-ing
+// two separate routers at the identical pattern, so read and write are
+// combined into one router here rather than two Mount calls on the same
+// path.
+func Router(pool *pgxpool.Pool) http.Handler {
+	q := sqlcgen.New(pool)
+	r := chi.NewRouter()
+	r.Get("/", listApiaries(q))
+	r.Get("/{apiaryId}", getApiary(q))
+	r.Post("/", createApiary(pool))
+	r.Patch("/{apiaryId}", updateApiary(pool))
+	r.Delete("/{apiaryId}", deleteApiary(pool))
 	return r
 }
 
@@ -101,6 +130,7 @@ func listApiaries(q *sqlcgen.Queries) http.HandlerFunc {
 				OrganizationID: uuidString(row.OrganizationID),
 				Name:           row.Name,
 				HiveCount:      row.HiveCount,
+				Location:       parseGeoJSONPoint(row.LocationGeojson),
 				CreatedAt:      row.CreatedAt.Time,
 				UpdatedAt:      row.UpdatedAt.Time,
 			})
@@ -134,11 +164,13 @@ func getApiary(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 
+		w.Header().Set("ETag", etagFor(row.UpdatedAt))
 		writeJSON(w, http.StatusOK, apiaryDTO{
 			ID:             uuidString(row.ID),
 			OrganizationID: uuidString(row.OrganizationID),
 			Name:           row.Name,
 			HiveCount:      row.HiveCount,
+			Location:       parseGeoJSONPoint(row.LocationGeojson),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,
 		})

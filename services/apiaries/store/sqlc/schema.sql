@@ -1,7 +1,7 @@
 -- sqlc's virtual schema for codegen only — mirrors the "up" side of
--- ../migrations/00001_create_apiaries.sql and 00002_create_audit_log.sql (no
--- down migration; runtime schema changes only ever happen via goose). Update
--- both files together.
+-- ../migrations/00001_create_apiaries.sql, 00002_create_audit_log.sql and
+-- 00003_add_apiary_location.sql (no down migration; runtime schema changes
+-- only ever happen via goose). Update all files together.
 CREATE SCHEMA IF NOT EXISTS apiaries;
 
 CREATE TABLE apiaries.apiaries (
@@ -12,7 +12,8 @@ CREATE TABLE apiaries.apiaries (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL,
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at      TIMESTAMPTZ
+    deleted_at      TIMESTAMPTZ,
+    location        geography(Point, 4326)
 );
 
 CREATE TABLE apiaries.sync_conflict_log (

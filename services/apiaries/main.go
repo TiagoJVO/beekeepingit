@@ -1,11 +1,13 @@
-// Command apiaries is the owning service of the walking skeleton's trivial
-// record. It exposes the client-facing read surface (GET /v1/apiaries[/{id}])
-// and the internal sync validate/apply endpoints the write-back coordinator
-// calls (walking-skeleton.md §4.4/§5, sync.md §5.2). Both surfaces run behind
-// OIDC authn + the org-resolver + authn.RequireRole (#28) so every
-// request is org-scoped and carries a resolved membership role. Online REST
-// write handlers are EPIC-02 (#31), not the skeleton. Wiring follows
-// services/servicetemplate/example/main.go.
+// Command apiaries is the owning service of apiary records. It exposes the
+// client-facing REST surface (GET/POST/PATCH/DELETE /v1/apiaries[/{id}],
+// #31/FR-AP-1) and the internal sync validate/apply endpoints the
+// write-back coordinator calls (walking-skeleton.md §4.4/§5, sync.md §5.2).
+// Both surfaces run behind OIDC authn + the org-resolver + authn.RequireRole
+// (#28) so every request is org-scoped and carries a resolved membership
+// role. The field PWA never calls the REST write handlers directly — every
+// client write rides the local-first sync path (walking-skeleton.md §4.4);
+// the REST writes serve online-only/direct callers (Admin App, scripts).
+// Wiring follows services/servicetemplate/example/main.go.
 package main
 
 import (
@@ -98,7 +100,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}
-	srv.Mount("/v1/apiaries", scoped(api.ReadRouter(pool)))
+	srv.Mount("/v1/apiaries", scoped(api.Router(pool)))
 	srv.Mount("/internal/sync", scoped(api.InternalSyncRouter(pool)))
 
 	return srv.Run(ctx)
