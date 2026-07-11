@@ -11,18 +11,45 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acceptInvitation = `-- name: AcceptInvitation :one
+UPDATE organizations.invitations
+SET status = 'accepted', updated_at = now()
+WHERE id = $1 AND status = 'pending'
+RETURNING id, organization_id, email, role, status, invited_by, created_at, updated_at
+`
+
+// Marks the invitation accepted. Called in the same transaction as the
+// membership insert (api/invitations.go acceptPendingInvitation) so an
+// invitation is never left pending after its membership exists, or vice
+// versa (mirrors CreateOrganization+CreateMembership's D-3 atomicity).
+func (q *Queries) AcceptInvitation(ctx context.Context, id pgtype.UUID) (OrganizationsInvitation, error) {
+	row := q.db.QueryRow(ctx, acceptInvitation, id)
+	var i OrganizationsInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Email,
+		&i.Role,
+		&i.Status,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createInvitation = `-- name: CreateInvitation :one
 INSERT INTO organizations.invitations (id, organization_id, email, role, invited_by)
-VALUES ($1, $2, lower($3), $4, $5)
+VALUES ($1, $2, lower($5), $3, $4)
 RETURNING id, organization_id, email, role, status, invited_by, created_at, updated_at
 `
 
 type CreateInvitationParams struct {
 	ID             pgtype.UUID `json:"id"`
 	OrganizationID pgtype.UUID `json:"organization_id"`
-	Email          string      `json:"email"`
 	Role           string      `json:"role"`
 	InvitedBy      pgtype.UUID `json:"invited_by"`
+	Email          string      `json:"email"`
 }
 
 // Invites an email address to join organization_id (admin-only, FR-ONB-3).
@@ -33,10 +60,65 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 	row := q.db.QueryRow(ctx, createInvitation,
 		arg.ID,
 		arg.OrganizationID,
-		arg.Email,
 		arg.Role,
 		arg.InvitedBy,
+		arg.Email,
 	)
+	var i OrganizationsInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Email,
+		&i.Role,
+		&i.Status,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getInvitation = `-- name: GetInvitation :one
+SELECT id, organization_id, email, role, status, invited_by, created_at, updated_at
+FROM organizations.invitations
+WHERE id = $1 AND organization_id = $2
+`
+
+type GetInvitationParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+func (q *Queries) GetInvitation(ctx context.Context, arg GetInvitationParams) (OrganizationsInvitation, error) {
+	row := q.db.QueryRow(ctx, getInvitation, arg.ID, arg.OrganizationID)
+	var i OrganizationsInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Email,
+		&i.Role,
+		&i.Status,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPendingInvitationByEmail = `-- name: GetPendingInvitationByEmail :one
+SELECT id, organization_id, email, role, status, invited_by, created_at, updated_at
+FROM organizations.invitations
+WHERE lower(email) = lower($1) AND status = 'pending'
+ORDER BY created_at
+LIMIT 1
+`
+
+// The accept-on-login lookup (FR-ONB-3 AC 2): does this verified profile
+// email have a pending invitation anywhere? v1 is single-org-per-user (C-1),
+// so the first (oldest) pending invite wins if more than one org somehow
+// invited the same address.
+func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, email string) (OrganizationsInvitation, error) {
+	row := q.db.QueryRow(ctx, getPendingInvitationByEmail, email)
 	var i OrganizationsInvitation
 	err := row.Scan(
 		&i.ID,
@@ -98,33 +180,6 @@ func (q *Queries) ListInvitations(ctx context.Context, arg ListInvitationsParams
 	return items, nil
 }
 
-const getInvitation = `-- name: GetInvitation :one
-SELECT id, organization_id, email, role, status, invited_by, created_at, updated_at
-FROM organizations.invitations
-WHERE id = $1 AND organization_id = $2
-`
-
-type GetInvitationParams struct {
-	ID             pgtype.UUID `json:"id"`
-	OrganizationID pgtype.UUID `json:"organization_id"`
-}
-
-func (q *Queries) GetInvitation(ctx context.Context, arg GetInvitationParams) (OrganizationsInvitation, error) {
-	row := q.db.QueryRow(ctx, getInvitation, arg.ID, arg.OrganizationID)
-	var i OrganizationsInvitation
-	err := row.Scan(
-		&i.ID,
-		&i.OrganizationID,
-		&i.Email,
-		&i.Role,
-		&i.Status,
-		&i.InvitedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const revokeInvitation = `-- name: RevokeInvitation :one
 UPDATE organizations.invitations
 SET status = 'revoked', updated_at = now()
@@ -142,61 +197,6 @@ type RevokeInvitationParams struct {
 // because the WHERE status='pending' guard excluded it) from "not found".
 func (q *Queries) RevokeInvitation(ctx context.Context, arg RevokeInvitationParams) (OrganizationsInvitation, error) {
 	row := q.db.QueryRow(ctx, revokeInvitation, arg.ID, arg.OrganizationID)
-	var i OrganizationsInvitation
-	err := row.Scan(
-		&i.ID,
-		&i.OrganizationID,
-		&i.Email,
-		&i.Role,
-		&i.Status,
-		&i.InvitedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getPendingInvitationByEmail = `-- name: GetPendingInvitationByEmail :one
-SELECT id, organization_id, email, role, status, invited_by, created_at, updated_at
-FROM organizations.invitations
-WHERE lower(email) = lower($1) AND status = 'pending'
-ORDER BY created_at
-LIMIT 1
-`
-
-// The accept-on-login lookup (FR-ONB-3 AC 2): does this verified profile
-// email have a pending invitation anywhere? v1 is single-org-per-user (C-1),
-// so the first (oldest) pending invite wins if more than one org somehow
-// invited the same address.
-func (q *Queries) GetPendingInvitationByEmail(ctx context.Context, email string) (OrganizationsInvitation, error) {
-	row := q.db.QueryRow(ctx, getPendingInvitationByEmail, email)
-	var i OrganizationsInvitation
-	err := row.Scan(
-		&i.ID,
-		&i.OrganizationID,
-		&i.Email,
-		&i.Role,
-		&i.Status,
-		&i.InvitedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const acceptInvitation = `-- name: AcceptInvitation :one
-UPDATE organizations.invitations
-SET status = 'accepted', updated_at = now()
-WHERE id = $1 AND status = 'pending'
-RETURNING id, organization_id, email, role, status, invited_by, created_at, updated_at
-`
-
-// Marks the invitation accepted. Called in the same transaction as the
-// membership insert (api/invitations.go acceptPendingInvitation) so an
-// invitation is never left pending after its membership exists, or vice
-// versa (mirrors CreateOrganization+CreateMembership's D-3 atomicity).
-func (q *Queries) AcceptInvitation(ctx context.Context, id pgtype.UUID) (OrganizationsInvitation, error) {
-	row := q.db.QueryRow(ctx, acceptInvitation, id)
 	var i OrganizationsInvitation
 	err := row.Scan(
 		&i.ID,

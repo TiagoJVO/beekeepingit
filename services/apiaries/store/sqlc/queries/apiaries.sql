@@ -1,7 +1,8 @@
 -- name: ListApiaries :many
 -- Org-scoped, live-row keyset page ordered by id (UUIDv7 ⇒ chronological).
 -- Pass a null cursor for the first page; fetch limit+1 to detect a next page.
-SELECT id, organization_id, name, hive_count, created_at, updated_at
+SELECT id, organization_id, name, hive_count, created_at, updated_at,
+       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1
   AND deleted_at IS NULL
@@ -10,25 +11,71 @@ ORDER BY id
 LIMIT $2;
 
 -- name: GetApiary :one
-SELECT id, organization_id, name, hive_count, created_at, updated_at
+SELECT id, organization_id, name, hive_count, created_at, updated_at,
+       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 
 -- name: GetApiaryForUpdate :one
--- Locks the row (or reports its absence) for the LWW apply transaction.
-SELECT id, organization_id, name, hive_count, created_at, updated_at, deleted_at
+-- Locks the row (or reports its absence) for the LWW apply / REST
+-- create-or-update transaction.
+SELECT id, organization_id, name, hive_count, created_at, updated_at, deleted_at,
+       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2
 FOR UPDATE;
 
 -- name: InsertApiary :exec
+-- Sync-apply create (no location — the sync wire shape carries only
+-- name/hive_count, sync.go's apiaryData). REST create uses InsertApiaryWithLocation.
 INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, updated_at, deleted_at)
 VALUES ($1, $2, $3, $4, $5, $6);
 
+-- name: InsertApiaryWithLocation :one
+-- REST create (POST /v1/apiaries, #31): full row including the optional
+-- GeoJSON location. sqlc.narg('lon')/sqlc.narg('lat') are both-or-neither —
+-- callers pass either both valid or both NULL (api/apiaries.go's toPoint).
+INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, updated_at, location)
+VALUES (
+    $1, $2, $3, $4, $5,
+    CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
+         ELSE ST_SetSRID(ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
+    END
+)
+RETURNING id, organization_id, name, hive_count, created_at, updated_at,
+          COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson;
+
 -- name: UpdateApiary :exec
+-- Sync-apply update (name/hive_count/tombstone only — location is not part
+-- of the sync wire shape yet). REST update uses UpdateApiaryWithLocation.
 UPDATE apiaries.apiaries
 SET name = $3, hive_count = $4, updated_at = $5, deleted_at = $6, recorded_at = now()
 WHERE organization_id = $1 AND id = $2;
+
+-- name: UpdateApiaryWithLocation :one
+-- REST update (PATCH /v1/apiaries/{id}, #31): the caller computes the full
+-- desired row first (matching sync.go's mergeOp pattern), so this always
+-- sets every mutable column.
+UPDATE apiaries.apiaries
+SET name = $3,
+    hive_count = $4,
+    updated_at = $5,
+    location = CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
+                     ELSE ST_SetSRID(ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
+               END,
+    recorded_at = now()
+WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
+RETURNING id, organization_id, name, hive_count, created_at, updated_at,
+          COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson;
+
+-- name: SoftDeleteApiary :execrows
+-- REST delete (DELETE /v1/apiaries/{id}, #31): tombstone, matching the sync
+-- path's deleted_at convention so the delete propagates to devices
+-- (data-model.md). :execrows so the caller can distinguish "already gone"
+-- (0 rows) from success without a separate SELECT.
+UPDATE apiaries.apiaries
+SET deleted_at = $3, updated_at = $3, recorded_at = now()
+WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 
 -- name: InsertConflict :exec
 INSERT INTO apiaries.sync_conflict_log
@@ -52,3 +99,34 @@ SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, 
 FROM apiaries.audit_log
 WHERE organization_id = $1 AND entity_type = $2 AND entity_id = $3
 ORDER BY recorded_at, id;
+
+-- name: ListEntityTimeline :many
+-- The combined per-entity timeline (#61 AC, history.md §6): UNIONs
+-- apiaries.audit_log (applied create/update/delete rows, event_kind =
+-- change_type) with apiaries.sync_conflict_log (LWW-loss rows, event_kind
+-- hardcoded 'superseded' — mirrors history.EventSuperseded — history.md §6
+-- "LWW losers... surfaced as a superseded timeline event, not silently
+-- overwritten"), ordered chronologically. change carries the audit delta for
+-- audit_log rows and the {winning_payload, losing_payload, winner} conflict
+-- payload for sync_conflict_log rows — the two tables' change shapes differ
+-- by design (§3 vs §4.2), so callers branch on event_kind to interpret it.
+-- Like ListAuditLog, not yet exposed via HTTP — typed groundwork for the
+-- entity-detail "history" screen (history.md §8/§10).
+SELECT timeline.id, timeline.organization_id, timeline.entity_type, timeline.entity_id,
+       timeline.event_kind, timeline.actor_user_id, timeline.occurred_at, timeline.recorded_at,
+       timeline.changed_fields, timeline.change
+FROM (
+    SELECT al.id, al.organization_id, al.entity_type, al.entity_id, al.change_type AS event_kind,
+           al.actor_user_id, al.occurred_at, al.recorded_at, al.changed_fields, al.change
+    FROM apiaries.audit_log al
+    WHERE al.organization_id = $1 AND al.entity_type = $2 AND al.entity_id = $3
+
+    UNION ALL
+
+    SELECT scl.id, scl.organization_id, scl.entity_type, scl.entity_id, 'superseded' AS event_kind,
+           scl.actor_user_id, scl.occurred_at, scl.recorded_at, NULL::text[] AS changed_fields,
+           jsonb_build_object('winning_payload', scl.winning_payload, 'losing_payload', scl.losing_payload, 'winner', scl.winner) AS change
+    FROM apiaries.sync_conflict_log scl
+    WHERE scl.organization_id = $1 AND scl.entity_type = $2 AND scl.entity_id = $3
+) timeline
+ORDER BY timeline.recorded_at, timeline.id;

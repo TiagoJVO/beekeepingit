@@ -12,7 +12,8 @@ import (
 )
 
 const getApiary = `-- name: GetApiary :one
-SELECT id, organization_id, name, hive_count, created_at, updated_at
+SELECT id, organization_id, name, hive_count, created_at, updated_at,
+       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 `
@@ -23,12 +24,13 @@ type GetApiaryParams struct {
 }
 
 type GetApiaryRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	OrganizationID pgtype.UUID        `json:"organization_id"`
-	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	Name            string             `json:"name"`
+	HiveCount       int32              `json:"hive_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	LocationGeojson string             `json:"location_geojson"`
 }
 
 func (q *Queries) GetApiary(ctx context.Context, arg GetApiaryParams) (GetApiaryRow, error) {
@@ -41,12 +43,14 @@ func (q *Queries) GetApiary(ctx context.Context, arg GetApiaryParams) (GetApiary
 		&i.HiveCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LocationGeojson,
 	)
 	return i, err
 }
 
 const getApiaryForUpdate = `-- name: GetApiaryForUpdate :one
-SELECT id, organization_id, name, hive_count, created_at, updated_at, deleted_at
+SELECT id, organization_id, name, hive_count, created_at, updated_at, deleted_at,
+       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2
 FOR UPDATE
@@ -58,16 +62,18 @@ type GetApiaryForUpdateParams struct {
 }
 
 type GetApiaryForUpdateRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	OrganizationID pgtype.UUID        `json:"organization_id"`
-	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	Name            string             `json:"name"`
+	HiveCount       int32              `json:"hive_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	LocationGeojson string             `json:"location_geojson"`
 }
 
-// Locks the row (or reports its absence) for the LWW apply transaction.
+// Locks the row (or reports its absence) for the LWW apply / REST
+// create-or-update transaction.
 func (q *Queries) GetApiaryForUpdate(ctx context.Context, arg GetApiaryForUpdateParams) (GetApiaryForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getApiaryForUpdate, arg.OrganizationID, arg.ID)
 	var i GetApiaryForUpdateRow
@@ -79,6 +85,7 @@ func (q *Queries) GetApiaryForUpdate(ctx context.Context, arg GetApiaryForUpdate
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.LocationGeojson,
 	)
 	return i, err
 }
@@ -97,6 +104,8 @@ type InsertApiaryParams struct {
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
+// Sync-apply create (no location — the sync wire shape carries only
+// name/hive_count, sync.go's apiaryData). REST create uses InsertApiaryWithLocation.
 func (q *Queries) InsertApiary(ctx context.Context, arg InsertApiaryParams) error {
 	_, err := q.db.Exec(ctx, insertApiary,
 		arg.ID,
@@ -107,6 +116,64 @@ func (q *Queries) InsertApiary(ctx context.Context, arg InsertApiaryParams) erro
 		arg.DeletedAt,
 	)
 	return err
+}
+
+const insertApiaryWithLocation = `-- name: InsertApiaryWithLocation :one
+INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, updated_at, location)
+VALUES (
+    $1, $2, $3, $4, $5,
+    CASE WHEN $6::double precision IS NULL THEN NULL
+         ELSE ST_SetSRID(ST_MakePoint($6::double precision, $7::double precision), 4326)::public.geography
+    END
+)
+RETURNING id, organization_id, name, hive_count, created_at, updated_at,
+          COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
+`
+
+type InsertApiaryWithLocationParams struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	Name           string             `json:"name"`
+	HiveCount      int32              `json:"hive_count"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	Lon            pgtype.Float8      `json:"lon"`
+	Lat            pgtype.Float8      `json:"lat"`
+}
+
+type InsertApiaryWithLocationRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	Name            string             `json:"name"`
+	HiveCount       int32              `json:"hive_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	LocationGeojson string             `json:"location_geojson"`
+}
+
+// REST create (POST /v1/apiaries, #31): full row including the optional
+// GeoJSON location. sqlc.narg('lon')/sqlc.narg('lat') are both-or-neither —
+// callers pass either both valid or both NULL (api/apiaries.go's toPoint).
+func (q *Queries) InsertApiaryWithLocation(ctx context.Context, arg InsertApiaryWithLocationParams) (InsertApiaryWithLocationRow, error) {
+	row := q.db.QueryRow(ctx, insertApiaryWithLocation,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Name,
+		arg.HiveCount,
+		arg.UpdatedAt,
+		arg.Lon,
+		arg.Lat,
+	)
+	var i InsertApiaryWithLocationRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.HiveCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LocationGeojson,
+	)
+	return i, err
 }
 
 const insertAuditLog = `-- name: InsertAuditLog :exec
@@ -179,7 +246,8 @@ func (q *Queries) InsertConflict(ctx context.Context, arg InsertConflictParams) 
 }
 
 const listApiaries = `-- name: ListApiaries :many
-SELECT id, organization_id, name, hive_count, created_at, updated_at
+SELECT id, organization_id, name, hive_count, created_at, updated_at,
+       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1
   AND deleted_at IS NULL
@@ -195,12 +263,13 @@ type ListApiariesParams struct {
 }
 
 type ListApiariesRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	OrganizationID pgtype.UUID        `json:"organization_id"`
-	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	Name            string             `json:"name"`
+	HiveCount       int32              `json:"hive_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	LocationGeojson string             `json:"location_geojson"`
 }
 
 // Org-scoped, live-row keyset page ordered by id (UUIDv7 ⇒ chronological).
@@ -221,6 +290,7 @@ func (q *Queries) ListApiaries(ctx context.Context, arg ListApiariesParams) ([]L
 			&i.HiveCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LocationGeojson,
 		); err != nil {
 			return nil, err
 		}
@@ -280,6 +350,112 @@ func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]A
 	return items, nil
 }
 
+const listEntityTimeline = `-- name: ListEntityTimeline :many
+SELECT timeline.id, timeline.organization_id, timeline.entity_type, timeline.entity_id,
+       timeline.event_kind, timeline.actor_user_id, timeline.occurred_at, timeline.recorded_at,
+       timeline.changed_fields, timeline.change
+FROM (
+    SELECT al.id, al.organization_id, al.entity_type, al.entity_id, al.change_type AS event_kind,
+           al.actor_user_id, al.occurred_at, al.recorded_at, al.changed_fields, al.change
+    FROM apiaries.audit_log al
+    WHERE al.organization_id = $1 AND al.entity_type = $2 AND al.entity_id = $3
+
+    UNION ALL
+
+    SELECT scl.id, scl.organization_id, scl.entity_type, scl.entity_id, 'superseded' AS event_kind,
+           scl.actor_user_id, scl.occurred_at, scl.recorded_at, NULL::text[] AS changed_fields,
+           jsonb_build_object('winning_payload', scl.winning_payload, 'losing_payload', scl.losing_payload, 'winner', scl.winner) AS change
+    FROM apiaries.sync_conflict_log scl
+    WHERE scl.organization_id = $1 AND scl.entity_type = $2 AND scl.entity_id = $3
+) timeline
+ORDER BY timeline.recorded_at, timeline.id
+`
+
+type ListEntityTimelineParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	EntityType     string      `json:"entity_type"`
+	EntityID       pgtype.UUID `json:"entity_id"`
+}
+
+type ListEntityTimelineRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	EventKind      string             `json:"event_kind"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
+}
+
+// The combined per-entity timeline (#61 AC, history.md §6): UNIONs
+// apiaries.audit_log (applied create/update/delete rows, event_kind =
+// change_type) with apiaries.sync_conflict_log (LWW-loss rows, event_kind
+// hardcoded 'superseded' — mirrors history.EventSuperseded — history.md §6
+// "LWW losers... surfaced as a superseded timeline event, not silently
+// overwritten"), ordered chronologically. change carries the audit delta for
+// audit_log rows and the {winning_payload, losing_payload, winner} conflict
+// payload for sync_conflict_log rows — the two tables' change shapes differ
+// by design (§3 vs §4.2), so callers branch on event_kind to interpret it.
+// Like ListAuditLog, not yet exposed via HTTP — typed groundwork for the
+// entity-detail "history" screen (history.md §8/§10).
+func (q *Queries) ListEntityTimeline(ctx context.Context, arg ListEntityTimelineParams) ([]ListEntityTimelineRow, error) {
+	rows, err := q.db.Query(ctx, listEntityTimeline, arg.OrganizationID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityTimelineRow
+	for rows.Next() {
+		var i ListEntityTimelineRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.EventKind,
+			&i.ActorUserID,
+			&i.OccurredAt,
+			&i.RecordedAt,
+			&i.ChangedFields,
+			&i.Change,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const softDeleteApiary = `-- name: SoftDeleteApiary :execrows
+UPDATE apiaries.apiaries
+SET deleted_at = $3, updated_at = $3, recorded_at = now()
+WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
+`
+
+type SoftDeleteApiaryParams struct {
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ID             pgtype.UUID        `json:"id"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// REST delete (DELETE /v1/apiaries/{id}, #31): tombstone, matching the sync
+// path's deleted_at convention so the delete propagates to devices
+// (data-model.md). :execrows so the caller can distinguish "already gone"
+// (0 rows) from success without a separate SELECT.
+func (q *Queries) SoftDeleteApiary(ctx context.Context, arg SoftDeleteApiaryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteApiary, arg.OrganizationID, arg.ID, arg.DeletedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateApiary = `-- name: UpdateApiary :exec
 UPDATE apiaries.apiaries
 SET name = $3, hive_count = $4, updated_at = $5, deleted_at = $6, recorded_at = now()
@@ -295,6 +471,8 @@ type UpdateApiaryParams struct {
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
+// Sync-apply update (name/hive_count/tombstone only — location is not part
+// of the sync wire shape yet). REST update uses UpdateApiaryWithLocation.
 func (q *Queries) UpdateApiary(ctx context.Context, arg UpdateApiaryParams) error {
 	_, err := q.db.Exec(ctx, updateApiary,
 		arg.OrganizationID,
@@ -305,4 +483,64 @@ func (q *Queries) UpdateApiary(ctx context.Context, arg UpdateApiaryParams) erro
 		arg.DeletedAt,
 	)
 	return err
+}
+
+const updateApiaryWithLocation = `-- name: UpdateApiaryWithLocation :one
+UPDATE apiaries.apiaries
+SET name = $3,
+    hive_count = $4,
+    updated_at = $5,
+    location = CASE WHEN $6::double precision IS NULL THEN NULL
+                     ELSE ST_SetSRID(ST_MakePoint($6::double precision, $7::double precision), 4326)::public.geography
+               END,
+    recorded_at = now()
+WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
+RETURNING id, organization_id, name, hive_count, created_at, updated_at,
+          COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
+`
+
+type UpdateApiaryWithLocationParams struct {
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ID             pgtype.UUID        `json:"id"`
+	Name           string             `json:"name"`
+	HiveCount      int32              `json:"hive_count"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	Lon            pgtype.Float8      `json:"lon"`
+	Lat            pgtype.Float8      `json:"lat"`
+}
+
+type UpdateApiaryWithLocationRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	OrganizationID  pgtype.UUID        `json:"organization_id"`
+	Name            string             `json:"name"`
+	HiveCount       int32              `json:"hive_count"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	LocationGeojson string             `json:"location_geojson"`
+}
+
+// REST update (PATCH /v1/apiaries/{id}, #31): the caller computes the full
+// desired row first (matching sync.go's mergeOp pattern), so this always
+// sets every mutable column.
+func (q *Queries) UpdateApiaryWithLocation(ctx context.Context, arg UpdateApiaryWithLocationParams) (UpdateApiaryWithLocationRow, error) {
+	row := q.db.QueryRow(ctx, updateApiaryWithLocation,
+		arg.OrganizationID,
+		arg.ID,
+		arg.Name,
+		arg.HiveCount,
+		arg.UpdatedAt,
+		arg.Lon,
+		arg.Lat,
+	)
+	var i UpdateApiaryWithLocationRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.HiveCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LocationGeojson,
+	)
+	return i, err
 }

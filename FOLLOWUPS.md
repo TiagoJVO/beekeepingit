@@ -9,37 +9,33 @@
 
 ---
 
-## App shell IA (`feat/EPIC-11-app-shell-ia`, #197, FR-UX-2) — before-merge notes
+## Apiary CRUD PostGIS bug (`fix/apiaries-geography-search-path`, follows #31) — before-merge note
 
-The 5-tab bottom nav + header + contextual FAB + offline banner ship in this branch. Two
-pieces are **stubbed on purpose** and already tracked by an existing issue — no new issue
-needed, just flagging for the next agent who picks up **#58**:
+`services/apiaries/store/migrations/00003_add_apiary_location.sql` (#31, merged) referenced the
+bare `geography` type — resolvable only when `public` is on the connection's search path. Each
+service connects with `search_path` restricted to its own schema (`DB_SEARCH_PATH`), which
+excludes `public` (where `CREATE EXTENSION postgis` installs its types) — so the apiaries
+service crash-loops on startup in any real deployment. Confirmed live against a k3d cluster;
+testcontainers tests pass because their default search path includes `public`, silently masking
+this. Fixed by schema-qualifying every `geography` reference as `public.geography`.
 
-- **Sync-status pill** (`client/lib/shell/sync_status.dart`'s `syncStatusProvider`) is a fixed
-  "online, nothing pending" `Provider`, not wired to PowerSync's real `statusStream`/upload-queue
-  depth. The pill's UI (color/label/tap→`/account`) is real; only the data source is a stub.
-- **Offline banner** reads the same stub, so it never renders in practice yet (hidden whenever
-  `SyncConnectivity.online`). Placement/shell wiring is done; #58 replaces the provider's body.
-
-Also relocated (not scope creep — the apiaries list lost its own `AppBar` to the shell's header,
-so these needed a new home): `manage-members` (#172) and `logout` moved from the apiaries
-app-bar actions to the account screen (`account-manage-members-button`,
-`account-logout-button`), matching the prototype's "Conta" screen.
+**Separately flagged, not fixed here:** the "k3d cluster + helm test" CI workflow only verifies
+Postgres/PostGIS and Authentik readiness — it never checks whether the application pods
+(apiaries/identity/organizations/sync) actually reach `Ready`. That gap is how this shipped
+undetected. Worth a dedicated follow-up (promote to an Issue) to add an application-pod
+readiness check to that workflow; out of scope for this hotfix.
 
 ## Keycloak → Authentik migration — post-merge follow-ups
 
-The migration (contract + ADR-0016 + D-7; WS-A infra, WS-B backend, WS-C client, WS-D docs) ships in
-**#191** — CI-green, including a live Authentik deploy passing the helm-e2e readiness check. Remaining
-coordinator follow-ups (to promote to GitHub Issues, then prune here):
+The migration (contract + ADR-0016 + D-7; WS-A infra, WS-B backend, WS-C client, WS-D docs) shipped in
+**#191** (merged). Remaining coordinator follow-up (to promote to a GitHub Issue, then prune here):
 
-- **Live browser-login re-validation** — stand the full stack up on k3d and drive a real PKCE
-  login/logout against Authentik through the dual-host gateway (`app.` / `auth.`). CI proved deploy
-  health and the OIDC spike proved token → `go-oidc` validation; the full browser round-trip is the
-  last check. WS-A also flagged `offline_access` consent-stage + blueprint `password`/`upn` to confirm
-  live on the pinned version.
 - **Backlog grooming** — rename **#72** (Keycloak → OIDC auth), retarget **#98** / EPIC-14 **#15**
   auth-hardening scope to Authentik (flows/blueprints/secrets), reconcile other open Keycloak-mentioning
   issues.
+
+(Live browser-login re-validation is already tracked as **#193**, opened separately — no longer
+duplicated here.)
 
 ## Milestone/stream regroom (D-14) — follow-ups
 
