@@ -42,6 +42,11 @@ ambiguities flagged inline link to `open-questions.md`.
   and other relevant details.
   - _Resolved (D-2):_ "number of hives" is a **count** on the apiary; hives are
     **not** a separate entity.
+- **FR-AP-8** — An apiary may carry optional **free-text notes**, editable
+  from the apiary form and shown on the detail page. Notes sync offline and
+  are **history-tracked** (FR-HIS) like other apiary edits.
+  - _Prototype:_ Melargil apiary detail (see
+    [`docs/design/prototype.md`](../docs/design/prototype.md)).
 
 ## Activities (FR-AC)
 
@@ -228,6 +233,12 @@ harvest, which requires visiting all apiaries).
 - **FR-UX-1** — All features must use a **user-friendly interface** with clear
   navigation and intuitive controls — **especially field features**, where the
   user has limited time/attention and may be **wearing gloves**.
+- **FR-UX-2** — The client presents a **persistent app shell**: a **bottom
+  navigation** across the primary areas (apiaries, activities, journeys, todos,
+  assistant), a header with the screen title, a **sync-status indicator**, and
+  account access, plus a **contextual quick-add** (FAB) for the active area.
+  - _Prototype:_ Melargil app shell (see
+    [`docs/design/prototype.md`](../docs/design/prototype.md)).
 
 ## Accessibility (FR-AX)
 

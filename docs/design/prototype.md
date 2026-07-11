@@ -115,7 +115,7 @@ remove the `Q-*`).
 
 ## Net-new & refinements this import surfaced
 
-- **Net-new stories:** apiary **notes** (M2, proposed `FR-AP-8`); **app-shell IA** (M2, proposed `FR-UX-1`).
+- **Net-new stories:** apiary **notes** (M2, `FR-AP-8`); **app-shell IA** (M2, `FR-UX-2`, folded into the field-first `FR-UX` track).
 - **Spec refinements** to existing issues (body notes, not new issues): exact per-type activity attributes on `#38`;
   the _média alças/colmeia_ metric on `#49`; auto-sync-on-3G on `#58`/`#81`; notification toggles on `#82`;
   suggested prompts + context scope on `#65`.
