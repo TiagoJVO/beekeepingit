@@ -15,26 +15,35 @@ import (
 // schema-grants-job.yaml set up: an app-owner role (`beekeepingit`) that owns
 // the schema, and a least-privilege per-service runtime login role
 // (`<schema>_svc`) granted only USAGE/CREATE on it — mirroring D-6 "schema
-// per service". superuser is the testcontainers bootstrap role (stands in
-// for whatever bootstraps the cluster; production never needs an actual
-// Postgres superuser for any of this beyond role/db creation, which CNPG's
-// operator already does out of band — see the Helm job's header comment).
+// per service".
 //
-// It also grants beekeepingit PERMANENT plain membership in apiaries_svc —
-// schema-grants-job.yaml's job now does this for every `<schema>_svc` role,
-// right alongside the existing `GRANT USAGE, CREATE ON SCHEMA`. Postgres
-// role membership needs ADMIN OPTION to revoke (confirmed empirically: a
-// bootstrap/superuser-granted plain membership can't be revoked by the
-// grantee itself without it), and CNPG's declarative `managed.roles.inRoles`
-// has no way to request ADMIN OPTION either (only plain GRANT — see
-// cloudnative-pg/cloudnative-pg#10007, an open, unshipped feature request) —
-// so granting once, permanently, via this same Job (which already retries
-// until each `<schema>_svc` role exists) is the only mechanism actually
-// available, and it's provably safe to leave in place: Postgres membership
-// is one-way, so apiaries_svc gains nothing from beekeepingit being its
-// member (see TestAuditImmutability_PermanentMembershipGrantsSvcRoleNothing).
+// superuser is the testcontainers bootstrap role, and it now stands in
+// SPECIFICALLY for CNPG's own operator reconciliation connection (not just
+// generic cluster bring-up) — this is the fix for a real production bug an
+// earlier version of this fixture masked: `beekeepingit`'s membership in
+// each `<schema>_svc` role (needed so it can later `ALTER TABLE ... OWNER
+// TO beekeepingit`) can ONLY be granted by a role with CREATEROLE + ADMIN
+// OPTION on the target role — `beekeepingit` itself (a plain login role)
+// has neither, so a manual `GRANT apiaries_svc TO beekeepingit` run BY
+// beekeepingit fails with a permission error. This was shipped once (a
+// Job running `psql` as `beekeepingit` in a retry loop) and only caught by
+// CI's live k3d/helm-e2e run — the `until ... done` retry loop couldn't
+// distinguish "role not ready yet" from "permanently denied", so it spun
+// until `activeDeadlineSeconds` killed it (helm-e2e run 29146587211). The
+// EARLIER version of this fixture bootstrapped that membership using `su`
+// too, but framed as "any cluster-init superuser, incidental" — which
+// missed that granting ROLE MEMBERSHIP specifically requires privileges
+// `beekeepingit` doesn't have, so the test never exercised (and couldn't
+// have caught) the broken "beekeepingit grants itself membership" path. The
+// production fix moves this into cluster.yaml's declarative
+// `spec.managed.roles` (a `beekeepingit` entry with `inRoles`), which CNPG's
+// own operator reconciles using ITS privileged connection — never
+// `beekeepingit`'s own. TestAuditImmutability_SvcRoleGrantingSelfMembership
+// ToOwnerFails below proves the broken path fails; superuser standing in for
+// CNPG's operator in this fixture is what makes the rest of this file
+// consistent with how production now actually establishes that membership.
 type auditImmutabilityFixture struct {
-	superuser *pgx.Conn // bootstrap-only: creates roles/db, nothing else
+	superuser *pgx.Conn // bootstrap-only: stands in for CNPG's own privileged reconciliation connection — creates roles/db AND grants the beekeepingit/svc-role membership (mirrors managed.roles.inRoles, never a manual GRANT run by beekeepingit itself)
 	owner     *pgx.Conn // beekeepingit: owns the schema, not the table (until locked down)
 	svc       *pgx.Conn // apiaries_svc: creates the table via its "migration", is its owner until locked down
 }
@@ -94,18 +103,25 @@ func newAuditImmutabilityFixture(t *testing.T) *auditImmutabilityFixture {
 
 	su := connect(bootstrapUser, bootstrapPass)
 
-	// The testcontainers bootstrap user (analogous to a one-time cluster-init
-	// superuser, never used again below) creates the two production-shaped,
+	// The testcontainers bootstrap user (standing in for CNPG's own
+	// privileged operator connection, NOT a generic one-off cluster-init
+	// step — see the type comment above) creates the two production-shaped,
 	// NON-superuser roles and hands the schema to the owner role — exactly
 	// cluster.yaml's `CREATE SCHEMA ... AUTHORIZATION beekeepingit` plus
 	// schema-grants-job.yaml's `GRANT USAGE, CREATE ON SCHEMA ... TO
-	// apiaries_svc` + its new permanent `GRANT apiaries_svc TO beekeepingit`.
+	// apiaries_svc`. It does NOT yet grant beekeepingit membership in
+	// apiaries_svc — callers that need that (i.e. everything except
+	// TestAuditImmutability_SvcRoleGrantingSelfMembershipToOwnerFails) call
+	// grantOwnerMembershipInSvcRoleAsIfByCNPGOperator below, which performs
+	// the SAME grant using su (privileged) rather than the owner role
+	// itself, matching how cluster.yaml's `managed.roles` entry for
+	// `beekeepingit` now actually gets this membership in production —
+	// never a manual GRANT run by beekeepingit's own connection.
 	for _, stmt := range []string{
 		`CREATE ROLE ` + auditFixtureOwner + ` WITH LOGIN PASSWORD 'owner_pw'`,
 		`CREATE ROLE ` + auditFixtureSvcRole + ` WITH LOGIN PASSWORD 'svc_pw'`,
 		`CREATE SCHEMA ` + auditFixtureSchema + ` AUTHORIZATION ` + auditFixtureOwner,
 		`GRANT USAGE, CREATE ON SCHEMA ` + auditFixtureSchema + ` TO ` + auditFixtureSvcRole,
-		`GRANT ` + auditFixtureSvcRole + ` TO ` + auditFixtureOwner,
 	} {
 		if _, err := su.Exec(ctx, stmt); err != nil {
 			t.Fatalf("bootstrap (%q): %v", stmt, err)
@@ -116,6 +132,55 @@ func newAuditImmutabilityFixture(t *testing.T) *auditImmutabilityFixture {
 		superuser: su,
 		owner:     connect(auditFixtureOwner, "owner_pw"),
 		svc:       connect(auditFixtureSvcRole, "svc_pw"),
+	}
+}
+
+// grantOwnerMembershipInSvcRoleAsIfByCNPGOperator grants beekeepingit
+// permanent, plain membership in apiaries_svc THE WAY PRODUCTION ACTUALLY
+// DOES IT: via a privileged connection (here, the testcontainers bootstrap
+// role standing in for CNPG's own operator reconciliation — see
+// cluster.yaml's `managed.roles` entry for `beekeepingit`, with `inRoles`),
+// never via beekeepingit's own connection. Postgres requires CREATEROLE +
+// ADMIN OPTION on the target role to grant its membership — beekeepingit
+// (a plain login role) has neither, so this step CANNOT be performed by
+// f.owner; see TestAuditImmutability_SvcRoleGrantingSelfMembershipToOwner
+// Fails for the proof.
+func (f *auditImmutabilityFixture) grantOwnerMembershipInSvcRoleAsIfByCNPGOperator(t *testing.T) {
+	t.Helper()
+	if _, err := f.superuser.Exec(context.Background(), `GRANT `+auditFixtureSvcRole+` TO `+auditFixtureOwner); err != nil {
+		t.Fatalf("GRANT %s TO %s (as the privileged/CNPG-operator-equivalent connection): %v", auditFixtureSvcRole, auditFixtureOwner, err)
+	}
+}
+
+// TestAuditImmutability_SvcRoleGrantingSelfMembershipToOwnerFails is the
+// regression test for a real production bug this PR shipped once already:
+// an earlier version of audit-immutability-job.yaml/schema-grants-job.yaml
+// tried to establish beekeepingit's membership in apiaries_svc with `GRANT
+// apiaries_svc TO beekeepingit` run FROM beekeepingit's OWN connection (the
+// `-app` Secret credential, exactly f.owner here). That shipped, passed this
+// file's OTHER tests (because they all bootstrapped the membership via a
+// superuser and never exercised HOW beekeepingit itself would try to get it),
+// and only failed in CI's live k3d/helm-e2e run: the schema-grants Job's
+// `until psql ... ; do sleep 5; done` retry loop can't distinguish "role not
+// ready yet" from "permanently denied", so `helm upgrade --install` spun
+// until `activeDeadlineSeconds: 300` killed it with DeadlineExceeded
+// (github.com/TiagoJVO/beekeepingit/actions/runs/29146587211).
+//
+// This test proves WHY that failed, directly: Postgres requires CREATEROLE
+// + ADMIN OPTION on apiaries_svc to grant its membership to anyone, and
+// beekeepingit (a plain login role — LOGIN only, per cluster.yaml's
+// `managed.roles` entry) has neither. The fix moves this grant to a
+// connection that DOES have the necessary privileges — CNPG's own operator
+// reconciliation, via cluster.yaml's declarative `managed.roles` `inRoles`
+// field (see grantOwnerMembershipInSvcRoleAsIfByCNPGOperator, which mirrors
+// that by using f.superuser instead of f.owner).
+func TestAuditImmutability_SvcRoleGrantingSelfMembershipToOwnerFails(t *testing.T) {
+	f := newAuditImmutabilityFixture(t)
+
+	_, err := f.owner.Exec(context.Background(), `GRANT `+auditFixtureSvcRole+` TO `+auditFixtureOwner)
+	if err == nil {
+		t.Fatalf("GRANT %s TO %s run BY %s itself: want a permission error (beekeepingit lacks CREATEROLE/ADMIN OPTION on %s), got success — if Postgres now allows this, the whole reason cluster.yaml routes this through CNPG's managed.roles instead of a manual GRANT is stale, re-verify",
+			auditFixtureSvcRole, auditFixtureOwner, auditFixtureOwner, auditFixtureSvcRole)
 	}
 }
 
@@ -273,6 +338,7 @@ func lockDownHistoryTable(t *testing.T, owner *pgx.Conn, schema, svcRole, table 
 func TestAuditImmutability_OwnershipTransferBlocksUpdateDeleteTruncate(t *testing.T) {
 	f := newAuditImmutabilityFixture(t)
 	f.createAuditLogAsService(t)
+	f.grantOwnerMembershipInSvcRoleAsIfByCNPGOperator(t)
 	ctx := context.Background()
 
 	if owner := f.tableOwner(t, "audit_log"); owner != auditFixtureSvcRole {
@@ -316,6 +382,7 @@ func TestAuditImmutability_OwnershipTransferBlocksUpdateDeleteTruncate(t *testin
 // needs and gets the identical lock-down.
 func TestAuditImmutability_SyncConflictLogGetsTheSameTreatment(t *testing.T) {
 	f := newAuditImmutabilityFixture(t)
+	f.grantOwnerMembershipInSvcRoleAsIfByCNPGOperator(t)
 	ctx := context.Background()
 	if _, err := f.svc.Exec(ctx, `CREATE TABLE `+auditFixtureSchema+`.sync_conflict_log (
 		id UUID PRIMARY KEY,
@@ -345,6 +412,7 @@ func TestAuditImmutability_SyncConflictLogGetsTheSameTreatment(t *testing.T) {
 // combined with the ALTER/GRANT).
 func TestAuditImmutability_PermanentMembershipGrantsSvcRoleNothing(t *testing.T) {
 	f := newAuditImmutabilityFixture(t)
+	f.grantOwnerMembershipInSvcRoleAsIfByCNPGOperator(t)
 	ctx := context.Background()
 
 	// A table beekeepingit owns directly (never touched by apiaries_svc at
@@ -374,6 +442,7 @@ func TestAuditImmutability_PermanentMembershipGrantsSvcRoleNothing(t *testing.T)
 func TestAuditImmutability_LockDownIsIdempotent(t *testing.T) {
 	f := newAuditImmutabilityFixture(t)
 	f.createAuditLogAsService(t)
+	f.grantOwnerMembershipInSvcRoleAsIfByCNPGOperator(t)
 
 	lockDownHistoryTable(t, f.owner, auditFixtureSchema, auditFixtureSvcRole, "audit_log")
 	lockDownHistoryTable(t, f.owner, auditFixtureSchema, auditFixtureSvcRole, "audit_log")

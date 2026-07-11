@@ -17,22 +17,23 @@ PowerSync's rollout genuinely blocks on (infra/README.md step 4/7).
 
 That other Job needs `beekeepingit` to act with each `<schema>_svc` role's
 own privileges (the only way a non-superuser can `ALTER TABLE ... OWNER TO`
-a table it doesn't yet own) — so THIS job also grants `beekeepingit`
-permanent, plain (non-admin) membership in every `<schema>_svc` role, right
-alongside the existing schema-level grant below. This is the REVERSE
-direction of D-6's schema ownership (beekeepingit owns the schema;
-`<schema>_svc` is only ever granted USAGE/CREATE on it, never membership in
-beekeepingit) and is one-way in Postgres — `<schema>_svc` gains nothing from
-beekeepingit being its member, proven in
-services/shared/dbaccess/audit_immutability_test.go. It's granted PLAIN
-(not WITH ADMIN OPTION) because plain membership is all `ALTER TABLE OWNER
-TO`/GRANT need (verified empirically); ADMIN OPTION would let beekeepingit
-re-delegate membership in `<schema>_svc` to other roles too, which nothing
-here needs. It's left in place permanently (not granted-then-revoked around
-each use) because: (a) revoking a role's OWN plain membership requires ADMIN
-OPTION anyway — a bootstrap role never has by default in PG16, forcing an
-extra privileged step for zero security benefit, since (b) the grant is
-already one-way and inert for `<schema>_svc`.
+a table it doesn't yet own) — its membership in every `<schema>_svc` role is
+granted DECLARATIVELY in cluster.yaml's `managed.roles` (an entry for
+`beekeepingit` itself, with `inRoles`), not by a manual GRANT run from this
+Job. A manual `GRANT <schema>_svc TO beekeepingit` executed BY beekeepingit
+does NOT work — confirmed the hard way (CI's live k3d/helm-e2e run failed
+with the schema-grants Job spinning its retry loop until
+`activeDeadlineSeconds` killed it): Postgres requires CREATEROLE + ADMIN
+OPTION on the target role to grant its membership, which beekeepingit (a
+plain login role, not superuser) has neither of, so every attempt returned a
+permission error indistinguishable (to the `until ... done` retry loop) from
+"role not ready yet" — it retried a permanent failure until the deadline. Only
+CNPG's own operator reconciliation connection is privileged enough to grant
+role membership unconditionally, which is why this now goes through
+`managed.roles` instead — see cluster.yaml's comment on the `beekeepingit`
+entry for the full mechanism and services/shared/dbaccess/
+audit_immutability_test.go for the testcontainers proof of the ALTER/GRANT
+sequence that membership then enables.
 */}}
 {{- if .Values.enabled }}
 apiVersion: batch/v1
@@ -80,17 +81,8 @@ spec:
             - -c
             - |
               set -eu
-              # #62 (history.md §7.1): each `GRANT <schema>_svc TO
-              # beekeepingit` below is the permanent, one-way membership
-              # grant audit-immutability-job.yaml needs to move ownership of
-              # <schema>.audit_log/sync_conflict_log off <schema>_svc — see
-              # this file's header comment for the full why.
               {{- range .Values.schemas }}
               until psql -v ON_ERROR_STOP=1 -c "GRANT USAGE, CREATE ON SCHEMA {{ . }} TO {{ . }}_svc;"; do
-                echo "role {{ . }}_svc not ready yet, retrying in 5s..."
-                sleep 5
-              done
-              until psql -v ON_ERROR_STOP=1 -c "GRANT {{ . }}_svc TO beekeepingit;"; do
                 echo "role {{ . }}_svc not ready yet, retrying in 5s..."
                 sleep 5
               done

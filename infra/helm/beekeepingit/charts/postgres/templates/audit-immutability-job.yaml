@@ -22,14 +22,27 @@ ALTER-OWNER dance below, green with it.
 The only durable fix is to move ownership OFF the runtime role entirely, so
 "the service role" and "the table owner" are different roles:
 
-  1. schema-grants-job.yaml (an earlier hook-weight, so it's guaranteed to
-     have already run — Helm executes hooks of the same event sequentially by
-     weight, waiting for each to complete) permanently grants `beekeepingit`
-     PLAIN membership in every `<schema>_svc` role — see that file's header
-     comment for the direction/why-plain/why-permanent reasoning. That
+  1. cluster.yaml's `spec.managed.roles` declares a `beekeepingit` entry with
+     `inRoles: [<schema>_svc, ...]` — CNPG's operator reconciles this using
+     ITS OWN privileged connection, granting `beekeepingit` PLAIN membership
+     in every `<schema>_svc` role. This is NOT a manual `GRANT <schema>_svc
+     TO beekeepingit` run from a Job connecting as `beekeepingit` itself —
+     that was tried first and confirmed broken (Postgres requires CREATEROLE
+     + ADMIN OPTION on the target role to grant its membership, which
+     `beekeepingit`, a plain login role, has neither of; it shipped once and
+     only failed in CI's live k3d/helm-e2e run, spinning the naive
+     `until ... done` retry loop until `activeDeadlineSeconds` killed it —
+     see cluster.yaml's `beekeepingit` entry for the full incident note).
+     CNPG's operator reconciliation is the only connection privileged enough
+     to grant role membership unconditionally — exactly why `powersync`'s
+     `inRoles` (right below the `beekeepingit` entry in cluster.yaml) already
+     used this same declarative mechanism, not a manual GRANT either. That
      membership means beekeepingit already INHERITS `<schema>_svc`'s
-     privileges by the time THIS job runs — no GRANT/REVOKE of membership
-     needed here, only the two SQL statements below.
+     privileges by the time THIS job runs (reconciled before this job's
+     hook-weight, since cluster.yaml's managed.roles is reconciled
+     continuously by the operator, well ahead of any post-install hook) — no
+     GRANT/REVOKE of membership needed here, only the two SQL statements
+     below.
   2. As beekeepingit (already inheriting `<schema>_svc`'s rights): `ALTER
      TABLE <schema>.audit_log OWNER TO beekeepingit;` then `GRANT INSERT,
      SELECT ON <schema>.audit_log TO <schema>_svc;` — re-granting only the
@@ -52,28 +65,28 @@ dead end — "a separate, privileged maintenance role, not the service role"
 (history.md §7.1) is exactly what it now is for these two tables.
 
 Generic across every service (loops `.Values.schemas`, same list
-schema-grants-job.yaml uses) so identity/organizations/... (#165, landing the
-same wave) get identical treatment the moment their own audit_log/
-sync_conflict_log migrations land — no per-service duplication needed here.
+schema-grants-job.yaml AND cluster.yaml's `beekeepingit` inRoles use) so
+identity/organizations/... (#165, landing the same wave) get identical
+treatment the moment their own audit_log/sync_conflict_log migrations land —
+no per-service duplication needed here.
 
-Deliberately a SEPARATE Job from schema-grants-job.yaml (not folded into it,
-beyond the one shared GRANT it now also performs): that job's role/schema
-grants gate PowerSync's rollout (infra/README.md step 4/7) and must stay
-fast/predictable. This job waits on each service's own migration, which runs
-on POD STARTUP (see above) — something this install/upgrade doesn't directly
-sequence — so it needs a much longer, best-effort retry budget and must
-never block or fail the install over a table that legitimately doesn't exist
-yet (a schema whose owning service hasn't shipped audit_log yet, or never
-will — e.g. `ai` per history.md §9 "records no domain history"). It re-runs
-on every post-install/post-upgrade (this chart's `helm upgrade` cadence,
-ADR-0009) and is idempotent (skips tables already owned by beekeepingit), so
-a table created by a service pod that starts after this Job's polling window
-closes is simply picked up on the NEXT upgrade — not a silent permanent gap,
-since Flux/CI re-runs this chart regularly. If that residual first-deploy
-race ever needs closing tighter (e.g. a genuinely one-shot environment that
-never gets a second upgrade), the fix is to trigger this Job from service
-rollout completion instead of a Helm hook — tracked as a follow-up if/when
-it's needed, not built here.
+Deliberately a SEPARATE Job from schema-grants-job.yaml: that job's role/
+schema grants gate PowerSync's rollout (infra/README.md step 4/7) and must
+stay fast/predictable. This job waits on each service's own migration, which
+runs on POD STARTUP (see above) — something this install/upgrade doesn't
+directly sequence — so it needs a much longer, best-effort retry budget and
+must never block or fail the install over a table that legitimately doesn't
+exist yet (a schema whose owning service hasn't shipped audit_log yet, or
+never will — e.g. `ai` per history.md §9 "records no domain history"). It
+re-runs on every post-install/post-upgrade (this chart's `helm upgrade`
+cadence, ADR-0009) and is idempotent (skips tables already owned by
+beekeepingit), so a table created by a service pod that starts after this
+Job's polling window closes is simply picked up on the NEXT upgrade — not a
+silent permanent gap, since Flux/CI re-runs this chart regularly. If that
+residual first-deploy race ever needs closing tighter (e.g. a genuinely
+one-shot environment that never gets a second upgrade), the fix is to
+trigger this Job from service rollout completion instead of a Helm hook —
+tracked as a follow-up if/when it's needed, not built here.
 */}}
 {{- if .Values.enabled }}
 apiVersion: batch/v1
@@ -129,11 +142,12 @@ spec:
               # Locks down one history table for one service schema (history.md
               # §7.1): moves ownership from <schema>_svc to beekeepingit, then
               # grants back only INSERT/SELECT. Relies on beekeepingit already
-              # having plain membership in <schema>_svc (granted permanently
-              # by the earlier-weight schema-grants Job — see this file's
-              # header comment). Idempotent (checks current owner first) and
-              # self-contained per (schema, table) pair, so one schema/table
-              # that never shows up doesn't block the rest.
+              # having plain membership in <schema>_svc (reconciled by CNPG's
+              # own operator from cluster.yaml's declarative `managed.roles`
+              # `beekeepingit` entry — see this file's header comment).
+              # Idempotent (checks current owner first) and self-contained
+              # per (schema, table) pair, so one schema/table that never
+              # shows up doesn't block the rest.
               lock_down_history_table() {
                 schema="$1"
                 table="$2"
@@ -153,10 +167,10 @@ spec:
                     fi
 
                     # beekeepingit already inherits svc_role's privileges
-                    # (schema-grants-job.yaml's permanent GRANT), so it can
-                    # move ownership off the runtime role directly, then
-                    # grant back only what it needs (INSERT/SELECT, never
-                    # UPDATE/DELETE).
+                    # (cluster.yaml's managed.roles inRoles, reconciled by
+                    # CNPG's operator), so it can move ownership off the
+                    # runtime role directly, then grant back only what it
+                    # needs (INSERT/SELECT, never UPDATE/DELETE).
                     psql -v ON_ERROR_STOP=1 \
                       -c "ALTER TABLE ${schema}.${table} OWNER TO beekeepingit;" \
                       -c "GRANT INSERT, SELECT ON ${schema}.${table} TO ${svc_role};"
