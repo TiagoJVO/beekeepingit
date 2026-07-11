@@ -32,12 +32,16 @@ ambiguities flagged inline link to `open-questions.md`.
   current location (closest first).
 - **FR-AP-3** — **Map view** showing a marker for each apiary's location and a
   marker for the user's current location.
+  - _Resolved (D-16):_ `flutter_map` markers + user location + measure overlay;
+    tile provider/offline-tile caching stays open (narrowed Q-MAP), doesn't block v1.
 - **FR-AP-4** — Users can **switch** between map view and list view; both must be
   available.
 - **FR-AP-5** — Feature to **measure the distance between two apiaries**.
-  - _Open question (Q-DIST):_ straight-line vs. driving distance, and how the two
-    apiaries are selected.
+  - _Resolved (D-15):_ straight-line (haversine), offline, tap-two-pins selection;
+    driving distance deferred.
 - **FR-AP-6** — **Search** apiaries by **name, location, or other attributes**.
+  - _Resolved (D-17):_ client-side, apiaries-only, name + location; extending to
+    other entities deferred.
 - **FR-AP-7** — **Apiary detail page** showing name, location, number of hives,
   and other relevant details.
   - _Resolved (D-2):_ "number of hives" is a **count** on the apiary; hives are

@@ -44,19 +44,15 @@ where there's a sensible one.
   reopen / edit / delete, assignment to a user, and association to an **apiary or
   area** (the AI example "todos pending for the area of apiary X" requires it).
 
-### Q-DIST — Distance measurement semantics
+### Q-MAP — Offline-tile caching strategy & tile provider (narrowed, was: map provider & offline tiles)
 
-- **Affects:** FR-AP-5. Straight-line (works offline) vs. driving distance (needs a
-  routing service, online). How are the two apiaries chosen? Is distance also shown
-  from the user's current location (FR-AP-2 already orders by proximity)?
-- **Recommended default:** straight-line (haversine) offline; optional driving
-  distance when online.
-
-### Q-MAP — Map provider & offline tiles
-
-- **Affects:** FR-AP-3, FR-OF-1. A field-first map that works **offline** needs
-  cached map tiles. Decision: provider (Google Maps, Mapbox, OpenStreetMap/MapLibre)
-  and offline-tile strategy. This has licensing and cost implications.
+- **Affects:** FR-AP-3, FR-OF-1. The map _interaction_ shape (markers, user location, measure
+  overlay) and the base library (`flutter_map` + MapLibre/OSM) are **resolved** — see
+  [D-16](decisions.md#d-16--map-flutter_map-markers--user-location--measure-overlay-tile-provider-deferred).
+  Still open: a field-first map that works **offline** needs **cached map tiles** — which tile
+  _provider_ to use at production traffic (the public OSM/MapLibre demo endpoint isn't meant for
+  that) and the **offline-tile caching strategy** (what to pre-cache, storage budget, refresh).
+  This has licensing and cost implications; does not block M2 (online-only map ships first).
 
 ### Q-IMP — Import semantics
 
@@ -69,11 +65,6 @@ where there's a sensible one.
   system, but none is otherwise specified. What events (todo due, sync results),
   what channel (in-app, push), and does push require a backend service + store
   registration?
-
-### Q-SEARCH — Search scope
-
-- **Affects:** FR-AP-6. Offline or online? Apiaries only, or activities/journeys/
-  todos too? What are the "other attributes"?
 
 ---
 
