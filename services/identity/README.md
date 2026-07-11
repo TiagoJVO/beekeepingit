@@ -23,9 +23,13 @@ sqlc typed queries). Its own Go module, linked through the repo-root `go.work`.
 | `PATCH /v1/profile`                | OIDC JWT | Partially update the caller's own profile (`name`/`email`/`locale`); 422 on invalid fields. Returns the full profile, including derived `profile_complete`. |
 | `GET /healthz`, `GET /readyz`      | none     | Liveness / readiness (readiness pings the DB).                                                                                                              |
 
-History recording (FR-HIS-1) for profile create/update is **not implemented yet** —
-EPIC-07's audit log doesn't exist. Tracked in
-[#165](https://github.com/TiagoJVO/beekeepingit/issues/165); `api/profile.go` marks the seam.
+History recording (FR-HIS-1, [#165](https://github.com/TiagoJVO/beekeepingit/issues/165)):
+profile create-on-first-seen (`GET /v1/profile`) and update (`PATCH /v1/profile`) each write one
+`identity.audit_log` row in the same local transaction as the `identity.users` write
+([docs/architecture/history.md](../../docs/architecture/history.md) §4). Unlike the other
+services' `audit_log`, `organization_id` is nullable and always `NULL` here — `identity.users` is
+a global, non-org-owned entity (history.md §9). Append-only immutability (DB role grants) is out
+of scope here — that's [#62](https://github.com/TiagoJVO/beekeepingit/issues/62).
 
 ## Configuration
 

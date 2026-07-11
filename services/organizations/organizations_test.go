@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/TiagoJVO/beekeepingit/services/organizations/api"
@@ -71,6 +74,7 @@ type orgFixture struct {
 	srv      *servicetemplate.Server
 	idp      *authtest.IDP
 	identity *stubIdentity
+	pool     *pgxpool.Pool
 }
 
 // newOrgFixture wires the service as run() does (minus the internal
@@ -195,7 +199,52 @@ func newOrgFixtureInternal(t *testing.T, users map[string]stubUser, claimsBySub 
 	userResolver := api.NewHTTPUserResolver(identity.srv.URL, nil)
 	srv.Mount("/v1", authnMW(api.PublicRouter(pool, userResolver)))
 
-	return &orgFixture{srv: srv, idp: idp, identity: identity}
+	return &orgFixture{srv: srv, idp: idp, identity: identity, pool: pool}
+}
+
+// auditRow is the subset of organizations.audit_log columns (#165,
+// history.md §3) the history tests assert on — mirrors
+// services/apiaries/main_test.go's own auditRow/auditLogFor.
+type auditRow struct {
+	EntityType    string
+	ChangeType    string
+	ActorUserID   string
+	OccurredAt    time.Time
+	RecordedAt    time.Time
+	ChangedFields []string
+	Change        json.RawMessage
+}
+
+// auditLogFor returns every organizations.audit_log row for one entity,
+// oldest first — the same ordering ListAuditLog uses.
+func (f *orgFixture) auditLogFor(t *testing.T, entityType, entityID string) []auditRow {
+	t.Helper()
+	rows, err := f.pool.Query(context.Background(),
+		`SELECT entity_type, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+		 FROM organizations.audit_log
+		 WHERE entity_type = $1 AND entity_id = $2
+		 ORDER BY recorded_at, id`, entityType, entityID)
+	if err != nil {
+		t.Fatalf("query audit_log: %v", err)
+	}
+	defer rows.Close()
+
+	var out []auditRow
+	for rows.Next() {
+		var (
+			a       auditRow
+			actorID uuid.UUID
+		)
+		if err := rows.Scan(&a.EntityType, &a.ChangeType, &actorID, &a.OccurredAt, &a.RecordedAt, &a.ChangedFields, &a.Change); err != nil {
+			t.Fatalf("scan audit_log row: %v", err)
+		}
+		a.ActorUserID = actorID.String()
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate audit_log: %v", err)
+	}
+	return out
 }
 
 // withEmailClaims wraps authnMW with a layer that overrides the verified
@@ -493,4 +542,146 @@ func TestOrganizations_ResponsesConformToOpenAPIContract(t *testing.T) {
 		t.Fatalf("GET /organizations/%s status = %d, want 200, body = %s", orgID, recByID.Code, recByID.Body.String())
 	}
 	doc.ValidateResponseBody(t, http.MethodGet, "/v1/organizations/"+orgID, http.StatusOK, recByID.Body.Bytes())
+}
+
+// TestCreateOrganization_History_WritesOrgAndMembershipAuditRowsInSameTx is
+// #165's core AC for organization creation: D-3 creates the org and the
+// creator's admin membership in one transaction, and this asserts BOTH now
+// also get their own organizations.audit_log "create" row, mirroring
+// apiaries' #59 TestApiariesSlice_History_CreateUpdateDeleteEachProduceOneAuditRow.
+func TestCreateOrganization_History_WritesOrgAndMembershipAuditRowsInSameTx(t *testing.T) {
+	sub := "e1111111-1111-4111-8111-1111111111e1"
+	userID := "a0000000-0000-7000-8000-0000000000e1"
+	f := newOrgFixture(t, map[string]string{sub: userID})
+	bearer := f.token(t, sub)
+	orgID := "b0000000-0000-7000-8000-0000000000e1"
+	before := time.Now().Add(-time.Second)
+
+	rec := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": orgID, "name": "History Co.", "address": "Serra Norte",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// The organization's own create row.
+	orgRows := f.auditLogFor(t, "organization", orgID)
+	if len(orgRows) != 1 {
+		t.Fatalf("organization audit rows = %d, want 1: %+v", len(orgRows), orgRows)
+	}
+	orgRow := orgRows[0]
+	if orgRow.ChangeType != "create" {
+		t.Fatalf("organization audit change_type = %q, want create", orgRow.ChangeType)
+	}
+	if orgRow.ActorUserID != userID {
+		t.Fatalf("organization audit actor_user_id = %q, want %q", orgRow.ActorUserID, userID)
+	}
+	if orgRow.RecordedAt.Before(before) || orgRow.RecordedAt.After(time.Now().Add(time.Second)) {
+		t.Fatalf("organization audit recorded_at = %v, want close to server now", orgRow.RecordedAt)
+	}
+	if orgRow.ChangedFields != nil {
+		t.Fatalf("organization audit changed_fields = %v, want nil (create carries a baseline)", orgRow.ChangedFields)
+	}
+	var orgChange map[string]any
+	if err := json.Unmarshal(orgRow.Change, &orgChange); err != nil {
+		t.Fatalf("unmarshal organization change: %v", err)
+	}
+	if orgChange["name"] != "History Co." || orgChange["address"] != "Serra Norte" {
+		t.Fatalf("organization change = %+v, want the baseline name/address", orgChange)
+	}
+
+	// The creator's admin membership gets its OWN create row too (a second
+	// entity created in the same D-3 transaction).
+	var org api.OrganizationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &org); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	recMembers := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/members", bearer, nil)
+	var members struct {
+		Data []api.MemberResponse `json:"data"`
+	}
+	if err := json.Unmarshal(recMembers.Body.Bytes(), &members); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(members.Data) != 1 {
+		t.Fatalf("members = %+v, want exactly 1 (the creator)", members.Data)
+	}
+
+	// The membership's audit entity_id isn't returned by any response body,
+	// so query by organization_id+entity_type=membership directly instead of
+	// by a specific entity_id (mirrors the member list's own lack of a
+	// membership id in MemberResponse).
+	var membershipRows []auditRow
+	rows, err := f.pool.Query(context.Background(),
+		`SELECT entity_type, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+		 FROM organizations.audit_log
+		 WHERE organization_id = $1 AND entity_type = 'membership'
+		 ORDER BY recorded_at, id`, orgID)
+	if err != nil {
+		t.Fatalf("query membership audit_log: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			a       auditRow
+			actorID uuid.UUID
+		)
+		if err := rows.Scan(&a.EntityType, &a.ChangeType, &actorID, &a.OccurredAt, &a.RecordedAt, &a.ChangedFields, &a.Change); err != nil {
+			t.Fatalf("scan membership audit row: %v", err)
+		}
+		a.ActorUserID = actorID.String()
+		membershipRows = append(membershipRows, a)
+	}
+	if len(membershipRows) != 1 {
+		t.Fatalf("membership audit rows = %d, want 1: %+v", len(membershipRows), membershipRows)
+	}
+	membershipRow := membershipRows[0]
+	if membershipRow.ChangeType != "create" {
+		t.Fatalf("membership audit change_type = %q, want create", membershipRow.ChangeType)
+	}
+	var membershipChange map[string]any
+	if err := json.Unmarshal(membershipRow.Change, &membershipChange); err != nil {
+		t.Fatalf("unmarshal membership change: %v", err)
+	}
+	if membershipChange["user_id"] != userID || membershipChange["role"] != "admin" || membershipChange["status"] != "active" {
+		t.Fatalf("membership change = %+v, want user_id=%s role=admin status=active", membershipChange, userID)
+	}
+}
+
+// TestCreateOrganization_History_ChangePayloadNeverEmbedsActorPersonalData is
+// #165's pseudonymity contract test (history.md §7.3) for organizations,
+// mirroring apiaries' #59
+// TestApiariesSlice_History_ChangePayloadNeverEmbedsPersonalData: the actor's
+// identity must live solely in actor_user_id, never a denormalized
+// actor_name/email field in the change JSONB.
+func TestCreateOrganization_History_ChangePayloadNeverEmbedsActorPersonalData(t *testing.T) {
+	sub := "e2222222-2222-4222-8222-2222222222e2"
+	userID := "a0000000-0000-7000-8000-0000000000e2"
+	f := newOrgFixture(t, map[string]string{sub: userID})
+	bearer := f.token(t, sub)
+	orgID := "b0000000-0000-7000-8000-0000000000e2"
+
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": orgID, "name": "Pseudonymity Co.",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("POST status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	for _, row := range f.auditLogFor(t, "organization", orgID) {
+		var decoded map[string]any
+		if err := json.Unmarshal(row.Change, &decoded); err != nil {
+			t.Fatalf("change payload is not a JSON object: %s", string(row.Change))
+		}
+		if _, ok := decoded["actor_name"]; ok {
+			t.Fatalf("change payload embeds an actor_name field: %s", string(row.Change))
+		}
+		if _, ok := decoded["actor_email"]; ok {
+			t.Fatalf("change payload embeds an actor_email field: %s", string(row.Change))
+		}
+		if _, ok := decoded["email"]; ok {
+			// organizations have no email field of their own — any "email"
+			// key here would have to be a leaked actor/member address.
+			t.Fatalf("change payload unexpectedly embeds an email field: %s", string(row.Change))
+		}
+	}
 }

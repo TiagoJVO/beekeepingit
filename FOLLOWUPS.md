@@ -9,6 +9,29 @@
 
 ---
 
+## Identity/org history (`feat/EPIC-07-identity-org-history`, #165, FR-HIS-1) — before-merge note
+
+`identity.audit_log` and `organizations.audit_log` (+ wiring into profile create/update, org
+creation, invite/accept/revoke) ship in this branch — all in-transaction with their domain
+writes, reusing `services/shared/history.ComputeChange` per #59's pattern.
+
+**Scoped out, not built:** #165's AC says "removing an org membership... writes a history
+record", but there is **no membership-removal code path anywhere in the codebase** to wire
+history into — `services/organizations/api/memberships.go` only has the internal
+active-membership resolve endpoint; there is no handler, route, or SQL query for removal.
+`organizations.memberships.status` already reserves the `'removed'` value
+(`store/migrations/00001_create_organizations.sql`) and `ListMembers` already excludes it, but
+both are explicitly noted as "future-proofed, not built" — consistent with the organizations
+README's existing "Member removal... are not built — D-3 and FR-ONB-3 both flag these as
+still-open detail." Building a removal endpoint was out of this issue's scope (it owns wiring
+history into existing seams, not implementing new domain functionality). When member removal
+is built (tracked under D-3/FR-ONB-3, no dedicated issue number yet — check the EPIC-01 #2
+sub-issues or file one), it should write its own `organizations.audit_log` row
+(`entity_type = 'membership'`, `change_type = 'update'`, status `active` → `removed`) using the
+same `writeAuditLog` helper in `services/organizations/api/audit.go` this branch adds.
+
+---
+
 ## Offline sync + history (`feat/EPIC-07-offline-sync-history`, #61, FR-HIS-1/FR-OF-1) — before-merge notes
 
 Builds the gaps #59 (merged, #202) left open: `apiaries.audit_log` + `apiaries.sync_conflict_log`

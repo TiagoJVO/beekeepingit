@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/TiagoJVO/beekeepingit/services/organizations/api"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/contracttest"
@@ -405,4 +408,245 @@ func TestInvitations_ResponsesConformToOpenAPIContract(t *testing.T) {
 		t.Fatalf("list members status = %d, want 200, body = %s", recMembers.Code, recMembers.Body.String())
 	}
 	doc.ValidateResponseBody(t, http.MethodGet, "/v1/organizations/"+orgID+"/members", http.StatusOK, recMembers.Body.Bytes())
+}
+
+// TestInvitations_History_InviteAcceptEachWriteOneAuditRow is #165's core AC
+// for invitations: inviting, accepting (auto-join on login) each write
+// exactly one organizations.audit_log row for the invitation entity, and
+// acceptance additionally writes the new membership's own create row —
+// mirroring apiaries' #59
+// TestApiariesSlice_History_CreateUpdateDeleteEachProduceOneAuditRow.
+func TestInvitations_History_InviteAcceptEachWriteOneAuditRow(t *testing.T) {
+	adminSub := "e7777777-1111-4777-8777-1111111117e7"
+	adminUserID := "a0000000-0000-7000-8000-0000000007e7"
+	inviteeSub := "e8888888-2222-4888-8888-2222222228e8"
+	inviteeUserID := "a0000000-0000-7000-8000-0000000008e8"
+	inviteeEmail := "history-invitee@example.com"
+
+	f := newOrgFixtureWithEmailClaims(t,
+		map[string]stubUser{
+			adminSub:   {UserID: adminUserID},
+			inviteeSub: {UserID: inviteeUserID, Email: inviteeEmail},
+		},
+		map[string]tokenClaim{
+			inviteeSub: {Email: inviteeEmail, EmailVerified: true},
+		},
+	)
+	adminBearer := f.token(t, adminSub)
+	inviteeBearer := f.token(t, inviteeSub)
+
+	orgID := "b0000000-0000-7000-8000-0000000007e7"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{
+		"id": orgID, "name": "History Invite Co.",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	recInvite := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{
+		"email": inviteeEmail, "role": "user",
+	})
+	if recInvite.Code != http.StatusCreated {
+		t.Fatalf("invite status = %d, want 201, body = %s", recInvite.Code, recInvite.Body.String())
+	}
+	var invitation api.InvitationResponse
+	if err := json.Unmarshal(recInvite.Body.Bytes(), &invitation); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	// The invite itself: one create row, actor = the inviting admin.
+	rows := f.auditLogFor(t, "invitation", invitation.ID)
+	if len(rows) != 1 {
+		t.Fatalf("invitation audit rows after invite = %d, want 1: %+v", len(rows), rows)
+	}
+	inviteRow := rows[0]
+	if inviteRow.ChangeType != "create" {
+		t.Fatalf("invite audit change_type = %q, want create", inviteRow.ChangeType)
+	}
+	if inviteRow.ActorUserID != adminUserID {
+		t.Fatalf("invite audit actor_user_id = %q, want %q (inviting admin)", inviteRow.ActorUserID, adminUserID)
+	}
+	var inviteChange map[string]any
+	if err := json.Unmarshal(inviteRow.Change, &inviteChange); err != nil {
+		t.Fatalf("unmarshal invite change: %v", err)
+	}
+	if inviteChange["email"] != inviteeEmail || inviteChange["role"] != "user" || inviteChange["status"] != "pending" {
+		t.Fatalf("invite change = %+v, want email=%s role=user status=pending", inviteChange, inviteeEmail)
+	}
+
+	// Accept-on-login (GET /organizations/me): one update row on the
+	// invitation (pending -> accepted), actor = the ACCEPTING user (not the
+	// admin — there is no admin action on this path).
+	recMe := f.do(t, http.MethodGet, "/v1/organizations/me", inviteeBearer, nil)
+	if recMe.Code != http.StatusOK {
+		t.Fatalf("GET /organizations/me status = %d, want 200, body = %s", recMe.Code, recMe.Body.String())
+	}
+
+	rows = f.auditLogFor(t, "invitation", invitation.ID)
+	if len(rows) != 2 {
+		t.Fatalf("invitation audit rows after accept = %d, want 2: %+v", len(rows), rows)
+	}
+	acceptRow := rows[1]
+	if acceptRow.ChangeType != "update" {
+		t.Fatalf("accept audit change_type = %q, want update", acceptRow.ChangeType)
+	}
+	if acceptRow.ActorUserID != inviteeUserID {
+		t.Fatalf("accept audit actor_user_id = %q, want %q (accepting user)", acceptRow.ActorUserID, inviteeUserID)
+	}
+	if len(acceptRow.ChangedFields) != 1 || acceptRow.ChangedFields[0] != "status" {
+		t.Fatalf("accept audit changed_fields = %v, want [status]", acceptRow.ChangedFields)
+	}
+	var acceptChange map[string]any
+	if err := json.Unmarshal(acceptRow.Change, &acceptChange); err != nil {
+		t.Fatalf("unmarshal accept change: %v", err)
+	}
+	statusDelta, ok := acceptChange["status"].(map[string]any)
+	if !ok {
+		t.Fatalf("accept change[status] = %#v, want a {from,to} object", acceptChange["status"])
+	}
+	if statusDelta["from"] != "pending" || statusDelta["to"] != "accepted" {
+		t.Fatalf("accept change[status] = %+v, want from=pending to=accepted", statusDelta)
+	}
+
+	// Acceptance also creates a new membership — its own create row, same
+	// transaction (mirrors organization creation's org+membership pair).
+	var membershipRows []auditRow
+	dbRows, err := f.pool.Query(context.Background(),
+		`SELECT entity_type, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+		 FROM organizations.audit_log
+		 WHERE organization_id = $1 AND entity_type = 'membership'
+		 ORDER BY recorded_at, id`, orgID)
+	if err != nil {
+		t.Fatalf("query membership audit_log: %v", err)
+	}
+	defer dbRows.Close()
+	for dbRows.Next() {
+		var (
+			a       auditRow
+			actorID uuid.UUID
+		)
+		if err := dbRows.Scan(&a.EntityType, &a.ChangeType, &actorID, &a.OccurredAt, &a.RecordedAt, &a.ChangedFields, &a.Change); err != nil {
+			t.Fatalf("scan membership audit row: %v", err)
+		}
+		a.ActorUserID = actorID.String()
+		membershipRows = append(membershipRows, a)
+	}
+	// Two memberships exist under this org: the admin's (from org creation)
+	// and the invitee's (from this acceptance) — both create rows.
+	if len(membershipRows) != 2 {
+		t.Fatalf("membership audit rows = %d, want 2 (admin's + invitee's): %+v", len(membershipRows), membershipRows)
+	}
+	foundInvitee := false
+	for _, m := range membershipRows {
+		if m.ActorUserID == inviteeUserID {
+			foundInvitee = true
+			if m.ChangeType != "create" {
+				t.Errorf("invitee membership audit change_type = %q, want create", m.ChangeType)
+			}
+		}
+	}
+	if !foundInvitee {
+		t.Fatalf("membership audit rows = %+v, want one attributed to the invitee %s", membershipRows, inviteeUserID)
+	}
+}
+
+// TestRevokeInvitation_History_WritesOneUpdateRow covers the revoke path:
+// exactly one update row (pending -> revoked), actor = the revoking admin.
+func TestRevokeInvitation_History_WritesOneUpdateRow(t *testing.T) {
+	adminSub := "e9999999-3333-4999-8999-3333333339e9"
+	adminUserID := "a0000000-0000-7000-8000-0000000009e9"
+	f := newOrgFixture(t, map[string]string{adminSub: adminUserID})
+	adminBearer := f.token(t, adminSub)
+
+	orgID := "b0000000-0000-7000-8000-0000000009e9"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{"id": orgID, "name": "Org"}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	recInvite := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{"email": "revoke-history@example.com"})
+	if recInvite.Code != http.StatusCreated {
+		t.Fatalf("invite status = %d, want 201, body = %s", recInvite.Code, recInvite.Body.String())
+	}
+	var invitation api.InvitationResponse
+	if err := json.Unmarshal(recInvite.Body.Bytes(), &invitation); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	recRevoke := f.do(t, http.MethodDelete, "/v1/organizations/"+orgID+"/invitations/"+invitation.ID, adminBearer, nil)
+	if recRevoke.Code != http.StatusNoContent {
+		t.Fatalf("revoke status = %d, want 204, body = %s", recRevoke.Code, recRevoke.Body.String())
+	}
+
+	rows := f.auditLogFor(t, "invitation", invitation.ID)
+	if len(rows) != 2 {
+		t.Fatalf("invitation audit rows after revoke = %d, want 2 (create, revoke): %+v", len(rows), rows)
+	}
+	revokeRow := rows[1]
+	if revokeRow.ChangeType != "update" {
+		t.Fatalf("revoke audit change_type = %q, want update", revokeRow.ChangeType)
+	}
+	if revokeRow.ActorUserID != adminUserID {
+		t.Fatalf("revoke audit actor_user_id = %q, want %q (revoking admin)", revokeRow.ActorUserID, adminUserID)
+	}
+	var revokeChange map[string]any
+	if err := json.Unmarshal(revokeRow.Change, &revokeChange); err != nil {
+		t.Fatalf("unmarshal revoke change: %v", err)
+	}
+	statusDelta, ok := revokeChange["status"].(map[string]any)
+	if !ok {
+		t.Fatalf("revoke change[status] = %#v, want a {from,to} object", revokeChange["status"])
+	}
+	if statusDelta["from"] != "pending" || statusDelta["to"] != "revoked" {
+		t.Fatalf("revoke change[status] = %+v, want from=pending to=revoked", statusDelta)
+	}
+}
+
+// TestInvitations_History_ChangePayloadNeverEmbedsActorPersonalData is
+// #165's pseudonymity contract test (history.md §7.3) for invitations: the
+// invitee's OWN email legitimately appears (it is the invitation's own
+// subject field, data-model.md §3 — see audit.go's invitationFields doc),
+// but the ACTOR's identity (the inviting/revoking/accepting admin or user)
+// must never be denormalized into the payload as a labeled name/email field
+// — it lives solely in actor_user_id.
+func TestInvitations_History_ChangePayloadNeverEmbedsActorPersonalData(t *testing.T) {
+	adminSub := "fa111111-4444-4111-8111-4444444114fa"
+	f := newOrgFixture(t, map[string]string{adminSub: "a0000000-0000-7000-8000-00000000fa11"})
+	adminBearer := f.token(t, adminSub)
+
+	orgID := "b0000000-0000-7000-8000-00000000fa11"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{"id": orgID, "name": "Org"}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	recInvite := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{"email": "subject@example.com"})
+	if recInvite.Code != http.StatusCreated {
+		t.Fatalf("invite status = %d, want 201, body = %s", recInvite.Code, recInvite.Body.String())
+	}
+	var invitation api.InvitationResponse
+	if err := json.Unmarshal(recInvite.Body.Bytes(), &invitation); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	for _, row := range f.auditLogFor(t, "invitation", invitation.ID) {
+		var decoded map[string]any
+		if err := json.Unmarshal(row.Change, &decoded); err != nil {
+			t.Fatalf("change payload is not a JSON object: %s", string(row.Change))
+		}
+		if _, ok := decoded["actor_name"]; ok {
+			t.Fatalf("change payload embeds an actor_name field: %s", string(row.Change))
+		}
+		if _, ok := decoded["actor_email"]; ok {
+			t.Fatalf("change payload embeds an actor_email field: %s", string(row.Change))
+		}
+		// invited_by must stay a soft ID (UUID string), never resolved to a
+		// name — assert its value parses as a UUID.
+		if ib, ok := decoded["invited_by"]; ok {
+			s, isString := ib.(string)
+			if !isString {
+				t.Fatalf("change payload invited_by = %#v, want a UUID string", ib)
+			}
+			if _, err := uuid.Parse(s); err != nil {
+				t.Fatalf("change payload invited_by = %q, want a valid UUID (soft ID, not a name): %v", s, err)
+			}
+		}
+	}
 }

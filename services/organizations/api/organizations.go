@@ -31,11 +31,11 @@
 // single-org-per-user invariant (C-1) this whole file — and invitations.go's
 // acceptance path — assumes.
 //
-// History recording (FR-HIS-1) for organization/membership/invitation
-// changes is explicitly deferred — EPIC-07's audit log isn't built yet.
-// Tracked in https://github.com/TiagoJVO/beekeepingit/issues/165; this is
-// the seam where audit writes would go once that lands (same deferral as
-// #25's profile and #26's organization create).
+// History recording (FR-HIS-1, #165): createOrganization writes both the
+// organization's and the creator's admin membership's audit_log rows in the
+// same D-3 transaction as their domain inserts (history.md §4); see audit.go
+// for the shared writeAuditLog helper and invitations.go for the
+// invite/accept/revoke wiring.
 package api
 
 import (
@@ -60,6 +60,7 @@ import (
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/organizations/store/sqlc/gen"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/authn"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 const maxOrgNameLength = 200
@@ -203,7 +204,7 @@ func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 	r.Post("/organizations", createOrganization(pool, q, resolver))
 	r.Get("/organizations/me", getMyOrganization(pool, q, resolver))
 	r.Get("/organizations/{orgId}", getOrganization(q, resolver))
-	registerMemberAndInvitationRoutes(r, q, resolver)
+	registerMemberAndInvitationRoutes(r, pool, q, resolver)
 	return r
 }
 
@@ -388,11 +389,32 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 			return
 		}
 
-		if _, err := txq.CreateMembership(r.Context(), sqlcgen.CreateMembershipParams{
+		// History (FR-HIS-1, #165): the org's own create row, in the same D-3
+		// transaction as the domain write (history.md §4). occurred_at is
+		// server-now — org creation has no client-supplied device timestamp
+		// the way apiaries' offline sync-apply ops do.
+		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		actor := pgtype.UUID{Bytes: userID, Valid: true}
+		if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeOrganization, org.ID, actor, now,
+			history.ChangeCreate, nil, organizationFields(org)); err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		membership, err := txq.CreateMembership(r.Context(), sqlcgen.CreateMembershipParams{
 			ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
 			OrganizationID: org.ID,
 			UserID:         pgtype.UUID{Bytes: userID, Valid: true},
-		}); err != nil {
+		})
+		if err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		// The creator's admin membership is a second entity created in this
+		// same transaction (D-3) — its own audit row, entity_type=membership.
+		if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeMembership, membership.ID, actor, now,
+			history.ChangeCreate, nil, membershipFields(membership)); err != nil {
 			problem.Write(w, r, problem.Internal())
 			return
 		}
