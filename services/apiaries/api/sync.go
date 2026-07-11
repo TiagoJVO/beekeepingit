@@ -16,6 +16,7 @@ import (
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/apiaries/store/sqlc/gen"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 // Op is one CRUD op in a client sync batch (walking-skeleton.md §5.1).
@@ -187,6 +188,12 @@ func (a rowState) sameAs(b rowState) bool {
 	return a.name == b.name && a.hive == b.hive && a.deletedAt.Valid == b.deletedAt.Valid
 }
 
+// fields projects a rowState to the plain field map history.ComputeChange
+// diffs — only soft/scalar values, never denormalized personal data (§7.3).
+func (a rowState) fields() map[string]any {
+	return map[string]any{"name": a.name, "hive_count": a.hive}
+}
+
 func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op) (OpResult, error) {
 	id, err := uuid.Parse(op.ID)
 	if err != nil {
@@ -220,6 +227,9 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 		}); err != nil {
 			return OpResult{}, err
 		}
+		if err := writeAuditLog(ctx, q, org, userID, op, history.ChangeCreate, rowState{}, want); err != nil {
+			return OpResult{}, err
+		}
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 	}
 
@@ -232,6 +242,13 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 			OrganizationID: org, ID: pgID, Name: want.name, HiveCount: want.hive,
 			UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
 		}); err != nil {
+			return OpResult{}, err
+		}
+		changeType := history.ChangeUpdate
+		if op.Op == "delete" {
+			changeType = history.ChangeDelete
+		}
+		if err := writeAuditLog(ctx, q, org, userID, op, changeType, current, want); err != nil {
 			return OpResult{}, err
 		}
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
@@ -275,6 +292,46 @@ func mergeOp(current rowState, op Op, data apiaryData) rowState {
 		}
 		return current
 	}
+}
+
+// writeAuditLog appends one history.md §3 row for an applied create/update/
+// delete, in the same local transaction as the domain write (§4). It must
+// NOT be called for the no-op (idempotent replay) or LWW-loss branches of
+// applyOp — those apply no domain change, so they get no audit row (§4
+// "Idempotency"; §6 "LWW losers" go to sync_conflict_log instead, via
+// logConflict, not here).
+func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, changeType string, before, after rowState) error {
+	var oldFields map[string]any
+	if changeType != history.ChangeCreate {
+		oldFields = before.fields()
+	}
+	newFields := after.fields()
+	if changeType == history.ChangeDelete {
+		newFields = nil
+	}
+	changedFields, change := history.ComputeChange(changeType, oldFields, newFields)
+
+	changeJSON, err := json.Marshal(change)
+	if err != nil {
+		return err
+	}
+
+	id, err := uuid.Parse(op.ID)
+	if err != nil {
+		return err
+	}
+	auditID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	return q.InsertAuditLog(ctx, sqlcgen.InsertAuditLogParams{
+		ID:             auditID,
+		OrganizationID: org,
+		EntityType:     entityTypeApiary,
+		EntityID:       pgtype.UUID{Bytes: id, Valid: true},
+		ChangeType:     changeType,
+		ActorUserID:    parseActor(userID),
+		OccurredAt:     pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true},
+		ChangedFields:  changedFields,
+		Change:         changeJSON,
+	})
 }
 
 func logConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, stored sqlcgen.GetApiaryForUpdateRow) error {

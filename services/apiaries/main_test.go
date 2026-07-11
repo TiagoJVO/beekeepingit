@@ -184,6 +184,49 @@ func (f *apiariesFixture) conflictCount(t *testing.T) int {
 	return n
 }
 
+// auditRow is the subset of apiaries.audit_log columns (#59, history.md §3)
+// the history tests below assert on.
+type auditRow struct {
+	ChangeType    string
+	ActorUserID   string
+	OccurredAt    time.Time
+	RecordedAt    time.Time
+	ChangedFields []string
+	Change        json.RawMessage
+}
+
+// auditLogFor returns every apiaries.audit_log row for one entity, oldest
+// first — the same ordering ListAuditLog uses.
+func (f *apiariesFixture) auditLogFor(t *testing.T, entityID string) []auditRow {
+	t.Helper()
+	rows, err := f.pool.Query(context.Background(),
+		`SELECT change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+		 FROM apiaries.audit_log
+		 WHERE entity_type = 'apiary' AND entity_id = $1
+		 ORDER BY recorded_at, id`, entityID)
+	if err != nil {
+		t.Fatalf("query audit_log: %v", err)
+	}
+	defer rows.Close()
+
+	var out []auditRow
+	for rows.Next() {
+		var (
+			a       auditRow
+			actorID uuid.UUID
+		)
+		if err := rows.Scan(&a.ChangeType, &actorID, &a.OccurredAt, &a.RecordedAt, &a.ChangedFields, &a.Change); err != nil {
+			t.Fatalf("scan audit_log row: %v", err)
+		}
+		a.ActorUserID = actorID.String()
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate audit_log: %v", err)
+	}
+	return out
+}
+
 func putOp(id, name string, hive int32, ts time.Time) api.Op {
 	data, _ := json.Marshal(map[string]any{"name": name, "hive_count": hive})
 	return api.Op{Op: "put", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
@@ -246,6 +289,225 @@ func TestApiariesSlice_CreateReadLWWConflictIdempotencyTombstone(t *testing.T) {
 	}
 	if list := f.listApiaries(t); len(list.Data) != 0 {
 		t.Fatalf("list after delete = %d rows, want 0", len(list.Data))
+	}
+}
+
+// TestApiariesSlice_History_CreateUpdateDeleteEachProduceOneAuditRow is #59's
+// core AC: every applied create/update/delete writes exactly one correctly
+// attributed apiaries.audit_log row (history.md §3-§4), with occurred_at =
+// the op's device timestamp and recorded_at ≈ server time.
+func TestApiariesSlice_History_CreateUpdateDeleteEachProduceOneAuditRow(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	before := time.Now().Add(-time.Second)
+
+	// Create.
+	if got := f.apply(t, putOp(id, "Encosta Nova", 3, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+	rows := f.auditLogFor(t, id)
+	if len(rows) != 1 {
+		t.Fatalf("audit rows after create = %d, want 1: %+v", len(rows), rows)
+	}
+	create := rows[0]
+	if create.ChangeType != "create" {
+		t.Fatalf("create audit change_type = %q, want create", create.ChangeType)
+	}
+	if create.ActorUserID != devseed.UserID {
+		t.Fatalf("create audit actor_user_id = %q, want %q", create.ActorUserID, devseed.UserID)
+	}
+	if !create.OccurredAt.Equal(t0) {
+		t.Fatalf("create audit occurred_at = %v, want %v (device time)", create.OccurredAt, t0)
+	}
+	if create.RecordedAt.Before(before) || create.RecordedAt.After(time.Now().Add(time.Second)) {
+		t.Fatalf("create audit recorded_at = %v, want close to server now (%v)", create.RecordedAt, before)
+	}
+	if create.ChangedFields != nil {
+		t.Fatalf("create audit changed_fields = %v, want nil (create carries a baseline, not a diff)", create.ChangedFields)
+	}
+	var createChange map[string]any
+	if err := json.Unmarshal(create.Change, &createChange); err != nil {
+		t.Fatalf("unmarshal create change: %v", err)
+	}
+	if createChange["name"] != "Encosta Nova" || createChange["hive_count"] != float64(3) {
+		t.Fatalf("create change = %+v, want the baseline field values", createChange)
+	}
+
+	// Update (newer edit wins, §4.1).
+	t1 := t0.Add(time.Minute)
+	if got := f.apply(t, patchHive(id, 12, t1)); got.Results[0].Result != "applied" {
+		t.Fatalf("update result = %q, want applied", got.Results[0].Result)
+	}
+	rows = f.auditLogFor(t, id)
+	if len(rows) != 2 {
+		t.Fatalf("audit rows after update = %d, want 2: %+v", len(rows), rows)
+	}
+	update := rows[1]
+	if update.ChangeType != "update" {
+		t.Fatalf("update audit change_type = %q, want update", update.ChangeType)
+	}
+	if !update.OccurredAt.Equal(t1) {
+		t.Fatalf("update audit occurred_at = %v, want %v", update.OccurredAt, t1)
+	}
+	if len(update.ChangedFields) != 1 || update.ChangedFields[0] != "hive_count" {
+		t.Fatalf("update audit changed_fields = %v, want [hive_count]", update.ChangedFields)
+	}
+	var updateChange map[string]any
+	if err := json.Unmarshal(update.Change, &updateChange); err != nil {
+		t.Fatalf("unmarshal update change: %v", err)
+	}
+	hiveDelta, ok := updateChange["hive_count"].(map[string]any)
+	if !ok {
+		t.Fatalf("update change[hive_count] = %#v, want a {from,to} object", updateChange["hive_count"])
+	}
+	if hiveDelta["from"] != float64(3) || hiveDelta["to"] != float64(12) {
+		t.Fatalf("update change[hive_count] = %+v, want from=3 to=12", hiveDelta)
+	}
+	if _, ok := updateChange["name"]; ok {
+		t.Fatalf("update change unexpectedly contains unchanged field name: %+v", updateChange)
+	}
+
+	// Delete (tombstone, §4.5/§6).
+	t2 := t0.Add(2 * time.Minute)
+	delOp := api.Op{Op: "delete", EntityType: "apiary", ID: id, UpdatedAt: t2}
+	if got := f.apply(t, delOp); got.Results[0].Result != "applied" {
+		t.Fatalf("delete result = %q, want applied", got.Results[0].Result)
+	}
+	rows = f.auditLogFor(t, id)
+	if len(rows) != 3 {
+		t.Fatalf("audit rows after delete = %d, want 3: %+v", len(rows), rows)
+	}
+	del := rows[2]
+	if del.ChangeType != "delete" {
+		t.Fatalf("delete audit change_type = %q, want delete", del.ChangeType)
+	}
+	if !del.OccurredAt.Equal(t2) {
+		t.Fatalf("delete audit occurred_at = %v, want %v", del.OccurredAt, t2)
+	}
+	if del.ChangedFields != nil {
+		t.Fatalf("delete audit changed_fields = %v, want nil", del.ChangedFields)
+	}
+	var delChange map[string]any
+	if err := json.Unmarshal(del.Change, &delChange); err != nil {
+		t.Fatalf("unmarshal delete change: %v", err)
+	}
+	if delChange["deleted"] != true {
+		t.Fatalf("delete change = %+v, want a {deleted:true} tombstone", delChange)
+	}
+	for _, forbidden := range []string{"name", "hive_count"} {
+		if _, ok := delChange[forbidden]; ok {
+			t.Fatalf("delete tombstone leaked field value %q: %+v", forbidden, delChange)
+		}
+	}
+}
+
+// TestApiariesSlice_History_IdempotentReplayWritesNoNewAuditRow is #59's
+// idempotency AC (history.md §4 "Idempotency"): a replayed/forward-retried
+// op that no-ops the domain write must not double-count history.
+func TestApiariesSlice_History_IdempotentReplayWritesNoNewAuditRow(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Encosta Nova", 0, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+	winningOp := patchHive(id, 12, t0.Add(time.Minute))
+	if got := f.apply(t, winningOp); got.Results[0].Result != "applied" {
+		t.Fatalf("update result = %q, want applied", got.Results[0].Result)
+	}
+	countBefore := len(f.auditLogFor(t, id))
+	if countBefore != 2 {
+		t.Fatalf("audit rows before replay = %d, want 2", countBefore)
+	}
+
+	// Re-send the exact same (already-applied) op — same client UUID PK,
+	// same value and timestamp as the current stored state.
+	if got := f.apply(t, winningOp); got.Results[0].Result != "applied" {
+		t.Fatalf("idempotent re-send result = %q, want applied", got.Results[0].Result)
+	}
+	if n := len(f.auditLogFor(t, id)); n != countBefore {
+		t.Fatalf("audit rows after idempotent replay = %d, want unchanged %d", n, countBefore)
+	}
+}
+
+// TestApiariesSlice_History_LWWLossWritesNoDomainAuditRow is #59's LWW-loss
+// AC: a losing offline edit applies no domain change, so it must not write a
+// domain audit_log row — only the existing sync_conflict_log row (history.md
+// §6 "LWW losers are not lost" via sync_conflict_log, not audit_log).
+func TestApiariesSlice_History_LWWLossWritesNoDomainAuditRow(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Encosta Nova", 0, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+	if got := f.apply(t, patchHive(id, 12, t0.Add(time.Minute))); got.Results[0].Result != "applied" {
+		t.Fatalf("update result = %q, want applied", got.Results[0].Result)
+	}
+	countBefore := len(f.auditLogFor(t, id))
+	if countBefore != 2 {
+		t.Fatalf("audit rows before losing edit = %d, want 2", countBefore)
+	}
+
+	// An older edit loses (§4.1) — superseded, server value kept.
+	if got := f.apply(t, patchHive(id, 99, t0.Add(-time.Minute))); got.Results[0].Result != "superseded" {
+		t.Fatalf("older edit result = %q, want superseded", got.Results[0].Result)
+	}
+	if n := f.conflictCount(t); n != 1 {
+		t.Fatalf("conflict rows = %d, want 1", n)
+	}
+	if n := len(f.auditLogFor(t, id)); n != countBefore {
+		t.Fatalf("audit rows after LWW loss = %d, want unchanged %d (loss goes to sync_conflict_log only)", n, countBefore)
+	}
+}
+
+// TestApiariesSlice_History_ChangePayloadNeverEmbedsPersonalData is #59's
+// pseudonymity contract test (history.md §7.3): the change JSONB must never
+// contain a denormalized name/email — only opaque IDs and the apiary's own
+// (non-personal) fields. actor identity lives solely in actor_user_id.
+func TestApiariesSlice_History_ChangePayloadNeverEmbedsPersonalData(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Encosta Nova", 3, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+	if got := f.apply(t, patchHive(id, 12, t0.Add(time.Minute))); got.Results[0].Result != "applied" {
+		t.Fatalf("update result = %q, want applied", got.Results[0].Result)
+	}
+	delOp := api.Op{Op: "delete", EntityType: "apiary", ID: id, UpdatedAt: t0.Add(2 * time.Minute)}
+	if got := f.apply(t, delOp); got.Results[0].Result != "applied" {
+		t.Fatalf("delete result = %q, want applied", got.Results[0].Result)
+	}
+
+	// devseed's known PII — if it ever leaked into a change payload it would
+	// appear verbatim as one of these substrings.
+	forbidden := []string{devseed.UserName, devseed.UserEmail}
+
+	for _, row := range f.auditLogFor(t, id) {
+		body := string(row.Change)
+		for _, pii := range forbidden {
+			if strings.Contains(body, pii) {
+				t.Fatalf("audit change payload for change_type=%s contains denormalized PII %q: %s", row.ChangeType, pii, body)
+			}
+		}
+		// change must decode to a JSON object whose values are only
+		// strings/numbers/bools/nested from/to pairs, never something that
+		// looks like a free-text name field.
+		var decoded map[string]any
+		if err := json.Unmarshal(row.Change, &decoded); err != nil {
+			t.Fatalf("change payload is not a JSON object: %s", body)
+		}
+		if _, ok := decoded["actor_name"]; ok {
+			t.Fatalf("change payload embeds an actor_name field: %s", body)
+		}
+		if _, ok := decoded["email"]; ok {
+			t.Fatalf("change payload embeds an email field: %s", body)
+		}
 	}
 }
 
