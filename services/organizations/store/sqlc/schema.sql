@@ -34,3 +34,19 @@ CREATE TABLE organizations.invitations (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- organizations.audit_log (00003, #165) — append-only history for
+-- organization/membership/invitation changes. entity_type distinguishes the
+-- three entities sharing this table (history.md §3, §9).
+CREATE TABLE organizations.audit_log (
+    id              UUID PRIMARY KEY,
+    organization_id UUID NOT NULL,
+    entity_type     TEXT NOT NULL CHECK (entity_type IN ('organization', 'membership', 'invitation')),
+    entity_id       UUID NOT NULL,
+    change_type     TEXT NOT NULL CHECK (change_type IN ('create', 'update', 'delete')),
+    actor_user_id   UUID,
+    occurred_at     TIMESTAMPTZ NOT NULL,
+    recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    changed_fields  TEXT[],
+    change          JSONB NOT NULL
+);

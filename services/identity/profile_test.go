@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/TiagoJVO/beekeepingit/services/identity/api"
@@ -26,8 +29,9 @@ import (
 const profileTestAudience = "beekeepingit-identity"
 
 type profileFixture struct {
-	srv *servicetemplate.Server
-	idp *authtest.IDP
+	srv  *servicetemplate.Server
+	idp  *authtest.IDP
+	pool *pgxpool.Pool
 }
 
 // newProfileFixture wires the service as run() does, mounting the /v1 profile
@@ -96,7 +100,51 @@ func newProfileFixture(t *testing.T) *profileFixture {
 	}
 	srv.Mount("/v1", authnMW(api.PublicRouter(pool)))
 
-	return &profileFixture{srv: srv, idp: idp}
+	return &profileFixture{srv: srv, idp: idp, pool: pool}
+}
+
+// auditRow is the subset of identity.audit_log columns (#165, history.md §3)
+// the history tests below assert on — mirrors services/apiaries/main_test.go's
+// own auditRow/auditLogFor.
+type auditRow struct {
+	ChangeType    string
+	ActorUserID   string
+	OccurredAt    time.Time
+	RecordedAt    time.Time
+	ChangedFields []string
+	Change        json.RawMessage
+}
+
+// auditLogFor returns every identity.audit_log row for one profile, oldest
+// first — the same ordering ListAuditLog uses.
+func (f *profileFixture) auditLogFor(t *testing.T, entityID string) []auditRow {
+	t.Helper()
+	rows, err := f.pool.Query(context.Background(),
+		`SELECT change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+		 FROM identity.audit_log
+		 WHERE entity_type = 'profile' AND entity_id = $1
+		 ORDER BY recorded_at, id`, entityID)
+	if err != nil {
+		t.Fatalf("query audit_log: %v", err)
+	}
+	defer rows.Close()
+
+	var out []auditRow
+	for rows.Next() {
+		var (
+			a       auditRow
+			actorID uuid.UUID
+		)
+		if err := rows.Scan(&a.ChangeType, &actorID, &a.OccurredAt, &a.RecordedAt, &a.ChangedFields, &a.Change); err != nil {
+			t.Fatalf("scan audit_log row: %v", err)
+		}
+		a.ActorUserID = actorID.String()
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate audit_log: %v", err)
+	}
+	return out
 }
 
 func (f *profileFixture) do(t *testing.T, method, path, bearer string, body any) *httptest.ResponseRecorder {
@@ -310,4 +358,230 @@ func TestProfile_ResponsesConformToOpenAPIContract(t *testing.T) {
 		t.Fatalf("PATCH status = %d, want 200", recPatch.Code)
 	}
 	doc.ValidateResponseBody(t, http.MethodPatch, "/v1/profile", http.StatusOK, recPatch.Body.Bytes())
+}
+
+// TestProfile_History_CreateThenUpdateEachProduceOneAuditRow is #165's core
+// AC for identity: the first GET (create-on-first-seen) and a later PATCH
+// each write exactly one correctly attributed identity.audit_log row
+// (history.md §3-§4), mirroring apiaries' #59
+// TestApiariesSlice_History_CreateUpdateDeleteEachProduceOneAuditRow. Unlike
+// apiaries, identity.audit_log.organization_id is always NULL (identity.users
+// is global, history.md §9) and occurred_at is server time (no client-device
+// timestamp exists on this synchronous API path).
+func TestProfile_History_CreateThenUpdateEachProduceOneAuditRow(t *testing.T) {
+	f := newProfileFixture(t)
+	sub := "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa"
+	bearer := f.token(t, sub)
+	before := time.Now().Add(-time.Second)
+
+	// First GET creates the row.
+	recGet := f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200, body = %s", recGet.Code, recGet.Body.String())
+	}
+	var p api.ProfileResponse
+	if err := json.Unmarshal(recGet.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	rows := f.auditLogFor(t, p.ID)
+	if len(rows) != 1 {
+		t.Fatalf("audit rows after first GET = %d, want 1: %+v", len(rows), rows)
+	}
+	create := rows[0]
+	if create.ChangeType != "create" {
+		t.Fatalf("create audit change_type = %q, want create", create.ChangeType)
+	}
+	if create.ActorUserID != p.ID {
+		t.Fatalf("create audit actor_user_id = %q, want %q (self-caused)", create.ActorUserID, p.ID)
+	}
+	if create.RecordedAt.Before(before) || create.RecordedAt.After(time.Now().Add(time.Second)) {
+		t.Fatalf("create audit recorded_at = %v, want close to server now (%v)", create.RecordedAt, before)
+	}
+	if !create.OccurredAt.Equal(create.RecordedAt) && create.OccurredAt.Before(before) {
+		t.Fatalf("create audit occurred_at = %v, want close to server now (%v)", create.OccurredAt, before)
+	}
+	if create.ChangedFields != nil {
+		t.Fatalf("create audit changed_fields = %v, want nil (create carries a baseline, not a diff)", create.ChangedFields)
+	}
+	var createChange map[string]any
+	if err := json.Unmarshal(create.Change, &createChange); err != nil {
+		t.Fatalf("unmarshal create change: %v", err)
+	}
+	if createChange["name"] != "" || createChange["email"] != "" {
+		t.Fatalf("create change = %+v, want the baseline (empty name/email for a brand-new profile)", createChange)
+	}
+
+	// A second GET (re-seen, not first-seen) must NOT write a second create
+	// row — mirrors apiaries' idempotency AC (history.md §4).
+	f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+	if n := len(f.auditLogFor(t, p.ID)); n != 1 {
+		t.Fatalf("audit rows after second GET = %d, want unchanged 1 (re-GET is not a new change)", n)
+	}
+
+	// PATCH (update) writes exactly one more row, a diff of only the changed
+	// fields.
+	recPatch := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
+		"name": "Ana Silva", "email": "ana@example.com",
+	})
+	if recPatch.Code != http.StatusOK {
+		t.Fatalf("PATCH status = %d, want 200, body = %s", recPatch.Code, recPatch.Body.String())
+	}
+
+	rows = f.auditLogFor(t, p.ID)
+	if len(rows) != 2 {
+		t.Fatalf("audit rows after PATCH = %d, want 2: %+v", len(rows), rows)
+	}
+	update := rows[1]
+	if update.ChangeType != "update" {
+		t.Fatalf("update audit change_type = %q, want update", update.ChangeType)
+	}
+	wantFields := map[string]bool{"name": true, "email": true}
+	if len(update.ChangedFields) != len(wantFields) {
+		t.Fatalf("update audit changed_fields = %v, want name and email", update.ChangedFields)
+	}
+	for _, field := range update.ChangedFields {
+		if !wantFields[field] {
+			t.Fatalf("update audit changed_fields = %v, want only name/email", update.ChangedFields)
+		}
+	}
+	var updateChange map[string]any
+	if err := json.Unmarshal(update.Change, &updateChange); err != nil {
+		t.Fatalf("unmarshal update change: %v", err)
+	}
+	nameDelta, ok := updateChange["name"].(map[string]any)
+	if !ok {
+		t.Fatalf("update change[name] = %#v, want a {from,to} object", updateChange["name"])
+	}
+	if nameDelta["from"] != "" || nameDelta["to"] != "Ana Silva" {
+		t.Fatalf("update change[name] = %+v, want from=\"\" to=\"Ana Silva\"", nameDelta)
+	}
+	if _, ok := updateChange["locale"]; ok {
+		t.Fatalf("update change unexpectedly contains unchanged field locale: %+v", updateChange)
+	}
+}
+
+// TestProfile_History_PartialPatchOnlyRecordsChangedFields covers a
+// locale-only PATCH: the audit row's changed_fields/change must mention only
+// locale, not the untouched name/email.
+func TestProfile_History_PartialPatchOnlyRecordsChangedFields(t *testing.T) {
+	f := newProfileFixture(t)
+	sub := "bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb"
+	bearer := f.token(t, sub)
+
+	recGet := f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+	var p api.ProfileResponse
+	if err := json.Unmarshal(recGet.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
+		"name": "Beatriz", "email": "bea@example.com",
+	})
+
+	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"locale": "pt"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("locale-only PATCH status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rows := f.auditLogFor(t, p.ID)
+	if len(rows) != 3 {
+		t.Fatalf("audit rows = %d, want 3 (create, name/email update, locale update): %+v", len(rows), rows)
+	}
+	localeUpdate := rows[2]
+	if len(localeUpdate.ChangedFields) != 1 || localeUpdate.ChangedFields[0] != "locale" {
+		t.Fatalf("locale-only PATCH audit changed_fields = %v, want [locale]", localeUpdate.ChangedFields)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(localeUpdate.Change, &change); err != nil {
+		t.Fatalf("unmarshal change: %v", err)
+	}
+	if _, ok := change["name"]; ok {
+		t.Fatalf("locale-only PATCH change unexpectedly contains name: %+v", change)
+	}
+	if _, ok := change["email"]; ok {
+		t.Fatalf("locale-only PATCH change unexpectedly contains email: %+v", change)
+	}
+}
+
+// TestProfile_History_ChangePayloadNeverEmbedsPersonalDataOfOthers is #165's
+// pseudonymity contract test (history.md §7.3), mirroring apiaries' #59
+// TestApiariesSlice_ChangePayloadNeverEmbedsPersonalData: a profile's own
+// name/email ARE the entity's own subject data (exactly like an apiary's own
+// `name`), so they legitimately appear in identity.audit_log.change — what
+// must NEVER appear is a distinguishable actor_name/email KEY (the audit
+// row's actor identity must live solely in the opaque actor_user_id column,
+// never spelled out as a labeled field in the JSONB payload).
+func TestProfile_History_ChangePayloadNeverEmbedsPersonalDataOfOthers(t *testing.T) {
+	f := newProfileFixture(t)
+	sub := "cccccccc-3333-4ccc-8ccc-cccccccccccc"
+	bearer := f.token(t, sub)
+
+	recGet := f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+	var p api.ProfileResponse
+	if err := json.Unmarshal(recGet.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
+		"name": "Carlos Mendes", "email": "carlos.mendes@example.com",
+	})
+
+	for _, row := range f.auditLogFor(t, p.ID) {
+		var decoded map[string]any
+		if err := json.Unmarshal(row.Change, &decoded); err != nil {
+			t.Fatalf("change payload is not a JSON object: %s", string(row.Change))
+		}
+		// The actor identity must never be spelled out as a labeled
+		// actor_name/actor_email field — it lives solely in actor_user_id.
+		if _, ok := decoded["actor_name"]; ok {
+			t.Fatalf("change payload embeds an actor_name field: %s", string(row.Change))
+		}
+		if _, ok := decoded["actor_email"]; ok {
+			t.Fatalf("change payload embeds an actor_email field: %s", string(row.Change))
+		}
+		// No other user's PII should ever appear (this test's caller is the
+		// only "person" involved, but the shape check stands regardless of
+		// entity: strings must only ever appear under the known field keys
+		// name/email/locale, or nested from/to, never a synthesized "profile
+		// of someone else" blob).
+		for k := range decoded {
+			switch v := decoded[k].(type) {
+			case map[string]any:
+				for kk := range v {
+					if kk != "from" && kk != "to" {
+						t.Fatalf("change payload field %q has unexpected nested key %q: %s", k, kk, string(row.Change))
+					}
+				}
+			case string, bool, nil:
+				// name/email/locale baseline values or a from/to leaf — fine.
+			default:
+				t.Fatalf("change payload field %q has unexpected value type %T: %s", k, v, string(row.Change))
+			}
+		}
+	}
+}
+
+// TestProfile_History_UnknownSubReturns404WithoutWritingAudit covers a PATCH
+// with no prior GET (no profile row yet) — verified to be the intentional
+// 404 branch, and confirms it writes no audit row (nothing was actually
+// changed).
+func TestProfile_History_UnknownSubReturns404WithoutWritingAudit(t *testing.T) {
+	f := newProfileFixture(t)
+	sub := "dddddddd-4444-4ddd-8ddd-dddddddddddd"
+	bearer := f.token(t, sub)
+
+	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"name": "Ghost"})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("PATCH-before-GET status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// There is no known profile id to query by (the row was never created),
+	// so assert the table has zero rows for this test's isolated fixture
+	// instead of a specific entity_id.
+	var n int
+	if err := f.pool.QueryRow(context.Background(), "SELECT count(*) FROM identity.audit_log").Scan(&n); err != nil {
+		t.Fatalf("count audit_log: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("audit_log rows = %d, want 0 (no profile was ever created in this fixture)", n)
+	}
 }
