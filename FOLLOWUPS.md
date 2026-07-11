@@ -32,37 +32,42 @@ same `writeAuditLog` helper in `services/organizations/api/audit.go` this branch
 
 ---
 
-## App shell IA (`feat/EPIC-11-app-shell-ia`, #197, FR-UX-2) — before-merge notes
+## Offline sync + history (`feat/EPIC-07-offline-sync-history`, #61, FR-HIS-1/FR-OF-1) — before-merge notes
 
-The 5-tab bottom nav + header + contextual FAB + offline banner ship in this branch. Two
-pieces are **stubbed on purpose** and already tracked by an existing issue — no new issue
-needed, just flagging for the next agent who picks up **#58**:
+Builds the gaps #59 (merged, #202) left open: `apiaries.audit_log` + `apiaries.sync_conflict_log`
+added to the PowerSync Sync Rules org bucket (`infra/helm/beekeepingit/charts/powersync/values.yaml`,
+offline-viewable history/conflict rows), a combined `ListEntityTimeline` sqlc query (audit_log UNION
+ALL sync_conflict_log, loser tagged `history.EventSuperseded`), and an end-to-end conflict-scenario
+test (`TestApiariesSlice_History_ConflictSurfacesInCombinedTimeline`). Pending:
 
-- **Sync-status pill** (`client/lib/shell/sync_status.dart`'s `syncStatusProvider`) is a fixed
-  "online, nothing pending" `Provider`, not wired to PowerSync's real `statusStream`/upload-queue
-  depth. The pill's UI (color/label/tap→`/account`) is real; only the data source is a stub.
-- **Offline banner** reads the same stub, so it never renders in practice yet (hidden whenever
-  `SyncConnectivity.online`). Placement/shell wiring is done; #58 replaces the provider's body.
-
-Also relocated (not scope creep — the apiaries list lost its own `AppBar` to the shell's header,
-so these needed a new home): `manage-members` (#172) and `logout` moved from the apiaries
-app-bar actions to the account screen (`account-manage-members-button`,
-`account-logout-button`), matching the prototype's "Conta" screen.
+- **Rebase against #31** (apiary CRUD REST handlers, parallel PR touching the same
+  `services/apiaries/api/apiaries.go` + migrations) once both land — expected per the coordinator,
+  not a defect.
+- **"Recent window" nuance not cleanly bounded** — history.md §6 asks for a "recent window" of
+  `audit_log`/`sync_conflict_log` to replicate down, but PowerSync Sync Rules bucket `data` queries
+  don't support LIMIT/rolling time-window semantics (they define a continuously-replicated row set).
+  v1 replicates the full per-org history down (same flat-`SELECT *` style as the existing `apiaries`
+  bucket entry). Revisit if/when per-org audit volume grows enough to matter (§3's "Trade-off
+  (accepted)" already anticipates this is bounded by real change volume) — a genuine bound would need
+  either an engine-level feature PowerSync doesn't have today, or a server-side pre-aggregation/
+  projection step, which is more than this issue's scope.
+- **Live end-to-end replication of `audit_log`/`sync_conflict_log` down to a device** was not
+  verified against a running PowerSync instance (per the coordinator's explicit call: static Sync
+  Rules YAML correctness via `helm lint`/`helm template` + a Go-level test of the underlying query is
+  the verified scope; a live-cluster check was out of bounds for this agent). Worth a quick live check
+  next time the umbrella chart is deployed to k3d.
 
 ## Keycloak → Authentik migration — post-merge follow-ups
 
-The migration (contract + ADR-0016 + D-7; WS-A infra, WS-B backend, WS-C client, WS-D docs) ships in
-**#191** — CI-green, including a live Authentik deploy passing the helm-e2e readiness check. Remaining
-coordinator follow-ups (to promote to GitHub Issues, then prune here):
+The migration (contract + ADR-0016 + D-7; WS-A infra, WS-B backend, WS-C client, WS-D docs) shipped in
+**#191** (merged). Remaining coordinator follow-up (to promote to a GitHub Issue, then prune here):
 
-- **Live browser-login re-validation** — stand the full stack up on k3d and drive a real PKCE
-  login/logout against Authentik through the dual-host gateway (`app.` / `auth.`). CI proved deploy
-  health and the OIDC spike proved token → `go-oidc` validation; the full browser round-trip is the
-  last check. WS-A also flagged `offline_access` consent-stage + blueprint `password`/`upn` to confirm
-  live on the pinned version.
 - **Backlog grooming** — rename **#72** (Keycloak → OIDC auth), retarget **#98** / EPIC-14 **#15**
   auth-hardening scope to Authentik (flows/blueprints/secrets), reconcile other open Keycloak-mentioning
   issues.
+
+(Live browser-login re-validation is already tracked as **#193**, opened separately — no longer
+duplicated here.)
 
 ## Milestone/stream regroom (D-14) — follow-ups
 

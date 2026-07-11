@@ -350,6 +350,88 @@ func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]A
 	return items, nil
 }
 
+const listEntityTimeline = `-- name: ListEntityTimeline :many
+SELECT timeline.id, timeline.organization_id, timeline.entity_type, timeline.entity_id,
+       timeline.event_kind, timeline.actor_user_id, timeline.occurred_at, timeline.recorded_at,
+       timeline.changed_fields, timeline.change
+FROM (
+    SELECT al.id, al.organization_id, al.entity_type, al.entity_id, al.change_type AS event_kind,
+           al.actor_user_id, al.occurred_at, al.recorded_at, al.changed_fields, al.change
+    FROM apiaries.audit_log al
+    WHERE al.organization_id = $1 AND al.entity_type = $2 AND al.entity_id = $3
+
+    UNION ALL
+
+    SELECT scl.id, scl.organization_id, scl.entity_type, scl.entity_id, 'superseded' AS event_kind,
+           scl.actor_user_id, scl.occurred_at, scl.recorded_at, NULL::text[] AS changed_fields,
+           jsonb_build_object('winning_payload', scl.winning_payload, 'losing_payload', scl.losing_payload, 'winner', scl.winner) AS change
+    FROM apiaries.sync_conflict_log scl
+    WHERE scl.organization_id = $1 AND scl.entity_type = $2 AND scl.entity_id = $3
+) timeline
+ORDER BY timeline.recorded_at, timeline.id
+`
+
+type ListEntityTimelineParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	EntityType     string      `json:"entity_type"`
+	EntityID       pgtype.UUID `json:"entity_id"`
+}
+
+type ListEntityTimelineRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	EventKind      string             `json:"event_kind"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
+}
+
+// The combined per-entity timeline (#61 AC, history.md §6): UNIONs
+// apiaries.audit_log (applied create/update/delete rows, event_kind =
+// change_type) with apiaries.sync_conflict_log (LWW-loss rows, event_kind
+// hardcoded 'superseded' — mirrors history.EventSuperseded — history.md §6
+// "LWW losers... surfaced as a superseded timeline event, not silently
+// overwritten"), ordered chronologically. change carries the audit delta for
+// audit_log rows and the {winning_payload, losing_payload, winner} conflict
+// payload for sync_conflict_log rows — the two tables' change shapes differ
+// by design (§3 vs §4.2), so callers branch on event_kind to interpret it.
+// Like ListAuditLog, not yet exposed via HTTP — typed groundwork for the
+// entity-detail "history" screen (history.md §8/§10).
+func (q *Queries) ListEntityTimeline(ctx context.Context, arg ListEntityTimelineParams) ([]ListEntityTimelineRow, error) {
+	rows, err := q.db.Query(ctx, listEntityTimeline, arg.OrganizationID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityTimelineRow
+	for rows.Next() {
+		var i ListEntityTimelineRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.EventKind,
+			&i.ActorUserID,
+			&i.OccurredAt,
+			&i.RecordedAt,
+			&i.ChangedFields,
+			&i.Change,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteApiary = `-- name: SoftDeleteApiary :execrows
 UPDATE apiaries.apiaries
 SET deleted_at = $3, updated_at = $3, recorded_at = now()
