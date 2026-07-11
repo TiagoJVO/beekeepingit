@@ -1,0 +1,240 @@
+{{/*
+#62's DB-enforced immutability grant (history.md §7.1, ADR-0007 §4: "the
+service runtime role has INSERT/SELECT but not UPDATE/DELETE on
+`audit_log`/`sync_conflict_log`").
+
+Why this can't be a plain `REVOKE UPDATE, DELETE FROM <schema>_svc`: each
+service's own migration runs AS that service's `<schema>_svc` role —
+dbaccess.Migrate (services/shared/dbaccess/migrate.go) opens its connection
+with the exact same DSN/Config as the service's runtime pgxpool (config.go),
+so whichever role is `cfg.DB.User` both serves requests AND executes
+`CREATE TABLE ... audit_log` in that service's migrations. That makes
+`<schema>_svc` the table's OWNER, and Postgres owners are never fully at the
+mercy of REVOKE: even where a REVOKE'd privilege is genuinely blocked (proven
+in services/shared/dbaccess/audit_immutability_test.go — plain DML REVOKE
+from the owner DOES take effect for UPDATE/DELETE), the owner can always
+`GRANT` it straight back to itself at will (it owns the object), and
+unconditionally retains `TRUNCATE`/`ALTER TABLE`/`DROP TABLE` regardless of
+any REVOKE — so a same-role REVOKE is not a durable restriction, only a
+suggestion the role can undo. That test fails-then-passes: red without the
+ALTER-OWNER dance below, green with it.
+
+The only durable fix is to move ownership OFF the runtime role entirely, so
+"the service role" and "the table owner" are different roles:
+
+  1. cluster.yaml's `spec.managed.roles` declares a `beekeepingit` entry with
+     `inRoles: [<schema>_svc, ...]` — CNPG's operator reconciles this using
+     ITS OWN privileged connection, granting `beekeepingit` PLAIN membership
+     in every `<schema>_svc` role. This is NOT a manual `GRANT <schema>_svc
+     TO beekeepingit` run from a Job connecting as `beekeepingit` itself —
+     that was tried first and confirmed broken (Postgres requires CREATEROLE
+     + ADMIN OPTION on the target role to grant its membership, which
+     `beekeepingit`, a plain login role, has neither of; it shipped once and
+     only failed in CI's live k3d/helm-e2e run, spinning the naive
+     `until ... done` retry loop until `activeDeadlineSeconds` killed it —
+     see cluster.yaml's `beekeepingit` entry for the full incident note).
+     CNPG's operator reconciliation is the only connection privileged enough
+     to grant role membership unconditionally — exactly why `powersync`'s
+     `inRoles` (right below the `beekeepingit` entry in cluster.yaml) already
+     used this same declarative mechanism, not a manual GRANT either. That
+     membership means beekeepingit already INHERITS `<schema>_svc`'s
+     privileges by the time THIS job runs (reconciled before this job's
+     hook-weight, since cluster.yaml's managed.roles is reconciled
+     continuously by the operator, well ahead of any post-install hook) — no
+     GRANT/REVOKE of membership needed here, only the two SQL statements
+     below.
+  2. As beekeepingit (already inheriting `<schema>_svc`'s rights): `ALTER
+     TABLE <schema>.audit_log OWNER TO beekeepingit;` then `GRANT INSERT,
+     SELECT ON <schema>.audit_log TO <schema>_svc;` — re-granting only the
+     narrow access the runtime role actually needs. Verified this INHERIT
+     membership (not NOINHERIT + `SET ROLE`) is what the ownership check
+     requires — confirmed empirically: `SET ROLE` changes current_user but
+     the has-privileges-of-role check `ALTER TABLE OWNER TO` performs comes
+     from inherited membership, not an active SET ROLE session.
+
+Critically, `<schema>_svc` is NEVER granted membership in `beekeepingit` (the
+direction that would matter for a privilege-escalation risk) — only the
+narrow table-level INSERT/SELECT GRANT flows to it. Once ownership moves,
+`<schema>_svc` can't UPDATE/DELETE/TRUNCATE/ALTER/DROP its former table by
+any means, including self-GRANT (confirmed empirically: Postgres silently
+no-ops a GRANT of a privilege the grantor doesn't hold, rather than erroring).
+
+Purge/anonymization (history.md §7.2, deferred to EPIC-14) stays reachable:
+`beekeepingit` is a real, usable login role (the app owner), not a revoked
+dead end — "a separate, privileged maintenance role, not the service role"
+(history.md §7.1) is exactly what it now is for these two tables.
+
+Generic across every service (loops `.Values.schemas`, same list
+schema-grants-job.yaml AND cluster.yaml's `beekeepingit` inRoles use) so
+identity/organizations/... (#165, landing the same wave) get identical
+treatment the moment their own audit_log/sync_conflict_log migrations land —
+no per-service duplication needed here.
+
+Deliberately a SEPARATE Job from schema-grants-job.yaml: that job's role/
+schema grants gate PowerSync's rollout (infra/README.md step 4/7) and must
+stay fast/predictable. This job waits on each service's own migration, which
+runs on POD STARTUP (see above) — something this install/upgrade doesn't
+directly sequence — so each (schema, table) check retries briefly and must
+never block or fail the install over a table that legitimately doesn't exist
+yet (a schema whose owning service hasn't shipped audit_log yet, or never
+will — e.g. `ai` per history.md §9 "records no domain history", or
+activities/journeys/todos, which have no Go service built at all yet). It
+re-runs on every post-install/post-upgrade (this chart's `helm upgrade`
+cadence, ADR-0009) and is idempotent (skips tables already owned by
+beekeepingit), so a table created by a service pod that starts after this
+Job's polling window closes is simply picked up on the NEXT upgrade — not a
+silent permanent gap, since Flux/CI re-runs this chart regularly. If that
+residual first-deploy race ever needs closing tighter (e.g. a genuinely
+one-shot environment that never gets a second upgrade), the fix is to
+trigger this Job from service rollout completion instead of a Helm hook —
+tracked as a follow-up if/when it's needed, not built here.
+
+RETRY BUDGET INCIDENT (fixed here): the first version of this job retried
+each (schema, table) pair SERIALLY, up to 5 minutes per pair. With ~14 pairs
+(.Values.schemas x {audit_log, sync_conflict_log}) and only 2-3 of them ever
+actually existing, every missing pair burned its full budget every run —
+~55 minutes worst case, which blew through CI's 15-minute `helm upgrade
+--timeout` (confirmed live against the shared k3d cluster). Fixed by (1)
+shortening the per-table budget to 15s (a migration that's going to run
+this deploy does so within seconds of the pod reaching Postgres, not
+minutes) and (2) running every pair CONCURRENTLY instead of serially, so
+total wall-clock is bounded by the slowest single pair, not their sum — see
+the inline shell comment below for the mechanics.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "postgres.fullname" . }}-audit-immutability
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "2"
+spec:
+  backoffLimit: 10
+  # Bounded for the WHOLE job, not just individually generous per table — see
+  # the incident note below on why a per-table budget that looked reasonable
+  # in isolation (30 attempts x 10s = 5 minutes) blew this up to ~55 minutes
+  # once multiplied across every (schema, table) pair, most of which don't
+  # exist yet. Concurrency (below) is what actually keeps this bounded; this
+  # deadline is a backstop, not the primary control.
+  activeDeadlineSeconds: 180
+  template:
+    metadata:
+      labels:
+        {{- include "beekeepingit.labels" . | nindent 8 }}
+        app.kubernetes.io/name: postgres
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: audit-immutability
+          image: {{ .Values.image }}
+          env:
+            - name: PGHOST
+              value: {{ include "postgres.fullname" . }}-rw
+            - name: PGDATABASE
+              value: beekeepingit
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres.fullname" . }}-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres.fullname" . }}-app
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              # INCIDENT NOTE (#62 fix-up): the first version of this script
+              # retried each (schema, table) pair SERIALLY, up to 30 attempts
+              # x 10s = 5 minutes, before moving to the next pair. That budget
+              # looked reasonable for ONE table genuinely still migrating, but
+              # with .Values.schemas x {audit_log, sync_conflict_log} = ~14
+              # pairs and only 2-3 of them ever actually existing (most
+              # schemas here — activities/journeys/todos/ai — have no Go
+              # service built yet, so their tables can NEVER appear), every
+              # missing pair burned its full 5-minute budget every single
+              # run. ~11 missing pairs x 5 min ≈ 55 minutes, which blew
+              # through CI's 15-minute `helm upgrade --timeout` before even
+              # finishing (confirmed live against the shared k3d cluster).
+              # Fixed two ways: (1) a MUCH shorter per-table budget — a
+              # migration that's going to appear this deploy does so within
+              # seconds of the pod reaching Postgres, not minutes, so 5
+              # attempts x 3s = 15s is already generous; (2) every
+              # (schema, table) pair now runs CONCURRENTLY (backgrounded,
+              # then `wait`ed on), so total wall-clock is bounded by the
+              # slowest SINGLE pair (~15s) rather than the sum across all of
+              # them — the whole job now finishes in well under a minute
+              # once Postgres is reachable, regardless of how many pairs are
+              # missing.
+              #
+              # Locks down one history table for one service schema (history.md
+              # §7.1): moves ownership from <schema>_svc to beekeepingit, then
+              # grants back only INSERT/SELECT. Relies on beekeepingit already
+              # having plain membership in <schema>_svc (reconciled by CNPG's
+              # own operator from cluster.yaml's declarative `managed.roles`
+              # `beekeepingit` entry — see this file's header comment).
+              # Idempotent (checks current owner first) and self-contained
+              # per (schema, table) pair, so one schema/table that never
+              # shows up doesn't block the rest.
+              lock_down_history_table() {
+                schema="$1"
+                table="$2"
+                svc_role="${schema}_svc"
+                attempt=0
+                max_attempts=5
+
+                while [ "$attempt" -lt "$max_attempts" ]; do
+                  exists=$(psql -v ON_ERROR_STOP=1 -tA -c \
+                    "SELECT 1 FROM pg_tables WHERE schemaname = '${schema}' AND tablename = '${table}';")
+                  if [ "$exists" = "1" ]; then
+                    owner=$(psql -v ON_ERROR_STOP=1 -tA -c \
+                      "SELECT tableowner FROM pg_tables WHERE schemaname = '${schema}' AND tablename = '${table}';")
+                    if [ "$owner" = "beekeepingit" ]; then
+                      echo "${schema}.${table}: already owned by beekeepingit, nothing to do."
+                      return 0
+                    fi
+
+                    # beekeepingit already inherits svc_role's privileges
+                    # (cluster.yaml's managed.roles inRoles, reconciled by
+                    # CNPG's operator), so it can move ownership off the
+                    # runtime role directly, then grant back only what it
+                    # needs (INSERT/SELECT, never UPDATE/DELETE).
+                    psql -v ON_ERROR_STOP=1 \
+                      -c "ALTER TABLE ${schema}.${table} OWNER TO beekeepingit;" \
+                      -c "GRANT INSERT, SELECT ON ${schema}.${table} TO ${svc_role};"
+                    echo "${schema}.${table}: ownership moved to beekeepingit; ${svc_role} now has INSERT/SELECT only."
+                    return 0
+                  fi
+                  attempt=$((attempt + 1))
+                  echo "${schema}.${table}: does not exist yet (attempt ${attempt}/${max_attempts}), retrying in 3s..."
+                  sleep 3
+                done
+                echo "${schema}.${table}: not found after ${max_attempts} attempts — skipping; picked up on the next upgrade if the owning service creates it later."
+                return 0
+              }
+
+              # Fire every (schema, table) check in the background so they
+              # run concurrently against Postgres (each opens its own psql
+              # connection; Postgres handles concurrent short-lived
+              # connections fine at this scale), then wait for all of them —
+              # total wall-clock is bounded by the slowest single pair, not
+              # their sum. `wait` with no args waits for every backgrounded
+              # job and returns 0 regardless of their individual exit codes
+              # (each function already handles its own not-found case
+              # without a non-zero exit, so there's nothing to propagate).
+              {{- range .Values.schemas }}
+              lock_down_history_table "{{ . }}" "audit_log" &
+              lock_down_history_table "{{ . }}" "sync_conflict_log" &
+              {{- end }}
+              wait
+{{- end }}
