@@ -28,6 +28,15 @@ const (
 	ChangeDelete = "delete"
 )
 
+// EventSuperseded is the timeline event kind (history.md §6) a combined
+// audit_log+sync_conflict_log timeline read (e.g. apiaries'
+// ListEntityTimeline) tags an LWW-loss row with. It is deliberately distinct
+// from the ChangeCreate/Update/Delete set: a superseded event is never an
+// audit_log change_type — it only ever comes from sync_conflict_log, which
+// has no change_type column of its own (§4.2). Kept here (not per-service) so
+// every owning service's combined timeline query uses the same literal.
+const EventSuperseded = "superseded"
+
 // Entry mirrors the audit_log row shape fixed by history.md §3. It is a
 // plain value type — building one is free of any DB/service concern; each
 // service's sqlc InsertAuditLog query consumes its fields directly.

@@ -14,11 +14,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/TiagoJVO/beekeepingit/services/apiaries/api"
 	"github.com/TiagoJVO/beekeepingit/services/apiaries/store"
+	sqlcgen "github.com/TiagoJVO/beekeepingit/services/apiaries/store/sqlc/gen"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/authn"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/config"
@@ -26,6 +28,7 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/health"
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 	"github.com/TiagoJVO/beekeepingit/services/shared/devseed"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 // testOrgHeader lets a test request stand in as a caller resolved to a
@@ -223,6 +226,47 @@ func (f *apiariesFixture) auditLogFor(t *testing.T, entityID string) []auditRow 
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate audit_log: %v", err)
+	}
+	return out
+}
+
+// timelineRow is the subset of ListEntityTimeline's columns
+// TestApiariesSlice_History_ConflictSurfacesInCombinedTimeline asserts on.
+type timelineRow struct {
+	EventKind  string
+	OccurredAt time.Time
+	RecordedAt time.Time
+	Change     json.RawMessage
+}
+
+// timelineFor runs the #61 combined-timeline query (sqlcgen.ListEntityTimeline
+// — audit_log UNION ALL sync_conflict_log, history.md §6) directly against
+// the fixture's pool, the same way the other history helpers here read
+// tables straight from the DB rather than through an (unexposed, #59/#61)
+// HTTP surface.
+func (f *apiariesFixture) timelineFor(t *testing.T, entityID string) []timelineRow {
+	t.Helper()
+	id, err := uuid.Parse(entityID)
+	if err != nil {
+		t.Fatalf("parse entityID: %v", err)
+	}
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListEntityTimeline(context.Background(), sqlcgen.ListEntityTimelineParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		EntityType:     "apiary",
+		EntityID:       pgtype.UUID{Bytes: id, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ListEntityTimeline: %v", err)
+	}
+	out := make([]timelineRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, timelineRow{
+			EventKind:  r.EventKind,
+			OccurredAt: r.OccurredAt.Time,
+			RecordedAt: r.RecordedAt.Time,
+			Change:     r.Change,
+		})
 	}
 	return out
 }
@@ -461,6 +505,118 @@ func TestApiariesSlice_History_LWWLossWritesNoDomainAuditRow(t *testing.T) {
 	}
 	if n := len(f.auditLogFor(t, id)); n != countBefore {
 		t.Fatalf("audit rows after LWW loss = %d, want unchanged %d (loss goes to sync_conflict_log only)", n, countBefore)
+	}
+}
+
+// TestApiariesSlice_History_ConflictSurfacesInCombinedTimeline is #61's
+// end-to-end conflict AC: two devices editing the same apiary offline, whose
+// pushes reach the server out of device-clock order (an older-timestamped op
+// arrives AFTER a newer one has already applied — the realistic offline
+// scenario, not just "two ops in one batch"). It asserts:
+//   - the winning edit (device B, same-org other user) has an audit_log row;
+//   - the losing edit (device A, the default devseed user) has a
+//     sync_conflict_log row instead, preserving its payload (history.md §6
+//     "LWW losers are not lost");
+//   - ListEntityTimeline (#61) returns both in correct chronological order
+//     (by recorded_at, matching ListAuditLog's own ordering), with the loser
+//     tagged event_kind = history.EventSuperseded rather than silently
+//     missing from the combined read.
+func TestApiariesSlice_History_ConflictSurfacesInCombinedTimeline(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	otherUser := sameOrgOtherUserCaller() // same org, distinct actor (sync.md §3.1)
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	// Device A (default devseed user) creates the apiary while both devices
+	// are offline.
+	if got := f.apply(t, putOp(id, "Encosta Nova", 3, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+
+	// Device B (a different member of the same org) is the first to reach
+	// the network and pushes a NEWER offline edit — it applies and wins.
+	winningTS := t0.Add(2 * time.Minute)
+	winningOp := patchHive(id, 20, winningTS)
+	if got := f.applyAs(t, otherUser, winningOp); got.Results[0].Result != "applied" {
+		t.Fatalf("device B (winning) edit result = %q, want applied", got.Results[0].Result)
+	}
+
+	// Device A regains connectivity later and pushes its own OLDER offline
+	// edit (made before device B's, per its device clock) — it reaches the
+	// server AFTER the newer edit already applied. Per §4.1 it loses: the
+	// server value is kept and the loss is logged, not silently dropped.
+	losingTS := t0.Add(time.Minute)
+	losingOp := patchHive(id, 12, losingTS)
+	if got := f.apply(t, losingOp); got.Results[0].Result != "superseded" {
+		t.Fatalf("device A (losing) edit result = %q, want superseded", got.Results[0].Result)
+	}
+
+	// Server converges on device B's value.
+	if a := f.getApiary(t, id); a.HiveCount != 20 {
+		t.Fatalf("hive_count after conflict = %d, want 20 (device B's winning edit)", a.HiveCount)
+	}
+
+	// The winning edit has its own audit_log row (create + this update = 2).
+	audit := f.auditLogFor(t, id)
+	if len(audit) != 2 {
+		t.Fatalf("audit rows = %d, want 2 (create + device B's winning update): %+v", len(audit), audit)
+	}
+	winningAudit := audit[1]
+	if winningAudit.ChangeType != "update" {
+		t.Fatalf("winning audit change_type = %q, want update", winningAudit.ChangeType)
+	}
+	if !winningAudit.OccurredAt.Equal(winningTS) {
+		t.Fatalf("winning audit occurred_at = %v, want %v (device B's timestamp)", winningAudit.OccurredAt, winningTS)
+	}
+
+	// The losing edit produced exactly one sync_conflict_log row (device A's
+	// payload preserved), and no matching domain audit_log row.
+	if n := f.conflictCount(t); n != 1 {
+		t.Fatalf("conflict rows = %d, want 1", n)
+	}
+
+	// ListEntityTimeline (#61) returns both events, chronologically ordered,
+	// with the loser tagged as a superseded timeline event alongside the
+	// applied changes — history.md §6's combined read.
+	timeline := f.timelineFor(t, id)
+	if len(timeline) != 3 {
+		t.Fatalf("timeline rows = %d, want 3 (create, device B update, device A superseded): %+v", len(timeline), timeline)
+	}
+	if timeline[0].EventKind != "create" {
+		t.Fatalf("timeline[0].EventKind = %q, want create", timeline[0].EventKind)
+	}
+	if timeline[1].EventKind != "update" {
+		t.Fatalf("timeline[1].EventKind = %q, want update (device B's winning edit)", timeline[1].EventKind)
+	}
+	if !timeline[1].OccurredAt.Equal(winningTS) {
+		t.Fatalf("timeline[1].OccurredAt = %v, want %v", timeline[1].OccurredAt, winningTS)
+	}
+	superseded := timeline[2]
+	if superseded.EventKind != history.EventSuperseded {
+		t.Fatalf("timeline[2].EventKind = %q, want %q (device A's losing edit)", superseded.EventKind, history.EventSuperseded)
+	}
+	if !superseded.OccurredAt.Equal(losingTS) {
+		t.Fatalf("timeline[2].OccurredAt = %v, want %v (device A's device timestamp preserved, not dropped)", superseded.OccurredAt, losingTS)
+	}
+	// The superseded row's recorded_at (server time it was logged) must
+	// order it AFTER the winning update, matching apply order, not device
+	// clock order — the same "occurred then, recorded now" property #59
+	// already proved for audit_log, now proven across the combined read.
+	if !superseded.RecordedAt.After(timeline[1].RecordedAt) {
+		t.Fatalf("superseded recorded_at %v not after winning update's recorded_at %v", superseded.RecordedAt, timeline[1].RecordedAt)
+	}
+	var conflictChange map[string]any
+	if err := json.Unmarshal(superseded.Change, &conflictChange); err != nil {
+		t.Fatalf("unmarshal superseded change: %v", err)
+	}
+	if _, ok := conflictChange["losing_payload"]; !ok {
+		t.Fatalf("superseded change = %+v, want a losing_payload field preserving device A's edit", conflictChange)
+	}
+	if _, ok := conflictChange["winning_payload"]; !ok {
+		t.Fatalf("superseded change = %+v, want a winning_payload field", conflictChange)
+	}
+	if conflictChange["winner"] != "server" {
+		t.Fatalf("superseded change[winner] = %v, want server", conflictChange["winner"])
 	}
 }
 
