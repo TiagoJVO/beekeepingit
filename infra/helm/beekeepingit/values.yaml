@@ -46,10 +46,10 @@ postgres:
     - todos
     - ai
 
-keycloak:
+authentik:
   enabled: true
-  # No workload of its own (just the admin-credential Secret + realm ConfigMap)
-  # — Keycloak itself is a separate Flux HelmRelease, see ADR-0012.
+  # No workload of its own (just the config/Postgres Secrets + blueprint ConfigMap)
+  # — Authentik itself is a separate Flux HelmRelease, see ADR-0012/ADR-0016.
 
 minio:
   enabled: true
@@ -60,6 +60,32 @@ minio:
 
 gateway:
   enabled: true
-  host: keycloak.beekeepingit.local
+  # Two hosts now (ADR-0016, oidc-integration.md §2): the app origin (PWA + Go APIs
+  # + PowerSync) and a dedicated auth origin for Authentik — a separate origin keeps
+  # the app cross-origin-isolated (COOP/COEP → SharedArrayBuffer for PowerSync) and
+  # avoids Authentik's broad root paths (/api, /static, /if, /-, ...) colliding with
+  # the PWA `/` catch-all. The self-signed TLS Secret's SAN covers both.
+  appHost: app.beekeepingit.local
+  authHost: auth.beekeepingit.local
   # No workload of its own (just Ingress + a self-signed TLS Secret) — reuses
   # k3d's already-running Traefik, so there's no resourceTier to size here.
+
+powersync:
+  enabled: true
+  image:
+    repository: journeyapps/powersync-service
+    tag: "1.23.2"
+  resourceTier: medium
+  # Real org-scoped Sync Rules + the `sync` service's JWKS connector now wired
+  # in the subchart's own values.yaml (#23/#106) — the #22 stopgaps (the OIDC
+  # realm JWKS, pg_tables placeholder) are gone.
+
+# The Go services (#23) — identity/organizations/apiaries/sync. Image tag +
+# per-service wiring live in the subchart's own values.yaml; overlays/CI bump
+# the tag. On merge, Flux image-automation reconciles the published tag.
+services:
+  enabled: true
+
+# The Flutter Web PWA static bundle (#21/#23), served behind the gateway's `/`.
+pwa:
+  enabled: true

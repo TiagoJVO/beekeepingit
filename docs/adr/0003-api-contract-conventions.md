@@ -6,7 +6,7 @@
 - **Requirements:** NFR-ARC-1, NFR-MNT-1, NFR-SEC-1, NFR-TST-1, NFR-I18N-1, NFR-RL-1
 - **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
   (microservices → inter-service contracts), [D-5](../../requirements/decisions.md) (Go/Flutter/React),
-  [D-7](../../requirements/decisions.md) (Keycloak JWT)
+  [D-7](../../requirements/decisions.md) (OIDC JWT — Authentik in v1)
 - **Open questions:** Q-SYNC (resolved → [sync.md](../architecture/sync.md) / [ADR-0006](0006-sync-conflict-resolution.md)),
   Q-AUTH / Q-ROLE (resolved → [ADR-0004](0004-authn-authz.md))
 - **Design doc:** [api-contracts.md](../architecture/api-contracts.md) ·
@@ -41,7 +41,7 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 5. **Versioning:** **major version in the URL path (`/vN`)**, owned by the gateway; only
    backward-compatible changes within a major; breaking changes ship a new major alongside the
    old and go through deprecate → `Sunset` → next major.
-6. **Auth & tenancy:** Keycloak **JWT bearer** on every operation (D-7); the caller's
+6. **Auth & tenancy:** OIDC **JWT bearer** on every operation (D-7 — Authentik in v1); the caller's
    `organization_id` is derived **from the token + membership** and is **never** a client
    parameter ([ADR-0002](0002-multi-tenancy.md)); out-of-scope ids return `404`.
 7. **Offline-aware verbs:** client-generated UUIDs, `Idempotency-Key` on `POST`, `ETag`/`If-Match`
@@ -72,8 +72,10 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 **Negative / risks**
 
 - **Discipline-dependent:** contract-first only holds if CI enforces spec↔code parity and
-  breaking-change detection. **Mitigation:** lint + `oasdiff` + codegen + contract tests wired in
-  EPIC-13 (tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)); until then specs are hand-linted.
+  breaking-change detection. **Mitigation:** lint, `oasdiff`, Go codegen, and contract tests at
+  boundaries all wired in [#153](https://github.com/TiagoJVO/beekeepingit/issues/153) (the
+  latter caught a real spec/implementation drift on first run — `apiaries`' `location` field
+  was emitted as `null` against a non-nullable schema, fixed alongside).
 - **Split-file `$ref` needs bundling** before codegen/publish, and `security` scheme names can't
   be cross-file `$ref`s (each spec re-declares `bearerAuth` as a `$ref` to the shared def).
   Accepted — it is the standard contract-first workflow and keeps a single source of truth.
@@ -105,7 +107,8 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 - **#106 / SP-1** — the sync write-back protocol over these REST writes (atomic push, D-12).
 - **#109** — JWT validation placement, claims→`organization_id`, admin scope (Q-AUTH/Q-ROLE).
 - **#107** — the async event/outbox contract for cross-service reactions (history capture).
-- **EPIC-13** — CI: OpenAPI lint, `oasdiff` breaking-change gate, server/client codegen, and
-  contract tests at boundaries (tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)).
+- **#153 (closed)** — CI: OpenAPI lint, `oasdiff` breaking-change gate, Go server-stub codegen
+  (no-ops until a service adopts it), and contract tests at boundaries all landed. Dart/TS
+  client codegen remains deferred — no consumer yet, tool undecided.
 - **Per service epic** — author the full spec from the template as each service is built
   (`identity`, `activities`, `journeys`, `todos`, `ai`, `history`).

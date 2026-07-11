@@ -29,7 +29,7 @@ import (
 
 const testAudience = "beekeepingit-example"
 
-// testIDP is a minimal stand-in for Keycloak's OIDC discovery + JWKS
+// testIDP is a minimal stand-in for an OIDC provider's discovery + JWKS
 // endpoints — see services/servicetemplate/authn's own tests for the
 // key-rotation scenario; this one just needs to mint one valid token.
 type testIDP struct {

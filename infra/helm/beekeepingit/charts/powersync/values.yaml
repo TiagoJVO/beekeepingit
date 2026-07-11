@@ -1,0 +1,50 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by
+# the `powersync:` key in the parent's values.yaml/environments/*.yaml.
+enabled: true
+
+image:
+  repository: journeyapps/powersync-service
+  tag: "1.23.2"
+resourceTier: medium
+port: 8080
+
+# Real sync-token JWKS (#23/#106, replaces #22's OIDC-realm stopgap): the
+# `sync` service mints the short-TTL, org-scoped PowerSync token
+# (GET /v1/sync/token) and serves the matching public keys here. `audience`
+# must match the sync service's SYNC_TOKEN_AUDIENCE. `allow_local_jwks: true`
+# (set in the configmap) permits this internal `http://` URL.
+auth:
+  jwksUrl: http://sync:8080/internal/sync/jwks.json
+  audience:
+    - powersync
+
+# Real org-scoped Sync Rules (#23/#106, replaces #22's pg_tables placeholder —
+# docs/architecture/sync.md §3.4, ADR-0006). A device receives ONLY its active
+# organization's data: every `apiaries` row of that org plus the one
+# `organizations` row. The org is taken from the sync token's `organization_id`
+# claim (`request.jwt()`), so tenancy layer 3 (ADR-0002) is exercised even with
+# a single seeded org.
+#
+# Uses classic `bucket_definitions` (the documented org-scoping pattern):
+# `request.jwt()` is only valid there, NOT in edition-3 streams (validated live
+# — the engine rejects `request.jwt()` in a stream query with "Invalid schema in
+# function name", #23 deploy). The bucket is parameterized on the sync token's
+# `organization_id` claim; `deleted_at IS NULL` drops tombstoned rows so a
+# server-side delete propagates as a local delete (sync.md §4.5).
+syncConfig:
+  bucket_definitions:
+    by_organization:
+      parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
+      data:
+        - SELECT * FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        - SELECT * FROM organizations.organizations WHERE id = bucket.organization_id
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit
+  resources:
+    medium:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 250m, memory: 256Mi }

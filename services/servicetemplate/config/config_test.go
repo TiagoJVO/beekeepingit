@@ -11,7 +11,7 @@ import (
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("SERVICE_NAME", "example")
-	t.Setenv("OIDC_ISSUER_URL", "https://keycloak.example/realms/beekeepingit")
+	t.Setenv("OIDC_ISSUER_URL", "https://auth.example/application/o/beekeepingit/")
 	t.Setenv("OIDC_AUDIENCE", "beekeepingit-example")
 	t.Setenv("DB_HOST", "postgres")
 	t.Setenv("DB_USER", "example_svc")

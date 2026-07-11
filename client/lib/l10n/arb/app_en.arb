@@ -4,45 +4,250 @@
   "@appTitle": {
     "description": "App title, shown in the browser tab and app switcher"
   },
-  "homeTitle": "Apiaries",
-  "@homeTitle": {
-    "description": "Home screen app bar title"
+  "loginPrompt": "Sign in to manage your apiaries.",
+  "@loginPrompt": {
+    "description": "Text above the login button"
   },
-  "homeSubtitle": "Walking-skeleton scaffold — routing, theming, state and i18n are wired; real apiary data lands with the walking skeleton.",
-  "@homeSubtitle": {
-    "description": "Home screen placeholder body copy"
+  "loginButton": "Sign in",
+  "@loginButton": {
+    "description": "Primary login action — starts the OIDC redirect to the identity provider"
   },
-  "homeOpenSampleApiaryButton": "View sample apiary",
-  "@homeOpenSampleApiaryButton": {
-    "description": "Button that navigates to the placeholder apiary detail route"
+  "logout": "Sign out",
+  "@logout": {
+    "description": "Sign-out action in the app bar"
   },
-  "gatewayStatusLabel": "Gateway",
-  "@gatewayStatusLabel": {
-    "description": "Label in front of the backend-through-gateway reachability indicator"
+  "apiariesTitle": "Apiaries",
+  "@apiariesTitle": {
+    "description": "Apiaries list screen app bar title"
   },
-  "gatewayStatusChecking": "Checking…",
-  "@gatewayStatusChecking": {
-    "description": "Gateway reachability check in progress"
+  "apiariesEmpty": "No apiaries yet. Tap “Add apiary” to create one.",
+  "@apiariesEmpty": {
+    "description": "Empty state on the apiaries list"
   },
-  "gatewayStatusReachable": "Reachable",
-  "@gatewayStatusReachable": {
-    "description": "The gateway responded successfully"
-  },
-  "gatewayStatusUnreachable": "Unreachable",
-  "@gatewayStatusUnreachable": {
-    "description": "The gateway did not respond"
-  },
-  "apiaryDetailTitle": "Apiary detail",
-  "@apiaryDetailTitle": {
-    "description": "Apiary detail screen app bar title"
-  },
-  "apiaryDetailBody": "Placeholder detail route for apiary {id}. The real apiary read/edit form lands with the walking skeleton (#23).",
-  "@apiaryDetailBody": {
-    "description": "Apiary detail screen placeholder body copy",
+  "apiariesError": "Could not load apiaries: {error}",
+  "@apiariesError": {
+    "description": "Error state on the apiaries list",
     "placeholders": {
-      "id": {
+      "error": {
         "type": "String"
       }
     }
+  },
+  "addApiary": "Add apiary",
+  "@addApiary": {
+    "description": "Floating action button to create an apiary"
+  },
+  "hiveCountValue": "{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}",
+  "@hiveCountValue": {
+    "description": "Hive count subtitle on a list row",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "newApiaryTitle": "New apiary",
+  "@newApiaryTitle": {
+    "description": "Create form app bar title"
+  },
+  "editApiaryTitle": "Edit apiary",
+  "@editApiaryTitle": {
+    "description": "Edit form app bar title"
+  },
+  "apiaryNameLabel": "Name",
+  "@apiaryNameLabel": {
+    "description": "Apiary name field label"
+  },
+  "apiaryNameRequired": "Enter a name.",
+  "@apiaryNameRequired": {
+    "description": "Validation message for an empty apiary name"
+  },
+  "hiveCountLabel": "Number of hives",
+  "@hiveCountLabel": {
+    "description": "Hive count field label"
+  },
+  "hiveCountInvalid": "Enter a number of 0 or more.",
+  "@hiveCountInvalid": {
+    "description": "Validation message for an invalid hive count"
+  },
+  "saveButton": "Save",
+  "@saveButton": {
+    "description": "Save the apiary form"
+  },
+  "deleteApiary": "Delete apiary",
+  "@deleteApiary": {
+    "description": "Delete an apiary from the edit form"
+  },
+  "profileTitle": "Your profile",
+  "@profileTitle": {
+    "description": "Profile screen app bar title"
+  },
+  "profileOnboardingIntro": "Tell us a bit about yourself to get started.",
+  "@profileOnboardingIntro": {
+    "description": "Intro text shown when the profile is not yet complete"
+  },
+  "profileNameLabel": "Name",
+  "@profileNameLabel": {
+    "description": "Profile name field label"
+  },
+  "profileNameRequired": "Enter your name.",
+  "@profileNameRequired": {
+    "description": "Validation message for an empty profile name"
+  },
+  "profileEmailLabel": "Email",
+  "@profileEmailLabel": {
+    "description": "Profile email field label"
+  },
+  "profileEmailRequired": "Enter your email.",
+  "@profileEmailRequired": {
+    "description": "Validation message for an empty profile email"
+  },
+  "profileEmailInvalid": "Enter a valid email address.",
+  "@profileEmailInvalid": {
+    "description": "Validation message for a malformed profile email"
+  },
+  "profileLocaleLabel": "Preferred language",
+  "@profileLocaleLabel": {
+    "description": "Profile locale picker label"
+  },
+  "profileSaveButton": "Save profile",
+  "@profileSaveButton": {
+    "description": "Submit button on the profile form"
+  },
+  "profileSaveSuccess": "Profile saved.",
+  "@profileSaveSuccess": {
+    "description": "Snackbar shown after a successful profile save"
+  },
+  "profileSaveError": "Could not save your profile: {error}",
+  "@profileSaveError": {
+    "description": "Error shown after a failed profile save that isn't a field-level validation error",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "organizationTitle": "Your organization",
+  "@organizationTitle": {
+    "description": "Organization creation screen app bar title"
+  },
+  "organizationOnboardingIntro": "Create your organization to start managing apiaries.",
+  "@organizationOnboardingIntro": {
+    "description": "Intro text shown when the user has no organization yet"
+  },
+  "organizationNameLabel": "Organization name",
+  "@organizationNameLabel": {
+    "description": "Organization name field label"
+  },
+  "organizationNameRequired": "Enter an organization name.",
+  "@organizationNameRequired": {
+    "description": "Validation message for an empty organization name"
+  },
+  "organizationAddressLabel": "Address (optional)",
+  "@organizationAddressLabel": {
+    "description": "Organization address field label"
+  },
+  "organizationSaveButton": "Create organization",
+  "@organizationSaveButton": {
+    "description": "Submit button on the organization creation form"
+  },
+  "organizationSaveSuccess": "Organization created.",
+  "@organizationSaveSuccess": {
+    "description": "Snackbar shown after successfully creating an organization"
+  },
+  "organizationSaveError": "Could not create your organization: {error}",
+  "@organizationSaveError": {
+    "description": "Error shown after a failed organization save that isn't a field-level validation error",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "membersTitle": "Members & invitations",
+  "@membersTitle": {
+    "description": "Members/invitations management screen app bar title"
+  },
+  "membersLoadError": "Could not load members: {error}",
+  "@membersLoadError": {
+    "description": "Error state on the members screen",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "membersInviteEmailLabel": "Email to invite",
+  "@membersInviteEmailLabel": {
+    "description": "Invite-by-email field label"
+  },
+  "membersInviteEmailRequired": "Enter an email address.",
+  "@membersInviteEmailRequired": {
+    "description": "Validation message for an empty invite email"
+  },
+  "membersInviteButton": "Invite",
+  "@membersInviteButton": {
+    "description": "Submit button to send an invitation"
+  },
+  "membersInviteSuccess": "Invitation sent.",
+  "@membersInviteSuccess": {
+    "description": "Snackbar shown after successfully sending an invitation"
+  },
+  "membersInviteError": "Could not complete the request: {error}",
+  "@membersInviteError": {
+    "description": "Error shown after a failed invite/revoke action that isn't a field-level validation error",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "membersSectionTitle": "Members",
+  "@membersSectionTitle": {
+    "description": "Heading above the members list"
+  },
+  "membersEmpty": "No members yet.",
+  "@membersEmpty": {
+    "description": "Empty state for the members list"
+  },
+  "invitationsSectionTitle": "Invitations",
+  "@invitationsSectionTitle": {
+    "description": "Heading above the invitations list"
+  },
+  "invitationsEmpty": "No invitations yet.",
+  "@invitationsEmpty": {
+    "description": "Empty state for the invitations list"
+  },
+  "membersRevokeButton": "Revoke invitation",
+  "@membersRevokeButton": {
+    "description": "Tooltip/action to revoke a pending invitation"
+  },
+  "membersRevokeSuccess": "Invitation revoked.",
+  "@membersRevokeSuccess": {
+    "description": "Snackbar shown after successfully revoking an invitation"
+  },
+  "manageMembers": "Manage members",
+  "@manageMembers": {
+    "description": "Admin-only app-bar action on the apiaries home, linking to the members/invitations screen (#172)"
+  },
+  "accountTitle": "Account settings",
+  "@accountTitle": {
+    "description": "Account settings screen app bar title"
+  },
+  "accountProfileSectionTitle": "Profile",
+  "@accountProfileSectionTitle": {
+    "description": "Heading above the profile fields on the account settings screen"
+  },
+  "accountSecuritySectionTitle": "Security",
+  "@accountSecuritySectionTitle": {
+    "description": "Heading above the change-password action on the account settings screen"
+  },
+  "accountChangePasswordHint": "Password changes are handled by our sign-in provider, in a new tab.",
+  "@accountChangePasswordHint": {
+    "description": "Explanatory text above the change-password button"
+  },
+  "accountChangePasswordButton": "Change password",
+  "@accountChangePasswordButton": {
+    "description": "Button that opens the identity provider's account page to change password"
   }
 }

@@ -64,7 +64,7 @@ erDiagram
 
     USERS {
         uuid id PK
-        text keycloak_sub UK "OIDC subject (D-7)"
+        text oidc_sub UK "OIDC subject (D-7)"
         text name
         text email
         text locale "EN/PT (NFR-I18N)"
@@ -160,6 +160,14 @@ its **own** append-only `audit_log` in its **own** schema, written in the same l
 the change (capture mechanism + retention/immutability decided in **#107** → [history.md](history.md)
 / [ADR-0007](../adr/0007-history-audit.md)).
 
+**As built (#27):** `INVITATIONS` landed without the `expires_at` column shown above —
+invitation expiry/re-invite is explicitly still-open detail (D-3, FR-ONB-3), so #27 implements
+only `pending|accepted|revoked` (no automatic `expired` transition, no expiry column to drive
+it yet). `invited_by` (soft ref → `identity.users`, the inviting admin) was added instead,
+needed to populate the invitation record but not shown in the ERD above. A partial unique index
+on `(organization_id, lower(email))` scoped to `status = 'pending'` enforces "at most one
+pending invite per address per org" without needing an `expires_at`-driven cleanup job.
+
 ---
 
 ## 4. Schema ownership
@@ -198,14 +206,24 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 
 **Enforcement layers (defense in depth):**
 
-1. **Application (primary):** a shared Go middleware derives the caller's `organization_id` from
-   the verified token + membership (authZ detail → [auth.md](auth.md) / [ADR-0004](../adr/0004-authn-authz.md)) and **every query is org-scoped**. No
-   query runs without an org filter.
-2. **Database (optional RLS):** session var `SET app.current_org = $org`; RLS policies
-   `USING (organization_id = current_setting('app.current_org')::uuid)` on owned tables — a
-   backstop if a code path forgets the filter.
-3. **Sync slice:** the engine's publication is **org-scoped** (and user-scoped where activity
-   ownership requires), so a device only ever receives its organization's rows (D-6, #106).
+1. **Application (primary, implemented, #28/#30):** the shared `authn.NewOrgResolver` middleware
+   derives the caller's `organization_id` from the verified token + membership (authZ detail →
+   [auth.md](auth.md) / [ADR-0004](../adr/0004-authn-authz.md)) and **every query is org-scoped** —
+   every owned table's sqlc queries take `organization_id` as an explicit parameter, and
+   `dbaccess.UnscopedTables` (`services/shared/dbaccess/tenancy.go`) automates checking that every
+   base table in a service's schema carries the column in the first place, so a future migration
+   can't silently drop the precondition this layer depends on. No query runs without an org filter.
+2. **Database (optional RLS — decided deferred, #30):** session var `SET app.current_org = $org`;
+   RLS policies `USING (organization_id = current_setting('app.current_org')::uuid)` on owned
+   tables would be a backstop if a code path forgets the filter — **deferred for v1, not enabled**,
+   with a concrete rationale recorded in [ADR-0002's RLS decision](../adr/0002-multi-tenancy.md#rls-decision-layer-2-resolved-in-30):
+   every service's DB role both owns its tables and runs its queries, so plain RLS would be
+   silently bypassed for owner queries without `FORCE ROW LEVEL SECURITY` plus a table-ownership
+   change this issue's scope doesn't include.
+3. **Sync slice (implemented):** the PowerSync `by_organization` bucket definition
+   (`infra/helm/beekeepingit/charts/powersync/values.yaml`) parameterizes every synced row on the
+   sync token's `organization_id` claim, so a device only ever receives its organization's rows
+   (D-6, #106).
 
 **Why org-id-on-every-row (not schema/db-per-tenant):** it is the standard pattern that serves
 **one org now and many later with no rework** (Context C-1), keeps the **single cluster**
@@ -268,7 +286,8 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 
 - [x] Logical data model (ERD) for all v1 entities — §3
 - [x] Schema-per-service mapping (one cluster, clean boundaries) — §4
-- [x] Multi-tenancy: `organization_id` on every owned row; scoping + optional RLS — §5 + ADR-0002
+- [x] Multi-tenancy: `organization_id` on every owned row; scoping enforced + RLS deferral decided
+      and documented (#30) — §5 + [ADR-0002](../adr/0002-multi-tenancy.md#rls-decision-layer-2-resolved-in-30)
 - [x] PostGIS geo (proximity/distance) specified — §6
 - [x] ERD + schema-ownership table in `docs/`, ADR for tenancy — this doc + [ADR-0002](../adr/0002-multi-tenancy.md)
 

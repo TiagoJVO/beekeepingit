@@ -1,5 +1,16 @@
-# Go tasks — discover every module (go.mod) and run the tool inside each.
-# No-ops until the first Go service is scaffolded (services/*/go.mod).
+# Go tasks — run a tool across Go modules.
+#
+# Two axes:
+#   - Scope: `task go:test -- services/apiaries` runs against just the given
+#     module dir(s); with no args it discovers modules. build-publish.yml uses
+#     the scoped form so each deployable service is checked in its own
+#     build-matrix leg (#23).
+#   - What `task ci` sees: `lint`/`test` (the two `task ci` runs) SKIP deployable
+#     components (dirs with a Dockerfile) when discovering, so a service isn't
+#     lint/tested twice — once repo-wide and once per-component. `format`/`build`/
+#     `vuln` still cover every module (local-dev convenience).
+#
+# No-ops gracefully when there are no matching modules.
 version: "3"
 
 silent: true
@@ -11,49 +22,64 @@ vars:
     -not -path '*/vendor/*'
     -not -path '*/.git/*'
     -not -path '*/.claude/worktrees/*'
+  # Target dirs for the `task ci` checks: CLI args if given, else every module
+  # dir WITHOUT a Dockerfile (deployable components run per-component in CI).
+  DIRS_CI: |
+    if [ -n "{{.CLI_ARGS}}" ]; then
+      dirs="{{.CLI_ARGS}}"
+    else
+      dirs=$({{.FIND_MODS}} | while read -r m; do d=$(dirname "$m"); [ -f "$d/Dockerfile" ] || echo "$d"; done)
+    fi
+  # Target dirs for everything else: CLI args if given, else every module dir.
+  DIRS_ALL: |
+    if [ -n "{{.CLI_ARGS}}" ]; then
+      dirs="{{.CLI_ARGS}}"
+    else
+      dirs=$({{.FIND_MODS}} | while read -r m; do dirname "$m"; done)
+    fi
 
 tasks:
   lint:
-    desc: "Lint Go modules (golangci-lint, config in .golangci.yml)"
+    desc: "Lint Go modules (golangci-lint). Scope with: task go:lint -- <dir>"
     cmds:
       - |
         set -e
-        mods=$({{.FIND_MODS}})
-        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
-        for m in $mods; do d=$(dirname "$m"); echo "› [go] lint $d"; (cd "$d" && golangci-lint run ./...); done
-
-  format:
-    desc: "Format Go modules (gofmt + golangci-lint --fix for imports)"
-    cmds:
-      - |
-        set -e
-        mods=$({{.FIND_MODS}})
-        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
-        for m in $mods; do d=$(dirname "$m"); echo "› [go] format $d"; (cd "$d" && gofmt -w . && golangci-lint run --fix ./... || true); done
+        {{.DIRS_CI}}
+        if [ -z "$dirs" ]; then echo "› [go] no modules to lint — skipping"; exit 0; fi
+        for d in $dirs; do echo "› [go] lint $d"; (cd "$d" && golangci-lint run ./...); done
 
   test:
-    desc: "Test Go modules (go test ./...)"
+    desc: "Test Go modules (go test ./...). Scope with: task go:test -- <dir>"
     cmds:
       - |
         set -e
-        mods=$({{.FIND_MODS}})
-        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
-        for m in $mods; do d=$(dirname "$m"); echo "› [go] test $d"; (cd "$d" && go test ./...); done
+        {{.DIRS_CI}}
+        if [ -z "$dirs" ]; then echo "› [go] no modules to test — skipping"; exit 0; fi
+        for d in $dirs; do echo "› [go] test $d"; (cd "$d" && go test ./...); done
+
+  format:
+    desc: "Format Go modules (gofmt + golangci-lint --fix). Scope with: task go:format -- <dir>"
+    cmds:
+      - |
+        set -e
+        {{.DIRS_ALL}}
+        if [ -z "$dirs" ]; then echo "› [go] no modules to format — skipping"; exit 0; fi
+        for d in $dirs; do echo "› [go] format $d"; (cd "$d" && gofmt -w . && golangci-lint run --fix ./... || true); done
 
   build:
-    desc: "Build Go modules (go build ./...)"
+    desc: "Build Go modules (go build ./...). Scope with: task go:build -- <dir>"
     cmds:
       - |
         set -e
-        mods=$({{.FIND_MODS}})
-        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
-        for m in $mods; do d=$(dirname "$m"); echo "› [go] build $d"; (cd "$d" && go build ./...); done
+        {{.DIRS_ALL}}
+        if [ -z "$dirs" ]; then echo "› [go] no modules to build — skipping"; exit 0; fi
+        for d in $dirs; do echo "› [go] build $d"; (cd "$d" && go build ./...); done
 
   vuln:
-    desc: "Scan Go modules for known vulnerabilities (govulncheck; wired into CI #88)"
+    desc: "Scan Go modules for vulnerabilities (govulncheck). Scope with: task go:vuln -- <dir>"
     cmds:
       - |
         set -e
-        mods=$({{.FIND_MODS}})
-        if [ -z "$mods" ]; then echo "› [go] no go.mod yet — skipping"; exit 0; fi
-        for m in $mods; do d=$(dirname "$m"); echo "› [go] vuln $d"; (cd "$d" && govulncheck ./...); done
+        {{.DIRS_ALL}}
+        if [ -z "$dirs" ]; then echo "› [go] no modules to scan — skipping"; exit 0; fi
+        for d in $dirs; do echo "› [go] vuln $d"; (cd "$d" && govulncheck ./...); done

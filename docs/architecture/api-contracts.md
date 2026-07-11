@@ -10,7 +10,7 @@
 **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
 (microservices → inter-service contracts),
 [D-5](../../requirements/decisions.md) (Go/Flutter/React),
-[D-7](../../requirements/decisions.md) (Keycloak JWT)
+[D-7](../../requirements/decisions.md) (OIDC JWT — Authentik in v1)
 **Depends on:** #104, #105 · **ADR:** [0003-api-contract-conventions](../adr/0003-api-contract-conventions.md)
 **Contracts:** [`contracts/openapi/`](../../contracts/openapi/)
 
@@ -192,8 +192,9 @@ Details** (`application/problem+json`). Canonical schema in
 
 ## 9. Auth & tenancy in the contract (D-7, ADR-0002)
 
-- **Every client-facing operation requires a Keycloak-issued JWT bearer** (`bearerAuth`,
-  D-7). The gateway and/or the owning service validate it via JWKS (#109).
+- **Every client-facing operation requires an OIDC-issued JWT bearer** (`bearerAuth`, D-7 —
+  Authentik in v1, behind a provider-agnostic boundary). The gateway and/or the owning service
+  validate it via JWKS (#109).
 - **Tenancy is derived server-side, never a client parameter.** The caller's
   `organization_id` comes from the **token + membership**, so it is **never** a path, query, or
   body field ([ADR-0002](../adr/0002-multi-tenancy.md)). Where an org id must appear in a path
@@ -247,11 +248,15 @@ flowchart TD
 - **The reusable contract template** is `_shared/components.openapi.yaml` — security scheme,
   pagination params, standard headers (`ETag`, `Idempotency-Key`, `If-Match`, `X-Request-Id`),
   the `Problem` error schema and standard responses. New services are stamped from it.
-- **To wire in CI (EPIC-13, tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)):** spec **lint**
-  (Redocly/Spectral), **breaking-change** diff (`oasdiff`) on PRs, **server-stub + typed-client
-  codegen** (Go `oapi-codegen`; Dart/TS clients), and **contract tests** at boundaries
-  (coding-standards / NFR-TST-1). Until then, lint locally (`npx @redocly/cli lint …`) — the two
-  committed skeletons pass the recommended ruleset.
+- **Wired in CI ([#153](https://github.com/TiagoJVO/beekeepingit/issues/153)):** spec **lint**
+  (Redocly, `task openapi:lint` in `task ci`) and a **breaking-change** diff (`oasdiff`,
+  `contracts-ci.yml`) on PRs touching `contracts/openapi/**` — see
+  [`taskfiles/openapi.yml`](../../taskfiles/openapi.yml). **Server-stub codegen** (Go
+  `oapi-codegen`) is wired but no-ops until a service adds an `oapi-codegen.yaml` config;
+  **Dart/TS typed-client codegen** is deferred (no consumer yet, tool undecided). **Contract
+  tests** at boundaries run inside the owning service's own integration tests via
+  `services/servicetemplate/contracttest`, which validates a real HTTP response against the
+  service's OpenAPI spec — see `services/apiaries/main_test.go`.
 
 ---
 

@@ -16,6 +16,15 @@ dependencies:
   go_router: ^17.2.3
   intl: 0.20.2
   http: ^1.6.0
+  powersync: ^1.18.0
+  crypto: ^3.0.7
+  web: ^1.1.1
+  uuid: ^4.5.3
+  # Provider-agnostic OIDC: discovery (`Issuer.discover`) + Authorization Code
+  # + PKCE (`Flow.authorizationCodeWithPKCE`) driven behind the AuthPlatform
+  # seam. Deliberately NOT openid_client_browser (that's the implicit flow).
+  # See docs/architecture/oidc-integration.md §7.
+  openid_client: ^0.4.10
 
 dev_dependencies:
   flutter_test:

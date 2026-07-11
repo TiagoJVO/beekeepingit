@@ -50,5 +50,10 @@ mise.local.toml        # personal mise overrides (not committed)
 .mise.local.toml
 lefthook-local.yml     # personal lefthook overrides
 
+# --- Go ---
+# Per-service static binary the CI build step / local deploy compiles before
+# `docker build` (the distroless image just COPYs it) — never committed (#23).
+services/*/app
+
 # --- Misc ---
 *.tsbuildinfo

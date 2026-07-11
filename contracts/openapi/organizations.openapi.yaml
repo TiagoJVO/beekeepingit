@@ -1,6 +1,8 @@
-# Organizations service — client-facing REST contract (SKELETON).
+# Organizations service — client-facing REST contract.
 # Onboarding (FR-ONB) + the management surface the React Admin App consumes (NFR-ROL-2).
-# Demonstrates nested sub-resources (members, invitations) and the role model (NFR-ROL-1).
+# Organization create/read (#26), membership listing and email invitations (#27) are built;
+# organization update (PATCH) and member removal/role changes remain a skeleton (still-open
+# detail per D-3/FR-ONB-3 — invite expiry, re-invite, removing members, transferring admin).
 # Stamped from ./_shared/components.openapi.yaml; conventions in
 # docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email).
 openapi: 3.1.0
@@ -9,7 +11,9 @@ info:
   version: 0.1.0
   description: >-
     Organization CRUD, membership and email invitations. The user who creates an
-    organization becomes its admin and invites others by email (D-3). Org scope and role
+    organization becomes its admin and invites others by email (D-3); an invited user who
+    logs in is auto-joined to the inviting organization on their first `GET /organizations/me`
+    poll rather than being prompted to create a new one (FR-ONB-3). Org scope and role
     are derived from the JWT (ADR-0002); `{orgId}` in the path must match the caller's org.
   license:
     name: AGPL-3.0-only
@@ -63,6 +67,33 @@ paths:
           $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
         '422':
           $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
+  /organizations/me:
+    get:
+      operationId: getMyOrganization
+      summary: Get the caller's own organization
+      description: >-
+        Resolves the organization from the caller's own active membership — no
+        {orgId} needed. `404` when the caller has no active membership yet
+        (FR-ONB-2): the client's org-completion gate (mirrors the profile
+        completeness probe, FR-ONB-1) uses this to learn whether onboarding
+        must still create or join an organization before the caller can reach
+        apiaries/main features.
+      tags: [Organizations]
+      responses:
+        '200':
+          description: The caller's organization.
+          headers:
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
 
   /organizations/{orgId}:
     parameters:
@@ -123,7 +154,7 @@ paths:
       - $ref: '#/components/parameters/OrgId'
     get:
       operationId: listMembers
-      summary: List organization members
+      summary: List organization members (admin only)
       tags: [Members]
       parameters:
         - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
@@ -250,7 +281,14 @@ components:
                 - $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
               readOnly: true
               description: The first admin (D-3).
-          required: [id, name]
+            role:
+              allOf:
+                - $ref: '#/components/schemas/Role'
+              readOnly: true
+              description: >-
+                The caller's own membership role in this organization — not a property of the
+                organization itself (#172).
+          required: [id, name, role]
 
     OrganizationCreate:
       type: object

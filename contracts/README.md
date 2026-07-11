@@ -13,15 +13,17 @@ work needs them), so each service epic implements _against a committed contract_
 
 ## Layout
 
-| Path                                      | What                                                                                                                                                                                                                                                       |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `openapi/_shared/components.openapi.yaml` | The reusable **contract template**: security scheme (Keycloak JWT), pagination params, standard headers, the RFC 9457 `Problem` error schema, and shared responses. Every service spec `$ref`s this — it is _not_ a deployable API on its own (a partial). |
-| `openapi/apiaries.openapi.yaml`           | Skeleton for the **apiaries** service (FR-AP) — the walking-skeleton's "create" target (#110).                                                                                                                                                             |
-| `openapi/organizations.openapi.yaml`      | Skeleton for the **organizations** service (onboarding + admin surface, FR-ONB / NFR-ROL).                                                                                                                                                                 |
+| Path                                      | What                                                                                                                                                                                                                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `openapi/_shared/components.openapi.yaml` | The reusable **contract template**: security scheme (OIDC JWT — Authentik in v1), pagination params, standard headers, the RFC 9457 `Problem` error schema, and shared responses. Every service spec `$ref`s this — it is _not_ a deployable API on its own (a partial). |
+| `openapi/apiaries.openapi.yaml`           | Skeleton for the **apiaries** service (FR-AP) — the walking-skeleton's "create" target (#110).                                                                                                                                                                           |
+| `openapi/organizations.openapi.yaml`      | Skeleton for the **organizations** service (onboarding + admin surface, FR-ONB / NFR-ROL).                                                                                                                                                                               |
+| `openapi/sync.openapi.yaml`               | The **sync** service (#23) — the offline write-back seam: `GET /v1/sync/token` (PowerSync `fetchCredentials`) + `POST /v1/sync/batch` (`uploadData`). See [sync.md](../docs/architecture/sync.md) §3.4/§6.                                                               |
 
 The remaining services from the [service decomposition](../docs/architecture/service-decomposition.md)
-(`identity`, `activities`, `journeys`, `todos`, `ai`, `history`) are stamped from the same
-template as their epics start.
+(`activities`, `journeys`, `todos`, `ai`, `history`) are stamped from the same template as
+their epics start. (`identity`/`organizations` expose only internal resolve endpoints in the
+skeleton, so they have no client-facing spec yet beyond the `organizations` skeleton above.)
 
 ## Working with the specs
 
@@ -40,6 +42,16 @@ template as their epics start.
   > `$ref` — so each service spec declares `bearerAuth` locally as a `$ref` to the shared
   > definition (single source of truth, name resolves locally).
 
-- **Contract tests + `spectral`/`redocly` lint in CI** are wired with the platform in
-  **EPIC-13** (see [`FOLLOWUPS.md`](../FOLLOWUPS.md)); until then, lint locally with the
-  command above.
+- **Lint + the breaking-change gate run in CI** (`task openapi:lint` in `task ci`;
+  `contracts-ci.yml` runs `task openapi:breaking-diff` on PRs touching `contracts/openapi/**`)
+  — see [`taskfiles/openapi.yml`](../taskfiles/openapi.yml). Go server-stub/model codegen
+  (`task openapi:generate-go`, `oapi-codegen`) is wired too but no-ops until a service adds
+  `internal/api/oapi-codegen.yaml`. Dart/TS typed-client codegen is deferred — no client
+  consumes a generated client yet and no tool is decided.
+- **Contract tests at service boundaries** (#153) run as part of the owning service's own
+  integration tests, via `services/servicetemplate/contracttest` — it validates a real HTTP
+  response against the service's spec ($ref/allOf-aware). See
+  `services/apiaries/main_test.go`'s `TestApiariesSlice_ResponsesConformToOpenAPIContract` and
+  `services/sync/main_test.go`'s `TestSyncSlice_ResponsesConformToOpenAPIContract`; extend the
+  same pattern to `organizations`/`identity` once they grow a real client-facing surface (today
+  they only expose internal resolve endpoints — nothing to validate against a public spec yet).

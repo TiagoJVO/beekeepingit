@@ -1,6 +1,6 @@
 # MinIO (NFR-ARC-2) as its own Flux-managed release, sourced directly from the
 # official upstream chart repo — not nested inside the umbrella release. Same
-# reasoning as keycloak-helmrelease.yaml: Flux's GitRepository-sourced charts
+# reasoning as authentik-helmrelease.yaml: Flux's GitRepository-sourced charts
 # don't recursively resolve a subchart's own vendored dependency, so sourcing
 # this via HelmRepository instead sidesteps that entirely. See ADR-0012.
 apiVersion: source.toolkit.fluxcd.io/v1
@@ -20,7 +20,7 @@ metadata:
 spec:
   interval: 5m
   targetNamespace: beekeepingit-dev
-  # Pinned explicitly for the same reason as keycloak-helmrelease.yaml: Flux
+  # Pinned explicitly for the same reason as authentik-helmrelease.yaml: Flux
   # defaults an unset releaseName to "<targetNamespace>-<HelmRelease name>"
   # when they differ, which would otherwise make the generated Service name
   # unpredictable for anything that needs to reach MinIO later.

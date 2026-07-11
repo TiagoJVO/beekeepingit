@@ -5,12 +5,15 @@
 #
 # This file GROWS as packages land (D-9: dirs/toolchains created as work needs them).
 # e.g. add `flutter = "…"` when the Flutter client package is scaffolded.
+#
+# Pinned versions below get automated bump PRs from Renovate (renovate.json — Dependabot
+# doesn't understand this file's pin format). See docs/development/tooling.md#dependency-updates.
 
 [tools]
 # --- Language toolchains (baseline for the first services/apps) ---
-go = "1.25"   # bumped from 1.24 landing services/shared (#85): pgx v5/minio-go v7 require it
+go = "1.25.12"   # patch-pinned for GO-2026-5856 (crypto/tls stdlib CVE, fixed in 1.25.12); 1.25+ needed since #85 (pgx v5/minio-go v7)
 node = "22"
-flutter = "3.35.5"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed
+flutter = "3.44.4"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed. Bumped from 3.35.5 for #23: PowerSync's powersync_core needs a Dart with `Deprecated.subclass` (>=3.10), which 3.35.5's Dart 3.9.2 lacks.
 
 # --- Task runner & git hooks ---
 task = "3"          # go-task — the monorepo task runner (Taskfile.yml)
@@ -32,6 +35,11 @@ shellcheck = "latest"        # shell script linter
 gitleaks = "latest"          # secret scanning
 "npm:prettier" = "3"                 # Markdown / YAML / JSON formatter
 "npm:markdownlint-cli2" = "latest"   # Markdown linter
+
+# --- API contract tooling (contracts/openapi/ — #153, ADR-0003 §11) ---
+"npm:@redocly/cli" = "2.37.0"                                            # OpenAPI lint (recommended ruleset) + bundle (resolves split $ref before oasdiff/codegen)
+"go:github.com/oasdiff/oasdiff" = "1.22.0"                               # breaking-change diff gate on PRs touching contracts/openapi/**
+"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "2.7.1"  # Go server-stub + models codegen (no-ops until a service adds internal/api/oapi-codegen.yaml)
 
 # --- Infra toolchain (infra/ — single-cluster k8s platform, #83/EPIC-13) ---
 helm = "3.21.2"     # pinned to match .github/workflows/helm-ci.yml

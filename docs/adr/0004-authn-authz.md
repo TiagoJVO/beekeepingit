@@ -10,6 +10,13 @@
   [Q-ROLE](../../requirements/open-questions.md) (resolved), [Q-TEN](../../requirements/open-questions.md)
 - **Design doc:** [auth.md](../architecture/auth.md)
 
+> **Update (2026-07-10):** the IdP is now **Authentik**, not Keycloak
+> ([ADR-0016](0016-replace-keycloak-with-authentik.md)). The two-layer model, JWKS validation,
+> app-layer org-scoped authZ, and offline design below are **provider-neutral and still stand** —
+> only the **Keycloak-specific** realm/client/flow details are superseded. Read this for the model;
+> [ADR-0016](0016-replace-keycloak-with-authentik.md) +
+> [oidc-integration.md](../architecture/oidc-integration.md) for the Authentik specifics.
+
 ## Context
 
 [D-7](../../requirements/decisions.md#d-7--identity--auth-keycloak-self-hosted) sets the mechanism —

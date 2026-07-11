@@ -1,0 +1,107 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/api/api_client.dart';
+import '../../core/auth/auth_controller.dart';
+
+/// The authenticated caller's own profile
+/// (contracts/openapi/identity.openapi.yaml's Profile schema, FR-ONB-1).
+class Profile {
+  const Profile({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.locale,
+    required this.profileComplete,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory Profile.fromJson(Map<String, dynamic> json) => Profile(
+    id: json['id'] as String,
+    name: json['name'] as String? ?? '',
+    email: json['email'] as String? ?? '',
+    locale: json['locale'] as String? ?? 'en',
+    profileComplete: json['profile_complete'] as bool? ?? false,
+    createdAt: DateTime.parse(json['created_at'] as String),
+    updatedAt: DateTime.parse(json['updated_at'] as String),
+  );
+
+  final String id;
+  final String name;
+  final String email;
+  final String locale;
+  final bool profileComplete;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+}
+
+/// Reads/writes the caller's profile via `GET`/`PATCH /v1/profile`. GET
+/// lazily get-or-creates the row server-side on first login; PATCH is a
+/// partial update — only the fields passed are sent.
+class ProfileRepository {
+  ProfileRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<Profile> fetch() async {
+    final json = await _api.getJson('/profile');
+    return Profile.fromJson(json);
+  }
+
+  Future<Profile> update({String? name, String? email, String? locale}) async {
+    final body = <String, dynamic>{
+      if (name != null) 'name': name,
+      if (email != null) 'email': email,
+      if (locale != null) 'locale': locale,
+    };
+    final json = await _api.patchJson('/profile', body);
+    return Profile.fromJson(json);
+  }
+}
+
+final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
+  return ProfileRepository(ref.watch(apiClientProvider));
+});
+
+/// The caller's profile, fetched (and lazily created server-side) on first
+/// read. `AsyncNotifier` (not a plain `FutureProvider`) because the
+/// onboarding/edit form needs to mutate it and refetch.
+class ProfileController extends AsyncNotifier<Profile> {
+  @override
+  Future<Profile> build() {
+    return ref.watch(profileRepositoryProvider).fetch();
+  }
+
+  /// Submits a (possibly partial) update and refreshes state with the
+  /// server's response. Rethrows on failure (e.g. [ApiException] for a 422)
+  /// so the calling screen can surface field errors; state is left as the
+  /// last-known-good profile.
+  ///
+  /// Named `submit`, not `update` — `AsyncNotifier` already declares an
+  /// `update(fn)` helper with an incompatible signature, and reusing that
+  /// name here is a Dart `invalid_override` compile error.
+  Future<void> submit({String? name, String? email, String? locale}) async {
+    final repo = ref.read(profileRepositoryProvider);
+    final updated = await repo.update(name: name, email: email, locale: locale);
+    state = AsyncData(updated);
+  }
+}
+
+final profileProvider = AsyncNotifierProvider<ProfileController, Profile>(
+  ProfileController.new,
+);
+
+/// Whether the caller's profile is complete — derived from [profileProvider],
+/// defaulting to `false` while loading/erroring. The router gates on
+/// [profileProvider]'s own `AsyncValue` directly (so it can tell "still
+/// loading" apart from "resolved incomplete" and avoid bouncing to /profile
+/// on a loading flicker); this provider is for callers, like the profile
+/// screen, that only care about the resolved-or-default answer. Only watches
+/// [profileProvider] once authenticated: reading it while logged out would
+/// otherwise fire an unauthenticated (401) GET /v1/profile for no reason —
+/// there is nothing to gate before a session exists (the router already
+/// sends an unauthenticated caller to /login first).
+final profileCompleteProvider = Provider<bool>((ref) {
+  if (!ref.watch(isAuthenticatedProvider)) return false;
+  return ref.watch(profileProvider).value?.profileComplete ?? false;
+});

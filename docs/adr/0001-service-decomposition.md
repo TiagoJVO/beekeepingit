@@ -72,7 +72,7 @@ The decomposition's by-product — the **Helm umbrella subchart list** — is ha
 **Negative / risks**
 
 - **Operational over-engineering for one org** (the C-1/Q-SCALE concern): eight services, a
-  gateway, Keycloak, Postgres, a sync engine and an observability stack are a lot to run for a
+  gateway, an OIDC IdP, Postgres, a sync engine and an observability stack are a lot to run for a
   single Portuguese beekeeping org. Accepted as a deliberate D-1 trade-off.
 - **Tight core-domain coupling:** `apiaries`/`activities`/`journeys` are highly interdependent;
   splitting them risks chatty inter-service reads. **Mitigation:** offline-first means most

@@ -19,10 +19,25 @@ spec:
     size: {{ .Values.storageSize }}
   resources:
     {{- index .Values.global.resources .Values.resourceTier | toYaml | nindent 4 }}
+  postgresql:
+    # Logical replication, required by the PowerSync sync engine (D-6, ADR-0005)
+    # to stream the `powersync` publication (below) to its self-hosted service.
+    parameters:
+      wal_level: "logical"
+      max_wal_senders: "10"
+      max_replication_slots: "10"
   bootstrap:
     initdb:
       database: beekeepingit
       owner: beekeepingit
+      # Runs once, as superuser, connected to the default `postgres` database,
+      # *before* the `beekeepingit` application database above is even created
+      # — the only bootstrap hook that can CREATE DATABASE. Used for PowerSync's
+      # bucket-storage database (ADR-0005: "a SEPARATE database, so the
+      # `powersync` publication below never captures it") — deliberately not a
+      # schema in `beekeepingit` like the domain services below.
+      postInitSQL:
+        - CREATE DATABASE powersync_storage OWNER beekeepingit;
       # Runs once, as superuser, inside the `beekeepingit` application database
       # (postInitApplicationSQL — not postInitSQL/postInitTemplateSQL, which run
       # against `postgres`/`template1` instead), *before* spec.managed.roles
@@ -35,6 +50,15 @@ spec:
         {{- range .Values.schemas }}
         - CREATE SCHEMA IF NOT EXISTS {{ . }} AUTHORIZATION beekeepingit;
         {{- end }}
+        # Scoped to the SYNCABLE schemas only — NOT `FOR ALL TABLES`
+        # (walking-skeleton.md §5.3, sync.md §3.4): PowerSync's bucket-storage
+        # DB must not become a shadow copy of non-synced data (identity, ai,
+        # invitations, …). `FOR TABLES IN SCHEMA` (PG15+) is createable at
+        # bootstrap because the schemas already exist (above) even though their
+        # tables don't yet, and it auto-includes future additive tables in
+        # those schemas — so a new syncable service only extends the
+        # `syncedSchemas` list here, no post-migration ALTER PUBLICATION.
+        - CREATE PUBLICATION powersync FOR TABLES IN SCHEMA {{ join ", " .Values.syncedSchemas }};
   managed:
     roles:
       {{- range .Values.schemas }}
@@ -44,4 +68,24 @@ spec:
         passwordSecret:
           name: {{ . }}-svc-credentials
       {{- end }}
+      # One combined role for the PowerSync service: `replication` to open a
+      # logical-replication connection to `beekeepingit` (the `powersync`
+      # publication above), and it also owns/uses `powersync_storage` (granted
+      # by templates/schema-grants-job.yaml, since that DB is created — at
+      # postInitSQL time, above — before this role exists). No isolation
+      # benefit to splitting these into two roles; one process uses both.
+      - name: powersync
+        ensure: present
+        login: true
+        replication: true
+        # Member of each synced schema's owning service role, so it inherits
+        # SELECT on those tables for the initial replication snapshot — they're
+        # owned by the least-privilege per-service `*_svc` roles, which neither
+        # the app owner nor a non-superuser can GRANT on (#23 deploy).
+        inRoles:
+          {{- range .Values.syncedSchemas }}
+          - {{ . }}_svc
+          {{- end }}
+        passwordSecret:
+          name: powersync-credentials
 {{- end }}

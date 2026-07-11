@@ -1,14 +1,17 @@
 # 0010 — Platform backing-services provisioning: vendored charts, CNPG, Traefik reuse
 
-- **Status:** Accepted — the `keycloak`/`minio` vendoring approach below (wrapper charts nesting
+- **Status:** Accepted — the IdP/`minio` vendoring approach below (wrapper charts nesting
   the vendored dependency) is **superseded by
-  [ADR-0012](0012-keycloak-minio-standalone-helmreleases.md)**; `postgres`/`gateway`/CNPG/Traefik/
-  TLS are unaffected and still stand.
+  [ADR-0012](0012-keycloak-minio-standalone-helmreleases.md)** (standalone HelmReleases);
+  the IdP itself was later **swapped Keycloak → Authentik** by
+  [ADR-0016](0016-replace-keycloak-with-authentik.md), so the historical `keycloak` subchart
+  references below now read as **Authentik** (`charts/authentik/`). `postgres`/`gateway`/CNPG/
+  Traefik/TLS are unaffected and still stand.
 - **Date:** 2026-07-04
 - **Issue / Epic:** #84 · EPIC-13 (#83) · **Milestone:** M0
 - **Requirements:** NFR-ARC-2, NFR-ARC-3, NFR-SEC
 - **Decisions:** [D-6](../../requirements/decisions.md) (Postgres + PostGIS, schema-per-service),
-  [D-7](../../requirements/decisions.md) (Keycloak), [D-1](../../requirements/decisions.md) (single
+  [D-7](../../requirements/decisions.md) (OIDC IdP — Authentik in v1), [D-1](../../requirements/decisions.md) (single
   cluster, full microservices)
 - **Settles:** the open "Traefik or NGINX ingress" in
   [tech-stack.md](../../requirements/tech-stack.md#infrastructure)
@@ -132,8 +135,10 @@ infrastructure that will be replaced (or fronted by a real CA) when EPIC-14 land
 
 ## Follow-ups
 
-- EPIC-14 (#15): production-grade Keycloak realm/RBAC hardening, trusted-CA TLS (cert-manager or
+- EPIC-14 (#15): production-grade IdP (Authentik) flow/RBAC hardening, trusted-CA TLS (cert-manager or
   equivalent), and secret-management hardening beyond the generated-Secret idiom used here.
-- EPIC-13 #86/#88: live-cluster CI, so the `postgres` subchart's `helm test` PostGIS smoke-query
-  hook (and equivalent liveness checks for the other three) run automatically instead of only via
-  a developer's local `beekeeping` k3d cluster.
+- Live-cluster CI for the `postgres` subchart's `helm test` PostGIS smoke-query hook landed in
+  `helm-e2e.yml` (`#154`): it now runs automatically on infra PRs, not only via a developer's local
+  `beekeeping` k3d cluster. Equivalent liveness checks for the other three (authentik/minio/gateway)
+  extend that same job once those subcharts grow their own `helm test` hooks. (Authentik's release
+  now ships its own `helm test` ready-probe — ADR-0016.)

@@ -1,0 +1,129 @@
+# Identity service — client-facing REST contract.
+# Profile creation + enforce completion (FR-ONB-1, #25). Profile is user-scoped, not
+# org-scoped: it is read/written before any organization exists (auth.md §7,
+# walking-skeleton.md §4.5), so — unlike organizations.openapi.yaml — there is no
+# {orgId}-style path scoping here; the caller's identity comes entirely from the JWT.
+# Stamped from ./_shared/components.openapi.yaml; conventions in
+# docs/architecture/api-contracts.md.
+openapi: 3.1.0
+info:
+  title: BeekeepingIT — Identity API
+  version: 0.1.0
+  description: >-
+    The authenticated caller's own profile (name, email, locale). On first login the
+    profile is get-or-created lazily (empty name/email); the client-side onboarding flow
+    then completes it via PATCH. `profile_complete` is derived (name and email both
+    non-empty), never stored (FR-ONB-1).
+  license:
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
+
+servers:
+  - url: /v1
+    description: Served through the API gateway; major version in the path (ADR-0003).
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Profile
+    description: The authenticated caller's own user profile (FR-ONB-1).
+
+paths:
+  /profile:
+    get:
+      operationId: getProfile
+      summary: Get (or lazily create) the caller's profile
+      description: >-
+        Resolves the profile for the authenticated caller (JWT `sub`). If no
+        identity.users row exists yet, one is created with empty name/email so the
+        client can detect an incomplete profile and prompt onboarding.
+      tags: [Profile]
+      responses:
+        '200':
+          description: The caller's profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+    patch:
+      operationId: updateProfile
+      summary: Update the caller's profile (partial)
+      description: >-
+        Accepts any subset of name/email/locale; omitted fields keep their current
+        value. Always returns the full updated Profile representation. Onboarding's
+        first submission sends name+email together.
+      tags: [Profile]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          # Should not normally happen — onboarding always does a GET first,
+          # which lazily creates the row (see getProfile above).
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
+components:
+  # bearerAuth must resolve locally for the top-level `security` name reference; the
+  # canonical definition stays in _shared (single source of truth), pulled in by $ref.
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared/components.openapi.yaml#/components/securitySchemes/bearerAuth'
+
+  schemas:
+    Profile:
+      type: object
+      allOf:
+        - $ref: './_shared/components.openapi.yaml#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id:
+              allOf:
+                - $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+              readOnly: true
+            name:
+              type: string
+              maxLength: 200
+            email:
+              type: string
+              format: email
+              maxLength: 320
+            locale:
+              type: string
+              description: BCP 47 language tag used for i18n (EN/PT today).
+            profile_complete:
+              type: boolean
+              readOnly: true
+              description: Derived — true once both name and email are non-empty. Never stored.
+          required: [id, name, email, locale, profile_complete]
+
+    ProfileUpdate:
+      type: object
+      description: Partial update — any subset of fields; omitted fields are left unchanged.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        locale:
+          type: string
+      minProperties: 1

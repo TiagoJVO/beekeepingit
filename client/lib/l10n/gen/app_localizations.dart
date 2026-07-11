@@ -104,59 +104,329 @@ abstract class AppLocalizations {
   /// **'BeekeepingIT'**
   String get appTitle;
 
-  /// Home screen app bar title
+  /// Text above the login button
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to manage your apiaries.'**
+  String get loginPrompt;
+
+  /// Primary login action — starts the OIDC redirect to the identity provider
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get loginButton;
+
+  /// Sign-out action in the app bar
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get logout;
+
+  /// Apiaries list screen app bar title
   ///
   /// In en, this message translates to:
   /// **'Apiaries'**
-  String get homeTitle;
+  String get apiariesTitle;
 
-  /// Home screen placeholder body copy
+  /// Empty state on the apiaries list
   ///
   /// In en, this message translates to:
-  /// **'Walking-skeleton scaffold — routing, theming, state and i18n are wired; real apiary data lands with the walking skeleton.'**
-  String get homeSubtitle;
+  /// **'No apiaries yet. Tap “Add apiary” to create one.'**
+  String get apiariesEmpty;
 
-  /// Button that navigates to the placeholder apiary detail route
+  /// Error state on the apiaries list
   ///
   /// In en, this message translates to:
-  /// **'View sample apiary'**
-  String get homeOpenSampleApiaryButton;
+  /// **'Could not load apiaries: {error}'**
+  String apiariesError(String error);
 
-  /// Label in front of the backend-through-gateway reachability indicator
+  /// Floating action button to create an apiary
   ///
   /// In en, this message translates to:
-  /// **'Gateway'**
-  String get gatewayStatusLabel;
+  /// **'Add apiary'**
+  String get addApiary;
 
-  /// Gateway reachability check in progress
+  /// Hive count subtitle on a list row
   ///
   /// In en, this message translates to:
-  /// **'Checking…'**
-  String get gatewayStatusChecking;
+  /// **'{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}'**
+  String hiveCountValue(int count);
 
-  /// The gateway responded successfully
+  /// Create form app bar title
   ///
   /// In en, this message translates to:
-  /// **'Reachable'**
-  String get gatewayStatusReachable;
+  /// **'New apiary'**
+  String get newApiaryTitle;
 
-  /// The gateway did not respond
+  /// Edit form app bar title
   ///
   /// In en, this message translates to:
-  /// **'Unreachable'**
-  String get gatewayStatusUnreachable;
+  /// **'Edit apiary'**
+  String get editApiaryTitle;
 
-  /// Apiary detail screen app bar title
+  /// Apiary name field label
   ///
   /// In en, this message translates to:
-  /// **'Apiary detail'**
-  String get apiaryDetailTitle;
+  /// **'Name'**
+  String get apiaryNameLabel;
 
-  /// Apiary detail screen placeholder body copy
+  /// Validation message for an empty apiary name
   ///
   /// In en, this message translates to:
-  /// **'Placeholder detail route for apiary {id}. The real apiary read/edit form lands with the walking skeleton (#23).'**
-  String apiaryDetailBody(String id);
+  /// **'Enter a name.'**
+  String get apiaryNameRequired;
+
+  /// Hive count field label
+  ///
+  /// In en, this message translates to:
+  /// **'Number of hives'**
+  String get hiveCountLabel;
+
+  /// Validation message for an invalid hive count
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a number of 0 or more.'**
+  String get hiveCountInvalid;
+
+  /// Save the apiary form
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get saveButton;
+
+  /// Delete an apiary from the edit form
+  ///
+  /// In en, this message translates to:
+  /// **'Delete apiary'**
+  String get deleteApiary;
+
+  /// Profile screen app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Your profile'**
+  String get profileTitle;
+
+  /// Intro text shown when the profile is not yet complete
+  ///
+  /// In en, this message translates to:
+  /// **'Tell us a bit about yourself to get started.'**
+  String get profileOnboardingIntro;
+
+  /// Profile name field label
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get profileNameLabel;
+
+  /// Validation message for an empty profile name
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your name.'**
+  String get profileNameRequired;
+
+  /// Profile email field label
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get profileEmailLabel;
+
+  /// Validation message for an empty profile email
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your email.'**
+  String get profileEmailRequired;
+
+  /// Validation message for a malformed profile email
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid email address.'**
+  String get profileEmailInvalid;
+
+  /// Profile locale picker label
+  ///
+  /// In en, this message translates to:
+  /// **'Preferred language'**
+  String get profileLocaleLabel;
+
+  /// Submit button on the profile form
+  ///
+  /// In en, this message translates to:
+  /// **'Save profile'**
+  String get profileSaveButton;
+
+  /// Snackbar shown after a successful profile save
+  ///
+  /// In en, this message translates to:
+  /// **'Profile saved.'**
+  String get profileSaveSuccess;
+
+  /// Error shown after a failed profile save that isn't a field-level validation error
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save your profile: {error}'**
+  String profileSaveError(String error);
+
+  /// Organization creation screen app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Your organization'**
+  String get organizationTitle;
+
+  /// Intro text shown when the user has no organization yet
+  ///
+  /// In en, this message translates to:
+  /// **'Create your organization to start managing apiaries.'**
+  String get organizationOnboardingIntro;
+
+  /// Organization name field label
+  ///
+  /// In en, this message translates to:
+  /// **'Organization name'**
+  String get organizationNameLabel;
+
+  /// Validation message for an empty organization name
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an organization name.'**
+  String get organizationNameRequired;
+
+  /// Organization address field label
+  ///
+  /// In en, this message translates to:
+  /// **'Address (optional)'**
+  String get organizationAddressLabel;
+
+  /// Submit button on the organization creation form
+  ///
+  /// In en, this message translates to:
+  /// **'Create organization'**
+  String get organizationSaveButton;
+
+  /// Snackbar shown after successfully creating an organization
+  ///
+  /// In en, this message translates to:
+  /// **'Organization created.'**
+  String get organizationSaveSuccess;
+
+  /// Error shown after a failed organization save that isn't a field-level validation error
+  ///
+  /// In en, this message translates to:
+  /// **'Could not create your organization: {error}'**
+  String organizationSaveError(String error);
+
+  /// Members/invitations management screen app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Members & invitations'**
+  String get membersTitle;
+
+  /// Error state on the members screen
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load members: {error}'**
+  String membersLoadError(String error);
+
+  /// Invite-by-email field label
+  ///
+  /// In en, this message translates to:
+  /// **'Email to invite'**
+  String get membersInviteEmailLabel;
+
+  /// Validation message for an empty invite email
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an email address.'**
+  String get membersInviteEmailRequired;
+
+  /// Submit button to send an invitation
+  ///
+  /// In en, this message translates to:
+  /// **'Invite'**
+  String get membersInviteButton;
+
+  /// Snackbar shown after successfully sending an invitation
+  ///
+  /// In en, this message translates to:
+  /// **'Invitation sent.'**
+  String get membersInviteSuccess;
+
+  /// Error shown after a failed invite/revoke action that isn't a field-level validation error
+  ///
+  /// In en, this message translates to:
+  /// **'Could not complete the request: {error}'**
+  String membersInviteError(String error);
+
+  /// Heading above the members list
+  ///
+  /// In en, this message translates to:
+  /// **'Members'**
+  String get membersSectionTitle;
+
+  /// Empty state for the members list
+  ///
+  /// In en, this message translates to:
+  /// **'No members yet.'**
+  String get membersEmpty;
+
+  /// Heading above the invitations list
+  ///
+  /// In en, this message translates to:
+  /// **'Invitations'**
+  String get invitationsSectionTitle;
+
+  /// Empty state for the invitations list
+  ///
+  /// In en, this message translates to:
+  /// **'No invitations yet.'**
+  String get invitationsEmpty;
+
+  /// Tooltip/action to revoke a pending invitation
+  ///
+  /// In en, this message translates to:
+  /// **'Revoke invitation'**
+  String get membersRevokeButton;
+
+  /// Snackbar shown after successfully revoking an invitation
+  ///
+  /// In en, this message translates to:
+  /// **'Invitation revoked.'**
+  String get membersRevokeSuccess;
+
+  /// Admin-only app-bar action on the apiaries home, linking to the members/invitations screen (#172)
+  ///
+  /// In en, this message translates to:
+  /// **'Manage members'**
+  String get manageMembers;
+
+  /// Account settings screen app bar title
+  ///
+  /// In en, this message translates to:
+  /// **'Account settings'**
+  String get accountTitle;
+
+  /// Heading above the profile fields on the account settings screen
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get accountProfileSectionTitle;
+
+  /// Heading above the change-password action on the account settings screen
+  ///
+  /// In en, this message translates to:
+  /// **'Security'**
+  String get accountSecuritySectionTitle;
+
+  /// Explanatory text above the change-password button
+  ///
+  /// In en, this message translates to:
+  /// **'Password changes are handled by our sign-in provider, in a new tab.'**
+  String get accountChangePasswordHint;
+
+  /// Button that opens the identity provider's account page to change password
+  ///
+  /// In en, this message translates to:
+  /// **'Change password'**
+  String get accountChangePasswordButton;
 }
 
 class _AppLocalizationsDelegate

@@ -16,18 +16,22 @@ merge to main ─▶ build-publish.yml ─▶ ghcr.io/.../<svc>:<ts>-<sha>
 ## Why this directory is not reconciled yet
 
 These manifests sit **outside** the Flux Kustomization paths (`clusters/dev/`, `apps/dev/`), so
-Flux does **not** apply them today. Nothing publishes an image yet (no service has a Dockerfile),
-and the `ImageUpdateAutomation` needs Git **write** credentials that aren't provisioned at M0.
-Committing the engine + convention now (dormant) keeps them version-controlled and ready — the
-same "green before code" approach as the rest of the pipeline (D-9). See
-[FOLLOWUPS.md](../../../FOLLOWUPS.md) for the activation ledger.
+Flux does **not** apply them today. The walking-skeleton (#23) is the first set of services to
+ship Dockerfiles and publish to ghcr.io, so the per-service tracking is now **real**
+(`slice-service-images.yaml`), not only the illustrative `gateway` template — but it stays
+**dormant** because the `ImageUpdateAutomation` still needs Git **write** credentials (tracked
+under EPIC-14 [#89](https://github.com/TiagoJVO/beekeepingit/issues/89)) and these objects must be
+moved into a reconciled path to activate (see "Activation"). Committing the wiring now (dormant)
+keeps it version-controlled and ready — the same "green before code" approach as the rest of the
+pipeline (D-9). See [FOLLOWUPS.md](../../../FOLLOWUPS.md) for the activation ledger.
 
 ## Files
 
-| File                                                           | What it is                                                                                        |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [`image-update-automation.yaml`](image-update-automation.yaml) | The **engine** — how/where Flux commits tag bumps (targets `apps/dev/`, `Setters` strategy).      |
-| [`example-service-image.yaml`](example-service-image.yaml)     | **Template** `ImageRepository` + `ImagePolicy` for one service (`gateway` as the worked example). |
+| File                                                           | What it is                                                                                                                                                                                         |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`image-update-automation.yaml`](image-update-automation.yaml) | The **engine** — how/where Flux commits tag bumps (targets `apps/dev/`, `Setters` strategy).                                                                                                       |
+| [`example-service-image.yaml`](example-service-image.yaml)     | **Template** `ImageRepository` + `ImagePolicy` for one service (`gateway` as the worked example).                                                                                                  |
+| [`slice-service-images.yaml`](slice-service-images.yaml)       | **Real (dormant)** tracking for the #23 slice's 5 images (`services-{identity,organizations,apiaries,sync}` + `client`), with setter markers wired in `../apps/dev/beekeepingit-helmrelease.yaml`. |
 
 ## Activation (per the first service that ships an image)
 

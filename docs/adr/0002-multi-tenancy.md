@@ -78,3 +78,49 @@ Use a **shared-schema, discriminator-column** tenancy model:
   **designed in [ADR-0004](0004-authn-authz.md)** / [auth.md](../architecture/auth.md) (#109).
 - Per-service build (EPIC-00 #20, EPIC-13) — implement scoping in the shared query layer and add
   tenancy tests; decide whether to enable RLS.
+
+## RLS decision (layer 2, resolved in #30)
+
+**Decision: RLS stays deferred (not enabled) for v1.** This isn't leaving the "optional" call
+unaddressed — it's a deliberate, reasoned deferral with a concrete, codebase-specific reason
+beyond the general "connection pooler" risk this ADR already flagged:
+
+- **Every service connects to Postgres as its own least-privilege `<schema>_svc` role (D-6,
+  `infra/helm/beekeepingit/charts/postgres/templates/cluster.yaml`), and that SAME role also
+  RUNS THE MIGRATIONS that `CREATE TABLE` the schema's own tables** (`dbaccess.Migrate` and
+  `dbaccess.Connect` share one `Config`/DSN — `services/servicetemplate/config/config.go`). That
+  makes `<schema>_svc` the **table owner** for every table it queries.
+- **Postgres table owners bypass RLS by default** — a plain
+  `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` would be **silently ineffective** for exactly the
+  role that runs every application query, giving a false sense of a working backstop. Making
+  RLS actually bind here needs
+  `FORCE ROW LEVEL SECURITY` (still bypassed by a table's owner unless forced) **and** either (a)
+  separating table ownership from the querying role (a bootstrap/infra change — who owns the
+  table vs. who's granted DML — not a per-service code change) or (b) auditing that `FORCE` is
+  set on every owned table and re-verifying it on every migration.
+- Even with that fixed, RLS's session-variable plumbing (`SET app.current_org`) is only safe
+  through a **pooled** connection (`pgxpool.Pool`, used by every service, `services/shared/dbaccess/pool.go`)
+  if scoped with `SET LOCAL` inside an explicit transaction per request. Today only the handlers
+  that already need atomicity for another reason run inside a transaction (`apiaries`'s sync-apply
+  write path for LWW+conflict-log atomicity; `organizations`'s `POST /organizations` for the
+  create-org-and-membership invariant) — every plain single-statement read (`GET /v1/apiaries`,
+  `GET /organizations/{orgId}`, etc., the majority of the current request volume) runs a bare
+  query with no transaction wrapper at all, so adopting RLS would mean adding one to every such
+  handler across every service, not just the already-transactional write paths.
+- **What's already real, working, and tested instead:** layer 1 (mandatory app-layer scoping,
+  every query parameterized by the middleware-resolved `organization_id`) and layer 3 (the
+  PowerSync `by_organization` bucket definition — `infra/helm/beekeepingit/charts/powersync/values.yaml`
+  — filters every synced row by the sync token's `organization_id` claim) are both implemented and
+  covered by cross-org tests (`services/apiaries/main_test.go`'s `TestApiariesSlice_CrossOrg_*`,
+  `services/organizations/organizations_test.go`'s `TestGetOrganization_OtherOrg_Returns404`).
+  `dbaccess.UnscopedTables` (`services/shared/dbaccess/tenancy.go`) automates the "every owned row
+  carries `organization_id`" check per-service in CI, so layer 1's precondition doesn't silently
+  regress on a future migration either.
+- **Revisit when:** a genuine multi-org tenant lands (C-1's "later"), a compliance/pen-test finding
+  demands defense-in-depth beyond layer 1+3, or the table-ownership-vs-query-role split gets
+  addressed for an unrelated reason (e.g. adopting a migration-runner role distinct from the
+  service's own DML role) — at that point `FORCE ROW LEVEL SECURITY` + the `SET LOCAL`-per-transaction
+  work becomes a much smaller, additive change instead of a wholesale connection-handling rework.
+
+This resolves #30's "optional Postgres RLS is either enabled or explicitly documented as a
+deferred defense-in-depth layer with a rationale" AC.

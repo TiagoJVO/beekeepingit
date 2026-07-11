@@ -1,11 +1,14 @@
 # Dependency scanning half of the CI supply-chain story (EPIC-13 #88 / EPIC-14 #89): Dependabot
 # opens a PR per update for each ecosystem below. It bumps the SHA-pinned `uses:` refs (and the
 # version comment) for Actions, `go.mod`/`go.sum` for Go, and `pubspec.yaml`/`pubspec.lock` for
-# the Flutter client. Add `docker` (per-service Dockerfiles) and `npm` (admin app) ecosystems as
-# those packages land.
+# the Flutter client, and base images for the per-service `Dockerfile`s. Add `npm` (admin app)
+# when it lands.
 #
 # `commit-message.prefix` keeps PR titles Conventional-Commits-compliant so they pass the
 # "PR Title Semantics" check (`ci:` for Actions, `build:` for app dependencies).
+#
+# `mise.toml`'s tool pins have no ecosystem here — Dependabot doesn't understand that pin
+# format. They're bumped by Renovate instead (../renovate.json, #155).
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -17,12 +20,16 @@ updates:
     labels:
       - "type/chore"
 
-  # Go backend modules — services/shared (#85) and services/servicetemplate (#20) today;
-  # each new service is its own module.
+  # Go backend modules — the shared libraries (#85/#20) and each domain/platform
+  # service (#23); every service is its own module.
   - package-ecosystem: "gomod"
     directories:
       - "/services/shared"
       - "/services/servicetemplate"
+      - "/services/identity"
+      - "/services/organizations"
+      - "/services/apiaries"
+      - "/services/sync"
     schedule:
       interval: "weekly"
     commit-message:
@@ -33,6 +40,21 @@ updates:
   # Flutter client (#21).
   - package-ecosystem: "pub"
     directory: "/client"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "build"
+    labels:
+      - "type/chore"
+
+  # Base images for the deployable components' Dockerfiles (#23).
+  - package-ecosystem: "docker"
+    directories:
+      - "/services/identity"
+      - "/services/organizations"
+      - "/services/apiaries"
+      - "/services/sync"
+      - "/client"
     schedule:
       interval: "weekly"
     commit-message:

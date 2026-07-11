@@ -60,4 +60,13 @@ spec:
                 sleep 5
               done
               {{- end }}
+              # powersync_storage (PowerSync's bucket-storage DB, ADR-0005) is
+              # created and owned by beekeepingit at postInitSQL time — before
+              # the `powersync` role exists — so it can't own it at creation
+              # time either; same reason as the schema grants above. GRANT ON
+              # DATABASE doesn't require being connected to that database.
+              until psql -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON DATABASE powersync_storage TO powersync;"; do
+                echo "role powersync not ready yet, retrying in 5s..."
+                sleep 5
+              done
 {{- end }}

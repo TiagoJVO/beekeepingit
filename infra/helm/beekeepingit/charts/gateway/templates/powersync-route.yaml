@@ -1,0 +1,60 @@
+{{/*
+The PowerSync sync-stream route, split out from the main Ingress because it needs
+the `/sync-stream` prefix stripped: the PowerSync service serves its endpoints
+(`/sync/stream`, `/write-checkpoint`, `/probes/*`) at the root, while the client's
+configured endpoint is `<host>/sync-stream`. Without the strip the request reached
+the PWA SPA fallback and download sync silently never ran (#23).
+
+Uses a Traefik StripPrefix Middleware — the one Traefik-specific piece of the
+otherwise controller-agnostic gateway (NFR-ARC-2). If the ingress controller is
+swapped, this route's rewrite is what needs a per-controller equivalent; the main
+Ingress does not.
+
+Gated on the Traefik CRD being present (`.Capabilities.APIVersions.Has`): on a
+bare cluster without Traefik installed — e.g. the CI `helm test` k3d node — the
+`Middleware` kind is unresolvable and would fail `helm install` before any pod
+starts. Skipping this route there is fine (that job validates install + PostGIS,
+not gateway routing); real dev/prod clusters ship Traefik, so it renders normally.
+*/}}
+{{- if and .Values.enabled (.Capabilities.APIVersions.Has "traefik.io/v1alpha1/Middleware") }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "gateway.fullname" . }}-strip-sync
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: gateway
+spec:
+  stripPrefix:
+    prefixes:
+      - {{ .Values.powersyncRoute.path }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "gateway.fullname" . }}-sync
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: gateway
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Values.global.namespace }}-{{ include "gateway.fullname" . }}-strip-sync@kubernetescrd
+spec:
+  ingressClassName: {{ .Values.ingressClassName }}
+  tls:
+    - hosts:
+        - {{ .Values.appHost }}
+      secretName: {{ include "gateway.fullname" . }}-tls
+  rules:
+    - host: {{ .Values.appHost }}
+      http:
+        paths:
+          - path: {{ .Values.powersyncRoute.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.powersyncRoute.service }}
+                port:
+                  number: {{ .Values.powersyncRoute.port }}
+{{- end }}

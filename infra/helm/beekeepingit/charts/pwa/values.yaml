@@ -1,0 +1,19 @@
+# Defaults for standalone `helm template`/`helm lint`. The umbrella overrides
+# via the `pwa:` key in its own values.yaml / environments/*.yaml.
+enabled: true
+resourceTier: small
+
+image:
+  repository: ghcr.io/tiagojvo/beekeepingit/client
+  tag: latest
+  pullPolicy: IfNotPresent
+
+port: 80
+
+# Placeholder for standalone rendering only — the umbrella injects real global.*.
+global:
+  namespace: beekeepingit
+  resources:
+    small:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 64Mi }

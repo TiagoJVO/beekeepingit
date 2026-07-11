@@ -21,6 +21,11 @@ type Config struct {
 	Password string
 	Database string
 	SSLMode  string // e.g. "require", "disable"; defaults to "require"
+	// SearchPath, when set, is applied as the connection's schema search path.
+	// A least-privilege per-service role (schema-per-service, D-6) has no rights
+	// on `public`, so this points it at its own schema — where its tables live
+	// and where goose creates its version table.
+	SearchPath string
 }
 
 // DSN renders cfg as a connection string consumable by both pgxpool
@@ -43,6 +48,10 @@ func (c Config) DSN() string {
 	}
 	q := url.Values{}
 	q.Set("sslmode", sslMode)
+	if c.SearchPath != "" {
+		// libpq/pgx honor `options=-c search_path=<schema>` on every connection.
+		q.Set("options", "-c search_path="+c.SearchPath)
+	}
 	u.RawQuery = q.Encode()
 
 	return u.String()

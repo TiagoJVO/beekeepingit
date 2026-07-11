@@ -1,0 +1,8 @@
+apiVersion: v2
+name: pwa
+description: >-
+  The BeekeepingIT Flutter Web PWA (#21/#23) served as a static bundle behind
+  nginx. The gateway routes `/` here (#93).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

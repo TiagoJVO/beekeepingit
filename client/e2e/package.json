@@ -1,0 +1,13 @@
+{
+  "name": "beekeepingit-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright end-to-end test of the M0 walking-skeleton slice (#23): login → create → offline edit → sync.",
+  "scripts": {
+    "test": "playwright test",
+    "install-browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  // Dependabot (.github/dependabot.yml) already covers github-actions, gomod
+  // (services/shared, services/servicetemplate) and pub (client/). It has no ecosystem for
+  // mise.toml's pin format (bare pins plus `go:`/`npm:` backend-prefixed keys), so this file
+  // exists solely to fill that gap via Renovate's built-in `mise` manager — restricted to
+  // that one manager so the two tools never propose the same bump twice (#155, NFR-MNT-1, D-9).
+  // Docs: docs/development/tooling.md#dependency-updates.
+  "extends": ["config:recommended"],
+  "enabledManagers": ["mise"],
+  "schedule": ["before 6am on monday"],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "labels": ["type/chore"],
+  // Renovate defaults to opening a persistent "Dependency Dashboard" issue outside this repo's
+  // curated epic/story taxonomy (see the backlog-management skill) — skip it; PRs alone are
+  // enough signal for the handful of mise-pinned tools.
+  "dependencyDashboard": false
+}

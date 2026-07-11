@@ -26,8 +26,9 @@ to `open-questions.md`.
 
 - **NFR-SEC-1** — Secure **authentication and authorization**, **data encryption**,
   and protection against common threats including **SQL injection, XSS, and CSRF**.
-  - _Resolved (D-7, Q-AUTH):_ Keycloak / OIDC; email verification & password reset via Keycloak;
-    token lifetimes and **offline login** (cached tokens/JWKS + grace window) designed in
+  - _Resolved (D-7, Q-AUTH):_ OIDC (Authentik in v1, behind a provider-agnostic boundary — ADR-0016);
+    email verification & password reset via the IdP's flows (EPIC-14); token lifetimes and
+    **offline login** (cached tokens/JWKS + grace window) designed in
     [`docs/architecture/auth.md`](../docs/architecture/auth.md) / [ADR-0004](../docs/adr/0004-authn-authz.md).
 
 ## Scalability (NFR-SCA)
