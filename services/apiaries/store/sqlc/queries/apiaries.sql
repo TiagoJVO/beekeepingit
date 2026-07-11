@@ -39,7 +39,7 @@ INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, updated_at
 VALUES (
     $1, $2, $3, $4, $5,
     CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
-         ELSE ST_SetSRID(ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::geography
+         ELSE ST_SetSRID(ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
     END
 )
 RETURNING id, organization_id, name, hive_count, created_at, updated_at,
@@ -61,7 +61,7 @@ SET name = $3,
     hive_count = $4,
     updated_at = $5,
     location = CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
-                     ELSE ST_SetSRID(ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::geography
+                     ELSE ST_SetSRID(ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
                END,
     recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL

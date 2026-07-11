@@ -13,7 +13,7 @@ CREATE TABLE apiaries.apiaries (
     updated_at      TIMESTAMPTZ NOT NULL,
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at      TIMESTAMPTZ,
-    location        geography(Point, 4326)
+    location        public.geography(Point, 4326)
 );
 
 CREATE TABLE apiaries.sync_conflict_log (
