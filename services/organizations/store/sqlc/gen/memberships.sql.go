@@ -11,58 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getActiveMembershipByUser = `-- name: GetActiveMembershipByUser :one
-SELECT id, organization_id, user_id, role, status
-FROM organizations.memberships
-WHERE user_id = $1 AND status = 'active'
-ORDER BY created_at
-LIMIT 1
-`
-
-type GetActiveMembershipByUserRow struct {
-	ID             pgtype.UUID `json:"id"`
-	OrganizationID pgtype.UUID `json:"organization_id"`
-	UserID         pgtype.UUID `json:"user_id"`
-	Role           string      `json:"role"`
-	Status         string      `json:"status"`
-}
-
-// The auth middleware's resolve step (§4.2): the user's active membership
-// gives the request its organization_id + role. v1 is single-org (C-1); if a
-// user ever has several active memberships, the earliest is chosen.
-func (q *Queries) GetActiveMembershipByUser(ctx context.Context, userID pgtype.UUID) (GetActiveMembershipByUserRow, error) {
-	row := q.db.QueryRow(ctx, getActiveMembershipByUser, userID)
-	var i GetActiveMembershipByUserRow
-	err := row.Scan(
-		&i.ID,
-		&i.OrganizationID,
-		&i.UserID,
-		&i.Role,
-		&i.Status,
-	)
-	return i, err
-}
-
-const getOrganization = `-- name: GetOrganization :one
-SELECT id, name, address, created_by, created_at, updated_at
-FROM organizations.organizations
-WHERE id = $1
-`
-
-func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (OrganizationsOrganization, error) {
-	row := q.db.QueryRow(ctx, getOrganization, id)
-	var i OrganizationsOrganization
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Address,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createMembership = `-- name: CreateMembership :one
 INSERT INTO organizations.memberships (id, organization_id, user_id, role, status)
 VALUES ($1, $2, $3, 'admin', 'active')
@@ -124,6 +72,58 @@ func (q *Queries) CreateMembershipWithRole(ctx context.Context, arg CreateMember
 		&i.UserID,
 		&i.Role,
 		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getActiveMembershipByUser = `-- name: GetActiveMembershipByUser :one
+SELECT id, organization_id, user_id, role, status
+FROM organizations.memberships
+WHERE user_id = $1 AND status = 'active'
+ORDER BY created_at
+LIMIT 1
+`
+
+type GetActiveMembershipByUserRow struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Role           string      `json:"role"`
+	Status         string      `json:"status"`
+}
+
+// The auth middleware's resolve step (§4.2): the user's active membership
+// gives the request its organization_id + role. v1 is single-org (C-1); if a
+// user ever has several active memberships, the earliest is chosen.
+func (q *Queries) GetActiveMembershipByUser(ctx context.Context, userID pgtype.UUID) (GetActiveMembershipByUserRow, error) {
+	row := q.db.QueryRow(ctx, getActiveMembershipByUser, userID)
+	var i GetActiveMembershipByUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+	)
+	return i, err
+}
+
+const getOrganization = `-- name: GetOrganization :one
+SELECT id, name, address, created_by, created_at, updated_at
+FROM organizations.organizations
+WHERE id = $1
+`
+
+func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (OrganizationsOrganization, error) {
+	row := q.db.QueryRow(ctx, getOrganization, id)
+	var i OrganizationsOrganization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Address,
+		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
