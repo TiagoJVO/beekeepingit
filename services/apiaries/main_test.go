@@ -74,7 +74,13 @@ func newApiariesFixture(t *testing.T) *apiariesFixture {
 		dbPass = "beekeepingit_test"
 		dbName = "beekeepingit_test"
 	)
-	pg, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+	// postgis/postgis (not the plain postgres:16-alpine other services use):
+	// this service's schema needs the postgis extension (location
+	// geography(Point,4326), 00003_add_apiary_location.sql) — matching the
+	// real cluster's CNPG postgis operand image (infra/helm/beekeepingit/
+	// charts/postgres/values.yaml), just a standalone build of the same
+	// extension rather than the CNPG-specific image.
+	pg, err := tcpostgres.Run(ctx, "postgis/postgis:16-3.5",
 		tcpostgres.WithUsername(dbUser),
 		tcpostgres.WithPassword(dbPass),
 		tcpostgres.WithDatabase(dbName),
@@ -98,8 +104,11 @@ func newApiariesFixture(t *testing.T) *apiariesFixture {
 	}
 
 	dbCfg := dbaccess.Config{Host: host, Port: port.Port(), User: dbUser, Password: dbPass, Database: dbName, SSLMode: "disable"}
-	// Migrations no longer create the schema (infra's job in-cluster).
+	// Migrations no longer create the schema or the postgis extension
+	// (infra's job in-cluster, cluster.yaml's postInitApplicationSQL) — both
+	// stand in for that bootstrap step here.
 	createSchema(ctx, t, dbCfg, "apiaries")
+	createPostgisExtension(ctx, t, dbCfg)
 	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -117,7 +126,7 @@ func newApiariesFixture(t *testing.T) *apiariesFixture {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	srv.Mount("/v1/apiaries", injectClaims(api.ReadRouter(pool)))
+	srv.Mount("/v1/apiaries", injectClaims(api.Router(pool)))
 	srv.Mount("/internal/sync", injectClaims(api.InternalSyncRouter(pool)))
 
 	return &apiariesFixture{srv: srv, pool: pool}
@@ -134,6 +143,14 @@ func (f *apiariesFixture) do(t *testing.T, method, path string, body any) *httpt
 // orgs/users/roles in one test (cross-org assertions, #28 AC).
 func (f *apiariesFixture) doAs(t *testing.T, callerHeader, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
+	return f.doAsWithHeaders(t, callerHeader, method, path, body, nil)
+}
+
+// doAsWithHeaders is doAs plus arbitrary extra request headers — the REST
+// write handlers' If-Match/Idempotency-Key tests need to set headers doAs
+// has no way to express.
+func (f *apiariesFixture) doAsWithHeaders(t *testing.T, callerHeader, method, path string, body any, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -146,6 +163,9 @@ func (f *apiariesFixture) doAs(t *testing.T, callerHeader, method, path string, 
 	req := httptest.NewRequest(method, path, r)
 	if callerHeader != "" {
 		req.Header.Set(testOrgHeader, callerHeader)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	f.srv.Router().ServeHTTP(rec, req)
 	return rec
@@ -830,12 +850,484 @@ func TestApiariesSlice_ResponsesConformToOpenAPIContract(t *testing.T) {
 	doc.ValidateResponseBody(t, http.MethodGet, getPath, http.StatusNotFound, recGone.Body.Bytes())
 }
 
+// TestApiariesRest_ResponsesConformToOpenAPIContract is
+// TestApiariesSlice_ResponsesConformToOpenAPIContract's counterpart for the
+// REST write surface this issue (#31) adds: POST's 201, PATCH's 200, and a
+// validation failure's 422 all validated against
+// contracts/openapi/apiaries.openapi.yaml (the "contract tests at
+// boundaries" AC of #153). DELETE's 204 has no body to validate
+// (contracttest.ValidateResponseBody no-ops when a status declares none).
+func TestApiariesRest_ResponsesConformToOpenAPIContract(t *testing.T) {
+	doc, err := contracttest.Load("../../contracts/openapi/apiaries.openapi.yaml")
+	if err != nil {
+		t.Fatalf("load contract: %v", err)
+	}
+
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Quinta do Vale", int32Ptr(3), geoPoint(-8.6, 41.1)))
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+	doc.ValidateResponseBody(t, http.MethodPost, "/v1/apiaries", http.StatusCreated, recCreate.Body.Bytes())
+
+	patchPath := "/v1/apiaries/" + id
+	recPatch := f.do(t, http.MethodPatch, patchPath, map[string]any{"hive_count": 5})
+	if recPatch.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", recPatch.Code, recPatch.Body.String())
+	}
+	doc.ValidateResponseBody(t, http.MethodPatch, patchPath, http.StatusOK, recPatch.Body.Bytes())
+
+	recInvalid := f.do(t, http.MethodPatch, patchPath, map[string]any{"hive_count": -1})
+	if recInvalid.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid update status = %d, want 422, body = %s", recInvalid.Code, recInvalid.Body.String())
+	}
+	doc.ValidateResponseBody(t, http.MethodPatch, patchPath, http.StatusUnprocessableEntity, recInvalid.Body.Bytes())
+
+	recDelete := f.do(t, http.MethodDelete, patchPath, nil)
+	if recDelete.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", recDelete.Code, recDelete.Body.String())
+	}
+	doc.ValidateResponseBody(t, http.MethodDelete, patchPath, http.StatusNoContent, recDelete.Body.Bytes())
+}
+
+// --- REST write handlers (POST/PATCH/DELETE /v1/apiaries[/{id}], #31) ---
+
+// createBody/updateBody build the REST write handlers' request bodies —
+// small literal maps rather than typed structs, so a test can omit a field
+// (nil) versus send its zero value, exercising the same
+// present/absent distinction the handlers themselves make.
+func createBody(id, name string, hiveCount *int32, loc *geoPointView) map[string]any {
+	body := map[string]any{"id": id, "name": name}
+	if hiveCount != nil {
+		body["hive_count"] = *hiveCount
+	}
+	if loc != nil {
+		body["location"] = loc
+	}
+	return body
+}
+
+func geoPoint(lon, lat float64) *geoPointView {
+	return &geoPointView{Type: "Point", Coordinates: [2]float64{lon, lat}}
+}
+
+// TestApiariesRest_CreateReadUpdateDelete walks the REST CRUD round-trip
+// this issue (#31) adds: POST creates (with Location/ETag headers and a
+// GeoJSON location), GET reads it back, PATCH partially updates it
+// (including clearing/changing location), and DELETE tombstones it so a
+// subsequent GET 404s — matching FR-AP-1's create/read/update/delete ACs.
+func TestApiariesRest_CreateReadUpdateDelete(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	// Create with a location.
+	body := createBody(id, "Quinta do Vale", int32Ptr(3), geoPoint(-8.611, 41.148))
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", body)
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+	if loc := recCreate.Header().Get("Location"); loc != "/v1/apiaries/"+id {
+		t.Fatalf("create Location header = %q, want /v1/apiaries/%s", loc, id)
+	}
+	etag := recCreate.Header().Get("ETag")
+	if etag == "" {
+		t.Fatalf("create ETag header is empty, want a version tag")
+	}
+	var created apiaryView
+	if err := json.Unmarshal(recCreate.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if created.Name != "Quinta do Vale" || created.HiveCount != 3 {
+		t.Fatalf("created apiary = %+v, want name=Quinta do Vale hive_count=3", created)
+	}
+	if created.Location == nil || created.Location.Coordinates != [2]float64{-8.611, 41.148} {
+		t.Fatalf("created apiary location = %+v, want [-8.611, 41.148]", created.Location)
+	}
+
+	// Read it back — same content, ETag on the response too.
+	recGet := f.do(t, http.MethodGet, "/v1/apiaries/"+id, nil)
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200, body = %s", recGet.Code, recGet.Body.String())
+	}
+	if got := recGet.Header().Get("ETag"); got != etag {
+		t.Fatalf("get ETag = %q, want %q (unchanged since create)", got, etag)
+	}
+
+	// Partial update: only hive_count changes; name/location must survive
+	// untouched (PATCH is a partial update, not a replace).
+	recUpdate := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"hive_count": 9})
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+	var updated apiaryView
+	if err := json.Unmarshal(recUpdate.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode update response: %v", err)
+	}
+	if updated.HiveCount != 9 || updated.Name != "Quinta do Vale" {
+		t.Fatalf("updated apiary = %+v, want hive_count=9 name unchanged", updated)
+	}
+	if updated.Location == nil || updated.Location.Coordinates != [2]float64{-8.611, 41.148} {
+		t.Fatalf("updated apiary location = %+v, want unchanged [-8.611, 41.148]", updated.Location)
+	}
+	newETag := recUpdate.Header().Get("ETag")
+	if newETag == "" || newETag == etag {
+		t.Fatalf("update ETag = %q, want a new value distinct from create's %q", newETag, etag)
+	}
+
+	// Update the location itself.
+	recMove := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"location": geoPoint(-9.0, 41.5)})
+	if recMove.Code != http.StatusOK {
+		t.Fatalf("move status = %d, want 200, body = %s", recMove.Code, recMove.Body.String())
+	}
+	var moved apiaryView
+	if err := json.Unmarshal(recMove.Body.Bytes(), &moved); err != nil {
+		t.Fatalf("decode move response: %v", err)
+	}
+	if moved.Location == nil || moved.Location.Coordinates != [2]float64{-9.0, 41.5} {
+		t.Fatalf("moved apiary location = %+v, want [-9.0, 41.5]", moved.Location)
+	}
+
+	// Delete (tombstone) — 204, then a subsequent GET/PATCH/DELETE all 404.
+	recDelete := f.do(t, http.MethodDelete, "/v1/apiaries/"+id, nil)
+	if recDelete.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", recDelete.Code, recDelete.Body.String())
+	}
+	if recGone := f.do(t, http.MethodGet, "/v1/apiaries/"+id, nil); recGone.Code != http.StatusNotFound {
+		t.Fatalf("get-after-delete status = %d, want 404", recGone.Code)
+	}
+	if recPatchGone := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"hive_count": 1}); recPatchGone.Code != http.StatusNotFound {
+		t.Fatalf("patch-after-delete status = %d, want 404", recPatchGone.Code)
+	}
+	if recDeleteAgain := f.do(t, http.MethodDelete, "/v1/apiaries/"+id, nil); recDeleteAgain.Code != http.StatusNotFound {
+		t.Fatalf("delete-after-delete status = %d, want 404", recDeleteAgain.Code)
+	}
+}
+
+// TestApiariesRest_CreateWithoutLocation confirms the OpenAPI contract's
+// ApiaryCreate.required (only [id, name], NOT location) is honored: a
+// caller that omits location entirely gets a 201 with no `location` key in
+// the response (omitempty — the GeoPoint schema has no null variant).
+func TestApiariesRest_CreateWithoutLocation(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Encosta Sem Local", nil, nil))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"location"`) {
+		t.Fatalf("create response unexpectedly contains a location key: %s", rec.Body.String())
+	}
+	var created apiaryView
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if created.HiveCount != 0 {
+		t.Fatalf("created apiary hive_count = %d, want 0 (schema default)", created.HiveCount)
+	}
+}
+
+// TestApiariesRest_UpdateLocation_ExplicitNullClearsIt confirms sending
+// `"location": null` on PATCH (a defensive case beyond what the GeoPoint
+// schema itself specifies — it has no null variant, so this is undefined by
+// the contract, not a documented clear-location signal) does not panic and
+// results in an apiary with no location, matching how create-without-location
+// behaves.
+func TestApiariesRest_UpdateLocation_ExplicitNullClearsIt(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Foo", nil, geoPoint(-8.6, 41.1))); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"location": nil})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var updated apiaryView
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode update response: %v", err)
+	}
+	if updated.Location != nil {
+		t.Fatalf("updated apiary location = %+v, want nil (cleared)", updated.Location)
+	}
+}
+
+// TestApiariesRest_CreateValidation_RejectsBadInput matches the sync path's
+// validation rules (sync.go's validateOp: name required/non-empty/≤200,
+// hive_count >= 0) plus location bounds validation, with field-level 422s.
+func TestApiariesRest_CreateValidation_RejectsBadInput(t *testing.T) {
+	f := newApiariesFixture(t)
+
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"missing id", map[string]any{"name": "Foo"}},
+		{"empty name", createBody(uuid.NewString(), "", nil, nil)},
+		{"name too long", createBody(uuid.NewString(), strings.Repeat("x", 201), nil, nil)},
+		{"negative hive_count", createBody(uuid.NewString(), "Foo", int32Ptr(-1), nil)},
+		{"location wrong type", map[string]any{"id": uuid.NewString(), "name": "Foo", "location": map[string]any{"type": "Polygon", "coordinates": []float64{0, 0}}}},
+		{"location out of range", map[string]any{"id": uuid.NewString(), "name": "Foo", "location": map[string]any{"type": "Point", "coordinates": []float64{200, 100}}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := f.do(t, http.MethodPost, "/v1/apiaries", tc.body)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("create(%s) status = %d, want 422, body = %s", tc.name, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestApiariesRest_UpdateValidation_RejectsBadInput mirrors the create
+// validation matrix for PATCH, plus the "must change at least one field"
+// rule (ApiaryUpdate's minProperties: 1).
+func TestApiariesRest_UpdateValidation_RejectsBadInput(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Foo", nil, nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"empty body", map[string]any{}},
+		{"empty name", map[string]any{"name": ""}},
+		{"name too long", map[string]any{"name": strings.Repeat("x", 201)}},
+		{"negative hive_count", map[string]any{"hive_count": -1}},
+		{"location out of range", map[string]any{"location": map[string]any{"type": "Point", "coordinates": []float64{0, -100}}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, tc.body)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("update(%s) status = %d, want 422, body = %s", tc.name, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestApiariesRest_Create_IdempotentReplayDoesNotDuplicate is #31's
+// idempotency AC: re-sending the exact same create (same client-generated
+// id, same content, with an Idempotency-Key) returns the original resource
+// (201, unchanged) rather than a duplicate or an error — the row's own id
+// is the idempotency anchor (api-contracts.md §4). A conflicting re-create
+// (same id, different content) is a genuine 409.
+func TestApiariesRest_Create_IdempotentReplayDoesNotDuplicate(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	idempotencyKey := uuid.NewString()
+	body := createBody(id, "Quinta do Vale", int32Ptr(3), geoPoint(-8.6, 41.1))
+
+	headers := map[string]string{"Idempotency-Key": idempotencyKey}
+	rec1 := f.doAsWithHeaders(t, "", http.MethodPost, "/v1/apiaries", body, headers)
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("first create status = %d, want 201, body = %s", rec1.Code, rec1.Body.String())
+	}
+
+	rec2 := f.doAsWithHeaders(t, "", http.MethodPost, "/v1/apiaries", body, headers)
+	if rec2.Code != http.StatusCreated {
+		t.Fatalf("replayed create status = %d, want 201 (idempotent replay), body = %s", rec2.Code, rec2.Body.String())
+	}
+	var first, second apiaryView
+	if err := json.Unmarshal(rec1.Body.Bytes(), &first); err != nil {
+		t.Fatalf("decode first create: %v", err)
+	}
+	if err := json.Unmarshal(rec2.Body.Bytes(), &second); err != nil {
+		t.Fatalf("decode replayed create: %v", err)
+	}
+	if first.ID != second.ID || first.Name != second.Name || first.HiveCount != second.HiveCount {
+		t.Fatalf("replayed create body = %+v, want identical to first %+v", second, first)
+	}
+	if (first.Location == nil) != (second.Location == nil) {
+		t.Fatalf("replayed create location = %+v, want identical to first %+v", second.Location, first.Location)
+	}
+	if first.Location != nil && *first.Location != *second.Location {
+		t.Fatalf("replayed create location = %+v, want identical to first %+v", *second.Location, *first.Location)
+	}
+
+	var n int
+	if err := f.pool.QueryRow(context.Background(), "SELECT count(*) FROM apiaries.apiaries WHERE id = $1", id).Scan(&n); err != nil {
+		t.Fatalf("count apiaries: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("apiaries rows with id %s = %d, want 1 (no duplicate)", id, n)
+	}
+
+	// A different payload reusing the same id is a genuine conflict.
+	conflicting := createBody(id, "Different Name", int32Ptr(3), geoPoint(-8.6, 41.1))
+	recConflict := f.do(t, http.MethodPost, "/v1/apiaries", conflicting)
+	if recConflict.Code != http.StatusConflict {
+		t.Fatalf("conflicting create status = %d, want 409, body = %s", recConflict.Code, recConflict.Body.String())
+	}
+}
+
+// TestApiariesRest_History_CreateUpdateDeleteEachProduceOneAuditRow is #31's
+// history AC (FR-HIS-1): every REST create/update/delete writes exactly one
+// apiaries.audit_log row, in the same shape sync.go's writeAuditLog
+// produces (mirrors TestApiariesSlice_History_CreateUpdateDeleteEachProduceOneAuditRow
+// for the sync-apply path).
+func TestApiariesRest_History_CreateUpdateDeleteEachProduceOneAuditRow(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Encosta Nova", int32Ptr(3), nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	rows := f.auditLogFor(t, id)
+	if len(rows) != 1 || rows[0].ChangeType != "create" {
+		t.Fatalf("audit rows after create = %+v, want exactly 1 create row", rows)
+	}
+	if rows[0].ActorUserID != devseed.UserID {
+		t.Fatalf("create audit actor_user_id = %q, want %q", rows[0].ActorUserID, devseed.UserID)
+	}
+
+	if rec := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"hive_count": 12}); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	rows = f.auditLogFor(t, id)
+	if len(rows) != 2 || rows[1].ChangeType != "update" {
+		t.Fatalf("audit rows after update = %+v, want [create, update]", rows)
+	}
+	if len(rows[1].ChangedFields) != 1 || rows[1].ChangedFields[0] != "hive_count" {
+		t.Fatalf("update audit changed_fields = %v, want [hive_count]", rows[1].ChangedFields)
+	}
+
+	if rec := f.do(t, http.MethodDelete, "/v1/apiaries/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+	rows = f.auditLogFor(t, id)
+	if len(rows) != 3 || rows[2].ChangeType != "delete" {
+		t.Fatalf("audit rows after delete = %+v, want [create, update, delete]", rows)
+	}
+	var delChange map[string]any
+	if err := json.Unmarshal(rows[2].Change, &delChange); err != nil {
+		t.Fatalf("unmarshal delete change: %v", err)
+	}
+	if delChange["deleted"] != true {
+		t.Fatalf("delete change = %+v, want a {deleted:true} tombstone", delChange)
+	}
+}
+
+// TestApiariesRest_IfMatch_StaleETagIsConflict is the optimistic-concurrency
+// half of PATCH/DELETE's If-Match handling (IfMatchHeader,
+// contracts/openapi/_shared/components.openapi.yaml): a stale If-Match is
+// 409, a current one succeeds, and an absent one (If-Match is optional) also
+// succeeds.
+func TestApiariesRest_IfMatch_StaleETagIsConflict(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Foo", nil, nil))
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+	staleETag := recCreate.Header().Get("ETag")
+
+	// A stale If-Match (from before an intervening update) is rejected.
+	if rec := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"hive_count": 1}); rec.Code != http.StatusOK {
+		t.Fatalf("first update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	recStale := f.doAsWithHeaders(t, "", http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"hive_count": 2}, map[string]string{"If-Match": staleETag})
+	if recStale.Code != http.StatusConflict {
+		t.Fatalf("update with stale If-Match status = %d, want 409, body = %s", recStale.Code, recStale.Body.String())
+	}
+
+	// The current ETag succeeds.
+	currentETag := f.getETag(t, id)
+	recOK := f.doAsWithHeaders(t, "", http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"hive_count": 3}, map[string]string{"If-Match": currentETag})
+	if recOK.Code != http.StatusOK {
+		t.Fatalf("update with current If-Match status = %d, want 200, body = %s", recOK.Code, recOK.Body.String())
+	}
+
+	// A stale If-Match on DELETE is likewise rejected.
+	recDeleteStale := f.doAsWithHeaders(t, "", http.MethodDelete, "/v1/apiaries/"+id, nil, map[string]string{"If-Match": staleETag})
+	if recDeleteStale.Code != http.StatusConflict {
+		t.Fatalf("delete with stale If-Match status = %d, want 409, body = %s", recDeleteStale.Code, recDeleteStale.Body.String())
+	}
+}
+
+// TestApiariesRest_CrossOrg_WritesCannotTouchOtherOrgsRow is FR-TEN-2's
+// write-side guarantee for the REST handlers (mirrors
+// TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow for the
+// sync-apply path, #57's cross-org idiom): org B cannot update or delete
+// org A's apiary by id — both come back 404, and org A's row is untouched.
+func TestApiariesRest_CrossOrg_WritesCannotTouchOtherOrgsRow(t *testing.T) {
+	f := newApiariesFixture(t)
+	other := otherOrgCaller()
+
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Org A Apiary", int32Ptr(5), nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	recUpdate := f.doAs(t, other, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"hive_count": 99})
+	if recUpdate.Code != http.StatusNotFound {
+		t.Fatalf("org B update status = %d, want 404, body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+	recDelete := f.doAs(t, other, http.MethodDelete, "/v1/apiaries/"+id, nil)
+	if recDelete.Code != http.StatusNotFound {
+		t.Fatalf("org B delete status = %d, want 404, body = %s", recDelete.Code, recDelete.Body.String())
+	}
+
+	// Org A's apiary is untouched and still live.
+	if a := f.getApiary(t, id); a.HiveCount != 5 {
+		t.Fatalf("org A apiary hive_count = %d, want 5 (untouched by org B's attempts)", a.HiveCount)
+	}
+}
+
+// TestApiariesRest_Create_CrossOrgIdCollisionIsConflict guards against the
+// REST create idempotency-replay path (respondIdempotentCreateOrConflict)
+// accidentally treating a same-id create from a DIFFERENT org as a safe
+// replay: org A creates id X, then org B creates the same id X — since
+// org B's org-scoped lookup of id X finds nothing (it's org A's row), this
+// must be a 409, never a 200/201 that would leak org A's data into the
+// response.
+func TestApiariesRest_Create_CrossOrgIdCollisionIsConflict(t *testing.T) {
+	f := newApiariesFixture(t)
+	other := otherOrgCaller()
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Org A Apiary", nil, nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("org A create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	recOtherOrg := f.doAs(t, other, http.MethodPost, "/v1/apiaries", createBody(id, "Org B Apiary", nil, nil))
+	if recOtherOrg.Code != http.StatusConflict {
+		t.Fatalf("org B create with colliding id status = %d, want 409, body = %s", recOtherOrg.Code, recOtherOrg.Body.String())
+	}
+}
+
+func int32Ptr(n int32) *int32 { return &n }
+
+// getETag issues a GET and returns just the ETag header — a shorthand for
+// tests that need the current version stamp without the full body.
+func (f *apiariesFixture) getETag(t *testing.T, id string) string {
+	t.Helper()
+	rec := f.do(t, http.MethodGet, "/v1/apiaries/"+id, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	return rec.Header().Get("ETag")
+}
+
 // --- small read helpers ---
 
+// geoPointView mirrors api.geoPointDTO's wire shape for test assertions.
+type geoPointView struct {
+	Type        string     `json:"type"`
+	Coordinates [2]float64 `json:"coordinates"`
+}
+
 type apiaryView struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	HiveCount int32  `json:"hive_count"`
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	HiveCount int32         `json:"hive_count"`
+	Location  *geoPointView `json:"location,omitempty"`
 }
 
 func (f *apiariesFixture) getApiary(t *testing.T, id string) apiaryView {
@@ -883,5 +1375,22 @@ func createSchema(ctx context.Context, t *testing.T, cfg dbaccess.Config, name s
 	defer conn.Close(ctx)
 	if _, err := conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+name); err != nil {
 		t.Fatalf("create schema %s: %v", name, err)
+	}
+}
+
+// createPostgisExtension enables postgis on the test database, standing in
+// for the postgres chart's bootstrap (cluster.yaml's postInitApplicationSQL
+// runs `CREATE EXTENSION IF NOT EXISTS postgis;` once, cluster-wide, before
+// any service's migrations run) — 00003_add_apiary_location.sql's
+// `geography(Point, 4326)` column needs the extension to already exist.
+func createPostgisExtension(ctx context.Context, t *testing.T, cfg dbaccess.Config) {
+	t.Helper()
+	conn, err := pgx.Connect(ctx, cfg.DSN())
+	if err != nil {
+		t.Fatalf("connect to create postgis extension: %v", err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS postgis"); err != nil {
+		t.Fatalf("create postgis extension: %v", err)
 	}
 }
