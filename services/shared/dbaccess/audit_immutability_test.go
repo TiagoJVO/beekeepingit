@@ -87,13 +87,15 @@ func newAuditImmutabilityFixture(t *testing.T) *auditImmutabilityFixture {
 		t.Fatalf("container mapped port: %v", err)
 	}
 
-	connect := func(user, password string) *pgx.Conn {
-		t.Helper()
-		cfg := dbaccess.Config{
+	configFor := func(user, password string) dbaccess.Config {
+		return dbaccess.Config{
 			Host: host, Port: port.Port(), User: user, Password: password,
 			Database: auditFixtureDB, SSLMode: "disable",
 		}
-		conn, err := pgx.Connect(ctx, cfg.DSN())
+	}
+	connect := func(user, password string) *pgx.Conn {
+		t.Helper()
+		conn, err := pgx.Connect(ctx, configFor(user, password).DSN())
 		if err != nil {
 			t.Fatalf("connect as %s: %v", user, err)
 		}
@@ -453,3 +455,25 @@ func TestAuditImmutability_LockDownIsIdempotent(t *testing.T) {
 	f.assertServiceCanInsertAndSelect(t, "audit_log")
 	f.assertServiceCannotUpdateDeleteOrTruncate(t, "audit_log")
 }
+
+// NOTE on the shell script's retry/concurrency shape itself (not exercised
+// by this file's tests): a second real production incident, found and fixed
+// in the same change as the cluster.yaml/managed.roles fix above, was in
+// audit-immutability-job.yaml's shell script — the FIRST version retried
+// each (schema, table) pair SERIALLY, up to 30 attempts x 10s = 5 minutes
+// per pair. Multiplied across every schema in .Values.schemas x {audit_log,
+// sync_conflict_log} (~14 pairs, most of which will NEVER exist —
+// activities/journeys/todos/ai have no Go service built yet), every missing
+// pair burned its full budget on every deploy: ~11 missing pairs x 5 min ≈
+// 55 minutes, which blew through CI's 15-minute `helm upgrade --timeout`
+// (confirmed live against the shared k3d cluster). Fixed by shortening the
+// per-table budget (5 attempts x 3s) and running every pair CONCURRENTLY
+// (backgrounded, then `wait`ed) instead of serially — verified manually
+// against a real container with the same 14-pair/1-existing shape: ~15s
+// total instead of ~55min. See audit-immutability-job.yaml's header comment
+// for the full incident note and the shell script itself for the mechanics.
+// An attempt to also cover this with a Go test that executes the real
+// rendered script inside a testcontainers Postgres (via Container.Exec) hit
+// an unreliable hang in that Exec path unrelated to the fix's correctness —
+// dropped rather than chased further; the manual verification above plus
+// this file's SQL-level tests are the coverage for #62's actual fix.
