@@ -238,7 +238,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
   resolves — `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2, `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6,
   `Q-AICLOUD` → M8, `Q-NOTIF` → M9 (resolve per the `requirements-folder` skill).
 - **Keeps:** the **D-10** rollout order (PWA → Android → iOS) and **D-4** deferrals (billing/quotas
-  EPIC-90/91 stay milestone-less) unchanged — this only re-slices *how* the work is bucketed.
+  EPIC-90/91 stay milestone-less) unchanged — this only re-slices _how_ the work is bucketed.
 - **Refines:** the flat-milestone framing and the `backlog-management` skill (streams are now a
   first-class kind). Touches D-4, D-10, EPIC-06/07/11/14/15. Applied to GitHub Issues 2026-07-11.
 
