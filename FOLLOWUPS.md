@@ -23,3 +23,19 @@ coordinator follow-ups (to promote to GitHub Issues, then prune here):
 - **Backlog grooming** — rename **#72** (Keycloak → OIDC auth), retarget **#98** / EPIC-14 **#15**
   auth-hardening scope to Authentik (flows/blueprints/secrets), reconcile other open Keycloak-mentioning
   issues.
+
+## Milestone/stream regroom (D-14) — follow-ups
+
+Flat **M0–M5** re-sliced into a per-feature ladder + cross-cutting streams; the GitHub
+Issues/Milestones/dependency edits are already applied (this PR records the model in **D-14**).
+Pending (promote to Issues, then prune here):
+
+- **Scope gates** — settle before sizing a feature's stories: `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2
+  (first), `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6, `Q-AICLOUD` → M8, `Q-NOTIF` → M9. Resolve via
+  the `requirements-folder` skill (answer → `D-*`/`FR-*`, then delete the `Q-*`).
+- **`#60`** ("history view per apiary/activity/journey", now M3) may want splitting per entity during grooming.
+- **Provisional stream-story placements** — `#56–59`/`#61–62`/`#165` → M2, `#90`/`#92` → M6 by
+  "first need"; revisit if a thinner M2 is wanted.
+- **Project board** — re-check any saved views that filtered the now-deleted `M2–M5`.
+
+Rollback snapshot if needed: `scratchpad/backlog-backup-2026-07-11/` (+ `RESTORE.md`).
