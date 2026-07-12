@@ -64,13 +64,12 @@ edges:
     from: { namespaceSelector: kube-system }
     to: { app.kubernetes.io/name: powersync }
     port: 8080
-  # 9000 = the server pod's own container port (the `authentik-server`
-  # Service front-ends it on 80; netpol matches the container port — see the
-  # header comment).
-  - name: gateway-to-authentik-server
-    from: { namespaceSelector: kube-system }
-    to: { app.kubernetes.io/name: server }
-    port: 9000
+  # NB: there is deliberately NO gateway-to-authentik-server edge. Traefik
+  # does route the auth host to authentik-server, but that pod is EXCLUDED
+  # from default-deny (vendored authentik stack, see _helpers.tpl), so it has
+  # no ingress restriction to punch through — and adding an ingress policy
+  # that selects it would flip it to whitelist-only and block its other
+  # (internal) callers. Excluded pods need no allow rules.
 
   # --- East-west (services/values.yaml env: INTERNAL_*_URL) ---
   - name: organizations-to-identity
@@ -104,30 +103,46 @@ edges:
     port: 8080
 
   # --- OIDC discovery/JWKS (docs/architecture/auth.md §4, internal split) ---
-  # 9000 = the server pod's container port behind the Service's port 80 (the
-  # discoveryUrl says http://authentik-server/... = port 80 pre-DNAT).
+  # Our domain services are under default-deny and must reach authentik for
+  # OIDC discovery — but authentik itself is EXCLUDED from default-deny (a
+  # vendored stack, see _helpers.tpl / default-deny.yaml), so these edges are
+  # `egressOnly`: only the caller-side allow is needed; a target-side ingress
+  # policy would (re)impose a whitelist on the excluded authentik-server pod
+  # and strangle its own internal traffic — exactly the failure this whole
+  # exclusion fixes.
+  # Port 9000 = the server pod's container port behind the Service's port 80
+  # (discoveryUrl says http://authentik-server/... = port 80 pre-DNAT;
+  # NetworkPolicy matches the pod port after DNAT).
   - name: identity-to-authentik-server
     from: { app.kubernetes.io/name: identity }
     to: { app.kubernetes.io/name: server }
     port: 9000
+    egressOnly: true
   - name: organizations-to-authentik-server
     from: { app.kubernetes.io/name: organizations }
     to: { app.kubernetes.io/name: server }
     port: 9000
+    egressOnly: true
   - name: apiaries-to-authentik-server
     from: { app.kubernetes.io/name: apiaries }
     to: { app.kubernetes.io/name: server }
     port: 9000
+    egressOnly: true
   - name: sync-to-authentik-server
     from: { app.kubernetes.io/name: sync }
     to: { app.kubernetes.io/name: server }
     port: 9000
+    egressOnly: true
   # `helm test` hook (charts/authentik/templates/tests/ready-test.yaml) —
   # probes authentik-server's readiness endpoint; runs in CI (helm-e2e.yml).
+  # This pod is umbrella-owned (`app.kubernetes.io/instance: <release>`, NOT
+  # `authentik`), so it stays default-denied and needs this egress allow;
+  # `egressOnly` for the same reason as the service edges above.
   - name: authentik-ready-test-to-authentik-server
     from: { app.kubernetes.io/name: authentik }
     to: { app.kubernetes.io/name: server }
     port: 9000
+    egressOnly: true
 
   # --- Postgres (charts/postgres) ---
   # sync does NOT connect directly (services/values.yaml sync.db.enabled: false).
@@ -169,26 +184,19 @@ edges:
     to: { cnpgCluster: true }
     port: 5432
 
-  # --- Authentik's OWN internal topology (its Flux HelmRelease, ADR-0012/
-  # ADR-0016) — also in this namespace, so default-deny applies to it too.
-  # Bundled Postgres subchart's conventional pod label; not independently
-  # confirmed against a live cluster here (no live cluster available, #89's
-  # constraint) — if it differs, helm-e2e.yml's Authentik readiness hook
-  # surfaces it as a connectivity failure to triage.
-  - name: authentik-worker-to-postgresql
-    from: { app.kubernetes.io/name: worker, app.kubernetes.io/instance: authentik }
-    to: { app.kubernetes.io/name: postgresql, app.kubernetes.io/instance: authentik }
-    port: 5432
-  - name: authentik-server-to-postgresql
-    from: { app.kubernetes.io/name: server, app.kubernetes.io/instance: authentik }
-    to: { app.kubernetes.io/name: postgresql, app.kubernetes.io/instance: authentik }
-    port: 5432
-  # 9000 = container port (see the header comment on Service vs container
-  # ports).
-  - name: authentik-worker-to-server
-    from: { app.kubernetes.io/name: worker, app.kubernetes.io/instance: authentik }
-    to: { app.kubernetes.io/name: server, app.kubernetes.io/instance: authentik }
-    port: 9000
+  # --- Authentik's OWN internal topology is NOT enumerated here ---
+  # authentik-server, authentik-worker and the bundled authentik-postgresql-0
+  # all share `app.kubernetes.io/instance: authentik` and are EXCLUDED from
+  # default-deny (_helpers.tpl / default-deny.yaml), so their internal traffic
+  # (server<->Postgres<->worker<->redis) is unrestricted — no allow rules
+  # needed, and adding ingress rules that select those pods would actually
+  # re-strangle them (an ingress policy imposes a whitelist on its target).
+  # An earlier revision of this PR tried to enumerate these three edges by
+  # guessing the bundled-Postgres label; it broke the CI k3d job's Authentik
+  # rollout ("progress deadline exceeded" — server couldn't reach
+  # authentik-postgresql-0). Excluding the whole vendored stack, like
+  # observability and MinIO, is the correct pattern (bringing all three under
+  # netpol with live-verified edges is tracked on #89).
 
   # --- Observability (infra/gitops/apps/dev/observability-helmrelease.yaml
   # targetNamespace: beekeepingit-dev — same namespace) ---

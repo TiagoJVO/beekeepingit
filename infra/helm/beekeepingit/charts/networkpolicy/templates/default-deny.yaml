@@ -2,11 +2,11 @@
 Baseline: deny all ingress and egress for every pod this chart manages the
 policy for (see the exclusions below), then the other templates in this chart
 punch narrow, explicit holes for the real traffic flows (gateway->services,
-services->postgres, powersync->postgres, service->service, DNS, OTel, CNPG
-operator plumbing). Applies regardless of which Helm release/HelmRelease owns
-a given pod (Authentik's Deployments included, even though this chart doesn't
-manage them) — NetworkPolicy is a namespace-scoped core API object
-(networking.k8s.io/v1), not tied to a release.
+services->postgres, powersync->postgres, service->service, service->authentik
+discovery, DNS, OTel, CNPG operator plumbing). Applies regardless of which
+Helm release/HelmRelease owns a given pod — NetworkPolicy is a
+namespace-scoped core API object (networking.k8s.io/v1), not tied to a
+release.
 
 ENFORCEMENT (corrected after PR #224's first CI round): NetworkPolicy IS
 enforced on k3d/k3s. k3s embeds kube-router's network-policy controller,
@@ -18,17 +18,17 @@ out: DeadlineExceeded). Every rule in this chart is therefore LIVE on local
 dev and the CI k3d job, not just declarative intent for some future CNI.
 
 EXCLUSIONS (scope, documented honestly): the podSelector below deliberately
-does NOT select the observability stack's pods or MinIO's pods, even though
-both deploy into this same namespace (their own Flux HelmReleases, ADR-0012/
-ADR-0013):
+does NOT select the three vendored third-party stacks that deploy into this
+same namespace via their own Flux HelmReleases (ADR-0012/ADR-0013). Each is a
+web of internal flows whose pod labels/ports aren't fully verifiable without
+a live cluster, so enumerating their edges would be guesswork — and since
+enforcement is real (above), a wrong guess strangles the stack for real:
 
   - observability (kube-prometheus-stack/loki/tempo/otel-collector/
-    alert-webhook-sink): a web of internal flows across four vendored
-    third-party charts — otel-collector -> Loki/Tempo/Prometheus, Grafana ->
+    alert-webhook-sink): otel-collector -> Loki/Tempo/Prometheus, Grafana ->
     Loki/Tempo/Prometheus, Prometheus scraping every component, Alertmanager
-    -> alert-webhook-sink, the operator's admission webhook — whose pod
-    labels and ports aren't all verifiable without a live cluster. Helm-owned
-    pods carry `app.kubernetes.io/instance: observability` (the pinned
+    -> alert-webhook-sink, the operator's admission webhook. Helm-owned pods
+    carry `app.kubernetes.io/instance: observability` (the pinned
     releaseName); the Prometheus/Alertmanager pods the operator creates carry
     `app.kubernetes.io/managed-by: prometheus-operator` instead — both
     excluded below.
@@ -36,15 +36,25 @@ ADR-0013):
     post-install bucket job; its chart uses legacy `release: minio` pod
     labels. Excluded so the storage the observability stack depends on isn't
     black-holed along with it.
+  - authentik (server/worker/bundled authentik-postgresql-0): the server can't
+    become ready without reaching its own bundled Postgres and worker. All
+    three share `app.kubernetes.io/instance: authentik` (their
+    `app.kubernetes.io/name` differs — authentik vs postgresql — so the
+    exclusion keys on `instance`, verified live). PR #224 first tried to
+    enumerate these internal edges by guessing the bundled-Postgres label;
+    that broke the CI k3d job's Authentik rollout ("progress deadline
+    exceeded"). Excluding the whole stack, like the other two, is the correct
+    pattern. NB: our own domain services are still default-denied and DO get
+    an explicit egress allow to reach authentik-server for OIDC discovery (an
+    egress-only edge, values.yaml) — the exclusion only frees authentik's
+    OWN internal traffic.
 
   A NotIn matchExpression also matches pods that LACK the label entirely, so
-  every other pod in the namespace (this umbrella's own workloads, Authentik's
-  server/worker/Postgres) IS selected and default-denied — the exclusions
-  only carve out the two releases named above. Since enforcement is real
-  (above), denying them without enumerated allow rules would break dev
-  observability/MinIO on the next Flux reconcile — a breakage CI can't catch
-  (helm-e2e.yml deploys only the umbrella + Authentik). Enumerating their
-  edges live and removing these exclusions is tracked on issue #89.
+  every other pod in the namespace (this umbrella's own Go services, pwa,
+  powersync, the CNPG Postgres cluster, and the umbrella-owned authentik
+  ready-test hook pod, whose instance label is the release name, not
+  `authentik`) IS selected and default-denied. Bringing all three vendored
+  stacks under netpol with live-verified edges is tracked on issue #89.
 */}}
 {{- if .Values.enabled }}
 apiVersion: networking.k8s.io/v1
