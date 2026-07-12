@@ -70,5 +70,33 @@
   "syncStatusSemanticLabel": "Estado de sincronização: {label}. Abre as definições de sincronização.",
   "offlineBannerMessage": "{count, plural, =0{Sem ligação — alterações guardadas localmente} =1{Sem ligação — alterações guardadas localmente (1 por sincronizar)} other{Sem ligação — alterações guardadas localmente ({count} por sincronizar)}}",
   "apiarySaveSuccess": "Apiário guardado.",
-  "apiaryDeleteSuccess": "Apiário eliminado."
+  "apiaryDeleteSuccess": "Apiário eliminado.",
+  "apiaryMapTitle": "Mapa de apiários",
+  "apiaryMapEmpty": "Ainda não há apiários com localização.",
+  "apiaryMapUserLocationLabel": "Você",
+  "apiaryMapLocationPermissionDenied": "Localização indisponível — ative o acesso à localização para ver a sua posição no mapa.",
+  "apiaryMapMeasureHintSelectFirst": "Toque em dois apiários para medir a distância entre eles.",
+  "apiaryMapMeasureHintSelectSecond": "Selecionado {name}. Toque noutro apiário para medir.",
+  "apiaryMapMeasureResult": "{from} a {to}: {distanceKm} km",
+  "apiaryMapMeasureClear": "Limpar seleção",
+  "@apiaryMapMeasureHintSelectSecond": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@apiaryMapMeasureResult": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      },
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  }
 }

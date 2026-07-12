@@ -6,6 +6,7 @@ import '../core/auth/auth_controller.dart';
 import '../features/account/account_screen.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
+import '../features/apiaries/apiary_map_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/members/members_screen.dart';
 import '../features/organization/organization_repository.dart';
@@ -132,6 +133,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                     path: 'new',
                     name: 'apiaryNew',
                     builder: (context, state) => const ApiaryFormScreen(),
+                  ),
+                  GoRoute(
+                    path: 'map',
+                    name: 'apiaryMap',
+                    builder: (context, state) => const ApiaryMapScreen(),
                   ),
                   GoRoute(
                     path: ':id',

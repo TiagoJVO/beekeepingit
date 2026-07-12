@@ -257,4 +257,34 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiaryDeleteSuccess => 'Apiário eliminado.';
+
+  @override
+  String get apiaryMapTitle => 'Mapa de apiários';
+
+  @override
+  String get apiaryMapEmpty => 'Ainda não há apiários com localização.';
+
+  @override
+  String get apiaryMapUserLocationLabel => 'Você';
+
+  @override
+  String get apiaryMapLocationPermissionDenied =>
+      'Localização indisponível — ative o acesso à localização para ver a sua posição no mapa.';
+
+  @override
+  String get apiaryMapMeasureHintSelectFirst =>
+      'Toque em dois apiários para medir a distância entre eles.';
+
+  @override
+  String apiaryMapMeasureHintSelectSecond(String name) {
+    return 'Selecionado $name. Toque noutro apiário para medir.';
+  }
+
+  @override
+  String apiaryMapMeasureResult(String from, String to, String distanceKm) {
+    return '$from a $to: $distanceKm km';
+  }
+
+  @override
+  String get apiaryMapMeasureClear => 'Limpar seleção';
 }

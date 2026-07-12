@@ -80,8 +80,15 @@ class AppShell extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final activeTab = tabs[navigationShell.currentIndex];
     final syncStatus = ref.watch(syncStatusProvider);
-    final fab = _fabConfigByTab[activeTab.route];
     final routeName = GoRouterState.of(context).topRoute?.name;
+    // The map screen (#34) has its own full-screen layout (measure overlay,
+    // location banner) with no room for a floating "Add apiary" action
+    // hovering over it — suppressed on that route specifically, not just by
+    // tab, unlike the create/edit form which keeps the contextual FAB
+    // available at the branch root.
+    final fab = routeName == 'apiaryMap'
+        ? null
+        : _fabConfigByTab[activeTab.route];
 
     // Whether there's somewhere to go back to *within the active tab's own
     // navigation stack* — e.g. Apiaries list -> apiary detail/form. Derived
@@ -168,6 +175,7 @@ class AppShell extends ConsumerWidget {
     return switch (routeName) {
       'apiaryNew' => l10n.newApiaryTitle,
       'apiaryEdit' => l10n.editApiaryTitle,
+      'apiaryMap' => l10n.apiaryMapTitle,
       _ => activeTab.label(l10n),
     };
   }

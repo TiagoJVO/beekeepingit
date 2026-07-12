@@ -6,13 +6,27 @@ import 'package:uuid/uuid.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
 
-/// A local apiary row (the slice's trivial record — name + hive count).
+/// A local apiary row (name + hive count + optional location). Location is
+/// nullable (#34/#37, FR-AP-3/FR-AP-5): older/incomplete records or apiaries
+/// created without a map pin have no coordinates, and callers (the map
+/// screen, the offline distance calculation) must skip/handle that case
+/// rather than assume every apiary is located.
 class Apiary {
-  const Apiary({required this.id, required this.name, required this.hiveCount});
+  const Apiary({
+    required this.id,
+    required this.name,
+    required this.hiveCount,
+    this.locationLon,
+    this.locationLat,
+  });
 
   final String id;
   final String name;
   final int hiveCount;
+  final double? locationLon;
+  final double? locationLat;
+
+  bool get hasLocation => locationLon != null && locationLat != null;
 }
 
 /// Reads and writes apiaries against the local PowerSync SQLite. Every write
@@ -28,15 +42,16 @@ class ApiariesRepository {
   Stream<List<Apiary>> watchAll() {
     return _db
         .watch(
-          'SELECT id, name, hive_count FROM $apiariesTable '
-          'ORDER BY created_at DESC, name',
+          'SELECT id, name, hive_count, location_lon, location_lat '
+          'FROM $apiariesTable ORDER BY created_at DESC, name',
         )
         .map((rs) => rs.map(_fromRow).toList());
   }
 
   Future<Apiary?> getById(String id) async {
     final row = await _db.getOptional(
-      'SELECT id, name, hive_count FROM $apiariesTable WHERE id = ?',
+      'SELECT id, name, hive_count, location_lon, location_lat '
+      'FROM $apiariesTable WHERE id = ?',
       [id],
     );
     return row == null ? null : _fromRow(row);
@@ -69,6 +84,8 @@ class ApiariesRepository {
     id: r['id'] as String,
     name: r['name'] as String,
     hiveCount: (r['hive_count'] as int?) ?? 0,
+    locationLon: (r['location_lon'] as num?)?.toDouble(),
+    locationLat: (r['location_lat'] as num?)?.toDouble(),
   );
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();

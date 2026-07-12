@@ -523,6 +523,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Apiary deleted.'**
   String get apiaryDeleteSuccess;
+
+  /// Map screen app bar title (#34, FR-AP-3)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary map'**
+  String get apiaryMapTitle;
+
+  /// Empty state on the map when no apiary has a stored location (#34 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries with a location yet.'**
+  String get apiaryMapEmpty;
+
+  /// Label/tooltip for the distinct user-location marker on the map (#34 AC, matches the Melargil prototype's "Você" marker)
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get apiaryMapUserLocationLabel;
+
+  /// Shown when the user-location marker can't be placed because permission was denied or location is unavailable (#34 AC: graceful permission-denied handling)
+  ///
+  /// In en, this message translates to:
+  /// **'Location unavailable — enable location access to see your position on the map.'**
+  String get apiaryMapLocationPermissionDenied;
+
+  /// Hint shown on the map before any apiary is selected for the tap-to-measure flow (#37/D-15, matches the Melargil prototype's "Toque em dois apiários para medir a distância entre eles.")
+  ///
+  /// In en, this message translates to:
+  /// **'Tap two apiaries to measure the distance between them.'**
+  String get apiaryMapMeasureHintSelectFirst;
+
+  /// Hint shown after the first apiary is selected for the tap-to-measure flow (#37/D-15)
+  ///
+  /// In en, this message translates to:
+  /// **'Selected {name}. Tap another apiary to measure.'**
+  String apiaryMapMeasureHintSelectSecond(String name);
+
+  /// Distance result shown after two apiaries are selected (#37/D-15, straight-line/haversine, km)
+  ///
+  /// In en, this message translates to:
+  /// **'{from} to {to}: {distanceKm} km'**
+  String apiaryMapMeasureResult(String from, String to, String distanceKm);
+
+  /// Action to clear the current two-apiary measurement selection (#37 AC: selection must be clear and usable)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear selection'**
+  String get apiaryMapMeasureClear;
 }
 
 class _AppLocalizationsDelegate
