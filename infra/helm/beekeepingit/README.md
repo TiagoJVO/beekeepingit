@@ -90,15 +90,15 @@ and the three resource tiers (`requests`/`limits` × `cpu`/`memory`) — enforce
 
 ## Current subcharts
 
-| Subchart    | What it is                                                                                                                                                                                      |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `postgres`  | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials                                                                                      |
-| `authentik` | Generated config/Postgres Secrets + dev/CI-grade blueprint (provider/app/group/seed user) for OIDC IdP Authentik (D-7, ADR-0016) — Authentik itself is a separate Flux `HelmRelease` (ADR-0012) |
-| `minio`     | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)                                                       |
-| `gateway`   | Ingress + self-signed TLS (SAN covers both hosts), reusing k3d's Traefik; the app host fans path-based routes out to the services + PWA, the auth host routes to Authentik (#23, ADR-0016)      |
-| `powersync` | Self-hosted PowerSync sync engine (D-6/ADR-0005), Postgres storage backend — real org-scoped Sync Rules + the `sync` service's JWKS connector (#23/#106)                                        |
-| `services`  | The Go domain/platform services (#23) — `identity`/`organizations`/`apiaries`/`sync`, rendered from one values-driven Deployment+Service template                                               |
-| `pwa`       | The Flutter Web PWA static bundle (#21/#23) served behind nginx at the gateway's `/`                                                                                                            |
+| Subchart        | What it is                                                                                                                                                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `postgres`      | PostgreSQL + PostGIS (D-6) via a CloudNativePG `Cluster` CR — schema-per-service + per-service credentials                                                                                                                            |
+| `authentik`     | Generated config/Postgres Secrets + dev/CI-grade blueprint (provider/app/group/seed user) for OIDC IdP Authentik (D-7, ADR-0016) — Authentik itself is a separate Flux `HelmRelease` (ADR-0012)                                       |
+| `minio`         | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)                                                                                             |
+| `gateway`       | Ingress + self-signed TLS (SAN covers both hosts), reusing k3d's Traefik; the app host fans path-based routes out to the services + PWA, the auth host routes to Authentik (#23, ADR-0016)                                            |
+| `powersync`     | Self-hosted PowerSync sync engine (D-6/ADR-0005), Postgres storage backend — real org-scoped Sync Rules + the `sync` service's JWKS connector (#23/#106)                                                                              |
+| `services`      | The Go domain/platform services (#23) — `identity`/`organizations`/`apiaries`/`sync`, rendered from one values-driven Deployment+Service template                                                                                     |
+| `pwa`           | The Flutter Web PWA static bundle (#21/#23) served behind nginx at the gateway's `/`                                                                                                                                                  |
 | `networkpolicy` | Default-deny + explicit-allow `NetworkPolicy` objects for the whole namespace (#89, NFR-SEC-1) — no workload of its own; applies to every pod in the namespace, including ones owned by the standalone authentik/minio `HelmRelease`s |
 
 The observability stack (`NFR-OBS-1`, #87) is deliberately **not** in this table — it's the

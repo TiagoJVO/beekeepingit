@@ -26,7 +26,7 @@ here):
   different one yet). **Action:** when a real non-local auth host ships, template this file
   per-environment (e.g. envsubst at container start) instead of a hardcoded string.
 - **PowerSync's Deployment security context is partial** (`charts/powersync/templates/
-  deployment.yaml`): `allowPrivilegeEscalation: false` + drop `ALL` capabilities are set, but
+deployment.yaml`): `allowPrivilegeEscalation: false` + drop `ALL` capabilities are set, but
   `runAsNonRoot`/`readOnlyRootFilesystem` are NOT, because `journeyapps/powersync-service` is a
   third-party image with no in-repo Dockerfile and its runtime user / on-disk writes aren't
   verified against a live cluster here. The two checks (KSV-0014/KSV-0118) are ignored

@@ -241,7 +241,7 @@ console, or any endpoint that starts trusting a cookie) changes that assumption,
 real CSRF protection (SameSite=Strict/Lax + a synchronizer token) at that time — this note
 applies only to the bearer-token REST APIs described in this document.
 
-**CORS**, by contrast, *is* relevant (a different browser mechanism, unrelated to CSRF): the
+**CORS**, by contrast, _is_ relevant (a different browser mechanism, unrelated to CSRF): the
 Authentik blueprint's OAuth2 provider `redirect_uris` double as its CORS-allowed-origins list
 (`infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml`, `auth.md` §8.5) —
 scoped to the app's own origin(s), not a wildcard.
