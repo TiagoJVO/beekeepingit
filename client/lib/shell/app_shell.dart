@@ -81,14 +81,6 @@ class AppShell extends ConsumerWidget {
     final activeTab = tabs[navigationShell.currentIndex];
     final syncStatus = ref.watch(syncStatusProvider);
     final routeName = GoRouterState.of(context).topRoute?.name;
-    // The map screen (#34) has its own full-screen layout (measure overlay,
-    // location banner) with no room for a floating "Add apiary" action
-    // hovering over it — suppressed on that route specifically, not just by
-    // tab, unlike the create/edit form which keeps the contextual FAB
-    // available at the branch root.
-    final fab = routeName == 'apiaryMap'
-        ? null
-        : _fabConfigByTab[activeTab.route];
 
     // Non-blocking notice when an offline edit lost a last-write-wins
     // conflict (sync.md §4.2/§8, D-12's notify-and-fix) — a toast, matching
@@ -115,9 +107,12 @@ class AppShell extends ConsumerWidget {
 
     // The shell's own contextual "quick add" FAB (_fabConfigByTab) only
     // makes sense at a tab's root (e.g. "Add apiary" on the apiaries list).
-    // Screens pushed deeper — like the apiary detail screen (#32) — own
-    // their own FAB (e.g. its edit action) instead; showing both at once
-    // would stack two FloatingActionButtons in the same corner.
+    // Screens pushed deeper — the apiary detail screen (#32, own FAB e.g.
+    // its edit action), the create/edit form, and the map screen (#34, its
+    // own full-screen layout with no room for a floating action) — are all
+    // covered by the same canGoBack check, since _fabConfigByTab is keyed by
+    // tab (not route) and would otherwise show "Add apiary" hovering over
+    // every one of them.
     final fab = canGoBack ? null : _fabConfigByTab[activeTab.route];
 
     return Scaffold(
