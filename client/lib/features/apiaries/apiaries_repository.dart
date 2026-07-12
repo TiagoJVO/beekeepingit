@@ -93,8 +93,8 @@ class ApiariesRepository {
 final apiariesRepositoryProvider = FutureProvider<ApiariesRepository>((
   ref,
 ) async {
-  final db = await ref.watch(powerSyncProvider.future);
-  return ApiariesRepository(db);
+  final session = await ref.watch(powerSyncProvider.future);
+  return ApiariesRepository(session.db);
 });
 
 /// Live list of the org's apiaries, straight from local SQLite (offline-first).

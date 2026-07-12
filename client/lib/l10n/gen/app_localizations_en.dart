@@ -277,4 +277,42 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiariesLocationRetry => 'Retry';
+
+  @override
+  String get syncStatusSyncing => 'Syncing…';
+
+  @override
+  String get syncSupersededNotice =>
+      'One of your offline changes was overwritten by a newer edit.';
+
+  @override
+  String get accountSyncSectionTitle => 'Sync';
+
+  @override
+  String accountSyncStatusLabel(String status) {
+    return 'Status: $status';
+  }
+
+  @override
+  String accountSyncPendingCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes waiting to sync.',
+      one: '1 change waiting to sync.',
+      zero: 'Everything is synced.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get accountSyncNowButton => 'Sync now';
+
+  @override
+  String get accountSyncNowTriggered => 'Sync requested.';
+
+  @override
+  String accountSyncNowError(String error) {
+    return 'Could not sync right now: $error';
+  }
 }

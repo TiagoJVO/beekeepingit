@@ -506,7 +506,7 @@ abstract class AppLocalizations {
   /// **'Sync status: {label}. Opens sync settings.'**
   String syncStatusSemanticLabel(String label);
 
-  /// Offline banner shown below the app-shell header with the pending-change count (#197; real pending-count wiring is #58 — currently a stub default of 0/hidden)
+  /// Offline banner shown below the app-shell header with the pending-change count (#197; real pending-count wiring is #58)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No connection — changes are saved locally} =1{No connection — changes are saved locally (1 to sync)} other{No connection — changes are saved locally ({count} to sync)}}'**
@@ -559,6 +559,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Retry'**
   String get apiariesLocationRetry;
+
+  /// App-shell header sync-status pill label while an upload/download is in flight (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing…'**
+  String get syncStatusSyncing;
+
+  /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
+  ///
+  /// In en, this message translates to:
+  /// **'One of your offline changes was overwritten by a newer edit.'**
+  String get syncSupersededNotice;
+
+  /// Section heading on the account screen for sync status + manual sync (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync'**
+  String get accountSyncSectionTitle;
+
+  /// Current sync status line on the account screen (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {status}'**
+  String accountSyncStatusLabel(String status);
+
+  /// Pending-change count line on the account screen (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Everything is synced.} =1{1 change waiting to sync.} other{{count} changes waiting to sync.}}'**
+  String accountSyncPendingCount(int count);
+
+  /// Manual sync trigger button on the account screen — the prototype's “Sincronizar agora” (#58, sync.md §7.1 manual override)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync now'**
+  String get accountSyncNowButton;
+
+  /// Toast shown after tapping “Sync now” (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync requested.'**
+  String get accountSyncNowTriggered;
+
+  /// Toast shown when a manual sync attempt fails immediately (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not sync right now: {error}'**
+  String accountSyncNowError(String error);
 }
 
 class _AppLocalizationsDelegate

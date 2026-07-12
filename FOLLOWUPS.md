@@ -9,21 +9,24 @@
 
 ---
 
-## Apiary CRUD PostGIS bug (`fix/apiaries-geography-search-path`, follows #31) — before-merge note
+## Offline UX: sync status/queued changes/retry (`feat/EPIC-06-offline-sync-ux`, #58) — before-merge note
 
-`services/apiaries/store/migrations/00003_add_apiary_location.sql` (#31, merged) referenced the
-bare `geography` type — resolvable only when `public` is on the connection's search path. Each
-service connects with `search_path` restricted to its own schema (`DB_SEARCH_PATH`), which
-excludes `public` (where `CREATE EXTENSION postgis` installs its types) — so the apiaries
-service crash-loops on startup in any real deployment. Confirmed live against a k3d cluster;
-testcontainers tests pass because their default search path includes `public`, silently masking
-this. Fixed by schema-qualifying every `geography` reference as `public.geography`.
+#58 builds the sync-status UI (real connectivity + pending count via `PowerSyncDatabase
+.statusStream`/`getUploadQueueStats`, a non-blocking "superseded" toast, manual "sync now",
+`client/lib/shell/sync_status.dart` + `client/lib/core/sync/`) against what already exists.
 
-**Separately flagged, not fixed here:** the "k3d cluster + helm test" CI workflow only verifies
-Postgres/PostGIS and Authentik readiness — it never checks whether the application pods
-(apiaries/identity/organizations/sync) actually reach `Ready`. That gap is how this shipped
-undetected. Worth a dedicated follow-up (promote to an Issue) to add an application-pod
-readiness check to that workflow; out of scope for this hotfix.
+**Gap found, not built here (by design — flagging per the issue's own instructions):** the
+**connection-quality gate** (FR-OF-3, [sync.md](docs/architecture/sync.md) §7.1 — "connect/flush
+only when a quality probe passes, ~usable 3G, with backoff") does not exist yet anywhere in the
+client (no gateway-reachable health/probe endpoint, no Network Information API / `connectivity_plus`
+usage). sync.md §10 itself hands this mechanism to **"EPIC-06 (#55/#58)"**, and re-reading **#55**
+("Client local store + sync integration") confirms **#55, not #58, owns building the actual gate**
+(its AC explicitly includes "connect/flush only when a quality probe passes... exponential backoff
+and a manual sync now override — mechanism in sync.md §7.1") — #55 is still open, so the gate is
+simply not built yet anywhere. #58 does not attempt to build a parallel gate; it only adds the
+manual "sync now" override (already in scope per #58's own AC) and will surface the gate's
+"waiting for better signal" state once #55 lands (no rework expected — `SyncStatus` has room to
+grow additively). **Action:** none needed here beyond this note; #55 already tracks the real work.
 
 ## Keycloak → Authentik migration — post-merge follow-ups
 
@@ -43,8 +46,9 @@ Flat **M0–M5** re-sliced into a per-feature ladder + cross-cutting streams; th
 Issues/Milestones/dependency edits are already applied (this PR records the model in **D-14**).
 Pending (promote to Issues, then prune here):
 
-- **Scope gates** — settle before sizing a feature's stories: `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2
-  (first), `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6, `Q-AICLOUD` → M8, `Q-NOTIF` → M9. Resolve via
+- **Scope gates** — settle before sizing a feature's stories: `Q-MAP` → M2 (narrowed to
+  offline-tile caching/provider; `Q-DIST`/`Q-SEARCH` already resolved via `D-*`, removed),
+  `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6, `Q-AICLOUD` → M8, `Q-NOTIF` → M9. Resolve via
   the `requirements-folder` skill (answer → `D-*`/`FR-*`, then delete the `Q-*`).
 - **`#60`** ("history view per apiary/activity/journey", now M3) may want splitting per entity during grooming.
 - **Provisional stream-story placements** — `#56–59`/`#61–62`/`#165` → M2, `#90`/`#92` → M6 by
@@ -62,5 +66,6 @@ M0–M11 backlog and answers 6 open `Q-*`. This PR adds: the prototype in-repo, 
 
 - **Confirmed & added** — `FR-AP-8` (apiary notes, #196) and `FR-UX-2` (app-shell IA, folded into the
   field-first `FR-UX` track, #197) are now in `requirements/functional-requirements.md`.
-- **Feed the scope pass** — the prototype answers `Q-DIST`/`Q-SEARCH`/`Q-MAP`/`Q-JOUR`/`Q-TODO`/`Q-NOTIF`
-  (see `docs/design/prototype.md`); use those when settling each `Q-*` (answer → `D-*`/`FR-*`, delete the `Q-*`).
+- **Feed the scope pass** — the prototype answers `Q-MAP`/`Q-JOUR`/`Q-TODO`/`Q-NOTIF` (see
+  `docs/design/prototype.md`); use those when settling each remaining `Q-*` (answer →
+  `D-*`/`FR-*`, delete the `Q-*`). `Q-DIST`/`Q-SEARCH` are already resolved and removed.

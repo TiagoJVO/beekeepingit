@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/shell/sync_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -42,7 +45,18 @@ class _ExistingOrganizationController extends OrganizationController {
 /// the app shell (FR-UX-2, #197) only appears once onboarding is done, so
 /// every shell test needs the same auth/profile/org stubbing as
 /// widget_test.dart's buildApp().
-Widget _buildShellApp({List<Apiary>? apiaries}) {
+///
+/// [syncStatus] overrides the real PowerSync-backed [syncStatusProvider]
+/// (#58) — tests isolate the shell from a real PowerSync database/network
+/// the same way [apiariesStreamProvider] is already overridden above.
+/// Defaults to "online, nothing pending" so tests that don't care about sync
+/// state see the same fixed status #197's stub used to provide.
+/// [supersededChanges] similarly overrides the notify-and-fix event stream.
+Widget _buildShellApp({
+  List<Apiary>? apiaries,
+  SyncStatus? syncStatus,
+  Stream<SupersededChange>? supersededChanges,
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
@@ -54,6 +68,16 @@ Widget _buildShellApp({List<Apiary>? apiaries}) {
       ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
+      syncStatusProvider.overrideWithValue(
+        syncStatus ??
+            const SyncStatus(
+              connectivity: SyncConnectivity.online,
+              pendingCount: 0,
+            ),
+      ),
+      supersededNotificationProvider.overrideWith(
+        (ref) => supersededChanges ?? const Stream.empty(),
+      ),
     ],
     child: const BeekeepingitApp(),
   );
@@ -236,15 +260,97 @@ void main() {
     }
   });
 
+  testWidgets('the offline banner is hidden when sync status is online', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildShellApp(
+        syncStatus: const SyncStatus(
+          connectivity: SyncConnectivity.online,
+          pendingCount: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('shell-offline-banner')), findsNothing);
+  });
+
   testWidgets(
-    'the offline banner is hidden when the stub sync status is online',
+    'the offline banner shows the pending count when sync status is offline',
     (tester) async {
-      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpWidget(
+        _buildShellApp(
+          syncStatus: const SyncStatus(
+            connectivity: SyncConnectivity.offline,
+            pendingCount: 3,
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
-      // sync_status.dart's provider is a fixed "online, nothing pending" stub
-      // (#197; real wiring is #58) — the banner has nothing to show yet.
-      expect(find.byKey(const Key('shell-offline-banner')), findsNothing);
+      expect(find.byKey(const Key('shell-offline-banner')), findsOneWidget);
+      expect(find.textContaining('3'), findsWidgets);
+    },
+  );
+
+  testWidgets('the sync-status pill reflects offline with a pending count', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildShellApp(
+        syncStatus: const SyncStatus(
+          connectivity: SyncConnectivity.offline,
+          pendingCount: 2,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Offline · 2'), findsOneWidget);
+  });
+
+  testWidgets(
+    'the sync-status pill shows "Syncing…" while an upload/download is in flight',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildShellApp(
+          syncStatus: const SyncStatus(
+            connectivity: SyncConnectivity.online,
+            pendingCount: 1,
+            syncing: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Syncing…'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a superseded change surfaces a non-blocking toast notification',
+    (tester) async {
+      final controller = StreamController<SupersededChange>();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        _buildShellApp(supersededChanges: controller.stream),
+      );
+      await tester.pumpAndSettle();
+
+      controller.add(
+        const SupersededChange(entityType: 'apiary', entityId: 'a1'),
+      );
+      await tester.pump(); // deliver the ref.listen callback
+      await tester.pump(); // let the SnackBar animate in
+
+      expect(
+        find.text(
+          'One of your offline changes was overwritten by a newer edit.',
+        ),
+        findsOneWidget,
+      );
     },
   );
 }

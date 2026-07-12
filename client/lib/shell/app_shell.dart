@@ -83,6 +83,20 @@ class AppShell extends ConsumerWidget {
     final fab = _fabConfigByTab[activeTab.route];
     final routeName = GoRouterState.of(context).topRoute?.name;
 
+    // Non-blocking notice when an offline edit lost a last-write-wins
+    // conflict (sync.md §4.2/§8, D-12's notify-and-fix) — a toast, matching
+    // #197's "toast confirmations on save/sync" pattern
+    // (docs/design/prototype.md), not a dedicated screen: the user needs to
+    // know it happened, not be interrupted. The full conflict record is the
+    // entity-history/timeline UI (FR-HIS, #59-#62).
+    ref.listen(supersededNotificationProvider, (previous, next) {
+      final change = next.value;
+      if (change == null) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.syncSupersededNotice)));
+    });
+
     // Whether there's somewhere to go back to *within the active tab's own
     // navigation stack* — e.g. Apiaries list -> apiary detail/form. Derived
     // from the matched route's own name rather than the branch Navigator's
@@ -239,10 +253,18 @@ class _SyncStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final color = status.isOnline
+    // sync.md §8's per-record vocabulary (pending/syncing/synced/superseded/
+    // rejected) generalized to the header's single connection-level pill:
+    // offline (with/without a pending count) · syncing (upload/download in
+    // flight) · online/up-to-date. Amber doubles as both "offline" and
+    // "syncing" (an in-progress, not-yet-settled state), green is reserved
+    // for "online and caught up".
+    final color = status.isOnline && !status.syncing
         ? const Color(0xFF7BC98A)
         : const Color(0xFFF0A81F);
-    final label = status.isOnline
+    final label = status.syncing
+        ? l10n.syncStatusSyncing
+        : status.isOnline
         ? l10n.syncStatusOnline
         : (status.pendingCount > 0
               ? l10n.syncStatusOfflinePending(status.pendingCount)
