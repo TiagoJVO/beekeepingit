@@ -14,14 +14,16 @@ const apiaryEntityType = 'apiary';
 /// `notes` (FR-AP-8, #196) is optional free-text, nullable like the server
 /// column it mirrors.
 ///
-/// `location_lon`/`location_lat` (#34/#37, FR-AP-3/FR-AP-5) are plain
-/// nullable REAL columns — the Sync Rules bucket for `apiaries.apiaries`
-/// projects the server's PostGIS `geography(Point,4326)` column to these via
-/// `ST_X`/`ST_Y(location::geometry)` (infra/helm/beekeepingit/charts/
-/// powersync/values.yaml) rather than streaming the raw geography column,
-/// which arrives in a wire form (EWKB) this client has no parser for. Both
-/// null together when the apiary has no stored location (nullable, matching
-/// the DB column's own optionality).
+/// `location_lon`/`location_lat` (FR-AP-2/FR-AP-3/FR-AP-5, #33/#34/#37) are
+/// plain nullable REAL columns — the Sync Rules bucket for
+/// `apiaries.apiaries` projects the server's PostGIS
+/// `geography(Point,4326)` column to these via `ST_X`/`ST_Y(location::
+/// geometry)` (infra/helm/beekeepingit/charts/powersync/values.yaml) rather
+/// than streaming the raw geography column, which arrives in a wire form
+/// (EWKB) this client has no parser for. Both null together when the apiary
+/// has no stored location (nullable, matching the DB column's own
+/// optionality). Used by #33's offline proximity ordering and #34/#37's map
+/// + offline distance measurement alike.
 const appSchema = Schema([
   Table(apiariesTable, [
     Column.text('organization_id'),

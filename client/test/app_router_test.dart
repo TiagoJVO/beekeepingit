@@ -1,11 +1,14 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'widget_test.dart' show FakeDeviceLocationService;
 
 /// A no-op controller that reports a fixed completeness, so the router's
 /// redirect logic can be exercised without a real ApiClient/network call.
@@ -52,6 +55,9 @@ Widget _buildApp({required bool profileComplete, bool hasOrganization = true}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
+      deviceLocationServiceProvider.overrideWithValue(
+        const FakeDeviceLocationService(),
+      ),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
       profileProvider.overrideWith(
         () => _FixedProfileController(profileComplete),

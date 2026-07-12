@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1798,6 +1800,183 @@ func TestApiariesRest_Distance_ResponseConformsToOpenAPIContract(t *testing.T) {
 	doc.ValidateResponseBody(t, http.MethodGet, distancePath, http.StatusOK, rec.Body.Bytes())
 }
 
+// --- Proximity ordering (`near`, FR-AP-2, #33) ---
+
+// TestApiariesRest_ListNear_OrdersByDistanceAscending is #33's core AC
+// ("proximity ordering produces correct results... verified against known
+// coordinates"): three apiaries at known offsets from a reference point in
+// Porto, Portugal (roughly 1km/5km/20km east along the same latitude, where
+// 1 degree of longitude ≈ 111km * cos(latitude) — small enough offsets that
+// the flat-earth approximation used to derive the fixture coordinates is
+// accurate to well within the assertion's tolerance) come back nearest
+// first, each carrying a distance_m consistent with that known separation.
+func TestApiariesRest_ListNear_OrdersByDistanceAscending(t *testing.T) {
+	f := newApiariesFixture(t)
+	const refLon, refLat = -8.6291, 41.1579 // Porto city centre
+
+	// Longitude-degrees-per-km at this latitude (~41.16°N): 1 / (111.32 * cos(lat)).
+	// near (~1km), mid (~5km), far (~20km) east of the reference point.
+	near := uuid.NewString()
+	mid := uuid.NewString()
+	far := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(far, "Far", nil, geoPoint(refLon+0.2394, refLat))); rec.Code != http.StatusCreated {
+		t.Fatalf("create far status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(near, "Near", nil, geoPoint(refLon+0.01197, refLat))); rec.Code != http.StatusCreated {
+		t.Fatalf("create near status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(mid, "Mid", nil, geoPoint(refLon+0.05985, refLat))); rec.Code != http.StatusCreated {
+		t.Fatalf("create mid status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	list := f.listApiariesNear(t, refLon, refLat)
+	if len(list.Data) != 3 {
+		t.Fatalf("near list = %+v, want 3 rows", list.Data)
+	}
+	gotOrder := []string{list.Data[0].ID, list.Data[1].ID, list.Data[2].ID}
+	wantOrder := []string{near, mid, far}
+	if gotOrder[0] != wantOrder[0] || gotOrder[1] != wantOrder[1] || gotOrder[2] != wantOrder[2] {
+		t.Fatalf("near list order = %v, want %v (near, mid, far)", gotOrder, wantOrder)
+	}
+
+	// Each row carries distance_m consistent with its known offset (±10%
+	// tolerance for the flat-earth approximation used to derive the fixture
+	// coordinates vs. PostGIS's geodesic ST_Distance).
+	wantDistances := map[string]float64{near: 1000, mid: 5000, far: 20000}
+	for _, a := range list.Data {
+		if a.DistanceM == nil {
+			t.Fatalf("apiary %s has no distance_m, want ~%.0fm", a.ID, wantDistances[a.ID])
+		}
+		want := wantDistances[a.ID]
+		tolerance := want * 0.1
+		if *a.DistanceM < want-tolerance || *a.DistanceM > want+tolerance {
+			t.Fatalf("apiary %s distance_m = %.1f, want ~%.1f (±10%%)", a.ID, *a.DistanceM, want)
+		}
+	}
+}
+
+// TestApiariesRest_ListNear_ApiaryWithoutLocationSortsLastWithNullDistance
+// confirms an apiary missing a location still appears in a `near` list
+// (rather than being silently dropped) with a null distance_m, sorted after
+// every apiary that does have a distance.
+func TestApiariesRest_ListNear_ApiaryWithoutLocationSortsLastWithNullDistance(t *testing.T) {
+	f := newApiariesFixture(t)
+	const refLon, refLat = -8.6291, 41.1579
+
+	withLoc := uuid.NewString()
+	withoutLoc := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(withLoc, "Has location", nil, geoPoint(refLon, refLat))); rec.Code != http.StatusCreated {
+		t.Fatalf("create withLoc status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(withoutLoc, "No location", nil, nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create withoutLoc status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	list := f.listApiariesNear(t, refLon, refLat)
+	if len(list.Data) != 2 {
+		t.Fatalf("near list = %+v, want 2 rows", list.Data)
+	}
+	if list.Data[0].ID != withLoc || list.Data[1].ID != withoutLoc {
+		t.Fatalf("near list order = [%s, %s], want [withLoc, withoutLoc] (no-location sorts last)", list.Data[0].ID, list.Data[1].ID)
+	}
+	if list.Data[0].DistanceM == nil {
+		t.Fatalf("apiary with location has nil distance_m, want a value")
+	}
+	if list.Data[1].DistanceM != nil {
+		t.Fatalf("apiary without location distance_m = %v, want nil", *list.Data[1].DistanceM)
+	}
+}
+
+// TestApiariesRest_List_WithoutNear_OmitsDistance confirms distance_m is
+// only populated on a `near`-ordered list (contract: "only on proximity
+// lists") — the default keyset-paginated list never carries it.
+func TestApiariesRest_List_WithoutNear_OmitsDistance(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Foo", nil, geoPoint(-8.6, 41.1))); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	list := f.listApiaries(t)
+	if len(list.Data) != 1 {
+		t.Fatalf("list = %+v, want 1 row", list.Data)
+	}
+	if list.Data[0].DistanceM != nil {
+		t.Fatalf("list without near distance_m = %v, want nil (omitted)", *list.Data[0].DistanceM)
+	}
+}
+
+// TestApiariesRest_ListNear_RejectsMalformedInput is #33's `near` validation
+// AC: a malformed or out-of-range `near` value is a 422, matching the
+// contract's field-level validation-error shape used elsewhere (e.g.
+// TestApiariesRest_CreateValidation_RejectsBadInput).
+func TestApiariesRest_ListNear_RejectsMalformedInput(t *testing.T) {
+	f := newApiariesFixture(t)
+	cases := []struct {
+		name string
+		near string
+	}{
+		{"not a coordinate pair", "not-a-number"},
+		{"missing latitude", "-8.6"},
+		{"three components", "-8.6,41.1,10"},
+		{"longitude out of range", "200,41.1"},
+		{"latitude out of range", "-8.6,100"},
+		{"empty", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := f.do(t, http.MethodGet, "/v1/apiaries?near="+url.QueryEscape(tc.near), nil)
+			// An empty `near` is indistinguishable from "not supplied" per
+			// url.Values semantics (the handler only branches on a non-empty
+			// value) — that's the default-list path, not a validation error.
+			if tc.near == "" {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("list with empty near status = %d, want 200 (treated as absent)", rec.Code)
+				}
+				return
+			}
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("list with near=%q status = %d, want 422, body = %s", tc.near, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestApiariesRest_ListNear_ResponsesConformToOpenAPIContract validates a
+// `near`-ordered list response (with distance_m present) against the
+// contract, the near-specific counterpart of
+// TestApiariesSlice_ResponsesConformToOpenAPIContract.
+func TestApiariesRest_ListNear_ResponsesConformToOpenAPIContract(t *testing.T) {
+	doc, err := contracttest.Load("../../contracts/openapi/apiaries.openapi.yaml")
+	if err != nil {
+		t.Fatalf("load contract: %v", err)
+	}
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Quinta do Vale", nil, geoPoint(-8.6, 41.1))); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	recList := f.do(t, http.MethodGet, "/v1/apiaries?near=-8.6,41.1", nil)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("near list status = %d, want 200, body = %s", recList.Code, recList.Body.String())
+	}
+	doc.ValidateResponseBody(t, http.MethodGet, "/v1/apiaries", http.StatusOK, recList.Body.Bytes())
+}
+
+// listApiariesNear issues GET /v1/apiaries?near=lon,lat and decodes the list.
+func (f *apiariesFixture) listApiariesNear(t *testing.T, lon, lat float64) listView {
+	t.Helper()
+	near := strconv.FormatFloat(lon, 'f', -1, 64) + "," + strconv.FormatFloat(lat, 'f', -1, 64)
+	rec := f.do(t, http.MethodGet, "/v1/apiaries?near="+url.QueryEscape(near), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("near list status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var l listView
+	if err := json.Unmarshal(rec.Body.Bytes(), &l); err != nil {
+		t.Fatalf("decode near list: %v", err)
+	}
+	return l
+}
+
 func int32Ptr(n int32) *int32 { return &n }
 
 // getETag issues a GET and returns just the ETag header — a shorthand for
@@ -1825,6 +2004,7 @@ type apiaryView struct {
 	HiveCount int32         `json:"hive_count"`
 	Location  *geoPointView `json:"location,omitempty"`
 	Notes     *string       `json:"notes,omitempty"`
+	DistanceM *float64      `json:"distance_m,omitempty"`
 }
 
 func (f *apiariesFixture) getApiary(t *testing.T, id string) apiaryView {

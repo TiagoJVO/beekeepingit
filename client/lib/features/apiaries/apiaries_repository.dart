@@ -3,31 +3,34 @@ import 'package:powersync/powersync.dart';
 import 'package:powersync/sqlite3_common.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/geo/distance.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
 
 /// A local apiary row (name + hive count + optional free-text notes,
-/// FR-AP-8/#196 + optional location). Location is nullable (#34/#37,
-/// FR-AP-3/FR-AP-5): older/incomplete records or apiaries created without a
-/// map pin have no coordinates, and callers (the map screen, the offline
-/// distance calculation) must skip/handle that case rather than assume every
-/// apiary is located.
+/// FR-AP-8/#196 + optional location). Location is nullable (#33/#34/#37,
+/// FR-AP-2/FR-AP-3/FR-AP-5): older/incomplete records or apiaries created
+/// without a map pin have no coordinates, and callers (offline proximity
+/// ordering, the map screen, the offline distance calculation) must
+/// skip/handle that case rather than assume every apiary is located.
+/// `locationLon`/`locationLat` are null exactly when the apiary has no
+/// location set server-side (powersync_schema.dart's doc comment).
 class Apiary {
   const Apiary({
     required this.id,
     required this.name,
     required this.hiveCount,
-    this.notes,
     this.locationLon,
     this.locationLat,
+    this.notes,
   });
 
   final String id;
   final String name;
   final int hiveCount;
-  final String? notes;
   final double? locationLon;
   final double? locationLat;
+  final String? notes;
 
   bool get hasLocation => locationLon != null && locationLat != null;
 }
@@ -108,9 +111,9 @@ class ApiariesRepository {
     id: r['id'] as String,
     name: r['name'] as String,
     hiveCount: (r['hive_count'] as int?) ?? 0,
-    notes: r['notes'] as String?,
     locationLon: (r['location_lon'] as num?)?.toDouble(),
     locationLat: (r['location_lat'] as num?)?.toDouble(),
+    notes: r['notes'] as String?,
   );
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
@@ -128,3 +131,61 @@ final apiariesStreamProvider = StreamProvider<List<Apiary>>((ref) async* {
   final repo = await ref.watch(apiariesRepositoryProvider.future);
   yield* repo.watchAll();
 });
+
+/// Client-side search over the locally-synced apiary set (FR-AP-6, D-17:
+/// client-side, apiaries-only, matches on name and location). There is no
+/// free-text location/address field on an apiary yet (just the GeoPoint,
+/// #33's own scope) — the coordinates aren't meaningful to match against a
+/// typed query, so "search by location" currently has nothing textual to
+/// search against and this only matches [Apiary.name]. Case-insensitive,
+/// substring match (not prefix-only) so "orte" matches "Encosta Norte".
+/// An empty/whitespace-only query returns [apiaries] unfiltered.
+List<Apiary> filterApiariesByQuery(List<Apiary> apiaries, String query) {
+  final needle = query.trim().toLowerCase();
+  if (needle.isEmpty) return apiaries;
+  return apiaries.where((a) => a.name.toLowerCase().contains(needle)).toList();
+}
+
+/// Offline proximity ordering (FR-AP-2, #33 AC: "the list works offline
+/// using the locally synced apiary set and an offline distance
+/// computation"): sorts [apiaries] ascending by haversine distance
+/// (core/geo/distance.dart, consistent with D-15/#37's approach) from
+/// (originLon, originLat). Apiaries without a location sort after every
+/// apiary that has one (mirrors the server's `near` ordering, NULLS LAST —
+/// api/apiaries.go's ListApiariesByProximity), staying in their relative
+/// (name) order among themselves.
+List<Apiary> sortApiariesByDistance(
+  List<Apiary> apiaries, {
+  required double originLon,
+  required double originLat,
+}) {
+  final withLocation = apiaries.where((a) => a.hasLocation).toList()
+    ..sort(
+      (a, b) =>
+          haversineDistanceMeters(
+            lon1: originLon,
+            lat1: originLat,
+            lon2: a.locationLon!,
+            lat2: a.locationLat!,
+          ).compareTo(
+            haversineDistanceMeters(
+              lon1: originLon,
+              lat1: originLat,
+              lon2: b.locationLon!,
+              lat2: b.locationLat!,
+            ),
+          ),
+    );
+  final withoutLocation = apiaries.where((a) => !a.hasLocation).toList()
+    ..sort((a, b) => a.name.compareTo(b.name));
+  return [...withLocation, ...withoutLocation];
+}
+
+/// The deterministic fallback ordering (#33 AC: "when location is
+/// unavailable or denied, the list falls back to a deterministic order
+/// (e.g. by name)") — alphabetical by name, used when the device location
+/// isn't available rather than leaving the (arbitrary, sync-order-dependent)
+/// [ApiariesRepository.watchAll] ordering in place.
+List<Apiary> sortApiariesByName(List<Apiary> apiaries) {
+  return [...apiaries]..sort((a, b) => a.name.compareTo(b.name));
+}

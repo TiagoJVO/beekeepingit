@@ -524,6 +524,42 @@ abstract class AppLocalizations {
   /// **'Apiary deleted.'**
   String get apiaryDeleteSuccess;
 
+  /// Placeholder text in the apiaries list search field (FR-AP-6, #36)
+  ///
+  /// In en, this message translates to:
+  /// **'Search apiaries by name'**
+  String get apiariesSearchHint;
+
+  /// Empty state shown when a search query matches no apiaries (FR-AP-6, #36)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries match your search.'**
+  String get apiariesSearchNoResults;
+
+  /// Fallback-order banner when device location services are disabled (FR-AP-2, #33)
+  ///
+  /// In en, this message translates to:
+  /// **'Location services are off — showing apiaries by name.'**
+  String get apiariesLocationServicesDisabled;
+
+  /// Fallback-order banner when location permission was denied (FR-AP-2, #33)
+  ///
+  /// In en, this message translates to:
+  /// **'Location access denied — showing apiaries by name.'**
+  String get apiariesLocationPermissionDenied;
+
+  /// Fallback-order banner when the device location couldn't be determined for another reason (FR-AP-2, #33)
+  ///
+  /// In en, this message translates to:
+  /// **'Location unavailable — showing apiaries by name.'**
+  String get apiariesLocationUnavailable;
+
+  /// Retry action on the location-fallback banner (FR-AP-2, #33)
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get apiariesLocationRetry;
+
   /// App-shell header sync-status pill label while an upload/download is in flight (#58)
   ///
   /// In en, this message translates to:

@@ -37,17 +37,21 @@ auth:
 # `location` column is a PostGIS `geography(Point,4326)` and streams to the
 # client in a wire form (EWKB) the Dart/SQLite side has no parser for.
 # ST_X/ST_Y(location::geometry) instead project it to plain nullable
-# double-precision lon/lat columns (`location_lon`/`location_lat`, #34/#37
-# map + offline-distance features — FR-AP-3/FR-AP-5), which PowerSync
-# replicates as ordinary SQLite REAL columns the client can read directly, no
-# WKB parsing needed. NULL when an apiary has no stored location (both
-# columns nullable, matching the DB column's own optionality).
+# double-precision lon/lat columns (`location_lon`/`location_lat`), which
+# PowerSync replicates as ordinary SQLite REAL columns the client can read
+# directly, no WKB parsing needed. NULL when an apiary has no stored location
+# (both columns nullable, matching the DB column's own optionality). Both
+# #33 (offline proximity ordering, FR-AP-2 — "the list works offline...
+# using an offline distance computation") and #34/#37 (map view + offline
+# distance measurement, FR-AP-3/FR-AP-5) need these same two columns
+# client-side, so this one bucket entry covers all three — don't duplicate it
+# if you touch this file again for related work.
 #
 # apiaries.audit_log and apiaries.sync_conflict_log (#61, history.md §6
 # "recent history is offline-viewable" / "LWW losers... surfaced as a
 # superseded timeline event") are included read-only in the same org bucket,
-# matching the flat unfiltered-`SELECT *` style already used for `apiaries`
-# above — no other bucket entry here is time/row-bounded either. history.md
+# matching the flat unfiltered-`SELECT *` style already used for the other two
+# tables below — no other bucket entry here is time/row-bounded either. history.md
 # §6 calls for a "recent window", not the unbounded log, but Sync Rules'
 # bucket `data` queries don't support a LIMIT/pagination clause (they define
 # a continuously-replicated row set, not a point-in-time page) and per-service
