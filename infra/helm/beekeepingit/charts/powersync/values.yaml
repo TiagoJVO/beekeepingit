@@ -36,16 +36,22 @@ auth:
 # apiaries.apiaries: an explicit column list, NOT `SELECT *` — the raw
 # `location` column is a PostGIS `geography(Point,4326)` and streams to the
 # client in a wire form (EWKB) the Dart/SQLite side has no parser for.
-# ST_X/ST_Y(location::geometry) instead project it to plain nullable
-# double-precision lon/lat columns (`location_lon`/`location_lat`), which
-# PowerSync replicates as ordinary SQLite REAL columns the client can read
-# directly, no WKB parsing needed. NULL when an apiary has no stored location
-# (both columns nullable, matching the DB column's own optionality). Both
-# #33 (offline proximity ordering, FR-AP-2 — "the list works offline...
-# using an offline distance computation") and #34/#37 (map view + offline
-# distance measurement, FR-AP-3/FR-AP-5) need these same two columns
-# client-side, so this one bucket entry covers all three — don't duplicate it
-# if you touch this file again for related work.
+# ST_X/ST_Y(location) instead project it to plain nullable double-precision
+# lon/lat columns (`location_lon`/`location_lat`), which PowerSync replicates
+# as ordinary SQLite REAL columns the client can read directly, no WKB parsing
+# needed. Deliberately no `::geometry` cast here (unlike the Go service's own
+# SQL, where PostGIS applies it implicitly) — PowerSync's sync-rules SQL
+# parser only supports CAST to text/numeric/integer/real/blob, not PostGIS
+# types, and fatals replication with "CAST not supported for 'geometry'" if
+# one is present; ST_X/ST_Y already accept `geography` directly (PowerSync
+# GIS support, docs.powersync.com/client-sdks/advanced/gis-data-postgis), so
+# the cast was both unsupported and unnecessary. NULL when an apiary has no
+# stored location (both columns nullable, matching the DB column's own
+# optionality). Both #33 (offline proximity ordering, FR-AP-2 — "the list
+# works offline... using an offline distance computation") and #34/#37 (map
+# view + offline distance measurement, FR-AP-3/FR-AP-5) need these same two
+# columns client-side, so this one bucket entry covers all three — don't
+# duplicate it if you touch this file again for related work.
 #
 # apiaries.audit_log and apiaries.sync_conflict_log (#61, history.md §6
 # "recent history is offline-viewable" / "LWW losers... surfaced as a
@@ -67,7 +73,7 @@ syncConfig:
       parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
       data:
         - SELECT id, organization_id, name, hive_count, created_at, updated_at,
-          ST_X(location::geometry) AS location_lon, ST_Y(location::geometry) AS location_lat
+          ST_X(location) AS location_lon, ST_Y(location) AS location_lat
           FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
         - SELECT * FROM organizations.organizations WHERE id = bucket.organization_id
         - SELECT * FROM apiaries.audit_log WHERE organization_id = bucket.organization_id
