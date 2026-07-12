@@ -1,14 +1,22 @@
 {{/*
 Renders BOTH sides of every edge in .Values.edges: an Egress rule on the
 `from` selector and an Ingress rule on the `to` selector. Both are required —
-default-deny.yaml sets `policyTypes: ["Ingress", "Egress"]` on every pod (an
-empty podSelector matches all), so an allow rule on only one side still
-leaves the connection blocked on the other. EXCEPTION: when `from` is a
-`namespaceSelector` (the caller is outside this namespace — e.g. Traefik in
-kube-system, the CNPG operator in cnpg-system), there is no egress side to
-render at all: this chart only secures pods IN .Values.global.namespace, and
-an out-of-namespace caller's own egress policy (if any) is that namespace's
-own concern, not this chart's.
+default-deny.yaml sets `policyTypes: ["Ingress", "Egress"]` on every pod it
+selects, so an allow rule on only one side still leaves the connection
+blocked on the other. These rules are enforced for real on k3d/k3s (embedded
+kube-router network-policy controller — see default-deny.yaml). Two
+exceptions:
+  - when `from` is a `namespaceSelector` (the caller is outside this
+    namespace — e.g. Traefik in kube-system, the CNPG operator in
+    cnpg-system), there is no egress side to render at all: this chart only
+    secures pods IN .Values.global.namespace, and an out-of-namespace
+    caller's own egress policy (if any) is that namespace's own concern, not
+    this chart's.
+  - when the edge sets `egressOnly: true` (the target is a pod default-deny
+    deliberately EXCLUDES — observability/MinIO), only the caller-side
+    egress policy renders: an Ingress-type policy selecting an excluded pod
+    would impose a whitelist on it after all, silently blocking its other,
+    un-enumerated callers.
 
 Selector shapes an edge's `from`/`to` can take:
   - a plain map of pod labels                    -> podSelector
@@ -70,6 +78,7 @@ spec:
       ports:
         - { protocol: TCP, port: {{ $edge.port }} }
 {{- end }}
+{{- if not $edge.egressOnly }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -104,5 +113,6 @@ spec:
         {{- end }}
       ports:
         - { protocol: TCP, port: {{ $edge.port }} }
+{{- end }}
 {{- end }}
 {{- end }}

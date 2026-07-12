@@ -1,11 +1,22 @@
 {{/*
-Every pod in the namespace needs DNS to resolve any other Service by name
-(gateway routes, INTERNAL_*_URL env vars, DB host, etc.) — without this, the
-default-deny egress policy blocks the DNS lookup itself before a workload-
-specific allow rule ever gets a chance to matter. CoreDNS runs in
-kube-system (k3d/k3s default) and is conventionally reachable on UDP/TCP 53;
-matched by the well-known `k8s-app: kube-dns` label CoreDNS's own Deployment
-carries on k3s (kube-system's CoreDNS addon), not a namespace-wide allow.
+Every default-denied pod needs DNS to resolve any other Service by name
+(gateway routes, INTERNAL_*_URL env vars, DB host, hook jobs' PGHOST, etc.) —
+without this, the default-deny egress baseline blocks the DNS lookup itself
+before a workload-specific allow rule ever gets a chance to matter.
+
+podSelector: the SAME selector as default-deny.yaml (via the shared helper) —
+NOT `{}`. An Egress-type policy's podSelector imposes whitelist-only egress
+on every pod it selects, so selecting the observability/MinIO pods here
+(which default-deny deliberately excludes) would restrict them to DNS-only
+egress and break them anyway. Enforcement is real on k3s (embedded
+kube-router network-policy controller — see default-deny.yaml).
+
+Target: the whole kube-system namespace on port 53 only, rather than
+pinpointing CoreDNS's `k8s-app: kube-dns` pod label — k3s's CoreDNS does
+carry that label today, but a wrong guess here breaks ALL name resolution
+for every workload at once (the single most fragile failure mode a netpol
+rollout has), and the namespace+port scope is still narrow: nothing else in
+kube-system serves 53.
 */}}
 {{- if .Values.enabled }}
 apiVersion: networking.k8s.io/v1
@@ -17,16 +28,14 @@ metadata:
     {{- include "beekeepingit.labels" . | nindent 4 }}
     app.kubernetes.io/name: networkpolicy
 spec:
-  podSelector: {}
+  podSelector:
+    {{- include "networkpolicy.managedPodSelector" . | nindent 4 }}
   policyTypes: ["Egress"]
   egress:
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }

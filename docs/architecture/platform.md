@@ -85,19 +85,25 @@ section covers the _why_.
   service existed) was removed once `#84`/`#87` added the first real subcharts.
 - `networkpolicy` (EPIC-14 `#89`, `NFR-SEC-1`) is hand-rolled and holds no workload — just
   `NetworkPolicy` objects (`networking.k8s.io/v1`, a namespace-scoped core API resource, not tied
-  to a Helm release). A namespace-wide **default-deny** (all ingress + egress) plus one
+  to a Helm release). A **default-deny** baseline (all ingress + egress) plus one
   **explicit-allow pair per real traffic edge**, generated from a single `values.yaml` edge list
   (`.Values.edges`) rather than hand-duplicated YAML per flow — each edge renders both an egress
   rule (on the caller) and an ingress rule (on the target), since default-deny blocks both
-  directions independently. Edges cover gateway→backends, service→service (from
-  `charts/services/values.yaml`'s `INTERNAL_*_URL` wiring), service→Postgres, powersync→Postgres,
-  and Authentik's own internal topology (server/worker/bundled Postgres) — the last because
+  directions independently, and ports are **container** ports (netpol matches after Service
+  DNAT — e.g. Authentik's Service listens on 80 but its rules must say 9000). Edges cover
+  gateway→backends, service→service (from `charts/services/values.yaml`'s `INTERNAL_*_URL`
+  wiring), service→Postgres, powersync→Postgres, CNPG's own operational plumbing (instance→API
+  server, operator→instance status port — without which the `Cluster` never reconciles), and
+  Authentik's own internal topology (server/worker/bundled Postgres) — the last because
   Authentik's Deployments live in the **same namespace** (its own standalone Flux `HelmRelease`,
   ADR-0012) and are therefore governed by this chart's default-deny too, even though this chart
-  doesn't own their pods. **k3d's default CNI (Flannel) does not enforce NetworkPolicy** — these
-  objects apply cleanly in local dev/CI but don't actually restrict traffic there; they're shipped
-  regardless because they're the correct declarative statement of intent and take effect
-  automatically on any NetworkPolicy-enforcing CNI (Calico, Cilium, …).
+  doesn't own their pods. **These policies are enforced on k3d/k3s**: k3s embeds kube-router's
+  network-policy controller, so NetworkPolicy is live even though the CNI itself is Flannel
+  (which has no netpol support of its own — an easy wrong assumption, made and corrected in
+  PR #224's first CI round). Two same-namespace releases are deliberately **excluded** from the
+  default-deny selector for now — the **observability stack** and **MinIO** — because their
+  internal flows span four vendored third-party charts whose pod labels/ports need live-cluster
+  verification before they can be enumerated as edges; tracked on `#89`.
 
 ## Observability
 

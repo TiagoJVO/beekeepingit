@@ -7,14 +7,31 @@ enabled: true
 # actual wiring (not guessed) — see each source file cited per edge. Each
 # entry renders BOTH sides of the same NetworkPolicy pair: an egress rule on
 # `from` and an ingress rule on `to`, because the default-deny baseline
-# (templates/default-deny.yaml) blocks Ingress AND Egress on every pod, so
-# either side missing silently breaks the connection even though "an allow
-# rule exists somewhere".
+# (templates/default-deny.yaml) blocks Ingress AND Egress on every pod it
+# selects, so either side missing silently breaks the connection even though
+# "an allow rule exists somewhere". These rules are LIVE on local dev and the
+# CI k3d job — k3s enforces NetworkPolicy via its embedded kube-router
+# controller even though the CNI is Flannel (see default-deny.yaml).
 #
 # `from`/`to` are k8s label selectors (any pod matching, not just this
 # umbrella's own subcharts — see allow-pod-to-pod.yaml's doc comment for why
-# that's valid for a NetworkPolicy object). `port` is the single TCP port
-# each edge actually uses.
+# that's valid for a NetworkPolicy object).
+#
+# `port` is the single TCP port each edge uses — and it must be the
+# CONTAINER port, not the Service port: NetworkPolicy is enforced against
+# pod IPs after kube-proxy's Service DNAT, so a rule written for a Service
+# port that differs from the pod's own port never matches anything. This bit
+# PR #224's first CI round: Authentik's `authentik-server` Service listens on
+# 80 but the server pod itself serves on 9000, so the authentik edges below
+# say 9000 even though the wiring they mirror (gateway authRoutes,
+# services' discoveryUrl) addresses the Service's port 80.
+#
+# `egressOnly: true` renders only the caller-side egress policy, no
+# target-side ingress policy — required when `to` is a pod that default-deny
+# deliberately EXCLUDES (observability/MinIO, see default-deny.yaml): an
+# Ingress-type policy selecting such a pod would impose a whitelist on it
+# after all, silently blocking its other, un-enumerated callers (e.g.
+# Prometheus scraping otel-collector's own metrics port).
 edges:
   # --- Gateway (Traefik, kube-system) -> in-namespace backends ---
   # charts/gateway/values.yaml `routes`/`authRoutes`/`powersyncRoute`. Traefik
@@ -47,10 +64,13 @@ edges:
     from: { namespaceSelector: kube-system }
     to: { app.kubernetes.io/name: powersync }
     port: 8080
+  # 9000 = the server pod's own container port (the `authentik-server`
+  # Service front-ends it on 80; netpol matches the container port — see the
+  # header comment).
   - name: gateway-to-authentik-server
     from: { namespaceSelector: kube-system }
     to: { app.kubernetes.io/name: server }
-    port: 80
+    port: 9000
 
   # --- East-west (services/values.yaml env: INTERNAL_*_URL) ---
   - name: organizations-to-identity
@@ -84,28 +104,30 @@ edges:
     port: 8080
 
   # --- OIDC discovery/JWKS (docs/architecture/auth.md §4, internal split) ---
+  # 9000 = the server pod's container port behind the Service's port 80 (the
+  # discoveryUrl says http://authentik-server/... = port 80 pre-DNAT).
   - name: identity-to-authentik-server
     from: { app.kubernetes.io/name: identity }
     to: { app.kubernetes.io/name: server }
-    port: 80
+    port: 9000
   - name: organizations-to-authentik-server
     from: { app.kubernetes.io/name: organizations }
     to: { app.kubernetes.io/name: server }
-    port: 80
+    port: 9000
   - name: apiaries-to-authentik-server
     from: { app.kubernetes.io/name: apiaries }
     to: { app.kubernetes.io/name: server }
-    port: 80
+    port: 9000
   - name: sync-to-authentik-server
     from: { app.kubernetes.io/name: sync }
     to: { app.kubernetes.io/name: server }
-    port: 80
+    port: 9000
   # `helm test` hook (charts/authentik/templates/tests/ready-test.yaml) —
   # probes authentik-server's readiness endpoint; runs in CI (helm-e2e.yml).
   - name: authentik-ready-test-to-authentik-server
     from: { app.kubernetes.io/name: authentik }
     to: { app.kubernetes.io/name: server }
-    port: 80
+    port: 9000
 
   # --- Postgres (charts/postgres) ---
   # sync does NOT connect directly (services/values.yaml sync.db.enabled: false).
@@ -161,32 +183,42 @@ edges:
     from: { app.kubernetes.io/name: server, app.kubernetes.io/instance: authentik }
     to: { app.kubernetes.io/name: postgresql, app.kubernetes.io/instance: authentik }
     port: 5432
+  # 9000 = container port (see the header comment on Service vs container
+  # ports).
   - name: authentik-worker-to-server
     from: { app.kubernetes.io/name: worker, app.kubernetes.io/instance: authentik }
     to: { app.kubernetes.io/name: server, app.kubernetes.io/instance: authentik }
-    port: 80
+    port: 9000
 
   # --- Observability (infra/gitops/apps/dev/observability-helmrelease.yaml
   # targetNamespace: beekeepingit-dev — same namespace) ---
   # services/values.yaml otelEndpoint: otel-collector:4317, shared by every
   # Go service. Attached per-service (not a namespace-wide egress-to-
   # collector rule) to keep every edge in this list equally auditable.
+  # `egressOnly`: otel-collector belongs to the observability release, which
+  # default-deny deliberately excludes — only the caller-side egress allow is
+  # needed, and an ingress policy here would impose a whitelist on the
+  # collector that blocks its un-enumerated callers (see the header comment).
   - name: identity-to-otel-collector
     from: { app.kubernetes.io/name: identity }
     to: { app.kubernetes.io/name: otel-collector }
     port: 4317
+    egressOnly: true
   - name: organizations-to-otel-collector
     from: { app.kubernetes.io/name: organizations }
     to: { app.kubernetes.io/name: otel-collector }
     port: 4317
+    egressOnly: true
   - name: apiaries-to-otel-collector
     from: { app.kubernetes.io/name: apiaries }
     to: { app.kubernetes.io/name: otel-collector }
     port: 4317
+    egressOnly: true
   - name: sync-to-otel-collector
     from: { app.kubernetes.io/name: sync }
     to: { app.kubernetes.io/name: otel-collector }
     port: 4317
+    egressOnly: true
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.
