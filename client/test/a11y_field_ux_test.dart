@@ -89,12 +89,15 @@ class _EmptyMembersController extends MembersController {
       const MembersState(members: [], invitations: []);
 }
 
+// `List<Object>` + `.cast()` below because Riverpod 3 no longer exports the
+// `Override` type by name — `cast()`'s target is inferred from
+// `ProviderScope.overrides`' own declared type.
 Widget _withMaterial(
   Widget child, {
-  List<Override> overrides = const [],
+  List<Object> overrides = const [],
 }) {
   return ProviderScope(
-    overrides: overrides,
+    overrides: overrides.cast(),
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
@@ -153,7 +156,11 @@ void main() {
     });
 
     testWidgets('apiary form save button (create mode)', (tester) async {
-      await tester.pumpWidget(_withMaterial(const ApiaryFormScreen()));
+      // The form screen relies on the app shell's Scaffold for its Material
+      // ancestor — supply one here like the shell does.
+      await tester.pumpWidget(
+        _withMaterial(const Scaffold(body: ApiaryFormScreen())),
+      );
       await tester.pumpAndSettle();
 
       expectMinTapTarget(tester, find.byKey(const Key('apiary-save-button')));
