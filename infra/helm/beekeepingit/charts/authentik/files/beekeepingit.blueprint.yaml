@@ -68,3 +68,26 @@ entries:
     id: app-beekeepingit
     identifiers: { slug: beekeepingit }
     attrs: { name: BeekeepingIT, slug: beekeepingit, provider: !KeyOf provider-beekeepingit }
+
+  # --- White-label the login as BeekeepingIT (not authentik) so end users never see the
+  # IdP's branding. Applied live via the API during #193 login re-validation; recorded here
+  # so a fresh deploy matches. ---
+  - model: authentik_core.brand
+    identifiers: { domain: authentik-default }
+    attrs:
+      branding_title: BeekeepingIT
+      # branding_logo only accepts a file path (not a data URI), so the authentik wordmark is
+      # hidden and replaced by a text header in CSS; the "Powered by authentik" footer is
+      # removed and the app's dark/amber theme applied.
+      branding_custom_css: |
+        .pf-c-brand img{display:none!important}
+        .pf-c-brand::after{content:'BeekeepingIT';color:#E8B979;font-size:30px;font-weight:700;font-family:'Segoe UI',Roboto,sans-serif}
+        .pf-c-login__footer{display:none!important}
+        :root{--ak-global--background-image:none!important}
+        .pf-c-background-image,.pf-c-background-image::before{background:#1a120b!important;background-image:none!important}
+        .ak-static-page,body{background:#1a120b!important}
+        .pf-c-button.pf-m-primary{background:#E8B979!important;border-color:#E8B979!important;color:#1a120b!important}
+  # Flow header text: "Welcome to authentik!" -> "Sign in".
+  - model: authentik_flows.flow
+    identifiers: { slug: default-authentication-flow }
+    attrs: { title: "Sign in" }
