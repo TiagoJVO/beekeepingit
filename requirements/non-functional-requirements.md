@@ -99,12 +99,16 @@ to `open-questions.md`.
 
 ## Compliance (NFR-CMP)
 
-- **NFR-CMP-1** — Adherence to relevant regulations/standards. The source lists
-  **GDPR and HIPAA** among others.
-  - _Note (Q-CMP):_ **GDPR applies** (Portugal/EU). **HIPAA is US healthcare** and
-    is almost certainly **not applicable** to a beekeeping app — confirm and
-    remove if so. Portuguese/EU **beekeeping & food-traceability** regulation is
-    the more likely real obligation (see context C-2 / Q-REG).
+- **NFR-CMP-1** — Adherence to relevant regulations/standards: **GDPR** (Portugal/EU) and
+  the **Portuguese/EU beekeeping & honey-traceability regime** — DL 203/2005 (PT beekeeping
+  activity & sanitary rules, DGAV), Reg (EC) 178/2002 Art. 18 + Reg (EU) 931/2011 (food
+  traceability), Dir 2001/110/EC as amended by Dir (EU) 2024/1438 (honey composition/origin
+  labelling), Dir 2011/91/EU (lot marking), Reg (EU) 2019/6 (veterinary medicinal product
+  record-keeping). **HIPAA does not apply** (US human-healthcare law; bee-health data is also
+  not GDPR Art. 9 special-category data) — dropped.
+  - _Resolved (D-19):_ obligations enumerated in
+    [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
+    (#91); concrete FR/NFR schema changes triaged per feature epic, not applied here.
 
 ## Internationalization & Localization (NFR-I18N)
 
