@@ -1,4 +1,5 @@
 import 'package:powersync/powersync.dart' as ps;
+import 'package:powersync/sqlite3_common.dart';
 
 import 'local_store.dart';
 
@@ -43,8 +44,8 @@ class PowerSyncLocalStore implements LocalStoreEngine {
   @override
   Future<void> clear() => _db.disconnectAndClear();
 
-  List<Map<String, Object?>> _rowsToMaps(ps.ResultSet rs) =>
+  List<Map<String, Object?>> _rowsToMaps(ResultSet rs) =>
       rs.map(_rowToMap).toList();
 
-  Map<String, Object?> _rowToMap(ps.Row r) => r.toMap();
+  Map<String, Object?> _rowToMap(Row r) => r.toMap();
 }
