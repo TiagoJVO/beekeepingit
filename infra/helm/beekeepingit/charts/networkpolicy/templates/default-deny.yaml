@@ -1,0 +1,49 @@
+{{/*
+Baseline: deny all ingress and egress for every pod in the namespace, then the
+other templates in this chart punch narrow, explicit holes for the real
+traffic flows (gateway->services, services->postgres, powersync->postgres,
+service->service, DNS, OTel). An empty podSelector matches every pod in this
+Namespace, per the NetworkPolicy spec. Applies namespace-wide regardless of
+which Helm release/HelmRelease owns a given pod (authentik/minio's Deployments
+included, even though this chart doesn't manage them) — NetworkPolicy is a
+namespace-scoped core API object (networking.k8s.io/v1), not tied to a
+release.
+
+CAVEAT #1 (documented honestly, not silently assumed): k3d's default CNI is
+Flannel (via k3s), which does NOT enforce NetworkPolicy — these objects apply
+cleanly (`kubectl apply` succeeds, `helm template`/`lint` validate them) on
+the CI k3d job and local dev, but traffic is NOT actually restricted there.
+They are still shipped because they're the correct, declarative statement of
+intent (NFR-SEC-1's "internal service traffic policy is documented") and take
+effect automatically on any NetworkPolicy-enforcing CNI (Calico, Cilium,
+etc.) without further change — exactly the "policy-only" object a
+GitOps-managed platform should carry even before every environment enforces
+it.
+
+CAVEAT #2 (scope, also documented honestly): this default-deny is
+namespace-wide, so it also covers the **observability stack**
+(infra/helm/observability, its own Flux HelmRelease, same `beekeepingit-dev`
+namespace, ADR-0013) — but `.Values.edges` (allow-pod-to-pod.yaml) does NOT
+yet enumerate observability's internal flows (otel-collector -> Loki/Tempo/
+Prometheus, Grafana -> Loki/Tempo/Prometheus, etc.). That stack is four
+vendored third-party charts (kube-prometheus-stack/loki/tempo/otel-collector)
+whose own pod labels weren't verified against a live cluster while writing
+this (#89's no-live-cluster constraint) — shipping guessed selectors for a
+stack outside this issue's explicit scope risked being MORE wrong than
+useful. On a CNI that actually enforces NetworkPolicy, this default-deny
+would currently break observability's internal traffic; tracked as a known
+gap in FOLLOWUPS.md rather than silently assumed away.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: networkpolicy
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+{{- end }}

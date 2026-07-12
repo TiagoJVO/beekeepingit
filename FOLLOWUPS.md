@@ -9,6 +9,58 @@
 
 ---
 
+## Security baseline (`fix/EPIC-14-89-security-baseline`, #89) — follow-ups
+
+#89 closed the CSP/headers, trivy-config, and NetworkPolicy gaps; three items are deliberately
+deferred rather than built here (each already has an inline comment at its source pointing back
+here):
+
+- **CSP: report-only → enforcing.** `client/nginx.conf` ships
+  `Content-Security-Policy-Report-Only`, not the enforcing header — this repo's CI can't run a
+  real browser against the built Flutter web app (no live cluster in CI), so a subtly-wrong
+  directive for the actual CanvasKit/skwasm/PowerSync wasm loading path would silently break the
+  app rather than just report. **Action:** once validated against a real browser (dev/staging),
+  flip to the enforcing `Content-Security-Policy` header.
+- **`client/nginx.conf`'s CSP `connect-src` hardcodes `auth.beekeepingit.local:8443`** — today
+  the only real auth-host value in the repo (`environments/{staging,prod}.yaml` don't define a
+  different one yet). **Action:** when a real non-local auth host ships, template this file
+  per-environment (e.g. envsubst at container start) instead of a hardcoded string.
+- **PowerSync's Deployment security context is partial** (`charts/powersync/templates/
+  deployment.yaml`): `allowPrivilegeEscalation: false` + drop `ALL` capabilities are set, but
+  `runAsNonRoot`/`readOnlyRootFilesystem` are NOT, because `journeyapps/powersync-service` is a
+  third-party image with no in-repo Dockerfile and its runtime user / on-disk writes aren't
+  verified against a live cluster here. The two checks (KSV-0014/KSV-0118) are ignored
+  repo-wide in `.trivyignore` as a result (see that file's own comment on the scoping caveat).
+  **Action:** validate against a live rollout, apply the two settings, and delete the
+  `.trivyignore` entry (restoring full KSV-0014/KSV-0118 coverage for any future Deployment).
+- **NetworkPolicy label assumptions not independently verified against a live cluster**
+  (no live cluster available while writing #89): Authentik's bundled Postgres subchart pod
+  label (`app.kubernetes.io/name: postgresql`, `app.kubernetes.io/instance: authentik`) and
+  CoreDNS's `k8s-app: kube-dns` label on k3d. If either differs, `helm-e2e.yml`'s Authentik
+  readiness hook / general pod connectivity will surface it as a failure to triage — the CI k3d
+  job is the live test this issue's own instructions call for.
+- **NetworkPolicy is not enforced by k3d's default CNI (Flannel)** — the policies are shipped
+  anyway because they're the correct, declarative statement of intent and take effect
+  automatically on any NetworkPolicy-enforcing CNI. Not an action item, just documented so a
+  future reader doesn't assume traffic is actually restricted on the local/CI cluster today.
+- **NetworkPolicy default-deny doesn't yet cover the observability stack's internal traffic**
+  (`infra/helm/observability` — its own Flux HelmRelease, but the SAME `beekeepingit-dev`
+  namespace, ADR-0013): `charts/networkpolicy`'s default-deny is namespace-wide, but
+  `.Values.edges` only enumerates this umbrella's own services + Authentik + Postgres, not
+  otel-collector → Loki/Tempo/Prometheus or Grafana → Loki/Tempo/Prometheus. Those are four
+  vendored third-party charts whose pod labels weren't verified against a live cluster while
+  writing #89 (guessing them risked being wrong for a stack outside #89's explicit scope, worse
+  than leaving the gap documented). **Action:** once verified against a live cluster, add the
+  observability edges to `charts/networkpolicy/values.yaml`'s `.Values.edges` the same way the
+  beekeepingit-umbrella ones are — same mechanism, just needs the real labels confirmed first.
+  Until then, this default-deny would break observability's internal traffic on any CNI that
+  actually enforces NetworkPolicy (not k3d's default Flannel — see the point above).
+
+**Still blocked on the user (not part of this PR, tracked in
+`infra/gitops/image-automation/README.md`):** Flux image-automation's `ImageUpdateAutomation`
+needs a Git **write credential** (deploy key or PAT) provisioned as a cluster secret before that
+directory can move into a reconciled path — a secrets-management step only the user can do.
+
 ## Offline UX: sync status/queued changes/retry (`feat/EPIC-06-offline-sync-ux`, #58) — before-merge note
 
 #58 builds the sync-status UI (real connectivity + pending count via `PowerSyncDatabase

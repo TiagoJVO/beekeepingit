@@ -19,12 +19,37 @@ spec:
         app.kubernetes.io/name: pwa
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      # Hardened pod/container security context (EPIC-14 #89, NFR-SEC-1,
+      # trivy-config KSV-0014/KSV-0118). The image already runs as the fixed
+      # non-root `nginx` user (uid/gid 101, the nginx:alpine image's stable
+      # convention) and binds :8080 (client/Dockerfile). A read-only root
+      # filesystem needs writable paths for nginx's own runtime dirs
+      # (cache/temp + the pidfile) — mounted here as emptyDirs rather than
+      # baked into the image, since a FRESH emptyDir mount is root-owned by
+      # default regardless of what the image's own Dockerfile chowned
+      # (kubelet creates it, then bind-mounts over whatever was there).
+      # `fsGroup: 101` is what actually makes it writable to the nginx user:
+      # kubelet chowns every mounted volume's group to it on pod start.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
       containers:
         - name: pwa
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.port }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
           livenessProbe:
             httpGet: { path: /, port: {{ .Values.port }} }
             periodSeconds: 10
@@ -33,4 +58,9 @@ spec:
             periodSeconds: 5
           resources:
             {{- index .Values.global.resources .Values.resourceTier | toYaml | nindent 12 }}
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
 {{- end }}

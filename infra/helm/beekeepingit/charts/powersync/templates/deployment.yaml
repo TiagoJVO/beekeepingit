@@ -23,12 +23,28 @@ spec:
         # don't otherwise trigger a re-read of mounted files).
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
+      # Hardened pod/container security context, partial (EPIC-14 #89,
+      # NFR-SEC-1, trivy-config KSV-0014/KSV-0118). `journeyapps/
+      # powersync-service` is a third-party image with no in-repo Dockerfile
+      # to inspect — its runtime user and whether it writes to its own root
+      # filesystem (e.g. Node/npm caches) aren't verified against a live
+      # cluster here (no live cluster in CI, #89's constraint). Applying
+      # `runAsNonRoot`/`readOnlyRootFilesystem` unverified risks a silent
+      # crash-loop (wrong UID / a write it needs rejected) that only a real
+      # deploy would catch. So this sets only the parts safe regardless of
+      # the image's internals; `runAsNonRoot`/`readOnlyRootFilesystem` are
+      # deferred to a follow-up once validated against a real rollout (see
+      # FOLLOWUPS.md).
       containers:
         - name: powersync
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           # `args:`, not `command:` — overriding `command:` skips the image's
           # own entrypoint script (SP-1 spike's k8s gotcha note).
           args: ["start", "-r", "unified"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: {{ .Values.port }}
           env:

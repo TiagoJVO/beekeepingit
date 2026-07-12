@@ -1,0 +1,33 @@
+{{/*
+Every pod in the namespace needs DNS to resolve any other Service by name
+(gateway routes, INTERNAL_*_URL env vars, DB host, etc.) — without this, the
+default-deny egress policy blocks the DNS lookup itself before a workload-
+specific allow rule ever gets a chance to matter. CoreDNS runs in
+kube-system (k3d/k3s default) and is conventionally reachable on UDP/TCP 53;
+matched by the well-known `k8s-app: kube-dns` label CoreDNS's own Deployment
+carries on k3s (kube-system's CoreDNS addon), not a namespace-wide allow.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: networkpolicy
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+{{- end }}

@@ -83,6 +83,21 @@ section covers the _why_.
   SP-1 spike's proven config and avoiding a second datastore technology.
 - The former `charts/smoke/` placeholder (proved the umbrella→subchart wiring before any real
   service existed) was removed once `#84`/`#87` added the first real subcharts.
+- `networkpolicy` (EPIC-14 `#89`, `NFR-SEC-1`) is hand-rolled and holds no workload — just
+  `NetworkPolicy` objects (`networking.k8s.io/v1`, a namespace-scoped core API resource, not tied
+  to a Helm release). A namespace-wide **default-deny** (all ingress + egress) plus one
+  **explicit-allow pair per real traffic edge**, generated from a single `values.yaml` edge list
+  (`.Values.edges`) rather than hand-duplicated YAML per flow — each edge renders both an egress
+  rule (on the caller) and an ingress rule (on the target), since default-deny blocks both
+  directions independently. Edges cover gateway→backends, service→service (from
+  `charts/services/values.yaml`'s `INTERNAL_*_URL` wiring), service→Postgres, powersync→Postgres,
+  and Authentik's own internal topology (server/worker/bundled Postgres) — the last because
+  Authentik's Deployments live in the **same namespace** (its own standalone Flux `HelmRelease`,
+  ADR-0012) and are therefore governed by this chart's default-deny too, even though this chart
+  doesn't own their pods. **k3d's default CNI (Flannel) does not enforce NetworkPolicy** — these
+  objects apply cleanly in local dev/CI but don't actually restrict traffic there; they're shipped
+  regardless because they're the correct declarative statement of intent and take effect
+  automatically on any NetworkPolicy-enforcing CNI (Calico, Cilium, …).
 
 ## Observability
 
@@ -178,10 +193,12 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
 
 - [`ci.yml`](../../.github/workflows/ci.yml) — repo-wide `task ci` (hygiene + per-language lint +
   test), self-discovering and green before any code lands.
-- [`security-scan.yml`](../../.github/workflows/security-scan.yml) — supply-chain scanning:
-  **Trivy `fs`** (dependency + secret, blocking on HIGH,CRITICAL) + **`govulncheck`** over every Go
-  module, with **Trivy `config`** (IaC misconfig) report-only until #89 triages the baseline. This
-  is the scanning stage EPIC-14 #89 shares and tunes.
+- [`security-scan.yml`](../../.github/workflows/security-scan.yml) — supply-chain scanning, all
+  three gates **blocking on HIGH,CRITICAL**: **Trivy `fs`** (dependency + secret) +
+  **`govulncheck`** over every Go module + **Trivy `config`** (IaC misconfig — Helm/k8s/Actions/
+  Dockerfiles), the last flipped from report-only once #89 triaged the pre-existing baseline (see
+  the repo-root [`.trivyignore`](../../.trivyignore) for the individually-justified exceptions).
+  This is the scanning stage EPIC-14 #89 shares and tunes.
 - [`build-publish.yml`](../../.github/workflows/build-publish.yml) — a `detect` job emits a matrix
   of only the changed directories containing a `Dockerfile`; each builds → **Trivy image scan** →
   on merge to `main`, publishes to **ghcr.io** tagged by commit. **Dormant** until the first

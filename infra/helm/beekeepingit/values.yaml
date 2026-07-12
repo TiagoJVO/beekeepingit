@@ -89,3 +89,7 @@ services:
 # The Flutter Web PWA static bundle (#21/#23), served behind the gateway's `/`.
 pwa:
   enabled: true
+
+# Default-deny + explicit-allow NetworkPolicies (EPIC-14 #89, NFR-SEC-1).
+networkpolicy:
+  enabled: true

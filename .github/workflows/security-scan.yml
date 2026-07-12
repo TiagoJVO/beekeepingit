@@ -6,11 +6,15 @@
 # Three independent gates so a failure points at one cause:
 #   trivy-deps   — dependency (SBOM) + secret scan of the working tree  → BLOCKING (HIGH,CRITICAL)
 #   govulncheck  — Go call-graph-aware vuln scan of every module        → BLOCKING
-#   trivy-config — IaC/misconfig scan (Helm, k8s, Actions, Dockerfiles) → REPORT-ONLY for now
+#   trivy-config — IaC/misconfig scan (Helm, k8s, Actions, Dockerfiles) → BLOCKING (HIGH,CRITICAL)
 #
-# Why config is report-only: gating it on the pre-existing Helm/k8s baseline would fail unrelated
-# PRs on findings this story didn't introduce. #89 triages the baseline, then flips exit-code to 1.
-# Tools (Trivy) and the HIGH,CRITICAL default are the "mechanism shared with EPIC-14".
+# trivy-config was report-only until #89 triaged the pre-existing Helm/k8s baseline (20 HIGH
+# findings): fixed the cheap ones (non-root client image, securityContext on every Deployment
+# this umbrella controls), and added narrowly-scoped, individually-justified entries to the repo
+# root .trivyignore for the two that aren't (the Authentik dev-seed blueprint password — a
+# throwaway credential for an ephemeral dev/CI cluster; PowerSync's readOnlyRootFilesystem/
+# runAsNonRoot — deferred, unverified against the third-party image without a live cluster).
+# Every ignore entry is dated/justified in .trivyignore itself, per NFR-SEC-1.
 name: security-scan
 
 on:
@@ -55,7 +59,7 @@ jobs:
         run: task go:vuln
 
   trivy-config:
-    name: trivy (IaC / misconfig) — report only
+    name: trivy (IaC / misconfig)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -66,5 +70,7 @@ jobs:
           scan-type: config
           scan-ref: .
           severity: HIGH,CRITICAL
-          # Report-only until #89 triages the Helm/k8s baseline, then this becomes "1".
-          exit-code: "0"
+          # Baseline triaged (#89) — see .trivyignore for the two remaining,
+          # individually-justified entries. trivy-action reads the repo-root
+          # .trivyignore automatically (same default as the CLI).
+          exit-code: "1"

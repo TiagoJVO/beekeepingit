@@ -1,0 +1,53 @@
+# Trivy IaC/misconfig ignore list — EPIC-14 #89 baseline triage.
+#
+# Read before adding an entry: this file makes `trivy-config` in
+# .github/workflows/security-scan.yml BLOCKING (exit-code 1, #89). Every entry
+# below is a specific, already-triaged finding with a stated reason it's an
+# accepted risk or a false positive — not a blanket suppression. New findings
+# introduced by future changes are NOT covered by anything here and will fail
+# CI as intended; add a new dated, justified entry only after the same triage
+# rigor, or fix the underlying misconfig instead.
+
+# KSV-0109 (ConfigMap with secrets) — infra/helm/beekeepingit/charts/authentik/
+# templates/blueprint-configmap.yaml, flagging the Authentik declarative
+# blueprint's seed-user `password: dev-password123`
+# (infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml).
+# Accepted: this is a fixed, non-secret dev/CI login for the
+# `test.beekeeper@beekeepingit.local` seed account used only by the local k3d
+# dev cluster and the ephemeral CI k3d job (helm-e2e.yml) — both
+# world-disposable environments with no real user data, torn down after every
+# run. It grants no access to anything outside that ephemeral cluster. Moving
+# it to a generated Secret would need the blueprint's YAML templating to
+# reference a Secret key (Authentik blueprints don't support that natively —
+# only ConfigMap-delivered file content), a nontrivial rework out of scope for
+# this triage pass. Production-grade IdP hardening (real accounts, no seed
+# user) is explicitly deferred to EPIC-14 (docs/architecture/platform.md "Not
+# yet covered here").
+KSV-0109
+
+# KSV-0014 (root filesystem not read-only) + KSV-0118 (default security
+# context) — currently only fires on
+# infra/helm/beekeepingit/charts/powersync/templates/deployment.yaml.
+# Deferred, not accepted-forever: `journeyapps/powersync-service` is a
+# third-party image with no in-repo Dockerfile to inspect. This PR cannot run
+# a live cluster (#89's constraint) to verify its runtime user or whether it
+# writes to its own root filesystem (e.g. Node/npm caches) — setting
+# `runAsNonRoot`/`readOnlyRootFilesystem` unverified risks a silent
+# crash-loop that only a real deploy would catch. The container-level
+# hardening that IS safe regardless of the image's internals
+# (allowPrivilegeEscalation: false, capabilities drop ALL) is already applied
+# — see that file. Every OTHER Deployment in the umbrella chart
+# (pwa/services/*) already sets a full securityContext (readOnlyRootFilesystem
+# included) as of this same PR, so this ignore is not currently masking
+# anything else.
+#
+# CAVEAT (trivy's .trivyignore has no per-resource scoping for misconfig
+# checks — a bare check ID is ignored repo-wide): until this entry is
+# resolved, a FUTURE Deployment added without its own securityContext would
+# also be silently ignored by these two IDs rather than caught by CI. Kept
+# narrow at review time by convention (new charts should copy the
+# pwa/services pattern), tracked to close in FOLLOWUPS.md — validate
+# PowerSync's image against a live rollout, apply the two settings there, and
+# delete this whole entry (restoring full KSV-0014/KSV-0118 coverage).
+KSV-0014
+KSV-0118

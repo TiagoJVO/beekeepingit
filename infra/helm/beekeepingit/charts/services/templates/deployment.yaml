@@ -22,8 +22,21 @@ spec:
         app.kubernetes.io/name: {{ $name }}
         app.kubernetes.io/instance: {{ $root.Release.Name }}
     spec:
+      # Hardened pod/container security context (EPIC-14 #89, NFR-SEC-1,
+      # trivy-config KSV-0014/KSV-0118). Safe for every service here: each
+      # ships as a statically-linked Go binary on distroless:nonroot
+      # (services/<name>/Dockerfile already sets USER nonroot:nonroot) that
+      # never writes to disk (no os.WriteFile/os.Create/temp-dir usage in this
+      # tree) — a read-only root filesystem changes no runtime behavior.
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: {{ $name }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           # Per-service `tag` overrides the shared `image.tag` when set — so Flux
           # image-automation can bump each service independently (they publish on
           # their own path-filtered CI legs). Defaults to the shared tag (`latest`

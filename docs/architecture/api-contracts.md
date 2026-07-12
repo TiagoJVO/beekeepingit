@@ -205,6 +205,47 @@ Details** (`application/problem+json`). Canonical schema in
   data; a user-confirmed action is executed by the **owning service via this same REST
   contract** (NFR-AI-4 / D-11) — so there is nothing AI-specific in the contract.
 
+### 9.1 CSRF posture (EPIC-14 #89, NFR-SEC-1)
+
+**No CSRF tokens are used, deliberately — the API is bearer-token authenticated, not
+cookie-authenticated, so the CSRF threat model doesn't apply to it.**
+
+CSRF works by getting a victim's browser to replay an **ambient credential** (a cookie the
+browser attaches automatically) toward a state-changing endpoint. Our client-facing APIs never
+rely on an ambient credential:
+
+- Every request to a domain service (`identity`/`organizations`/`apiaries`/`sync`/…) carries an
+  explicit **`Authorization: Bearer <access token>`** header (§9 above), read from the app's own
+  in-memory/secure-storage token cache
+  ([`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart),
+  [`client/lib/core/api/`](../../client/lib/core/api/)). A forged cross-site request has no way
+  to attach that header — the browser doesn't send it automatically the way it would a cookie,
+  and a third-party page cannot read it out of the app's storage (same-origin policy).
+- Domain services and the gateway **set no session cookie of their own** — nothing here is
+  cookie-authenticated for the client to forget to protect.
+- **Authentik** (the IdP, `auth.beekeepingit.local`) does set its own server-side SSO session
+  cookie, scoped to **its own origin** — but that cookie is Authentik's login-session state, used
+  only during the OIDC redirect dance (`auth.md` §7 "Logout"). No BeekeepingIT domain service or
+  the gateway ever reads it; it never crosses to the app origin (`app.beekeepingit.local`) or
+  into a REST call. It's out of scope for our APIs' CSRF posture the same way a bank's SSO cookie
+  is out of scope for a third-party OAuth client it federates with.
+- The OIDC **Authorization Code + PKCE** flow itself already carries its own anti-forgery
+  mechanism — the `state` parameter, verified client-side on the redirect callback
+  (`auth_controller_test.dart` covers "CSRF-state rejection", `auth.md` §8.5) — a different,
+  already-solved problem from API CSRF.
+
+**What this is not:** this is not "we skipped CSRF protection" — a same-site/lax cookie policy
+or CSRF tokens would be **redundant** protection for a surface that never grants access via an
+ambient credential in the first place. If a future surface (e.g. a server-rendered admin
+console, or any endpoint that starts trusting a cookie) changes that assumption, it must add
+real CSRF protection (SameSite=Strict/Lax + a synchronizer token) at that time — this note
+applies only to the bearer-token REST APIs described in this document.
+
+**CORS**, by contrast, *is* relevant (a different browser mechanism, unrelated to CSRF): the
+Authentik blueprint's OAuth2 provider `redirect_uris` double as its CORS-allowed-origins list
+(`infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml`, `auth.md` §8.5) —
+scoped to the app's own origin(s), not a wildcard.
+
 ---
 
 ## 10. Inter-service communication (D-1)

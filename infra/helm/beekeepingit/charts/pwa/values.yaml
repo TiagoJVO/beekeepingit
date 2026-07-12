@@ -8,7 +8,9 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-port: 80
+# 8080, not 80: the container runs as non-root (client/Dockerfile, EPIC-14
+# #89) — only root can bind a port <1024.
+port: 8080
 
 # Placeholder for standalone rendering only — the umbrella injects real global.*.
 global:
