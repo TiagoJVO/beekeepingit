@@ -117,26 +117,26 @@ jobs:
       # The server being Ready is NOT enough for the domain services: the WORKER applies
       # the blueprint (provider/application/seed user) asynchronously after boot, and
       # until it lands, OIDC discovery 404s and every Go service crash-restarts with a
-      # growing backoff (up to 5 min). Wait for discovery to actually answer, then
-      # restart the services once to clear the accumulated CrashLoopBackOff — otherwise
-      # the readiness gate below is racing pod backoff timers, not real readiness.
+      # growing backoff (up to 5 min). So: wait for the worker rollout (it does the
+      # apply), poll discovery until it 200s, then restart the services once to clear the
+      # accumulated CrashLoopBackOff — otherwise the readiness gate below races pod
+      # backoff timers, not real readiness.
       - name: Wait for the Authentik blueprint (OIDC discovery answers), reset backoffs
         if: steps.changes.outputs.infra == 'true'
         run: |
-          kubectl -n beekeepingit-dev port-forward svc/authentik-server 9000:80 &
-          PF_PID=$!
-          trap 'kill $PF_PID 2>/dev/null || true' EXIT
-          for i in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:9000/application/o/beekeepingit/.well-known/openid-configuration >/dev/null; then
-              echo "discovery answered after ~$((i*5))s"
-              break
-            fi
-            if [ "$i" = "60" ]; then
-              echo "::error::blueprint never applied — discovery still 404 after 300s"
-              exit 1
-            fi
-            sleep 5
-          done
+          kubectl -n beekeepingit-dev rollout status deployment/authentik-worker --timeout=600s
+          # Poll from INSIDE the cluster (a throwaway curl pod) against the Service DNS —
+          # port-forward from the runner is racy here and just adds reset-by-peer noise.
+          # 90×10s = 15 min: a cold CI worker can be slow to finish the blueprint apply.
+          kubectl -n beekeepingit-dev run oidc-wait --image=curlimages/curl:8.11.0 \
+            --restart=Never --quiet --rm --attach --command -- sh -c '
+              for i in $(seq 1 90); do
+                if curl -sf http://authentik-server/application/o/beekeepingit/.well-known/openid-configuration >/dev/null; then
+                  echo "discovery answered after ~$((i*10))s"; exit 0
+                fi
+                sleep 10
+              done
+              echo "blueprint never applied — discovery still 404 after 900s"; exit 1'
           kubectl -n beekeepingit-dev rollout restart deployment \
             -l app.kubernetes.io/part-of=beekeepingit
 
