@@ -111,9 +111,21 @@ func newApiariesFixture(t *testing.T) *apiariesFixture {
 	dbCfg := dbaccess.Config{Host: host, Port: port.Port(), User: dbUser, Password: dbPass, Database: dbName, SSLMode: "disable"}
 	// Migrations no longer create the schema or the postgis extension
 	// (infra's job in-cluster, cluster.yaml's postInitApplicationSQL) — both
-	// stand in for that bootstrap step here.
+	// stand in for that bootstrap step here. Both connect via dbCfg.DSN()
+	// directly, before SearchPath below is set, so they still see `public`
+	// (needed to create the extension there).
 	createSchema(ctx, t, dbCfg, "apiaries")
 	createPostgisExtension(ctx, t, dbCfg)
+	// SearchPath matches infra/helm's DB_SEARCH_PATH=apiaries (schema-per-
+	// service, D-6): `public` is deliberately excluded, same as the real
+	// deployed service. Testcontainers' own default search_path includes
+	// `public`, which silently masked #221 — every PostGIS function call had
+	// to be schema-qualified (public.ST_...) in the query sources for
+	// anything under this restricted path to work, matching what a live
+	// cluster deploy actually sees. Applied to both migrations and the
+	// runtime pool so a future migration reintroducing an unqualified
+	// PostGIS reference fails here the same way it fails in prod.
+	dbCfg.SearchPath = "apiaries"
 	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

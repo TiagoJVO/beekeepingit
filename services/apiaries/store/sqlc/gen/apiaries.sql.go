@@ -13,7 +13,7 @@ import (
 
 const getApiary = `-- name: GetApiary :one
 SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
+       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 `
@@ -54,7 +54,7 @@ const getApiaryDistance = `-- name: GetApiaryDistance :one
 SELECT
     a.id AS from_id,
     b.id AS to_id,
-    COALESCE(ST_Distance(a.location, b.location), 0)::float8 AS distance_m,
+    COALESCE(public.ST_Distance(a.location, b.location), 0)::float8 AS distance_m,
     (a.location IS NOT NULL AND b.location IS NOT NULL) AS has_locations
 FROM apiaries.apiaries a
 CROSS JOIN apiaries.apiaries b
@@ -83,10 +83,13 @@ type GetApiaryDistanceRow struct {
 // geography returns NULL, which the caller also treats as "can't compute,
 // 404" (a location-less apiary has no distance to report). ST_Distance on
 // `geography` is already great-circle/spheroidal (not planar), matching
-// D-15's "straight-line" method — no explicit ::public.geography cast is
-// needed here since `location` is already that column type (unlike
-// write.go's ST_MakePoint(...)::public.geography, which builds one from
-// scratch and must qualify the target type it casts to).
+// D-15's "straight-line" method — no ::public.geography *cast* is needed
+// here since `location` is already that column type (unlike write.go's
+// ST_MakePoint(...)::public.geography, which builds one from scratch and
+// must qualify the target type it casts to). The function call itself
+// (public.ST_Distance) is still schema-qualified regardless (#221): the
+// function, like the type, lives in `public`, not the service's own
+// restricted search_path.
 // COALESCE(...,0) avoids a NULL distance_m (ST_Distance returns NULL when
 // either side is NULL) so the Go row type can stay a plain, non-pointer
 // float64 — has_locations is the caller's actual "can I trust this value"
@@ -105,7 +108,7 @@ func (q *Queries) GetApiaryDistance(ctx context.Context, arg GetApiaryDistancePa
 
 const getApiaryForUpdate = `-- name: GetApiaryForUpdate :one
 SELECT id, organization_id, name, hive_count, notes, created_at, updated_at, deleted_at,
-       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
+       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2
 FOR UPDATE
@@ -182,11 +185,11 @@ INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, notes, upd
 VALUES (
     $1, $2, $3, $4, $5, $6,
     CASE WHEN $7::double precision IS NULL THEN NULL
-         ELSE ST_SetSRID(ST_MakePoint($7::double precision, $8::double precision), 4326)::public.geography
+         ELSE public.ST_SetSRID(public.ST_MakePoint($7::double precision, $8::double precision), 4326)::public.geography
     END
 )
 RETURNING id, organization_id, name, hive_count, notes, created_at, updated_at,
-          COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
+          COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
 `
 
 type InsertApiaryWithLocationParams struct {
@@ -310,7 +313,7 @@ func (q *Queries) InsertConflict(ctx context.Context, arg InsertConflictParams) 
 
 const listApiaries = `-- name: ListApiaries :many
 SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-       COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
+       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1
   AND deleted_at IS NULL
@@ -373,9 +376,16 @@ func (q *Queries) ListApiaries(ctx context.Context, arg ListApiariesParams) ([]L
 const listApiariesByProximity = `-- name: ListApiariesByProximity :many
 WITH ranked AS (
     SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-           COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson,
-           ST_Distance(location, ST_SetSRID(ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography) AS distance_m,
-           location <-> ST_SetSRID(ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography AS knn_distance
+           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson,
+           public.ST_Distance(location, public.ST_SetSRID(public.ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography) AS distance_m,
+           -- The KNN operator itself is schema-qualified the same way the
+           -- functions above are (#221): ` + "`" + `<->` + "`" + ` is also defined by the
+           -- postgis extension in ` + "`" + `public` + "`" + `, not just its functions/types, so
+           -- a bare ` + "`" + `<->` + "`" + ` fails to resolve under the restricted search_path
+           -- too (SQLSTATE 42883 "operator does not exist"). Postgres
+           -- operators use OPERATOR(schema.op) to schema-qualify, unlike
+           -- functions/types which take a plain schema. prefix.
+           location OPERATOR(public.<->) public.ST_SetSRID(public.ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography AS knn_distance
     FROM apiaries.apiaries
     WHERE organization_id = $1
       AND deleted_at IS NULL
@@ -417,10 +427,18 @@ type ListApiariesByProximityRow struct {
 // listing isn't expected to page deeply. Rows without a location sort last
 // (NULLS LAST) rather than being dropped, so an apiary missing a location
 // still appears (with a null distance_m) instead of silently vanishing
-// from the list. `public.geography`/`ST_MakePoint` follow
+// from the list. `public.geography`/`public.ST_MakePoint` follow
 // 00003_add_apiary_location.sql's schema-qualification note (bare
 // `geography` fails to resolve under the service's restricted
-// search_path).
+// search_path) — and per #221, every PostGIS *function* call
+// (ST_AsGeoJSON/ST_Distance/ST_SetSRID/ST_MakePoint) needs the same
+// `public.` qualification: the functions themselves live in `public`, not
+// just the type, so an unqualified call also fails to resolve
+// (SQLSTATE 42883) under the service's restricted search_path. The `<->`
+// KNN *operator* below needs the same treatment (also `public`'s, also
+// 42883 unqualified — "operator does not exist") but takes different
+// syntax: `OPERATOR(public.<->)`, not a plain `public.` prefix (operators
+// aren't schema-qualified the way functions/types are).
 //
 // ORDER BY uses the `<->` KNN distance operator rather than `distance_m`
 // itself: cheaper to evaluate (an index-accelerated bounding-box distance,
@@ -664,12 +682,12 @@ SET name = $3,
     notes = $5,
     updated_at = $6,
     location = CASE WHEN $7::double precision IS NULL THEN NULL
-                     ELSE ST_SetSRID(ST_MakePoint($7::double precision, $8::double precision), 4326)::public.geography
+                     ELSE public.ST_SetSRID(public.ST_MakePoint($7::double precision, $8::double precision), 4326)::public.geography
                END,
     recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING id, organization_id, name, hive_count, notes, created_at, updated_at,
-          COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
+          COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
 `
 
 type UpdateApiaryWithLocationParams struct {
