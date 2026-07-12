@@ -151,6 +151,12 @@ jobs:
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=server --tail=100 || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=worker --tail=100 || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/part-of=beekeepingit --tail=50 --prefix || true
+          # Crashlooping containers keep their crash output on the PREVIOUS instance;
+          # plain `logs` on a just-restarted container is usually empty.
+          for d in identity organizations apiaries sync pwa beekeepingit-powersync; do
+            echo "=== previous logs: $d ==="
+            kubectl -n beekeepingit-dev logs "deploy/$d" --previous --tail=30 || true
+          done
           kubectl get helmrelease -A || true
           kubectl -n beekeepingit-dev get events --sort-by=.lastTimestamp || true
 
