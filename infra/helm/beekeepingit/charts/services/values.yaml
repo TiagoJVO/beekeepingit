@@ -18,7 +18,8 @@ image:
 # client id).
 oidc:
   issuerUrl: https://auth.beekeepingit.local:8443/application/o/beekeepingit/
-  discoveryUrl: http://authentik-server/application/o/beekeepingit/.well-known/openid-configuration
+  # Issuer BASE — go-oidc's NewProvider appends /.well-known/openid-configuration.
+  discoveryUrl: http://authentik-server/application/o/beekeepingit/
   audience: beekeepingit-pwa
 otelEndpoint: otel-collector:4317
 logLevel: info

@@ -76,7 +76,7 @@ optional.
   doc returns an **internal `jwks_uri`** (reachable in-cluster) while trusting the **external** `iss`.
 - **Env:**
   - `OIDC_ISSUER_URL` = `https://auth.beekeepingit.local:8443/application/o/beekeepingit/`
-  - `OIDC_DISCOVERY_URL` = `http://authentik-server/application/o/beekeepingit/.well-known/openid-configuration`
+  - `OIDC_DISCOVERY_URL` = `http://authentik-server/application/o/beekeepingit/` — the issuer **base**, _not_ the full `.well-known` URL: `go-oidc`'s `NewProvider` appends `/.well-known/openid-configuration` itself (a full URL here double-appends → 404)
   - `OIDC_AUDIENCE` = `beekeepingit-pwa`
 - **Identity naming (provider-neutral):** `identity.users.keycloak_sub` → **`oidc_sub`**;
   `GetUserByKeycloakSub` → `GetUserByOidcSub`; regenerate sqlc; `devseed.KeycloakSub` →
