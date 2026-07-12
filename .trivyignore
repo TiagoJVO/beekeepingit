@@ -46,7 +46,7 @@ KSV-0109
 # resolved, a FUTURE Deployment added without its own securityContext would
 # also be silently ignored by these two IDs rather than caught by CI. Kept
 # narrow at review time by convention (new charts should copy the
-# pwa/services pattern), tracked to close in FOLLOWUPS.md — validate
+# pwa/services pattern), tracked to close on issue #89 — validate
 # PowerSync's image against a live rollout, apply the two settings there, and
 # delete this whole entry (restoring full KSV-0014/KSV-0118 coverage).
 KSV-0014

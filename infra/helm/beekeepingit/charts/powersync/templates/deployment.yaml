@@ -34,7 +34,7 @@ spec:
       # deploy would catch. So this sets only the parts safe regardless of
       # the image's internals; `runAsNonRoot`/`readOnlyRootFilesystem` are
       # deferred to a follow-up once validated against a real rollout (see
-      # FOLLOWUPS.md).
+      # issue #89).
       containers:
         - name: powersync
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
