@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
+import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../shell/sync_status.dart';
 import '../organization/organization_repository.dart';
@@ -161,18 +162,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         style: Theme.of(context).textTheme.bodyMedium,
       ),
       const SizedBox(height: 16),
-      OutlinedButton.icon(
+      SecondaryActionButton(
         key: const Key('account-sync-now-button'),
-        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
-        onPressed: _syncing ? null : () => _syncNow(l10n),
-        icon: _syncing
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.sync),
-        label: Text(l10n.accountSyncNowButton),
+        label: l10n.accountSyncNowButton,
+        icon: Icons.sync,
+        busy: _syncing,
+        onPressed: () => _syncNow(l10n),
       ),
     ];
   }
@@ -269,21 +264,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                             },
                           ),
                           const SizedBox(height: 24),
-                          FilledButton(
+                          PrimaryActionButton(
                             key: const Key('account-save-button'),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(56),
-                            ),
-                            onPressed: _saving ? null : () => _save(l10n),
-                            child: _saving
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Text(l10n.profileSaveButton),
+                            label: l10n.profileSaveButton,
+                            busy: _saving,
+                            onPressed: () => _save(l10n),
                           ),
                         ],
                       ),
@@ -305,14 +290,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
-                    OutlinedButton.icon(
+                    SecondaryActionButton(
                       key: const Key('account-change-password-button'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(56),
-                      ),
+                      label: l10n.accountChangePasswordButton,
+                      icon: Icons.lock_outline,
                       onPressed: _openChangePassword,
-                      icon: const Icon(Icons.lock_outline),
-                      label: Text(l10n.accountChangePasswordButton),
                     ),
                     // Admin-only (#172): the destination screen's endpoints
                     // are admin-only server-side (auth.md §5.3), so a
@@ -332,32 +314,23 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 16),
-                      OutlinedButton.icon(
+                      SecondaryActionButton(
                         key: const Key('account-manage-members-button'),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(56),
-                        ),
+                        label: l10n.manageMembers,
+                        icon: Icons.group_outlined,
                         onPressed: () => context.go('/organization/members'),
-                        icon: const Icon(Icons.group_outlined),
-                        label: Text(l10n.manageMembers),
                       ),
                     ],
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
-                    OutlinedButton.icon(
+                    SecondaryActionButton(
                       key: const Key('account-logout-button'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(56),
-                        foregroundColor: Theme.of(context).colorScheme.error,
-                        side: BorderSide(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
+                      label: l10n.logout,
+                      icon: Icons.logout,
+                      destructive: true,
                       onPressed: () =>
                           ref.read(authControllerProvider.notifier).logout(),
-                      icon: const Icon(Icons.logout),
-                      label: Text(l10n.logout),
                     ),
                   ],
                 ),
