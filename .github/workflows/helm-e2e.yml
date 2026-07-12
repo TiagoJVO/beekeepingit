@@ -124,8 +124,11 @@ jobs:
       - name: Wait for domain-service deployments
         if: steps.changes.outputs.infra == 'true'
         run: |
+          # 600s, not 300s: the Go services crash-restart until Authentik answers OIDC
+          # discovery, so after Authentik comes up a pod can still sit in CrashLoopBackOff
+          # for up to ~5 more minutes before its next restart attempt.
           kubectl -n beekeepingit-dev wait --for=condition=available deployment \
-            -l app.kubernetes.io/part-of=beekeepingit --timeout=300s
+            -l app.kubernetes.io/part-of=beekeepingit --timeout=600s
 
       # The AC: the postgres PostGIS smoke-query hook AND the authentik readiness hook run
       # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
@@ -147,6 +150,7 @@ jobs:
           kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=server --tail=100 || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=worker --tail=100 || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/part-of=beekeepingit --tail=50 --prefix || true
           kubectl get helmrelease -A || true
           kubectl -n beekeepingit-dev get events --sort-by=.lastTimestamp || true
 
