@@ -47,5 +47,5 @@ class PowerSyncLocalStore implements LocalStoreEngine {
   List<Map<String, Object?>> _rowsToMaps(ResultSet rs) =>
       rs.map(_rowToMap).toList();
 
-  Map<String, Object?> _rowToMap(Row r) => r.toMap();
+  Map<String, Object?> _rowToMap(Row r) => Map<String, Object?>.from(r);
 }
