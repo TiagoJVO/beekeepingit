@@ -17,6 +17,21 @@ type ApiariesApiary struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	Location       interface{}        `json:"location"`
+	Notes          pgtype.Text        `json:"notes"`
+}
+
+type ApiariesAuditLog struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	ChangeType     string             `json:"change_type"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
 }
 
 type ApiariesSyncConflictLog struct {

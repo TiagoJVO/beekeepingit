@@ -228,7 +228,7 @@
   },
   "manageMembers": "Manage members",
   "@manageMembers": {
-    "description": "Admin-only app-bar action on the apiaries home, linking to the members/invitations screen (#172)"
+    "description": "Admin-only action on the account screen, linking to the members/invitations screen (#172, relocated from the apiaries app bar by #197)"
   },
   "accountTitle": "Account settings",
   "@accountTitle": {
@@ -249,5 +249,243 @@
   "accountChangePasswordButton": "Change password",
   "@accountChangePasswordButton": {
     "description": "Button that opens the identity provider's account page to change password"
+  },
+  "accountOrganizationSectionTitle": "Organization",
+  "@accountOrganizationSectionTitle": {
+    "description": "Heading above the admin-only organization actions (manage members) on the account settings screen"
+  },
+  "activitiesTitle": "Activities",
+  "@activitiesTitle": {
+    "description": "Activities tab label and screen title (bottom nav, #197)"
+  },
+  "journeysTitle": "Journeys",
+  "@journeysTitle": {
+    "description": "Journeys tab label and screen title (bottom nav, #197)"
+  },
+  "todosTitle": "Todos",
+  "@todosTitle": {
+    "description": "Todos tab label and screen title (bottom nav, #197)"
+  },
+  "assistantTitle": "Assistant",
+  "@assistantTitle": {
+    "description": "Assistant tab label and screen title (bottom nav, #197)"
+  },
+  "activitiesComingSoon": "Activities — coming soon",
+  "@activitiesComingSoon": {
+    "description": "Placeholder shown on the Activities tab until its real screens land (M3, #197)"
+  },
+  "journeysComingSoon": "Journeys — coming soon",
+  "@journeysComingSoon": {
+    "description": "Placeholder shown on the Journeys tab until its real screens land (M4, #197)"
+  },
+  "todosComingSoon": "Todos — coming soon",
+  "@todosComingSoon": {
+    "description": "Placeholder shown on the Todos tab until its real screens land (M5, #197)"
+  },
+  "assistantComingSoon": "Assistant — coming soon",
+  "@assistantComingSoon": {
+    "description": "Placeholder shown on the Assistant tab until its real screens land (M8, #197)"
+  },
+  "syncStatusOnline": "Online",
+  "@syncStatusOnline": {
+    "description": "App-shell header sync-status pill label when connected (#197; real connectivity wiring is #58 — currently a fixed stub)"
+  },
+  "syncStatusOffline": "Offline",
+  "@syncStatusOffline": {
+    "description": "App-shell header sync-status pill label when disconnected with nothing pending (#197)"
+  },
+  "syncStatusOfflinePending": "Offline · {count}",
+  "@syncStatusOfflinePending": {
+    "description": "App-shell header sync-status pill label when disconnected with pending local changes (#197)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncStatusSemanticLabel": "Sync status: {label}. Opens sync settings.",
+  "@syncStatusSemanticLabel": {
+    "description": "Screen-reader label for the header sync-status pill (#197)",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "offlineBannerMessage": "{count, plural, =0{No connection — changes are saved locally} =1{No connection — changes are saved locally (1 to sync)} other{No connection — changes are saved locally ({count} to sync)}}",
+  "@offlineBannerMessage": {
+    "description": "Offline banner shown below the app-shell header with the pending-change count (#197; real pending-count wiring is #58)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "apiarySaveSuccess": "Apiary saved.",
+  "@apiarySaveSuccess": {
+    "description": "Toast shown after successfully creating or updating an apiary (#197)"
+  },
+  "apiaryDeleteSuccess": "Apiary deleted.",
+  "@apiaryDeleteSuccess": {
+    "description": "Toast shown after successfully deleting an apiary (#197)"
+  },
+  "apiariesSearchHint": "Search apiaries by name",
+  "@apiariesSearchHint": {
+    "description": "Placeholder text in the apiaries list search field (FR-AP-6, #36)"
+  },
+  "apiariesSearchNoResults": "No apiaries match your search.",
+  "@apiariesSearchNoResults": {
+    "description": "Empty state shown when a search query matches no apiaries (FR-AP-6, #36)"
+  },
+  "apiariesLocationServicesDisabled": "Location services are off — showing apiaries by name.",
+  "@apiariesLocationServicesDisabled": {
+    "description": "Fallback-order banner when device location services are disabled (FR-AP-2, #33)"
+  },
+  "apiariesLocationPermissionDenied": "Location access denied — showing apiaries by name.",
+  "@apiariesLocationPermissionDenied": {
+    "description": "Fallback-order banner when location permission was denied (FR-AP-2, #33)"
+  },
+  "apiariesLocationUnavailable": "Location unavailable — showing apiaries by name.",
+  "@apiariesLocationUnavailable": {
+    "description": "Fallback-order banner when the device location couldn't be determined for another reason (FR-AP-2, #33)"
+  },
+  "apiariesLocationRetry": "Retry",
+  "@apiariesLocationRetry": {
+    "description": "Retry action on the location-fallback banner (FR-AP-2, #33)"
+  },
+  "apiariesViewToggleLabel": "Apiaries view",
+  "@apiariesViewToggleLabel": {
+    "description": "Semantic label for the list/map segmented toggle as a group (FR-AP-4, #35)"
+  },
+  "apiariesViewListAction": "List view",
+  "@apiariesViewListAction": {
+    "description": "Tooltip/semantic label for the list segment of the list/map toggle (FR-AP-4, #35)"
+  },
+  "apiariesViewMapAction": "Map view",
+  "@apiariesViewMapAction": {
+    "description": "Tooltip/semantic label for the map segment of the list/map toggle (FR-AP-4, #35)"
+  },
+  "syncStatusSyncing": "Syncing…",
+  "@syncStatusSyncing": {
+    "description": "App-shell header sync-status pill label while an upload/download is in flight (#58)"
+  },
+  "syncSupersededNotice": "One of your offline changes was overwritten by a newer edit.",
+  "@syncSupersededNotice": {
+    "description": "Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)"
+  },
+  "accountSyncSectionTitle": "Sync",
+  "@accountSyncSectionTitle": {
+    "description": "Section heading on the account screen for sync status + manual sync (#58)"
+  },
+  "accountSyncStatusLabel": "Status: {status}",
+  "@accountSyncStatusLabel": {
+    "description": "Current sync status line on the account screen (#58)",
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "accountSyncPendingCount": "{count, plural, =0{Everything is synced.} =1{1 change waiting to sync.} other{{count} changes waiting to sync.}}",
+  "@accountSyncPendingCount": {
+    "description": "Pending-change count line on the account screen (#58)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "accountSyncNowButton": "Sync now",
+  "@accountSyncNowButton": {
+    "description": "Manual sync trigger button on the account screen — the prototype's “Sincronizar agora” (#58, sync.md §7.1 manual override)"
+  },
+  "accountSyncNowTriggered": "Sync requested.",
+  "@accountSyncNowTriggered": {
+    "description": "Toast shown after tapping “Sync now” (#58)"
+  },
+  "accountSyncNowError": "Could not sync right now: {error}",
+  "@accountSyncNowError": {
+    "description": "Toast shown when a manual sync attempt fails immediately (#58)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryDetailTitle": "Apiary",
+  "@apiaryDetailTitle": {
+    "description": "Apiary detail screen app bar title (#32)"
+  },
+  "apiaryLocationValue": "{lat}, {lon}",
+  "@apiaryLocationValue": {
+    "description": "Formatted lat/lon shown on the apiary detail screen when a location is set (#32)",
+    "placeholders": {
+      "lat": {
+        "type": "String"
+      },
+      "lon": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryLocationNotSet": "No location set",
+  "@apiaryLocationNotSet": {
+    "description": "Apiary detail screen placeholder when no location is set (#32)"
+  },
+  "apiaryNotesLabel": "Notes",
+  "@apiaryNotesLabel": {
+    "description": "Label above the notes block on the apiary detail screen, and the notes field label on the form (FR-AP-8, #196)"
+  },
+  "apiaryNotesHint": "Flora, access, observations…",
+  "@apiaryNotesHint": {
+    "description": "Placeholder hint text in the apiary form's notes field (FR-AP-8, #196)"
+  },
+  "editApiaryAction": "Edit apiary",
+  "@editApiaryAction": {
+    "description": "Action on the apiary detail screen that navigates to the edit form (#32)"
+  },
+  "apiaryMapEmpty": "No apiaries with a location yet.",
+  "@apiaryMapEmpty": {
+    "description": "Empty state on the map when no apiary has a stored location (#34 AC)"
+  },
+  "apiaryMapUserLocationLabel": "You",
+  "@apiaryMapUserLocationLabel": {
+    "description": "Label/tooltip for the distinct user-location marker on the map (#34 AC, matches the Melargil prototype's \"Você\" marker)"
+  },
+  "apiaryMapLocationPermissionDenied": "Location unavailable — enable location access to see your position on the map.",
+  "@apiaryMapLocationPermissionDenied": {
+    "description": "Shown when the user-location marker can't be placed because permission was denied or location is unavailable (#34 AC: graceful permission-denied handling)"
+  },
+  "apiaryMapMeasureHintSelectFirst": "Tap two apiaries to measure the distance between them.",
+  "@apiaryMapMeasureHintSelectFirst": {
+    "description": "Hint shown on the map before any apiary is selected for the tap-to-measure flow (#37/D-15, matches the Melargil prototype's \"Toque em dois apiários para medir a distância entre eles.\")"
+  },
+  "apiaryMapMeasureHintSelectSecond": "Selected {name}. Tap another apiary to measure.",
+  "@apiaryMapMeasureHintSelectSecond": {
+    "description": "Hint shown after the first apiary is selected for the tap-to-measure flow (#37/D-15)",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryMapMeasureResult": "{from} to {to}: {distanceKm} km",
+  "@apiaryMapMeasureResult": {
+    "description": "Distance result shown after two apiaries are selected (#37/D-15, straight-line/haversine, km)",
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      },
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryMapMeasureClear": "Clear selection",
+  "@apiaryMapMeasureClear": {
+    "description": "Action to clear the current two-apiary measurement selection (#37 AC: selection must be clear and usable)"
   }
 }

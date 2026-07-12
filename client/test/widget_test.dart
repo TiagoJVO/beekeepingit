@@ -1,11 +1,27 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// A fake that never touches the real `geolocator` platform channel (not
+/// available under `flutter test`, apiaries_list_screen.dart's own doc
+/// comment on [DeviceLocationService]) — the default for every test helper
+/// in this file that isn't specifically exercising proximity ordering
+/// (apiaries_list_screen_test.dart owns those).
+class FakeDeviceLocationService implements DeviceLocationService {
+  const FakeDeviceLocationService([
+    this._result = const DeviceLocationUnavailable(),
+  ]);
+  final DeviceLocation _result;
+
+  @override
+  Future<DeviceLocation> current() async => _result;
+}
 
 /// A profile that is always complete, so these pre-existing "authenticated"
 /// tests reach the apiaries home rather than being redirected to /profile by
@@ -62,6 +78,9 @@ Widget buildApp({
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(authed),
+      deviceLocationServiceProvider.overrideWithValue(
+        const FakeDeviceLocationService(),
+      ),
       if (apiaries != null)
         apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
       if (authed) profileProvider.overrideWith(_CompleteProfileController.new),
@@ -89,17 +108,17 @@ void main() {
     await tester.pumpWidget(
       buildApp(
         authed: true,
-        apiaries: const [
-          Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
-        ],
+        apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Apiaries'), findsOneWidget);
+    // "Apiaries" now appears twice (shell header title + bottom-nav tab
+    // label, #197) — findsWidgets rather than findsOneWidget.
+    expect(find.text('Apiaries'), findsWidgets);
     expect(find.text('Serra Norte'), findsOneWidget);
     expect(find.text('3 hives'), findsOneWidget);
-    expect(find.byKey(const Key('add-apiary-fab')), findsOneWidget);
+    expect(find.byKey(const Key('shell-fab')), findsOneWidget);
   });
 
   testWidgets('empty local data shows the empty state', (tester) async {
@@ -118,20 +137,30 @@ void main() {
     expect(app.darkTheme, isNotNull);
   });
 
-  testWidgets('tapping logout calls the auth controller without throwing', (tester) async {
+  testWidgets('tapping logout calls the auth controller without throwing', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       buildApp(
         authed: true,
-        apiaries: const [
-          Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
-        ],
+        apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('logout-button')), findsOneWidget);
+    // Logout lives on the account screen (#197 relocated it there from the
+    // apiaries app bar, matching the prototype's "Conta" screen) — reached
+    // via the shell header's account action.
+    await tester.tap(find.byKey(const Key('shell-account-button')));
+    await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('logout-button')));
+    expect(find.byKey(const Key('account-logout-button')), findsOneWidget);
+
+    // The account screen's actions sit below the fold in the test viewport's
+    // SingleChildScrollView — scroll it into view before tapping.
+    await tester.ensureVisible(find.byKey(const Key('account-logout-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('account-logout-button')));
     await tester.pumpAndSettle();
 
     // isAuthenticatedProvider is overridden to a fixed `true` in this harness
@@ -144,14 +173,23 @@ void main() {
     // authControllerProvider end to end.
   });
 
-  testWidgets('org admins see the manage-members action', (tester) async {
-    await tester.pumpWidget(
-      buildApp(authed: true, apiaries: const [], orgRole: 'admin'),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'org admins see the manage-members action on the account screen',
+    (tester) async {
+      await tester.pumpWidget(
+        buildApp(authed: true, apiaries: const [], orgRole: 'admin'),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('manage-members-button')), findsOneWidget);
-  });
+      await tester.tap(find.byKey(const Key('shell-account-button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('account-manage-members-button')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets(
     'non-admin org members do not see the manage-members action (#172)',
@@ -161,9 +199,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('shell-account-button')));
+      await tester.pumpAndSettle();
+
       // The link would only lead to a 403 for a non-admin (auth.md §5.3) —
       // hidden, not just disabled.
-      expect(find.byKey(const Key('manage-members-button')), findsNothing);
+      expect(
+        find.byKey(const Key('account-manage-members-button')),
+        findsNothing,
+      );
     },
   );
 }

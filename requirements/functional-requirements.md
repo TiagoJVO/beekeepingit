@@ -32,16 +32,25 @@ ambiguities flagged inline link to `open-questions.md`.
   current location (closest first).
 - **FR-AP-3** — **Map view** showing a marker for each apiary's location and a
   marker for the user's current location.
+  - _Resolved (D-16):_ `flutter_map` markers + user location + measure overlay;
+    tile provider/offline-tile caching stays open (narrowed Q-MAP), doesn't block v1.
 - **FR-AP-4** — Users can **switch** between map view and list view; both must be
   available.
 - **FR-AP-5** — Feature to **measure the distance between two apiaries**.
-  - _Open question (Q-DIST):_ straight-line vs. driving distance, and how the two
-    apiaries are selected.
+  - _Resolved (D-15):_ straight-line (haversine), offline, tap-two-pins selection;
+    driving distance deferred.
 - **FR-AP-6** — **Search** apiaries by **name, location, or other attributes**.
+  - _Resolved (D-17):_ client-side, apiaries-only, name + location; extending to
+    other entities deferred.
 - **FR-AP-7** — **Apiary detail page** showing name, location, number of hives,
   and other relevant details.
   - _Resolved (D-2):_ "number of hives" is a **count** on the apiary; hives are
     **not** a separate entity.
+- **FR-AP-8** — An apiary may carry optional **free-text notes**, editable
+  from the apiary form and shown on the detail page. Notes sync offline and
+  are **history-tracked** (FR-HIS) like other apiary edits.
+  - _Prototype:_ Melargil apiary detail (see
+    [`docs/design/prototype.md`](../docs/design/prototype.md)).
 
 ## Activities (FR-AC)
 
@@ -228,6 +237,12 @@ harvest, which requires visiting all apiaries).
 - **FR-UX-1** — All features must use a **user-friendly interface** with clear
   navigation and intuitive controls — **especially field features**, where the
   user has limited time/attention and may be **wearing gloves**.
+- **FR-UX-2** — The client presents a **persistent app shell**: a **bottom
+  navigation** across the primary areas (apiaries, activities, journeys, todos,
+  assistant), a header with the screen title, a **sync-status indicator**, and
+  account access, plus a **contextual quick-add** (FAB) for the active area.
+  - _Prototype:_ Melargil app shell (see
+    [`docs/design/prototype.md`](../docs/design/prototype.md)).
 
 ## Accessibility (FR-AX)
 

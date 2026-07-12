@@ -54,5 +54,71 @@
   "accountProfileSectionTitle": "Perfil",
   "accountSecuritySectionTitle": "Segurança",
   "accountChangePasswordHint": "As alterações de palavra-passe são geridas pelo nosso fornecedor de login, numa nova aba.",
-  "accountChangePasswordButton": "Alterar palavra-passe"
+  "accountChangePasswordButton": "Alterar palavra-passe",
+  "accountOrganizationSectionTitle": "Organização",
+  "activitiesTitle": "Atividades",
+  "journeysTitle": "Jornadas",
+  "todosTitle": "Tarefas",
+  "assistantTitle": "Assistente",
+  "activitiesComingSoon": "Atividades — brevemente",
+  "journeysComingSoon": "Jornadas — brevemente",
+  "todosComingSoon": "Tarefas — brevemente",
+  "assistantComingSoon": "Assistente — brevemente",
+  "syncStatusOnline": "Online",
+  "syncStatusOffline": "Offline",
+  "syncStatusOfflinePending": "Offline · {count}",
+  "syncStatusSemanticLabel": "Estado de sincronização: {label}. Abre as definições de sincronização.",
+  "offlineBannerMessage": "{count, plural, =0{Sem ligação — alterações guardadas localmente} =1{Sem ligação — alterações guardadas localmente (1 por sincronizar)} other{Sem ligação — alterações guardadas localmente ({count} por sincronizar)}}",
+  "apiarySaveSuccess": "Apiário guardado.",
+  "apiaryDeleteSuccess": "Apiário eliminado.",
+  "apiariesSearchHint": "Pesquisar apiários por nome",
+  "apiariesSearchNoResults": "Nenhum apiário corresponde à pesquisa.",
+  "apiariesLocationServicesDisabled": "Os serviços de localização estão desativados — a mostrar apiários por nome.",
+  "apiariesLocationPermissionDenied": "Acesso à localização negado — a mostrar apiários por nome.",
+  "apiariesLocationUnavailable": "Localização indisponível — a mostrar apiários por nome.",
+  "apiariesLocationRetry": "Tentar novamente",
+  "apiariesViewToggleLabel": "Vista dos apiários",
+  "apiariesViewListAction": "Vista de lista",
+  "apiariesViewMapAction": "Vista de mapa",
+  "syncStatusSyncing": "A sincronizar…",
+  "syncSupersededNotice": "Uma das suas alterações offline foi substituída por uma edição mais recente.",
+  "accountSyncSectionTitle": "Sincronização",
+  "accountSyncStatusLabel": "Estado: {status}",
+  "accountSyncPendingCount": "{count, plural, =0{Tudo sincronizado.} =1{1 alteração por sincronizar.} other{{count} alterações por sincronizar.}}",
+  "accountSyncNowButton": "Sincronizar agora",
+  "accountSyncNowTriggered": "Sincronização pedida.",
+  "accountSyncNowError": "Não foi possível sincronizar agora: {error}",
+  "apiaryDetailTitle": "Apiário",
+  "apiaryLocationValue": "{lat}, {lon}",
+  "apiaryLocationNotSet": "Sem localização definida",
+  "apiaryNotesLabel": "Notas",
+  "apiaryNotesHint": "Flora, acessos, observações…",
+  "editApiaryAction": "Editar apiário",
+  "apiaryMapEmpty": "Ainda não há apiários com localização.",
+  "apiaryMapUserLocationLabel": "Você",
+  "apiaryMapLocationPermissionDenied": "Localização indisponível — ative o acesso à localização para ver a sua posição no mapa.",
+  "apiaryMapMeasureHintSelectFirst": "Toque em dois apiários para medir a distância entre eles.",
+  "apiaryMapMeasureHintSelectSecond": "Selecionado {name}. Toque noutro apiário para medir.",
+  "apiaryMapMeasureResult": "{from} a {to}: {distanceKm} km",
+  "apiaryMapMeasureClear": "Limpar seleção",
+  "@apiaryMapMeasureHintSelectSecond": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@apiaryMapMeasureResult": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      },
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  }
 }

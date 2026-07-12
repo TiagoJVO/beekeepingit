@@ -53,36 +53,89 @@ func (q *Queries) GetUserByOidcSub(ctx context.Context, oidcSub string) (Identit
 	return i, err
 }
 
-const upsertUserOnFirstSeen = `-- name: UpsertUserOnFirstSeen :one
-INSERT INTO identity.users (id, oidc_sub, name, email, locale)
-VALUES ($1, $2, '', '', 'en')
-ON CONFLICT (oidc_sub) DO UPDATE SET updated_at = identity.users.updated_at
-RETURNING id, oidc_sub, name, email, locale, created_at, updated_at
+const insertAuditLog = `-- name: InsertAuditLog :exec
+INSERT INTO identity.audit_log
+    (id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, changed_fields, change)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
-type UpsertUserOnFirstSeenParams struct {
-	ID      pgtype.UUID `json:"id"`
-	OidcSub string      `json:"oidc_sub"`
+type InsertAuditLogParams struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	ChangeType     string             `json:"change_type"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
 }
 
-// Get-or-create on first authenticated profile read (#25, FR-ONB-1): if no row
-// exists yet for oidc_sub, insert one with empty name/email so the client
-// can detect an incomplete profile and prompt onboarding. The ON CONFLICT
-// branch is a no-op update (bumps nothing semantically — updated_at is
-// reassigned to itself) purely so RETURNING gives back the existing row.
-func (q *Queries) UpsertUserOnFirstSeen(ctx context.Context, arg UpsertUserOnFirstSeenParams) (IdentityUser, error) {
-	row := q.db.QueryRow(ctx, upsertUserOnFirstSeen, arg.ID, arg.OidcSub)
-	var i IdentityUser
-	err := row.Scan(
-		&i.ID,
-		&i.OidcSub,
-		&i.Name,
-		&i.Email,
-		&i.Locale,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+// Append-only history row (history.md §3-§4, #165): one row per applied
+// profile create/update, written in the same local transaction as the
+// domain write. organization_id is always NULL (identity.users is global,
+// history.md §9). changed_fields is null for create (only update carries
+// it).
+func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
+	_, err := q.db.Exec(ctx, insertAuditLog,
+		arg.ID,
+		arg.OrganizationID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.ChangeType,
+		arg.ActorUserID,
+		arg.OccurredAt,
+		arg.ChangedFields,
+		arg.Change,
 	)
-	return i, err
+	return err
+}
+
+const listAuditLog = `-- name: ListAuditLog :many
+SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+FROM identity.audit_log
+WHERE entity_type = $1 AND entity_id = $2
+ORDER BY recorded_at, id
+`
+
+type ListAuditLogParams struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+// The per-entity timeline read (FR-HIS-1, history.md §8): every history row
+// for one entity, oldest first. Not yet exposed via HTTP (no AC in this
+// milestone requires the view screens, history.md §8/§10) — kept as typed
+// groundwork for the profile-detail "history" screen.
+func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]IdentityAuditLog, error) {
+	rows, err := q.db.Query(ctx, listAuditLog, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IdentityAuditLog
+	for rows.Next() {
+		var i IdentityAuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ChangeType,
+			&i.ActorUserID,
+			&i.OccurredAt,
+			&i.RecordedAt,
+			&i.ChangedFields,
+			&i.Change,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateUserProfile = `-- name: UpdateUserProfile :one
@@ -119,6 +172,38 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		arg.Locale,
 		arg.OidcSub,
 	)
+	var i IdentityUser
+	err := row.Scan(
+		&i.ID,
+		&i.OidcSub,
+		&i.Name,
+		&i.Email,
+		&i.Locale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertUserOnFirstSeen = `-- name: UpsertUserOnFirstSeen :one
+INSERT INTO identity.users (id, oidc_sub, name, email, locale)
+VALUES ($1, $2, '', '', 'en')
+ON CONFLICT (oidc_sub) DO UPDATE SET updated_at = identity.users.updated_at
+RETURNING id, oidc_sub, name, email, locale, created_at, updated_at
+`
+
+type UpsertUserOnFirstSeenParams struct {
+	ID      pgtype.UUID `json:"id"`
+	OidcSub string      `json:"oidc_sub"`
+}
+
+// Get-or-create on first authenticated profile read (#25, FR-ONB-1): if no row
+// exists yet for oidc_sub, insert one with empty name/email so the client
+// can detect an incomplete profile and prompt onboarding. The ON CONFLICT
+// branch is a no-op update (bumps nothing semantically — updated_at is
+// reassigned to itself) purely so RETURNING gives back the existing row.
+func (q *Queries) UpsertUserOnFirstSeen(ctx context.Context, arg UpsertUserOnFirstSeenParams) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, upsertUserOnFirstSeen, arg.ID, arg.OidcSub)
 	var i IdentityUser
 	err := row.Scan(
 		&i.ID,

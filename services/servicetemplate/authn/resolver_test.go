@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -93,6 +94,78 @@ func TestOrgResolver_EnrichesClaimsAndCaches(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&stubs.orgHits); got != 1 {
 		t.Errorf("organizations hits = %d, want 1 (second resolve should be cached)", got)
+	}
+}
+
+// TestOrgResolver_MembershipChange_ReflectedAfterCacheExpiry is #57's AC
+// "changing organization membership updates what replicates to a device on
+// the next sync": org resolution is never a one-time/cached-forever claim —
+// it re-resolves from the organizations service's live membership lookup
+// once the per-instance cache entry (§4.2, default 60s, here set to ~0 so
+// the test needs no sleep/clock injection) expires. This proves the seam
+// sync.md §3.4 relies on ("a member removed from an org stops getting a
+// fresh sync token within one TTL") actually reflects a *changed* org, not
+// just that the cache eventually re-fires the same value.
+func TestOrgResolver_MembershipChange_ReflectedAfterCacheExpiry(t *testing.T) {
+	idp := newTestIDP(t)
+	priv, pub := generateKey(t, "key-1")
+	idp.addKey(pub)
+	authnMW := newMiddleware(t, idp.srv.URL)
+
+	// organizations reports org-A first, then org-B once the caller's active
+	// membership changes (e.g. removed from org A, added to org B).
+	var mu sync.Mutex
+	currentOrg := "org-A-uuid"
+	identity := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"user_id": "user-uuid-1"})
+	}))
+	t.Cleanup(identity.Close)
+	organizations := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		org := currentOrg
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]string{"organization_id": org, "role": "admin"})
+	}))
+	t.Cleanup(organizations.Close)
+
+	// A near-zero TTL means every resolve is effectively a fresh lookup —
+	// standing in for "the cache entry has expired" without needing to
+	// inject/advance a clock (the package-internal now field isn't reachable
+	// from this external test package).
+	resolveMW, err := authn.NewOrgResolver(authn.ResolveConfig{
+		IdentityBaseURL:      identity.URL,
+		OrganizationsBaseURL: organizations.URL,
+		CacheTTL:             time.Nanosecond,
+	})
+	if err != nil {
+		t.Fatalf("NewOrgResolver: %v", err)
+	}
+
+	chain := func(next http.Handler) http.Handler { return authnMW(resolveMW(next)) }
+	token := mintToken(t, priv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), nil)
+
+	var claims authn.Claims
+	if rec := doRequest(chain, protectedHandler(&claims), "Bearer "+token); rec.Code != http.StatusOK {
+		t.Fatalf("first resolve status = %d, want 200", rec.Code)
+	}
+	if claims.OrganizationID != "org-A-uuid" {
+		t.Fatalf("first resolve org = %q, want org-A-uuid", claims.OrganizationID)
+	}
+
+	// Membership changes: the caller is now in org B.
+	mu.Lock()
+	currentOrg = "org-B-uuid"
+	mu.Unlock()
+
+	// Give the near-zero TTL entry time to be past expiry, then resolve
+	// again — the cache must not serve the stale org-A value.
+	time.Sleep(time.Millisecond)
+	claims = authn.Claims{}
+	if rec := doRequest(chain, protectedHandler(&claims), "Bearer "+token); rec.Code != http.StatusOK {
+		t.Fatalf("second resolve status = %d, want 200", rec.Code)
+	}
+	if claims.OrganizationID != "org-B-uuid" {
+		t.Errorf("second resolve org = %q, want org-B-uuid (membership change must be reflected once the cache entry expires)", claims.OrganizationID)
 	}
 }
 

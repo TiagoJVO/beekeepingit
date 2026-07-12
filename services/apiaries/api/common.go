@@ -1,9 +1,9 @@
 // Package api holds the apiaries service's HTTP surface: the client-facing
-// read endpoints (GET /v1/apiaries[/{id}]) and the internal sync
-// validate/apply endpoints the write-back coordinator calls
-// (walking-skeleton.md §5). Writes never arrive via a client-facing REST
-// mutation in the slice — the field client is local-first through sync
-// (§4.4); online REST write handlers are EPIC-02 (#31).
+// REST endpoints (GET/POST/PATCH/DELETE /v1/apiaries[/{id}], apiaries.go +
+// write.go, #31/FR-AP-1) and the internal sync validate/apply endpoints the
+// write-back coordinator calls (walking-skeleton.md §5, sync.go). The field
+// client never calls the REST write handlers directly — it is local-first
+// through sync (§4.4); the REST writes serve online-only/direct callers.
 package api
 
 import (
@@ -50,3 +50,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func uuidString(u pgtype.UUID) string { return uuid.UUID(u.Bytes).String() }
+
+// textPtr converts a nullable pgtype.Text column (e.g. apiaries.notes) to the
+// DTO's *string — nil when unset, matching Location's own
+// present-vs-absent convention (apiaryDTO's `omitempty`).
+func textPtr(t pgtype.Text) *string {
+	if !t.Valid {
+		return nil
+	}
+	return &t.String
+}

@@ -31,3 +31,23 @@ SET name       = CASE WHEN sqlc.arg(set_name)::bool THEN sqlc.arg(name) ELSE nam
     updated_at = now()
 WHERE oidc_sub = sqlc.arg(oidc_sub)
 RETURNING id, oidc_sub, name, email, locale, created_at, updated_at;
+
+-- name: InsertAuditLog :exec
+-- Append-only history row (history.md §3-§4, #165): one row per applied
+-- profile create/update, written in the same local transaction as the
+-- domain write. organization_id is always NULL (identity.users is global,
+-- history.md §9). changed_fields is null for create (only update carries
+-- it).
+INSERT INTO identity.audit_log
+    (id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, changed_fields, change)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+
+-- name: ListAuditLog :many
+-- The per-entity timeline read (FR-HIS-1, history.md §8): every history row
+-- for one entity, oldest first. Not yet exposed via HTTP (no AC in this
+-- milestone requires the view screens, history.md §8/§10) — kept as typed
+-- groundwork for the profile-detail "history" screen.
+SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+FROM identity.audit_log
+WHERE entity_type = $1 AND entity_id = $2
+ORDER BY recorded_at, id;

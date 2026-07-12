@@ -1,6 +1,8 @@
 -- sqlc's virtual schema for codegen only — mirrors the "up" side of
--- ../migrations/00001_create_apiaries.sql (no down migration; runtime schema
--- changes only ever happen via goose). Update both files together.
+-- ../migrations/00001_create_apiaries.sql, 00002_create_audit_log.sql,
+-- 00003_add_apiary_location.sql and 00004_add_apiary_notes.sql (no down
+-- migration; runtime schema changes only ever happen via goose). Update all
+-- files together.
 CREATE SCHEMA IF NOT EXISTS apiaries;
 
 CREATE TABLE apiaries.apiaries (
@@ -11,7 +13,9 @@ CREATE TABLE apiaries.apiaries (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL,
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at      TIMESTAMPTZ
+    deleted_at      TIMESTAMPTZ,
+    location        public.geography(Point, 4326),
+    notes           TEXT CHECK (notes IS NULL OR char_length(notes) <= 10000)
 );
 
 CREATE TABLE apiaries.sync_conflict_log (
@@ -25,4 +29,17 @@ CREATE TABLE apiaries.sync_conflict_log (
     actor_user_id   UUID,
     occurred_at     TIMESTAMPTZ,
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE apiaries.audit_log (
+    id              UUID PRIMARY KEY,
+    organization_id UUID NOT NULL,
+    entity_type     TEXT NOT NULL,
+    entity_id       UUID NOT NULL,
+    change_type     TEXT NOT NULL CHECK (change_type IN ('create', 'update', 'delete')),
+    actor_user_id   UUID,
+    occurred_at     TIMESTAMPTZ NOT NULL,
+    recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    changed_fields  TEXT[],
+    change          JSONB NOT NULL
 );

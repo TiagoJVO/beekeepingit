@@ -16,6 +16,7 @@ import (
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/apiaries/store/sqlc/gen"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 // Op is one CRUD op in a client sync batch (walking-skeleton.md §5.1).
@@ -35,6 +36,7 @@ type Batch struct {
 type apiaryData struct {
 	Name      *string `json:"name"`
 	HiveCount *int32  `json:"hive_count"`
+	Notes     *string `json:"notes"`
 }
 
 // Per-op apply outcomes (§5.2).
@@ -130,7 +132,10 @@ func validateOp(i int, op Op) []problem.FieldError {
 	if data.HiveCount != nil && *data.HiveCount < 0 {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.hive_count", Code: "out_of_range", Message: "hive_count must be >= 0"})
 	}
-	if op.Op == "patch" && data.Name == nil && data.HiveCount == nil {
+	if data.Notes != nil && len(*data.Notes) > 10000 {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.notes", Code: "too_long", Message: "notes must be at most 10000 characters"})
+	}
+	if op.Op == "patch" && data.Name == nil && data.HiveCount == nil && data.Notes == nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data", Code: "required", Message: "patch must change at least one field"})
 	}
 	return errs
@@ -180,11 +185,23 @@ func applyBatch(pool *pgxpool.Pool) http.HandlerFunc {
 type rowState struct {
 	name      string
 	hive      int32
+	notes     string // "" means unset — an apiary's own free-text content, not personal data (§7.3)
 	deletedAt pgtype.Timestamptz
 }
 
 func (a rowState) sameAs(b rowState) bool {
-	return a.name == b.name && a.hive == b.hive && a.deletedAt.Valid == b.deletedAt.Valid
+	return a.name == b.name && a.hive == b.hive && a.notes == b.notes && a.deletedAt.Valid == b.deletedAt.Valid
+}
+
+// fields projects a rowState to the plain field map history.ComputeChange
+// diffs — only soft/scalar values, never denormalized personal data (§7.3).
+// notes is the apiary's own content (FR-AP-8, #196), not personal data.
+func (a rowState) fields() map[string]any {
+	m := map[string]any{"name": a.name, "hive_count": a.hive}
+	if a.notes != "" {
+		m["notes"] = a.notes
+	}
+	return m
 }
 
 func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op) (OpResult, error) {
@@ -216,22 +233,34 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 		want := mergeOp(rowState{}, op, data)
 		if err := q.InsertApiary(ctx, sqlcgen.InsertApiaryParams{
 			ID: pgID, OrganizationID: org, Name: want.name, HiveCount: want.hive,
+			Notes:     notesParamFromState(want.notes),
 			UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
 		}); err != nil {
+			return OpResult{}, err
+		}
+		if err := writeAuditLog(ctx, q, org, userID, op, history.ChangeCreate, rowState{}, want); err != nil {
 			return OpResult{}, err
 		}
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 	}
 
-	current := rowState{name: stored.Name, hive: stored.HiveCount, deletedAt: stored.DeletedAt}
+	current := rowState{name: stored.Name, hive: stored.HiveCount, notes: textOf(stored.Notes), deletedAt: stored.DeletedAt}
 	want := mergeOp(current, op, data)
 
 	// Strictly-newer incoming wins (§4.1).
 	if op.UpdatedAt.After(stored.UpdatedAt.Time) {
 		if err := q.UpdateApiary(ctx, sqlcgen.UpdateApiaryParams{
 			OrganizationID: org, ID: pgID, Name: want.name, HiveCount: want.hive,
+			Notes:     notesParamFromState(want.notes),
 			UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
 		}); err != nil {
+			return OpResult{}, err
+		}
+		changeType := history.ChangeUpdate
+		if op.Op == "delete" {
+			changeType = history.ChangeDelete
+		}
+		if err := writeAuditLog(ctx, q, org, userID, op, changeType, current, want); err != nil {
 			return OpResult{}, err
 		}
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
@@ -262,6 +291,9 @@ func mergeOp(current rowState, op Op, data apiaryData) rowState {
 		if data.HiveCount != nil {
 			out.hive = *data.HiveCount
 		}
+		if data.Notes != nil {
+			out.notes = *data.Notes
+		}
 		return out
 	case "delete":
 		current.deletedAt = pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
@@ -273,8 +305,51 @@ func mergeOp(current rowState, op Op, data apiaryData) rowState {
 		if data.HiveCount != nil {
 			current.hive = *data.HiveCount
 		}
+		if data.Notes != nil {
+			current.notes = *data.Notes
+		}
 		return current
 	}
+}
+
+// writeAuditLog appends one history.md §3 row for an applied create/update/
+// delete, in the same local transaction as the domain write (§4). It must
+// NOT be called for the no-op (idempotent replay) or LWW-loss branches of
+// applyOp — those apply no domain change, so they get no audit row (§4
+// "Idempotency"; §6 "LWW losers" go to sync_conflict_log instead, via
+// logConflict, not here).
+func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, changeType string, before, after rowState) error {
+	var oldFields map[string]any
+	if changeType != history.ChangeCreate {
+		oldFields = before.fields()
+	}
+	newFields := after.fields()
+	if changeType == history.ChangeDelete {
+		newFields = nil
+	}
+	changedFields, change := history.ComputeChange(changeType, oldFields, newFields)
+
+	changeJSON, err := json.Marshal(change)
+	if err != nil {
+		return err
+	}
+
+	id, err := uuid.Parse(op.ID)
+	if err != nil {
+		return err
+	}
+	auditID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	return q.InsertAuditLog(ctx, sqlcgen.InsertAuditLogParams{
+		ID:             auditID,
+		OrganizationID: org,
+		EntityType:     entityTypeApiary,
+		EntityID:       pgtype.UUID{Bytes: id, Valid: true},
+		ChangeType:     changeType,
+		ActorUserID:    parseActor(userID),
+		OccurredAt:     pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true},
+		ChangedFields:  changedFields,
+		Change:         changeJSON,
+	})
 }
 
 func logConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, stored sqlcgen.GetApiaryForUpdateRow) error {
@@ -282,6 +357,7 @@ func logConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userI
 		"id":         uuidString(stored.ID),
 		"name":       stored.Name,
 		"hive_count": stored.HiveCount,
+		"notes":      textPtr(stored.Notes),
 		"updated_at": stored.UpdatedAt.Time,
 		"deleted_at": timePtr(stored.DeletedAt),
 	})

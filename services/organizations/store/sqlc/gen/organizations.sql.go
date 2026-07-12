@@ -28,7 +28,12 @@ type CreateOrganizationParams struct {
 // transaction (api/organizations.go) so the creator's admin membership is
 // never observable without its org, or vice versa (D-3).
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (OrganizationsOrganization, error) {
-	row := q.db.QueryRow(ctx, createOrganization, arg.ID, arg.Name, arg.Address, arg.CreatedBy)
+	row := q.db.QueryRow(ctx, createOrganization,
+		arg.ID,
+		arg.Name,
+		arg.Address,
+		arg.CreatedBy,
+	)
 	var i OrganizationsOrganization
 	err := row.Scan(
 		&i.ID,

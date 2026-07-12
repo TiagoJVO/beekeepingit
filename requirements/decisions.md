@@ -218,6 +218,69 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - See [`infra/gitops/README.md`](../infra/gitops/README.md) and
   [ADR-0009](../docs/adr/0009-gitops-flux.md). Touches `NFR-ARC-3`, `NFR-MNT-1`, `#86`.
 
+## D-14 — Delivery model: per-feature milestones + cross-cutting streams
+
+- **Decision:** Milestones are **thin, incremental, per-feature delivery slices**, each independently
+  pickable: **M0** Walking Skeleton (done) → **M1** Identity & Onboarding (done) → **M2** Apiaries →
+  **M3** Activities → **M4** Journeys ∥ **M5** Todos → **M6** Import/Export → **M7** Admin App →
+  **M8** AI Assistant → **M9** Settings & Notifications → **M10** Android → **M11** iOS & on-device AI.
+- **Streams:** the cross-cutting concerns — **offline/sync (EPIC-06)**, **history/audit (EPIC-07)**,
+  **i18n/a11y (EPIC-11)**, **security/compliance/DR (EPIC-14)**, **platform rollout (EPIC-15)** — are
+  **continuous streams, not milestones**: their epics carry **no milestone** (labeled **`stream`**) and
+  their sub-issues take the **milestone of first need**. Feature epics keep their first milestone.
+- **Dependencies at leaf level:** sequencing is between **stories**, not epic→epic — a whole-epic
+  `blocked-by` over-constrains and is what made the board look tangled.
+- **Why:** the earlier flat **M0–M5** conflated capability-grouping (epics) with time-ordering
+  (milestones). Spanning epics pinned to M0 and epic-level edges left milestones non-incremental — a
+  single true backward edge (`#16 ◂ #9`, an M0 epic blocked by an M3 epic) plus several whole-epic
+  gates. Splitting the two axes makes each milestone buildable on its own.
+- **Scope gating:** a feature milestone's **story-level** scope is finalized only when its open `Q-*`
+  resolves — `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2, `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6,
+  `Q-AICLOUD` → M8, `Q-NOTIF` → M9 (resolve per the `requirements-folder` skill).
+- **Keeps:** the **D-10** rollout order (PWA → Android → iOS) and **D-4** deferrals (billing/quotas
+  EPIC-90/91 stay milestone-less) unchanged — this only re-slices _how_ the work is bucketed.
+- **Refines:** the flat-milestone framing and the `backlog-management` skill (streams are now a
+  first-class kind). Touches D-4, D-10, EPIC-06/07/11/14/15. Applied to GitHub Issues 2026-07-11.
+
+## D-15 — Apiary distance: straight-line (haversine), offline
+
+- **Decision:** the two-apiary distance feature (FR-AP-5) computes **straight-line (haversine)
+  distance**, works **fully offline**, and is shown in **km**. The two apiaries are chosen by a
+  **tap-to-select** interaction on the map (tap two pins), per the Melargil prototype's "medir
+  distância" flow.
+- **Deferred:** **driving distance** (needs an online routing service) is not built in v1 — kept
+  as an optional future enhancement, revisit only if field feedback asks for it. Distance _from
+  the user's current location_ is already covered separately by proximity ordering (FR-AP-2) and
+  is not part of this feature.
+- **Supersedes:** Q-DIST. Touches FR-AP-5, #37.
+
+## D-16 — Map: `flutter_map` markers + user location + measure overlay; tile provider deferred
+
+- **Decision:** the apiary map view (FR-AP-3) renders **pin markers per apiary** (showing hive
+  count), a distinct **user-location marker**, and the tap-to-measure overlay (D-15), built on
+  `flutter_map` + MapLibre/OSM tiles (already the stack per `tech-stack.md`). This resolves the
+  map _interaction/UX_ shape.
+- **Still open (narrowed Q-MAP):** the **tile provider and offline-tile caching strategy** —
+  which has real licensing/cost implications for production traffic — is **not** decided here and
+  does **not** block M2: FR-AP-3's acceptance criteria only require the map to render online,
+  without error, for a reasonable marker count. M2 ships with the public OSM/MapLibre demo tile
+  endpoint (dev/low-traffic use, proper attribution), and offline-tile caching + a paid/self-hosted
+  tile provider decision is deferred to a follow-up (tracked as the narrowed Q-MAP below).
+- **Supersedes (partially):** Q-MAP — the marker/location/measure UX is resolved; the tile
+  provider/offline-tiles question is kept open (narrowed) in `open-questions.md`. Touches FR-AP-3,
+  FR-OF-1, #34.
+
+## D-17 — Apiary search: client-side, apiaries-only, by name/location
+
+- **Decision:** search (FR-AP-6) is scoped to **apiaries only** in v1, runs **client-side** over
+  the locally-synced apiary set (so it works fully offline per FR-OF-1), and matches on **name**
+  and **location** (the apiary's stored location label/address text, not free-text notes), per the
+  Melargil prototype's apiary-list search.
+- **Deferred:** extending search to activities/journeys/todos is out of scope for FR-AP-6 — it is
+  a separate, future cross-entity search requirement (not yet specified) to consider if/when those
+  domains land.
+- **Supersedes:** Q-SEARCH. Touches FR-AP-6, #36.
+
 ---
 
 ## Open Spikes

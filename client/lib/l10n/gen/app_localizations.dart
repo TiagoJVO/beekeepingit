@@ -392,7 +392,7 @@ abstract class AppLocalizations {
   /// **'Invitation revoked.'**
   String get membersRevokeSuccess;
 
-  /// Admin-only app-bar action on the apiaries home, linking to the members/invitations screen (#172)
+  /// Admin-only action on the account screen, linking to the members/invitations screen (#172, relocated from the apiaries app bar by #197)
   ///
   /// In en, this message translates to:
   /// **'Manage members'**
@@ -427,6 +427,282 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Change password'**
   String get accountChangePasswordButton;
+
+  /// Heading above the admin-only organization actions (manage members) on the account settings screen
+  ///
+  /// In en, this message translates to:
+  /// **'Organization'**
+  String get accountOrganizationSectionTitle;
+
+  /// Activities tab label and screen title (bottom nav, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Activities'**
+  String get activitiesTitle;
+
+  /// Journeys tab label and screen title (bottom nav, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Journeys'**
+  String get journeysTitle;
+
+  /// Todos tab label and screen title (bottom nav, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Todos'**
+  String get todosTitle;
+
+  /// Assistant tab label and screen title (bottom nav, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant'**
+  String get assistantTitle;
+
+  /// Placeholder shown on the Activities tab until its real screens land (M3, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Activities — coming soon'**
+  String get activitiesComingSoon;
+
+  /// Placeholder shown on the Journeys tab until its real screens land (M4, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Journeys — coming soon'**
+  String get journeysComingSoon;
+
+  /// Placeholder shown on the Todos tab until its real screens land (M5, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Todos — coming soon'**
+  String get todosComingSoon;
+
+  /// Placeholder shown on the Assistant tab until its real screens land (M8, #197)
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant — coming soon'**
+  String get assistantComingSoon;
+
+  /// App-shell header sync-status pill label when connected (#197; real connectivity wiring is #58 — currently a fixed stub)
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get syncStatusOnline;
+
+  /// App-shell header sync-status pill label when disconnected with nothing pending (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get syncStatusOffline;
+
+  /// App-shell header sync-status pill label when disconnected with pending local changes (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Offline · {count}'**
+  String syncStatusOfflinePending(int count);
+
+  /// Screen-reader label for the header sync-status pill (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync status: {label}. Opens sync settings.'**
+  String syncStatusSemanticLabel(String label);
+
+  /// Offline banner shown below the app-shell header with the pending-change count (#197; real pending-count wiring is #58)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No connection — changes are saved locally} =1{No connection — changes are saved locally (1 to sync)} other{No connection — changes are saved locally ({count} to sync)}}'**
+  String offlineBannerMessage(int count);
+
+  /// Toast shown after successfully creating or updating an apiary (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary saved.'**
+  String get apiarySaveSuccess;
+
+  /// Toast shown after successfully deleting an apiary (#197)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary deleted.'**
+  String get apiaryDeleteSuccess;
+
+  /// Placeholder text in the apiaries list search field (FR-AP-6, #36)
+  ///
+  /// In en, this message translates to:
+  /// **'Search apiaries by name'**
+  String get apiariesSearchHint;
+
+  /// Empty state shown when a search query matches no apiaries (FR-AP-6, #36)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries match your search.'**
+  String get apiariesSearchNoResults;
+
+  /// Fallback-order banner when device location services are disabled (FR-AP-2, #33)
+  ///
+  /// In en, this message translates to:
+  /// **'Location services are off — showing apiaries by name.'**
+  String get apiariesLocationServicesDisabled;
+
+  /// Fallback-order banner when location permission was denied (FR-AP-2, #33)
+  ///
+  /// In en, this message translates to:
+  /// **'Location access denied — showing apiaries by name.'**
+  String get apiariesLocationPermissionDenied;
+
+  /// Fallback-order banner when the device location couldn't be determined for another reason (FR-AP-2, #33)
+  ///
+  /// In en, this message translates to:
+  /// **'Location unavailable — showing apiaries by name.'**
+  String get apiariesLocationUnavailable;
+
+  /// Retry action on the location-fallback banner (FR-AP-2, #33)
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get apiariesLocationRetry;
+
+  /// Semantic label for the list/map segmented toggle as a group (FR-AP-4, #35)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries view'**
+  String get apiariesViewToggleLabel;
+
+  /// Tooltip/semantic label for the list segment of the list/map toggle (FR-AP-4, #35)
+  ///
+  /// In en, this message translates to:
+  /// **'List view'**
+  String get apiariesViewListAction;
+
+  /// Tooltip/semantic label for the map segment of the list/map toggle (FR-AP-4, #35)
+  ///
+  /// In en, this message translates to:
+  /// **'Map view'**
+  String get apiariesViewMapAction;
+
+  /// App-shell header sync-status pill label while an upload/download is in flight (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing…'**
+  String get syncStatusSyncing;
+
+  /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
+  ///
+  /// In en, this message translates to:
+  /// **'One of your offline changes was overwritten by a newer edit.'**
+  String get syncSupersededNotice;
+
+  /// Section heading on the account screen for sync status + manual sync (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync'**
+  String get accountSyncSectionTitle;
+
+  /// Current sync status line on the account screen (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {status}'**
+  String accountSyncStatusLabel(String status);
+
+  /// Pending-change count line on the account screen (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{Everything is synced.} =1{1 change waiting to sync.} other{{count} changes waiting to sync.}}'**
+  String accountSyncPendingCount(int count);
+
+  /// Manual sync trigger button on the account screen — the prototype's “Sincronizar agora” (#58, sync.md §7.1 manual override)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync now'**
+  String get accountSyncNowButton;
+
+  /// Toast shown after tapping “Sync now” (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync requested.'**
+  String get accountSyncNowTriggered;
+
+  /// Toast shown when a manual sync attempt fails immediately (#58)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not sync right now: {error}'**
+  String accountSyncNowError(String error);
+
+  /// Apiary detail screen app bar title (#32)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get apiaryDetailTitle;
+
+  /// Formatted lat/lon shown on the apiary detail screen when a location is set (#32)
+  ///
+  /// In en, this message translates to:
+  /// **'{lat}, {lon}'**
+  String apiaryLocationValue(String lat, String lon);
+
+  /// Apiary detail screen placeholder when no location is set (#32)
+  ///
+  /// In en, this message translates to:
+  /// **'No location set'**
+  String get apiaryLocationNotSet;
+
+  /// Label above the notes block on the apiary detail screen, and the notes field label on the form (FR-AP-8, #196)
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get apiaryNotesLabel;
+
+  /// Placeholder hint text in the apiary form's notes field (FR-AP-8, #196)
+  ///
+  /// In en, this message translates to:
+  /// **'Flora, access, observations…'**
+  String get apiaryNotesHint;
+
+  /// Action on the apiary detail screen that navigates to the edit form (#32)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit apiary'**
+  String get editApiaryAction;
+
+  /// Empty state on the map when no apiary has a stored location (#34 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries with a location yet.'**
+  String get apiaryMapEmpty;
+
+  /// Label/tooltip for the distinct user-location marker on the map (#34 AC, matches the Melargil prototype's "Você" marker)
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get apiaryMapUserLocationLabel;
+
+  /// Shown when the user-location marker can't be placed because permission was denied or location is unavailable (#34 AC: graceful permission-denied handling)
+  ///
+  /// In en, this message translates to:
+  /// **'Location unavailable — enable location access to see your position on the map.'**
+  String get apiaryMapLocationPermissionDenied;
+
+  /// Hint shown on the map before any apiary is selected for the tap-to-measure flow (#37/D-15, matches the Melargil prototype's "Toque em dois apiários para medir a distância entre eles.")
+  ///
+  /// In en, this message translates to:
+  /// **'Tap two apiaries to measure the distance between them.'**
+  String get apiaryMapMeasureHintSelectFirst;
+
+  /// Hint shown after the first apiary is selected for the tap-to-measure flow (#37/D-15)
+  ///
+  /// In en, this message translates to:
+  /// **'Selected {name}. Tap another apiary to measure.'**
+  String apiaryMapMeasureHintSelectSecond(String name);
+
+  /// Distance result shown after two apiaries are selected (#37/D-15, straight-line/haversine, km)
+  ///
+  /// In en, this message translates to:
+  /// **'{from} to {to}: {distanceKm} km'**
+  String apiaryMapMeasureResult(String from, String to, String distanceKm);
+
+  /// Action to clear the current two-apiary measurement selection (#37 AC: selection must be clear and usable)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear selection'**
+  String get apiaryMapMeasureClear;
 }
 
 class _AppLocalizationsDelegate

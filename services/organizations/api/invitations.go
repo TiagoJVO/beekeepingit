@@ -16,8 +16,11 @@
 // doc comment and organizations.go's getMyOrganization/ResolvedUser comments
 // for the security reasoning (a #170-review-found vulnerability, now fixed).
 //
-// History recording (FR-HIS-1) for invite/accept/revoke is explicitly
-// deferred — see organizations.go's package doc; tracked in #165.
+// History recording (FR-HIS-1, #165): invite/revoke/accept each write an
+// organizations.audit_log row (entity_type "invitation", plus a "membership"
+// create row on accept) in the same local transaction as their domain write
+// — see audit.go's shared writeAuditLog helper and organizations.go's
+// package doc for the parallel organization-create wiring.
 package api
 
 import (
@@ -37,6 +40,7 @@ import (
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/organizations/store/sqlc/gen"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 const (
@@ -99,13 +103,14 @@ type invitationCreateRequest struct {
 // sub-resources under the same /v1 router organizations.go's PublicRouter
 // returns — kept in this file rather than duplicating PublicRouter, since
 // these routes share its request-resolution helpers (resolveActiveMembership).
-// Invite/revoke are single-statement (no transaction needed), unlike
-// acceptPendingInvitationByEmail below.
-func registerMemberAndInvitationRoutes(r chi.Router, q *sqlcgen.Queries, resolver UserResolver) {
+// Invite/revoke now open their own local transaction (pool, not just q) so
+// their #165 audit_log row commits atomically with the domain write
+// (history.md §4) — see createInvitationHandler/revokeInvitationHandler.
+func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) {
 	r.Get("/organizations/{orgId}/members", listMembersHandler(q, resolver))
 	r.Get("/organizations/{orgId}/invitations", listInvitationsHandler(q, resolver))
-	r.Post("/organizations/{orgId}/invitations", createInvitationHandler(q, resolver))
-	r.Delete("/organizations/{orgId}/invitations/{invitationId}", revokeInvitationHandler(q, resolver))
+	r.Post("/organizations/{orgId}/invitations", createInvitationHandler(pool, q, resolver))
+	r.Delete("/organizations/{orgId}/invitations/{invitationId}", revokeInvitationHandler(pool, q, resolver))
 }
 
 // requireOrgAdmin resolves the caller's active membership, asserts {orgId}
@@ -204,7 +209,7 @@ func listInvitationsHandler(q *sqlcgen.Queries, resolver UserResolver) http.Hand
 	}
 }
 
-func createInvitationHandler(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
+func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		member, ok := requireOrgAdmin(w, r, q, resolver)
 		if !ok {
@@ -237,7 +242,17 @@ func createInvitationHandler(q *sqlcgen.Queries, resolver UserResolver) http.Han
 			return
 		}
 
-		invitation, err := q.CreateInvitation(r.Context(), sqlcgen.CreateInvitationParams{
+		// History (FR-HIS-1, #165): the invitation's create row commits in
+		// the same local transaction as the domain insert (history.md §4).
+		tx, err := pool.Begin(r.Context())
+		if err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
+		txq := q.WithTx(tx)
+
+		invitation, err := txq.CreateInvitation(r.Context(), sqlcgen.CreateInvitationParams{
 			ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
 			OrganizationID: member.OrgID,
 			Email:          email,
@@ -253,12 +268,23 @@ func createInvitationHandler(q *sqlcgen.Queries, resolver UserResolver) http.Han
 			return
 		}
 
+		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, invitation.ID, member.UserID, now,
+			history.ChangeCreate, nil, invitationFields(invitation)); err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
 		w.Header().Set("Location", "/v1/organizations/"+uuidString(member.OrgID)+"/invitations/"+uuidString(invitation.ID))
 		writeJSON(w, http.StatusCreated, toInvitationResponse(invitation))
 	}
 }
 
-func revokeInvitationHandler(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
+func revokeInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		member, ok := requireOrgAdmin(w, r, q, resolver)
 		if !ok {
@@ -278,7 +304,7 @@ func revokeInvitationHandler(q *sqlcgen.Queries, resolver UserResolver) http.Han
 		// non-pending row exists for a non-admin — moot here since the
 		// caller is already asserted admin of this exact org, but keeps the
 		// two branches simple rather than a single ambiguous message).
-		_, err = q.GetInvitation(r.Context(), sqlcgen.GetInvitationParams{
+		before, err := q.GetInvitation(r.Context(), sqlcgen.GetInvitationParams{
 			ID:             pgtype.UUID{Bytes: invitationID, Valid: true},
 			OrganizationID: member.OrgID,
 		})
@@ -291,7 +317,17 @@ func revokeInvitationHandler(q *sqlcgen.Queries, resolver UserResolver) http.Han
 			return
 		}
 
-		_, err = q.RevokeInvitation(r.Context(), sqlcgen.RevokeInvitationParams{
+		// History (FR-HIS-1, #165): the revoke's update row commits in the
+		// same local transaction as the domain update (history.md §4).
+		tx, err := pool.Begin(r.Context())
+		if err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
+		txq := q.WithTx(tx)
+
+		revoked, err := txq.RevokeInvitation(r.Context(), sqlcgen.RevokeInvitationParams{
 			ID:             pgtype.UUID{Bytes: invitationID, Valid: true},
 			OrganizationID: member.OrgID,
 		})
@@ -300,6 +336,17 @@ func revokeInvitationHandler(q *sqlcgen.Queries, resolver UserResolver) http.Han
 			return
 		}
 		if err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, revoked.ID, member.UserID, now,
+			history.ChangeUpdate, invitationFields(before), invitationFields(revoked)); err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -345,6 +392,16 @@ func acceptPendingInvitationByEmail(r *http.Request, pool *pgxpool.Pool, q *sqlc
 		return callerMembership{}, err
 	}
 
+	// History (FR-HIS-1, #165): the accept is an update on the invitation
+	// (pending -> accepted) — the accepting user IS the actor here (there is
+	// no admin action on this path), in the same transaction as the domain
+	// update (history.md §4).
+	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+	if err := writeAuditLog(r.Context(), txq, accepted.OrganizationID, entityTypeInvitation, accepted.ID, userID, now,
+		history.ChangeUpdate, invitationFields(invitation), invitationFields(accepted)); err != nil {
+		return callerMembership{}, err
+	}
+
 	membership, err := txq.CreateMembershipWithRole(r.Context(), sqlcgen.CreateMembershipWithRoleParams{
 		ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		OrganizationID: accepted.OrganizationID,
@@ -352,6 +409,14 @@ func acceptPendingInvitationByEmail(r *http.Request, pool *pgxpool.Pool, q *sqlc
 		Role:           accepted.Role,
 	})
 	if err != nil {
+		return callerMembership{}, err
+	}
+
+	// The new membership this acceptance creates is its own entity/create
+	// row, same transaction (mirrors organizations.go's createOrganization
+	// writing both the org's and its creator membership's rows together).
+	if err := writeAuditLog(r.Context(), txq, membership.OrganizationID, entityTypeMembership, membership.ID, userID, now,
+		history.ChangeCreate, nil, membershipFields(membership)); err != nil {
 		return callerMembership{}, err
 	}
 

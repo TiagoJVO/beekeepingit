@@ -195,4 +195,180 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get accountChangePasswordButton => 'Change password';
+
+  @override
+  String get accountOrganizationSectionTitle => 'Organization';
+
+  @override
+  String get activitiesTitle => 'Activities';
+
+  @override
+  String get journeysTitle => 'Journeys';
+
+  @override
+  String get todosTitle => 'Todos';
+
+  @override
+  String get assistantTitle => 'Assistant';
+
+  @override
+  String get activitiesComingSoon => 'Activities — coming soon';
+
+  @override
+  String get journeysComingSoon => 'Journeys — coming soon';
+
+  @override
+  String get todosComingSoon => 'Todos — coming soon';
+
+  @override
+  String get assistantComingSoon => 'Assistant — coming soon';
+
+  @override
+  String get syncStatusOnline => 'Online';
+
+  @override
+  String get syncStatusOffline => 'Offline';
+
+  @override
+  String syncStatusOfflinePending(int count) {
+    return 'Offline · $count';
+  }
+
+  @override
+  String syncStatusSemanticLabel(String label) {
+    return 'Sync status: $label. Opens sync settings.';
+  }
+
+  @override
+  String offlineBannerMessage(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'No connection — changes are saved locally ($count to sync)',
+      one: 'No connection — changes are saved locally (1 to sync)',
+      zero: 'No connection — changes are saved locally',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get apiarySaveSuccess => 'Apiary saved.';
+
+  @override
+  String get apiaryDeleteSuccess => 'Apiary deleted.';
+
+  @override
+  String get apiariesSearchHint => 'Search apiaries by name';
+
+  @override
+  String get apiariesSearchNoResults => 'No apiaries match your search.';
+
+  @override
+  String get apiariesLocationServicesDisabled =>
+      'Location services are off — showing apiaries by name.';
+
+  @override
+  String get apiariesLocationPermissionDenied =>
+      'Location access denied — showing apiaries by name.';
+
+  @override
+  String get apiariesLocationUnavailable =>
+      'Location unavailable — showing apiaries by name.';
+
+  @override
+  String get apiariesLocationRetry => 'Retry';
+
+  @override
+  String get apiariesViewToggleLabel => 'Apiaries view';
+
+  @override
+  String get apiariesViewListAction => 'List view';
+
+  @override
+  String get apiariesViewMapAction => 'Map view';
+
+  @override
+  String get syncStatusSyncing => 'Syncing…';
+
+  @override
+  String get syncSupersededNotice =>
+      'One of your offline changes was overwritten by a newer edit.';
+
+  @override
+  String get accountSyncSectionTitle => 'Sync';
+
+  @override
+  String accountSyncStatusLabel(String status) {
+    return 'Status: $status';
+  }
+
+  @override
+  String accountSyncPendingCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes waiting to sync.',
+      one: '1 change waiting to sync.',
+      zero: 'Everything is synced.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get accountSyncNowButton => 'Sync now';
+
+  @override
+  String get accountSyncNowTriggered => 'Sync requested.';
+
+  @override
+  String accountSyncNowError(String error) {
+    return 'Could not sync right now: $error';
+  }
+
+  @override
+  String get apiaryDetailTitle => 'Apiary';
+
+  @override
+  String apiaryLocationValue(String lat, String lon) {
+    return '$lat, $lon';
+  }
+
+  @override
+  String get apiaryLocationNotSet => 'No location set';
+
+  @override
+  String get apiaryNotesLabel => 'Notes';
+
+  @override
+  String get apiaryNotesHint => 'Flora, access, observations…';
+
+  @override
+  String get editApiaryAction => 'Edit apiary';
+
+  @override
+  String get apiaryMapEmpty => 'No apiaries with a location yet.';
+
+  @override
+  String get apiaryMapUserLocationLabel => 'You';
+
+  @override
+  String get apiaryMapLocationPermissionDenied =>
+      'Location unavailable — enable location access to see your position on the map.';
+
+  @override
+  String get apiaryMapMeasureHintSelectFirst =>
+      'Tap two apiaries to measure the distance between them.';
+
+  @override
+  String apiaryMapMeasureHintSelectSecond(String name) {
+    return 'Selected $name. Tap another apiary to measure.';
+  }
+
+  @override
+  String apiaryMapMeasureResult(String from, String to, String distanceKm) {
+    return '$from to $to: $distanceKm km';
+  }
+
+  @override
+  String get apiaryMapMeasureClear => 'Clear selection';
 }

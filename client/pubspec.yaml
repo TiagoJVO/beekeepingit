@@ -18,6 +18,7 @@ dependencies:
   http: ^1.6.0
   powersync: ^1.18.0
   crypto: ^3.0.7
+  meta: ^1.18.0
   web: ^1.1.1
   uuid: ^4.5.3
   # Provider-agnostic OIDC: discovery (`Issuer.discover`) + Authorization Code
@@ -25,11 +26,25 @@ dependencies:
   # seam. Deliberately NOT openid_client_browser (that's the implicit flow).
   # See docs/architecture/oidc-integration.md §7.
   openid_client: ^0.4.10
+  # Map view (D-16, #34): flutter_map + MapLibre/OSM tiles per tech-stack.md;
+  # latlong2 is flutter_map's LatLng type.
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+  # Device location — for both #34's map "Você" marker and #33's offline
+  # proximity ordering (FR-AP-2): permission request + last-known/current
+  # position, with a working web (PWA) implementation via the browser
+  # Geolocation API — matches D-5/D-10's Flutter Web PWA target, not just
+  # native. Graceful permission handling required by both ACs.
+  geolocator: ^14.0.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  # Direct dev dependency so tests can fake GeolocatorPlatform.instance
+  # (apiary_map_screen_test.dart, #34) — otherwise only a transitive dep of
+  # geolocator.
+  geolocator_platform_interface: ^4.2.8
 
 flutter:
   uses-material-design: true
