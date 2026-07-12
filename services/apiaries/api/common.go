@@ -50,3 +50,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func uuidString(u pgtype.UUID) string { return uuid.UUID(u.Bytes).String() }
+
+// textPtr converts a nullable pgtype.Text column (e.g. apiaries.notes) to the
+// DTO's *string — nil when unset, matching Location's own
+// present-vs-absent convention (apiaryDTO's `omitempty`).
+func textPtr(t pgtype.Text) *string {
+	if !t.Valid {
+		return nil
+	}
+	return &t.String
+}

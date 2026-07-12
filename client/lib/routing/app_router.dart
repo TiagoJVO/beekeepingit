@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../core/auth/auth_controller.dart';
 import '../features/account/account_screen.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
+import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/apiaries/apiary_map_screen.dart';
 import '../features/auth/login_screen.dart';
@@ -141,9 +142,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ),
                   GoRoute(
                     path: ':id',
-                    name: 'apiaryEdit',
-                    builder: (context, state) =>
-                        ApiaryFormScreen(apiaryId: state.pathParameters['id']),
+                    name: 'apiaryDetail',
+                    builder: (context, state) => ApiaryDetailScreen(
+                      apiaryId: state.pathParameters['id']!,
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        name: 'apiaryEdit',
+                        builder: (context, state) => ApiaryFormScreen(
+                          apiaryId: state.pathParameters['id'],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

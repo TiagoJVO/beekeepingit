@@ -11,6 +11,8 @@ idempotency ([sync.md](../../docs/architecture/sync.md) §4–§5,
 [walking-skeleton.md](../../docs/architecture/walking-skeleton.md) §4.1/§4.6).
 `location` is PostGIS `geography(Point, 4326)` (D-6, data-model.md §6),
 GIST-indexed for the proximity ordering a later wave (#33) builds on top.
+`notes` is optional free-text (FR-AP-8, #196), shown on the client's apiary
+detail screen when present.
 
 Stamped from [`services/servicetemplate`](../servicetemplate/README.md); DB
 access via [`services/shared/dbaccess`](../shared/README.md); history

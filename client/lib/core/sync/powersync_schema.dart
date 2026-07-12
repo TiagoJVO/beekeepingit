@@ -11,6 +11,9 @@ const apiaryEntityType = 'apiary';
 /// the Sync Rules exclude tombstoned rows, so a server-side delete simply
 /// leaves the client's result set and PowerSync removes the row locally.
 ///
+/// `notes` (FR-AP-8, #196) is optional free-text, nullable like the server
+/// column it mirrors.
+///
 /// `location_lon`/`location_lat` (#34/#37, FR-AP-3/FR-AP-5) are plain
 /// nullable REAL columns — the Sync Rules bucket for `apiaries.apiaries`
 /// projects the server's PostGIS `geography(Point,4326)` column to these via
@@ -24,6 +27,7 @@ const appSchema = Schema([
     Column.text('organization_id'),
     Column.text('name'),
     Column.integer('hive_count'),
+    Column.text('notes'),
     Column.text('created_at'),
     Column.text('updated_at'),
     Column.real('location_lon'),

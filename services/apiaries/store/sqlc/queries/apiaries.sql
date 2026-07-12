@@ -1,7 +1,7 @@
 -- name: ListApiaries :many
 -- Org-scoped, live-row keyset page ordered by id (UUIDv7 ⇒ chronological).
 -- Pass a null cursor for the first page; fetch limit+1 to detect a next page.
-SELECT id, organization_id, name, hive_count, created_at, updated_at,
+SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
        COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1
@@ -11,7 +11,7 @@ ORDER BY id
 LIMIT $2;
 
 -- name: GetApiary :one
-SELECT id, organization_id, name, hive_count, created_at, updated_at,
+SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
        COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
@@ -46,7 +46,7 @@ WHERE a.organization_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
 -- name: GetApiaryForUpdate :one
 -- Locks the row (or reports its absence) for the LWW apply / REST
 -- create-or-update transaction.
-SELECT id, organization_id, name, hive_count, created_at, updated_at, deleted_at,
+SELECT id, organization_id, name, hive_count, notes, created_at, updated_at, deleted_at,
        COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2
@@ -54,29 +54,29 @@ FOR UPDATE;
 
 -- name: InsertApiary :exec
 -- Sync-apply create (no location — the sync wire shape carries only
--- name/hive_count, sync.go's apiaryData). REST create uses InsertApiaryWithLocation.
-INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, updated_at, deleted_at)
-VALUES ($1, $2, $3, $4, $5, $6);
+-- name/hive_count/notes, sync.go's apiaryData). REST create uses InsertApiaryWithLocation.
+INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, notes, updated_at, deleted_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: InsertApiaryWithLocation :one
 -- REST create (POST /v1/apiaries, #31): full row including the optional
 -- GeoJSON location. sqlc.narg('lon')/sqlc.narg('lat') are both-or-neither —
 -- callers pass either both valid or both NULL (api/apiaries.go's toPoint).
-INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, updated_at, location)
+INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, notes, updated_at, location)
 VALUES (
-    $1, $2, $3, $4, $5,
+    $1, $2, $3, $4, $5, $6,
     CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
          ELSE ST_SetSRID(ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
     END
 )
-RETURNING id, organization_id, name, hive_count, created_at, updated_at,
+RETURNING id, organization_id, name, hive_count, notes, created_at, updated_at,
           COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson;
 
 -- name: UpdateApiary :exec
--- Sync-apply update (name/hive_count/tombstone only — location is not part
--- of the sync wire shape yet). REST update uses UpdateApiaryWithLocation.
+-- Sync-apply update (name/hive_count/notes/tombstone only — location is not
+-- part of the sync wire shape yet). REST update uses UpdateApiaryWithLocation.
 UPDATE apiaries.apiaries
-SET name = $3, hive_count = $4, updated_at = $5, deleted_at = $6, recorded_at = now()
+SET name = $3, hive_count = $4, notes = $5, updated_at = $6, deleted_at = $7, recorded_at = now()
 WHERE organization_id = $1 AND id = $2;
 
 -- name: UpdateApiaryWithLocation :one
@@ -86,13 +86,14 @@ WHERE organization_id = $1 AND id = $2;
 UPDATE apiaries.apiaries
 SET name = $3,
     hive_count = $4,
-    updated_at = $5,
+    notes = $5,
+    updated_at = $6,
     location = CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
                      ELSE ST_SetSRID(ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
                END,
     recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, hive_count, created_at, updated_at,
+RETURNING id, organization_id, name, hive_count, notes, created_at, updated_at,
           COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson;
 
 -- name: SoftDeleteApiary :execrows

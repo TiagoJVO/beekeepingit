@@ -1,7 +1,7 @@
 # Apiaries service — client-facing REST contract (SKELETON).
 # First domain service and the walking-skeleton's "create" target (#110).
 # Stamped from ./_shared/components.openapi.yaml; conventions in
-# docs/architecture/api-contracts.md. Requirements: FR-AP-1..7 (D-2).
+# docs/architecture/api-contracts.md. Requirements: FR-AP-1..8 (D-2).
 openapi: 3.1.0
 info:
   title: BeekeepingIT — Apiaries API
@@ -243,6 +243,10 @@ components:
               type: integer
               minimum: 0
               description: Number of hives at the apiary (D-2).
+            notes:
+              type: [string, "null"]
+              maxLength: 10000
+              description: Optional free-text notes (FR-AP-8), shown on the apiary detail when present.
             distance_m:
               type: [number, "null"]
               readOnly: true
@@ -265,6 +269,10 @@ components:
           type: integer
           minimum: 0
           default: 0
+        notes:
+          type: [string, "null"]
+          maxLength: 10000
+          description: Optional free-text notes (FR-AP-8).
       required: [id, name]
 
     ApiaryUpdate:
@@ -280,6 +288,10 @@ components:
         hive_count:
           type: integer
           minimum: 0
+        notes:
+          type: [string, "null"]
+          maxLength: 10000
+          description: Optional free-text notes (FR-AP-8).
       minProperties: 1
 
     ApiaryList:

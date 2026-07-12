@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../shell/sync_status.dart';
 import '../organization/organization_repository.dart';
 import '../profile/profile_repository.dart';
 import 'account_platform.dart';
@@ -100,6 +101,80 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 
   void _openChangePassword() {
     createAccountPlatform().openInNewTab(AppConfig.oidcAccountUrl);
+  }
+
+  bool _syncing = false;
+
+  // Manual "sync now" (prototype's "Sincronizar agora", sync.md §7.1's
+  // user-triggered override — attempts once regardless of the
+  // connection-quality gate). This only *requests* the attempt: the actual
+  // upload/download and any retry/backoff on failure is PowerSync's own
+  // connect lifecycle (syncNowProvider docs), so success here means
+  // "reconnected", not "fully synced" — the header pill / this screen's own
+  // status line reflect the real outcome once it lands.
+  Future<void> _syncNow(AppLocalizations l10n) async {
+    setState(() => _syncing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(syncNowProvider)();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.accountSyncNowTriggered)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.accountSyncNowError('$e'))),
+      );
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  // Prototype's "Definições / Sync": current status (mirrors the header
+  // pill's state, sync.md §8's vocabulary generalized to the connection),
+  // the pending-change count (AC: "see that there are queued/unsynced local
+  // changes and roughly how many"), and the manual "Sincronizar agora"
+  // override (AC: "a failed sync can be retried"; sync.md §7.1).
+  List<Widget> _buildSyncSection(BuildContext context, AppLocalizations l10n) {
+    final syncStatus = ref.watch(syncStatusProvider);
+    final statusLabel = syncStatus.syncing
+        ? l10n.syncStatusSyncing
+        : syncStatus.isOnline
+        ? l10n.syncStatusOnline
+        : l10n.syncStatusOffline;
+    return [
+      Text(
+        l10n.accountSyncSectionTitle,
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      const SizedBox(height: 8),
+      Text(
+        l10n.accountSyncStatusLabel(statusLabel),
+        key: const Key('account-sync-status-text'),
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      const SizedBox(height: 4),
+      Text(
+        l10n.accountSyncPendingCount(syncStatus.pendingCount),
+        key: const Key('account-sync-pending-text'),
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      const SizedBox(height: 16),
+      OutlinedButton.icon(
+        key: const Key('account-sync-now-button'),
+        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+        onPressed: _syncing ? null : () => _syncNow(l10n),
+        icon: _syncing
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.sync),
+        label: Text(l10n.accountSyncNowButton),
+      ),
+    ];
   }
 
   @override
@@ -213,6 +288,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    ..._buildSyncSection(context, l10n),
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
