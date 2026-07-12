@@ -41,6 +41,29 @@ health. BeekeepingIT's treatment/disease records concern bees, not humans, so th
 **ordinary personal data at most** (insofar as a record is _attributed to the user who made
 it_, per FR-HIS-1/FR-TEN-2), not GDPR special-category data.
 
+### What IS personal data in BeekeepingIT
+
+The paragraph above must not be read as "GDPR barely applies here." It applies fully,
+because of who uses the app — not because of what the app is about. The app holds
+personal data in at least five places, and export and erasure must cover all five:
+
+- **User profile** — name, email, language, login identity. Plain personal data.
+- **Organization and membership data** — member lists, roles, invitation emails. Most
+  Portuguese beekeepers operate as individuals, so a one-person organization's name, tax
+  number, DGAV registration number, and contacts are that person's data. The GDPR
+  exclusion for "legal persons" does not cover sole traders.
+- **Apiary coordinates** — not personal on their own, but when the organization is one
+  person, they show where that person works and keeps property. Treat them as personal
+  data.
+- **Free-text notes** (apiary and activity notes) — users can write anything, including
+  other people's information or health remarks about a person. This cannot be prevented
+  technically. Notes must be inside export/erasure scope and named in the privacy
+  documentation.
+- **History/audit logs** (FR-HIS) — they record who did what and when. That is personal
+  data of the person who acted. On an erasure request, treatment records may still be
+  kept for the 5-year veterinary-record period, because a legal obligation overrides
+  erasure (GDPR Art. 17(3)(b)).
+
 - **Recommendation:** Remove **HIPAA** from NFR-CMP-1. Confirm **GDPR** applies (already
   affirmed in the current NFR-CMP-1 note) and clarify that treatment/health-of-bees records
   do **not** trigger GDPR Art. 9 special-category handling — ordinary GDPR lawfulness/
@@ -330,6 +353,13 @@ retrofitting M0-M2 issues.
   "special category" data (Art. 9 health data is limited to natural persons). Remove HIPAA
   from NFR-CMP-1. **GDPR applies** (already affirmed) with ordinary (non-special-category)
   handling for treatment/health-of-bees records.
+
+  To be explicit: GDPR fully applies to the app's personal data — user profiles,
+  organization/membership data (sole traders are natural persons), free-text notes,
+  apiary coordinates linkable to an individual, and audit logs. The only things decided
+  here are that bee-health records are not special-category data and that HIPAA is
+  irrelevant. Export and erasure must cover all five personal-data surfaces (see
+  "What IS personal data in BeekeepingIT" in Finding A).
 
   The concrete **Portuguese/EU beekeeping and honey-traceability obligations** are enumerated
   in [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
