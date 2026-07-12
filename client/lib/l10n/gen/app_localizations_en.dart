@@ -279,6 +279,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiariesLocationRetry => 'Retry';
 
   @override
+  String get apiariesViewToggleLabel => 'Apiaries view';
+
+  @override
+  String get apiariesViewListAction => 'List view';
+
+  @override
+  String get apiariesViewMapAction => 'Map view';
+
+  @override
   String get syncStatusSyncing => 'Syncing…';
 
   @override
@@ -335,9 +344,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get editApiaryAction => 'Edit apiary';
-
-  @override
-  String get apiaryMapTitle => 'Apiary map';
 
   @override
   String get apiaryMapEmpty => 'No apiaries with a location yet.';

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/apiaries/apiaries_list_screen.dart';
 import '../l10n/gen/app_localizations.dart';
 import 'sync_status.dart';
 
@@ -105,15 +106,25 @@ class AppShell extends ConsumerWidget {
     // app_router.dart) — any other matched name means we're pushed deeper.
     final canGoBack = routeName != null && routeName != activeTab.route;
 
+    // The apiaries tab's list/map toggle (#35, FR-AP-4) swaps sibling views
+    // in place rather than pushing a route, so the map is no longer visible
+    // via routeName — read the shared view provider instead. Watched (not
+    // just read) so the FAB actually shows/hides live as the user flips the
+    // toggle, not only on the next unrelated rebuild.
+    final apiariesView = ref.watch(apiariesViewProvider);
+    final onApiaryMap =
+        activeTab.route == 'apiaries' && apiariesView == ApiariesView.map;
+
     // The shell's own contextual "quick add" FAB (_fabConfigByTab) only
     // makes sense at a tab's root (e.g. "Add apiary" on the apiaries list).
     // Screens pushed deeper — the apiary detail screen (#32, own FAB e.g.
-    // its edit action), the create/edit form, and the map screen (#34, its
-    // own full-screen layout with no room for a floating action) — are all
-    // covered by the same canGoBack check, since _fabConfigByTab is keyed by
-    // tab (not route) and would otherwise show "Add apiary" hovering over
-    // every one of them.
-    final fab = canGoBack ? null : _fabConfigByTab[activeTab.route];
+    // its edit action) and the create/edit form — are covered by canGoBack;
+    // the map view (#34/#35, its own full-screen layout with no room for a
+    // floating action) is covered by onApiaryMap above, since it's a sibling
+    // view rather than a pushed route.
+    final fab = (canGoBack || onApiaryMap)
+        ? null
+        : _fabConfigByTab[activeTab.route];
 
     return Scaffold(
       appBar: _ShellHeader(
@@ -177,7 +188,10 @@ class AppShell extends ConsumerWidget {
   // active tab's own label at the branch root. Named routes pushed within a
   // branch (apiaryNew, apiaryDetail, apiaryEdit) opt into a specific title
   // here; anything else (including the placeholder tabs) just shows the tab
-  // label.
+  // label. The map view (#34/#35) is a sibling view within the apiaries tab
+  // root (not a pushed route, see apiariesView above) so it doesn't need an
+  // entry here — the segmented toggle itself is the view indicator (#35 AC),
+  // the header title stays "Apiaries" for both views.
   String _titleFor(
     String? routeName,
     ({
@@ -193,7 +207,6 @@ class AppShell extends ConsumerWidget {
       'apiaryNew' => l10n.newApiaryTitle,
       'apiaryDetail' => l10n.apiaryDetailTitle,
       'apiaryEdit' => l10n.editApiaryTitle,
-      'apiaryMap' => l10n.apiaryMapTitle,
       _ => activeTab.label(l10n),
     };
   }

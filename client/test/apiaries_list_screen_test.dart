@@ -286,6 +286,142 @@ void main() {
     );
   });
 
+  group('list/map toggle (FR-AP-4, #35)', () {
+    testWidgets('the list view is active by default and the map is hidden', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildScreen(apiaries: [_apiary('a1', 'Serra Norte')]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Serra Norte'), findsOneWidget);
+      expect(find.byKey(const Key('apiary-map')), findsNothing);
+
+      expect(
+        tester.getSemantics(find.byKey(const Key('apiaries-view-list-button'))),
+        matchesSemantics(
+          isButton: true,
+          isSelected: true,
+          hasSelectedState: true,
+          isFocusable: true,
+          hasTapAction: true,
+          hasFocusAction: true,
+          label: 'List view',
+        ),
+      );
+    });
+
+    testWidgets(
+      'tapping the map segment shows the map, hides the list, and marks the map segment active',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(apiaries: [_apiary('a1', 'Serra Norte')]),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('apiary-map')), findsOneWidget);
+
+        expect(
+          tester.getSemantics(
+            find.byKey(const Key('apiaries-view-map-button')),
+          ),
+          matchesSemantics(
+            isButton: true,
+            isSelected: true,
+            hasSelectedState: true,
+            isFocusable: true,
+            hasTapAction: true,
+            hasFocusAction: true,
+            label: 'Map view',
+          ),
+        );
+        expect(
+          tester.getSemantics(
+            find.byKey(const Key('apiaries-view-list-button')),
+          ),
+          matchesSemantics(
+            isButton: true,
+            isSelected: false,
+            hasSelectedState: true,
+            isFocusable: true,
+            hasTapAction: true,
+            hasFocusAction: true,
+            label: 'List view',
+          ),
+        );
+      },
+    );
+
+    testWidgets(
+      'switching to map and back to list preserves the typed search query',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte'), _apiary('a2', 'Vale Sul')],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiaries-search-field')),
+          'serra',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Vale Sul'), findsNothing);
+
+        await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiaries-view-list-button')));
+        await tester.pumpAndSettle();
+
+        // The search field still shows what was typed, and the list is
+        // still filtered by it — the query wasn't reset by switching views
+        // (#35 AC: "switching views preserves relevant context").
+        expect(find.text('serra'), findsOneWidget);
+        expect(find.text('Serra Norte'), findsOneWidget);
+        expect(find.text('Vale Sul'), findsNothing);
+      },
+    );
+
+    testWidgets('each toggle segment meets the 44x44 minimum tap target size', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildScreen(apiaries: [_apiary('a1', 'Serra Norte')]),
+      );
+      await tester.pumpAndSettle();
+
+      for (final key in [
+        'apiaries-view-list-button',
+        'apiaries-view-map-button',
+      ]) {
+        final size = tester.getSize(find.byKey(Key(key)));
+        expect(size.width, greaterThanOrEqualTo(44));
+        expect(size.height, greaterThanOrEqualTo(44));
+      }
+    });
+
+    testWidgets(
+      'each toggle segment also shows a tooltip, for pointer users hovering/long-pressing it',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(apiaries: [_apiary('a1', 'Serra Norte')]),
+        );
+        await tester.pumpAndSettle();
+
+        final tooltips = tester
+            .widgetList<Tooltip>(find.byType(Tooltip))
+            .map((t) => t.message)
+            .toList();
+        expect(tooltips, containsAll(['List view', 'Map view']));
+      },
+    );
+  });
+
   group('pure sort/filter helpers', () {
     test('filterApiariesByQuery matches name case-insensitively', () {
       final apiaries = [_apiary('a', 'Serra Norte'), _apiary('b', 'Vale Sul')];

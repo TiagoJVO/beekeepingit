@@ -79,8 +79,8 @@ Widget _buildApp(List<Apiary> apiaries) {
   );
 }
 
-/// Navigates from the apiaries list (the router's initial location) to the
-/// map screen via the list's "View map" entry point (#34).
+/// Switches from the apiaries list (the router's initial location) to the
+/// map view via the list/map toggle's map segment (#34, #35).
 Future<void> _goToMap(WidgetTester tester) async {
   await tester.pumpWidget(_buildApp([_serraNorte, _valeDasEguas, _semLocal]));
   await tester.pumpAndSettle();
@@ -168,13 +168,20 @@ void main() {
     },
   );
 
-  testWidgets('tapping the map entry point navigates to /apiaries/map with the shell title', (
-    tester,
-  ) async {
-    await _goToMap(tester);
+  testWidgets(
+    'tapping the map toggle segment shows the map without leaving the Apiaries tab (#35)',
+    (tester) async {
+      await _goToMap(tester);
 
-    expect(find.text('Apiary map'), findsOneWidget);
-  });
+      // The map is a sibling view within the Apiaries tab (#35), not a
+      // pushed route — the shell header keeps showing the tab title (also
+      // duplicated in the bottom nav label, hence findsWidgets — same
+      // pattern as app_shell_test.dart), and the map segment of the toggle
+      // is now the selected one.
+      expect(find.text('Apiaries'), findsWidgets);
+      expect(find.byKey(const Key('apiary-map')), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'tap-to-select-two-then-measure: selecting two apiaries shows the haversine distance',

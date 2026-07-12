@@ -353,6 +353,18 @@
   "@apiariesLocationRetry": {
     "description": "Retry action on the location-fallback banner (FR-AP-2, #33)"
   },
+  "apiariesViewToggleLabel": "Apiaries view",
+  "@apiariesViewToggleLabel": {
+    "description": "Semantic label for the list/map segmented toggle as a group (FR-AP-4, #35)"
+  },
+  "apiariesViewListAction": "List view",
+  "@apiariesViewListAction": {
+    "description": "Tooltip/semantic label for the list segment of the list/map toggle (FR-AP-4, #35)"
+  },
+  "apiariesViewMapAction": "Map view",
+  "@apiariesViewMapAction": {
+    "description": "Tooltip/semantic label for the map segment of the list/map toggle (FR-AP-4, #35)"
+  },
   "syncStatusSyncing": "Syncing…",
   "@syncStatusSyncing": {
     "description": "App-shell header sync-status pill label while an upload/download is in flight (#58)"
@@ -431,10 +443,6 @@
   "editApiaryAction": "Edit apiary",
   "@editApiaryAction": {
     "description": "Action on the apiary detail screen that navigates to the edit form (#32)"
-  },
-  "apiaryMapTitle": "Apiary map",
-  "@apiaryMapTitle": {
-    "description": "Map screen app bar title (#34, FR-AP-3)"
   },
   "apiaryMapEmpty": "No apiaries with a location yet.",
   "@apiaryMapEmpty": {
