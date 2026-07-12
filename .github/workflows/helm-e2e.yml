@@ -125,18 +125,26 @@ jobs:
         if: steps.changes.outputs.infra == 'true'
         run: |
           kubectl -n beekeepingit-dev rollout status deployment/authentik-worker --timeout=600s
-          # Poll from INSIDE the cluster (a throwaway curl pod) against the Service DNS —
-          # port-forward from the runner is racy here and just adds reset-by-peer noise.
-          # 90×10s = 15 min: a cold CI worker can be slow to finish the blueprint apply.
-          kubectl -n beekeepingit-dev run oidc-wait --image=curlimages/curl:8.11.0 \
-            --restart=Never --quiet --rm --attach --command -- sh -c '
-              for i in $(seq 1 90); do
-                if curl -sf http://authentik-server/application/o/beekeepingit/.well-known/openid-configuration >/dev/null; then
-                  echo "discovery answered after ~$((i*10))s"; exit 0
-                fi
-                sleep 10
-              done
-              echo "blueprint never applied — discovery still 404 after 900s"; exit 1'
+          # Poll discovery by exec-ing INTO the authentik-server pod and curling its own
+          # localhost. exec runs over the kube API (not pod networking) and localhost is
+          # loopback, so this is immune to the NetworkPolicy default-deny (#89) — a
+          # separate probe pod or a runner port-forward is not. 90×10s = 15 min, since a
+          # cold CI worker can be slow to finish applying the blueprint.
+          POD=$(kubectl -n beekeepingit-dev get pod \
+            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
+            -o jsonpath='{.items[0].metadata.name}')
+          for i in $(seq 1 90); do
+            if kubectl -n beekeepingit-dev exec "$POD" -- \
+                 curl -sf http://localhost:9000/application/o/beekeepingit/.well-known/openid-configuration >/dev/null 2>&1; then
+              echo "discovery answered after ~$((i*10))s"
+              break
+            fi
+            if [ "$i" = "90" ]; then
+              echo "::error::blueprint never applied — discovery still 404 after 900s"
+              exit 1
+            fi
+            sleep 10
+          done
           kubectl -n beekeepingit-dev rollout restart deployment \
             -l app.kubernetes.io/part-of=beekeepingit
 
