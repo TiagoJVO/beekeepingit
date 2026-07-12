@@ -1640,6 +1640,166 @@ func TestApiariesRest_Create_CrossOrgIdCollisionIsConflict(t *testing.T) {
 	}
 }
 
+// --- Distance endpoint (GET /v1/apiaries/{apiaryId}/distance, #37/FR-AP-5) ---
+
+// distanceView mirrors api.distanceDTO's wire shape for test assertions.
+type distanceView struct {
+	From      string  `json:"from"`
+	To        string  `json:"to"`
+	DistanceM float64 `json:"distance_m"`
+	Method    string  `json:"method"`
+}
+
+// TestApiariesRest_Distance_KnownCoordinatePair asserts the endpoint returns
+// the correct great-circle distance (within tolerance) for a known pair:
+// Porto Cathedral (-8.6109, 41.1496) to Braga's Sé (-8.4265, 41.5503) is
+// approximately 47.6 km apart (straight-line, per D-15/the OpenAPI
+// `Distance` schema's `method: straight_line`).
+func TestApiariesRest_Distance_KnownCoordinatePair(t *testing.T) {
+	f := newApiariesFixture(t)
+	fromID := uuid.NewString()
+	toID := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(fromID, "Porto", nil, geoPoint(-8.6109, 41.1496))); rec.Code != http.StatusCreated {
+		t.Fatalf("create from-apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(toID, "Braga", nil, geoPoint(-8.4265, 41.5503))); rec.Code != http.StatusCreated {
+		t.Fatalf("create to-apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodGet, "/v1/apiaries/"+fromID+"/distance?to="+toID, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("distance status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got distanceView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode distance response: %v", err)
+	}
+	if got.From != fromID || got.To != toID {
+		t.Fatalf("distance from/to = %s/%s, want %s/%s", got.From, got.To, fromID, toID)
+	}
+	if got.Method != "straight_line" {
+		t.Fatalf("distance method = %q, want straight_line", got.Method)
+	}
+	const wantM = 47_600.0
+	const toleranceM = 2_000.0
+	if diff := got.DistanceM - wantM; diff < -toleranceM || diff > toleranceM {
+		t.Fatalf("distance_m = %v, want within %vm of %v", got.DistanceM, toleranceM, wantM)
+	}
+}
+
+// TestApiariesRest_Distance_SameApiaryIsZero is a simple sanity check: the
+// distance from an apiary to itself is (approximately) zero.
+func TestApiariesRest_Distance_SameApiaryIsZero(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Porto", nil, geoPoint(-8.6109, 41.1496))); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodGet, "/v1/apiaries/"+id+"/distance?to="+id, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("distance status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got distanceView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode distance response: %v", err)
+	}
+	if got.DistanceM < -0.001 || got.DistanceM > 0.001 {
+		t.Fatalf("distance_m to self = %v, want ~0", got.DistanceM)
+	}
+}
+
+// TestApiariesRest_Distance_MissingOrCrossOrgApiaryIs404 covers the AC's 404
+// cases: an unknown `to` id, and a `to` id that belongs to a different
+// organization (ADR-0002 scope-hiding — indistinguishable from "doesn't
+// exist").
+func TestApiariesRest_Distance_MissingOrCrossOrgApiaryIs404(t *testing.T) {
+	f := newApiariesFixture(t)
+	other := otherOrgCaller()
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Porto", nil, geoPoint(-8.6109, 41.1496))); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// Unknown `to` id.
+	recMissing := f.do(t, http.MethodGet, "/v1/apiaries/"+id+"/distance?to="+uuid.NewString(), nil)
+	if recMissing.Code != http.StatusNotFound {
+		t.Fatalf("distance to unknown apiary status = %d, want 404, body = %s", recMissing.Code, recMissing.Body.String())
+	}
+
+	// `apiaryId` itself unknown.
+	recFromMissing := f.do(t, http.MethodGet, "/v1/apiaries/"+uuid.NewString()+"/distance?to="+id, nil)
+	if recFromMissing.Code != http.StatusNotFound {
+		t.Fatalf("distance from unknown apiary status = %d, want 404, body = %s", recFromMissing.Code, recFromMissing.Body.String())
+	}
+
+	// Org B's apiary, addressed by org B, but `to` points at org A's id —
+	// org B's own query filters org A's row out of the self-join entirely.
+	otherID := uuid.NewString()
+	if rec := f.doAs(t, other, http.MethodPost, "/v1/apiaries", createBody(otherID, "Org B Apiary", nil, geoPoint(-8.0, 41.0))); rec.Code != http.StatusCreated {
+		t.Fatalf("create org B apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	recCrossOrg := f.doAs(t, other, http.MethodGet, "/v1/apiaries/"+otherID+"/distance?to="+id, nil)
+	if recCrossOrg.Code != http.StatusNotFound {
+		t.Fatalf("distance to cross-org apiary status = %d, want 404, body = %s", recCrossOrg.Code, recCrossOrg.Body.String())
+	}
+
+	// Org A cannot compute a distance to org B's apiary either (from org A's
+	// own apiary to org B's id).
+	recCrossOrg2 := f.do(t, http.MethodGet, "/v1/apiaries/"+id+"/distance?to="+otherID, nil)
+	if recCrossOrg2.Code != http.StatusNotFound {
+		t.Fatalf("distance from org A to org B apiary status = %d, want 404, body = %s", recCrossOrg2.Code, recCrossOrg2.Body.String())
+	}
+}
+
+// TestApiariesRest_Distance_NoLocationIs404 covers apiaries with no stored
+// location: there is no distance resource to report, so this is a 404 (not a
+// 422/409) matching the "no location" cases above.
+func TestApiariesRest_Distance_NoLocationIs404(t *testing.T) {
+	f := newApiariesFixture(t)
+	locatedID := uuid.NewString()
+	unlocatedID := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(locatedID, "Porto", nil, geoPoint(-8.6109, 41.1496))); rec.Code != http.StatusCreated {
+		t.Fatalf("create located apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(unlocatedID, "Sem Local", nil, nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create unlocated apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodGet, "/v1/apiaries/"+locatedID+"/distance?to="+unlocatedID, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("distance to unlocated apiary status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestApiariesRest_Distance_ResponseConformsToOpenAPIContract validates the
+// 200 response body against the Distance schema (contracts/openapi/
+// apiaries.openapi.yaml) — the "contract tests at boundaries" AC of #153.
+func TestApiariesRest_Distance_ResponseConformsToOpenAPIContract(t *testing.T) {
+	doc, err := contracttest.Load("../../contracts/openapi/apiaries.openapi.yaml")
+	if err != nil {
+		t.Fatalf("load contract: %v", err)
+	}
+
+	f := newApiariesFixture(t)
+	fromID := uuid.NewString()
+	toID := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(fromID, "Porto", nil, geoPoint(-8.6109, 41.1496))); rec.Code != http.StatusCreated {
+		t.Fatalf("create from-apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(toID, "Braga", nil, geoPoint(-8.4265, 41.5503))); rec.Code != http.StatusCreated {
+		t.Fatalf("create to-apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	distancePath := "/v1/apiaries/" + fromID + "/distance"
+	rec := f.do(t, http.MethodGet, distancePath+"?to="+toID, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("distance status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	doc.ValidateResponseBody(t, http.MethodGet, distancePath, http.StatusOK, rec.Body.Bytes())
+}
+
 // --- Proximity ordering (`near`, FR-AP-2, #33) ---
 
 // TestApiariesRest_ListNear_OrdersByDistanceAscending is #33's core AC

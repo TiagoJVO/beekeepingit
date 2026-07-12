@@ -431,5 +431,53 @@
   "editApiaryAction": "Edit apiary",
   "@editApiaryAction": {
     "description": "Action on the apiary detail screen that navigates to the edit form (#32)"
+  },
+  "apiaryMapTitle": "Apiary map",
+  "@apiaryMapTitle": {
+    "description": "Map screen app bar title (#34, FR-AP-3)"
+  },
+  "apiaryMapEmpty": "No apiaries with a location yet.",
+  "@apiaryMapEmpty": {
+    "description": "Empty state on the map when no apiary has a stored location (#34 AC)"
+  },
+  "apiaryMapUserLocationLabel": "You",
+  "@apiaryMapUserLocationLabel": {
+    "description": "Label/tooltip for the distinct user-location marker on the map (#34 AC, matches the Melargil prototype's \"Você\" marker)"
+  },
+  "apiaryMapLocationPermissionDenied": "Location unavailable — enable location access to see your position on the map.",
+  "@apiaryMapLocationPermissionDenied": {
+    "description": "Shown when the user-location marker can't be placed because permission was denied or location is unavailable (#34 AC: graceful permission-denied handling)"
+  },
+  "apiaryMapMeasureHintSelectFirst": "Tap two apiaries to measure the distance between them.",
+  "@apiaryMapMeasureHintSelectFirst": {
+    "description": "Hint shown on the map before any apiary is selected for the tap-to-measure flow (#37/D-15, matches the Melargil prototype's \"Toque em dois apiários para medir a distância entre eles.\")"
+  },
+  "apiaryMapMeasureHintSelectSecond": "Selected {name}. Tap another apiary to measure.",
+  "@apiaryMapMeasureHintSelectSecond": {
+    "description": "Hint shown after the first apiary is selected for the tap-to-measure flow (#37/D-15)",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryMapMeasureResult": "{from} to {to}: {distanceKm} km",
+  "@apiaryMapMeasureResult": {
+    "description": "Distance result shown after two apiaries are selected (#37/D-15, straight-line/haversine, km)",
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      },
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryMapMeasureClear": "Clear selection",
+  "@apiaryMapMeasureClear": {
+    "description": "Action to clear the current two-apiary measurement selection (#37 AC: selection must be clear and usable)"
   }
 }

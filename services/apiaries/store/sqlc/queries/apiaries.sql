@@ -64,6 +64,33 @@ SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
 FROM apiaries.apiaries
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 
+-- name: GetApiaryDistance :one
+-- Distance endpoint (GET /v1/apiaries/{apiaryId}/distance, #37/FR-AP-5):
+-- both apiaries must be live rows in the caller's org (a self-join, both
+-- sides org-scoped and deleted_at IS NULL — a missing/cross-org/soft-deleted
+-- `to` id yields zero rows, handled as 404 by the caller). has_locations
+-- reports whether BOTH rows have a location set — ST_Distance on a NULL
+-- geography returns NULL, which the caller also treats as "can't compute,
+-- 404" (a location-less apiary has no distance to report). ST_Distance on
+-- `geography` is already great-circle/spheroidal (not planar), matching
+-- D-15's "straight-line" method — no explicit ::public.geography cast is
+-- needed here since `location` is already that column type (unlike
+-- write.go's ST_MakePoint(...)::public.geography, which builds one from
+-- scratch and must qualify the target type it casts to).
+-- COALESCE(...,0) avoids a NULL distance_m (ST_Distance returns NULL when
+-- either side is NULL) so the Go row type can stay a plain, non-pointer
+-- float64 — has_locations is the caller's actual "can I trust this value"
+-- signal, not the mere presence/absence of a numeric distance_m.
+SELECT
+    a.id AS from_id,
+    b.id AS to_id,
+    COALESCE(ST_Distance(a.location, b.location), 0)::float8 AS distance_m,
+    (a.location IS NOT NULL AND b.location IS NOT NULL) AS has_locations
+FROM apiaries.apiaries a
+CROSS JOIN apiaries.apiaries b
+WHERE a.organization_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
+  AND b.organization_id = $1 AND b.id = $3 AND b.deleted_at IS NULL;
+
 -- name: GetApiaryForUpdate :one
 -- Locks the row (or reports its absence) for the LWW apply / REST
 -- create-or-update transaction.

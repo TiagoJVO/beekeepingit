@@ -50,6 +50,59 @@ func (q *Queries) GetApiary(ctx context.Context, arg GetApiaryParams) (GetApiary
 	return i, err
 }
 
+const getApiaryDistance = `-- name: GetApiaryDistance :one
+SELECT
+    a.id AS from_id,
+    b.id AS to_id,
+    COALESCE(ST_Distance(a.location, b.location), 0)::float8 AS distance_m,
+    (a.location IS NOT NULL AND b.location IS NOT NULL) AS has_locations
+FROM apiaries.apiaries a
+CROSS JOIN apiaries.apiaries b
+WHERE a.organization_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
+  AND b.organization_id = $1 AND b.id = $3 AND b.deleted_at IS NULL
+`
+
+type GetApiaryDistanceParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	ID             pgtype.UUID `json:"id"`
+	ID_2           pgtype.UUID `json:"id_2"`
+}
+
+type GetApiaryDistanceRow struct {
+	FromID       pgtype.UUID `json:"from_id"`
+	ToID         pgtype.UUID `json:"to_id"`
+	DistanceM    float64     `json:"distance_m"`
+	HasLocations pgtype.Bool `json:"has_locations"`
+}
+
+// Distance endpoint (GET /v1/apiaries/{apiaryId}/distance, #37/FR-AP-5):
+// both apiaries must be live rows in the caller's org (a self-join, both
+// sides org-scoped and deleted_at IS NULL — a missing/cross-org/soft-deleted
+// `to` id yields zero rows, handled as 404 by the caller). has_locations
+// reports whether BOTH rows have a location set — ST_Distance on a NULL
+// geography returns NULL, which the caller also treats as "can't compute,
+// 404" (a location-less apiary has no distance to report). ST_Distance on
+// `geography` is already great-circle/spheroidal (not planar), matching
+// D-15's "straight-line" method — no explicit ::public.geography cast is
+// needed here since `location` is already that column type (unlike
+// write.go's ST_MakePoint(...)::public.geography, which builds one from
+// scratch and must qualify the target type it casts to).
+// COALESCE(...,0) avoids a NULL distance_m (ST_Distance returns NULL when
+// either side is NULL) so the Go row type can stay a plain, non-pointer
+// float64 — has_locations is the caller's actual "can I trust this value"
+// signal, not the mere presence/absence of a numeric distance_m.
+func (q *Queries) GetApiaryDistance(ctx context.Context, arg GetApiaryDistanceParams) (GetApiaryDistanceRow, error) {
+	row := q.db.QueryRow(ctx, getApiaryDistance, arg.OrganizationID, arg.ID, arg.ID_2)
+	var i GetApiaryDistanceRow
+	err := row.Scan(
+		&i.FromID,
+		&i.ToID,
+		&i.DistanceM,
+		&i.HasLocations,
+	)
+	return i, err
+}
+
 const getApiaryForUpdate = `-- name: GetApiaryForUpdate :one
 SELECT id, organization_id, name, hive_count, notes, created_at, updated_at, deleted_at,
        COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson

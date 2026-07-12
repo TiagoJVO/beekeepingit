@@ -71,6 +71,19 @@ type listDTO struct {
 	Page pageDTO     `json:"page"`
 }
 
+// distanceDTO is the client-facing Distance shape (contracts/openapi/
+// apiaries's Distance schema, #37/FR-AP-5). method is always "straight_line"
+// (D-15 — driving distance is deferred), matching the OpenAPI schema's
+// const.
+type distanceDTO struct {
+	From      string  `json:"from"`
+	To        string  `json:"to"`
+	DistanceM float64 `json:"distance_m"`
+	Method    string  `json:"method"`
+}
+
+const distanceMethodStraightLine = "straight_line"
+
 // ReadRouter returns the client-facing read routes (GET /v1/apiaries[/{id}]).
 // Mount it behind the OIDC authn + org-resolver middleware so requests are
 // org-scoped from the resolved Claims. Combined with the REST write routes
@@ -82,6 +95,7 @@ func ReadRouter(pool *pgxpool.Pool) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/", listApiaries(q))
 	r.Get("/{apiaryId}", getApiary(q))
+	r.Get("/{apiaryId}/distance", getApiaryDistance(q))
 	return r
 }
 
@@ -96,6 +110,7 @@ func Router(pool *pgxpool.Pool) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/", listApiaries(q))
 	r.Get("/{apiaryId}", getApiary(q))
+	r.Get("/{apiaryId}/distance", getApiaryDistance(q))
 	r.Post("/", createApiary(pool))
 	r.Patch("/{apiaryId}", updateApiary(pool))
 	r.Delete("/{apiaryId}", deleteApiary(pool))
@@ -291,6 +306,70 @@ func getApiary(q *sqlcgen.Queries) http.HandlerFunc {
 			Notes:          textPtr(row.Notes),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,
+		})
+	}
+}
+
+// getApiaryDistance serves GET /v1/apiaries/{apiaryId}/distance?to={otherId}
+// (#37/FR-AP-5, contracts/openapi/apiaries.openapi.yaml's getApiaryDistance):
+// the straight-line (ST_Distance over `geography`, so great-circle not
+// planar) distance in metres between two org-scoped apiaries. This is the
+// contract-completeness/online-only-caller path — the field client's primary
+// UX computes the same haversine distance client-side, offline, from its
+// already-synced apiary locations (D-15), and never depends on this
+// endpoint. 404s (rather than a field-level 422) when either id doesn't
+// parse, doesn't exist, belongs to another org, or has no stored location —
+// each is "no distance to report for this pair", not a validation error of
+// the request shape itself.
+func getApiaryDistance(q *sqlcgen.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		org, _, ok := requireOrg(w, r)
+		if !ok {
+			return
+		}
+		fromID, err := uuid.Parse(chi.URLParam(r, "apiaryId"))
+		if err != nil {
+			problem.Write(w, r, problem.NotFound("apiary not found"))
+			return
+		}
+		toRaw := r.URL.Query().Get("to")
+		toID, err := uuid.Parse(toRaw)
+		if err != nil {
+			problem.Write(w, r, problem.ValidationFailed("to must be a UUID",
+				problem.FieldError{Field: "to", Code: "invalid", Message: "must be a UUID"}))
+			return
+		}
+
+		row, err := q.GetApiaryDistance(r.Context(), sqlcgen.GetApiaryDistanceParams{
+			OrganizationID: org,
+			ID:             pgtype.UUID{Bytes: fromID, Valid: true},
+			ID_2:           pgtype.UUID{Bytes: toID, Valid: true},
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Either id doesn't exist, belongs to another org, or is
+			// soft-deleted — the self-join's WHERE filters it out entirely,
+			// so this is indistinguishable from "not found" (ADR-0002
+			// scope-hiding, same as getApiary's 404).
+			problem.Write(w, r, problem.NotFound("apiary not found"))
+			return
+		}
+		if err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		if !row.HasLocations.Valid || !row.HasLocations.Bool {
+			// A located distance can't be computed when either apiary has no
+			// stored location — treated the same as "not found" (there is no
+			// distance resource for this pair), not a 422/409.
+			problem.Write(w, r, problem.NotFound("distance not available: one or both apiaries have no location"))
+			return
+		}
+
+		writeJSON(w, http.StatusOK, distanceDTO{
+			From:      uuidString(row.FromID),
+			To:        uuidString(row.ToID),
+			DistanceM: row.DistanceM,
+			Method:    distanceMethodStraightLine,
 		})
 	}
 }

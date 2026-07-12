@@ -49,6 +49,12 @@ final apiariesLocationProvider =
 ///    local haversine computation, falling back to a deterministic
 ///    (by-name) order with a visible indication when location is
 ///    unavailable/denied (FR-AP-2).
+///
+/// The "View map" entry point (search row's trailing icon button) opens the
+/// map screen (#34, FR-AP-3). This is a minimal list-level affordance, not a
+/// real list/map toggle — the full toggle UX (persisted view preference, map
+/// as an alternate root view) is #35's scope, a later wave; this only needs
+/// the map screen to exist and be reachable per #34's AC.
 class ApiariesListScreen extends ConsumerWidget {
   const ApiariesListScreen({super.key});
 
@@ -63,27 +69,44 @@ class ApiariesListScreen extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: TextField(
-            key: const Key('apiaries-search-field'),
-            decoration: InputDecoration(
-              hintText: l10n.apiariesSearchHint,
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              isDense: true,
-              suffixIcon: query.isEmpty
-                  ? null
-                  : IconButton(
-                      key: const Key('apiaries-search-clear-button'),
-                      icon: const Icon(Icons.clear),
-                      onPressed: () =>
-                          ref.read(apiariesSearchQueryProvider.notifier).state =
-                              '',
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const Key('apiaries-search-field'),
+                  decoration: InputDecoration(
+                    hintText: l10n.apiariesSearchHint,
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-            ),
-            onChanged: (v) =>
-                ref.read(apiariesSearchQueryProvider.notifier).state = v,
+                    isDense: true,
+                    suffixIcon: query.isEmpty
+                        ? null
+                        : IconButton(
+                            key: const Key('apiaries-search-clear-button'),
+                            icon: const Icon(Icons.clear),
+                            onPressed: () =>
+                                ref
+                                        .read(
+                                          apiariesSearchQueryProvider.notifier,
+                                        )
+                                        .state =
+                                    '',
+                          ),
+                  ),
+                  onChanged: (v) =>
+                      ref.read(apiariesSearchQueryProvider.notifier).state =
+                          v,
+                ),
+              ),
+              IconButton(
+                key: const Key('apiaries-view-map-button'),
+                icon: const Icon(Icons.map_outlined),
+                tooltip: l10n.apiaryMapTitle,
+                onPressed: () => context.go('/apiaries/map'),
+              ),
+            ],
           ),
         ),
         _LocationFallbackBanner(location: location),

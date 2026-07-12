@@ -107,9 +107,12 @@ class AppShell extends ConsumerWidget {
 
     // The shell's own contextual "quick add" FAB (_fabConfigByTab) only
     // makes sense at a tab's root (e.g. "Add apiary" on the apiaries list).
-    // Screens pushed deeper — like the apiary detail screen (#32) — own
-    // their own FAB (e.g. its edit action) instead; showing both at once
-    // would stack two FloatingActionButtons in the same corner.
+    // Screens pushed deeper — the apiary detail screen (#32, own FAB e.g.
+    // its edit action), the create/edit form, and the map screen (#34, its
+    // own full-screen layout with no room for a floating action) — are all
+    // covered by the same canGoBack check, since _fabConfigByTab is keyed by
+    // tab (not route) and would otherwise show "Add apiary" hovering over
+    // every one of them.
     final fab = canGoBack ? null : _fabConfigByTab[activeTab.route];
 
     return Scaffold(
@@ -190,6 +193,7 @@ class AppShell extends ConsumerWidget {
       'apiaryNew' => l10n.newApiaryTitle,
       'apiaryDetail' => l10n.apiaryDetailTitle,
       'apiaryEdit' => l10n.editApiaryTitle,
+      'apiaryMap' => l10n.apiaryMapTitle,
       _ => activeTab.label(l10n),
     };
   }

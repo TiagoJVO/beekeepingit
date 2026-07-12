@@ -7,11 +7,14 @@ import '../../core/geo/distance.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
 
-/// A local apiary row (the slice's trivial record — name + hive count, plus
-/// the optional location synced down for offline proximity ordering FR-AP-2,
-/// #33, and optional free-text notes FR-AP-8/#196). `locationLon`/
-/// `locationLat` are null exactly when the apiary has no location set
-/// server-side (powersync_schema.dart's doc comment).
+/// A local apiary row (name + hive count + optional free-text notes,
+/// FR-AP-8/#196 + optional location). Location is nullable (#33/#34/#37,
+/// FR-AP-2/FR-AP-3/FR-AP-5): older/incomplete records or apiaries created
+/// without a map pin have no coordinates, and callers (offline proximity
+/// ordering, the map screen, the offline distance calculation) must
+/// skip/handle that case rather than assume every apiary is located.
+/// `locationLon`/`locationLat` are null exactly when the apiary has no
+/// location set server-side (powersync_schema.dart's doc comment).
 class Apiary {
   const Apiary({
     required this.id,
@@ -45,15 +48,16 @@ class ApiariesRepository {
   Stream<List<Apiary>> watchAll() {
     return _db
         .watch(
-          'SELECT id, name, hive_count, notes, location_lon, location_lat FROM $apiariesTable '
-          'ORDER BY created_at DESC, name',
+          'SELECT id, name, hive_count, notes, location_lon, location_lat '
+          'FROM $apiariesTable ORDER BY created_at DESC, name',
         )
         .map((rs) => rs.map(_fromRow).toList());
   }
 
   Future<Apiary?> getById(String id) async {
     final row = await _db.getOptional(
-      'SELECT id, name, hive_count, notes, location_lon, location_lat FROM $apiariesTable WHERE id = ?',
+      'SELECT id, name, hive_count, notes, location_lon, location_lat '
+      'FROM $apiariesTable WHERE id = ?',
       [id],
     );
     return row == null ? null : _fromRow(row);

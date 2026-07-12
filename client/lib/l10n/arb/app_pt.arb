@@ -90,5 +90,33 @@
   "apiaryLocationNotSet": "Sem localização definida",
   "apiaryNotesLabel": "Notas",
   "apiaryNotesHint": "Flora, acessos, observações…",
-  "editApiaryAction": "Editar apiário"
+  "editApiaryAction": "Editar apiário",
+  "apiaryMapTitle": "Mapa de apiários",
+  "apiaryMapEmpty": "Ainda não há apiários com localização.",
+  "apiaryMapUserLocationLabel": "Você",
+  "apiaryMapLocationPermissionDenied": "Localização indisponível — ative o acesso à localização para ver a sua posição no mapa.",
+  "apiaryMapMeasureHintSelectFirst": "Toque em dois apiários para medir a distância entre eles.",
+  "apiaryMapMeasureHintSelectSecond": "Selecionado {name}. Toque noutro apiário para medir.",
+  "apiaryMapMeasureResult": "{from} a {to}: {distanceKm} km",
+  "apiaryMapMeasureClear": "Limpar seleção",
+  "@apiaryMapMeasureHintSelectSecond": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@apiaryMapMeasureResult": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      },
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  }
 }

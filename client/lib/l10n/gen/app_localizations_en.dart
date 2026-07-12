@@ -335,4 +335,34 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get editApiaryAction => 'Edit apiary';
+
+  @override
+  String get apiaryMapTitle => 'Apiary map';
+
+  @override
+  String get apiaryMapEmpty => 'No apiaries with a location yet.';
+
+  @override
+  String get apiaryMapUserLocationLabel => 'You';
+
+  @override
+  String get apiaryMapLocationPermissionDenied =>
+      'Location unavailable — enable location access to see your position on the map.';
+
+  @override
+  String get apiaryMapMeasureHintSelectFirst =>
+      'Tap two apiaries to measure the distance between them.';
+
+  @override
+  String apiaryMapMeasureHintSelectSecond(String name) {
+    return 'Selected $name. Tap another apiary to measure.';
+  }
+
+  @override
+  String apiaryMapMeasureResult(String from, String to, String distanceKm) {
+    return '$from to $to: $distanceKm km';
+  }
+
+  @override
+  String get apiaryMapMeasureClear => 'Clear selection';
 }
