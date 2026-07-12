@@ -23,6 +23,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _hiveController = TextEditingController(text: '0');
+  final _notesController = TextEditingController();
   bool _busy = false;
 
   @override
@@ -35,6 +36,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
   void dispose() {
     _nameController.dispose();
     _hiveController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -46,6 +48,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
     if (existing != null) {
       _nameController.text = existing.name;
       _hiveController.text = existing.hiveCount.toString();
+      _notesController.text = existing.notes ?? '';
     }
     setState(() => _busy = false);
   }
@@ -63,13 +66,26 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
     final repo = await ref.read(apiariesRepositoryProvider.future);
     final name = _nameController.text.trim();
     final hives = int.tryParse(_hiveController.text.trim()) ?? 0;
+    final notes = _notesController.text.trim();
     if (widget.isEdit) {
-      await repo.update(widget.apiaryId!, name: name, hiveCount: hives);
+      await repo.update(
+        widget.apiaryId!,
+        name: name,
+        hiveCount: hives,
+        notes: notes.isEmpty ? null : notes,
+        notesProvided: true,
+      );
+      if (!mounted) return;
+      context.go('/apiaries/${widget.apiaryId}');
     } else {
-      await repo.create(name: name, hiveCount: hives);
+      await repo.create(
+        name: name,
+        hiveCount: hives,
+        notes: notes.isEmpty ? null : notes,
+      );
+      if (!mounted) return;
+      context.go('/apiaries');
     }
-    if (!mounted) return;
-    context.go('/apiaries');
     messenger.showSnackBar(SnackBar(content: Text(l10n.apiarySaveSuccess)));
   }
 
@@ -133,6 +149,21 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                               ? l10n.hiveCountInvalid
                               : null;
                         },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        key: const Key('apiary-notes-field'),
+                        controller: _notesController,
+                        minLines: 3,
+                        maxLines: 6,
+                        maxLength: 10000,
+                        textInputAction: TextInputAction.newline,
+                        decoration: InputDecoration(
+                          labelText: l10n.apiaryNotesLabel,
+                          hintText: l10n.apiaryNotesHint,
+                          border: const OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
                       ),
                       const SizedBox(height: 24),
                       FilledButton(

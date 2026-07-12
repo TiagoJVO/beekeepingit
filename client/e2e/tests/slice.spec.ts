@@ -125,8 +125,13 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await expect(page.getByText(apiaryName)).toBeVisible();
 
   // ── Go offline and edit ───────────────────────────────────────────────
+  // Tapping the list row now opens the read-only detail screen (FR-AP-7,
+  // #32) rather than the edit form directly — reach the form via its edit
+  // action.
   await context.setOffline(true);
   await page.getByText(apiaryName).click();
+  await enableSemantics(page);
+  await page.getByRole("button", { name: "Edit apiary" }).click();
   await enableSemantics(page);
   const hives = page.getByLabel("Number of hives");
   await hives.click();

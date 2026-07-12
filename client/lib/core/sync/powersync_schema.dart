@@ -10,11 +10,14 @@ const apiaryEntityType = 'apiary';
 /// implicit (client-generated UUID). `deleted_at` is NOT a local column:
 /// the Sync Rules exclude tombstoned rows, so a server-side delete simply
 /// leaves the client's result set and PowerSync removes the row locally.
+/// `notes` (FR-AP-8, #196) is optional free-text, nullable like the server
+/// column it mirrors.
 const appSchema = Schema([
   Table(apiariesTable, [
     Column.text('organization_id'),
     Column.text('name'),
     Column.integer('hive_count'),
+    Column.text('notes'),
     Column.text('created_at'),
     Column.text('updated_at'),
   ]),

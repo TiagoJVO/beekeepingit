@@ -295,4 +295,24 @@ class AppLocalizationsPt extends AppLocalizations {
   String accountSyncNowError(String error) {
     return 'Não foi possível sincronizar agora: $error';
   }
+
+  @override
+  String get apiaryDetailTitle => 'Apiário';
+
+  @override
+  String apiaryLocationValue(String lat, String lon) {
+    return '$lat, $lon';
+  }
+
+  @override
+  String get apiaryLocationNotSet => 'Sem localização definida';
+
+  @override
+  String get apiaryNotesLabel => 'Notas';
+
+  @override
+  String get apiaryNotesHint => 'Flora, acessos, observações…';
+
+  @override
+  String get editApiaryAction => 'Editar apiário';
 }
