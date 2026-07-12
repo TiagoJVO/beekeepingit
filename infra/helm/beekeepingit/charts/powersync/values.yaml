@@ -36,8 +36,8 @@ auth:
 # apiaries.audit_log and apiaries.sync_conflict_log (#61, history.md §6
 # "recent history is offline-viewable" / "LWW losers... surfaced as a
 # superseded timeline event") are included read-only in the same org bucket,
-# matching the flat unfiltered-`SELECT *` style already used for `apiaries`
-# above — no other bucket entry here is time/row-bounded either. history.md
+# matching the flat unfiltered-`SELECT *` style already used for the other two
+# tables below — no other bucket entry here is time/row-bounded either. history.md
 # §6 calls for a "recent window", not the unbounded log, but Sync Rules'
 # bucket `data` queries don't support a LIMIT/pagination clause (they define
 # a continuously-replicated row set, not a point-in-time page) and per-service
@@ -47,12 +47,24 @@ auth:
 # interval`) would need re-evaluation server-side to keep rolling forward,
 # which Sync Rules also doesn't do — that refinement is deferred (tracked in
 # FOLLOWUPS.md) rather than approximated here.
+#
+# apiaries.apiaries is an EXPLICIT column list, not `SELECT *` (#33 change —
+# flagged for the parallel map/distance work touching the same file: if you
+# also need lon/lat client-side, this already provides it, don't duplicate
+# the bucket entry): `location` is a PostGIS `geography(Point,4326)` and
+# streams to the client in a form Dart can't parse directly, so it's
+# replaced with two plain numeric columns, `location_lon`/`location_lat`
+# (`ST_X`/`ST_Y` on the geometry cast — geography has no direct X/Y
+# accessor), nullable exactly when `location` itself is unset. Offline
+# proximity ordering (FR-AP-2, #33 AC "the list works offline... using an
+# offline distance computation") needs these locally; the map view (FR-AP-3)
+# needs the same two columns to place pins, so this one change covers both.
 syncConfig:
   bucket_definitions:
     by_organization:
       parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
       data:
-        - SELECT * FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        - SELECT id, organization_id, name, hive_count, created_at, updated_at, ST_X(location::geometry) AS location_lon, ST_Y(location::geometry) AS location_lat FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
         - SELECT * FROM organizations.organizations WHERE id = bucket.organization_id
         - SELECT * FROM apiaries.audit_log WHERE organization_id = bucket.organization_id
         - SELECT * FROM apiaries.sync_conflict_log WHERE organization_id = bucket.organization_id

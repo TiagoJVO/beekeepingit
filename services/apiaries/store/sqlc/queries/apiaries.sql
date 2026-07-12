@@ -1,6 +1,9 @@
 -- name: ListApiaries :many
 -- Org-scoped, live-row keyset page ordered by id (UUIDv7 ⇒ chronological).
 -- Pass a null cursor for the first page; fetch limit+1 to detect a next page.
+-- Used when the contract's `near` param is absent (FR-AP-2/#33);
+-- ListApiariesByProximity below is the `near`-supplied, distance-ordered
+-- variant.
 SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
        COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson
 FROM apiaries.apiaries
@@ -9,6 +12,51 @@ WHERE organization_id = $1
   AND (sqlc.narg('cursor')::uuid IS NULL OR id > sqlc.narg('cursor')::uuid)
 ORDER BY id
 LIMIT $2;
+
+-- name: ListApiariesByProximity :many
+-- Org-scoped list ordered by ascending distance to the `near` reference
+-- point (FR-AP-2, #33; D-6/PostGIS). Not keyset-paginated like ListApiaries
+-- above: proximity order has no stable monotonic key to page on (a
+-- distance tie, or simply re-issuing the same page, doesn't have the "id
+-- always increases" property keyset pagination relies on), so this variant
+-- is offset-paginated — acceptable given the contract's default page size
+-- (50) already covers a realistic per-org apiary count and proximity
+-- listing isn't expected to page deeply. Rows without a location sort last
+-- (NULLS LAST) rather than being dropped, so an apiary missing a location
+-- still appears (with a null distance_m) instead of silently vanishing
+-- from the list. `public.geography`/`ST_MakePoint` follow
+-- 00003_add_apiary_location.sql's schema-qualification note (bare
+-- `geography` fails to resolve under the service's restricted
+-- search_path).
+--
+-- ORDER BY uses the `<->` KNN distance operator rather than `distance_m`
+-- itself: cheaper to evaluate (an index-accelerated bounding-box distance,
+-- not the exact geodesic calculation), though the `organization_id`
+-- equality filter here still forces a sequential scan over the org's own
+-- rows rather than an index-only KNN traversal via idx_apiaries_location
+-- (00003_add_apiary_location.sql) — confirmed with EXPLAIN: Postgres can't
+-- combine "top-N nearest" index access with an arbitrary equality filter on
+-- a different column without a matching partial/composite index, which
+-- isn't worth adding for the realistic per-org apiary count this query
+-- already assumes (see above). `<->` on `geography` is a fast
+-- *approximate* distance (a few tenths of a percent off geodesic truth —
+-- verified: ST_Distance and `<->` differ by ~0.1% at ~100km), fine for
+-- ordering; the selected `distance_m` column still uses the exact
+-- ST_Distance for the value actually returned to the client.
+WITH ranked AS (
+    SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
+           COALESCE(ST_AsGeoJSON(location), '')::text AS location_geojson,
+           ST_Distance(location, ST_SetSRID(ST_MakePoint(sqlc.arg('lon')::double precision, sqlc.arg('lat')::double precision), 4326)::public.geography) AS distance_m,
+           location <-> ST_SetSRID(ST_MakePoint(sqlc.arg('lon')::double precision, sqlc.arg('lat')::double precision), 4326)::public.geography AS knn_distance
+    FROM apiaries.apiaries
+    WHERE organization_id = $1
+      AND deleted_at IS NULL
+)
+SELECT id, organization_id, name, hive_count, notes, created_at, updated_at, location_geojson, distance_m
+FROM ranked
+ORDER BY knn_distance ASC NULLS LAST, id
+LIMIT $2
+OFFSET $3;
 
 -- name: GetApiary :one
 SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,

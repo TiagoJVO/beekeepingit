@@ -10,6 +10,14 @@ const apiaryEntityType = 'apiary';
 /// implicit (client-generated UUID). `deleted_at` is NOT a local column:
 /// the Sync Rules exclude tombstoned rows, so a server-side delete simply
 /// leaves the client's result set and PowerSync removes the row locally.
+///
+/// `location_lon`/`location_lat` (FR-AP-2, #33) are plain nullable reals —
+/// the Sync Rules bucket (infra/helm/beekeepingit/charts/powersync/
+/// values.yaml) projects the server's PostGIS `geography(Point,4326)`
+/// column through `ST_X`/`ST_Y` into these two columns rather than
+/// streaming the geography value itself (Dart/SQLite has no PostGIS type to
+/// parse it into). Null on both exactly when the apiary has no location set.
+///
 /// `notes` (FR-AP-8, #196) is optional free-text, nullable like the server
 /// column it mirrors.
 const appSchema = Schema([
@@ -20,5 +28,7 @@ const appSchema = Schema([
     Column.text('notes'),
     Column.text('created_at'),
     Column.text('updated_at'),
+    Column.real('location_lon'),
+    Column.real('location_lat'),
   ]),
 ]);

@@ -26,6 +26,11 @@ dependencies:
   # seam. Deliberately NOT openid_client_browser (that's the implicit flow).
   # See docs/architecture/oidc-integration.md §7.
   openid_client: ^0.4.10
+  # Device location for proximity ordering (FR-AP-2, #33): permission
+  # request + last-known/current position, with a working web (PWA)
+  # implementation via the browser Geolocation API — matches D-5/D-10's
+  # Flutter Web PWA target, not just native.
+  geolocator: ^14.0.3
 
 dev_dependencies:
   flutter_test:

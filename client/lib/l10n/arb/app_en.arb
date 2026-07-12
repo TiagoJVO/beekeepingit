@@ -329,6 +329,30 @@
   "@apiaryDeleteSuccess": {
     "description": "Toast shown after successfully deleting an apiary (#197)"
   },
+  "apiariesSearchHint": "Search apiaries by name",
+  "@apiariesSearchHint": {
+    "description": "Placeholder text in the apiaries list search field (FR-AP-6, #36)"
+  },
+  "apiariesSearchNoResults": "No apiaries match your search.",
+  "@apiariesSearchNoResults": {
+    "description": "Empty state shown when a search query matches no apiaries (FR-AP-6, #36)"
+  },
+  "apiariesLocationServicesDisabled": "Location services are off — showing apiaries by name.",
+  "@apiariesLocationServicesDisabled": {
+    "description": "Fallback-order banner when device location services are disabled (FR-AP-2, #33)"
+  },
+  "apiariesLocationPermissionDenied": "Location access denied — showing apiaries by name.",
+  "@apiariesLocationPermissionDenied": {
+    "description": "Fallback-order banner when location permission was denied (FR-AP-2, #33)"
+  },
+  "apiariesLocationUnavailable": "Location unavailable — showing apiaries by name.",
+  "@apiariesLocationUnavailable": {
+    "description": "Fallback-order banner when the device location couldn't be determined for another reason (FR-AP-2, #33)"
+  },
+  "apiariesLocationRetry": "Retry",
+  "@apiariesLocationRetry": {
+    "description": "Retry action on the location-fallback banner (FR-AP-2, #33)"
+  },
   "syncStatusSyncing": "Syncing…",
   "@syncStatusSyncing": {
     "description": "App-shell header sync-status pill label while an upload/download is in flight (#58)"
