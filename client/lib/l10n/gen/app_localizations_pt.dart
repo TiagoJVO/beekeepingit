@@ -281,6 +281,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiariesLocationRetry => 'Tentar novamente';
 
   @override
+  String get apiariesViewToggleLabel => 'Vista dos apiários';
+
+  @override
+  String get apiariesViewListAction => 'Vista de lista';
+
+  @override
+  String get apiariesViewMapAction => 'Vista de mapa';
+
+  @override
   String get syncStatusSyncing => 'A sincronizar…';
 
   @override
@@ -337,9 +346,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get editApiaryAction => 'Editar apiário';
-
-  @override
-  String get apiaryMapTitle => 'Mapa de apiários';
 
   @override
   String get apiaryMapEmpty => 'Ainda não há apiários com localização.';

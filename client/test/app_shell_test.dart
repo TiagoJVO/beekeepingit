@@ -180,6 +180,26 @@ void main() {
   );
 
   testWidgets(
+    'the FAB hides while the apiaries map view is showing, and returns when back on the list (#35)',
+    (tester) async {
+      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell-fab')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('apiaries-view-list-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'tabs without real content yet have no FAB (Activities/Journeys/Todos/Assistant)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());

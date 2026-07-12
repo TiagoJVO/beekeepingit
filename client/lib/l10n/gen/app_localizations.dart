@@ -560,6 +560,24 @@ abstract class AppLocalizations {
   /// **'Retry'**
   String get apiariesLocationRetry;
 
+  /// Semantic label for the list/map segmented toggle as a group (FR-AP-4, #35)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries view'**
+  String get apiariesViewToggleLabel;
+
+  /// Tooltip/semantic label for the list segment of the list/map toggle (FR-AP-4, #35)
+  ///
+  /// In en, this message translates to:
+  /// **'List view'**
+  String get apiariesViewListAction;
+
+  /// Tooltip/semantic label for the map segment of the list/map toggle (FR-AP-4, #35)
+  ///
+  /// In en, this message translates to:
+  /// **'Map view'**
+  String get apiariesViewMapAction;
+
   /// App-shell header sync-status pill label while an upload/download is in flight (#58)
   ///
   /// In en, this message translates to:
@@ -643,12 +661,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit apiary'**
   String get editApiaryAction;
-
-  /// Map screen app bar title (#34, FR-AP-3)
-  ///
-  /// In en, this message translates to:
-  /// **'Apiary map'**
-  String get apiaryMapTitle;
 
   /// Empty state on the map when no apiary has a stored location (#34 AC)
   ///

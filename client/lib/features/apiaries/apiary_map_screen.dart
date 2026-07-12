@@ -32,6 +32,12 @@ const _focusedZoom = 12.0;
 /// provider/offline-tile-caching is a separate, deferred concern; this
 /// screen only needs to render online without error for a reasonable
 /// marker count).
+///
+/// Embedded as a sibling view of [ApiariesListScreen] (#35, FR-AP-4) behind
+/// the list/map segmented toggle, rather than its own pushed route — both
+/// stay mounted in an [IndexedStack] so the tap-to-measure selection here
+/// survives switching to the list and back (#35 AC: "switching views
+/// preserves relevant context").
 class ApiaryMapScreen extends ConsumerStatefulWidget {
   const ApiaryMapScreen({super.key});
 
