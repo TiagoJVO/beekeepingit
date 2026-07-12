@@ -38,8 +38,8 @@ disease notes) is **not "health data" of a natural person** under GDPR Art. 9(1)
 Art. 9 special-category "data concerning health" is defined (Art. 4(15)) as data about the
 **physical or mental health of a natural person** — it does not extend to animal or apiary
 health. BeekeepingIT's treatment/disease records concern bees, not humans, so they are
-**ordinary personal data at most** (insofar as a record is *attributed to the user who made
-it*, per FR-HIS-1/FR-TEN-2), not GDPR special-category data.
+**ordinary personal data at most** (insofar as a record is _attributed to the user who made
+it_, per FR-HIS-1/FR-TEN-2), not GDPR special-category data.
 
 - **Recommendation:** Remove **HIPAA** from NFR-CMP-1. Confirm **GDPR** applies (already
   affirmed in the current NFR-CMP-1 note) and clarify that treatment/health-of-bees records
@@ -48,6 +48,7 @@ it*, per FR-HIS-1/FR-TEN-2), not GDPR special-category data.
 - **Maps to:** NFR-CMP-1 (edit: drop HIPAA, add the Art. 9 clarification).
 
 **Sources:**
+
 - [GDPR Art. 9 — special categories, EUR-Lex consolidated text](https://eur-lex.europa.eu/eli/reg/2016/679/oj) (accessed 2026-07-12)
 - Analysis confirming "health data" under Art. 9 is limited to natural persons, not animals (secondary sources cross-checked against Art. 4(15)/Art. 9(1) definitions, accessed 2026-07-12)
 
@@ -61,6 +62,7 @@ Alimentação e Veterinária), operationally via **SICOA** (Sistema Informático
 Oficial de Apiários) and the **IFAP** portal reserved area.
 
 Source pages (accessed 2026-07-12):
+
 - [DGAV — Identificação e registo da atividade apícola](https://www.dgav.pt/animais/conteudo/animais-de-producao/abelhas/identificacao-registo-e-movimentacao-animal/registo/)
 - [DGAV — Abelhas (overview)](https://www.dgav.pt/animais/conteudo/animais-de-producao/abelhas/)
 - [DGAV — Doenças das Abelhas](https://www.dgav.pt/animais/conteudo/animais-de-producao/abelhas/saude-animal/doencas-das-abelhas/)
@@ -121,8 +123,8 @@ messaging in the future (e.g., a "density check" feature). **Not a near-term req
 ### B.6 — Mandatory-notification bee diseases (sanitary)
 
 DL 203/2005 Annex II lists **diseases of compulsory notification (DDO)**. Per DGAV's current
-list: **Acariose (Acarapisose)**, **infestation by *Tropilaelaps* spp.**, **infestation by
-*Aethina tumida*** (small hive beetle), **American foulbrood (loque americana)**, **European
+list: **Acariose (Acarapisose)**, **infestation by _Tropilaelaps_ spp.**, **infestation by
+_Aethina tumida_** (small hive beetle), **American foulbrood (loque americana)**, **European
 foulbrood (loque europeia)**, **nosemosis**, and **varroosis**. American foulbrood is
 endemic in Portugal; varroosis is the most prevalent disease in national colonies. DGAV
 notifies the EU Commission/WOAH per these DDOs and runs an annual **Programa Sanitário
@@ -142,8 +144,7 @@ Sources: [DGAV — Doenças das Abelhas](https://www.dgav.pt/animais/conteudo/an
 
 ### B.7 — Veterinary medicinal product records (EU-wide, applies in PT)
 
-**Regulation (EU) 2019/6** on veterinary medicinal products (applicable since 28 January
-2022) requires that **records of medicinal product administration be kept up to date** and
+**Regulation (EU) 2019/6** on veterinary medicinal products (applicable since 28 January 2022) requires that **records of medicinal product administration be kept up to date** and
 retained for the **longer of**: 1 year after the batch's expiry date, or **5 years** from the
 recording date. This applies to any veterinary treatment administered to bees (e.g. varroacide
 treatments), whether by the beekeeper or a vet.
@@ -253,21 +254,21 @@ disease-notification regime, not as an independent new obligation.
 
 ## 5. Summary table — findings mapped to FR/NFR
 
-| # | Finding | Affirms / changes | Data-model impact |
-|---|---|---|---|
-| A | HIPAA inapplicable; bee-health data ≠ GDPR Art. 9 special category | NFR-CMP-1 (edit: drop HIPAA) | None |
-| B.1 | Beekeeper/apiary DGAV registration number | FR-ONB, FR-AP-1 (new optional field) | **Yes** — flagged |
-| B.2 | Apiary geo-coordinates mandatory | FR-AP-1/3 (affirms existing field) | None (already covered) |
-| B.3 | Annual stock declaration (Sept 1–30) + 20%/20-colony interim declaration | FR-AP-7 (new: declaration record, distinct from live count) | **Yes** — flagged |
-| B.4 | Transhumance movement authorization | No current FR; future-only | Deferred, no near-term change |
-| B.5 | Hive density rules | No current FR; informational | None near-term |
-| B.6 | Mandatory-notification bee diseases (DDO list) | FR-AC-1 Treatment type (optional structured disease field) | **Yes** — flagged |
-| B.7 | Vet medicinal product record retention (5 yr / batch-expiry+1yr) | FR-AC-1 Treatment (affirms fields); retention-policy note vs. FR-HIS-1 | **Yes** — flagged (policy, not schema) |
-| C.1 | Reg 178/2002 Art. 18 + Reg 931/2011 traceability (batch/lot, one-step-back/forward) | FR-AC-1 Honey harvest, FR-IE-1 (optional lot/batch ID) | **Yes** — flagged |
-| C.2 | Honey composition/labelling (2001/110/EC) | Context only | None |
-| C.3 | Origin labelling %, in force from 2026-06-14 (Dir 2024/1438) | FR-AC-1/FR-AP-1 (affirms apiary-location-linked harvest data suffices for now) | Low — flag only if label-generation feature is ever built |
-| C.4 | Lot marking (Dir 2011/91/EU) | Same as C.1 | Same as C.1 |
-| C.5 | Animal Health Law (Reg 2016/429) | Legal-basis context for B.6 | None additional |
+| #   | Finding                                                                             | Affirms / changes                                                              | Data-model impact                                         |
+| --- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| A   | HIPAA inapplicable; bee-health data ≠ GDPR Art. 9 special category                  | NFR-CMP-1 (edit: drop HIPAA)                                                   | None                                                      |
+| B.1 | Beekeeper/apiary DGAV registration number                                           | FR-ONB, FR-AP-1 (new optional field)                                           | **Yes** — flagged                                         |
+| B.2 | Apiary geo-coordinates mandatory                                                    | FR-AP-1/3 (affirms existing field)                                             | None (already covered)                                    |
+| B.3 | Annual stock declaration (Sept 1–30) + 20%/20-colony interim declaration            | FR-AP-7 (new: declaration record, distinct from live count)                    | **Yes** — flagged                                         |
+| B.4 | Transhumance movement authorization                                                 | No current FR; future-only                                                     | Deferred, no near-term change                             |
+| B.5 | Hive density rules                                                                  | No current FR; informational                                                   | None near-term                                            |
+| B.6 | Mandatory-notification bee diseases (DDO list)                                      | FR-AC-1 Treatment type (optional structured disease field)                     | **Yes** — flagged                                         |
+| B.7 | Vet medicinal product record retention (5 yr / batch-expiry+1yr)                    | FR-AC-1 Treatment (affirms fields); retention-policy note vs. FR-HIS-1         | **Yes** — flagged (policy, not schema)                    |
+| C.1 | Reg 178/2002 Art. 18 + Reg 931/2011 traceability (batch/lot, one-step-back/forward) | FR-AC-1 Honey harvest, FR-IE-1 (optional lot/batch ID)                         | **Yes** — flagged                                         |
+| C.2 | Honey composition/labelling (2001/110/EC)                                           | Context only                                                                   | None                                                      |
+| C.3 | Origin labelling %, in force from 2026-06-14 (Dir 2024/1438)                        | FR-AC-1/FR-AP-1 (affirms apiary-location-linked harvest data suffices for now) | Low — flag only if label-generation feature is ever built |
+| C.4 | Lot marking (Dir 2011/91/EU)                                                        | Same as C.1                                                                    | Same as C.1                                               |
+| C.5 | Animal Health Law (Reg 2016/429)                                                    | Legal-basis context for B.6                                                    | None additional                                           |
 
 ## 6. Data-model impact flags (for triage before the relevant feature epic)
 
@@ -303,7 +304,7 @@ retrofitting M0-M2 issues.
 - **DGAV/SICOA integration** (e.g., auto-submitting declarations) is explicitly **out of
   scope** for this research and is not recommended as a near-term feature — the app's role is
   personal/organizational record-keeping, not a government reporting channel, unless a future
-  epic decides otherwise (would need its own Q-*/D-*).
+  epic decides otherwise (would need its own Q-_/D-_).
 - Directive (EU) 2024/1438's application date (2026-06-14) has **already passed** as of this
   research's date (2026-07-12) — treat origin-labelling percentage rules as **current law**,
   not upcoming.
@@ -345,6 +346,7 @@ retrofitting M0-M2 issues.
   - Optional lot/batch identifier on Honey harvest activities (FR-AC-1), for future
     traceability/export features (Reg (EC) 178/2002 Art. 18, Reg (EU) 931/2011, Dir
     2011/91/EU, Dir 2001/110/EC as amended by Dir (EU) 2024/1438).
+
 - **Supersedes:** Q-CMP, Q-REG.
 - **Affected requirements:**
   - **NFR-CMP-1** — drop HIPAA; note GDPR + non-special-category clarification for bee-health
