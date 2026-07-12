@@ -80,7 +80,6 @@ class AppShell extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final activeTab = tabs[navigationShell.currentIndex];
     final syncStatus = ref.watch(syncStatusProvider);
-    final fab = _fabConfigByTab[activeTab.route];
     final routeName = GoRouterState.of(context).topRoute?.name;
 
     // Non-blocking notice when an offline edit lost a last-write-wins
@@ -105,6 +104,13 @@ class AppShell extends ConsumerWidget {
     // *root* route is named exactly like its branch (see the routes table in
     // app_router.dart) — any other matched name means we're pushed deeper.
     final canGoBack = routeName != null && routeName != activeTab.route;
+
+    // The shell's own contextual "quick add" FAB (_fabConfigByTab) only
+    // makes sense at a tab's root (e.g. "Add apiary" on the apiaries list).
+    // Screens pushed deeper — like the apiary detail screen (#32) — own
+    // their own FAB (e.g. its edit action) instead; showing both at once
+    // would stack two FloatingActionButtons in the same corner.
+    final fab = canGoBack ? null : _fabConfigByTab[activeTab.route];
 
     return Scaffold(
       appBar: _ShellHeader(
@@ -166,8 +172,9 @@ class AppShell extends ConsumerWidget {
   // The header shows a per-route title, not just the tab label — e.g. "New
   // apiary" while pushed on top of the Apiaries tab — falling back to the
   // active tab's own label at the branch root. Named routes pushed within a
-  // branch (apiaryNew, apiaryEdit) opt into a specific title here; anything
-  // else (including the placeholder tabs) just shows the tab label.
+  // branch (apiaryNew, apiaryDetail, apiaryEdit) opt into a specific title
+  // here; anything else (including the placeholder tabs) just shows the tab
+  // label.
   String _titleFor(
     String? routeName,
     ({
@@ -181,6 +188,7 @@ class AppShell extends ConsumerWidget {
   ) {
     return switch (routeName) {
       'apiaryNew' => l10n.newApiaryTitle,
+      'apiaryDetail' => l10n.apiaryDetailTitle,
       'apiaryEdit' => l10n.editApiaryTitle,
       _ => activeTab.label(l10n),
     };

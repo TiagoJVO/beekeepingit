@@ -375,5 +375,37 @@
         "type": "String"
       }
     }
+  },
+  "apiaryDetailTitle": "Apiary",
+  "@apiaryDetailTitle": {
+    "description": "Apiary detail screen app bar title (#32)"
+  },
+  "apiaryLocationValue": "{lat}, {lon}",
+  "@apiaryLocationValue": {
+    "description": "Formatted lat/lon shown on the apiary detail screen when a location is set (#32)",
+    "placeholders": {
+      "lat": {
+        "type": "String"
+      },
+      "lon": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryLocationNotSet": "No location set",
+  "@apiaryLocationNotSet": {
+    "description": "Apiary detail screen placeholder when no location is set (#32)"
+  },
+  "apiaryNotesLabel": "Notes",
+  "@apiaryNotesLabel": {
+    "description": "Label above the notes block on the apiary detail screen, and the notes field label on the form (FR-AP-8, #196)"
+  },
+  "apiaryNotesHint": "Flora, access, observations…",
+  "@apiaryNotesHint": {
+    "description": "Placeholder hint text in the apiary form's notes field (FR-AP-8, #196)"
+  },
+  "editApiaryAction": "Edit apiary",
+  "@editApiaryAction": {
+    "description": "Action on the apiary detail screen that navigates to the edit form (#32)"
   }
 }

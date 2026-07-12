@@ -6,13 +6,20 @@ import 'package:uuid/uuid.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
 
-/// A local apiary row (the slice's trivial record — name + hive count).
+/// A local apiary row (name + hive count + optional free-text notes,
+/// FR-AP-8/#196).
 class Apiary {
-  const Apiary({required this.id, required this.name, required this.hiveCount});
+  const Apiary({
+    required this.id,
+    required this.name,
+    required this.hiveCount,
+    this.notes,
+  });
 
   final String id;
   final String name;
   final int hiveCount;
+  final String? notes;
 }
 
 /// Reads and writes apiaries against the local PowerSync SQLite. Every write
@@ -28,7 +35,7 @@ class ApiariesRepository {
   Stream<List<Apiary>> watchAll() {
     return _db
         .watch(
-          'SELECT id, name, hive_count FROM $apiariesTable '
+          'SELECT id, name, hive_count, notes FROM $apiariesTable '
           'ORDER BY created_at DESC, name',
         )
         .map((rs) => rs.map(_fromRow).toList());
@@ -36,29 +43,50 @@ class ApiariesRepository {
 
   Future<Apiary?> getById(String id) async {
     final row = await _db.getOptional(
-      'SELECT id, name, hive_count FROM $apiariesTable WHERE id = ?',
+      'SELECT id, name, hive_count, notes FROM $apiariesTable WHERE id = ?',
       [id],
     );
     return row == null ? null : _fromRow(row);
   }
 
-  Future<String> create({required String name, required int hiveCount}) async {
+  Future<String> create({
+    required String name,
+    required int hiveCount,
+    String? notes,
+  }) async {
     final id = _uuid.v4();
     final now = _nowIso();
     await _db.execute(
-      'INSERT INTO $apiariesTable (id, name, hive_count, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?)',
-      [id, name, hiveCount, now, now],
+      'INSERT INTO $apiariesTable (id, name, hive_count, notes, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?)',
+      [id, name, hiveCount, notes, now, now],
     );
     return id;
   }
 
-  Future<void> update(String id, {String? name, int? hiveCount}) async {
+  /// Updates the given fields of an existing apiary. `notes` uses a
+  /// present-vs-absent sentinel via [notesProvided] (rather than treating
+  /// null as "leave unchanged") so a caller can explicitly clear notes back
+  /// to empty — mirroring the server's PATCH semantics (write.go's
+  /// `notesSet`/`fields["notes"]` presence check).
+  Future<void> update(
+    String id, {
+    String? name,
+    int? hiveCount,
+    String? notes,
+    bool notesProvided = false,
+  }) async {
     final current = await getById(id);
     if (current == null) return;
     await _db.execute(
-      'UPDATE $apiariesTable SET name = ?, hive_count = ?, updated_at = ? WHERE id = ?',
-      [name ?? current.name, hiveCount ?? current.hiveCount, _nowIso(), id],
+      'UPDATE $apiariesTable SET name = ?, hive_count = ?, notes = ?, updated_at = ? WHERE id = ?',
+      [
+        name ?? current.name,
+        hiveCount ?? current.hiveCount,
+        notesProvided ? notes : current.notes,
+        _nowIso(),
+        id,
+      ],
     );
   }
 
@@ -69,6 +97,7 @@ class ApiariesRepository {
     id: r['id'] as String,
     name: r['name'] as String,
     hiveCount: (r['hive_count'] as int?) ?? 0,
+    notes: r['notes'] as String?,
   );
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
