@@ -9,23 +9,6 @@
 
 ---
 
-## Accessibility & field-first UX (`feat/EPIC-a11y-field-ux-79-80`, #79/#80) — post-merge note
-
-#79/#80 landed the automated half of the checklist (`docs/design/accessibility-field-ux-checklist.md`,
-D-18): tap-target sweep tests, semantics-label tests, a keyboard focus-order test, and a WCAG 2.2 AA
-contrast regression test against the real theme values (`client/test/theming/app_theme_contrast_test.dart`).
-
-**Not done — needs a human, tracked honestly in the checklist's pass log (not claimed as done):**
-
-- **Screen-reader pass** (TalkBack/VoiceOver/NVDA) over login, apiaries list/form, account/org/members.
-- **Keyboard-only pass** in a real browser (not just simulated Tab-key widget tests).
-- **Gloved-use pass** on a physical touchscreen device.
-
-**Action:** whoever picks this up next should run the three passes in
-`docs/design/accessibility-field-ux-checklist.md`'s "Manual pass protocol" section, fill in the
-pass log with real dates/results, and file any findings as new issues (referencing FR-AX-1/FR-UX-1).
-Once done, prune this entry — the checklist's own pass log is the durable record, not this file.
-
 ## Offline UX: sync status/queued changes/retry (`feat/EPIC-06-offline-sync-ux`, #58) — before-merge note
 
 #58 builds the sync-status UI (real connectivity + pending count via `PowerSyncDatabase
