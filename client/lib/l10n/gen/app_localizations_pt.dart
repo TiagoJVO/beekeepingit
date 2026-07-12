@@ -293,6 +293,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncStatusSyncing => 'A sincronizar…';
 
   @override
+  String get syncStatusWaitingForSignal => 'A aguardar melhor sinal';
+
+  @override
   String get syncSupersededNotice =>
       'Uma das suas alterações offline foi substituída por uma edição mais recente.';
 
