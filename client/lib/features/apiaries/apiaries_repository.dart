@@ -9,8 +9,9 @@ import '../../core/sync/powersync_service.dart';
 
 /// A local apiary row (the slice's trivial record — name + hive count, plus
 /// the optional location synced down for offline proximity ordering FR-AP-2,
-/// #33). `locationLon`/`locationLat` are null exactly when the apiary has no
-/// location set server-side (powersync_schema.dart's doc comment).
+/// #33, and optional free-text notes FR-AP-8/#196). `locationLon`/
+/// `locationLat` are null exactly when the apiary has no location set
+/// server-side (powersync_schema.dart's doc comment).
 class Apiary {
   const Apiary({
     required this.id,
@@ -18,6 +19,7 @@ class Apiary {
     required this.hiveCount,
     this.locationLon,
     this.locationLat,
+    this.notes,
   });
 
   final String id;
@@ -25,6 +27,7 @@ class Apiary {
   final int hiveCount;
   final double? locationLon;
   final double? locationLat;
+  final String? notes;
 
   bool get hasLocation => locationLon != null && locationLat != null;
 }
@@ -42,7 +45,7 @@ class ApiariesRepository {
   Stream<List<Apiary>> watchAll() {
     return _db
         .watch(
-          'SELECT id, name, hive_count, location_lon, location_lat FROM $apiariesTable '
+          'SELECT id, name, hive_count, notes, location_lon, location_lat FROM $apiariesTable '
           'ORDER BY created_at DESC, name',
         )
         .map((rs) => rs.map(_fromRow).toList());
@@ -50,29 +53,50 @@ class ApiariesRepository {
 
   Future<Apiary?> getById(String id) async {
     final row = await _db.getOptional(
-      'SELECT id, name, hive_count, location_lon, location_lat FROM $apiariesTable WHERE id = ?',
+      'SELECT id, name, hive_count, notes, location_lon, location_lat FROM $apiariesTable WHERE id = ?',
       [id],
     );
     return row == null ? null : _fromRow(row);
   }
 
-  Future<String> create({required String name, required int hiveCount}) async {
+  Future<String> create({
+    required String name,
+    required int hiveCount,
+    String? notes,
+  }) async {
     final id = _uuid.v4();
     final now = _nowIso();
     await _db.execute(
-      'INSERT INTO $apiariesTable (id, name, hive_count, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?)',
-      [id, name, hiveCount, now, now],
+      'INSERT INTO $apiariesTable (id, name, hive_count, notes, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?)',
+      [id, name, hiveCount, notes, now, now],
     );
     return id;
   }
 
-  Future<void> update(String id, {String? name, int? hiveCount}) async {
+  /// Updates the given fields of an existing apiary. `notes` uses a
+  /// present-vs-absent sentinel via [notesProvided] (rather than treating
+  /// null as "leave unchanged") so a caller can explicitly clear notes back
+  /// to empty — mirroring the server's PATCH semantics (write.go's
+  /// `notesSet`/`fields["notes"]` presence check).
+  Future<void> update(
+    String id, {
+    String? name,
+    int? hiveCount,
+    String? notes,
+    bool notesProvided = false,
+  }) async {
     final current = await getById(id);
     if (current == null) return;
     await _db.execute(
-      'UPDATE $apiariesTable SET name = ?, hive_count = ?, updated_at = ? WHERE id = ?',
-      [name ?? current.name, hiveCount ?? current.hiveCount, _nowIso(), id],
+      'UPDATE $apiariesTable SET name = ?, hive_count = ?, notes = ?, updated_at = ? WHERE id = ?',
+      [
+        name ?? current.name,
+        hiveCount ?? current.hiveCount,
+        notesProvided ? notes : current.notes,
+        _nowIso(),
+        id,
+      ],
     );
   }
 
@@ -85,6 +109,7 @@ class ApiariesRepository {
     hiveCount: (r['hive_count'] as int?) ?? 0,
     locationLon: (r['location_lon'] as num?)?.toDouble(),
     locationLat: (r['location_lat'] as num?)?.toDouble(),
+    notes: r['notes'] as String?,
   );
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();

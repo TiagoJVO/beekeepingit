@@ -30,27 +30,31 @@ import (
 )
 
 const maxNameLength = 200
+const maxNotesLength = 10000
 
 // apiaryCreateRequest is the POST /v1/apiaries request body (ApiaryCreate
 // schema). id is client-supplied (offline-generatable UUID, api-contracts.md
-// §4); hive_count defaults to 0 when omitted (schema default).
+// §4); hive_count defaults to 0 when omitted (schema default); notes is
+// optional free-text (FR-AP-8, #196).
 type apiaryCreateRequest struct {
 	ID        string         `json:"id"`
 	Name      string         `json:"name"`
 	Location  *geoPointInput `json:"location"`
 	HiveCount *int32         `json:"hive_count"`
+	Notes     *string        `json:"notes"`
 }
 
 // apiaryUpdateRequest is the PATCH /v1/apiaries/{id} request body
 // (ApiaryUpdate schema) — any subset of mutable fields. A field's zero value
-// is indistinguishable from "not sent" for Location (already a pointer) and
-// HiveCount (pointer); Name uses a separate "was the key present" check
-// (nameSet) since Go can't otherwise tell "" apart from absent for a plain
-// string field decoded from JSON.
+// is indistinguishable from "not sent" for Location (already a pointer),
+// HiveCount (pointer) and Notes (pointer); Name uses a separate "was the key
+// present" check (nameSet) since Go can't otherwise tell "" apart from
+// absent for a plain string field decoded from JSON.
 type apiaryUpdateRequest struct {
 	Name      *string        `json:"name"`
 	Location  *geoPointInput `json:"location"`
 	HiveCount *int32         `json:"hive_count"`
+	Notes     *string        `json:"notes"`
 }
 
 // createApiary, updateApiary and deleteApiary are wired into apiaries.go's
@@ -96,6 +100,7 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			OrganizationID: org,
 			Name:           body.Name,
 			HiveCount:      hiveCount,
+			Notes:          notesParam(body.Notes),
 			UpdatedAt:      pgtype.Timestamptz{Time: now, Valid: true},
 			Lon:            body.Location.lon(),
 			Lat:            body.Location.lat(),
@@ -124,7 +129,7 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		want := restRowState{name: row.Name, hive: row.HiveCount}
+		want := restRowState{name: row.Name, hive: row.HiveCount, notes: textOf(row.Notes)}
 		if err := writeAuditLogTx(r.Context(), txq, org, userID, id, history.ChangeCreate, now, restRowState{}, want); err != nil {
 			problem.Write(w, r, problem.Internal())
 			return
@@ -142,6 +147,7 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			Name:           row.Name,
 			HiveCount:      row.HiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
+			Notes:          textPtr(row.Notes),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,
 		})
@@ -163,7 +169,8 @@ func respondIdempotentCreateOrConflict(w http.ResponseWriter, r *http.Request, q
 		return
 	}
 	sameLocation := existing.LocationGeojson == geoJSONOf(body.Location)
-	if existing.Name != body.Name || existing.HiveCount != hiveCount || !sameLocation {
+	sameNotes := textOf(existing.Notes) == strPtrValue(body.Notes)
+	if existing.Name != body.Name || existing.HiveCount != hiveCount || !sameLocation || !sameNotes {
 		problem.Write(w, r, problem.Conflict("an apiary with this id already exists with different content"))
 		return
 	}
@@ -175,6 +182,7 @@ func respondIdempotentCreateOrConflict(w http.ResponseWriter, r *http.Request, q
 		Name:           existing.Name,
 		HiveCount:      existing.HiveCount,
 		Location:       parseGeoJSONPoint(existing.LocationGeojson),
+		Notes:          textPtr(existing.Notes),
 		CreatedAt:      existing.CreatedAt.Time,
 		UpdatedAt:      existing.UpdatedAt.Time,
 	})
@@ -192,6 +200,46 @@ func geoJSONOf(p *geoPointInput) string {
 	return string(b)
 }
 
+// notesParam converts a request's optional notes (*string, nil = omitted)
+// into the sqlc nullable text param InsertApiaryWithLocation/
+// UpdateApiaryWithLocation expect — Valid:false clears/omits notes.
+func notesParam(notes *string) pgtype.Text {
+	if notes == nil {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: *notes, Valid: true}
+}
+
+// notesParamFromState is notesParam's counterpart for a restRowState's
+// already-resolved notes value ("" is its "unset" sentinel, matching
+// location — see restRowState.notes).
+func notesParamFromState(notes string) pgtype.Text {
+	if notes == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: notes, Valid: true}
+}
+
+// textOf reads a stored pgtype.Text column back as a plain string ("" when
+// unset) — the restRowState/idempotency-comparison counterpart of textPtr
+// (which instead yields a DTO *string, nil when unset).
+func textOf(t pgtype.Text) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.String
+}
+
+// strPtrValue reads an optional request field (*string, nil = omitted) as a
+// plain string ("" when omitted) — the request-side counterpart of textOf,
+// so respondIdempotentCreateOrConflict can compare both sides the same way.
+func strPtrValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func validateCreate(body apiaryCreateRequest) (uuid.UUID, []problem.FieldError) {
 	var errs []problem.FieldError
 	id, err := uuid.Parse(body.ID)
@@ -207,6 +255,9 @@ func validateCreate(body apiaryCreateRequest) (uuid.UUID, []problem.FieldError) 
 	}
 	if body.HiveCount != nil && *body.HiveCount < 0 {
 		errs = append(errs, problem.FieldError{Field: "hive_count", Code: "out_of_range", Message: "hive_count must be >= 0"})
+	}
+	if body.Notes != nil && len(*body.Notes) > maxNotesLength {
+		errs = append(errs, problem.FieldError{Field: "notes", Code: "too_long", Message: "notes must be at most 10000 characters"})
 	}
 	errs = append(errs, body.Location.validate("location")...)
 	return id, errs
@@ -262,13 +313,17 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson}
+		before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes)}
 		want := before
 		if nameSet {
 			want.name = *body.Name
 		}
 		if body.HiveCount != nil {
 			want.hive = *body.HiveCount
+		}
+		_, notesSet := fields["notes"]
+		if notesSet {
+			want.notes = strPtrValue(body.Notes)
 		}
 		var lon, lat pgtype.Float8
 		if locationSet {
@@ -285,6 +340,7 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 		updated, err := txq.UpdateApiaryWithLocation(r.Context(), sqlcgen.UpdateApiaryWithLocationParams{
 			OrganizationID: org, ID: pgID,
 			Name: want.name, HiveCount: want.hive,
+			Notes:     notesParamFromState(want.notes),
 			UpdatedAt: pgtype.Timestamptz{Time: now, Valid: true},
 			Lon:       lon, Lat: lat,
 		})
@@ -309,6 +365,7 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			Name:           updated.Name,
 			HiveCount:      updated.HiveCount,
 			Location:       parseGeoJSONPoint(updated.LocationGeojson),
+			Notes:          textPtr(updated.Notes),
 			CreatedAt:      updated.CreatedAt.Time,
 			UpdatedAt:      updated.UpdatedAt.Time,
 		})
@@ -319,7 +376,8 @@ func validateUpdate(fields map[string]json.RawMessage, body apiaryUpdateRequest,
 	var errs []problem.FieldError
 	_, hiveSet := fields["hive_count"]
 	_, locSet := fields["location"]
-	if !nameSet && !hiveSet && !locSet {
+	_, notesSet := fields["notes"]
+	if !nameSet && !hiveSet && !locSet && !notesSet {
 		errs = append(errs, problem.FieldError{Field: "(body)", Code: "required", Message: "request must change at least one field"})
 	}
 	if nameSet {
@@ -332,6 +390,9 @@ func validateUpdate(fields map[string]json.RawMessage, body apiaryUpdateRequest,
 	}
 	if body.HiveCount != nil && *body.HiveCount < 0 {
 		errs = append(errs, problem.FieldError{Field: "hive_count", Code: "out_of_range", Message: "hive_count must be >= 0"})
+	}
+	if body.Notes != nil && len(*body.Notes) > maxNotesLength {
+		errs = append(errs, problem.FieldError{Field: "notes", Code: "too_long", Message: "notes must be at most 10000 characters"})
 	}
 	errs = append(errs, body.Location.validate("location")...)
 	return errs
@@ -442,16 +503,22 @@ type restRowState struct {
 	name     string
 	hive     int32
 	location string // "" means unset, matching location_geojson's sentinel
+	notes    string // "" means unset — an apiary's own free-text content, not personal data (§7.3)
 }
 
 // fields projects a restRowState to the plain field map history.ComputeChange
 // diffs — only soft/scalar values, never denormalized personal data (§7.3).
 // location is included as its GeoJSON string (an opaque, non-personal
-// value) so a location change shows up in the update delta.
+// value) so a location change shows up in the update delta; notes similarly
+// (FR-AP-8, #196) — it's the apiary's own content, not personal data about
+// a person.
 func (a restRowState) fields() map[string]any {
 	m := map[string]any{"name": a.name, "hive_count": a.hive}
 	if a.location != "" {
 		m["location"] = a.location
+	}
+	if a.notes != "" {
+		m["notes"] = a.notes
 	}
 	return m
 }

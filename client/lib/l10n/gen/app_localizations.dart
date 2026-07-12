@@ -607,6 +607,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not sync right now: {error}'**
   String accountSyncNowError(String error);
+
+  /// Apiary detail screen app bar title (#32)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get apiaryDetailTitle;
+
+  /// Formatted lat/lon shown on the apiary detail screen when a location is set (#32)
+  ///
+  /// In en, this message translates to:
+  /// **'{lat}, {lon}'**
+  String apiaryLocationValue(String lat, String lon);
+
+  /// Apiary detail screen placeholder when no location is set (#32)
+  ///
+  /// In en, this message translates to:
+  /// **'No location set'**
+  String get apiaryLocationNotSet;
+
+  /// Label above the notes block on the apiary detail screen, and the notes field label on the form (FR-AP-8, #196)
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get apiaryNotesLabel;
+
+  /// Placeholder hint text in the apiary form's notes field (FR-AP-8, #196)
+  ///
+  /// In en, this message translates to:
+  /// **'Flora, access, observations…'**
+  String get apiaryNotesHint;
+
+  /// Action on the apiary detail screen that navigates to the edit form (#32)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit apiary'**
+  String get editApiaryAction;
 }
 
 class _AppLocalizationsDelegate

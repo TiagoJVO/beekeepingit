@@ -18,6 +18,7 @@ type ApiariesApiary struct {
 	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	Location       interface{}        `json:"location"`
+	Notes          pgtype.Text        `json:"notes"`
 }
 
 type ApiariesAuditLog struct {

@@ -84,5 +84,11 @@
   "accountSyncPendingCount": "{count, plural, =0{Tudo sincronizado.} =1{1 alteração por sincronizar.} other{{count} alterações por sincronizar.}}",
   "accountSyncNowButton": "Sincronizar agora",
   "accountSyncNowTriggered": "Sincronização pedida.",
-  "accountSyncNowError": "Não foi possível sincronizar agora: {error}"
+  "accountSyncNowError": "Não foi possível sincronizar agora: {error}",
+  "apiaryDetailTitle": "Apiário",
+  "apiaryLocationValue": "{lat}, {lon}",
+  "apiaryLocationNotSet": "Sem localização definida",
+  "apiaryNotesLabel": "Notas",
+  "apiaryNotesHint": "Flora, acessos, observações…",
+  "editApiaryAction": "Editar apiário"
 }

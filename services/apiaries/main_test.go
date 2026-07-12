@@ -303,6 +303,11 @@ func patchHive(id string, hive int32, ts time.Time) api.Op {
 	return api.Op{Op: "patch", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
 }
 
+func patchNotes(id, notes string, ts time.Time) api.Op {
+	data, _ := json.Marshal(map[string]any{"notes": notes})
+	return api.Op{Op: "patch", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
+}
+
 // TestApiariesSlice_CreateReadLWWConflictIdempotencyTombstone walks the whole
 // apply/read matrix the skeleton must guarantee (sync.md §4–§5).
 func TestApiariesSlice_CreateReadLWWConflictIdempotencyTombstone(t *testing.T) {
@@ -1037,6 +1042,13 @@ func TestApiariesRest_ResponsesConformToOpenAPIContract(t *testing.T) {
 	}
 	doc.ValidateResponseBody(t, http.MethodPatch, patchPath, http.StatusOK, recPatch.Body.Bytes())
 
+	// notes (FR-AP-8, #196) — new field, validated against the contract too.
+	recNotes := f.do(t, http.MethodPatch, patchPath, map[string]any{"notes": "Cerca elétrica."})
+	if recNotes.Code != http.StatusOK {
+		t.Fatalf("notes update status = %d, want 200, body = %s", recNotes.Code, recNotes.Body.String())
+	}
+	doc.ValidateResponseBody(t, http.MethodPatch, patchPath, http.StatusOK, recNotes.Body.Bytes())
+
 	recInvalid := f.do(t, http.MethodPatch, patchPath, map[string]any{"hive_count": -1})
 	if recInvalid.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid update status = %d, want 422, body = %s", recInvalid.Code, recInvalid.Body.String())
@@ -1064,6 +1076,15 @@ func createBody(id, name string, hiveCount *int32, loc *geoPointView) map[string
 	if loc != nil {
 		body["location"] = loc
 	}
+	return body
+}
+
+// createBodyWithNotes layers a `notes` key onto createBody's result — kept
+// as a separate helper (rather than widening createBody's signature) so the
+// many existing createBody(...) call sites stay untouched (FR-AP-8, #196).
+func createBodyWithNotes(id, name string, hiveCount *int32, loc *geoPointView, notes string) map[string]any {
+	body := createBody(id, name, hiveCount, loc)
+	body["notes"] = notes
 	return body
 }
 
@@ -1372,6 +1393,165 @@ func TestApiariesRest_History_CreateUpdateDeleteEachProduceOneAuditRow(t *testin
 	}
 }
 
+// TestApiariesRest_Notes_CreateAndUpdateRoundTrip is #196's core REST AC:
+// notes is optional on create, present on read when set, and independently
+// updatable via PATCH without disturbing other fields (mirrors how
+// TestApiariesRest_CreateReadUpdateDelete exercises hive_count/location).
+func TestApiariesRest_Notes_CreateAndUpdateRoundTrip(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	// Create without notes: omitted from the response (omitempty, like
+	// location's own "unset" convention).
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Quinta das Flores", int32Ptr(2), nil))
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+	if strings.Contains(recCreate.Body.String(), `"notes"`) {
+		t.Fatalf("create response unexpectedly contains a notes key: %s", recCreate.Body.String())
+	}
+
+	// Create a second apiary with notes set up front.
+	id2 := uuid.NewString()
+	recCreate2 := f.do(t, http.MethodPost, "/v1/apiaries",
+		createBodyWithNotes(id2, "Monte Alto", int32Ptr(4), nil, "Rosmaninho e eucalipto; acesso por caminho de terra."))
+	if recCreate2.Code != http.StatusCreated {
+		t.Fatalf("create-with-notes status = %d, want 201, body = %s", recCreate2.Code, recCreate2.Body.String())
+	}
+	var created2 apiaryView
+	if err := json.Unmarshal(recCreate2.Body.Bytes(), &created2); err != nil {
+		t.Fatalf("decode create-with-notes response: %v", err)
+	}
+	if created2.Notes == nil || *created2.Notes != "Rosmaninho e eucalipto; acesso por caminho de terra." {
+		t.Fatalf("created apiary notes = %v, want the submitted text", created2.Notes)
+	}
+
+	// PATCH sets notes on the apiary created without them; other fields
+	// (name, hive_count) must survive untouched (partial update).
+	recUpdate := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"notes": "Cerca elétrica."})
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+	var updated apiaryView
+	if err := json.Unmarshal(recUpdate.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode update response: %v", err)
+	}
+	if updated.Notes == nil || *updated.Notes != "Cerca elétrica." {
+		t.Fatalf("updated apiary notes = %v, want \"Cerca elétrica.\"", updated.Notes)
+	}
+	if updated.Name != "Quinta das Flores" || updated.HiveCount != 2 {
+		t.Fatalf("updated apiary = %+v, want name/hive_count unchanged", updated)
+	}
+
+	// A subsequent GET reflects the same notes (persisted, not just echoed).
+	got := f.getApiary(t, id)
+	if got.Notes == nil || *got.Notes != "Cerca elétrica." {
+		t.Fatalf("get apiary notes = %v, want \"Cerca elétrica.\"", got.Notes)
+	}
+
+	// PATCH clearing notes back to empty string is a valid (if unusual)
+	// content change, not treated as "field absent".
+	recClear := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"notes": ""})
+	if recClear.Code != http.StatusOK {
+		t.Fatalf("clear-notes status = %d, want 200, body = %s", recClear.Code, recClear.Body.String())
+	}
+}
+
+// TestApiariesRest_Notes_ValidationRejectsTooLong matches sync.go's
+// validateOp notes-length rule (10000 chars) on the REST create/update path.
+func TestApiariesRest_Notes_ValidationRejectsTooLong(t *testing.T) {
+	f := newApiariesFixture(t)
+	tooLong := strings.Repeat("x", 10001)
+
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", createBodyWithNotes(uuid.NewString(), "Foo", nil, nil, tooLong))
+	if recCreate.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("create with too-long notes status = %d, want 422, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Foo", nil, nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	recUpdate := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"notes": tooLong})
+	if recUpdate.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("update with too-long notes status = %d, want 422, body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+}
+
+// TestApiariesRest_History_NotesChangeProducesAuditRowWithChangedField is
+// #196's history AC (FR-HIS): a notes-only PATCH is recorded in change
+// history like any other apiary edit, mirroring
+// TestApiariesRest_History_CreateUpdateDeleteEachProduceOneAuditRow's
+// hive_count assertion but for the new field.
+func TestApiariesRest_History_NotesChangeProducesAuditRowWithChangedField(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Encosta Nova", int32Ptr(3), nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	if rec := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"notes": "Montado de sobro."}); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	rows := f.auditLogFor(t, id)
+	if len(rows) != 2 || rows[1].ChangeType != "update" {
+		t.Fatalf("audit rows after notes update = %+v, want [create, update]", rows)
+	}
+	if len(rows[1].ChangedFields) != 1 || rows[1].ChangedFields[0] != "notes" {
+		t.Fatalf("notes-update audit changed_fields = %v, want [notes]", rows[1].ChangedFields)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(rows[1].Change, &change); err != nil {
+		t.Fatalf("unmarshal update change: %v", err)
+	}
+	notesChange, ok := change["notes"].(map[string]any)
+	if !ok {
+		t.Fatalf("update change = %+v, want a notes {from,to} entry", change)
+	}
+	if notesChange["to"] != "Montado de sobro." {
+		t.Fatalf("notes change.to = %v, want %q", notesChange["to"], "Montado de sobro.")
+	}
+	if rows[1].ActorUserID != devseed.UserID {
+		t.Fatalf("notes-update audit actor_user_id = %q, want %q", rows[1].ActorUserID, devseed.UserID)
+	}
+}
+
+// TestApiariesSlice_Notes_SyncApplyRoundTrip is #196's offline-sync AC
+// ("notes sync offline"): notes flows through the sync-apply put/patch path
+// exactly like name/hive_count, mirroring
+// TestApiariesSlice_CreateReadLWWConflictIdempotencyTombstone's shape.
+func TestApiariesSlice_Notes_SyncApplyRoundTrip(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Encosta Nova", 0, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %+v, want applied", got.Results[0])
+	}
+	created := f.getApiary(t, id)
+	if created.Notes != nil {
+		t.Fatalf("created apiary notes = %v, want nil (not set)", created.Notes)
+	}
+
+	t1 := t0.Add(time.Minute)
+	if got := f.apply(t, patchNotes(id, "Junto à albufeira.", t1)); got.Results[0].Result != "applied" {
+		t.Fatalf("notes patch result = %+v, want applied", got.Results[0])
+	}
+	updated := f.getApiary(t, id)
+	if updated.Notes == nil || *updated.Notes != "Junto à albufeira." {
+		t.Fatalf("updated apiary notes = %v, want \"Junto à albufeira.\"", updated.Notes)
+	}
+
+	rows := f.auditLogFor(t, id)
+	if len(rows) != 2 || rows[1].ChangeType != "update" {
+		t.Fatalf("audit rows after notes sync-apply = %+v, want [create, update]", rows)
+	}
+	if len(rows[1].ChangedFields) != 1 || rows[1].ChangedFields[0] != "notes" {
+		t.Fatalf("notes sync-apply changed_fields = %v, want [notes]", rows[1].ChangedFields)
+	}
+}
+
 // TestApiariesRest_IfMatch_StaleETagIsConflict is the optimistic-concurrency
 // half of PATCH/DELETE's If-Match handling (IfMatchHeader,
 // contracts/openapi/_shared/components.openapi.yaml): a stale If-Match is
@@ -1663,6 +1843,7 @@ type apiaryView struct {
 	Name      string        `json:"name"`
 	HiveCount int32         `json:"hive_count"`
 	Location  *geoPointView `json:"location,omitempty"`
+	Notes     *string       `json:"notes,omitempty"`
 	DistanceM *float64      `json:"distance_m,omitempty"`
 }
 

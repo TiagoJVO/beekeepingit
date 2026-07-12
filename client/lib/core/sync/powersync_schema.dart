@@ -17,11 +17,15 @@ const apiaryEntityType = 'apiary';
 /// column through `ST_X`/`ST_Y` into these two columns rather than
 /// streaming the geography value itself (Dart/SQLite has no PostGIS type to
 /// parse it into). Null on both exactly when the apiary has no location set.
+///
+/// `notes` (FR-AP-8, #196) is optional free-text, nullable like the server
+/// column it mirrors.
 const appSchema = Schema([
   Table(apiariesTable, [
     Column.text('organization_id'),
     Column.text('name'),
     Column.integer('hive_count'),
+    Column.text('notes'),
     Column.text('created_at'),
     Column.text('updated_at'),
     Column.real('location_lon'),

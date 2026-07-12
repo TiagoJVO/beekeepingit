@@ -64,8 +64,9 @@ The product's interactive prototype ("Melargil") is now in-repo at `docs/design/
 M0–M11 backlog and answers 6 open `Q-*`. This PR adds: the prototype in-repo, epic `**Prototype:**` links
 (#2/#3/#4/#5/#6/#9/#13), 2 net-new stories, and spec-note refinements (#38/#49/#58/#65/#82). Pending:
 
-- **Confirmed & added** — `FR-AP-8` (apiary notes, #196) and `FR-UX-2` (app-shell IA, folded into the
-  field-first `FR-UX` track, #197) are now in `requirements/functional-requirements.md`.
+- `FR-AP-8` (apiary notes, #196) and `FR-UX-2` (app-shell IA, folded into the field-first
+  `FR-UX` track, #197) landed in `requirements/functional-requirements.md` (#199, merged) and are
+  now **implemented** (#32/#196, #197) — no longer pending.
 - **Feed the scope pass** — the prototype answers `Q-MAP`/`Q-JOUR`/`Q-TODO`/`Q-NOTIF` (see
   `docs/design/prototype.md`); use those when settling each remaining `Q-*` (answer →
   `D-*`/`FR-*`, delete the `Q-*`). `Q-DIST`/`Q-SEARCH` are already resolved and removed.

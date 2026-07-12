@@ -55,6 +55,7 @@ type apiaryDTO struct {
 	Name           string       `json:"name"`
 	HiveCount      int32        `json:"hive_count"`
 	Location       *geoPointDTO `json:"location,omitempty"`
+	Notes          *string      `json:"notes,omitempty"`
 	DistanceM      *float64     `json:"distance_m,omitempty"`
 	CreatedAt      time.Time    `json:"created_at"`
 	UpdatedAt      time.Time    `json:"updated_at"`
@@ -163,6 +164,7 @@ func listApiaries(q *sqlcgen.Queries) http.HandlerFunc {
 				Name:           row.Name,
 				HiveCount:      row.HiveCount,
 				Location:       parseGeoJSONPoint(row.LocationGeojson),
+				Notes:          textPtr(row.Notes),
 				CreatedAt:      row.CreatedAt.Time,
 				UpdatedAt:      row.UpdatedAt.Time,
 			})
@@ -205,6 +207,7 @@ func listApiariesByProximity(w http.ResponseWriter, r *http.Request, q *sqlcgen.
 			Name:           row.Name,
 			HiveCount:      row.HiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
+			Notes:          textPtr(row.Notes),
 			DistanceM:      distancePtr(row.DistanceM),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,
@@ -285,6 +288,7 @@ func getApiary(q *sqlcgen.Queries) http.HandlerFunc {
 			Name:           row.Name,
 			HiveCount:      row.HiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
+			Notes:          textPtr(row.Notes),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,
 		})
