@@ -15,7 +15,7 @@ abstract interface class ConnectivityProbe {
 }
 
 /// The real probe: a `GET` against PowerSync's own liveness endpoint,
-/// reachable through the gateway at `<gatewayBaseUrl>/sync-stream/probes/
+/// reachable through the gateway at `[gatewayBaseUrl]/sync-stream/probes/
 /// liveness` (the existing strip-prefix route in
 /// `infra/helm/beekeepingit/charts/gateway/templates/powersync-route.yaml`,
 /// unauthenticated, no DB/business logic — genuinely the "tiny probe request"
