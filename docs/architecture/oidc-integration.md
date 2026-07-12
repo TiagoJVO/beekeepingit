@@ -37,8 +37,9 @@ so a separate origin is free of cost here.
 
 - **Application slug** `beekeepingit` → **issuer** `https://auth.beekeepingit.local:8443/application/o/beekeepingit/` (`issuer_mode: per_provider`, request-host-derived).
 - **Client** `beekeepingit-pwa` — **public**, **Authorization Code + PKCE (S256)**, **RS256**.
+- **Grant types** — `authorization_code`, `refresh_token`. **Set explicitly** — on Authentik 2026.5.x this defaults to `[]` (no grants), which rejects the authorize request with `invalid_request`.
 - **Token validity** — access **15m**, refresh **30d** (blueprint uses Django-timedelta strings: `minutes=15`, `days=30`).
-- **Redirect URIs** (`matching_mode: regex`) — `http://localhost:.*` and `https://app\.beekeepingit\.local:8443/.*` (the PWA origin).
+- **Redirect URIs** — `http://localhost:.*` (regex), `https://app\.beekeepingit\.local:8443/.*` (regex), **and** `https://app.beekeepingit.local:8443` (**strict**). The strict bare-origin entry is required because the PWA sends the bare origin as its `redirect_uri`, and Authentik derives **CORS**-allowed origins from `redirect_uris` — an `Origin` has no path, so the `…/.*` regex never matches it.
 - **Registration** — disabled (Authentik default; no enrollment flow bound to the app).
 - **`platform-operator`** — an Authentik **group** (ops-only marker, **not** an app role); the app authZ path never reads it.
 
