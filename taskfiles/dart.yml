@@ -64,6 +64,84 @@ tasks:
           if grep -q 'sdk: *flutter' "$p"; then (cd "$d" && flutter test); else (cd "$d" && dart test); fi
         done
 
+  l10n-check:
+    desc: >-
+      Regenerate Flutter l10n (flutter gen-l10n) and fail on malformed ARB,
+      keys missing in either language, or stale committed gen/ output (#78 AC:
+      "extraction/build step wired into CI so missing or malformed translation
+      resources fail the build"). Scoped to client/ specifically (rather than
+      every FIND_DART_PKGS package) since l10n.yaml/lib/l10n/ is a client-only
+      convention today.
+    cmds:
+      - |
+        set -e
+        d=client
+        if [ ! -f "$d/l10n.yaml" ]; then echo "› [dart] no client/l10n.yaml — skipping l10n-check"; exit 0; fi
+        echo "› [dart] l10n-check $d"
+        (cd "$d" && flutter pub get)
+
+        # ARB key-parity check: every message key in the template (app_en.arb)
+        # must also exist in every other ARB file, and vice versa — `flutter
+        # gen-l10n` silently accepts an ARB with extra keys (they're just
+        # unused) and, depending on version/flags, may only warn rather than
+        # fail on a key missing from a translation, so this catches that
+        # explicitly. A "message key" is a top-level JSON key that isn't a
+        # `@`-prefixed ICU/metadata entry or `@@locale`; ARB is JSON, so a
+        # depth-1 quoted key always starts at 2-space indent right after the
+        # opening `{`.
+        # Uses plain temp files rather than `<(...)` process substitution —
+        # go-task runs `sh`, not bash, and dash doesn't support it.
+        arb_keys() {
+          grep -oE '^  "[^"]+":' "$1" | sed -E 's/^  "([^"]+)":$/\1/' | grep -vE '^@' | sort -u
+        }
+        template="$d/lib/l10n/arb/app_en.arb"
+        if [ ! -f "$template" ]; then
+          echo "› [dart] template ARB $template not found." >&2
+          exit 1
+        fi
+        template_keys_file="$(mktemp)"
+        arb_keys "$template" > "$template_keys_file"
+        arb_ok=0
+        for f in "$d"/lib/l10n/arb/*.arb; do
+          [ "$f" = "$template" ] && continue
+          keys_file="$(mktemp)"
+          arb_keys "$f" > "$keys_file"
+          missing="$(comm -23 "$template_keys_file" "$keys_file")"
+          extra="$(comm -13 "$template_keys_file" "$keys_file")"
+          rm -f "$keys_file"
+          if [ -n "$missing" ]; then
+            echo "› [dart] $f is missing keys present in app_en.arb:" >&2
+            echo "$missing" | sed 's/^/    /' >&2
+            arb_ok=1
+          fi
+          if [ -n "$extra" ]; then
+            echo "› [dart] $f has extra keys not present in app_en.arb:" >&2
+            echo "$extra" | sed 's/^/    /' >&2
+            arb_ok=1
+          fi
+        done
+        rm -f "$template_keys_file"
+        if [ "$arb_ok" -ne 0 ]; then
+          echo "› [dart] ARB key parity check failed." >&2
+          exit 1
+        fi
+        echo "› [dart] ARB key parity OK."
+
+        # Malformed-ARB / untranslated-message check: gen-l10n itself fails
+        # the build on invalid JSON or a message missing from a non-template
+        # ARB (it errors rather than silently falling back at codegen time).
+        (cd "$d" && flutter gen-l10n)
+
+        # Stale-committed-output check: the regenerated lib/l10n/gen/ must be
+        # byte-identical to what's committed (matches services/shared's
+        # committed sqlc convention — no codegen step needed to build/test,
+        # but that means CI must catch a source ARB edit that wasn't followed
+        # by a regeneration).
+        git diff --exit-code -- "$d/lib/l10n/gen" || {
+          echo "› [dart] lib/l10n/gen is stale — run 'flutter gen-l10n' in client/ and commit the result." >&2
+          exit 1
+        }
+
   build:
     desc: "Build Dart/Flutter packages (flutter build web for Flutter apps)"
     cmds:
