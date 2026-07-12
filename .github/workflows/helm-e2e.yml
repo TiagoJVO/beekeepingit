@@ -114,6 +114,19 @@ jobs:
           done
           kubectl -n beekeepingit-dev rollout status deployment/authentik-server --timeout=600s
 
+      # Explicit readiness gate for the domain services (identity, organizations, apiaries,
+      # sync, pwa, powersync, ...) — not just Postgres/Authentik above. Without this, a
+      # service stuck in CrashLoopBackOff (e.g. a search_path-dependent SQL bug that only
+      # reproduces under that service's restricted DB role) passes the whole pipeline
+      # undetected, because nothing ever asserted the pods became Ready (#215). Every
+      # Deployment in the umbrella chart carries this label via `beekeepingit.labels`
+      # (infra/helm/beekeepingit/templates/_helpers.tpl), so one selector covers all of them.
+      - name: Wait for domain-service deployments
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          kubectl -n beekeepingit-dev wait --for=condition=available deployment \
+            -l app.kubernetes.io/part-of=beekeepingit --timeout=300s
+
       # The AC: the postgres PostGIS smoke-query hook AND the authentik readiness hook run
       # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
       # here too.
@@ -127,8 +140,10 @@ jobs:
       - name: Diagnostics (on failure)
         if: failure() && steps.changes.outputs.infra == 'true'
         run: |
-          kubectl get pods -A || true
+          kubectl get pods -A -o wide || true
           kubectl -n beekeepingit-dev describe pods || true
+          kubectl -n beekeepingit-dev get deployment -o wide || true
+          kubectl -n beekeepingit-dev describe deployment || true
           kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=server --tail=100 || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=worker --tail=100 || true
