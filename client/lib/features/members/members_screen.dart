@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'members_repository.dart';
 
@@ -131,16 +132,18 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    FilledButton(
+                    // Not full-width (unlike the other screens' primary
+                    // actions): this button shares its row with the email
+                    // field rather than owning the whole form width. Still
+                    // gets the same 44+ tap-target height (#79/#80) — this
+                    // previously had no explicit minimumSize at all, silently
+                    // sized to Material 3's 40px default.
+                    PrimaryActionButton(
                       key: const Key('invite-submit-button'),
-                      onPressed: _inviting ? null : () => _invite(l10n),
-                      child: _inviting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(l10n.membersInviteButton),
+                      label: l10n.membersInviteButton,
+                      busy: _inviting,
+                      fullWidth: false,
+                      onPressed: () => _invite(l10n),
                     ),
                   ],
                 ),

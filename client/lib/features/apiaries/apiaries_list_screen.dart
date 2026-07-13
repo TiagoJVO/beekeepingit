@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/geo/device_location.dart';
+import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
 import 'apiary_map_screen.dart';
@@ -282,7 +283,10 @@ class _ToggleSegment extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           onTap: onTap,
           child: Container(
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            constraints: const BoxConstraints(
+              minWidth: kMinTapTarget,
+              minHeight: kMinTapTarget,
+            ),
             alignment: Alignment.center,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
@@ -352,6 +356,9 @@ class _LocationFallbackBanner extends ConsumerWidget {
           ),
           TextButton(
             key: const Key('apiaries-location-retry-button'),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+            ),
             onPressed: () =>
                 ref.read(apiariesLocationProvider.notifier).retry(),
             child: Text(l10n.apiariesLocationRetry),
