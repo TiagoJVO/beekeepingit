@@ -49,3 +49,28 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   generate: true # regenerate lib/l10n/gen from l10n.yaml + lib/l10n/arb/*.arb
+
+  # Melargil brand typography (FR-UX-1, FR-AX-1, D-18, #243), bundled as
+  # assets — offline-first, NO runtime font fetching (no google_fonts, no CDN).
+  # Static per-weight TTFs from Google Fonts (OFL 1.1; license file lives
+  # beside each family under fonts/<Family>/OFL.txt). Archivo is the app-wide
+  # default (AppTheme.bodyFontFamily); Playfair Display is applied to
+  # display/headline/title styles (AppTheme.displayFontFamily). See
+  # docs/design/prototype.md §Type and client/lib/theming/app_theme.dart.
+  fonts:
+    - family: Archivo
+      fonts:
+        - asset: fonts/Archivo/Archivo-Regular.ttf
+          weight: 400
+        - asset: fonts/Archivo/Archivo-Medium.ttf
+          weight: 500
+        - asset: fonts/Archivo/Archivo-SemiBold.ttf
+          weight: 600
+        - asset: fonts/Archivo/Archivo-Bold.ttf
+          weight: 700
+    - family: Playfair Display
+      fonts:
+        - asset: fonts/PlayfairDisplay/PlayfairDisplay-SemiBold.ttf
+          weight: 600
+        - asset: fonts/PlayfairDisplay/PlayfairDisplay-Bold.ttf
+          weight: 700

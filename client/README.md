@@ -53,7 +53,7 @@ hard-coded, so swapping the identity provider is just changing `OIDC_ISSUER`
 | `lib/app.dart`, `main.dart` | App bootstrap: `ProviderScope`, `MaterialApp.router`                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `lib/routing/`              | [go_router](https://pub.dev/packages/go_router) config — `/login`, onboarding gates (`/profile`, `/organization/new`), an auth redirect, and the post-onboarding app shell (`StatefulShellRoute.indexedStack`, one nav stack per tab): apiaries (`/apiaries`, `/apiaries/new`, `/apiaries/:id` read-only detail, `/apiaries/:id/edit` the form, `FR-AP-7`/`#32`) plus the not-yet-built activities/journeys/todos/assistant tabs; `/organization/members` and `/account` sit outside the shell |
 | `lib/shell/`                | The persistent app shell (`FR-UX-2`, `#197`) — 5-tab bottom nav, header (contextual back, brand + screen title, sync-status pill, account), contextual honey FAB, offline banner, and `ComingSoonScreen` placeholders for tabs without real screens yet                                                                                                                                                                                                                                        |
-| `lib/theming/`              | Light/dark Material 3 `ThemeData`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `lib/theming/`              | Light/dark Material 3 `ThemeData` (`app_theme.dart`) hand-built from the Melargil brand tokens (`brand_tokens.dart`) — the single source of truth for every brand hex; plus the bundled brand fonts under `../fonts/` (see Theming below)                                                                                                                                                                                                                                                      |
 | `lib/l10n/`                 | i18n scaffold — `arb/app_{en,pt}.arb` source strings (`flutter gen-l10n`); generated `gen/` output is committed (matches `services/shared`'s committed `sqlc` output — no codegen step needed to build/test)                                                                                                                                                                                                                                                                                   |
 | `lib/core/config/`          | Compile-time config (`--dart-define`) — gateway/OIDC/PowerSync URLs (see the table above)                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `lib/core/auth/`            | Provider-agnostic OIDC Authorization Code + PKCE flow via `openid_client` (discovery-driven; web redirect behind a conditional import so widget tests compile on the VM)                                                                                                                                                                                                                                                                                                                       |
@@ -118,9 +118,22 @@ the active locale, ready for the first field that needs it — see its tests
   straightforward provider overrides in widget tests (see `test/widget_test.dart`).
 - **Routing: [go_router](https://pub.dev/packages/go_router)**, the Flutter-team-maintained
   router — declarative routes, deep-linkable on web, named navigation.
-- **Theming:** Material 3, a single seed color (`ColorScheme.fromSeed`), light + dark.
-  Default `VisualDensity` (not compact) for gloves-friendly, large-tap-target field UX
-  (`FR-UX`/`FR-AX`, WCAG 2.2 AA) — depth is EPIC-11's, this only establishes the approach.
+- **Theming:** Material 3, light + dark, **hand-built from the Melargil brand tokens** — the
+  depth EPIC-11 (`#243`, `FR-UX-1`/`FR-AX-1`/`D-18`) adds on top of `#21`'s original single-seed
+  approach. `lib/theming/brand_tokens.dart` names the prototype palette
+  (`docs/design/prototype.md` §Design tokens — plum/honey/gold/cream/ink/…) and is the **only**
+  place brand hexes live; `lib/theming/app_theme.dart` maps those tokens onto the `ColorScheme`
+  (honey `#F0A81F` is the single primary — the "one honey primary action" shared by
+  `PrimaryActionButton`/`FilledButton` and the shell FAB — with a dark on-primary because
+  white-on-honey fails AA). Every `on*` role is chosen for WCAG 2.2 AA and enforced in
+  `test/theming/app_theme_contrast_test.dart`. Default `VisualDensity` (not compact) for
+  gloves-friendly, large-tap-target field UX.
+  - **Typography is bundled as assets** (offline-first — no `google_fonts`, no runtime/CDN
+    fetching): static per-weight **Archivo** (400/500/600/700, the app-wide default for UI/body)
+    and **Playfair Display** (600/700, for display/screen titles + brand) TTFs live under
+    [`fonts/`](fonts/) with each family's `OFL.txt`, declared under `flutter: fonts:` in
+    `pubspec.yaml`. This also fixes the shell header's old dangling `fontFamily: 'Playfair
+Display'` that had no bundled font and fell back to Roboto.
 - **i18n: Flutter `intl`** (`flutter gen-l10n`), EN default + a real (not lorem-ipsum) PT
   translation, per `NFR-I18N`.
 - **Backend through the gateway (`#23`):** the `#21` provider-reachability placeholder is
