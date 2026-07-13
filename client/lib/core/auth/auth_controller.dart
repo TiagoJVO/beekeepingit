@@ -132,7 +132,12 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     final flow = Flow.authorizationCodeWithPKCE(
       _client(issuer),
       codeVerifier: verifier,
-      scopes: const ['openid', 'profile', 'email'],
+      // `offline_access` is required for the provider to issue a refresh token;
+      // build() restores a session on (re)load only from a persisted refresh
+      // token, so without it a full page reload logs the user out (auth.md §7,
+      // #236). The Authentik blueprint already maps offline_access + the
+      // refresh_token grant, so requesting it here is all that's needed.
+      scopes: const ['openid', 'profile', 'email', 'offline_access'],
     )..redirectUri = Uri.parse(platform.redirectUri);
 
     platform.writeSession(_kVerifier, verifier);
@@ -285,7 +290,11 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       _client(issuer),
       state: expectedState,
       codeVerifier: verifier,
-      scopes: const ['openid', 'profile', 'email'],
+      // Must match login()'s requested scopes — including `offline_access` — so
+      // the reconstructed flow completes the same exchange and the provider
+      // returns a refresh token to persist for session restore (auth.md §7,
+      // #236).
+      scopes: const ['openid', 'profile', 'email', 'offline_access'],
     )..redirectUri = Uri.parse(platform.redirectUri);
 
     // Flow.callback throws ArgumentError('State does not match') on a CSRF

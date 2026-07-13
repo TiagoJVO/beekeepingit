@@ -228,11 +228,11 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await context.setOffline(false);
 
   // Return to the list first (shell Back is labeled "Back"), then nudge sync
-  // from there. NOT a page reload: a full reload currently logs the session out
-  // because the client requests ['openid','profile','email'] WITHOUT
-  // 'offline_access', so no refresh token is persisted to restore from (see #236
-  // and the reload test.fixme below). In-app navigation keeps the in-memory
-  // session.
+  // from there. In-app navigation (History API), NOT a page reload: this keeps
+  // the same in-memory session and PowerSync connection, so the assertions below
+  // isolate reconnect-sync from session restore. Reload-based session
+  // persistence is exercised on its own by the dedicated reload test below
+  // (#236) — no need to couple the two here.
   await page.getByRole("button", { name: "Back" }).click();
   await enableSemantics(page);
 
@@ -299,16 +299,15 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   }
 });
 
-// A page reload should keep the user logged in (auth.md §7: "app open, online
-// → silently refresh the access token") and the local state should converge on
-// reload — but today a full reload logs out, because the client never requests
-// the `offline_access` scope so no refresh token is persisted to restore from
-// (auth_controller.dart login()/_refresh() request ['openid','profile','email']
-// only; the Authentik provider blueprint already maps offline_access + the
-// refresh_token grant, so the fix is client-side). Tracked in #236. Kept as a
-// documented, skipped guard so the reload-persistence AC isn't silently dropped:
-// unskip once #236 lands. Real bug, NOT an e2e-harness issue.
-test.fixme("reload keeps the session and converges (blocked by #236: client omits offline_access → no refresh token persisted)", async ({
+// A page reload keeps the user logged in (auth.md §7: "app open, online →
+// silently refresh the access token") and the local state converges on reload.
+// This works because the client requests the `offline_access` scope
+// (auth_controller.dart login()/_exchangeCallback()), so the provider issues a
+// refresh token that build() persists and restores from after the reload's full
+// page load. Fixed in #236 (previously a full reload logged the session out
+// because that scope was omitted). This is the guard for the reload-persistence
+// AC — it must stay green.
+test("reload keeps the session and converges (#236: offline_access → refresh token persisted)", async ({
   page,
 }) => {
   await login(page);

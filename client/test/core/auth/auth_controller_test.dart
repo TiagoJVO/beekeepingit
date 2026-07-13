@@ -28,7 +28,10 @@ Issuer fakeIssuer() => Issuer(
     'end_session_endpoint': _endSessionUrl,
     // Flow only forwards scopes advertised as supported (openid_client filters
     // against this), so the authorize URL carries them only if listed here.
-    'scopes_supported': ['openid', 'profile', 'email'],
+    // `offline_access` is advertised so the controller's request for it (#236)
+    // survives that filter — mirrors the Authentik provider blueprint, which
+    // maps offline_access + the refresh_token grant.
+    'scopes_supported': ['openid', 'profile', 'email', 'offline_access'],
     'response_types_supported': ['code'],
     'subject_types_supported': ['public'],
     'id_token_signing_alg_values_supported': ['RS256'],
@@ -201,7 +204,19 @@ void main() {
         expect(uri.queryParameters['code_challenge_method'], 'S256');
         expect(uri.queryParameters['code_challenge'], isNotEmpty);
         expect(uri.queryParameters['state'], isNotEmpty);
-        expect(uri.queryParameters['scope'], contains('openid'));
+        final requestedScopes = (uri.queryParameters['scope'] ?? '').split(' ');
+        expect(requestedScopes, contains('openid'));
+        // #236: `offline_access` MUST be requested so the provider issues a
+        // refresh token — build() restores a session on reload only from a
+        // persisted refresh token, so omitting this logs the user out on a full
+        // page reload (auth.md §7). Guards against a silent regression.
+        expect(
+          requestedScopes,
+          contains('offline_access'),
+          reason:
+              'offline_access must be requested so a refresh token is issued '
+              'for session restore on reload (#236, auth.md §7)',
+        );
 
         // The verifier/state are persisted so the callback can validate them.
         expect(platform.readSession('bk.pkce_verifier'), isNotEmpty);

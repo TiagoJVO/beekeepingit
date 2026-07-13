@@ -14,6 +14,13 @@ name: Helm E2E
 # k3d cluster in a separate workflow) — cheaper and keeps one source of truth for "how
 # the slice comes up in CI".
 #
+# The PWA image the chart deploys is built IN-JOB from the checked-out commit and
+# imported into the k3d cluster — NOT pulled as the chart's default `client:latest`,
+# which build-publish.yml only publishes on push to main and therefore always lags the
+# commit under test (#236: the reload-persistence fix was invisible to this e2e —
+# the spec came from the PR, the app bundle from main — and even a main push races
+# build-publish's concurrent image build, landing one image behind).
+#
 # Like helm-ci.yml, this is designed to be a REQUIRED status check on `main`, so the job
 # runs on EVERY PR/push (no path filter on the trigger) — otherwise a PR that doesn't
 # touch infra/** would never start the job, its required "Expected" status would never
@@ -37,8 +44,9 @@ jobs:
     runs-on: ubuntu-latest
     # Authentik + its own bundled Postgres is heavier to boot than the previous IdP
     # (bootstrap migrations + blueprint apply), so the whole job gets more room
-    # (ADR-0016, oidc-integration.md §8).
-    timeout-minutes: 30
+    # (ADR-0016, oidc-integration.md §8). The in-job Flutter web build + image
+    # import (#236) adds a few more minutes on top of the cluster bring-up.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -70,10 +78,34 @@ jobs:
               - 'client/e2e/**'
 
       # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
-      # local dev (infra/cluster/*.sh) and the rest of CI use.
+      # local dev (infra/cluster/*.sh) and the rest of CI use. (mise installs
+      # everything mise.toml pins, so Flutter for the PWA build below comes from
+      # here too — no separate SDK setup.)
       - name: Set up toolchains from mise.toml
         if: steps.changes.outputs.e2e == 'true'
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      # Build the PWA image from THIS checkout (#236). The pwa subchart defaults
+      # to `client:latest`, which build-publish.yml only publishes on push to
+      # main — installing the chart as-is would run the e2e against MAIN's client
+      # bundle, so a PR's client change would be invisible to the very test meant
+      # to exercise it. Same artifact steps as build-publish.yml's client build
+      # (which also lint/tests it — this job only needs the deployable); the
+      # define-less build targets the dev hostnames via AppConfig defaults,
+      # exactly like the published image. Runs BEFORE the cluster bring-up so a
+      # broken client build fails fast without paying for the cluster.
+      - name: Build the PWA image from the checkout
+        id: pwa_image
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "repository=ghcr.io/${owner}/beekeepingit/client" >> "$GITHUB_OUTPUT"
+          echo "tag=e2e-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          ( cd client \
+            && flutter pub get \
+            && dart run powersync:setup_web \
+            && flutter build web --release --no-web-resources-cdn )
+          docker build -t "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" client
 
       # Create the k3d cluster and install the CNPG operator by running the exact
       # script developers run locally, so CI validates the real bring-up path
@@ -82,6 +114,17 @@ jobs:
       - name: Bring up the cluster (k3d + CNPG operator)
         if: steps.changes.outputs.e2e == 'true'
         run: infra/cluster/up.sh
+
+      # Make the just-built image visible to the cluster's containerd: it was
+      # never pushed to a registry (PR builds don't publish), so the kubelet
+      # couldn't pull it. The pwa chart's pullPolicy is IfNotPresent and the tag
+      # is unique per commit, so the imported copy is used as-is. Cluster name
+      # is pinned in infra/cluster/k3d-config.yaml.
+      - name: Import the PWA image into the cluster
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          PWA_IMAGE: ${{ steps.pwa_image.outputs.repository }}:${{ steps.pwa_image.outputs.tag }}
+        run: k3d image import "$PWA_IMAGE" -c beekeeping
 
       # Install the packaged subchart snapshots under charts/*.tgz (see the chart's
       # README) — the umbrella's deps are all local file:// / vendored, so no chart
@@ -97,11 +140,18 @@ jobs:
       # which blocks (retrying) until Postgres is serving and the grants land — so by
       # the time this returns, Postgres is already up. A generous --timeout covers the
       # first CNPG/PostGIS image pull on a cold runner.
+      # `--set pwa.image.*` points the pwa subchart at the image built from this
+      # checkout and imported above (#236) instead of the chart's `latest` default.
       - name: Install the umbrella release
         if: steps.changes.outputs.e2e == 'true'
+        env:
+          PWA_IMAGE_REPOSITORY: ${{ steps.pwa_image.outputs.repository }}
+          PWA_IMAGE_TAG: ${{ steps.pwa_image.outputs.tag }}
         run: |
           helm upgrade --install beekeepingit infra/helm/beekeepingit \
             -f infra/helm/beekeepingit/environments/dev.yaml \
+            --set "pwa.image.repository=${PWA_IMAGE_REPOSITORY}" \
+            --set "pwa.image.tag=${PWA_IMAGE_TAG}" \
             --namespace beekeepingit-dev --create-namespace \
             --timeout 15m
 
@@ -290,6 +340,16 @@ jobs:
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server --tail=120 --prefix || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker --tail=200 --prefix || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/part-of=beekeepingit --tail=50 --prefix || true
+          # PowerSync's own stdout is the only place a rejected/failing client
+          # sync-stream connection is named: the browser side of that connection
+          # runs inside a SharedWorker, invisible to Playwright's page-level
+          # trace (all the trace shows is the SDK's ~5s fetchCredentials retry
+          # loop — learned diagnosing #236's follow-up e2e failure, where the
+          # part-of dump above also happened to miss this pod's logs). Dump it,
+          # the sync service, and the gateway explicitly.
+          kubectl -n beekeepingit-dev logs deploy/beekeepingit-powersync --tail=300 || true
+          kubectl -n beekeepingit-dev logs deploy/sync --tail=150 || true
+          kubectl -n kube-system logs deploy/traefik --tail=150 || true
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
           for d in identity organizations apiaries sync pwa beekeepingit-powersync; do
