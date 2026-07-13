@@ -68,6 +68,40 @@ async function enableSemantics(page: Page) {
     .catch(() => {});
 }
 
+// Navigate to the app root, tolerating a cold stack. On a freshly-booted k3d
+// cluster the gateway/PWA route can transiently answer 502/503/504 (Traefik has
+// marked the pod ready, but the route's endpoints/first-request path isn't warm
+// yet) — a plain goto() then lands on a static "Bad Gateway" error page that
+// never becomes the Flutter app, and every later selector hangs the whole test.
+// So: reload until the app actually boots (its glass pane appears), not just
+// until goto() resolves. Bounded retries with a short pause.
+async function gotoAppRoot(page: Page) {
+  const deadline = Date.now() + 120_000;
+  let lastStatus: number | null = null;
+  for (;;) {
+    const resp = await page.goto("/", { waitUntil: "domcontentloaded" }).catch(() => null);
+    lastStatus = resp?.status() ?? lastStatus;
+    // A 5xx is the gateway's own error page (no Flutter host element will ever
+    // appear) — retry immediately without burning the glass-pane wait on it.
+    const serverError = resp != null && resp.status() >= 500;
+    if (!serverError) {
+      // The app booted if Flutter's host element is present. Give the SPA a
+      // beat to attach it after a real 2xx.
+      const booted = await page
+        .waitForSelector("flt-glass-pane, flutter-view", { timeout: 20_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (booted) return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `app root never booted (last HTTP status ${lastStatus ?? "unknown"}) — gateway/PWA not ready`,
+      );
+    }
+    await page.waitForTimeout(3_000);
+  }
+}
+
 // Provider-agnostic IdP login. The app only redirects to the discovered OIDC
 // provider, so this test must not depend on any one provider's page markup
 // (fixed element ids like `#username`/`#kc-login`, etc.). Locate fields by
@@ -82,9 +116,10 @@ async function fillIfPresent(
   page: Page,
   locator: ReturnType<Page["getByLabel"]>,
   value: string,
+  timeout = 30_000,
 ): Promise<boolean> {
   try {
-    await locator.first().waitFor({ state: "visible", timeout: 15_000 });
+    await locator.first().waitFor({ state: "visible", timeout });
   } catch {
     return false;
   }
@@ -93,10 +128,22 @@ async function fillIfPresent(
 }
 
 async function login(page: Page) {
-  await page.goto("/");
+  await gotoAppRoot(page);
   await enableSemantics(page);
-  await page.getByRole("button", { name: /sign in/i }).click();
+  // Wait for the app's own Sign in button to be present AND enabled before
+  // clicking — on a cold stack the login screen can paint a beat after the
+  // glass pane appears. Explicit wait (not just the default click auto-wait)
+  // with a generous timeout so a slow first render doesn't burn the whole
+  // test budget on a hung click.
+  const appSignIn = page.getByRole("button", { name: /sign in/i });
+  await appSignIn.waitFor({ state: "visible", timeout: 60_000 });
+  await appSignIn.click();
 
+  // The app redirects to Authentik; its login form (lit web components) also
+  // needs a beat to render on a cold stack. Wait for the identifier field to
+  // be visible before interacting, so we don't click through a half-rendered
+  // page. fillIfPresent already tolerates absence, but this makes the wait
+  // explicit and generous for the OIDC redirect + Authentik first paint.
   // ── Step 1: identifier (username/email) ───────────────────────────────
   await fillIfPresent(page, page.getByLabel(/username|email/i), TEST_USER);
 
@@ -117,10 +164,12 @@ async function login(page: Page) {
   await fillIfPresent(page, password, TEST_PASS);
   await submitButton(page).first().click();
 
-  // Back on the PWA (apiaries list).
-  await page.waitForURL(/\/apiaries/);
+  // Back on the PWA (apiaries list). The OIDC callback is a full page load that
+  // re-bootstraps Flutter + the token exchange, so allow generously for a cold
+  // stack rather than the default 30s navigation budget.
+  await page.waitForURL(/\/apiaries/, { timeout: 60_000 });
   await enableSemantics(page);
-  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible({ timeout: 30_000 });
 }
 
 test("login → create → offline edit → sync", async ({ page, context, browser }) => {
@@ -178,12 +227,39 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // ── Reconnect → the queued change syncs ───────────────────────────────
   await context.setOffline(false);
 
-  // Assert server-side: the edit reached the apiaries service. This runs a
-  // fetch inside the current page, so it works from the detail screen — no
-  // need to be on the list yet. Generous timeout: the connection-quality sync
-  // gate (#55, FR-OF-3) re-probes on an exponential backoff (2s→…, capped),
-  // so after reconnect the queued upload can wait out one backoff interval
-  // before it fires — that's by design, not a hang.
+  // Return to the list first (shell Back is labeled "Back"), then nudge sync
+  // from there. NOT a page reload: a full reload currently logs the session out
+  // because the client requests ['openid','profile','email'] WITHOUT
+  // 'offline_access', so no refresh token is persisted to restore from (see #236
+  // and the reload test.fixme below). In-app navigation keeps the in-memory
+  // session.
+  await page.getByRole("button", { name: "Back" }).click();
+  await enableSemantics(page);
+
+  // Nudge the sync via the app's "Sync now" override before asserting. This is
+  // the intended user action for exactly this situation, not a test cheat: the
+  // connection-quality gate (#55, FR-OF-3) re-probes on an exponential backoff
+  // and — confirmed via trace — does NOT re-probe promptly on connectivity-
+  // return (no online-event listener interrupts the pending backoff; rearm() is
+  // a no-op while it's mid-wait), so a queued write can sit unflushed for up to
+  // the ~2-min max backoff. The app ships a manual "Sync now" (SyncGate.
+  // requestSync, which bypasses the gate) precisely for "reconnected but the
+  // gate hasn't re-probed yet". Exercising it makes the reconnect-sync assertion
+  // deterministic instead of racing the backoff. (Follow-up flagged for the
+  // gate's slow re-probe-on-reconnect — a real FR-OF-3 responsiveness gap, not
+  // just CI slowness; see the PR notes. Once the gate re-probes on reconnect,
+  // this nudge can be dropped.) Sync now lives on the Account screen (#197/#172
+  // IA); open it from the list's shell header account button, then return to the
+  // list with a single in-app Back (History API — keeps the session).
+  await page.getByRole("button", { name: "Account settings" }).click();
+  await enableSemantics(page);
+  await page.getByRole("button", { name: "Sync now" }).click();
+  await page.goBack();
+  await enableSemantics(page);
+
+  // Assert server-side: the edit reached the apiaries service. Runs a fetch
+  // inside the page; works from any screen. Generous in case the flush takes a
+  // moment to land server-side after the nudge.
   await expect
     .poll(async () => serverHiveCount(page, capturedToken, apiaryName), { timeout: 60_000 })
     .toBe(12);
@@ -193,21 +269,9 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // confirmed.
   createdApiaryId = await serverApiaryId(page, capturedToken, apiaryName);
 
-  // ── Back to the list → local state converged (#23 AC) ─────────────────
-  // Return via the shell's in-app Back button, NOT a page reload / full
-  // navigation. A full reload currently logs the session out: the app only
-  // restores a session from a persisted OIDC refresh token (auth_controller
-  // build()), but the client requests scopes ['openid','profile','email']
-  // WITHOUT 'offline_access', so Authentik (whose provider IS configured for
-  // refresh_token + offline_access) never issues one — nothing is persisted,
-  // and any full load redirects to /login. That's a real, separate
-  // walking-skeleton auth bug (see the test.fixme below and the PR notes),
-  // independent of #162's e2e wiring. In-app navigation keeps the in-memory
-  // session, so this still validates that the list row read from local SQLite
-  // converged to the synced value.
-  await enableSemantics(page);
-  await page.getByRole("button", { name: "Back" }).click();
-  await enableSemantics(page);
+  // ── Local state converged on the list (#23 AC) ────────────────────────
+  // Back on the list (from the goBack above), the row read from local SQLite
+  // shows the synced value.
   await expect(apiaryRow(page, apiaryName)).toContainText("12 hives");
 
   // ── A second, fresh client converges via download sync ────────────────
@@ -241,10 +305,10 @@ test("login → create → offline edit → sync", async ({ page, context, brows
 // the `offline_access` scope so no refresh token is persisted to restore from
 // (auth_controller.dart login()/_refresh() request ['openid','profile','email']
 // only; the Authentik provider blueprint already maps offline_access + the
-// refresh_token grant, so the fix is client-side). Kept as a documented,
-// skipped guard so the reload-persistence AC isn't silently dropped: unskip
-// once the scope is added. Real bug, NOT an e2e-harness issue.
-test.fixme("reload keeps the session and converges (blocked: client omits offline_access → no refresh token persisted)", async ({
+// refresh_token grant, so the fix is client-side). Tracked in #236. Kept as a
+// documented, skipped guard so the reload-persistence AC isn't silently dropped:
+// unskip once #236 lands. Real bug, NOT an e2e-harness issue.
+test.fixme("reload keeps the session and converges (blocked by #236: client omits offline_access → no refresh token persisted)", async ({
   page,
 }) => {
   await login(page);
@@ -266,10 +330,11 @@ test.fixme("reload keeps the session and converges (blocked: client omits offlin
 // side logout (local state cleared, #125) happens; the round trip just doesn't
 // come back on its own. Fix is on the Authentik/logout-flow side (e.g. the
 // provider needs to honor the post_logout_redirect_uri without the interstitial,
-// or the flow must be configured to skip it). auth_controller_test.dart already
-// covers the client end-session request shape at the unit level; this e2e is the
-// only place the live round trip is exercised, so it stays here as the guard.
-test.fixme("logout revokes the session — a reload does not silently re-authenticate (#24) [blocked: Authentik shows a logout-confirmation interstitial instead of redirecting back to the app]", async ({
+// or the flow must be configured to skip it). Tracked in #237.
+// auth_controller_test.dart already covers the client end-session request shape
+// at the unit level; this e2e is the only place the live round trip is
+// exercised, so it stays here as the guard — unskip once #237 lands.
+test.fixme("logout revokes the session — a reload does not silently re-authenticate (#24) [blocked by #237: Authentik shows a logout-confirmation interstitial instead of redirecting back to the app]", async ({
   page,
 }) => {
   // The most faithful check of the real OIDC end-session round trip

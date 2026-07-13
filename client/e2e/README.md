@@ -24,18 +24,38 @@ Two assertions the e2e correctly caught are marked `test.fixme` (skipped, not
 loosened) with the diagnosis inline, so the job stays green while the bugs are
 tracked. Unskip each when its bug is fixed:
 
-- **Full-page reload logs the session out.** The app restores a session only from
-  a persisted OIDC **refresh token**, but the client requests
+- **Full-page reload logs the session out** (#236). The app restores a session
+  only from a persisted OIDC **refresh token**, but the client requests
   `['openid','profile','email']` **without `offline_access`**, so Authentik never
   issues one (its provider blueprint already maps `offline_access` + the
   `refresh_token` grant — the fix is client-side, in
   `client/lib/core/auth/auth_controller.dart`). The live convergence check instead
   navigates back in-app (session preserved); the fresh-client download-sync check
   is the real convergence guarantee.
-- **RP-initiated logout doesn't return to the app.** After Sign out, Authentik
-  shows its own "You've logged out" confirmation interstitial instead of
-  redirecting to the app's `post_logout_redirect_uri`, so the browser never gets
-  back to `/login`. Fix is on the Authentik/logout-flow side.
+- **RP-initiated logout doesn't return to the app** (#237). After Sign out,
+  Authentik shows its own "You've logged out" confirmation interstitial instead
+  of redirecting to the app's `post_logout_redirect_uri`, so the browser never
+  gets back to `/login`. Fix is on the Authentik/logout-flow side.
+
+## Cold-stack robustness
+
+The e2e runs against a k3d stack the CI job brings up fresh each run, so the spec
+hardens its first interactions against a not-yet-warm gateway rather than assuming
+instant readiness:
+
+- **`gotoAppRoot`** reloads until the Flutter app actually boots — a freshly-ready
+  gateway can answer `502 Bad Gateway` for a short window, and a plain `goto()` then
+  lands on a static error page that never becomes the app. The workflow also warms
+  the gateway (polls the PWA + OIDC discovery) before starting the browser.
+- The login helper waits for the app's Sign in button to be visible before clicking,
+  and gives the OIDC callback a generous navigation budget.
+- The reconnect-sync step taps the app's **Sync now** override after reconnect: the
+  connection-quality gate (#55) doesn't re-probe promptly on connectivity-return
+  (it waits out its exponential backoff — up to ~2 min — with no online-event
+  interrupt), so a queued write can sit unflushed. That's a real FR-OF-3
+  responsiveness gap (see the code comment by the nudge and the PR notes), not just
+  CI slowness; the nudge is the intended user action and can be dropped once the
+  gate re-probes on reconnect.
 
 ## Run
 

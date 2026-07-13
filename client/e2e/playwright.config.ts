@@ -20,10 +20,12 @@ const hostMap =
 export default defineConfig({
   testDir: "./tests",
   // The create→offline-edit→sync test does two full OIDC logins (the main flow
-  // + a fresh-client convergence check), an offline edit, and waits out the
-  // connection-quality sync gate's backoff after reconnect (#55) — under CI
-  // load that adds up, so give it more than the old 120s budget.
-  timeout: 180_000,
+  // + a fresh-client convergence check), each of which may retry a cold-stack
+  // "Bad Gateway" (gotoAppRoot) or wait out a slow Authentik first paint, plus
+  // an offline edit, a "Sync now" nudge, and a fresh-client download — under CI
+  // load against a freshly-booted stack that adds up. 240s gives the explicit
+  // per-step waits room to resolve without the whole test timing out mid-step.
+  timeout: 240_000,
   expect: { timeout: 30_000 },
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
@@ -32,6 +34,10 @@ export default defineConfig({
     baseURL,
     // Dev cluster uses a self-signed cert.
     ignoreHTTPSErrors: true,
+    // The OIDC callback + Flutter re-bootstrap is a full page load that can be
+    // slow on a cold stack; the default 30s navigation budget is tight, so
+    // raise it for waitForURL/goto across the suite.
+    navigationTimeout: 60_000,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     launchOptions: {

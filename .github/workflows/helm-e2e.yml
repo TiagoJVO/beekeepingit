@@ -213,6 +213,37 @@ jobs:
         working-directory: client/e2e
         run: npm run install-browsers
 
+      # Warm the gateway before the browser test. The domain-service readiness gate
+      # above asserts the pods are Available, but Traefik's route to the PWA can still
+      # answer 502 Bad Gateway for a short window after that (endpoints/first-request
+      # not warm) — and the e2e's first navigation landing on a static 502 page was a
+      # real flake (the spec now also retries, but warming here removes the window
+      # entirely). Poll the app origin (PWA) AND the auth host's OIDC discovery — both
+      # are on the k3d 8443 host port — until each answers, resolving the dev hostnames
+      # to loopback with --resolve (the browser uses --host-resolver-rules; curl needs
+      # this). Accept any HTTP response (even a redirect/401) as "warm" — a 5xx/000
+      # (connection refused) is not.
+      - name: Wait for the gateway to serve the PWA + OIDC discovery
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          warm() {
+            local name="$1" host="$2" path="$3"
+            for _ in $(seq 1 60); do
+              code=$(curl -sk -o /dev/null -w '%{http_code}' \
+                --resolve "$host:8443:127.0.0.1" "https://$host:8443$path" || echo 000)
+              if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then
+                echo "$name warm (HTTP $code)"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::$name never warmed (last HTTP $code)"
+            return 1
+          }
+          warm "PWA" app.beekeepingit.local /
+          warm "OIDC discovery" auth.beekeepingit.local \
+            /application/o/beekeepingit/.well-known/openid-configuration
+
       # Runs the walking-skeleton spec (#23 §7.3, NFR-TST-1, #162) against the gateway
       # this job just brought up, over the same host:8443 -> in-cluster:443 k3d port
       # mapping local dev uses (k3d-config.yaml) — no port-forward needed. Defaults in
