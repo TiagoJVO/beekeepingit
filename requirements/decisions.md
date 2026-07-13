@@ -281,6 +281,42 @@ Core technology decisions (2026-06-27). Detail and rationale in
   domains land.
 - **Supersedes:** Q-SEARCH. Touches FR-AP-6, #36.
 
+## D-19 — PT/EU beekeeping & honey-traceability obligations scoped; HIPAA dropped
+
+- **Decision:** **HIPAA does not apply** — it is US human-healthcare law with no
+  extraterritorial reach here, and separately, bee/apiary health records are not GDPR Art. 9
+  "special category" data (Art. 9 health data is limited to natural persons). Remove HIPAA
+  from NFR-CMP-1. **GDPR applies** (already affirmed) with ordinary (non-special-category)
+  handling for treatment/health-of-bees records.
+
+  To be explicit: GDPR fully applies to the app's personal data — user profiles,
+  organization/membership data (sole traders are natural persons), free-text notes,
+  apiary coordinates linkable to an individual, and audit logs. The only things decided
+  here are that bee-health records are not special-category data and that HIPAA is
+  irrelevant. Export and erasure must cover all five personal-data surfaces (see
+  "What IS personal data in BeekeepingIT" in the research note's Finding A).
+
+  The concrete **Portuguese/EU beekeeping and honey-traceability obligations** are enumerated
+  in [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
+  (#91). None block current M0-M2 scope; the following are accepted as **future-relevant data
+  points**, to be triaged into concrete FR/NFR changes when the owning feature epic
+  (apiaries/activities/import-export) is planned:
+  - Beekeeper/apiary DGAV registration number (optional field).
+  - Annual stock-declaration record (Sept 1-30 window + 20%/20-colony interim trigger),
+    distinct from the live hive count (FR-AP-7/D-2).
+  - Optional structured disease/condition field on Treatment activities (FR-AC-1), informed
+    by DGAV's mandatory-notification disease list (DDO).
+  - A retention-policy note reconciling GDPR erasure (FR-HIS-1) with the ~5-year veterinary
+    treatment record-keeping expectation (Reg (EU) 2019/6).
+  - Optional lot/batch identifier on Honey harvest activities (FR-AC-1), for future
+    traceability/export features (Reg (EC) 178/2002 Art. 18, Reg (EU) 931/2011, Dir
+    2011/91/EU, Dir 2001/110/EC as amended by Dir (EU) 2024/1438).
+
+- **Supersedes:** Q-CMP, Q-REG. Touches NFR-CMP-1, Context C-2, #91.
+- **Not decided here (deferred to feature epics):** whether/when to actually implement any of
+  the five future-relevant data points above. This decision **scopes the obligations**, it
+  does not commit to schema changes.
+
 ---
 
 ## Open Spikes

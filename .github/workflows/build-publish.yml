@@ -125,7 +125,11 @@ jobs:
           elif [ -f "$COMPONENT_PATH/pubspec.yaml" ]; then
             # `powersync:setup_web` downloads the wasm SQLite + sync workers into
             # web/ (gitignored) — required before the web build (#23).
-            ( cd "$COMPONENT_PATH" && flutter pub get && dart run powersync:setup_web \
+            # `task dart:l10n-check` (#78 AC): regenerate lib/l10n/gen and fail
+            # on malformed ARB, an EN/PT key mismatch, or stale committed
+            # codegen output — before spending time on analyze/test/build.
+            ( task dart:l10n-check \
+              && cd "$COMPONENT_PATH" && flutter pub get && dart run powersync:setup_web \
               && flutter analyze && flutter test \
               && flutter build web --release --no-web-resources-cdn )
           else

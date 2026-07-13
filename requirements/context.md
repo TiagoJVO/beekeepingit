@@ -29,7 +29,8 @@ At this stage the app is used **only in Portugal**.
 - Internationalization is still required (see NFR-I18N), but Portugal is the only
   in-scope locale/regulatory regime for now.
 
-> **Open question:** the specific Portuguese/EU regulations the app must satisfy
-> (e.g., apiary registration with DGAV, hive identification, treatment logging,
-> traceability for honey as a food product) are not yet enumerated. See
-> `open-questions.md` (Q-REG).
+> **Resolved (D-19):** the specific Portuguese/EU regulations are enumerated in
+> [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
+> (#91) — apiary registration (DGAV), stock declarations, mandatory-notification bee diseases,
+> and honey/food traceability. None block current scope; see the note for future-relevant
+> data-model flags.
