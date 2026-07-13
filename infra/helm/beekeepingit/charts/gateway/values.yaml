@@ -23,9 +23,7 @@ routes:
   - { path: /v1/organizations, service: organizations, port: 8080 }
   - { path: /v1/profile, service: identity, port: 8080 }
   - { path: /v1/sync, service: sync, port: 8080 }
-  # 8080, not 80: the pwa container runs as non-root (client/Dockerfile,
-  # EPIC-14 #89) — only root can bind a port <1024.
-  - { path: /, service: pwa, port: 8080 }
+  - { path: /, service: pwa, port: 80 }
 
 # Auth-host catch-all → the Authentik server Service (its own Flux HelmRelease
 # "authentik", ADR-0012/ADR-0016 → Service "authentik-server"). Authentik serves

@@ -25,29 +25,40 @@
 # yet covered here").
 KSV-0109
 
+# DS-0002 (image user should not be 'root') — client/Dockerfile (the pwa's
+# nginx image). Deferred to #235: making stock nginx run non-root reliably
+# under a read-only root filesystem in the CI k3d job proved fragile and cost
+# ~5 iterations on PR #224 (pidfile/temp-dir writes, then a liveness-probe
+# crash-loop). The substantive #89 security work — CSP headers, NetworkPolicy,
+# blocking trivy-config, securityContext on all Go services — is done and
+# valuable; this one vendored-web-image hardening item was deferred rather than
+# hold #89/M0 hostage. The Go service images (services/*/Dockerfile) already
+# run non-root, so this is scoped to the nginx web image alone. Tracked in
+# #235 (Harden pwa container) — fix and delete this entry then.
+DS-0002
+
 # KSV-0014 (root filesystem not read-only) + KSV-0118 (default security
-# context) — currently only fires on
-# infra/helm/beekeepingit/charts/powersync/templates/deployment.yaml.
-# Deferred, not accepted-forever: `journeyapps/powersync-service` is a
-# third-party image with no in-repo Dockerfile to inspect. This PR cannot run
-# a live cluster (#89's constraint) to verify its runtime user or whether it
-# writes to its own root filesystem (e.g. Node/npm caches) — setting
-# `runAsNonRoot`/`readOnlyRootFilesystem` unverified risks a silent
-# crash-loop that only a real deploy would catch. The container-level
-# hardening that IS safe regardless of the image's internals
-# (allowPrivilegeEscalation: false, capabilities drop ALL) is already applied
-# — see that file. Every OTHER Deployment in the umbrella chart
-# (pwa/services/*) already sets a full securityContext (readOnlyRootFilesystem
-# included) as of this same PR, so this ignore is not currently masking
-# anything else.
+# context) — fire on two Deployments, both DEFERRED for the same "fragile
+# vendored-image hardening" reason:
+#   - powersync (charts/powersync/templates/deployment.yaml): `journeyapps/
+#     powersync-service` is a third-party image with no in-repo Dockerfile;
+#     its runtime user / on-disk writes aren't verified against a live cluster,
+#     so runAsNonRoot/readOnlyRootFilesystem risk a silent crash-loop. The
+#     safe container-level bits (allowPrivilegeEscalation: false, drop ALL
+#     caps) ARE applied there.
+#   - pwa (charts/pwa/templates/deployment.yaml): the nginx web image — same
+#     defer decision as DS-0002 above (#235). Reverted to the stock-nginx
+#     config main proved green after the readOnlyRootFilesystem hardening
+#     crash-looped repeatedly in CI.
+# The Go domain services (charts/services/*) DO set a full securityContext
+# (readOnlyRootFilesystem included), so that hardening is real and tested.
 #
 # CAVEAT (trivy's .trivyignore has no per-resource scoping for misconfig
-# checks — a bare check ID is ignored repo-wide): until this entry is
-# resolved, a FUTURE Deployment added without its own securityContext would
-# also be silently ignored by these two IDs rather than caught by CI. Kept
-# narrow at review time by convention (new charts should copy the
-# pwa/services pattern), tracked to close on issue #89 — validate
-# PowerSync's image against a live rollout, apply the two settings there, and
-# delete this whole entry (restoring full KSV-0014/KSV-0118 coverage).
+# checks — a bare check ID is ignored repo-wide): until these are resolved, a
+# FUTURE Deployment added without its own securityContext would also be
+# silently ignored by these two IDs rather than caught by CI. Kept narrow at
+# review time by convention (new charts copy the services pattern); tracked to
+# close on #235 (pwa) and #89 (powersync) — fix both, then delete this entry
+# to restore full KSV-0014/KSV-0118 coverage.
 KSV-0014
 KSV-0118

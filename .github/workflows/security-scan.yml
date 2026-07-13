@@ -9,12 +9,12 @@
 #   trivy-config — IaC/misconfig scan (Helm, k8s, Actions, Dockerfiles) → BLOCKING (HIGH,CRITICAL)
 #
 # trivy-config was report-only until #89 triaged the pre-existing Helm/k8s baseline (20 HIGH
-# findings): fixed the cheap ones (non-root client image, securityContext on every Deployment
-# this umbrella controls), and added narrowly-scoped, individually-justified entries to the repo
-# root .trivyignore for the two that aren't (the Authentik dev-seed blueprint password — a
-# throwaway credential for an ephemeral dev/CI cluster; PowerSync's readOnlyRootFilesystem/
-# runAsNonRoot — deferred, unverified against the third-party image without a live cluster).
-# Every ignore entry is dated/justified in .trivyignore itself, per NFR-SEC-1.
+# findings): fixed most (securityContext on every Go domain service, drop-caps on powersync),
+# and added narrowly-scoped, individually-justified entries to the repo-root .trivyignore for the
+# deferred ones (the Authentik dev-seed blueprint password — a throwaway dev/CI credential; and
+# the readOnlyRootFilesystem/non-root hardening of the two vendored web/sync images, powersync
+# and the pwa's nginx, deferred to #89/#235 after they proved fragile to verify without a live
+# cluster). Every ignore entry is dated/justified in .trivyignore itself, per NFR-SEC-1.
 name: security-scan
 
 on:
