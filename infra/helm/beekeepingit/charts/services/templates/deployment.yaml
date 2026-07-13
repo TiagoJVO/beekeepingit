@@ -28,8 +28,18 @@ spec:
       # (services/<name>/Dockerfile already sets USER nonroot:nonroot) that
       # never writes to disk (no os.WriteFile/os.Create/temp-dir usage in this
       # tree) — a read-only root filesystem changes no runtime behavior.
+      #
+      # runAsUser/runAsGroup MUST be the numeric 65532: the image's own USER is
+      # the NAME `nonroot`, and with `runAsNonRoot: true` but no numeric uid,
+      # the kubelet can't verify the user is non-root and refuses to start the
+      # container (CreateContainerConfigError: "image has non-numeric user
+      # (nonroot), cannot verify user is non-root" — the #224 CI failure).
+      # 65532 is the fixed uid/gid of the `nonroot` user in
+      # gcr.io/distroless/static-debian12:nonroot (each service's Dockerfile).
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
       containers:
         - name: {{ $name }}
           securityContext:

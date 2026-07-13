@@ -5,24 +5,30 @@
 #
 #   flutter build web --dart-define=GATEWAY_BASE_URL=...   # + PowerSync web assets (see README)
 #   docker build -t <image> client
-FROM nginx:1.27-alpine
+# Non-root (EPIC-14 #89, NFR-SEC-1, trivy-config DS-0002): use nginx's OWN
+# unprivileged image rather than making stock `nginx:alpine` run non-root by
+# hand. The stock image's master starts as root (to bind :80 and drop
+# privileges per-worker) and its entrypoint scripts write into
+# /etc/nginx/conf.d and /var/cache/nginx at startup — forcing it non-root +
+# `readOnlyRootFilesystem` makes those writes fail and the container
+# crash-loops before nginx ever listens (observed on the #224 CI k3d run:
+# pwa CrashLoopBackOff, "connection refused" on :8080). `nginxinc/
+# nginx-unprivileged` is purpose-built for exactly this: it already runs as
+# uid/gid 101, listens on 8080 (not 80), writes its pidfile to /tmp, ships no
+# top-level `user` directive (which errors when the master isn't root), and
+# its entrypoint tolerates a read-only root filesystem. Same nginx, same
+# config surface — just the rootless variant.
+FROM nginxinc/nginx-unprivileged:1.27-alpine
 # Patch base-image OS packages (openssl et al.) to the latest Alpine security
-# releases so the image clears the CI Trivy HIGH/CRITICAL gate (#88).
-#
-# Non-root (EPIC-14 #89, NFR-SEC-1, trivy-config DS-0002): nginx's master
-# process normally starts as root to bind :80 and drop privileges per-worker;
-# running the whole container as a fixed non-root uid instead means binding a
-# port >1024 (8080). `nginx` (uid/gid 101) already exists in this base image
-# — reused rather than inventing a new one. It only needs READ access to the
-# static site (default COPY permissions already give every user read), so no
-# ownership change is needed there; it DOES need write access to its own
-# runtime dirs (cache/temp + pidfile) for a read-only root filesystem to
-# work, which the Deployment provides as emptyDir mounts with a matching
-# `fsGroup: 101` (charts/pwa/templates/deployment.yaml) — a volume mount
-# overrides whatever this image layer would chown anyway, so that's set
-# there, not here.
+# releases so the image clears the CI Trivy HIGH/CRITICAL gate (#88). Needs
+# root briefly for apk; the base image's own trailing `USER nginx` (uid 101)
+# is re-asserted below after the COPYs.
+USER root
 RUN apk --no-cache upgrade
+# Our server block replaces the base image's default. This image's
+# conf.d/default.conf already listens on 8080 as uid 101; ours does the same
+# (see nginx.conf) and adds the SPA fallback + security headers.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY build/web /usr/share/nginx/html
-USER nginx:nginx
+USER nginx
 EXPOSE 8080

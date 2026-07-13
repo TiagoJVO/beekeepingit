@@ -20,16 +20,15 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       # Hardened pod/container security context (EPIC-14 #89, NFR-SEC-1,
-      # trivy-config KSV-0014/KSV-0118). The image already runs as the fixed
-      # non-root `nginx` user (uid/gid 101, the nginx:alpine image's stable
-      # convention) and binds :8080 (client/Dockerfile). A read-only root
-      # filesystem needs writable paths for nginx's own runtime dirs
-      # (cache/temp + the pidfile) — mounted here as emptyDirs rather than
-      # baked into the image, since a FRESH emptyDir mount is root-owned by
-      # default regardless of what the image's own Dockerfile chowned
-      # (kubelet creates it, then bind-mounts over whatever was there).
-      # `fsGroup: 101` is what actually makes it writable to the nginx user:
-      # kubelet chowns every mounted volume's group to it on pod start.
+      # trivy-config KSV-0014/KSV-0118). The image is `nginxinc/
+      # nginx-unprivileged` (client/Dockerfile): runs as the fixed non-root
+      # `nginx` user (uid/gid 101), binds :8080, and puts its pidfile in
+      # /tmp. A read-only root filesystem needs writable paths for the two
+      # dirs nginx writes at runtime — its proxy/temp cache under
+      # /var/cache/nginx and the pidfile in /tmp — mounted here as emptyDirs.
+      # `fsGroup: 101` makes those mounts writable to the nginx user (kubelet
+      # chowns every mounted volume's group to it on pod start; a fresh
+      # emptyDir is otherwise root-owned).
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
@@ -48,8 +47,8 @@ spec:
           volumeMounts:
             - name: nginx-cache
               mountPath: /var/cache/nginx
-            - name: nginx-run
-              mountPath: /var/run
+            - name: nginx-tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet: { path: /, port: {{ .Values.port }} }
             periodSeconds: 10
@@ -61,6 +60,6 @@ spec:
       volumes:
         - name: nginx-cache
           emptyDir: {}
-        - name: nginx-run
+        - name: nginx-tmp
           emptyDir: {}
 {{- end }}
