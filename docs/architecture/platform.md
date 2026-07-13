@@ -214,12 +214,15 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
   `helm dependency build`, `helm lint`, and `helm template` (base + each environment overlay) as a
   manifest-rendering dry-run. No live cluster is involved.
 - [`helm-e2e.yml`](../../.github/workflows/helm-e2e.yml) — the live-cluster counterpart (`#154`):
-  stands up an ephemeral k3d cluster via `infra/cluster/up.sh`, installs the umbrella release, runs
-  `helm test` (the `postgres` PostGIS smoke-query hook), and tears the cluster down regardless of
-  outcome. Like `helm-ci.yml` it runs on every PR/push and checks path-relevance _inside_ the job
-  (`dorny/paths-filter`) rather than on the trigger — so it can be a required check while still
-  skipping the (minutes-long) live bring-up on PRs that don't touch `infra/helm/**` or
-  `infra/cluster/**`, reporting success in seconds for those.
+  stands up an ephemeral k3d cluster via `infra/cluster/up.sh`, installs the umbrella release, waits
+  for Postgres/Authentik/the domain-service Deployments, runs `helm test` (the `postgres` PostGIS
+  smoke-query hook), then the walking-skeleton Playwright e2e (`client/e2e`, NFR-TST-1, `#162`) —
+  login → create → offline edit → sync → convergence → logout — against that same cluster, and
+  tears the cluster down regardless of outcome. Like `helm-ci.yml` it runs on every PR/push and
+  checks path-relevance _inside_ the job (`dorny/paths-filter`) rather than on the trigger — so it
+  can be a required check while still skipping the (minutes-long) live bring-up on PRs that don't
+  touch `infra/helm/**`, `infra/cluster/**`, or `client/e2e/**`, reporting success in seconds for
+  those.
 - [`gitops-ci.yml`](../../.github/workflows/gitops-ci.yml) — kubeconform-validates the Flux
   manifests under `infra/gitops/**` (including the image-automation templates).
 

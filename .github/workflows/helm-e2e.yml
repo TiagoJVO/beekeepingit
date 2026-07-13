@@ -5,13 +5,23 @@ name: Helm E2E
 # — so the `postgres` subchart's PostGIS smoke-query hook (#84) is exercised in CI, not
 # only manually against a developer's local cluster.
 #
+# Also runs the walking-skeleton Playwright e2e (`client/e2e`, NFR-TST-1, #162) against
+# that same live stack — login (OIDC) → create an apiary → offline edit → sync →
+# server-side assertion → reload convergence → fresh-client download convergence →
+# logout. It was a manual pre-merge gate until now; the domain-service readiness gate
+# added below (#215) means the slice reliably comes up authenticated in CI, so the e2e
+# can finally run unattended. Deliberately reuses this job's own bring-up (not a second
+# k3d cluster in a separate workflow) — cheaper and keeps one source of truth for "how
+# the slice comes up in CI".
+#
 # Like helm-ci.yml, this is designed to be a REQUIRED status check on `main`, so the job
 # runs on EVERY PR/push (no path filter on the trigger) — otherwise a PR that doesn't
 # touch infra/** would never start the job, its required "Expected" status would never
 # report, and it would block merging forever. Path-relevance is instead checked INSIDE
 # the job (dorny/paths-filter): on an irrelevant PR every real step is skipped — not
 # absent — so the check reports success in seconds without spinning up a cluster; only a
-# PR that changes the charts/cluster scripts pays for the (minutes-long) live bring-up.
+# PR that changes the charts/cluster scripts (or the e2e test itself) pays for the
+# (minutes-long) live bring-up.
 
 on:
   pull_request:
@@ -34,6 +44,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Two outputs: `infra` (unchanged) gates the existing helm-test bring-up;
+      # `e2e` additionally covers the Playwright test itself so a change to
+      # `client/e2e/**` alone (no infra/chart edit) still exercises it. `e2e` is
+      # the superset every e2e-specific step below is actually gated on, since
+      # running the e2e needs the exact same live bring-up `infra` already gates.
+      # (Listed out flat rather than via a YAML anchor: the `filters` value is a
+      # literal block string that dorny/paths-filter re-parses on its own, and an
+      # anchor/alias in there would produce a nested list, not a flat pattern list.)
       - name: Check for relevant changes
         id: changes
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
@@ -44,11 +62,17 @@ jobs:
               - 'infra/cluster/**'
               - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
               - '.github/workflows/helm-e2e.yml'
+            e2e:
+              - 'infra/helm/**'
+              - 'infra/cluster/**'
+              - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
+              - '.github/workflows/helm-e2e.yml'
+              - 'client/e2e/**'
 
       # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
       # local dev (infra/cluster/*.sh) and the rest of CI use.
       - name: Set up toolchains from mise.toml
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
       # Create the k3d cluster and install the CNPG operator by running the exact
@@ -56,14 +80,14 @@ jobs:
       # rather than a CI-only copy that can silently drift from it. (`up.sh` takes a
       # flock lock — harmless here: an ephemeral runner is a single, isolated user.)
       - name: Bring up the cluster (k3d + CNPG operator)
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: infra/cluster/up.sh
 
       # Install the packaged subchart snapshots under charts/*.tgz (see the chart's
       # README) — the umbrella's deps are all local file:// / vendored, so no chart
       # repo network access is needed.
       - name: Fetch umbrella chart dependencies
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: helm dependency build infra/helm/beekeepingit
 
       # No --wait, matching dev-up.sh: with --wait, Helm blocks on the main resources
@@ -74,7 +98,7 @@ jobs:
       # the time this returns, Postgres is already up. A generous --timeout covers the
       # first CNPG/PostGIS image pull on a cold runner.
       - name: Install the umbrella release
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: |
           helm upgrade --install beekeepingit infra/helm/beekeepingit \
             -f infra/helm/beekeepingit/environments/dev.yaml \
@@ -84,7 +108,7 @@ jobs:
       # Explicit readiness gate (the install above already blocked on the grants hook,
       # so the pod exists by now — but assert condition=ready before testing against it).
       - name: Wait for Postgres
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: |
           kubectl -n beekeepingit-dev wait --for=condition=ready pod \
             -l cnpg.io/cluster=beekeepingit-postgres --timeout=300s
@@ -96,10 +120,10 @@ jobs:
       # HelmRelease object this direct-apply path doesn't create; the umbrella install
       # above already created the config/Postgres Secrets + blueprint ConfigMap it needs).
       - name: Set up Flux CLI
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         uses: fluxcd/flux2/action@4a15fa6a023259353ef750acf1c98fe88407d4d0 # v2.7.2
       - name: Bring up Authentik (Flux HelmRelease)
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: |
           flux install
           sed '/^  dependsOn:$/,+1d' infra/gitops/apps/dev/authentik-helmrelease.yaml \
@@ -122,7 +146,7 @@ jobs:
       # accumulated CrashLoopBackOff — otherwise the readiness gate below races pod
       # backoff timers, not real readiness.
       - name: Wait for the Authentik blueprint (OIDC discovery answers), reset backoffs
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: |
           kubectl -n beekeepingit-dev rollout status deployment/authentik-worker --timeout=600s
           # Poll discovery by exec-ing INTO the authentik-server pod and curling its own
@@ -161,7 +185,7 @@ jobs:
       # Deployment in the umbrella chart carries this label via `beekeepingit.labels`
       # (infra/helm/beekeepingit/templates/_helpers.tpl), so one selector covers all of them.
       - name: Wait for domain-service deployments
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: |
           # Backoffs were just reset by the rollout restart above, so this is a clean
           # boot: image start + probe warmup only.
@@ -172,14 +196,60 @@ jobs:
       # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
       # here too.
       - name: helm test (PostGIS smoke query + Authentik readiness)
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: helm test beekeepingit --namespace beekeepingit-dev
+
+      # Node itself already came from "Set up toolchains from mise.toml" above
+      # (mise.toml pins node = 22, the same toolchain local dev uses) — no
+      # separate actions/setup-node needed.
+      - name: Install e2e dependencies
+        if: steps.changes.outputs.e2e == 'true'
+        working-directory: client/e2e
+        run: npm ci
+
+      # Chromium only (playwright.config.ts's one project) + its OS deps.
+      - name: Install Playwright browsers
+        if: steps.changes.outputs.e2e == 'true'
+        working-directory: client/e2e
+        run: npm run install-browsers
+
+      # Runs the walking-skeleton spec (#23 §7.3, NFR-TST-1, #162) against the gateway
+      # this job just brought up, over the same host:8443 -> in-cluster:443 k3d port
+      # mapping local dev uses (k3d-config.yaml) — no port-forward needed. Defaults in
+      # playwright.config.ts already point at https://app.beekeepingit.local:8443 and
+      # map both dev hostnames to loopback via --host-resolver-rules, so no runner
+      # /etc/hosts edit either; the config also already sets ignoreHTTPSErrors /
+      # --ignore-certificate-errors for the dev gateway's self-signed cert. The seed
+      # user (test.beekeeper@beekeepingit.local) comes from the Authentik blueprint
+      # applied during bring-up above.
+      - name: Run the walking-skeleton e2e
+        if: steps.changes.outputs.e2e == 'true'
+        working-directory: client/e2e
+        run: npm test
+
+      # Playwright's own trace/screenshot/HTML report (playwright.config.ts:
+      # trace: on-first-retry, screenshot: only-on-failure) — the fastest way to
+      # debug a red run without re-running the whole live cluster locally.
+      - name: Upload Playwright report
+        if: failure() && steps.changes.outputs.e2e == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: client/e2e/playwright-report/
+          retention-days: 7
+
+      # Test-data teardown (#162 AC): the spec's own afterAll deletes the apiary it
+      # created via the apiaries API (see slice.spec.ts) so re-runs against a
+      # longer-lived environment don't accumulate rows. Belt-and-braces here too,
+      # since this job's cluster is destroyed at the end regardless (Tear down the
+      # cluster, below) — so on THIS job the afterAll is defense in depth, not the
+      # only thing keeping runs isolated; the cluster teardown is.
 
       # Make a red run debuggable without re-running locally. Gated on the filter too:
       # on an irrelevant PR the tools were never installed, so these kubectl calls would
       # error on a missing binary rather than help.
       - name: Diagnostics (on failure)
-        if: failure() && steps.changes.outputs.infra == 'true'
+        if: failure() && steps.changes.outputs.e2e == 'true'
         run: |
           kubectl get pods -A -o wide || true
           kubectl -n beekeepingit-dev describe pods || true
@@ -203,5 +273,5 @@ jobs:
       # The runner is ephemeral, but deleting the cluster explicitly keeps the job honest
       # and mirrors down.sh's cleanup.
       - name: Tear down the cluster
-        if: always() && steps.changes.outputs.infra == 'true'
+        if: always() && steps.changes.outputs.e2e == 'true'
         run: infra/cluster/down.sh

@@ -16,6 +16,18 @@ const TEST_USER = process.env.E2E_USER ?? "test.beekeeper@beekeepingit.local";
 const TEST_PASS = process.env.E2E_PASS ?? "dev-password123";
 const apiaryName = `Encosta Nova ${Date.now()}`;
 
+// Test-data teardown (#162): the create test leaves an apiary behind server-side.
+// Harmless against an ephemeral per-run cluster (CI deletes the whole namespace/
+// cluster afterwards, see helm-e2e.yml's "Tear down the cluster" step), but the
+// list would otherwise grow across runs against any longer-lived environment —
+// so delete it explicitly rather than relying on cluster ephemerality alone.
+// The main test captures the bearer token it observes and the server-assigned id
+// (both only obtainable from a real authenticated run); afterAll then deletes by
+// id via the same REST API the app uses (see the afterAll block below for why
+// that's a throwaway browser page, not Playwright's `request` fixture).
+let cleanupToken = "";
+let createdApiaryId: string | null = null;
+
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // The apiaries list row for `name`, as a Flutter semantics button. Scoped by the
 // unique name because download sync legitimately fills the list with the org's
@@ -86,7 +98,12 @@ async function login(page: Page) {
   // identifier is submitted; a single-step page already has it, so only click
   // through if the password field isn't visible yet.
   const password = page.getByLabel(/password/i);
-  if (!(await password.first().isVisible().catch(() => false))) {
+  if (
+    !(await password
+      .first()
+      .isVisible()
+      .catch(() => false))
+  ) {
     await submitButton(page).first().click();
   }
 
@@ -102,12 +119,14 @@ async function login(page: Page) {
 
 test("login → create → offline edit → sync", async ({ page, context, browser }) => {
   // Capture the OIDC access token from the app's own requests (the provider
-  // disallows direct grant, so we don't mint one out-of-band).
+  // disallows direct grant, so we don't mint one out-of-band). Also stashed at
+  // module scope so afterAll can delete the apiary this test creates (#162).
   let capturedToken = "";
   page.on("request", (req) => {
     const auth = req.headers()["authorization"];
     if (auth?.startsWith("Bearer ") && req.url().includes("/v1/")) {
       capturedToken = auth.slice("Bearer ".length);
+      cleanupToken = capturedToken;
     }
   });
 
@@ -153,6 +172,11 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await expect
     .poll(async () => serverHiveCount(page, capturedToken, apiaryName), { timeout: 30_000 })
     .toBe(12);
+
+  // Stash the server-assigned id for afterAll's cleanup (#162) — it only
+  // exists once the create has actually synced, which the poll above just
+  // confirmed.
+  createdApiaryId = await serverApiaryId(page, capturedToken, apiaryName);
 
   // ── Reload → local state converged (#23 AC) ───────────────────────────
   await page.reload();
@@ -221,3 +245,57 @@ async function serverHiveCount(page: Page, token: string, name: string): Promise
     { apiURL, token, name },
   );
 }
+
+async function serverApiaryId(page: Page, token: string, name: string): Promise<string | null> {
+  const apiURL = process.env.E2E_API_URL ?? "";
+  return page.evaluate(
+    async ({ apiURL, token, name }) => {
+      const res = await fetch(`${apiURL}/v1/apiaries`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      const found = (body.data ?? []).find((a: { name: string }) => a.name === name);
+      return found ? (found.id as string) : null;
+    },
+    { apiURL, token, name },
+  );
+}
+
+// Test-data teardown (#162): delete the apiary the create test left on the
+// server. Deliberately NOT Playwright's `request` fixture — that issues a
+// plain Node-side HTTP request, which doesn't get the browser launch's
+// `--host-resolver-rules` (playwright.config.ts's hostMap) that's the whole
+// reason the dev hostnames resolve without editing the runner's /etc/hosts.
+// A throwaway browser page does inherit it (same as serverHiveCount/
+// serverApiaryId above), so the DELETE runs the same way those GETs do.
+// Best-effort: if the create test never got far enough to populate
+// `createdApiaryId` (e.g. it failed before syncing), there's nothing to
+// clean up. Runs even if a test failed, so a red run still doesn't leak data.
+test.afterAll(async ({ browser }) => {
+  if (!createdApiaryId || !cleanupToken) return;
+  const apiURL = process.env.E2E_API_URL ?? "";
+  const id = createdApiaryId;
+  const token = cleanupToken;
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto("/");
+    const status = await page.evaluate(
+      async ({ apiURL, token, id }) => {
+        const res = await fetch(`${apiURL}/v1/apiaries/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        return res.status;
+      },
+      { apiURL, token, id },
+    );
+    if (status >= 400 && status !== 404) {
+      // Non-fatal: don't fail an otherwise-green run over cleanup.
+      console.warn(`afterAll cleanup: DELETE /v1/apiaries/${id} -> ${status}`);
+    }
+  } finally {
+    await context.close();
+  }
+});

@@ -2,10 +2,17 @@
 
 Playwright test of the M0 slice ([#23](https://github.com/TiagoJVO/beekeepingit/issues/23) §7.3):
 **log in → create an apiary → go offline → edit → reconnect → assert it synced
-server-side → reload → assert the local state converged.** It drives the
-deployed Flutter Web PWA through the gateway and asserts against the `apiaries`
-service, so it needs the **full slice deployed** (see
-[`infra/README.md`](../../infra/README.md) for the k3d bring-up).
+server-side → reload → assert the local state converged → a fresh client
+converges via download sync → log out.** It drives the deployed Flutter Web PWA
+through the gateway and asserts against the `apiaries` service, so it needs the
+**full slice deployed** (see [`infra/README.md`](../../infra/README.md) for the
+k3d bring-up).
+
+Runs in CI (`.github/workflows/helm-e2e.yml`, NFR-TST-1, `#162`) against a fresh
+k3d cluster the workflow itself brings up — no separate deployed environment
+needed. Gated on changes under `infra/**` or `client/e2e/**` (dorny/paths-filter),
+same as the rest of that job. The apiary the create step leaves behind is deleted
+in `afterAll` (`tests/slice.spec.ts`) via the same REST API the app uses.
 
 The server-side apply semantics (LWW, conflict log, idempotency, tombstones) and
 the sync coordinator are additionally covered by fast **Go integration tests**
