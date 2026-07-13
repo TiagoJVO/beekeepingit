@@ -28,18 +28,6 @@ manual "sync now" override (already in scope per #58's own AC) and will surface 
 "waiting for better signal" state once #55 lands (no rework expected — `SyncStatus` has room to
 grow additively). **Action:** none needed here beyond this note; #55 already tracks the real work.
 
-## Keycloak → Authentik migration — post-merge follow-ups
-
-The migration (contract + ADR-0016 + D-7; WS-A infra, WS-B backend, WS-C client, WS-D docs) shipped in
-**#191** (merged). Remaining coordinator follow-up (to promote to a GitHub Issue, then prune here):
-
-- **Backlog grooming** — rename **#72** (Keycloak → OIDC auth), retarget **#98** / EPIC-14 **#15**
-  auth-hardening scope to Authentik (flows/blueprints/secrets), reconcile other open Keycloak-mentioning
-  issues.
-
-(Live browser-login re-validation is already tracked as **#193**, opened separately — no longer
-duplicated here.)
-
 ## Milestone/stream regroom (D-14) — follow-ups
 
 Flat **M0–M5** re-sliced into a per-feature ladder + cross-cutting streams; the GitHub
