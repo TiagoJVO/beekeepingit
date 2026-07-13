@@ -9,37 +9,6 @@
 
 ---
 
-## Offline UX: sync status/queued changes/retry (`feat/EPIC-06-offline-sync-ux`, #58) — before-merge note
-
-#58 builds the sync-status UI (real connectivity + pending count via `PowerSyncDatabase
-.statusStream`/`getUploadQueueStats`, a non-blocking "superseded" toast, manual "sync now",
-`client/lib/shell/sync_status.dart` + `client/lib/core/sync/`) against what already exists.
-
-**Gap found, not built here (by design — flagging per the issue's own instructions):** the
-**connection-quality gate** (FR-OF-3, [sync.md](docs/architecture/sync.md) §7.1 — "connect/flush
-only when a quality probe passes, ~usable 3G, with backoff") does not exist yet anywhere in the
-client (no gateway-reachable health/probe endpoint, no Network Information API / `connectivity_plus`
-usage). sync.md §10 itself hands this mechanism to **"EPIC-06 (#55/#58)"**, and re-reading **#55**
-("Client local store + sync integration") confirms **#55, not #58, owns building the actual gate**
-(its AC explicitly includes "connect/flush only when a quality probe passes... exponential backoff
-and a manual sync now override — mechanism in sync.md §7.1") — #55 is still open, so the gate is
-simply not built yet anywhere. #58 does not attempt to build a parallel gate; it only adds the
-manual "sync now" override (already in scope per #58's own AC) and will surface the gate's
-"waiting for better signal" state once #55 lands (no rework expected — `SyncStatus` has room to
-grow additively). **Action:** none needed here beyond this note; #55 already tracks the real work.
-
-## Keycloak → Authentik migration — post-merge follow-ups
-
-The migration (contract + ADR-0016 + D-7; WS-A infra, WS-B backend, WS-C client, WS-D docs) shipped in
-**#191** (merged). Remaining coordinator follow-up (to promote to a GitHub Issue, then prune here):
-
-- **Backlog grooming** — rename **#72** (Keycloak → OIDC auth), retarget **#98** / EPIC-14 **#15**
-  auth-hardening scope to Authentik (flows/blueprints/secrets), reconcile other open Keycloak-mentioning
-  issues.
-
-(Live browser-login re-validation is already tracked as **#193**, opened separately — no longer
-duplicated here.)
-
 ## Milestone/stream regroom (D-14) — follow-ups
 
 Flat **M0–M5** re-sliced into a per-feature ladder + cross-cutting streams; the GitHub

@@ -249,4 +249,4 @@ harvest, which requires visiting all apiaries).
 - **FR-AX-1** — Design with **accessibility** in mind: screen-reader support,
   keyboard navigation, and other accessibility features so the app is usable by
   everyone, including users with disabilities.
-  - _Open question (Q-AX):_ target standard/level (e.g., WCAG 2.2 AA).
+  - _Target standard:_ **WCAG 2.2 AA** (`D-18`).

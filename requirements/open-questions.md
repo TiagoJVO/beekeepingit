@@ -76,14 +76,6 @@ where there's a sensible one.
   no longer near-term. Revisit at the native phase (model, device specs, size,
   quality) via **SP-2**.
 
-### Q-CMP / Q-REG — Compliance & Portuguese regulation
-
-- **Affects:** NFR-CMP-1, Context C-2. Confirm **GDPR** scope (data export/erasure,
-  consent for cloud AI per NFR-AI-1). **HIPAA is very likely not applicable** —
-  confirm and drop. Enumerate the actual **Portuguese/EU beekeeping & food
-  (honey) traceability** obligations (e.g., apiary registration, treatment
-  records) that may become real requirements.
-
 ### Q-DR — Backup/DR targets
 
 - **Affects:** NFR-DR-1. RPO/RTO numbers; what is backed up (server-side org data,
@@ -101,7 +93,6 @@ where there's a sensible one.
 - **Q-TEN** — Confirm the tenancy interpretation: isolation is at the
   **organization** level (resolved in FR-TEN-2), not per-user as frs line 28 reads
   literally.
-- **Q-AX** — Accessibility target standard/level (recommend **WCAG 2.2 AA**).
 - **Q-EXPORT-PII** — Export (FR-IE-1) of activities tied to users may include PII;
   confirm what's allowed under GDPR.
 - **Units & formats** — confirm metric units (kg/L) and Portuguese locale defaults

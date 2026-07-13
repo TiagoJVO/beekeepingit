@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
 import '../../core/geo/haversine.dart';
+import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
 
@@ -471,6 +472,9 @@ class _MeasureOverlay extends StatelessWidget {
             if (selected.isNotEmpty)
               TextButton(
                 key: const Key('apiary-map-measure-clear'),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+                ),
                 onPressed: onClear,
                 child: Text(l10n.apiaryMapMeasureClear),
               ),

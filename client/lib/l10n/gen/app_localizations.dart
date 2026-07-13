@@ -584,6 +584,12 @@ abstract class AppLocalizations {
   /// **'Syncing…'**
   String get syncStatusSyncing;
 
+  /// App-shell header sync-status pill / account screen status label while the connection-quality gate is backing off after a failed probe (FR-OF-3, sync.md §7.1, #55)
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for better signal'**
+  String get syncStatusWaitingForSignal;
+
   /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
   ///
   /// In en, this message translates to:

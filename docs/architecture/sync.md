@@ -37,6 +37,15 @@ proved create → offline edit → sync + server-authoritative LWW/conflict-log 
 design is **engine-aware but isolates engine specifics behind the contract in §5**, so the sync
 engine remains swappable (NFR-ARC-2).
 
+**Client-side seam (as built, #55).** On the client, `client/lib/core/sync/local_store.dart`'s
+`LocalStoreEngine` is the concrete NFR-ARC-2 boundary: a minimal read/watch/write/`clear()`
+interface that feature repositories (e.g. `features/apiaries/apiaries_repository.dart`) depend
+on instead of a concrete engine type. `powersync_local_store.dart`'s `PowerSyncLocalStore` is
+the only implementation today, and is the one file outside `core/sync/` allowed to import
+`package:powersync`. `clear()` disconnects and wipes every locally-replicated row plus the
+upload queue (`PowerSyncDatabase.disconnectAndClear`) — exposed on the interface now for the
+logout data-wipe **#125** will wire up, not added ad hoc later.
+
 **When any of this actually runs.** The conflict/atomicity machinery is a property of the
 **offline-deferred push** only: writes made while a device is disconnected and replayed later.
 **Online writes go straight through the normal service API** and conflict at the database like
@@ -139,6 +148,67 @@ Because the sync token is **short-lived**, it can't go stale — which is exactl
 coexist: **long-lived access token stays org-free; org is resolved from the DB and carried only
 in the ephemeral sync token.** A member removed from an org stops getting a fresh sync token
 within one TTL.
+
+### 3.5 Local-data lifecycle — purge on logout & membership loss (#125)
+
+§3.4 above covers _stopping_ replication when access ends. It does not cover the data **already
+on the device** — a full replica of the active org's slice sits in local SQLite (OPFS/IndexedDB on
+web) until something explicitly clears it. This is the offline mirror of the tenancy guarantee
+(FR-TEN-1, FR-TEN-2, NFR-SEC-1): local cached data must not outlive the right to see it, on a
+shared, lost, or re-assigned field device.
+
+**Mechanism.** Both paths below go through the same seam:
+[`LocalStoreEngine.clear()`](../../client/lib/core/sync/local_store.dart) (#55), implemented by
+`PowerSyncLocalStore.clear()` → `PowerSyncDatabase.disconnectAndClear()` — wipes every
+locally-replicated row **and** the upload queue in one call. Neither caller reaches into
+PowerSync types directly.
+
+- **Logout** — `AuthController.logout()` (`client/lib/core/auth/auth_controller.dart`) calls
+  `clear()` **before** clearing the cached OIDC session tokens (§6 below), so a second user
+  logging in on the same shared browser/device never sees the previous session's replicated rows
+  before the next sync reconciles. The wipe is best-effort (a failure never blocks the user from
+  finishing logout) and needs no network — pure on-device SQLite teardown — so it also runs while
+  fully offline.
+- **Membership revocation** — `client/lib/core/sync/local_data_purge.dart`'s
+  `membershipLossPurgeProvider`, watched from app boot (`app.dart`). `GET /v1/organizations/me`
+  returns **404 for both** "never onboarded" and "was a member, removed" (by design, so a
+  brand-new signup reaches onboarding — services/organizations/api), so the client can't tell
+  these apart from the status code alone. It tracks its own marker instead: the last-resolved org
+  id is written to session storage whenever `organizationProvider` resolves an org; a **subsequent**
+  resolution in the same session that comes back with no org while that marker is still set is
+  unambiguous — the caller had access and now doesn't — and triggers the same `clear()`. A
+  first-time "no org yet" (no prior marker) never purges. Firing from `organizationProvider`
+  itself means this runs both **at next app start** (the router's onboarding gate reads that
+  provider immediately on every authenticated load) and **at next connectivity** (any later
+  re-fetch), matching the AC.
+
+**Pending writes at purge time: discarded, not blocked-and-warned**, in both paths.
+`disconnectAndClear` drops the upload queue along with the replicated rows. This is a deliberate
+trade-off, not an oversight:
+
+- **Logout** is a _user-initiated_ action — the field-first UX (D-10) favors a fast,
+  always-available logout over a screen that can get stuck offline waiting to flush before it
+  lets the user leave. Logout itself is the confirmation; there is no separate prompt in v1.
+- **Membership-loss purge** is _not_ a user action — it fires from a background re-fetch, with no
+  user present to prompt. Keeping stale/inaccessible data around instead would violate the very
+  guarantee the purge exists to enforce. Moreover, a removed member's unsynced writes were never
+  going to be accepted server-side anyway — the next sync re-checks membership and rejects the
+  push regardless (auth.md §6.4, "gains nothing server-side"). The server-side conflict log (§4.2)
+  remains the safety net for an LWW loss in general; it does not cover discarded-at-purge writes,
+  which is why the discard-not-block choice is documented here explicitly rather than assumed.
+
+**Interaction with offline login (D-7).** The offline grace window (auth.md §6) is a **local UX
+affordance, not server authorization** — a removed member can keep _local_ access to already-open
+screens until the grace window lapses or they reconnect, but gains nothing server-side (auth.md
+§6.4). The membership-loss purge above is exactly what turns that accepted "offline revocation
+latency" risk into a bounded one on the _local-data_ dimension: once the client does get a fresh
+`organizations/me` read — at the next app start or reconnect — the stale replica is cleared even
+though the cached-token grace window (a separate mechanism) may not have expired yet.
+
+**Multi-org on one device — v1 scope note.** A user in more than one org (C-1, future) and
+active-org switching are **out of v1 scope** for this purge. v1 is single-active-org per device;
+the purge above fires on "the org disappeared," not "switched to another org." Org-switch
+purge/repartitioning is deferred to when multi-org lands.
 
 ---
 
@@ -411,6 +481,31 @@ the client gates sync on **measured link quality**, not the mere presence of a c
   (with PowerSync: gate `connect()`/`disconnect()` and the `uploadData` trigger). It sits
   **outside** the §5 contract, so it survives an engine swap (NFR-ARC-2).
 
+**As built (#55).** `client/lib/core/sync/`:
+
+- `connectivity_probe.dart`'s `HttpConnectivityProbe` is the "tiny probe request." No `/v1/*`
+  domain-service `/healthz` is actually reachable through the gateway today — the main Ingress
+  routes `/v1/<service>` **without** stripping the prefix, but every service mounts
+  `/healthz`/`/readyz` at its own root, so e.g. `/v1/sync/healthz` 404s. Instead the probe hits
+  **PowerSync's own liveness endpoint**, `GET <gatewayBaseUrl>/sync-stream/probes/liveness` —
+  already gateway-reachable via the existing strip-prefix route
+  (`infra/helm/beekeepingit/charts/gateway/templates/powersync-route.yaml`), unauthenticated, and
+  cheap (no DB, no business logic). A response within the timeout (default 3s) counts as a pass
+  regardless of status code — the signal is reachability, not the probe endpoint's status-code
+  contract. No new server endpoint was needed.
+- `sync_gate.dart`'s `SyncGate` is the probe → exponential-backoff → probe state machine
+  (`SyncGateState`: `probing` / `waitingForSignal` / `passed`; default backoff 2s → 2min,
+  ×2/attempt — tuning constants, adjustable without an interface change). It depends only on
+  `ConnectivityProbe` and a `Future<void> Function()` connect callback — never on a PowerSync
+  type — so it sits outside the §5 contract as intended.
+- `powersync_service.dart` wires the gate around `PowerSyncDatabase.connect()`: the first
+  connect and every reconnect after a `statusStream` connected→disconnected transition go
+  through the gate (`SyncGate.rearm()`); `shell/sync_status.dart`'s `syncNowProvider` (#58's
+  manual "sync now") calls `SyncGate.requestSync()`, which bypasses the probe/backoff entirely.
+- `SyncStatus` (`shell/sync_status.dart`) gained an additive `gateState` field (default
+  `passed`, so existing call sites are unaffected) and `isWaitingForSignal`; the header pill and
+  account screen show "Waiting for better signal" while the gate backs off (EN/PT).
+
 ---
 
 ## 8. "Synced" status & notify-and-fix UX (FR-OF-2 / D-12)
@@ -459,18 +554,20 @@ authoritative.
 
 ## 10. Open items, deferred scope & hand-offs
 
-| Item                                                                      | Status                                                                                                                                     | Where                                                                                   |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| Field-level merge                                                         | **Deferred** — record-level LWW + log for v1; add per-field where the conflict log shows it hurts (§4.4)                                   | owning service apply step; behind the seam (§6)                                         |
-| Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change           | §6.3; EPIC-06                                                                           |
-| Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                   | owning service                                                                          |
-| Notify-and-fix screens                                                    | **Design hand-off** — states/data fixed here                                                                                               | EPIC-06                                                                                 |
-| Connection-quality gate (FR-OF-3)                                         | **Design hand-off** — trigger rule, probe approach & override fixed here (§7.1); thresholds tuned in field testing                         | EPIC-06 (#55/#58)                                                                       |
-| Validation-parity mechanism                                               | **Design hand-off** — approach fixed here (§9)                                                                                             | EPIC-06                                                                                 |
-| History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                 | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)              |
-| History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved) |
-| Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on                                                                                                                                 | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13                                                   |
-| iOS PWA storage durability (OPFS/IndexedDB eviction)                      | Validate when iOS is in scope (D-10)                                                                                                       | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5                                  |
+| Item                                                                      | Status                                                                                                                                     | Where                                                                                            |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Field-level merge                                                         | **Deferred** — record-level LWW + log for v1; add per-field where the conflict log shows it hurts (§4.4)                                   | owning service apply step; behind the seam (§6)                                                  |
+| Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change           | §6.3; EPIC-06                                                                                    |
+| Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                   | owning service                                                                                   |
+| Notify-and-fix screens                                                    | **Design hand-off** — states/data fixed here                                                                                               | EPIC-06                                                                                          |
+| Connection-quality gate (FR-OF-3)                                         | **Resolved** — built in #55 (§7.1 "As built"); probe/backoff thresholds are the starting defaults, still tunable in field testing          | `client/lib/core/sync/{connectivity_probe,sync_gate}.dart` (#55)                                 |
+| Validation-parity mechanism                                               | **Design hand-off** — approach fixed here (§9)                                                                                             | EPIC-06                                                                                          |
+| History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                 | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)                       |
+| History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved)          |
+| Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on                                                                                                                                 | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13                                                            |
+| iOS PWA storage durability (OPFS/IndexedDB eviction)                      | Validate when iOS is in scope (D-10)                                                                                                       | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5                                           |
+| Local-data purge on logout & membership loss                              | **Resolved** — `LocalStoreEngine.clear()` wired into `AuthController.logout()` and a background membership-loss watcher (§3.5)             | `client/lib/core/auth/auth_controller.dart`, `client/lib/core/sync/local_data_purge.dart` (#125) |
+| Local-data purge on active-org switch (multi-org, C-1)                    | **Deferred** — v1 is single-active-org per device; no switch UI exists yet to trigger it (§3.5)                                            | future, when multi-org lands                                                                     |
 
 ---
 

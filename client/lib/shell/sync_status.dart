@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:powersync/powersync.dart' as ps;
 
 import '../core/sync/powersync_service.dart';
 import '../core/sync/sync_events.dart';
+import '../core/sync/sync_gate.dart';
 
 export '../core/sync/sync_events.dart' show SupersededChange;
+export '../core/sync/sync_gate.dart' show SyncGateState;
 
 /// Connectivity/pending-change state shown by the header's sync-status pill
 /// and the offline banner (FR-UX-2, #197; wired to PowerSync in #58).
@@ -16,6 +20,7 @@ class SyncStatus {
     required this.pendingCount,
     this.syncing = false,
     this.hasError = false,
+    this.gateState = SyncGateState.passed,
   });
 
   final SyncConnectivity connectivity;
@@ -31,7 +36,19 @@ class SyncStatus {
   /// just surfaces "a retry is pending" to the UI.
   final bool hasError;
 
+  /// The connection-quality gate's current state (FR-OF-3, sync.md §7.1,
+  /// #55). Added additively — existing `connectivity`/`syncing`/`hasError`
+  /// consumers are unaffected; a caller that wants to show "waiting for
+  /// better signal" checks [isWaitingForSignal].
+  final SyncGateState gateState;
+
   bool get isOnline => connectivity == SyncConnectivity.online;
+
+  /// The gate is backing off after a failed probe — the device has *some*
+  /// connectivity signal but the engine is deliberately not attempting to
+  /// connect/flush yet (sync.md §7.1). Manual "sync now" always bypasses
+  /// this (`syncNowProvider`).
+  bool get isWaitingForSignal => gateState == SyncGateState.waitingForSignal;
 }
 
 /// Broadcasts a [SupersededChange] every time [BeekeepingitConnector.uploadData]
@@ -47,14 +64,21 @@ final supersededNotificationProvider =
     });
 
 /// Real connectivity + pending-change count, sourced from
-/// [ps.PowerSyncDatabase.statusStream] (connectivity/uploading/error) and
-/// [ps.PowerSyncDatabase.getUploadQueueStats] (pending count).
+/// [ps.PowerSyncDatabase.statusStream] (connectivity/uploading/error),
+/// [ps.PowerSyncDatabase.getUploadQueueStats] (pending count), and
+/// [SyncGate.stateStream] (FR-OF-3's "waiting for better signal" state, #55).
 ///
 /// `pendingCount` is re-read on every status change rather than derived from
 /// the status event itself: the `powersync` package's `SyncStatus` doesn't
 /// carry queue depth, only connectivity/upload-in-progress/error flags. The
 /// extra query (`SELECT count(*) FROM ps_crud`) is cheap and only runs on
 /// transitions, not polled.
+///
+/// The engine's status and the gate's state change independently (a probe
+/// can fail while the engine is still reporting its last-known connectivity,
+/// and vice versa), so this listens to **both** streams and re-emits a
+/// combined [SyncStatus] whenever either changes — rather than pulling in a
+/// stream-combining package for two sources.
 ///
 /// Internal — [syncStatusProvider] below is the public seam callers use; it
 /// unwraps the [AsyncValue] with a sane default so widgets (and #197's
@@ -63,21 +87,46 @@ final supersededNotificationProvider =
 final _syncStatusStreamProvider = StreamProvider<SyncStatus>((ref) async* {
   final session = await ref.watch(powerSyncProvider.future);
   final db = session.db;
+  final gate = session.gate;
 
-  Future<SyncStatus> toStatus(ps.SyncStatus s) async {
+  final controller = StreamController<SyncStatus>();
+  var lastEngine = db.currentStatus;
+  var lastGate = gate.state;
+
+  Future<void> emit() async {
+    if (controller.isClosed) return;
     final queue = await db.getUploadQueueStats();
-    return SyncStatus(
-      connectivity: s.connected
-          ? SyncConnectivity.online
-          : SyncConnectivity.offline,
-      pendingCount: queue.count,
-      syncing: s.uploading || s.downloading,
-      hasError: s.anyError != null,
+    if (controller.isClosed) return;
+    controller.add(
+      SyncStatus(
+        connectivity: lastEngine.connected
+            ? SyncConnectivity.online
+            : SyncConnectivity.offline,
+        pendingCount: queue.count,
+        syncing: lastEngine.uploading || lastEngine.downloading,
+        hasError: lastEngine.anyError != null,
+        gateState: lastGate,
+      ),
     );
   }
 
-  yield await toStatus(db.currentStatus);
-  yield* db.statusStream.asyncMap(toStatus);
+  final engineSub = db.statusStream.listen((s) {
+    lastEngine = s;
+    emit();
+  });
+  final gateSub = gate.stateStream.listen((s) {
+    lastGate = s;
+    emit();
+  });
+
+  controller.onCancel = () async {
+    await engineSub.cancel();
+    await gateSub.cancel();
+  };
+
+  unawaited(emit());
+
+  yield* controller.stream;
 });
 
 /// Public seam (#197's stub, replaced in #58): connectivity + pending-count
@@ -95,15 +144,17 @@ final syncStatusProvider = Provider<SyncStatus>((ref) {
 
 /// One-shot manual "sync now" (the prototype's "Sincronizar agora";
 /// sync.md §7.1's override — "a user-triggered sync now always attempts
-/// once, gate or no gate"). PowerSync has no standalone "flush now" call;
-/// the documented way to force an immediate reconnect + upload/download
-/// attempt is a disconnect/connect cycle on the *same* connector, which
-/// re-invokes `fetchCredentials`/`uploadData` right away instead of waiting
-/// on the SDK's own retry backoff.
+/// once, gate or no gate"). Bypasses [SyncGate] entirely via
+/// [SyncGate.requestSync] rather than probing first — the beekeeper on the
+/// hill may know things the probe doesn't (§7.1). PowerSync has no
+/// standalone "flush now" call; the documented way to force an immediate
+/// reconnect + upload/download attempt is a disconnect/connect cycle on the
+/// *same* connector, which re-invokes `fetchCredentials`/`uploadData` right
+/// away instead of waiting on the SDK's own retry backoff.
 final syncNowProvider = Provider<Future<void> Function()>((ref) {
   return () async {
     final session = await ref.read(powerSyncProvider.future);
     await session.db.disconnect();
-    await session.db.connect(connector: session.connector);
+    await session.gate.requestSync();
   };
 });

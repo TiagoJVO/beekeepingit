@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
 
@@ -166,27 +167,19 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      FilledButton(
+                      PrimaryActionButton(
                         key: const Key('apiary-save-button'),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(56),
-                        ),
+                        label: l10n.saveButton,
                         onPressed: _save,
-                        child: Text(l10n.saveButton),
                       ),
                       if (widget.isEdit) ...[
                         const SizedBox(height: 12),
-                        OutlinedButton.icon(
+                        SecondaryActionButton(
                           key: const Key('apiary-delete-button'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(56),
-                            foregroundColor: Theme.of(
-                              context,
-                            ).colorScheme.error,
-                          ),
+                          label: l10n.deleteApiary,
+                          icon: Icons.delete_outline,
+                          destructive: true,
                           onPressed: _delete,
-                          icon: const Icon(Icons.delete_outline),
-                          label: Text(l10n.deleteApiary),
                         ),
                       ],
                     ],
