@@ -42,8 +42,11 @@ edges:
   # controller lives elsewhere, update the `namespaceSelector` below.
   - name: gateway-to-pwa
     from: { namespaceSelector: kube-system }
+    # 80, not 8080: the pwa reverted to the stock nginx image on port 80 (#224
+    # path-B revert, #235); NetworkPolicy matches the CONTAINER port, so this
+    # ingress allow must be 80 or Traefik→pwa is dropped and the gateway 502s.
     to: { app.kubernetes.io/name: pwa }
-    port: 8080
+    port: 80
   - name: gateway-to-apiaries
     from: { namespaceSelector: kube-system }
     to: { app.kubernetes.io/name: apiaries }
