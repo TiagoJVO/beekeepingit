@@ -8,16 +8,15 @@
 # Non-root (EPIC-14 #89, NFR-SEC-1, trivy-config DS-0002): use nginx's OWN
 # unprivileged image rather than making stock `nginx:alpine` run non-root by
 # hand. The stock image's master starts as root (to bind :80 and drop
-# privileges per-worker) and its entrypoint scripts write into
-# /etc/nginx/conf.d and /var/cache/nginx at startup — forcing it non-root +
-# `readOnlyRootFilesystem` makes those writes fail and the container
-# crash-loops before nginx ever listens (observed on the #224 CI k3d run:
-# pwa CrashLoopBackOff, "connection refused" on :8080). `nginxinc/
-# nginx-unprivileged` is purpose-built for exactly this: it already runs as
-# uid/gid 101, listens on 8080 (not 80), writes its pidfile to /tmp, ships no
-# top-level `user` directive (which errors when the master isn't root), and
-# its entrypoint tolerates a read-only root filesystem. Same nginx, same
-# config surface — just the rootless variant.
+# privileges per-worker) and ships a top-level `user` directive that errors
+# when the master isn't root. `nginxinc/nginx-unprivileged` is purpose-built
+# for non-root: it runs as uid/gid 101, listens on 8080 (not 80), and ships
+# no `user` directive. It still writes a pidfile (/run/nginx.pid) and temp
+# dirs (/var/cache/nginx) at startup, so running it under
+# `readOnlyRootFilesystem: true` requires writable emptyDir mounts at those
+# paths — provided by the Deployment (charts/pwa/templates/deployment.yaml).
+# Getting those mounts wrong crash-loops it ([emerg] open()
+# "/run/nginx.pid" failed: Read-only file system — the #224 CI failure).
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 # Patch base-image OS packages (openssl et al.) to the latest Alpine security
 # releases so the image clears the CI Trivy HIGH/CRITICAL gate (#88). Needs

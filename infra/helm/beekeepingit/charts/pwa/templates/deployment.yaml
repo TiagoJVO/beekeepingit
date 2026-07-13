@@ -22,13 +22,24 @@ spec:
       # Hardened pod/container security context (EPIC-14 #89, NFR-SEC-1,
       # trivy-config KSV-0014/KSV-0118). The image is `nginxinc/
       # nginx-unprivileged` (client/Dockerfile): runs as the fixed non-root
-      # `nginx` user (uid/gid 101), binds :8080, and puts its pidfile in
-      # /tmp. A read-only root filesystem needs writable paths for the two
-      # dirs nginx writes at runtime — its proxy/temp cache under
-      # /var/cache/nginx and the pidfile in /tmp — mounted here as emptyDirs.
-      # `fsGroup: 101` makes those mounts writable to the nginx user (kubelet
+      # `nginx` user (uid/gid 101) and binds :8080. Making it work under
+      # `readOnlyRootFilesystem: true` needs a writable emptyDir at EVERY
+      # path nginx (and its entrypoint) writes at runtime — getting this
+      # incomplete crash-loops it with `[emerg] open() "/run/nginx.pid"
+      # failed (30: Read-only file system)`, the #224 CI failure. The three
+      # paths, all mounted below:
+      #   /run             — the base image's `nginx.conf` writes its pidfile
+      #                      to /run/nginx.pid (main-context `pid` directive,
+      #                      not overridable from our conf.d server block).
+      #   /var/cache/nginx — proxy/client-body/fastcgi temp dirs.
+      #   /tmp             — misc scratch used by the entrypoint scripts.
+      # `fsGroup: 101` makes each mount writable to the nginx user (kubelet
       # chowns every mounted volume's group to it on pod start; a fresh
-      # emptyDir is otherwise root-owned).
+      # emptyDir is otherwise root-owned). The entrypoint's
+      # 10-listen-on-ipv6-by-default.sh still logs a benign "can not modify
+      # /etc/nginx/conf.d/default.conf (read-only file system?)" — harmless
+      # (our config already binds correctly; it's IPv6 auto-detection we
+      # don't need), so conf.d stays read-only rather than mounted writable.
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
@@ -45,6 +56,8 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
+            - name: nginx-run
+              mountPath: /run
             - name: nginx-cache
               mountPath: /var/cache/nginx
             - name: nginx-tmp
@@ -58,6 +71,8 @@ spec:
           resources:
             {{- index .Values.global.resources .Values.resourceTier | toYaml | nindent 12 }}
       volumes:
+        - name: nginx-run
+          emptyDir: {}
         - name: nginx-cache
           emptyDir: {}
         - name: nginx-tmp
