@@ -6,7 +6,7 @@ wins over earlier requirement wording.
 > Decisions are the working **default, not immutable**. If contradicting one makes sense,
 > propose it to the user; on confirmation, update it here (and the affected requirements).
 
-_Last updated: 2026-07-10._
+_Last updated: 2026-07-12._
 
 ---
 
@@ -280,6 +280,26 @@ Core technology decisions (2026-06-27). Detail and rationale in
   a separate, future cross-entity search requirement (not yet specified) to consider if/when those
   domains land.
 - **Supersedes:** Q-SEARCH. Touches FR-AP-6, #36.
+
+## D-18 — Accessibility baseline: WCAG 2.2 AA, 44x44 tap targets
+
+- **Decision:** the app's documented accessibility standard is **WCAG 2.2 AA** (FR-AX-1). Beyond
+  WCAG 2.2's own 24x24 CSS px target-size minimum (SC 2.5.8), field-first primary/secondary
+  actions (FR-UX-1) use a **44x44 minimum tap target**, with the single primary action per screen
+  (save/sign-in/submit) at **56px tall**, gloves-friendly per the Melargil prototype's 52-60px
+  control sizing (`docs/design/prototype.md`). Both numbers are enforced by an automated test
+  sweep, not just convention — see `client/test/a11y_field_ux_test.dart` and
+  `client/test/core/widgets/field_action_button_test.dart` (built on the shared
+  `expectMinTapTarget` helper in `client/test/support/a11y_matchers.dart`), which generalize
+  `apiaries_list_screen_test.dart`'s original toggle-segment test that predates this decision.
+- **Reusable checklist:** `docs/design/accessibility-field-ux-checklist.md` is the one checklist
+  other epics' feature stories use to verify a11y/field-first UX consistently (FR-AX-1 AC,
+  FR-UX-1 AC) — tap-target size, focus order/visible focus indicator, semantics labels, contrast,
+  gloves-friendly spacing, and the manual screen-reader/keyboard/gloved-use pass procedure.
+- **Reusable components:** shared tap-target-sized building blocks live in `client/lib/core/widgets/`
+  (`PrimaryActionButton`/`SecondaryActionButton`) rather than each screen hand-rolling button
+  sizing — see that directory's doc comments.
+- **Supersedes:** Q-AX. Touches FR-AX-1, FR-UX-1, NFR-TST-1, #79, #80.
 
 ## D-19 — PT/EU beekeeping & honey-traceability obligations scoped; HIPAA dropped
 

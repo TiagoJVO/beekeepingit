@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 
 /// Login entry point: a single "sign in" action that starts the OIDC
@@ -28,19 +29,14 @@ class LoginScreen extends ConsumerWidget {
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 24),
-                // Large, gloves-friendly primary action (WCAG 2.2 AA target size).
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    key: const Key('login-button'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(56),
-                    ),
-                    onPressed: () =>
-                        ref.read(authControllerProvider.notifier).login(),
-                    icon: const Icon(Icons.login),
-                    label: Text(l10n.loginButton),
-                  ),
+                // Large, gloves-friendly primary action (WCAG 2.2 AA target
+                // size) — see core/widgets/field_action_button.dart.
+                PrimaryActionButton(
+                  key: const Key('login-button'),
+                  label: l10n.loginButton,
+                  icon: Icons.login,
+                  onPressed: () =>
+                      ref.read(authControllerProvider.notifier).login(),
                 ),
               ],
             ),
