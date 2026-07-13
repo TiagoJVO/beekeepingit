@@ -3,7 +3,9 @@ import 'package:powersync/powersync.dart';
 
 import '../auth/auth_controller.dart';
 import 'connectivity_probe.dart';
+import 'local_store.dart';
 import 'powersync_connector.dart';
+import 'powersync_local_store.dart';
 import 'powersync_schema.dart';
 import 'sync_gate.dart';
 
@@ -80,3 +82,16 @@ class PowerSyncSession {
   final BeekeepingitConnector connector;
   final SyncGate gate;
 }
+
+/// The [LocalStoreEngine] seam (NFR-ARC-2, #55) over the same database
+/// [powerSyncProvider] opens — so callers that only need read/write/`clear()`
+/// (e.g. `AuthController.logout()`'s local-data wipe, #125) depend on the
+/// engine-agnostic interface instead of reaching for [PowerSyncSession.db]
+/// and wrapping it themselves. Feature repositories build their own
+/// [PowerSyncLocalStore] today (`apiaries_repository.dart`) for symmetry with
+/// their existing wiring; this provider exists for `core/` callers that sit
+/// above any one feature.
+final localStoreProvider = FutureProvider<LocalStoreEngine>((ref) async {
+  final session = await ref.watch(powerSyncProvider.future);
+  return PowerSyncLocalStore(session.db);
+});

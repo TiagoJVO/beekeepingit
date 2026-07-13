@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:openid_client/openid_client.dart';
 
 import '../config/app_config.dart';
+import '../sync/local_store.dart';
 import '../sync/powersync_service.dart';
 import 'auth_platform.dart';
 import 'pkce.dart';
@@ -68,12 +69,22 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// fake [Issuer], and a `package:http/testing.dart` `MockClient` to stub the
   /// token endpoint (via `authControllerProvider.overrideWith(() =>
   /// AuthController(...))`) — no redirect-based web platform, no network.
-  AuthController({AuthPlatform? platform, http.Client? httpClient})
-    : _injectedPlatform = platform,
-      _http = httpClient;
+  ///
+  /// [clearLocalStore] is a further test-only seam: production reads the real
+  /// [localStoreProvider] (which opens/reuses the on-device PowerSync
+  /// database), but unit tests inject a fake so `logout()`'s purge can be
+  /// asserted without standing up PowerSync itself.
+  AuthController({
+    AuthPlatform? platform,
+    http.Client? httpClient,
+    Future<LocalStoreEngine> Function()? clearLocalStore,
+  }) : _injectedPlatform = platform,
+       _http = httpClient,
+       _injectedLocalStore = clearLocalStore;
 
   final AuthPlatform? _injectedPlatform;
   AuthPlatform? _platform;
+  final Future<LocalStoreEngine> Function()? _injectedLocalStore;
 
   /// Injected only in tests; production lets `openid_client` create its own
   /// per-request client. Not closed here — a `MockClient` needs none and a
@@ -138,20 +149,53 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// local token cache (NFR-SEC-1, oidc-integration.md §7). Best-effort also
   /// hits the `revocation_endpoint` for the refresh token.
   ///
-  /// Also disconnects/tears down the local PowerSync database (invalidating
-  /// [powerSyncProvider], whose `onDispose` already calls `disconnect()` +
-  /// `close()`) so a second user logging in on the same shared browser/device
-  /// doesn't see the previous session's replicated rows before the next sync
-  /// reconciles — the tenancy-holds-offline guarantee (auth.md §6.5) extends
-  /// to the moment **between** sessions, not just within one.
+  /// Also **wipes the on-device local store** (#125, FR-TEN-1/FR-TEN-2,
+  /// NFR-SEC-1) via [LocalStoreEngine.clear] — not just a
+  /// disconnect/dispose — so a second user logging in on the same shared
+  /// browser/device never sees the previous session's replicated rows
+  /// (SQLite over OPFS/IndexedDB on web) before the next sync reconciles.
+  /// This is the offline mirror of the tenancy guarantee (auth.md §6.5): it
+  /// holds for the moment **between** sessions, not just within one.
+  ///
+  /// **Pending-writes-at-purge policy (#125 AC):** logout is a *deliberate*
+  /// user action, so any unsynced local writes still queued in PowerSync's
+  /// upload queue at this point are **discarded**, not blocked-and-warned —
+  /// `clear()` drops the queue along with the replicated rows
+  /// (`disconnectAndClear`, powersync_local_store.dart). We accept this
+  /// trade-off rather than blocking logout on a flush: the field-first UX
+  /// (auth.md, D-10) favors a fast, always-available logout over a screen
+  /// that can get stuck offline waiting to sync before it lets the user
+  /// leave. There is no separate confirmation prompt for this in v1 — logout
+  /// itself is the confirmation. (Membership-loss purges, by contrast, are
+  /// not a user action; see `local_data_purge.dart`'s own note on the same
+  /// question for that path.)
   Future<void> logout() async {
     final session = state.value;
     final platform = _platform;
 
-    // Clear local state FIRST — the redirect below may never complete offline,
-    // but the user must still end up locally logged out.
+    // Wipe the local store BEFORE clearing session tokens: `clear()` needs
+    // no network (pure on-device SQLite teardown) so it is safe to run even
+    // fully offline, and doing it first means a crash/interruption between
+    // the two steps never leaves stale replicated data behind paired with a
+    // session that looks logged out. Best-effort: a wipe failure must not
+    // block the user from finishing logout.
+    try {
+      final store =
+          await (_injectedLocalStore ??
+              () => ref.read(localStoreProvider.future))();
+      await store.clear();
+    } catch (_) {
+      // PowerSync was never opened this session, or the wipe failed — local
+      // session-token clearing below still logs the user out.
+    }
+    // `ref.mounted` guards against the async gap above racing this
+    // controller's own disposal (e.g. a test container torn down mid-await;
+    // see auth_controller_test.dart) — invalidating a disposed Ref throws.
+    if (ref.mounted) ref.invalidate(powerSyncProvider);
+
+    // Clear local session state — the redirect below may never complete
+    // offline, but the user must still end up locally logged out.
     _clearLocalSession();
-    ref.invalidate(powerSyncProvider);
     state = const AsyncData(null);
 
     if (session == null || platform == null) return;
@@ -254,14 +298,16 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     return _persist(platform, token);
   }
 
-  Future<AuthSession?> _refresh(AuthPlatform platform, String refreshToken) async {
+  Future<AuthSession?> _refresh(
+    AuthPlatform platform,
+    String refreshToken,
+  ) async {
     try {
       final issuer = await _issuer();
       final idToken = platform.readSession(_kIdToken);
-      final credential = _client(issuer).createCredential(
-        refreshToken: refreshToken,
-        idToken: idToken,
-      );
+      final credential = _client(
+        issuer,
+      ).createCredential(refreshToken: refreshToken, idToken: idToken);
       final token = await credential.getTokenResponse(true);
       return _persist(platform, token);
     } catch (_) {
@@ -280,17 +326,18 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // openid_client keeps the prior refresh token across a refresh when the
     // provider omits it, so read it back off the token, falling back to the
     // stored one so a refresh that doesn't re-issue it keeps the session alive.
-    final effectiveRefresh =
-        refresh.isNotEmpty ? refresh : (platform.readSession(_kRefresh) ?? '');
+    final effectiveRefresh = refresh.isNotEmpty
+        ? refresh
+        : (platform.readSession(_kRefresh) ?? '');
     // Read `id_token` off the raw response (not the typed `.idToken` getter,
     // which throws when absent): a refresh often omits it, so fall back to the
     // previously-stored value to keep it available for RP-initiated logout.
     final rawIdToken = token['id_token'] as String?;
-    final idToken =
-        (rawIdToken != null && rawIdToken.isNotEmpty)
-            ? rawIdToken
-            : (platform.readSession(_kIdToken) ?? '');
-    final expiresAt = token.expiresAt ??
+    final idToken = (rawIdToken != null && rawIdToken.isNotEmpty)
+        ? rawIdToken
+        : (platform.readSession(_kIdToken) ?? '');
+    final expiresAt =
+        token.expiresAt ??
         DateTime.now().add(token.expiresIn ?? const Duration(minutes: 5));
 
     if (effectiveRefresh.isNotEmpty) {
