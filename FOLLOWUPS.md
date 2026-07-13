@@ -39,3 +39,22 @@ M0–M11 backlog and answers 6 open `Q-*`. This PR adds: the prototype in-repo, 
 - **Feed the scope pass** — the prototype answers `Q-MAP`/`Q-JOUR`/`Q-TODO`/`Q-NOTIF` (see
   `docs/design/prototype.md`); use those when settling each remaining `Q-*` (answer →
   `D-*`/`FR-*`, delete the `Q-*`). `Q-DIST`/`Q-SEARCH` are already resolved and removed.
+
+## PWA installability audit (`#93`) — follow-ups
+
+This PR adds the automated Lighthouse CI installability gate (`client/lighthouserc.json`,
+wired into `build-publish.yml`) and `docs/client/pwa-installability.md` (manual-pass
+procedure with a static-build-verifiable first pass filled in). Two `#93` ACs remain open —
+kept as `Relates to #93`, not closed, until a human completes these:
+
+- **Real project app icons** — `client/web/icons/*` and `favicon.png` are still Flutter's
+  default template logo (verified by opening `Icon-512.png`: it's the blue Flutter chevron,
+  not a BeekeepingIT mark). Needs real brand artwork from design, then
+  `flutter pub run flutter_launcher_icons` (or manual export) to regenerate the icon set
+  (192/512 + maskable variants) and `favicon.png`. No design asset exists in-repo to derive
+  this from yet.
+- **Human device pass** — Chrome desktop/Android install-prompt check and offline-shell-reload
+  check against a real deployed instance (or `flutter run -d chrome`), per
+  `docs/client/pwa-installability.md` §2's unchecked items. Needs a person with a real
+  browser/device; not reproducible in a sandboxed build-only environment. Record the result
+  in the `#93` issue thread when run, then tick those items in the doc.

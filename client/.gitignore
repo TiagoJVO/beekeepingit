@@ -49,3 +49,7 @@ app.*.map.json
 /web/sqlite3.wasm
 /web/powersync_db.worker.js
 /web/powersync_sync.worker.js
+
+# Lighthouse CI installability audit output (#93) — regenerated each run.
+/.lighthouseci/
+/lhci-report/
