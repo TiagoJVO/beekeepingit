@@ -709,6 +709,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Clear selection'**
   String get apiaryMapMeasureClear;
+
+  /// Semantics container label for the satellite/streets layer toggle on the map (#257 AC: gloves-friendly toggle with semantics labels)
+  ///
+  /// In en, this message translates to:
+  /// **'Map layer'**
+  String get apiaryMapLayerToggleLabel;
+
+  /// Tooltip/label for the satellite segment of the map layer toggle (#257)
+  ///
+  /// In en, this message translates to:
+  /// **'Satellite'**
+  String get apiaryMapLayerSatelliteAction;
+
+  /// Tooltip/label for the streets (OSM) segment of the map layer toggle (#257)
+  ///
+  /// In en, this message translates to:
+  /// **'Streets'**
+  String get apiaryMapLayerStreetsAction;
+
+  /// Attribution overlay text shown when the satellite (Esri World Imagery) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by Esri's World Imagery terms of use)
+  ///
+  /// In en, this message translates to:
+  /// **'Powered by Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'**
+  String get apiaryMapAttributionEsri;
+
+  /// Attribution overlay text shown when the streets (OSM) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by the OSM tile usage policy)
+  ///
+  /// In en, this message translates to:
+  /// **'© OpenStreetMap contributors'**
+  String get apiaryMapAttributionOsm;
 }
 
 class _AppLocalizationsDelegate

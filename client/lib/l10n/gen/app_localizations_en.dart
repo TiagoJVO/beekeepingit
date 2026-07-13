@@ -374,4 +374,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryMapMeasureClear => 'Clear selection';
+
+  @override
+  String get apiaryMapLayerToggleLabel => 'Map layer';
+
+  @override
+  String get apiaryMapLayerSatelliteAction => 'Satellite';
+
+  @override
+  String get apiaryMapLayerStreetsAction => 'Streets';
+
+  @override
+  String get apiaryMapAttributionEsri =>
+      'Powered by Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
+
+  @override
+  String get apiaryMapAttributionOsm => '© OpenStreetMap contributors';
 }

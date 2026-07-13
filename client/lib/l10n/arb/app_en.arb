@@ -491,5 +491,25 @@
   "apiaryMapMeasureClear": "Clear selection",
   "@apiaryMapMeasureClear": {
     "description": "Action to clear the current two-apiary measurement selection (#37 AC: selection must be clear and usable)"
+  },
+  "apiaryMapLayerToggleLabel": "Map layer",
+  "@apiaryMapLayerToggleLabel": {
+    "description": "Semantics container label for the satellite/streets layer toggle on the map (#257 AC: gloves-friendly toggle with semantics labels)"
+  },
+  "apiaryMapLayerSatelliteAction": "Satellite",
+  "@apiaryMapLayerSatelliteAction": {
+    "description": "Tooltip/label for the satellite segment of the map layer toggle (#257)"
+  },
+  "apiaryMapLayerStreetsAction": "Streets",
+  "@apiaryMapLayerStreetsAction": {
+    "description": "Tooltip/label for the streets (OSM) segment of the map layer toggle (#257)"
+  },
+  "apiaryMapAttributionEsri": "Powered by Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+  "@apiaryMapAttributionEsri": {
+    "description": "Attribution overlay text shown when the satellite (Esri World Imagery) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by Esri's World Imagery terms of use)"
+  },
+  "apiaryMapAttributionOsm": "© OpenStreetMap contributors",
+  "@apiaryMapAttributionOsm": {
+    "description": "Attribution overlay text shown when the streets (OSM) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by the OSM tile usage policy)"
   }
 }

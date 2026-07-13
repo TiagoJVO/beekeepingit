@@ -102,6 +102,11 @@
   "apiaryMapMeasureHintSelectSecond": "Selecionado {name}. Toque noutro apiário para medir.",
   "apiaryMapMeasureResult": "{from} a {to}: {distanceKm} km",
   "apiaryMapMeasureClear": "Limpar seleção",
+  "apiaryMapLayerToggleLabel": "Camada do mapa",
+  "apiaryMapLayerSatelliteAction": "Satélite",
+  "apiaryMapLayerStreetsAction": "Ruas",
+  "apiaryMapAttributionEsri": "Powered by Esri — Fonte: Esri, Maxar, Earthstar Geographics e a comunidade de utilizadores GIS",
+  "apiaryMapAttributionOsm": "© Colaboradores do OpenStreetMap",
   "@apiaryMapMeasureHintSelectSecond": {
     "placeholders": {
       "name": {

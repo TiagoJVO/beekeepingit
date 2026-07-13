@@ -1,15 +1,19 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/apiaries/apiary_map_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
 import 'package:go_router/go_router.dart';
+
+import 'support/a11y_matchers.dart';
 
 /// A deterministic fake for [GeolocatorPlatform] (#34 AC — the map's
 /// permission-denied path must be testable without depending on the real
@@ -124,32 +128,37 @@ void main() {
     GeolocatorPlatform.instance = _LocationServicesDisabledGeolocator();
   });
 
-  testWidgets('renders a marker for each apiary with a location, skipping unlocated ones', (
-    tester,
-  ) async {
-    await _goToMap(tester);
+  testWidgets(
+    'renders a marker for each apiary with a location, skipping unlocated ones',
+    (tester) async {
+      await _goToMap(tester);
 
-    expect(find.byKey(const Key('apiary-map')), findsOneWidget);
-    expect(find.byKey(Key('apiary-marker-${_serraNorte.id}')), findsOneWidget);
-    expect(
-      find.byKey(Key('apiary-marker-${_valeDasEguas.id}')),
-      findsOneWidget,
-    );
-    // The unlocated apiary must not produce a marker or throw.
-    expect(find.byKey(Key('apiary-marker-${_semLocal.id}')), findsNothing);
-  });
+      expect(find.byKey(const Key('apiary-map')), findsOneWidget);
+      expect(
+        find.byKey(Key('apiary-marker-${_serraNorte.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(Key('apiary-marker-${_valeDasEguas.id}')),
+        findsOneWidget,
+      );
+      // The unlocated apiary must not produce a marker or throw.
+      expect(find.byKey(Key('apiary-marker-${_semLocal.id}')), findsNothing);
+    },
+  );
 
-  testWidgets('the empty case (no located apiaries) shows the empty state, not an error', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_buildApp([_semLocal]));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'the empty case (no located apiaries) shows the empty state, not an error',
+    (tester) async {
+      await tester.pumpWidget(_buildApp([_semLocal]));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('apiary-map')), findsOneWidget);
-    expect(find.byKey(const Key('apiary-map-empty')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('apiary-map')), findsOneWidget);
+      expect(find.byKey(const Key('apiary-map-empty')), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'location permission denied/unavailable in the test harness shows the banner, not an error, and no user marker',
@@ -209,11 +218,16 @@ void main() {
         find.textContaining('Serra Norte to Vale das Éguas: 47.'),
         findsOneWidget,
       );
-      expect(find.text('km', findRichText: true), findsNothing); // sanity: no stray literal
+      expect(
+        find.text('km', findRichText: true),
+        findsNothing,
+      ); // sanity: no stray literal
     },
   );
 
-  testWidgets('the clear-selection action resets the measurement', (tester) async {
+  testWidgets('the clear-selection action resets the measurement', (
+    tester,
+  ) async {
     await _goToMap(tester);
 
     await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
@@ -267,6 +281,203 @@ void main() {
     // navigationShell and stays mounted across this in-tab navigation, so
     // it's a reliable descendant to anchor on instead.
     final router = GoRouter.of(tester.element(find.byType(AppShell)));
-    expect(router.routeInformationProvider.value.uri.toString(), '/apiaries/a1');
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      '/apiaries/a1',
+    );
+  });
+
+  group('satellite default + layer toggle (#257, D-16)', () {
+    testWidgets('the map opens with the satellite tile layer by default', (
+      tester,
+    ) async {
+      await _goToMap(tester);
+
+      expect(
+        find.byKey(const Key('apiary-map-tile-layer-satellite')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('apiary-map-tile-layer-streets')),
+        findsNothing,
+      );
+      final tileLayer = tester.widget<TileLayer>(
+        find.byKey(const Key('apiary-map-tile-layer-satellite')),
+      );
+      // Esri World Imagery, {z}/{y}/{x} order (not OSM's {z}/{x}/{y}) — the
+      // exact endpoint the #257 AC calls for, asserted by value rather than
+      // just "a TileLayer exists" so a regression back to the OSM URL (or a
+      // typo'd segment order) fails this test.
+      expect(
+        tileLayer.urlTemplate,
+        'https://server.arcgisonline.com/ArcGIS/rest/services/'
+        'World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      );
+    });
+
+    testWidgets('the toggle switches to the streets (OSM) layer and back', (
+      tester,
+    ) async {
+      await _goToMap(tester);
+
+      await tester.tap(
+        find.byKey(const Key('apiary-map-layer-streets-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('apiary-map-tile-layer-streets')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('apiary-map-tile-layer-satellite')),
+        findsNothing,
+      );
+      final streetsLayer = tester.widget<TileLayer>(
+        find.byKey(const Key('apiary-map-tile-layer-streets')),
+      );
+      expect(
+        streetsLayer.urlTemplate,
+        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      );
+
+      await tester.tap(
+        find.byKey(const Key('apiary-map-layer-satellite-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('apiary-map-tile-layer-satellite')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('apiary-map-tile-layer-streets')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'the chosen layer survives switching to the list view and back (#257 AC)',
+      (tester) async {
+        await _goToMap(tester);
+
+        await tester.tap(
+          find.byKey(const Key('apiary-map-layer-streets-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('apiary-map-tile-layer-streets')),
+          findsOneWidget,
+        );
+
+        // Switch to the list view (the map stays mounted in the IndexedStack,
+        // #35) and back to the map.
+        await tester.tap(find.byKey(const Key('apiaries-view-list-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-map-tile-layer-streets')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('apiary-map-tile-layer-satellite')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'the layer toggle segments meet the min tap target and have semantics labels',
+      (tester) async {
+        await _goToMap(tester);
+
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-map-layer-satellite-button')),
+        );
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-map-layer-streets-button')),
+        );
+        expectHasSemanticsLabel(
+          tester,
+          const Key('apiary-map-layer-satellite-button'),
+        );
+        expectHasSemanticsLabel(
+          tester,
+          const Key('apiary-map-layer-streets-button'),
+        );
+        expectHasSemanticsLabel(tester, const Key('apiary-map-layer-toggle'));
+      },
+    );
+
+    testWidgets(
+      'attribution shows the active source and switches with the layer',
+      (tester) async {
+        await _goToMap(tester);
+
+        expect(
+          find.byKey(const Key('apiary-map-attribution-text')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Esri'), findsOneWidget);
+        expect(find.textContaining('OpenStreetMap'), findsNothing);
+
+        await tester.tap(
+          find.byKey(const Key('apiary-map-layer-streets-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('OpenStreetMap'), findsOneWidget);
+        expect(find.textContaining('Esri'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'at phone width the attribution wraps on-screen and sits clear of the measure card',
+      (tester) async {
+        // The constrained case for the map's overlay layout: at 375 logical
+        // px the measure card's hint text wraps (making the card taller than
+        // its desktop height) and the long Esri credit line is wider than
+        // the screen. Both were real overlaps/overflows during development —
+        // the attribution shares the measure overlay's bottom-anchored
+        // Positioned (bounded width, stacked above) precisely so neither can
+        // happen; this pins that.
+        tester.view.physicalSize = const Size(375, 812);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await _goToMap(tester);
+
+        final attribution = tester.getRect(
+          find.byKey(const Key('apiary-map-attribution-text')),
+        );
+        final measure = tester.getRect(
+          find.byKey(const Key('apiary-map-measure-overlay')),
+        );
+
+        // Wraps within the screen instead of overflowing off the right edge.
+        expect(attribution.right, lessThanOrEqualTo(375));
+        // Fully above the measure card, never underneath it.
+        expect(attribution.bottom, lessThanOrEqualTo(measure.top));
+      },
+    );
+
+    testWidgets('the default layer provider value is MapLayer.satellite', (
+      tester,
+    ) async {
+      // Belt-and-suspenders unit-level check on the provider default
+      // itself (independent of the widget tree), matching how
+      // apiariesViewProvider's default is implicitly relied upon —
+      // this pins MapLayer.satellite as literally the provider's
+      // initial state, not just "whatever the first-rendered TileLayer
+      // happens to be".
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(container.read(mapLayerProvider), MapLayer.satellite);
+    });
   });
 }
