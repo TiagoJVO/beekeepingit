@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/widgets/tap_target.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../l10n/gen/app_localizations.dart';
 import 'sync_status.dart';
@@ -308,7 +309,10 @@ class _SyncStatusPill extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           onTap: onTap,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+            constraints: const BoxConstraints(
+              minHeight: kMinTapTarget,
+              minWidth: kMinTapTarget,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(

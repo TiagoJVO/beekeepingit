@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'organization_repository.dart';
 
@@ -118,19 +119,11 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  FilledButton(
+                  PrimaryActionButton(
                     key: const Key('organization-save-button'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(56),
-                    ),
-                    onPressed: _saving ? null : () => _save(l10n),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(l10n.organizationSaveButton),
+                    label: l10n.organizationSaveButton,
+                    busy: _saving,
+                    onPressed: () => _save(l10n),
                   ),
                 ],
               ),

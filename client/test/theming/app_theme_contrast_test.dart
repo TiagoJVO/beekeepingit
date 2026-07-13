@@ -1,0 +1,101 @@
+import 'dart:math' as math;
+
+import 'package:beekeepingit_client/theming/app_theme.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// WCAG 2.2 AA contrast checks for `AppTheme` (#79, D-18).
+/// `ColorScheme.fromSeed` generates Material 3 tonal palettes
+/// algorithmically — it's designed to produce AA-compliant "on" pairs, but
+/// that's an assumption about a third-party algorithm, not a guarantee this
+/// repo controls. This test checks the actual [ThemeData] values so a future
+/// seed-color change (or a Flutter/Material upgrade that alters the tonal
+/// palette) that regresses contrast fails CI instead of shipping.
+///
+/// Formula: WCAG 2.x relative luminance + contrast ratio
+/// (https://www.w3.org/TR/WCAG22/#contrast-minimum), reimplemented directly
+/// against the sRGB channel values rather than pulled from a package, so the
+/// math is auditable here.
+double _relativeLuminance(Color c) {
+  double channel(double v) {
+    return v <= 0.03928
+        ? v / 12.92
+        : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+  }
+
+  final r = channel(c.r);
+  final g = channel(c.g);
+  final b = channel(c.b);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+double _contrastRatio(Color a, Color b) {
+  final la = _relativeLuminance(a) + 0.05;
+  final lb = _relativeLuminance(b) + 0.05;
+  return la > lb ? la / lb : lb / la;
+}
+
+/// WCAG 2.2 AA for normal text: 4.5:1 (the checklist's "Color contrast ...
+/// meet WCAG 2.2 AA" AC, #79).
+const double _kMinNormalTextContrast = 4.5;
+
+void _expectAaContrast(
+  String label,
+  Color foreground,
+  Color background,
+) {
+  final ratio = _contrastRatio(foreground, background);
+  expect(
+    ratio,
+    greaterThanOrEqualTo(_kMinNormalTextContrast),
+    reason:
+        '$label: contrast ratio $ratio is below WCAG 2.2 AA\'s '
+        '$_kMinNormalTextContrast:1 minimum for normal text '
+        '(fg $foreground on bg $background)',
+  );
+}
+
+void _checkOnColorPairs(String themeName, ColorScheme scheme) {
+  // Every (surface/container, "on"-color) pair Material 3 defines and this
+  // app actually renders text/icons on — mirrors the surfaces the app's
+  // screens use: primary buttons (primary/onPrimary), primary containers
+  // (apiary detail header — primaryContainer/onPrimaryContainer), general
+  // surfaces (surface/onSurface, surfaceVariant/onSurfaceVariant), and error
+  // (delete/logout destructive actions — error/onError).
+  final pairs = <String, (Color fg, Color bg)>{
+    'primary/onPrimary': (scheme.onPrimary, scheme.primary),
+    'primaryContainer/onPrimaryContainer': (
+      scheme.onPrimaryContainer,
+      scheme.primaryContainer,
+    ),
+    'secondary/onSecondary': (scheme.onSecondary, scheme.secondary),
+    'surface/onSurface': (scheme.onSurface, scheme.surface),
+    'surfaceContainerHighest/onSurfaceVariant': (
+      scheme.onSurfaceVariant,
+      scheme.surfaceContainerHighest,
+    ),
+    'error/onError': (scheme.onError, scheme.error),
+    'errorContainer/onErrorContainer': (
+      scheme.onErrorContainer,
+      scheme.errorContainer,
+    ),
+  };
+
+  for (final entry in pairs.entries) {
+    _expectAaContrast(
+      '$themeName ${entry.key}',
+      entry.value.$1,
+      entry.value.$2,
+    );
+  }
+}
+
+void main() {
+  test('light theme color pairs meet WCAG 2.2 AA (4.5:1)', () {
+    _checkOnColorPairs('light', AppTheme.light().colorScheme);
+  });
+
+  test('dark theme color pairs meet WCAG 2.2 AA (4.5:1)', () {
+    _checkOnColorPairs('dark', AppTheme.dark().colorScheme);
+  });
+}

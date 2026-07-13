@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'profile_repository.dart';
 
@@ -171,19 +172,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         },
                       ),
                       const SizedBox(height: 24),
-                      FilledButton(
+                      PrimaryActionButton(
                         key: const Key('profile-save-button'),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(56),
-                        ),
-                        onPressed: _saving ? null : () => _save(l10n),
-                        child: _saving
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : Text(l10n.profileSaveButton),
+                        label: l10n.profileSaveButton,
+                        busy: _saving,
+                        onPressed: () => _save(l10n),
                       ),
                     ],
                   ),

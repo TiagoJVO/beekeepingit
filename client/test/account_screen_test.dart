@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:beekeepingit_client/features/account/account_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
@@ -316,10 +317,11 @@ void main() {
       expect(find.textContaining('Could not sync right now'), findsOneWidget);
       // The button is re-enabled afterwards, so the user can retry (AC: "a
       // failed sync can be retried").
-      final button = tester.widget<OutlinedButton>(
+      final button = tester.widget<SecondaryActionButton>(
         find.byKey(const Key('account-sync-now-button')),
       );
       expect(button.onPressed, isNotNull);
+      expect(button.busy, isFalse);
     });
   });
 }
