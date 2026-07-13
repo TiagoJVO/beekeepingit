@@ -35,6 +35,12 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const apiaryRow = (page: Page, name: string) =>
   page.getByRole("button", { name: new RegExp(escapeRe(name)) });
 
+// The read-only apiary detail screen's hive-count badge (FR-AP-7, #32). After
+// editing from the detail screen, the form's save returns here (not to the
+// list), so this is where the fresh count shows. `getByText` is unambiguous on
+// the detail screen — no list rows are mounted alongside it.
+const apiaryDetailHiveCount = (page: Page) => page.getByText(/\d+ hives|No hives/);
+
 async function enableSemantics(page: Page) {
   // Flutter builds its semantics DOM (what Playwright selects against) only
   // after its "Enable accessibility" placeholder is activated. A direct DOM
@@ -162,15 +168,24 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.type("12", { delay: 80 });
   await page.getByText("Save", { exact: true }).click();
 
-  // The edit is applied locally while offline (local-first, FR-OF-1).
-  await expect(apiaryRow(page, apiaryName)).toContainText("12 hives");
+  // The edit is applied locally while offline (local-first, FR-OF-1). Saving
+  // the edit form now returns to the read-only detail screen (FR-AP-7, #32 —
+  // the form's `_save` routes to /apiaries/:id, not back to the list), so the
+  // fresh value shows on the detail hive-count badge, not a list row. Assert
+  // it there — no navigation, so this stays valid while still offline.
+  await expect(apiaryDetailHiveCount(page)).toContainText("12 hives");
 
   // ── Reconnect → the queued change syncs ───────────────────────────────
   await context.setOffline(false);
 
-  // Assert server-side: the edit reached the apiaries service.
+  // Assert server-side: the edit reached the apiaries service. This runs a
+  // fetch inside the current page, so it works from the detail screen — no
+  // need to be on the list yet. Generous timeout: the connection-quality sync
+  // gate (#55, FR-OF-3) re-probes on an exponential backoff (2s→…, capped),
+  // so after reconnect the queued upload can wait out one backoff interval
+  // before it fires — that's by design, not a hang.
   await expect
-    .poll(async () => serverHiveCount(page, capturedToken, apiaryName), { timeout: 30_000 })
+    .poll(async () => serverHiveCount(page, capturedToken, apiaryName), { timeout: 60_000 })
     .toBe(12);
 
   // Stash the server-assigned id for afterAll's cleanup (#162) — it only
@@ -178,8 +193,12 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // confirmed.
   createdApiaryId = await serverApiaryId(page, capturedToken, apiaryName);
 
-  // ── Reload → local state converged (#23 AC) ───────────────────────────
-  await page.reload();
+  // ── Reload the list → local state converged (#23 AC) ──────────────────
+  // Now online, so a real navigation to the list is safe (the offline branch
+  // above deliberately avoided one). This doubles as the #23 "reload and
+  // assert the local state converged" check: the row read from local SQLite
+  // shows the synced value.
+  await page.goto("/apiaries");
   await enableSemantics(page);
   await expect(apiaryRow(page, apiaryName)).toContainText("12 hives");
 
@@ -210,6 +229,12 @@ test("logout revokes the session — a reload does not silently re-authenticate 
   // id_token_hint, then back to the app's post_logout_redirect_uri).
   await login(page);
 
+  // Logout moved off the apiaries list's app bar to the Account screen (app-
+  // shell IA rework, #197/#172): open Account from the shell header (its
+  // account button's accessible name is the "Account settings" tooltip), then
+  // sign out from there.
+  await page.getByRole("button", { name: "Account settings" }).click();
+  await enableSemantics(page);
   await page.getByRole("button", { name: "Sign out" }).click();
 
   // The app-side session is cleared and (after the end-session round trip

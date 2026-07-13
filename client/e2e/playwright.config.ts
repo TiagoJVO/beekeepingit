@@ -19,7 +19,11 @@ const hostMap =
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 120_000,
+  // The create→offline-edit→sync test does two full OIDC logins (the main flow
+  // + a fresh-client convergence check), an offline edit, and waits out the
+  // connection-quality sync gate's backoff after reconnect (#55) — under CI
+  // load that adds up, so give it more than the old 120s budget.
+  timeout: 180_000,
   expect: { timeout: 30_000 },
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
