@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../core/widgets/tap_target.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../l10n/gen/app_localizations.dart';
+import '../theming/brand_tokens.dart';
 import 'sync_status.dart';
 
 /// Per-tab quick-add config for the contextual FAB (FR-UX-2). Tabs without a
@@ -80,6 +81,7 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
     final activeTab = tabs[navigationShell.currentIndex];
     final syncStatus = ref.watch(syncStatusProvider);
     final routeName = GoRouterState.of(context).topRoute?.name;
@@ -144,10 +146,13 @@ class AppShell extends ConsumerWidget {
       ),
       floatingActionButton: fab == null
           ? null
+          // Honey FAB drawn from the theme primary/onPrimary (BrandTokens
+          // honey / onHoney) — the "one honey primary action" shared with
+          // PrimaryActionButton, not a second hardcoded honey (#243).
           : FloatingActionButton.extended(
               key: const Key('shell-fab'),
-              backgroundColor: const Color(0xFFF0A81F),
-              foregroundColor: const Color(0xFF3A2E14),
+              backgroundColor: colorScheme.primary,
+              foregroundColor: colorScheme.onPrimary,
               onPressed: () => context.go(fab.destination),
               icon: const Icon(Icons.add),
               label: Text(fab.label(l10n)),
@@ -245,10 +250,11 @@ class _ShellHeader extends StatelessWidget implements PreferredSizeWidget {
             ),
       automaticallyImplyLeading: false,
       titleSpacing: onBack == null ? null : 0,
-      title: Text(
-        title,
-        style: const TextStyle(fontFamily: 'Playfair Display'),
-      ),
+      // The Playfair Display screen-title font + plum-header color come from
+      // the theme's appBarTheme.titleTextStyle now (AppTheme), replacing the
+      // old inline `fontFamily: 'Playfair Display'` that had no bundled font
+      // and silently fell back to Roboto (#243).
+      title: Text(title),
       actions: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -279,16 +285,24 @@ class _SyncStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    // The pill sits on the plum header; its label/tint use the header's own
+    // foreground (white) so they read on plum (white-on-plum700 is ~9.6:1 AA —
+    // the automated contrast test covers the ColorScheme role pairs, this
+    // header pair was verified computationally in the #243 PR).
+    final onHeader =
+        theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
     // sync.md §8's per-record vocabulary (pending/syncing/synced/superseded/
     // rejected) generalized to the header's single connection-level pill:
     // offline (with/without a pending count) · waiting for signal (the
     // connection-quality gate is backing off, FR-OF-3/§7.1, #55) · syncing
     // (upload/download in flight) · online/up-to-date. Amber doubles as
     // "offline"/"waiting"/"syncing" (all in-progress, not-yet-settled
-    // states), green is reserved for "online and caught up".
+    // states), green is reserved for "online and caught up". Amber == the
+    // theme primary (BrandTokens honey); green == BrandTokens.online (#243).
     final color = status.isOnline && !status.syncing
-        ? const Color(0xFF7BC98A)
-        : const Color(0xFFF0A81F);
+        ? BrandTokens.online
+        : theme.colorScheme.primary;
     final label = status.syncing
         ? l10n.syncStatusSyncing
         : status.isOnline
@@ -303,7 +317,7 @@ class _SyncStatusPill extends StatelessWidget {
       button: true,
       label: l10n.syncStatusSemanticLabel(label),
       child: Material(
-        color: Colors.white.withValues(alpha: 0.12),
+        color: onHeader.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
@@ -329,8 +343,8 @@ class _SyncStatusPill extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     label,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: onHeader,
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
                     ),
@@ -353,19 +367,24 @@ class _OfflineBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    // Plum banner ground with a honey cloud-off icon and cream text — from the
+    // tokens/theme (BrandTokens plum800 / honey / cream), not inline hexes.
+    // Cream-on-plum800 is AA-legible (~10.4:1, verified computationally in the
+    // #243 PR) (#243).
     return Container(
       key: const Key('shell-offline-banner'),
       width: double.infinity,
-      color: const Color(0xFF3A3149),
+      color: BrandTokens.plum800,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          const Icon(Icons.cloud_off, size: 18, color: Color(0xFFF0A81F)),
+          Icon(Icons.cloud_off, size: 18, color: colorScheme.primary),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               l10n.offlineBannerMessage(pendingCount),
-              style: const TextStyle(color: Color(0xFFE8E3F2), fontSize: 13),
+              style: const TextStyle(color: BrandTokens.cream, fontSize: 13),
             ),
           ),
         ],
