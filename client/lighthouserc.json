@@ -1,0 +1,27 @@
+{
+  "ci": {
+    "collect": {
+      "staticDistDir": "build/web",
+      "url": ["http://localhost/index.html"],
+      "numberOfRuns": 1,
+      "settings": {
+        "onlyCategories": ["pwa"],
+        "skipAudits": ["is-on-https"]
+      }
+    },
+    "assert": {
+      "assertions": {
+        "installable-manifest": ["error", { "minScore": 1 }],
+        "viewport": ["error", { "minScore": 1 }],
+        "themed-omnibox": ["error", { "minScore": 1 }],
+        "content-width": ["error", { "minScore": 1 }],
+        "maskable-icon": ["error", { "minScore": 1 }],
+        "splash-screen": ["error", { "minScore": 1 }]
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": "lhci-report"
+    }
+  }
+}

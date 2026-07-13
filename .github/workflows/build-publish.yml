@@ -137,6 +137,20 @@ jobs:
             exit 1
           fi
 
+      # PWA installability audit (#93 AC "passes an installability audit e.g. Lighthouse
+      # PWA checks"). Scoped to the client component only, and to the `pwa` category's
+      # installability audits specifically (installable manifest incl. service worker,
+      # viewport, themed omnibox, maskable icon, splash screen) — not the full
+      # performance/perf-budget score, so this gates a real installability regression
+      # without being noisy about unrelated Lighthouse perf variance. Runs against the
+      # static `build/web` artifact just produced above via a local static file server
+      # (no live cluster/gateway needed) — see client/lighthouserc.json and
+      # docs/client/pwa-installability.md.
+      - name: PWA installability audit (Lighthouse CI, client only)
+        if: matrix.component == 'client'
+        working-directory: ${{ matrix.path }}
+        run: npx --yes @lhci/cli@0.13.0 autorun --config=./lighthouserc.json
+
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Image metadata (tag by commit)

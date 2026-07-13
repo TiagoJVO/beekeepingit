@@ -128,9 +128,18 @@ the active locale, ready for the first field that needs it — see its tests
   reads/writes apiaries local-first through PowerSync + the `sync` service (`/v1/sync/token`,
   `/v1/sync/batch`).
 
+## PWA installability
+
+Manifest, service worker (Flutter-generated at build time), icons, and hosting are covered by
+`#93`. An automated Lighthouse CI installability audit runs in `build-publish.yml` on every
+client change, plus a manual verification procedure (with a first pass already filled in) for
+what a static-build audit can't check (real install prompt, offline shell serving) — see
+[`docs/client/pwa-installability.md`](../docs/client/pwa-installability.md).
+
 ## Not in scope here (see `FOLLOWUPS.md`)
 
 The PowerSync **web assets** (wasm SQLite + workers) and a few **deploy-time** wirings
 (OIDC issuer/host resolution, the `/sync-stream` gateway route) are validated against the
 live cluster — see `FOLLOWUPS.md`. The full-slice **Playwright e2e** lives in
-[`e2e/`](e2e/). App icons (`web/icons/`, `web/favicon.png`) are Flutter's default placeholders.
+[`e2e/`](e2e/). App icons (`web/icons/`, `web/favicon.png`) are Flutter's default placeholders —
+real branded artwork is still needed (`#93`'s "real project app icons" AC).
