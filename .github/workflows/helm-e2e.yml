@@ -340,6 +340,16 @@ jobs:
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server --tail=120 --prefix || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker --tail=200 --prefix || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/part-of=beekeepingit --tail=50 --prefix || true
+          # PowerSync's own stdout is the only place a rejected/failing client
+          # sync-stream connection is named: the browser side of that connection
+          # runs inside a SharedWorker, invisible to Playwright's page-level
+          # trace (all the trace shows is the SDK's ~5s fetchCredentials retry
+          # loop — learned diagnosing #236's follow-up e2e failure, where the
+          # part-of dump above also happened to miss this pod's logs). Dump it,
+          # the sync service, and the gateway explicitly.
+          kubectl -n beekeepingit-dev logs deploy/beekeepingit-powersync --tail=300 || true
+          kubectl -n beekeepingit-dev logs deploy/sync --tail=150 || true
+          kubectl -n kube-system logs deploy/traefik --tail=150 || true
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
           for d in identity organizations apiaries sync pwa beekeepingit-powersync; do
