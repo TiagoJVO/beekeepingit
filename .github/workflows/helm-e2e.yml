@@ -130,11 +130,16 @@ jobs:
           # loopback, so this is immune to the NetworkPolicy default-deny (#89) — a
           # separate probe pod or a runner port-forward is not. 90×10s = 15 min, since a
           # cold CI worker can be slow to finish applying the blueprint.
-          POD=$(kubectl -n beekeepingit-dev get pod \
-            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
-            -o jsonpath='{.items[0].metadata.name}')
+          # Re-resolve the server pod EACH iteration: on a fresh cluster authentik-server
+          # can restart mid-poll (cold-DB migrations, startup-probe cycling), and a pod
+          # name captured once goes stale — every exec then fails forever and the poll
+          # times out even after discovery is actually serving on the new pod.
           for i in $(seq 1 90); do
-            if kubectl -n beekeepingit-dev exec "$POD" -- \
+            POD=$(kubectl -n beekeepingit-dev get pod \
+              -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
+              --field-selector=status.phase=Running \
+              -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            if [ -n "$POD" ] && kubectl -n beekeepingit-dev exec "$POD" -- \
                  curl -sf http://localhost:9000/application/o/beekeepingit/.well-known/openid-configuration >/dev/null 2>&1; then
               echo "discovery answered after ~$((i*10))s"
               break
@@ -181,8 +186,8 @@ jobs:
           kubectl -n beekeepingit-dev get deployment -o wide || true
           kubectl -n beekeepingit-dev describe deployment || true
           kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
-          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=server --tail=100 || true
-          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=worker --tail=100 || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server --tail=120 --prefix || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker --tail=200 --prefix || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/part-of=beekeepingit --tail=50 --prefix || true
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
