@@ -18,7 +18,7 @@ The server-side apply semantics (LWW, conflict log, idempotency, tombstones) and
 the sync coordinator are additionally covered by fast **Go integration tests**
 (`services/apiaries`, `services/sync`) that run in CI without a browser.
 
-### Skipped guards (`test.fixme`) — real bugs found by wiring this e2e
+## Skipped guards (`test.fixme`) — real bugs found by wiring this e2e
 
 Two assertions the e2e correctly caught are marked `test.fixme` (skipped, not
 loosened) with the diagnosis inline, so the job stays green while the bugs are
