@@ -110,37 +110,53 @@ edges:
   # policy would (re)impose a whitelist on the excluded authentik-server pod
   # and strangle its own internal traffic — exactly the failure this whole
   # exclusion fixes.
+  #
+  # `to` selector: the goauthentik chart labels its server pod
+  # `app.kubernetes.io/name: authentik` + `app.kubernetes.io/component:
+  # server` (verified live via helm-e2e.yml diagnostics + a failed run's pod
+  # describe) — NOT `name: server`. An earlier revision used `{name: server}`,
+  # which matches NO pod, so the egress allow pointed at nothing. BOTH labels
+  # are required: `name: authentik` alone also matches the worker (same
+  # `name`), and `component: server` alone isn't specific enough.
+  #
   # Port 9000 = the server pod's container port behind the Service's port 80
   # (discoveryUrl says http://authentik-server/... = port 80 pre-DNAT;
   # NetworkPolicy matches the pod port after DNAT).
   - name: identity-to-authentik-server
     from: { app.kubernetes.io/name: identity }
-    to: { app.kubernetes.io/name: server }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
   - name: organizations-to-authentik-server
     from: { app.kubernetes.io/name: organizations }
-    to: { app.kubernetes.io/name: server }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
   - name: apiaries-to-authentik-server
     from: { app.kubernetes.io/name: apiaries }
-    to: { app.kubernetes.io/name: server }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
   - name: sync-to-authentik-server
     from: { app.kubernetes.io/name: sync }
-    to: { app.kubernetes.io/name: server }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
   # `helm test` hook (charts/authentik/templates/tests/ready-test.yaml) —
   # probes authentik-server's readiness endpoint; runs in CI (helm-e2e.yml).
-  # This pod is umbrella-owned (`app.kubernetes.io/instance: <release>`, NOT
-  # `authentik`), so it stays default-denied and needs this egress allow;
-  # `egressOnly` for the same reason as the service edges above.
+  #
+  # `from` selector MUST distinguish this umbrella-owned hook pod from the
+  # goauthentik chart's OWN server/worker pods: all three share
+  # `app.kubernetes.io/name: authentik`, so selecting on that alone caught the
+  # real server AND worker and flipped them to whitelist-only egress — which
+  # is exactly what broke the worker on #224's k3d run (it could no longer
+  # reach its bundled Postgres / the K8s API). The hook pod is distinguished
+  # by `app.kubernetes.io/part-of: beekeepingit` (the umbrella's shared label);
+  # the real authentik pods carry `part-of: authentik`. So this `from`
+  # matchLabels pins BOTH, targeting only the hook pod.
   - name: authentik-ready-test-to-authentik-server
-    from: { app.kubernetes.io/name: authentik }
-    to: { app.kubernetes.io/name: server }
+    from: { app.kubernetes.io/name: authentik, app.kubernetes.io/part-of: beekeepingit }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
 
