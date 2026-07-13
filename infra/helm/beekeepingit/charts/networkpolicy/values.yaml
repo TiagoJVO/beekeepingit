@@ -1,0 +1,250 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by
+# the `networkpolicy:` key in the parent's values.yaml/environments/*.yaml.
+enabled: true
+
+# Every real pod-to-pod edge in the namespace, derived directly from the
+# actual wiring (not guessed) — see each source file cited per edge. Each
+# entry renders BOTH sides of the same NetworkPolicy pair: an egress rule on
+# `from` and an ingress rule on `to`, because the default-deny baseline
+# (templates/default-deny.yaml) blocks Ingress AND Egress on every pod it
+# selects, so either side missing silently breaks the connection even though
+# "an allow rule exists somewhere". These rules are LIVE on local dev and the
+# CI k3d job — k3s enforces NetworkPolicy via its embedded kube-router
+# controller even though the CNI is Flannel (see default-deny.yaml).
+#
+# `from`/`to` are k8s label selectors (any pod matching, not just this
+# umbrella's own subcharts — see allow-pod-to-pod.yaml's doc comment for why
+# that's valid for a NetworkPolicy object).
+#
+# `port` is the single TCP port each edge uses — and it must be the
+# CONTAINER port, not the Service port: NetworkPolicy is enforced against
+# pod IPs after kube-proxy's Service DNAT, so a rule written for a Service
+# port that differs from the pod's own port never matches anything. This bit
+# PR #224's first CI round: Authentik's `authentik-server` Service listens on
+# 80 but the server pod itself serves on 9000, so the authentik edges below
+# say 9000 even though the wiring they mirror (gateway authRoutes,
+# services' discoveryUrl) addresses the Service's port 80.
+#
+# `egressOnly: true` renders only the caller-side egress policy, no
+# target-side ingress policy — required when `to` is a pod that default-deny
+# deliberately EXCLUDES (observability/MinIO, see default-deny.yaml): an
+# Ingress-type policy selecting such a pod would impose a whitelist on it
+# after all, silently blocking its other, un-enumerated callers (e.g.
+# Prometheus scraping otel-collector's own metrics port).
+edges:
+  # --- Gateway (Traefik, kube-system) -> in-namespace backends ---
+  # charts/gateway/values.yaml `routes`/`authRoutes`/`powersyncRoute`. Traefik
+  # is k3d's bundled ingress controller (infra/cluster/k3d-config.yaml,
+  # docs/architecture/platform.md "Cluster") and k3d/k3s installs it into
+  # `kube-system` by default — the only expected source of ingress traffic
+  # into this namespace from outside it. If a future environment's ingress
+  # controller lives elsewhere, update the `namespaceSelector` below.
+  - name: gateway-to-pwa
+    from: { namespaceSelector: kube-system }
+    to: { app.kubernetes.io/name: pwa }
+    port: 8080
+  - name: gateway-to-apiaries
+    from: { namespaceSelector: kube-system }
+    to: { app.kubernetes.io/name: apiaries }
+    port: 8080
+  - name: gateway-to-organizations
+    from: { namespaceSelector: kube-system }
+    to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  - name: gateway-to-identity
+    from: { namespaceSelector: kube-system }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: gateway-to-sync
+    from: { namespaceSelector: kube-system }
+    to: { app.kubernetes.io/name: sync }
+    port: 8080
+  - name: gateway-to-powersync
+    from: { namespaceSelector: kube-system }
+    to: { app.kubernetes.io/name: powersync }
+    port: 8080
+  # NB: there is deliberately NO gateway-to-authentik-server edge. Traefik
+  # does route the auth host to authentik-server, but that pod is EXCLUDED
+  # from default-deny (vendored authentik stack, see _helpers.tpl), so it has
+  # no ingress restriction to punch through — and adding an ingress policy
+  # that selects it would flip it to whitelist-only and block its other
+  # (internal) callers. Excluded pods need no allow rules.
+
+  # --- East-west (services/values.yaml env: INTERNAL_*_URL) ---
+  - name: organizations-to-identity
+    from: { app.kubernetes.io/name: organizations }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: apiaries-to-identity
+    from: { app.kubernetes.io/name: apiaries }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: apiaries-to-organizations
+    from: { app.kubernetes.io/name: apiaries }
+    to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  - name: sync-to-identity
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: sync-to-organizations
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  - name: sync-to-apiaries
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: apiaries }
+    port: 8080
+  # powersync.auth.jwksUrl = http://sync:8080/internal/sync/jwks.json
+  - name: powersync-to-sync
+    from: { app.kubernetes.io/name: powersync }
+    to: { app.kubernetes.io/name: sync }
+    port: 8080
+
+  # --- OIDC discovery/JWKS (docs/architecture/auth.md §4, internal split) ---
+  # Our domain services are under default-deny and must reach authentik for
+  # OIDC discovery — but authentik itself is EXCLUDED from default-deny (a
+  # vendored stack, see _helpers.tpl / default-deny.yaml), so these edges are
+  # `egressOnly`: only the caller-side allow is needed; a target-side ingress
+  # policy would (re)impose a whitelist on the excluded authentik-server pod
+  # and strangle its own internal traffic — exactly the failure this whole
+  # exclusion fixes.
+  #
+  # `to` selector: the goauthentik chart labels its server pod
+  # `app.kubernetes.io/name: authentik` + `app.kubernetes.io/component:
+  # server` (verified live via helm-e2e.yml diagnostics + a failed run's pod
+  # describe) — NOT `name: server`. An earlier revision used `{name: server}`,
+  # which matches NO pod, so the egress allow pointed at nothing. BOTH labels
+  # are required: `name: authentik` alone also matches the worker (same
+  # `name`), and `component: server` alone isn't specific enough.
+  #
+  # Port 9000 = the server pod's container port behind the Service's port 80
+  # (discoveryUrl says http://authentik-server/... = port 80 pre-DNAT;
+  # NetworkPolicy matches the pod port after DNAT).
+  - name: identity-to-authentik-server
+    from: { app.kubernetes.io/name: identity }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
+  - name: organizations-to-authentik-server
+    from: { app.kubernetes.io/name: organizations }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
+  - name: apiaries-to-authentik-server
+    from: { app.kubernetes.io/name: apiaries }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
+  - name: sync-to-authentik-server
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
+  # `helm test` hook (charts/authentik/templates/tests/ready-test.yaml) —
+  # probes authentik-server's readiness endpoint; runs in CI (helm-e2e.yml).
+  #
+  # `from` selector MUST distinguish this umbrella-owned hook pod from the
+  # goauthentik chart's OWN server/worker pods: all three share
+  # `app.kubernetes.io/name: authentik`, so selecting on that alone caught the
+  # real server AND worker and flipped them to whitelist-only egress — which
+  # is exactly what broke the worker on #224's k3d run (it could no longer
+  # reach its bundled Postgres / the K8s API). The hook pod is distinguished
+  # by `app.kubernetes.io/part-of: beekeepingit` (the umbrella's shared label);
+  # the real authentik pods carry `part-of: authentik`. So this `from`
+  # matchLabels pins BOTH, targeting only the hook pod.
+  - name: authentik-ready-test-to-authentik-server
+    from: { app.kubernetes.io/name: authentik, app.kubernetes.io/part-of: beekeepingit }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
+
+  # --- Postgres (charts/postgres) ---
+  # sync does NOT connect directly (services/values.yaml sync.db.enabled: false).
+  # `to: { cnpgCluster: true }` is a marker the template resolves to the real
+  # `cnpg.io/cluster: <postgres.fullname>` label (release-name-derived, not a
+  # static string values.yaml can know) — see allow-pod-to-pod.yaml.
+  - name: identity-to-postgres
+    from: { app.kubernetes.io/name: identity }
+    to: { cnpgCluster: true }
+    port: 5432
+  - name: organizations-to-postgres
+    from: { app.kubernetes.io/name: organizations }
+    to: { cnpgCluster: true }
+    port: 5432
+  - name: apiaries-to-postgres
+    from: { app.kubernetes.io/name: apiaries }
+    to: { cnpgCluster: true }
+    port: 5432
+  # PS_DATA_SOURCE_URI (logical replication) + PS_STORAGE_SOURCE_URI
+  # (charts/postgres/templates/cluster.yaml's `powersync` managed role).
+  - name: powersync-to-postgres
+    from: { app.kubernetes.io/name: powersync }
+    to: { cnpgCluster: true }
+    port: 5432
+  # This chart's own migration-time Job/test-hook pods (schema-grants-job,
+  # audit-immutability-job, tests/postgis-smoke-test — each connects to
+  # Postgres as PGHOST at hook/test time, and each stamps `app.kubernetes.io/
+  # name: postgres` on its own pod, distinct from the CNPG instance pods'
+  # `cnpg.io/cluster` label).
+  - name: postgres-jobs-to-postgres
+    from: { app.kubernetes.io/name: postgres }
+    to: { cnpgCluster: true }
+    port: 5432
+  # The CNPG operator itself (cluster-scoped, its own namespace, ADR-0010) —
+  # needed for the Cluster to reconcile (replication, health) regardless of
+  # app traffic.
+  - name: cnpg-operator-to-postgres
+    from: { namespaceSelector: cnpg-system }
+    to: { cnpgCluster: true }
+    port: 5432
+
+  # --- Authentik's OWN internal topology is NOT enumerated here ---
+  # authentik-server, authentik-worker and the bundled authentik-postgresql-0
+  # all share `app.kubernetes.io/instance: authentik` and are EXCLUDED from
+  # default-deny (_helpers.tpl / default-deny.yaml), so their internal traffic
+  # (server<->Postgres<->worker<->redis) is unrestricted — no allow rules
+  # needed, and adding ingress rules that select those pods would actually
+  # re-strangle them (an ingress policy imposes a whitelist on its target).
+  # An earlier revision of this PR tried to enumerate these three edges by
+  # guessing the bundled-Postgres label; it broke the CI k3d job's Authentik
+  # rollout ("progress deadline exceeded" — server couldn't reach
+  # authentik-postgresql-0). Excluding the whole vendored stack, like
+  # observability and MinIO, is the correct pattern (bringing all three under
+  # netpol with live-verified edges is tracked on #89).
+
+  # --- Observability (infra/gitops/apps/dev/observability-helmrelease.yaml
+  # targetNamespace: beekeepingit-dev — same namespace) ---
+  # services/values.yaml otelEndpoint: otel-collector:4317, shared by every
+  # Go service. Attached per-service (not a namespace-wide egress-to-
+  # collector rule) to keep every edge in this list equally auditable.
+  # `egressOnly`: otel-collector belongs to the observability release, which
+  # default-deny deliberately excludes — only the caller-side egress allow is
+  # needed, and an ingress policy here would impose a whitelist on the
+  # collector that blocks its un-enumerated callers (see the header comment).
+  - name: identity-to-otel-collector
+    from: { app.kubernetes.io/name: identity }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+  - name: organizations-to-otel-collector
+    from: { app.kubernetes.io/name: organizations }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+  - name: apiaries-to-otel-collector
+    from: { app.kubernetes.io/name: apiaries }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+  - name: sync-to-otel-collector
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: networkpolicy
+description: >-
+  Default-deny + explicit-allow NetworkPolicies for the beekeepingit namespace (EPIC-14 #89,
+  NFR-SEC-1 "internal service traffic policy is documented"). Hand-rolled (nothing to vendor):
+  NetworkPolicy is a namespace-scoped core API object, so this chart can allow traffic to/from
+  workloads owned by OTHER Flux HelmReleases in the same namespace (authentik, minio) without
+  needing to modify their charts — see charts/networkpolicy/README (this chart's own notes) and
+  docs/architecture/platform.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

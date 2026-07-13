@@ -1,0 +1,118 @@
+{{/*
+Renders BOTH sides of every edge in .Values.edges: an Egress rule on the
+`from` selector and an Ingress rule on the `to` selector. Both are required —
+default-deny.yaml sets `policyTypes: ["Ingress", "Egress"]` on every pod it
+selects, so an allow rule on only one side still leaves the connection
+blocked on the other. These rules are enforced for real on k3d/k3s (embedded
+kube-router network-policy controller — see default-deny.yaml). Two
+exceptions:
+  - when `from` is a `namespaceSelector` (the caller is outside this
+    namespace — e.g. Traefik in kube-system, the CNPG operator in
+    cnpg-system), there is no egress side to render at all: this chart only
+    secures pods IN .Values.global.namespace, and an out-of-namespace
+    caller's own egress policy (if any) is that namespace's own concern, not
+    this chart's.
+  - when the edge sets `egressOnly: true` (the target is a pod default-deny
+    deliberately EXCLUDES — observability/MinIO), only the caller-side
+    egress policy renders: an Ingress-type policy selecting an excluded pod
+    would impose a whitelist on it after all, silently blocking its other,
+    un-enumerated callers.
+
+Selector shapes an edge's `from`/`to` can take:
+  - a plain map of pod labels                    -> podSelector
+  - { namespaceSelector: <ns-name> }              -> cross-namespace (e.g.
+                                                      kube-system, cnpg-system)
+                                                      — valid for `from` only
+                                                      (see exception above)
+  - { cnpgCluster: true }                         -> resolves to this
+                                                      release's real CNPG
+                                                      cluster label
+    (`cnpg.io/cluster: {{ include "postgres.fullname" . }}`, not a static
+    string values.yaml can express — postgres.fullname is release-name-
+    derived, defined in charts/postgres/templates/_helpers.tpl and visible
+    here because Helm's named templates share one global namespace across
+    every chart in a release, not per-subchart).
+
+Applies namespace-wide by design, not just to this umbrella's own subcharts:
+several edges' `to`/`from` selectors match pods owned by the STANDALONE
+authentik/minio Flux HelmReleases (ADR-0012) — e.g. `app.kubernetes.io/name:
+server`. That's valid because NetworkPolicy (networking.k8s.io/v1) is a
+namespace-scoped core API object, not tied to a specific Helm
+release/HelmRelease; a NetworkPolicy created by this chart still governs
+traffic to/from any pod in the same namespace, whoever created it.
+*/}}
+{{- if .Values.enabled }}
+{{- $root := . }}
+{{- range .Values.edges }}
+{{- $edge := . }}
+{{- if not $edge.from.namespaceSelector }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-{{ $edge.name }}
+  namespace: {{ $root.Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $edge.from | nindent 6 }}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        {{- if $edge.to.cnpgCluster }}
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ include "postgres.fullname" $root }}
+        {{- else if $edge.to.namespaceSelector }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $edge.to.namespaceSelector }}
+        {{- else }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml $edge.to | nindent 14 }}
+        {{- end }}
+      ports:
+        - { protocol: TCP, port: {{ $edge.port }} }
+{{- end }}
+{{- if not $edge.egressOnly }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-{{ $edge.name }}
+  namespace: {{ $root.Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: networkpolicy
+spec:
+  podSelector:
+    {{- if $edge.to.cnpgCluster }}
+    matchLabels:
+      cnpg.io/cluster: {{ include "postgres.fullname" $root }}
+    {{- else if $edge.to.namespaceSelector }}
+    {{- fail (printf "edge %s: `to` cannot be a namespaceSelector (a namespace can't be the policy's own podSelector)" $edge.name) }}
+    {{- else }}
+    matchLabels:
+      {{- toYaml $edge.to | nindent 6 }}
+    {{- end }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        {{- if $edge.from.namespaceSelector }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $edge.from.namespaceSelector }}
+        {{- else }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml $edge.from | nindent 14 }}
+        {{- end }}
+      ports:
+        - { protocol: TCP, port: {{ $edge.port }} }
+{{- end }}
+{{- end }}
+{{- end }}

@@ -4,6 +4,15 @@ via `helm test <release> -n <namespace>`: manually against the local `beekeeping
 k3d cluster, and automatically in CI on infra PRs (helm-e2e.yml, #154). Uses the
 app-owner credentials CNPG auto-generates for the bootstrap database
 (<cluster-fullname>-app Secret).
+
+Bounded readiness wait before the assertion: the CNPG `-rw` Service points at the
+current primary, which can briefly REFUSE connections during a primary transition
+(observed in CI — the domain services hit the same transient
+`connection refused` and survive only because they retry). A `helm test` hook is a
+single-shot pod with no restart, so without this loop one unlucky blip fails the
+whole test. Poll `pg_isready` until the primary accepts (or a bounded timeout),
+mirroring the retry idiom the schema-grants Job already uses for the same reason —
+then run the actual PostGIS assertion. This also removes a latent flake on `main`.
 */}}
 {{- if .Values.enabled }}
 apiVersion: v1
@@ -23,11 +32,24 @@ spec:
     - name: postgis-smoke-test
       image: {{ .Values.image }}
       command:
-        - psql
-        - -v
-        - ON_ERROR_STOP=1
+        - /bin/sh
         - -c
-        - "SELECT postgis_version();"
+        - |
+          set -eu
+          # Wait (bounded) for the CNPG primary behind the -rw Service to accept
+          # connections — see the header comment. ~90s cap (18 * 5s).
+          i=0
+          until pg_isready -h "$PGHOST" -p 5432 -U "$PGUSER" -d "$PGDATABASE"; do
+            i=$((i + 1))
+            if [ "$i" -ge 18 ]; then
+              echo "postgres at $PGHOST:5432 not ready after ~90s — failing smoke test" >&2
+              exit 1
+            fi
+            echo "postgres not ready yet, retrying in 5s... ($i/18)"
+            sleep 5
+          done
+          # PostGIS availability assertion (the actual AC).
+          psql -v ON_ERROR_STOP=1 -c "SELECT postgis_version();"
       env:
         - name: PGHOST
           value: {{ include "postgres.fullname" . }}-rw
