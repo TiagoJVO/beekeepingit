@@ -11,8 +11,12 @@ k3d bring-up).
 Runs in CI (`.github/workflows/helm-e2e.yml`, NFR-TST-1, `#162`) against a fresh
 k3d cluster the workflow itself brings up — no separate deployed environment
 needed. Gated on changes under `infra/**` or `client/e2e/**` (dorny/paths-filter),
-same as the rest of that job. The apiary the create step leaves behind is deleted
-in `afterAll` (`tests/slice.spec.ts`) via the same REST API the app uses.
+same as the rest of that job. The **PWA image is built in-job from the checked-out
+commit** and imported into the cluster (#236) — not pulled as the last-published
+`client:latest`, which only updates on merge to main and would make the e2e test
+main's client bundle instead of the commit under test. The apiary the create step
+leaves behind is deleted in `afterAll` (`tests/slice.spec.ts`) via the same REST
+API the app uses.
 
 The server-side apply semantics (LWW, conflict log, idempotency, tombstones) and
 the sync coordinator are additionally covered by fast **Go integration tests**
