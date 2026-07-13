@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:powersync/powersync.dart';
-import 'package:powersync/sqlite3_common.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/geo/distance.dart';
+import '../../core/sync/local_store.dart';
+import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
 
@@ -35,27 +35,30 @@ class Apiary {
   bool get hasLocation => locationLon != null && locationLat != null;
 }
 
-/// Reads and writes apiaries against the local PowerSync SQLite. Every write
-/// is local-first and queued for the write-back seam (walking-skeleton.md
-/// §4.4); the client never calls the apiaries REST write API directly. The
-/// server derives `organization_id` from the token, so writes here omit it.
+/// Reads and writes apiaries against the local store (NFR-ARC-2, #55: behind
+/// [LocalStoreEngine], never a concrete engine type like `PowerSyncDatabase`
+/// directly, so the sync engine can be swapped without rewriting this file).
+/// Every write is local-first and queued for the write-back seam
+/// (walking-skeleton.md §4.4); the client never calls the apiaries REST
+/// write API directly. The server derives `organization_id` from the token,
+/// so writes here omit it.
 class ApiariesRepository {
-  ApiariesRepository(this._db);
+  ApiariesRepository(this._store);
 
-  final PowerSyncDatabase _db;
+  final LocalStoreEngine _store;
   static const _uuid = Uuid();
 
   Stream<List<Apiary>> watchAll() {
-    return _db
+    return _store
         .watch(
           'SELECT id, name, hive_count, notes, location_lon, location_lat '
           'FROM $apiariesTable ORDER BY created_at DESC, name',
         )
-        .map((rs) => rs.map(_fromRow).toList());
+        .map((rows) => rows.map(_fromRow).toList());
   }
 
   Future<Apiary?> getById(String id) async {
-    final row = await _db.getOptional(
+    final row = await _store.getOptional(
       'SELECT id, name, hive_count, notes, location_lon, location_lat '
       'FROM $apiariesTable WHERE id = ?',
       [id],
@@ -70,7 +73,7 @@ class ApiariesRepository {
   }) async {
     final id = _uuid.v4();
     final now = _nowIso();
-    await _db.execute(
+    await _store.execute(
       'INSERT INTO $apiariesTable (id, name, hive_count, notes, created_at, updated_at) '
       'VALUES (?, ?, ?, ?, ?, ?)',
       [id, name, hiveCount, notes, now, now],
@@ -92,7 +95,7 @@ class ApiariesRepository {
   }) async {
     final current = await getById(id);
     if (current == null) return;
-    await _db.execute(
+    await _store.execute(
       'UPDATE $apiariesTable SET name = ?, hive_count = ?, notes = ?, updated_at = ? WHERE id = ?',
       [
         name ?? current.name,
@@ -105,9 +108,9 @@ class ApiariesRepository {
   }
 
   Future<void> delete(String id) =>
-      _db.execute('DELETE FROM $apiariesTable WHERE id = ?', [id]);
+      _store.execute('DELETE FROM $apiariesTable WHERE id = ?', [id]);
 
-  Apiary _fromRow(Row r) => Apiary(
+  Apiary _fromRow(Map<String, Object?> r) => Apiary(
     id: r['id'] as String,
     name: r['name'] as String,
     hiveCount: (r['hive_count'] as int?) ?? 0,
@@ -123,7 +126,7 @@ final apiariesRepositoryProvider = FutureProvider<ApiariesRepository>((
   ref,
 ) async {
   final session = await ref.watch(powerSyncProvider.future);
-  return ApiariesRepository(session.db);
+  return ApiariesRepository(PowerSyncLocalStore(session.db));
 });
 
 /// Live list of the org's apiaries, straight from local SQLite (offline-first).

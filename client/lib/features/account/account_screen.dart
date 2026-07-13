@@ -143,6 +143,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         ? l10n.syncStatusSyncing
         : syncStatus.isOnline
         ? l10n.syncStatusOnline
+        : syncStatus.isWaitingForSignal
+        ? l10n.syncStatusWaitingForSignal
         : l10n.syncStatusOffline;
     return [
       Text(

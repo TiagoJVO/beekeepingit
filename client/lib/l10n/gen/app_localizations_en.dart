@@ -291,6 +291,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncStatusSyncing => 'Syncing…';
 
   @override
+  String get syncStatusWaitingForSignal => 'Waiting for better signal';
+
+  @override
   String get syncSupersededNotice =>
       'One of your offline changes was overwritten by a newer edit.';
 

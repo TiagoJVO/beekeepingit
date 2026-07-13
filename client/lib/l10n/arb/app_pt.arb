@@ -81,6 +81,7 @@
   "apiariesViewListAction": "Vista de lista",
   "apiariesViewMapAction": "Vista de mapa",
   "syncStatusSyncing": "A sincronizar…",
+  "syncStatusWaitingForSignal": "A aguardar melhor sinal",
   "syncSupersededNotice": "Uma das suas alterações offline foi substituída por uma edição mais recente.",
   "accountSyncSectionTitle": "Sincronização",
   "accountSyncStatusLabel": "Estado: {status}",

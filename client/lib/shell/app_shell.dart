@@ -281,10 +281,11 @@ class _SyncStatusPill extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     // sync.md §8's per-record vocabulary (pending/syncing/synced/superseded/
     // rejected) generalized to the header's single connection-level pill:
-    // offline (with/without a pending count) · syncing (upload/download in
-    // flight) · online/up-to-date. Amber doubles as both "offline" and
-    // "syncing" (an in-progress, not-yet-settled state), green is reserved
-    // for "online and caught up".
+    // offline (with/without a pending count) · waiting for signal (the
+    // connection-quality gate is backing off, FR-OF-3/§7.1, #55) · syncing
+    // (upload/download in flight) · online/up-to-date. Amber doubles as
+    // "offline"/"waiting"/"syncing" (all in-progress, not-yet-settled
+    // states), green is reserved for "online and caught up".
     final color = status.isOnline && !status.syncing
         ? const Color(0xFF7BC98A)
         : const Color(0xFFF0A81F);
@@ -292,6 +293,8 @@ class _SyncStatusPill extends StatelessWidget {
         ? l10n.syncStatusSyncing
         : status.isOnline
         ? l10n.syncStatusOnline
+        : status.isWaitingForSignal
+        ? l10n.syncStatusWaitingForSignal
         : (status.pendingCount > 0
               ? l10n.syncStatusOfflinePending(status.pendingCount)
               : l10n.syncStatusOffline);

@@ -37,6 +37,15 @@ proved create → offline edit → sync + server-authoritative LWW/conflict-log 
 design is **engine-aware but isolates engine specifics behind the contract in §5**, so the sync
 engine remains swappable (NFR-ARC-2).
 
+**Client-side seam (as built, #55).** On the client, `client/lib/core/sync/local_store.dart`'s
+`LocalStoreEngine` is the concrete NFR-ARC-2 boundary: a minimal read/watch/write/`clear()`
+interface that feature repositories (e.g. `features/apiaries/apiaries_repository.dart`) depend
+on instead of a concrete engine type. `powersync_local_store.dart`'s `PowerSyncLocalStore` is
+the only implementation today, and is the one file outside `core/sync/` allowed to import
+`package:powersync`. `clear()` disconnects and wipes every locally-replicated row plus the
+upload queue (`PowerSyncDatabase.disconnectAndClear`) — exposed on the interface now for the
+logout data-wipe **#125** will wire up, not added ad hoc later.
+
 **When any of this actually runs.** The conflict/atomicity machinery is a property of the
 **offline-deferred push** only: writes made while a device is disconnected and replayed later.
 **Online writes go straight through the normal service API** and conflict at the database like
@@ -411,6 +420,31 @@ the client gates sync on **measured link quality**, not the mere presence of a c
   (with PowerSync: gate `connect()`/`disconnect()` and the `uploadData` trigger). It sits
   **outside** the §5 contract, so it survives an engine swap (NFR-ARC-2).
 
+**As built (#55).** `client/lib/core/sync/`:
+
+- `connectivity_probe.dart`'s `HttpConnectivityProbe` is the "tiny probe request." No `/v1/*`
+  domain-service `/healthz` is actually reachable through the gateway today — the main Ingress
+  routes `/v1/<service>` **without** stripping the prefix, but every service mounts
+  `/healthz`/`/readyz` at its own root, so e.g. `/v1/sync/healthz` 404s. Instead the probe hits
+  **PowerSync's own liveness endpoint**, `GET <gatewayBaseUrl>/sync-stream/probes/liveness` —
+  already gateway-reachable via the existing strip-prefix route
+  (`infra/helm/beekeepingit/charts/gateway/templates/powersync-route.yaml`), unauthenticated, and
+  cheap (no DB, no business logic). A response within the timeout (default 3s) counts as a pass
+  regardless of status code — the signal is reachability, not the probe endpoint's status-code
+  contract. No new server endpoint was needed.
+- `sync_gate.dart`'s `SyncGate` is the probe → exponential-backoff → probe state machine
+  (`SyncGateState`: `probing` / `waitingForSignal` / `passed`; default backoff 2s → 2min,
+  ×2/attempt — tuning constants, adjustable without an interface change). It depends only on
+  `ConnectivityProbe` and a `Future<void> Function()` connect callback — never on a PowerSync
+  type — so it sits outside the §5 contract as intended.
+- `powersync_service.dart` wires the gate around `PowerSyncDatabase.connect()`: the first
+  connect and every reconnect after a `statusStream` connected→disconnected transition go
+  through the gate (`SyncGate.rearm()`); `shell/sync_status.dart`'s `syncNowProvider` (#58's
+  manual "sync now") calls `SyncGate.requestSync()`, which bypasses the probe/backoff entirely.
+- `SyncStatus` (`shell/sync_status.dart`) gained an additive `gateState` field (default
+  `passed`, so existing call sites are unaffected) and `isWaitingForSignal`; the header pill and
+  account screen show "Waiting for better signal" while the gate backs off (EN/PT).
+
 ---
 
 ## 8. "Synced" status & notify-and-fix UX (FR-OF-2 / D-12)
@@ -465,7 +499,7 @@ authoritative.
 | Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change           | §6.3; EPIC-06                                                                           |
 | Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                   | owning service                                                                          |
 | Notify-and-fix screens                                                    | **Design hand-off** — states/data fixed here                                                                                               | EPIC-06                                                                                 |
-| Connection-quality gate (FR-OF-3)                                         | **Design hand-off** — trigger rule, probe approach & override fixed here (§7.1); thresholds tuned in field testing                         | EPIC-06 (#55/#58)                                                                       |
+| Connection-quality gate (FR-OF-3)                                         | **Resolved** — built in #55 (§7.1 "As built"); probe/backoff thresholds are the starting defaults, still tunable in field testing          | `client/lib/core/sync/{connectivity_probe,sync_gate}.dart` (#55)                        |
 | Validation-parity mechanism                                               | **Design hand-off** — approach fixed here (§9)                                                                                             | EPIC-06                                                                                 |
 | History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                 | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)              |
 | History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved) |
