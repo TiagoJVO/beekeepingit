@@ -29,7 +29,7 @@ dependencies:
   # Map view (D-16, #34): flutter_map + MapLibre/OSM tiles per tech-stack.md;
   # latlong2 is flutter_map's LatLng type.
   flutter_map: ^8.2.2
-  latlong2: ^0.9.1
+  latlong2: ^0.10.1
   # Device location — for both #34's map "Você" marker and #33's offline
   # proximity ordering (FR-AP-2): permission request + last-known/current
   # position, with a working web (PWA) implementation via the browser
