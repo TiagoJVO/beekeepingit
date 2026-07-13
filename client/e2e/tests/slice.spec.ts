@@ -217,11 +217,18 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // download stream — e.g. the gateway/endpoint bugs that let a stale-local
   // read still pass (#23). This is the stronger convergence guarantee — it
   // does a fresh login, so it doesn't depend on reload session-persistence.
+  //
+  // 60s (not 30s): a fresh client's FIRST full-bucket download is gated by the
+  // same connection-quality probe/backoff (#55, FR-OF-3) as the reconnect poll
+  // above, and under CI load it legitimately needs more than 30s sometimes —
+  // the trace of the flaky run shows the apiary DID arrive with "12 hives",
+  // just past the old 30s deadline (slow, not hung). Only the wait is
+  // extended; the "12 hives" content assertion is unchanged.
   const fresh = await browser.newContext();
   try {
     const p2 = await fresh.newPage();
     await login(p2);
-    await expect(apiaryRow(p2, apiaryName)).toBeVisible({ timeout: 30_000 });
+    await expect(apiaryRow(p2, apiaryName)).toBeVisible({ timeout: 60_000 });
     await expect(apiaryRow(p2, apiaryName)).toContainText("12 hives");
   } finally {
     await fresh.close();
