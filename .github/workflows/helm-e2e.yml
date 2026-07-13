@@ -27,8 +27,8 @@ name: Helm E2E
 # report, and it would block merging forever. Path-relevance is instead checked INSIDE
 # the job (dorny/paths-filter): on an irrelevant PR every real step is skipped — not
 # absent — so the check reports success in seconds without spinning up a cluster; only a
-# PR that changes the charts/cluster scripts (or the e2e test itself) pays for the
-# (minutes-long) live bring-up.
+# PR that changes the charts/cluster scripts or the client app (whose image is built
+# from this checkout, above) pays for the (minutes-long) live bring-up.
 
 on:
   pull_request:
@@ -53,8 +53,17 @@ jobs:
           fetch-depth: 0
 
       # Two outputs: `infra` (unchanged) gates the existing helm-test bring-up;
-      # `e2e` additionally covers the Playwright test itself so a change to
-      # `client/e2e/**` alone (no infra/chart edit) still exercises it. `e2e` is
+      # `e2e` additionally covers the whole client app (`client/**` — source,
+      # pubspec, web/, not just the Playwright e2e): since #242 the PWA image
+      # under test is built in-job from this very checkout, so a client-only
+      # change IS visible to the e2e — but only if it also triggers it. The
+      # filter previously stopped at `client/e2e/**`, so a client-only PR
+      # skipped the live run entirely and shipped un-e2e'd (#244 did exactly
+      # that; trigger-path policy tracked in #245). This buys every client PR
+      # the ~30-40 min live bring-up — the accepted trade (NFR-TST-1, #162).
+      # `services/**` stays out until service images are also built in-job
+      # (#245): those pods still deploy main's `:latest`, so a services PR
+      # would pay the full run only to exercise main's binaries. `e2e` is
       # the superset every e2e-specific step below is actually gated on, since
       # running the e2e needs the exact same live bring-up `infra` already gates.
       # (Listed out flat rather than via a YAML anchor: the `filters` value is a
@@ -75,7 +84,7 @@ jobs:
               - 'infra/cluster/**'
               - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
               - '.github/workflows/helm-e2e.yml'
-              - 'client/e2e/**'
+              - 'client/**'
 
       # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
       # local dev (infra/cluster/*.sh) and the rest of CI use. (mise installs

@@ -221,8 +221,10 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
   tears the cluster down regardless of outcome. Like `helm-ci.yml` it runs on every PR/push and
   checks path-relevance _inside_ the job (`dorny/paths-filter`) rather than on the trigger — so it
   can be a required check while still skipping the (minutes-long) live bring-up on PRs that don't
-  touch `infra/helm/**`, `infra/cluster/**`, or `client/e2e/**`, reporting success in seconds for
-  those.
+  touch `infra/helm/**`, `infra/cluster/**`, or `client/**`, reporting success in seconds for
+  those. The whole client tree gates the run (not just `client/e2e/**`) because the PWA image
+  under test is built in-job from the PR's own checkout (`#236`) — a client-only PR that skipped
+  the e2e would ship the one artifact the test exists to exercise unverified (`#245`).
 - [`gitops-ci.yml`](../../.github/workflows/gitops-ci.yml) — kubeconform-validates the Flux
   manifests under `infra/gitops/**` (including the image-automation templates).
 
