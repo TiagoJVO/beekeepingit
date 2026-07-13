@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart' as ll;
@@ -18,6 +19,22 @@ const _fallbackCenter = ll.LatLng(39.5, -8.0);
 const _fallbackZoom = 6.0;
 const _focusedZoom = 12.0;
 
+/// The two tile layers the map can render (#257, refines D-16). Satellite is
+/// the default — field users recognize terrain/tree cover, not street
+/// outlines — with a toggle down to streets (the original OSM layer) for
+/// when road/place names are more useful.
+enum MapLayer { satellite, streets }
+
+/// Which [MapLayer] is currently active. A plain [StateProvider] — same
+/// pattern as [apiariesViewProvider] in `apiaries_list_screen.dart` — rather
+/// than a persisted preference: #257's AC only asks that the choice "survives
+/// list<->map view switches within the session", not an app restart. Scoped
+/// above the list/map [IndexedStack] (both views are built from the same
+/// [ProviderScope]), so switching to the list and back to the map keeps
+/// whatever layer was last selected, exactly like the tap-to-measure
+/// selection already does.
+final mapLayerProvider = StateProvider<MapLayer>((ref) => MapLayer.satellite);
+
 /// The apiary map view (#34, FR-AP-3) plus the tap-to-measure distance
 /// overlay (#37, FR-AP-5, D-15). Renders a marker per apiary that has a
 /// stored location (apiaries without one are silently skipped — #34 AC), a
@@ -29,10 +46,13 @@ const _focusedZoom = 12.0;
 /// services/apiaries/api/apiaries.go's getApiaryDistance — mirroring how
 /// apiary CRUD writes never call the REST write API directly).
 ///
-/// Tile source: the public OSM/MapLibre demo endpoint (D-16 — tile
-/// provider/offline-tile-caching is a separate, deferred concern; this
-/// screen only needs to render online without error for a reasonable
-/// marker count).
+/// Tile source: satellite imagery (Esri World Imagery) by default, streets
+/// (the public OSM/MapLibre demo endpoint) as the toggled-to alternative
+/// (#257, refining D-16 — the tile *provider* for production traffic and
+/// offline-tile caching remain a separate, deferred concern per the
+/// narrowed Q-MAP; this screen only needs to render online without error
+/// for a reasonable marker count, with correct attribution for whichever
+/// source is active).
 ///
 /// Embedded as a sibling view of [ApiariesListScreen] (#35, FR-AP-4) behind
 /// the list/map segmented toggle, rather than its own pushed route — both
@@ -139,6 +159,7 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final apiariesAsync = ref.watch(apiariesStreamProvider);
+    final mapLayer = ref.watch(mapLayerProvider);
 
     return apiariesAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -159,6 +180,7 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
               selected: _selected,
               userLocation: _userLocation,
               userLocationLabel: l10n.apiaryMapUserLocationLabel,
+              layer: mapLayer,
               onApiaryTap: _onApiaryTap,
               onApiaryDetail: (apiary) => context.go('/apiaries/${apiary.id}'),
             ),
@@ -178,8 +200,11 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
               ),
             if (!_locationLoading && _locationPermissionDenied)
               Positioned(
+                // Right inset leaves room for the layer toggle in the
+                // opposite top-right corner (below) so a long permission
+                // message never renders underneath it.
                 left: 12,
-                right: 12,
+                right: 76,
                 top: 12,
                 child: _InfoBanner(
                   key: const Key('apiary-map-location-denied'),
@@ -188,13 +213,45 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
                 ),
               ),
             Positioned(
+              top: 12,
+              right: 12,
+              child: _MapLayerToggle(
+                layer: mapLayer,
+                onChanged: (layer) =>
+                    ref.read(mapLayerProvider.notifier).state = layer,
+              ),
+            ),
+            // Attribution rides directly above the measure overlay in the
+            // same bottom-anchored Positioned (a Column) rather than being
+            // pinned to the screen's literal bottom-left corner the way
+            // flutter_map's own attribution widgets are: the measure card
+            // already occupies that corner's row (always — its hint shows
+            // even with nothing selected), and its height varies with text
+            // wrapping at narrow widths, so a separately-positioned
+            // attribution with a fixed bottom offset either collides with it
+            // or floats at the wrong height. Sharing the Positioned also
+            // bounds the attribution's width (left+right insets), so the
+            // long Esri credit line wraps on phones instead of overflowing
+            // off-screen.
+            Positioned(
               left: 12,
               right: 12,
               bottom: 12,
-              child: _MeasureOverlay(
-                key: const Key('apiary-map-measure-overlay'),
-                selected: _selected,
-                onClear: _clearSelection,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _MapAttribution(
+                    key: const Key('apiary-map-attribution'),
+                    layer: mapLayer,
+                  ),
+                  const SizedBox(height: 6),
+                  _MeasureOverlay(
+                    key: const Key('apiary-map-measure-overlay'),
+                    selected: _selected,
+                    onClear: _clearSelection,
+                  ),
+                ],
               ),
             ),
           ],
@@ -212,6 +269,7 @@ class _Map extends StatelessWidget {
     required this.selected,
     required this.userLocation,
     required this.userLocationLabel,
+    required this.layer,
     required this.onApiaryTap,
     required this.onApiaryDetail,
   });
@@ -221,6 +279,7 @@ class _Map extends StatelessWidget {
   final List<Apiary> selected;
   final ll.LatLng? userLocation;
   final String userLocationLabel;
+  final MapLayer layer;
   final void Function(Apiary) onApiaryTap;
   final void Function(Apiary) onApiaryDetail;
 
@@ -259,10 +318,24 @@ class _Map extends StatelessWidget {
         initialCameraFit: initialCameraFit,
       ),
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.beekeepingit.client',
-        ),
+        switch (layer) {
+          MapLayer.satellite => TileLayer(
+            key: const Key('apiary-map-tile-layer-satellite'),
+            // Esri World Imagery — no API key required for this REST tile
+            // endpoint. Note the {z}/{y}/{x} segment order: Esri's ArcGIS
+            // REST tile scheme puts the row (y) before the column (x),
+            // unlike the {z}/{x}/{y} order the OSM layer below uses.
+            urlTemplate:
+                'https://server.arcgisonline.com/ArcGIS/rest/services/'
+                'World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            userAgentPackageName: 'com.beekeepingit.client',
+          ),
+          MapLayer.streets => TileLayer(
+            key: const Key('apiary-map-tile-layer-streets'),
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.beekeepingit.client',
+          ),
+        },
         MarkerLayer(
           markers: [
             for (final apiary in apiaries)
@@ -392,6 +465,153 @@ class _UserPin extends StatelessWidget {
   }
 }
 
+/// The satellite/streets layer toggle (#257, FR-AP-3, refining D-16). Same
+/// gloves-friendly segmented-control shape as
+/// `apiaries_list_screen.dart`'s `_ApiariesViewToggle`/`_ToggleSegment`
+/// (≥[kMinTapTarget] per segment, `Semantics` labels, `Tooltip`s, visible
+/// Material focus/hover) — reused here rather than re-derived so the map's
+/// own in-screen control matches the app's one established toggle pattern.
+/// Positioned top-right by the caller, clear of the measure overlay (bottom)
+/// and the location-denied banner (top-left, inset to leave room for this).
+class _MapLayerToggle extends StatelessWidget {
+  const _MapLayerToggle({required this.layer, required this.onChanged});
+
+  final MapLayer layer;
+  final ValueChanged<MapLayer> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Semantics(
+      container: true,
+      label: l10n.apiaryMapLayerToggleLabel,
+      child: Material(
+        key: const Key('apiary-map-layer-toggle'),
+        color: theme.colorScheme.surfaceContainerHighest,
+        elevation: 2,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MapLayerToggleSegment(
+              itemKey: const Key('apiary-map-layer-satellite-button'),
+              icon: Icons.satellite_alt_outlined,
+              selectedIcon: Icons.satellite_alt,
+              tooltip: l10n.apiaryMapLayerSatelliteAction,
+              selected: layer == MapLayer.satellite,
+              onTap: () => onChanged(MapLayer.satellite),
+            ),
+            _MapLayerToggleSegment(
+              itemKey: const Key('apiary-map-layer-streets-button'),
+              icon: Icons.map_outlined,
+              selectedIcon: Icons.map,
+              tooltip: l10n.apiaryMapLayerStreetsAction,
+              selected: layer == MapLayer.streets,
+              onTap: () => onChanged(MapLayer.streets),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapLayerToggleSegment extends StatelessWidget {
+  const _MapLayerToggleSegment({
+    required this.itemKey,
+    required this.icon,
+    required this.selectedIcon,
+    required this.tooltip,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Key itemKey;
+  final IconData icon;
+  final IconData selectedIcon;
+  final String tooltip;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          key: itemKey,
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(
+              minWidth: kMinTapTarget,
+              minHeight: kMinTapTarget,
+            ),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? theme.colorScheme.primary : null,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              selected ? selectedIcon : icon,
+              size: 22,
+              color: selected
+                  ? theme.colorScheme.onPrimary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Attribution for the active tile source (#257 AC: "Proper attribution
+/// overlay for the active tile source"). Esri's terms require "Powered by
+/// Esri" plus source credits for World Imagery; OSM's require
+/// "© OpenStreetMap contributors" — both are on permanently, not gated
+/// behind a tap, since a hidden-until-tapped credit does not satisfy either
+/// provider's "must be displayed" requirement. This is a small bespoke
+/// overlay (matching this screen's existing hand-rolled `_InfoBanner`/
+/// `_MeasureOverlay` pattern) rather than flutter_map's own
+/// `RichAttributionWidget`: that widget's text attributions render inside a
+/// collapsed, tap-to-open popup by default (`AnimatedOpacity(opacity: 0)`
+/// under a `FadeRAWA`), which would leave attribution invisible until the
+/// user finds and taps an info icon — the wrong default for a compliance
+/// requirement that must be visible, not merely reachable.
+class _MapAttribution extends StatelessWidget {
+  const _MapAttribution({super.key, required this.layer});
+
+  final MapLayer layer;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final text = switch (layer) {
+      MapLayer.satellite => l10n.apiaryMapAttributionEsri,
+      MapLayer.streets => l10n.apiaryMapAttributionOsm,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        key: const Key('apiary-map-attribution-text'),
+        style: theme.textTheme.labelSmall,
+      ),
+    );
+  }
+}
+
 class _InfoBanner extends StatelessWidget {
   const _InfoBanner({super.key, required this.message, required this.icon});
 
@@ -411,9 +631,7 @@ class _InfoBanner extends StatelessWidget {
           children: [
             Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 8),
-            Expanded(
-              child: Text(message, style: theme.textTheme.bodySmall),
-            ),
+            Expanded(child: Text(message, style: theme.textTheme.bodySmall)),
           ],
         ),
       ),
@@ -426,7 +644,11 @@ class _InfoBanner extends StatelessWidget {
 /// haversine distance in km plus a clear action to reset (#37 AC: "the
 /// selection mechanism ... is clear and usable").
 class _MeasureOverlay extends StatelessWidget {
-  const _MeasureOverlay({super.key, required this.selected, required this.onClear});
+  const _MeasureOverlay({
+    super.key,
+    required this.selected,
+    required this.onClear,
+  });
 
   final List<Apiary> selected;
   final VoidCallback onClear;

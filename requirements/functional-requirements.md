@@ -34,6 +34,9 @@ ambiguities flagged inline link to `open-questions.md`.
   marker for the user's current location.
   - _Resolved (D-16):_ `flutter_map` markers + user location + measure overlay;
     tile provider/offline-tile caching stays open (narrowed Q-MAP), doesn't block v1.
+  - _Refined (D-16, #257):_ satellite (Esri World Imagery) is the default layer, with a
+    gloves-friendly in-map toggle down to streets (OSM) — both attributed, choice persists
+    per session. Production-traffic tile provider + offline-tile caching remain open (Q-MAP).
 - **FR-AP-4** — Users can **switch** between map view and list view; both must be
   available.
 - **FR-AP-5** — Feature to **measure the distance between two apiaries**.

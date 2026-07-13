@@ -376,4 +376,20 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiaryMapMeasureClear => 'Limpar seleção';
+
+  @override
+  String get apiaryMapLayerToggleLabel => 'Camada do mapa';
+
+  @override
+  String get apiaryMapLayerSatelliteAction => 'Satélite';
+
+  @override
+  String get apiaryMapLayerStreetsAction => 'Ruas';
+
+  @override
+  String get apiaryMapAttributionEsri =>
+      'Powered by Esri — Fonte: Esri, Maxar, Earthstar Geographics e a comunidade de utilizadores GIS';
+
+  @override
+  String get apiaryMapAttributionOsm => '© Colaboradores do OpenStreetMap';
 }

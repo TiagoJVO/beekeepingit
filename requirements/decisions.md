@@ -266,9 +266,18 @@ Core technology decisions (2026-06-27). Detail and rationale in
   without error, for a reasonable marker count. M2 ships with the public OSM/MapLibre demo tile
   endpoint (dev/low-traffic use, proper attribution), and offline-tile caching + a paid/self-hosted
   tile provider decision is deferred to a follow-up (tracked as the narrowed Q-MAP below).
+- **Refinement (2026-07-13 user decision, #257):** the map's **default layer is satellite**
+  imagery (Esri World Imagery, no API key required), not the OSM streets layer — field users
+  recognize terrain/tree cover more readily than street outlines. A gloves-friendly in-map toggle
+  switches satellite ⇄ streets, the choice persists for the session (survives list⇄map view
+  switches, not an app restart), and both layers now carry a visible attribution overlay for
+  their active source (Esri's "Powered by Esri" + credits, or OSM's "© OpenStreetMap
+  contributors" — previously missing for OSM too). This only changes which _online_ tile source
+  is shown by default and how it's toggled/attributed; it does not pick a production tile
+  provider or resolve offline-tile caching — both remain open per the narrowed Q-MAP below.
 - **Supersedes (partially):** Q-MAP — the marker/location/measure UX is resolved; the tile
   provider/offline-tiles question is kept open (narrowed) in `open-questions.md`. Touches FR-AP-3,
-  FR-OF-1, #34.
+  FR-OF-1, #34, #257.
 
 ## D-17 — Apiary search: client-side, apiaries-only, by name/location
 
