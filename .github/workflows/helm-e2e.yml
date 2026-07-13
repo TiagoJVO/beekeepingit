@@ -114,6 +114,60 @@ jobs:
           done
           kubectl -n beekeepingit-dev rollout status deployment/authentik-server --timeout=600s
 
+      # The server being Ready is NOT enough for the domain services: the WORKER applies
+      # the blueprint (provider/application/seed user) asynchronously after boot, and
+      # until it lands, OIDC discovery 404s and every Go service crash-restarts with a
+      # growing backoff (up to 5 min). So: wait for the worker rollout (it does the
+      # apply), poll discovery until it 200s, then restart the services once to clear the
+      # accumulated CrashLoopBackOff — otherwise the readiness gate below races pod
+      # backoff timers, not real readiness.
+      - name: Wait for the Authentik blueprint (OIDC discovery answers), reset backoffs
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          kubectl -n beekeepingit-dev rollout status deployment/authentik-worker --timeout=600s
+          # Poll discovery by exec-ing INTO the authentik-server pod and curling its own
+          # localhost. exec runs over the kube API (not pod networking) and localhost is
+          # loopback, so this is immune to the NetworkPolicy default-deny (#89) — a
+          # separate probe pod or a runner port-forward is not. 90×10s = 15 min, since a
+          # cold CI worker can be slow to finish applying the blueprint.
+          # Re-resolve the server pod EACH iteration: on a fresh cluster authentik-server
+          # can restart mid-poll (cold-DB migrations, startup-probe cycling), and a pod
+          # name captured once goes stale — every exec then fails forever and the poll
+          # times out even after discovery is actually serving on the new pod.
+          for i in $(seq 1 90); do
+            POD=$(kubectl -n beekeepingit-dev get pod \
+              -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
+              --field-selector=status.phase=Running \
+              -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            if [ -n "$POD" ] && kubectl -n beekeepingit-dev exec "$POD" -- \
+                 curl -sf http://localhost:9000/application/o/beekeepingit/.well-known/openid-configuration >/dev/null 2>&1; then
+              echo "discovery answered after ~$((i*10))s"
+              break
+            fi
+            if [ "$i" = "90" ]; then
+              echo "::error::blueprint never applied — discovery still 404 after 900s"
+              exit 1
+            fi
+            sleep 10
+          done
+          kubectl -n beekeepingit-dev rollout restart deployment \
+            -l app.kubernetes.io/part-of=beekeepingit
+
+      # Explicit readiness gate for the domain services (identity, organizations, apiaries,
+      # sync, pwa, powersync, ...) — not just Postgres/Authentik above. Without this, a
+      # service stuck in CrashLoopBackOff (e.g. a search_path-dependent SQL bug that only
+      # reproduces under that service's restricted DB role) passes the whole pipeline
+      # undetected, because nothing ever asserted the pods became Ready (#215). Every
+      # Deployment in the umbrella chart carries this label via `beekeepingit.labels`
+      # (infra/helm/beekeepingit/templates/_helpers.tpl), so one selector covers all of them.
+      - name: Wait for domain-service deployments
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          # Backoffs were just reset by the rollout restart above, so this is a clean
+          # boot: image start + probe warmup only.
+          kubectl -n beekeepingit-dev wait --for=condition=available deployment \
+            -l app.kubernetes.io/part-of=beekeepingit --timeout=600s
+
       # The AC: the postgres PostGIS smoke-query hook AND the authentik readiness hook run
       # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
       # here too.
@@ -127,11 +181,20 @@ jobs:
       - name: Diagnostics (on failure)
         if: failure() && steps.changes.outputs.infra == 'true'
         run: |
-          kubectl get pods -A || true
+          kubectl get pods -A -o wide || true
           kubectl -n beekeepingit-dev describe pods || true
+          kubectl -n beekeepingit-dev get deployment -o wide || true
+          kubectl -n beekeepingit-dev describe deployment || true
           kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
-          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=server --tail=100 || true
-          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=worker --tail=100 || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server --tail=120 --prefix || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker --tail=200 --prefix || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/part-of=beekeepingit --tail=50 --prefix || true
+          # Crashlooping containers keep their crash output on the PREVIOUS instance;
+          # plain `logs` on a just-restarted container is usually empty.
+          for d in identity organizations apiaries sync pwa beekeepingit-powersync; do
+            echo "=== previous logs: $d ==="
+            kubectl -n beekeepingit-dev logs "deploy/$d" --previous --tail=30 || true
+          done
           kubectl get helmrelease -A || true
           kubectl -n beekeepingit-dev get events --sort-by=.lastTimestamp || true
 
