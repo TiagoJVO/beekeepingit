@@ -72,7 +72,7 @@ entries:
   # --- White-label the login as BeekeepingIT (not authentik) so end users never see the
   # IdP's branding. Applied live via the API during #193 login re-validation; recorded here
   # so a fresh deploy matches. ---
-  - model: authentik_core.brand
+  - model: authentik_brands.brand
     identifiers: { domain: authentik-default }
     attrs:
       branding_title: BeekeepingIT
