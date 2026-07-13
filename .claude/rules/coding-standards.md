@@ -35,4 +35,8 @@
 ## Style
 
 - Match the surrounding code's conventions. Conventional Commits; small, reviewable PRs.
+- **Run the repo's format/lint gate locally before every push** — `task lint` (or at minimum
+  `npx prettier --check` on every touched `.md`/`.yaml`/`.yml` file, plus the language linter
+  for touched code). CI runs the exact same gate and fails the whole `ci` job on one
+  unformatted file; a local check costs seconds, a CI round-trip costs many minutes.
   See [CONTRIBUTING.md](../../CONTRIBUTING.md).

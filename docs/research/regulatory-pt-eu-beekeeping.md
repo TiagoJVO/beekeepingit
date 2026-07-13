@@ -1,8 +1,8 @@
 # Portuguese/EU Beekeeping & Honey-Traceability Regulatory Research
 
 - **Issue:** #91 · **Milestone:** M0 · **Date:** 2026-07-12
-- **Resolves (proposed):** [Q-CMP / Q-REG](../../requirements/open-questions.md) → see the
-  **Proposal** section below (not yet applied to `requirements/`)
+- **Resolves:** [Q-CMP / Q-REG](../../requirements/open-questions.md) → **D-19** (applied
+  2026-07-13); see §8 for the source text
 - **Informs:** NFR-CMP-1, Context C-2, FR-HIS-1, FR-AC-1, FR-AP-1/7/8, FR-IE-1
 - **Type:** Time-boxed research spike (`type/research`) — **no code, no `requirements/`
   edits**. Findings only; the Q-* resolution is a proposal for user confirmation.
@@ -335,18 +335,16 @@ retrofitting M0-M2 issues.
   export/backup, not commercial sale) — traceability findings (C.1–C.4) are framed as
   **future-relevant**, not blocking.
 
-## 8. Proposal — draft Q-CMP/Q-REG resolution (NOT APPLIED)
+## 8. Q-CMP/Q-REG resolution (APPLIED as D-19)
 
-> The following is a **ready-to-apply draft** for `requirements/decisions.md` and
-> `requirements/non-functional-requirements.md`, provided for **user confirmation** per the
-> `requirements-folder` skill and `mandatory-workflow.md` rule. **This research PR does not
-> edit `requirements/`.** Apply only after explicit user sign-off, in a follow-up change that
-> also removes the Q-CMP/Q-REG entry from `open-questions.md`.
+> **Applied** to `requirements/` after user sign-off (2026-07-13): decision **D-19** added to
+> `decisions.md`, `NFR-CMP-1` and Context `C-2` edited, and the Q-CMP/Q-REG entry removed from
+> `open-questions.md`. The blocks below are the source text, kept here as the rationale record.
 
-### Proposed new decision — `D-18 — PT/EU beekeeping & honey-traceability obligations scoped; HIPAA dropped`
+### Proposed new decision — `D-19 — PT/EU beekeeping & honey-traceability obligations scoped; HIPAA dropped`
 
 ```markdown
-## D-18 — PT/EU beekeeping & honey-traceability obligations scoped; HIPAA dropped
+## D-19 — PT/EU beekeeping & honey-traceability obligations scoped; HIPAA dropped
 
 - **Decision:** **HIPAA does not apply** — it is US human-healthcare law with no
   extraterritorial reach here, and separately, bee/apiary health records are not GDPR Art. 9
@@ -412,7 +410,7 @@ with:
   labelling), Dir 2011/91/EU (lot marking), Reg (EU) 2019/6 (veterinary medicinal product
   record-keeping). **HIPAA does not apply** (US human-healthcare law; bee-health data is also
   not GDPR Art. 9 special-category data) — dropped.
-  - _Resolved (D-18):_ obligations enumerated in
+  - _Resolved (D-19):_ obligations enumerated in
     [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
     (#91); concrete FR/NFR schema changes triaged per feature epic, not applied here.
 ```
@@ -422,7 +420,7 @@ with:
 Replace the `> Open question:` line with:
 
 ```markdown
-> **Resolved (D-18):** the specific Portuguese/EU regulations are enumerated in
+> **Resolved (D-19):** the specific Portuguese/EU regulations are enumerated in
 > [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
 > (#91) — apiary registration (DGAV), stock declarations, mandatory-notification bee diseases,
 > and honey/food traceability. None block current scope; see the note for future-relevant
@@ -431,5 +429,5 @@ Replace the `> Open question:` line with:
 
 ### `open-questions.md` — entry to remove
 
-The **Q-CMP / Q-REG** entry (Tier 3) would be **deleted in full** once D-18 is applied, per
+The **Q-CMP / Q-REG** entry (Tier 3) would be **deleted in full** once D-19 is applied, per
 the "resolved question is removed" convention.

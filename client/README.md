@@ -59,7 +59,56 @@ hard-coded, so swapping the identity provider is just changing `OIDC_ISSUER`
 | `lib/core/auth/`            | Provider-agnostic OIDC Authorization Code + PKCE flow via `openid_client` (discovery-driven; web redirect behind a conditional import so widget tests compile on the VM)                                                                                                                                                                                                                                                                                                                       |
 | `lib/core/sync/`            | PowerSync schema + backend connector (`fetchCredentials`→`/v1/sync/token`, `uploadData`→`/v1/sync/batch`) + the DB provider; the connector also parses per-op `superseded` results into a notify-and-fix event stream (`sync.md` §4.2/§8, `#58`) consumed by `lib/shell/sync_status.dart`'s real `syncStatusProvider`/`syncNowProvider`                                                                                                                                                        |
 | `lib/core/api/`             | Generic REST scaffold (`ApiClient`) — base URL + bearer injection (reuses `core/auth`'s access token), typed JSON, RFC 9457 `ApiException` mapping. Not profile-specific — other features reuse it (`#25`)                                                                                                                                                                                                                                                                                     |
+| `lib/core/l10n/`            | `LocaleFormatting` — locale-aware date/number formatting helper (`intl` `DateFormat`/`NumberFormat`), ready for the first screen that displays a date or a decimal (`NFR-I18N-1`, `#77`); see [Translations (i18n)](#translations-i18n) below                                                                                                                                                                                                                                                  |
 | `lib/features/`             | One folder per screen/feature (`auth`, `apiaries`, `profile`, `organization`, `members`, `account`)                                                                                                                                                                                                                                                                                                                                                                                            |
+
+## Translations (i18n)
+
+EN + PT today, structured to add more languages later without touching feature
+screens (`NFR-I18N-1`, `#77`/`#78`). Source strings are
+[ARB](https://github.com/google/app-resource-bundle) files under
+`lib/l10n/arb/`; `flutter gen-l10n` (configured by `l10n.yaml`) generates the
+typed `AppLocalizations` API into `lib/l10n/gen/`, which is **committed**
+(same convention as `services/shared`'s committed `sqlc` output — no codegen
+step needed to build/test).
+
+**Add a string:**
+
+1. Add the key to `lib/l10n/arb/app_en.arb` (the template file), with an
+   `@key` metadata block describing where it's used (see existing entries).
+   Use [ICU plural syntax](https://docs.flutter.dev/ui/accessibility-and-localization/internationalization#pluralization)
+   for anything that varies by count, e.g. `hiveCountValue`.
+2. Add the same key to `lib/l10n/arb/app_pt.arb` too — CI only checks that
+   the key exists in both files (see "What CI enforces" below), not that the
+   Portuguese value is a real translation yet, but don't merge with an
+   English placeholder left in the PT file; translate it in the same PR or
+   flag it for a translator before merging.
+3. Run `flutter gen-l10n` in `client/` and commit the regenerated
+   `lib/l10n/gen/` alongside the ARB change.
+4. Use it from a widget via `AppLocalizations.of(context).yourKey`.
+
+**Translate a string:** edit the value in `lib/l10n/arb/app_pt.arb` (or the
+new language's ARB file) — no Dart code changes needed. Re-run
+`flutter gen-l10n` and commit `lib/l10n/gen/`.
+
+**What CI enforces** (`task dart:l10n-check`, run as part of the client build
+job in `.github/workflows/build-publish.yml`, `#78`):
+
+- Every ARB file is valid JSON and every key in `app_en.arb` (the template)
+  exists in every other ARB file, and vice versa — a key added to one
+  language but not the other fails the build.
+- `flutter gen-l10n` runs clean (fails on malformed ARB or an ICU syntax
+  error).
+- The committed `lib/l10n/gen/` matches what `flutter gen-l10n` regenerates —
+  an ARB edit that wasn't followed by regenerating and committing the output
+  fails the build.
+
+**Locale-aware dates/numbers:** no screen renders a date or a decimal number
+yet (the current slice only shows plain strings, ICU-pluralized counts, and
+raw lat/lon text). `lib/core/l10n/locale_formatting.dart`'s
+`LocaleFormatting` helper wraps `intl`'s `DateFormat`/`NumberFormat` keyed to
+the active locale, ready for the first field that needs it — see its tests
+(`test/core/l10n/locale_formatting_test.dart`) for EN vs. PT output.
 
 ## Decisions this scaffold makes (AC of `#21`)
 
