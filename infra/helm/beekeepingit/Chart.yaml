@@ -56,3 +56,11 @@ dependencies:
     version: "0.1.0"
     repository: "file://charts/pwa"
     condition: pwa.enabled
+  # Default-deny + explicit-allow NetworkPolicies for the whole namespace
+  # (EPIC-14 #89, NFR-SEC-1) — applies namespace-wide, so it also covers pods
+  # owned by the standalone authentik/minio Flux HelmReleases (ADR-0012),
+  # not just this umbrella's own subcharts.
+  - name: networkpolicy
+    version: "0.1.0"
+    repository: "file://charts/networkpolicy"
+    condition: networkpolicy.enabled
