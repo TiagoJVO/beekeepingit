@@ -28,15 +28,10 @@ Invitation _invitation({
 /// [ApiClient]/network call, matching organization_screen_test.dart's
 /// override-providers-not-network convention.
 class _FakeMembersController extends MembersController {
-  _FakeMembersController(
-    this._initial, {
-    this.onInvite,
-    this.onRevoke,
-  });
+  _FakeMembersController(this._initial, {this.onInvite, this.onRevoke});
 
   final MembersState _initial;
-  final Future<void> Function({required String email, String role})?
-  onInvite;
+  final Future<void> Function({required String email, String role})? onInvite;
   final Future<void> Function(String invitationId)? onRevoke;
 
   @override
@@ -51,7 +46,10 @@ class _FakeMembersController extends MembersController {
     state = AsyncData(
       MembersState(
         members: _initial.members,
-        invitations: [..._initial.invitations, _invitation(email: email)],
+        invitations: [
+          ..._initial.invitations,
+          _invitation(email: email),
+        ],
       ),
     );
   }
@@ -135,9 +133,7 @@ void main() {
     expect(find.text('Enter an email address.'), findsOneWidget);
   });
 
-  testWidgets('submits a valid invite email and shows success', (
-    tester,
-  ) async {
+  testWidgets('submits a valid invite email and shows success', (tester) async {
     await tester.pumpWidget(
       _buildScreen(
         _FakeMembersController(
@@ -164,7 +160,8 @@ void main() {
         throw const ApiException(
           statusCode: 409,
           code: 'resource.conflict',
-          detail: 'this email already has a pending invitation to this organization',
+          detail:
+              'this email already has a pending invitation to this organization',
         );
       },
     );

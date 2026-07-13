@@ -93,36 +93,33 @@ void main() {
       expect(probe.callCount, 5);
     });
 
-    test(
-      'requestSync (manual "sync now") bypasses the gate entirely, even '
-      'while backing off',
-      () async {
-        final probe = FakeConnectivityProbe([false]); // never passes on its own
-        var connectCalls = 0;
-        final gate = SyncGate(
-          probe: probe,
-          onGatePassed: () async => connectCalls++,
-          initialBackoff: const Duration(seconds: 30), // long backoff
-          maxBackoff: const Duration(seconds: 60),
-        );
-        addTearDown(gate.dispose);
+    test('requestSync (manual "sync now") bypasses the gate entirely, even '
+        'while backing off', () async {
+      final probe = FakeConnectivityProbe([false]); // never passes on its own
+      var connectCalls = 0;
+      final gate = SyncGate(
+        probe: probe,
+        onGatePassed: () async => connectCalls++,
+        initialBackoff: const Duration(seconds: 30), // long backoff
+        maxBackoff: const Duration(seconds: 60),
+      );
+      addTearDown(gate.dispose);
 
-        gate.start();
-        await pumpEventQueue(); // let the first (failing) probe run
+      gate.start();
+      await pumpEventQueue(); // let the first (failing) probe run
 
-        expect(gate.state, SyncGateState.waitingForSignal);
-        expect(connectCalls, 0);
+      expect(gate.state, SyncGateState.waitingForSignal);
+      expect(connectCalls, 0);
 
-        // Manual override: connects immediately, without waiting on backoff
-        // or re-probing (sync.md §7.1: "a user-triggered sync now always
-        // attempts once, gate or no gate").
-        await gate.requestSync();
+      // Manual override: connects immediately, without waiting on backoff
+      // or re-probing (sync.md §7.1: "a user-triggered sync now always
+      // attempts once, gate or no gate").
+      await gate.requestSync();
 
-        expect(connectCalls, 1);
-        // The gate's own state/backoff schedule is untouched by the override.
-        expect(gate.state, SyncGateState.waitingForSignal);
-      },
-    );
+      expect(connectCalls, 1);
+      // The gate's own state/backoff schedule is untouched by the override.
+      expect(gate.state, SyncGateState.waitingForSignal);
+    });
 
     test('rearm restarts probing after the gate had already passed', () async {
       final probe = FakeConnectivityProbe([true, true]);

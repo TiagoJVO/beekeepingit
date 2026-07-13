@@ -6,7 +6,11 @@ import '../organization/organization_repository.dart';
 /// An organization member
 /// (contracts/openapi/organizations.openapi.yaml's Member schema, #27).
 class Member {
-  const Member({required this.userId, required this.role, required this.status});
+  const Member({
+    required this.userId,
+    required this.role,
+    required this.status,
+  });
 
   factory Member.fromJson(Map<String, dynamic> json) => Member(
     userId: json['user_id'] as String,

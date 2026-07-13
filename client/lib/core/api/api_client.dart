@@ -8,7 +8,11 @@ import '../config/app_config.dart';
 
 /// Field-level detail on a 422 (RFC 9457 `Problem.errors[]`).
 class ApiFieldError {
-  const ApiFieldError({required this.field, required this.code, required this.message});
+  const ApiFieldError({
+    required this.field,
+    required this.code,
+    required this.message,
+  });
 
   factory ApiFieldError.fromJson(Map<String, dynamic> json) => ApiFieldError(
     field: json['field'] as String? ?? '',
@@ -46,7 +50,8 @@ class ApiException implements Exception {
 /// and maps non-2xx responses to [ApiException]. Feature repositories (e.g.
 /// `features/profile`) build on this rather than talking to `http` directly.
 class ApiClient {
-  ApiClient(this._ref, {http.Client? httpClient}) : _http = httpClient ?? http.Client();
+  ApiClient(this._ref, {http.Client? httpClient})
+    : _http = httpClient ?? http.Client();
 
   final Ref _ref;
   final http.Client _http;
@@ -54,7 +59,9 @@ class ApiClient {
   Uri _uri(String path) => Uri.parse('${AppConfig.gatewayBaseUrl}/v1$path');
 
   Future<Map<String, String>> _headers() async {
-    final token = await _ref.read(authControllerProvider.notifier).accessToken();
+    final token = await _ref
+        .read(authControllerProvider.notifier)
+        .accessToken();
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -67,7 +74,10 @@ class ApiClient {
     return _decode(resp);
   }
 
-  Future<Map<String, dynamic>> patchJson(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> patchJson(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final resp = await _http.patch(
       _uri(path),
       headers: await _headers(),
@@ -76,7 +86,10 @@ class ApiClient {
     return _decode(resp);
   }
 
-  Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> postJson(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final resp = await _http.post(
       _uri(path),
       headers: await _headers(),
@@ -96,7 +109,9 @@ class ApiClient {
 
   Map<String, dynamic> _decode(http.Response resp) {
     final isJson = resp.body.isNotEmpty;
-    final decoded = isJson ? jsonDecode(resp.body) as Map<String, dynamic> : <String, dynamic>{};
+    final decoded = isJson
+        ? jsonDecode(resp.body) as Map<String, dynamic>
+        : <String, dynamic>{};
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       return decoded;
     }

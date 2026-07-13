@@ -44,8 +44,14 @@ void main() {
     });
 
     test('lookupAppLocalizations resolves en and pt to the matching class', () {
-      expect(lookupAppLocalizations(const Locale('en')), isA<AppLocalizationsEn>());
-      expect(lookupAppLocalizations(const Locale('pt')), isA<AppLocalizationsPt>());
+      expect(
+        lookupAppLocalizations(const Locale('en')),
+        isA<AppLocalizationsEn>(),
+      );
+      expect(
+        lookupAppLocalizations(const Locale('pt')),
+        isA<AppLocalizationsPt>(),
+      );
     });
   });
 

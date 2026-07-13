@@ -48,13 +48,15 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
       ).showSnackBar(SnackBar(content: Text(l10n.membersInviteSuccess)));
     } on ApiException catch (e) {
       if (!mounted) return;
-      final fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
+      final fieldErrors = {
+        for (final fe in e.fieldErrors) fe.field: fe.message,
+      };
       if (fieldErrors.containsKey('email')) {
         setState(() => _emailError = fieldErrors['email']);
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.membersInviteError(e.detail))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.membersInviteError(e.detail))),
+        );
       }
     } catch (e) {
       if (!mounted) return;

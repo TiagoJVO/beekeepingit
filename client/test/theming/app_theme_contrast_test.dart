@@ -40,11 +40,7 @@ double _contrastRatio(Color a, Color b) {
 /// meet WCAG 2.2 AA" AC, #79).
 const double _kMinNormalTextContrast = 4.5;
 
-void _expectAaContrast(
-  String label,
-  Color foreground,
-  Color background,
-) {
+void _expectAaContrast(String label, Color foreground, Color background) {
   final ratio = _contrastRatio(foreground, background);
   expect(
     ratio,

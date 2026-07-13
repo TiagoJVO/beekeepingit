@@ -119,8 +119,7 @@ class ApiariesListScreen extends ConsumerWidget {
                           ),
                   ),
                   onChanged: (v) =>
-                      ref.read(apiariesSearchQueryProvider.notifier).state =
-                          v,
+                      ref.read(apiariesSearchQueryProvider.notifier).state = v,
                 ),
               ),
               const SizedBox(width: 8),
@@ -139,8 +138,7 @@ class ApiariesListScreen extends ConsumerWidget {
             index: view == ApiariesView.list ? 0 : 1,
             children: [
               apiaries.when(
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (err, _) => Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
