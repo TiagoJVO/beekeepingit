@@ -59,13 +59,24 @@ jobs:
       # change IS visible to the e2e — but only if it also triggers it. The
       # filter previously stopped at `client/e2e/**`, so a client-only PR
       # skipped the live run entirely and shipped un-e2e'd (#244 did exactly
-      # that; trigger-path policy tracked in #245). This buys every client PR
-      # the ~30-40 min live bring-up — the accepted trade (NFR-TST-1, #162).
-      # `services/**` stays out until service images are also built in-job
-      # (#245): those pods still deploy main's `:latest`, so a services PR
-      # would pay the full run only to exercise main's binaries. `e2e` is
-      # the superset every e2e-specific step below is actually gated on, since
-      # running the e2e needs the exact same live bring-up `infra` already gates.
+      # that). This buys every client PR the ~30-40 min live bring-up — the
+      # accepted trade (NFR-TST-1, #162).
+      #
+      # `services/**` is now in the filter too (#245): the Go service images
+      # are built in-job from this checkout (the "Build the service images"
+      # step below), exactly like the PWA, and `--set services.image.tag`
+      # points the deployed pods at them — so a `services/**` change is finally
+      # exercised by the e2e against its OWN binaries, not main's stale
+      # `:latest`. #256 (typed apiary counters, a coordinated
+      # migration+service+sync-rules+client change) is the forcing case: its
+      # client uploaded a new op the deployed main server 422-rejected, and the
+      # e2e couldn't have caught it while services deployed from main.
+      # Cost trade-off (the "decide its trigger paths" half of #245): every
+      # `services/**` PR now pays the same ~30-40 min live run the client/infra
+      # PRs already do, plus a few minutes to build the Go service images (fast
+      # — a static `go build` + a distroless COPY, cached via buildx gha). The
+      # coverage is worth it: a service change reaching the sync/auth/apiary
+      # paths is exactly what only the live e2e can validate end to end.
       # (Listed out flat rather than via a YAML anchor: the `filters` value is a
       # literal block string that dorny/paths-filter re-parses on its own, and an
       # anchor/alias in there would produce a nested list, not a flat pattern list.)
@@ -85,6 +96,7 @@ jobs:
               - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
               - '.github/workflows/helm-e2e.yml'
               - 'client/**'
+              - 'services/**'
 
       # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
       # local dev (infra/cluster/*.sh) and the rest of CI use. (mise installs
@@ -116,6 +128,58 @@ jobs:
             && flutter build web --release --no-web-resources-cdn )
           docker build -t "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" client
 
+      # Build the Go SERVICE images from THIS checkout (#245) — the generalization
+      # of the PWA step above to the domain services (identity, organizations,
+      # apiaries, sync). The services subchart otherwise deploys
+      # `ghcr.io/<owner>/beekeepingit/services-<name>:latest`, which build-publish.yml
+      # publishes only on merge to main — so without this, a `services/**` PR would
+      # run the e2e against MAIN's binaries (exactly the staleness that made #256's
+      # cross-stack change untestable: its client sent an op the deployed main
+      # server rejected). Same recipe as build-publish.yml's Go leg: compile the
+      # static binary against the go.work workspace (the per-service Docker context
+      # can't resolve the sibling shared/servicetemplate modules — see each
+      # service's Dockerfile), then `docker build` the distroless image that just
+      # COPYs it. Every service shares the subchart's `image.tag`
+      # (deployment.yaml: `{{ image.registry }}/{{ component }}:{{ tag }}`), so one
+      # tag (`e2e-<sha>`) + the per-service `services-<name>` repo names cover them
+      # all — imported below and pointed at via `--set services.image.tag`.
+      # Runs BEFORE the cluster bring-up so a broken service build fails fast
+      # without paying for the cluster (same ordering rationale as the PWA build).
+      - name: Build the service images from the checkout
+        id: service_images
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          IMAGE_TAG: e2e-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          # Must match charts/services/values.yaml's image.registry so the
+          # imported tags line up with the refs the chart pulls.
+          registry="ghcr.io/${owner}/beekeepingit"
+          echo "tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+          # Discover the services as "every services/*/ dir with a Dockerfile" —
+          # the same rule build-publish.yml uses to decide what's buildable, and
+          # it matches the chart's deployed set (each maps to the chart's
+          # services-<name> component). No yq/extra tooling needed; a
+          # newly-added service is picked up automatically.
+          images=""
+          for dockerfile in services/*/Dockerfile; do
+            dir="$(dirname "${dockerfile}")"     # services/<name>
+            name="$(basename "${dir}")"
+            image="${registry}/services-${name}:${IMAGE_TAG}"
+            echo "::group::build ${image} (from ${dir})"
+            # Compile against the workspace root so go.work resolves the sibling
+            # modules, then build the image the same way build-publish.yml does.
+            ( cd "${dir}" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app . )
+            docker build -t "${image}" "${dir}"
+            images="${images} ${image}"
+            echo "::endgroup::"
+          done
+
+          # Space-separated list of built images, consumed by the import step.
+          echo "images=${images# }" >> "$GITHUB_OUTPUT"
+
       # Create the k3d cluster and install the CNPG operator by running the exact
       # script developers run locally, so CI validates the real bring-up path
       # rather than a CI-only copy that can silently drift from it. (`up.sh` takes a
@@ -135,6 +199,20 @@ jobs:
           PWA_IMAGE: ${{ steps.pwa_image.outputs.repository }}:${{ steps.pwa_image.outputs.tag }}
         run: k3d image import "$PWA_IMAGE" -c beekeeping
 
+      # Import the service images the same way (#245): they were built to the
+      # local daemon, never pushed (PR builds don't publish), so the cluster's
+      # containerd can't pull them — import each so pullPolicy: IfNotPresent
+      # finds the imported copy. One `k3d image import` call takes all four.
+      - name: Import the service images into the cluster
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          SERVICE_IMAGES: ${{ steps.service_images.outputs.images }}
+        run: |
+          # Intentional word-splitting: SERVICE_IMAGES is a space-separated list
+          # of image refs, each a separate argument to `k3d image import`.
+          # shellcheck disable=SC2086
+          k3d image import $SERVICE_IMAGES -c beekeeping
+
       # Install the packaged subchart snapshots under charts/*.tgz (see the chart's
       # README) — the umbrella's deps are all local file:// / vendored, so no chart
       # repo network access is needed.
@@ -151,16 +229,24 @@ jobs:
       # first CNPG/PostGIS image pull on a cold runner.
       # `--set pwa.image.*` points the pwa subchart at the image built from this
       # checkout and imported above (#236) instead of the chart's `latest` default.
+      # `--set services.image.tag` does the same for the four service images (#245):
+      # they were tagged `services-<name>:e2e-<sha>` under the same registry the
+      # services subchart already resolves (charts/services/values.yaml's
+      # image.registry), so overriding just the shared `image.tag` makes every
+      # service's `{{ registry }}/{{ component }}:{{ tag }}` ref land on its own
+      # in-job image — no per-service repository override needed.
       - name: Install the umbrella release
         if: steps.changes.outputs.e2e == 'true'
         env:
           PWA_IMAGE_REPOSITORY: ${{ steps.pwa_image.outputs.repository }}
           PWA_IMAGE_TAG: ${{ steps.pwa_image.outputs.tag }}
+          SERVICE_IMAGE_TAG: ${{ steps.service_images.outputs.tag }}
         run: |
           helm upgrade --install beekeepingit infra/helm/beekeepingit \
             -f infra/helm/beekeepingit/environments/dev.yaml \
             --set "pwa.image.repository=${PWA_IMAGE_REPOSITORY}" \
             --set "pwa.image.tag=${PWA_IMAGE_TAG}" \
+            --set "services.image.tag=${SERVICE_IMAGE_TAG}" \
             --namespace beekeepingit-dev --create-namespace \
             --timeout 15m
 
