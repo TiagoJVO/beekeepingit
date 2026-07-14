@@ -2,9 +2,10 @@ import { test, expect, Page } from "@playwright/test";
 
 /**
  * The M0 walking-skeleton end-to-end test (#23 §7.3):
- *   log in (OIDC, provider-agnostic) → create an apiary → go offline → edit it →
- *   verify the edit is local-only → reconnect → assert it synced to the
- *   server → reload and assert the local state converged.
+ *   log in (OIDC, provider-agnostic) → create an apiary (with free-text
+ *   notes, FR-AP-8) → go offline → edit it → verify the edit is local-only →
+ *   reconnect → assert it synced to the server → reload and assert the local
+ *   state converged.
  *
  * The PWA is Flutter Web. Flutter only exposes an accessibility DOM (which
  * Playwright can query) once semantics are enabled, so `enableSemantics`
@@ -15,6 +16,14 @@ import { test, expect, Page } from "@playwright/test";
 const TEST_USER = process.env.E2E_USER ?? "test.beekeeper@beekeepingit.local";
 const TEST_PASS = process.env.E2E_PASS ?? "dev-password123";
 const apiaryName = `Encosta Nova ${Date.now()}`;
+// Free-text notes on the same apiary (FR-AP-8, #196), asserted server-side
+// after sync AND on the fresh client below. The fresh-client assertion is the
+// regression guard for the sync-rules column list dropping `notes` (the
+// explicit `apiaries.apiaries` SELECT in
+// infra/helm/beekeepingit/charts/powersync/values.yaml) — nothing else
+// catches that: the column just stays NULL on a fresh device while the
+// server has content.
+const apiaryNotes = "South slope, morning sun; check the water trough";
 
 // Test-data teardown (#162): the create test leaves an apiary behind server-side.
 // Harmless against an ephemeral per-run cluster (CI deletes the whole namespace/
@@ -194,6 +203,8 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.type(apiaryName);
   await page.getByLabel("Number of hives").click();
   await page.keyboard.type("0");
+  await page.getByLabel("Notes").click();
+  await page.keyboard.type(apiaryNotes);
   await page.getByText("Save", { exact: true }).click();
 
   await expect(page.getByText(apiaryName)).toBeVisible();
@@ -223,6 +234,11 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // fresh value shows on the detail hive-count badge, not a list row. Assert
   // it there — no navigation, so this stays valid while still offline.
   await expect(apiaryDetailHiveCount(page)).toContainText("12 hives");
+
+  // The edit-form round-trip must not clobber the notes (the form re-saves
+  // them with notesProvided — apiaries_repository.dart's update): still shown
+  // on the detail screen the save returned to.
+  await expect(page.getByText(apiaryNotes)).toBeVisible();
 
   // ── Reconnect → the queued change syncs ───────────────────────────────
   await context.setOffline(false);
@@ -261,13 +277,19 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // inside the page; works from any screen. Generous in case the flush takes a
   // moment to land server-side after the nudge.
   await expect
-    .poll(async () => serverHiveCount(page, capturedToken, apiaryName), { timeout: 60_000 })
+    .poll(async () => (await serverApiary(page, capturedToken, apiaryName))?.hive_count ?? null, {
+      timeout: 60_000,
+    })
     .toBe(12);
 
-  // Stash the server-assigned id for afterAll's cleanup (#162) — it only
-  // exists once the create has actually synced, which the poll above just
-  // confirmed.
-  createdApiaryId = await serverApiaryId(page, capturedToken, apiaryName);
+  // One more read now that the row is known to be there: the create's notes
+  // reached the server too (the upload half of FR-AP-8 — the download half is
+  // the fresh-client assertion below). Also stash the server-assigned id for
+  // afterAll's cleanup (#162) — it only exists once the create has actually
+  // synced, which the poll above just confirmed.
+  const serverRow = await serverApiary(page, capturedToken, apiaryName);
+  expect(serverRow?.notes).toBe(apiaryNotes);
+  createdApiaryId = serverRow?.id ?? null;
 
   // ── Local state converged on the list (#23 AC) ────────────────────────
   // Back on the list (from the goBack above), the row read from local SQLite
@@ -294,6 +316,14 @@ test("login → create → offline edit → sync", async ({ page, context, brows
     await login(p2);
     await expect(apiaryRow(p2, apiaryName)).toBeVisible({ timeout: 60_000 });
     await expect(apiaryRow(p2, apiaryName)).toContainText("12 hives");
+
+    // The notes replicated too (FR-AP-8, #196): a fresh local DB can only
+    // show them if the sync-rules `apiaries.apiaries` column list includes
+    // `notes` (values.yaml — see apiaryNotes above). The list row doesn't
+    // render notes, so open the detail screen, which does.
+    await apiaryRow(p2, apiaryName).click();
+    await enableSemantics(p2);
+    await expect(p2.getByText(apiaryNotes)).toBeVisible({ timeout: 15_000 });
   } finally {
     await fresh.close();
   }
@@ -367,25 +397,15 @@ test.fixme("logout revokes the session — a reload does not silently re-authent
   expect(page.url()).toMatch(/\/login/);
 });
 
-async function serverHiveCount(page: Page, token: string, name: string): Promise<number | null> {
-  const apiURL = process.env.E2E_API_URL ?? "";
-  // Run the request INSIDE the page: same-origin (no CORS) and it uses the
-  // browser's host-resolver rule, unlike Playwright's Node-side request context.
-  return page.evaluate(
-    async ({ apiURL, token, name }) => {
-      const res = await fetch(`${apiURL}/v1/apiaries`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) return null;
-      const body = await res.json();
-      const found = (body.data ?? []).find((a: { name: string }) => a.name === name);
-      return found ? (found.hive_count as number) : null;
-    },
-    { apiURL, token, name },
-  );
-}
-
-async function serverApiaryId(page: Page, token: string, name: string): Promise<string | null> {
+// The server's view of the (uniquely-named) apiary, via the same list
+// endpoint the app uses. Runs the request INSIDE the page: same-origin (no
+// CORS) and it uses the browser's host-resolver rule, unlike Playwright's
+// Node-side request context.
+async function serverApiary(
+  page: Page,
+  token: string,
+  name: string,
+): Promise<{ id: string; hive_count: number; notes: string | null } | null> {
   const apiURL = process.env.E2E_API_URL ?? "";
   return page.evaluate(
     async ({ apiURL, token, name }) => {
@@ -395,7 +415,14 @@ async function serverApiaryId(page: Page, token: string, name: string): Promise<
       if (!res.ok) return null;
       const body = await res.json();
       const found = (body.data ?? []).find((a: { name: string }) => a.name === name);
-      return found ? (found.id as string) : null;
+      if (!found) return null;
+      // `notes` is omitempty server-side (api/apiaries.go) — normalize an
+      // absent field to null so callers get one shape.
+      return {
+        id: found.id as string,
+        hive_count: found.hive_count as number,
+        notes: (found.notes as string | undefined) ?? null,
+      };
     },
     { apiURL, token, name },
   );
@@ -406,8 +433,8 @@ async function serverApiaryId(page: Page, token: string, name: string): Promise<
 // plain Node-side HTTP request, which doesn't get the browser launch's
 // `--host-resolver-rules` (playwright.config.ts's hostMap) that's the whole
 // reason the dev hostnames resolve without editing the runner's /etc/hosts.
-// A throwaway browser page does inherit it (same as serverHiveCount/
-// serverApiaryId above), so the DELETE runs the same way those GETs do.
+// A throwaway browser page does inherit it (same as serverApiary above), so
+// the DELETE runs the same way that GET does.
 // Best-effort: if the create test never got far enough to populate
 // `createdApiaryId` (e.g. it failed before syncing), there's nothing to
 // clean up. Runs even if a test failed, so a red run still doesn't leak data.

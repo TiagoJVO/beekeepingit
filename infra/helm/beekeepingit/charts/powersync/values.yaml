@@ -53,6 +53,14 @@ auth:
 # columns client-side, so this one bucket entry covers all three — don't
 # duplicate it if you touch this file again for related work.
 #
+# Because the list is explicit, it must stay a SUPERSET of the client's local
+# schema (client/lib/core/sync/powersync_schema.dart): a column missing here
+# doesn't error anywhere — it silently stays NULL on every device that didn't
+# write it locally. `notes` (FR-AP-8, #196) was lost exactly that way when
+# #33's rewrite of this entry (from `SELECT *` to the explicit list) landed in
+# parallel with #196 adding the column; the walking-skeleton e2e's fresh-client
+# notes assertion (client/e2e/tests/slice.spec.ts) now guards against a repeat.
+#
 # apiaries.audit_log and apiaries.sync_conflict_log (#61, history.md §6
 # "recent history is offline-viewable" / "LWW losers... surfaced as a
 # superseded timeline event") are included read-only in the same org bucket,
@@ -93,8 +101,8 @@ syncConfig:
     by_organization:
       parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
       data:
-        - SELECT id, organization_id, name, place_label, created_at, updated_at,
-          ST_X(location) AS location_lon, ST_Y(location) AS location_lat
+        - SELECT id, organization_id, name, notes, place_label, created_at,
+          updated_at, ST_X(location) AS location_lon, ST_Y(location) AS location_lat
           FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
         - SELECT * FROM apiaries.apiary_counters WHERE organization_id = bucket.organization_id
         - SELECT * FROM organizations.organizations WHERE id = bucket.organization_id
