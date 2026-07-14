@@ -289,9 +289,7 @@ void main() {
       // badge still renders normally.
       await tester.pumpWidget(
         _buildApp(
-          apiaries: const [
-            Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 4),
-          ],
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 4)],
           counters: const {
             'a1': [
               ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 4),
