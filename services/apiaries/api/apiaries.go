@@ -48,13 +48,17 @@ type geoPointDTO struct {
 // object, no null variant) doesn't allow for a present-but-null value.
 // `distance_m` (FR-AP-2, #33) is only set on a `near`-ordered list; other
 // reads (get, cursor-paginated list) omit it, matching the contract's
-// "only on proximity lists" note on the Apiary schema.
+// "only on proximity lists" note on the Apiary schema. `place_label` (#252)
+// is an optional free-text place name (e.g. "Montargil"), independent of
+// `location`'s coordinates and of the apiary's own `name` — omitempty like
+// `notes`.
 type apiaryDTO struct {
 	ID             string       `json:"id"`
 	OrganizationID string       `json:"organization_id"`
 	Name           string       `json:"name"`
 	HiveCount      int32        `json:"hive_count"`
 	Location       *geoPointDTO `json:"location,omitempty"`
+	PlaceLabel     *string      `json:"place_label,omitempty"`
 	Notes          *string      `json:"notes,omitempty"`
 	DistanceM      *float64     `json:"distance_m,omitempty"`
 	CreatedAt      time.Time    `json:"created_at"`
@@ -179,6 +183,7 @@ func listApiaries(q *sqlcgen.Queries) http.HandlerFunc {
 				Name:           row.Name,
 				HiveCount:      row.HiveCount,
 				Location:       parseGeoJSONPoint(row.LocationGeojson),
+				PlaceLabel:     textPtr(row.PlaceLabel),
 				Notes:          textPtr(row.Notes),
 				CreatedAt:      row.CreatedAt.Time,
 				UpdatedAt:      row.UpdatedAt.Time,
@@ -222,6 +227,7 @@ func listApiariesByProximity(w http.ResponseWriter, r *http.Request, q *sqlcgen.
 			Name:           row.Name,
 			HiveCount:      row.HiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
+			PlaceLabel:     textPtr(row.PlaceLabel),
 			Notes:          textPtr(row.Notes),
 			DistanceM:      distancePtr(row.DistanceM),
 			CreatedAt:      row.CreatedAt.Time,
@@ -303,6 +309,7 @@ func getApiary(q *sqlcgen.Queries) http.HandlerFunc {
 			Name:           row.Name,
 			HiveCount:      row.HiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
+			PlaceLabel:     textPtr(row.PlaceLabel),
 			Notes:          textPtr(row.Notes),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,

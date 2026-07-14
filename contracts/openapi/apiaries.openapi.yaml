@@ -243,6 +243,12 @@ components:
               type: integer
               minimum: 0
               description: Number of hives at the apiary (D-2).
+            place_label:
+              type: [string, "null"]
+              maxLength: 200
+              description: >-
+                Optional free-text place name (e.g. "Montargil"), independent of `location`'s
+                coordinates and of the apiary's own `name` (#252).
             notes:
               type: [string, "null"]
               maxLength: 10000
@@ -269,6 +275,12 @@ components:
           type: integer
           minimum: 0
           default: 0
+        place_label:
+          type: [string, "null"]
+          maxLength: 200
+          description: >-
+            Optional free-text place name (e.g. "Montargil"), independent of `location`'s
+            coordinates and of the apiary's own `name` (#252).
         notes:
           type: [string, "null"]
           maxLength: 10000
@@ -288,6 +300,12 @@ components:
         hive_count:
           type: integer
           minimum: 0
+        place_label:
+          type: [string, "null"]
+          maxLength: 200
+          description: >-
+            Optional free-text place name (e.g. "Montargil"), independent of `location`'s
+            coordinates and of the apiary's own `name` (#252).
         notes:
           type: [string, "null"]
           maxLength: 10000

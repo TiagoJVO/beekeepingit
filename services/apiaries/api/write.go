@@ -31,30 +31,34 @@ import (
 
 const maxNameLength = 200
 const maxNotesLength = 10000
+const maxPlaceLabelLength = 200
 
 // apiaryCreateRequest is the POST /v1/apiaries request body (ApiaryCreate
 // schema). id is client-supplied (offline-generatable UUID, api-contracts.md
 // §4); hive_count defaults to 0 when omitted (schema default); notes is
-// optional free-text (FR-AP-8, #196).
+// optional free-text (FR-AP-8, #196); place_label is an optional free-text
+// place name (#252), independent of location's coordinates.
 type apiaryCreateRequest struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Location  *geoPointInput `json:"location"`
-	HiveCount *int32         `json:"hive_count"`
-	Notes     *string        `json:"notes"`
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	Location   *geoPointInput `json:"location"`
+	HiveCount  *int32         `json:"hive_count"`
+	Notes      *string        `json:"notes"`
+	PlaceLabel *string        `json:"place_label"`
 }
 
 // apiaryUpdateRequest is the PATCH /v1/apiaries/{id} request body
 // (ApiaryUpdate schema) — any subset of mutable fields. A field's zero value
 // is indistinguishable from "not sent" for Location (already a pointer),
-// HiveCount (pointer) and Notes (pointer); Name uses a separate "was the key
-// present" check (nameSet) since Go can't otherwise tell "" apart from
-// absent for a plain string field decoded from JSON.
+// HiveCount (pointer), Notes (pointer) and PlaceLabel (pointer); Name uses a
+// separate "was the key present" check (nameSet) since Go can't otherwise
+// tell "" apart from absent for a plain string field decoded from JSON.
 type apiaryUpdateRequest struct {
-	Name      *string        `json:"name"`
-	Location  *geoPointInput `json:"location"`
-	HiveCount *int32         `json:"hive_count"`
-	Notes     *string        `json:"notes"`
+	Name       *string        `json:"name"`
+	Location   *geoPointInput `json:"location"`
+	HiveCount  *int32         `json:"hive_count"`
+	Notes      *string        `json:"notes"`
+	PlaceLabel *string        `json:"place_label"`
 }
 
 // createApiary, updateApiary and deleteApiary are wired into apiaries.go's
@@ -100,6 +104,7 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			OrganizationID: org,
 			Name:           body.Name,
 			Notes:          notesParam(body.Notes),
+			PlaceLabel:     notesParam(body.PlaceLabel),
 			UpdatedAt:      pgtype.Timestamptz{Time: now, Valid: true},
 			Lon:            body.Location.lon(),
 			Lat:            body.Location.lat(),
@@ -144,7 +149,7 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		want := restRowState{name: row.Name, hive: hiveCount, notes: textOf(row.Notes)}
+		want := restRowState{name: row.Name, hive: hiveCount, notes: textOf(row.Notes), placeLabel: textOf(row.PlaceLabel)}
 		if err := writeAuditLogTx(r.Context(), txq, org, userID, id, history.ChangeCreate, now, restRowState{}, want); err != nil {
 			problem.Write(w, r, problem.Internal())
 			return
@@ -162,6 +167,7 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			Name:           row.Name,
 			HiveCount:      hiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
+			PlaceLabel:     textPtr(row.PlaceLabel),
 			Notes:          textPtr(row.Notes),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,
@@ -185,7 +191,8 @@ func respondIdempotentCreateOrConflict(w http.ResponseWriter, r *http.Request, q
 	}
 	sameLocation := existing.LocationGeojson == geoJSONOf(body.Location)
 	sameNotes := textOf(existing.Notes) == strPtrValue(body.Notes)
-	if existing.Name != body.Name || existing.HiveCount != hiveCount || !sameLocation || !sameNotes {
+	samePlaceLabel := textOf(existing.PlaceLabel) == strPtrValue(body.PlaceLabel)
+	if existing.Name != body.Name || existing.HiveCount != hiveCount || !sameLocation || !sameNotes || !samePlaceLabel {
 		problem.Write(w, r, problem.Conflict("an apiary with this id already exists with different content"))
 		return
 	}
@@ -197,6 +204,7 @@ func respondIdempotentCreateOrConflict(w http.ResponseWriter, r *http.Request, q
 		Name:           existing.Name,
 		HiveCount:      existing.HiveCount,
 		Location:       parseGeoJSONPoint(existing.LocationGeojson),
+		PlaceLabel:     textPtr(existing.PlaceLabel),
 		Notes:          textPtr(existing.Notes),
 		CreatedAt:      existing.CreatedAt.Time,
 		UpdatedAt:      existing.UpdatedAt.Time,
@@ -215,24 +223,29 @@ func geoJSONOf(p *geoPointInput) string {
 	return string(b)
 }
 
-// notesParam converts a request's optional notes (*string, nil = omitted)
-// into the sqlc nullable text param InsertApiaryWithLocation/
-// UpdateApiaryWithLocation expect — Valid:false clears/omits notes.
-func notesParam(notes *string) pgtype.Text {
-	if notes == nil {
+// notesParam converts a request's optional nullable-text field (*string, nil
+// = omitted) into the sqlc nullable text param InsertApiaryWithLocation/
+// UpdateApiaryWithLocation expect — Valid:false clears/omits the field.
+// Shared by both `notes` and `place_label` (#252): both are optional
+// free-text columns with the identical "nil = omitted" wire shape, so one
+// converter serves either call site — the parameter name stays generic
+// rather than `notes`-specific now that a second field uses it.
+func notesParam(value *string) pgtype.Text {
+	if value == nil {
 		return pgtype.Text{}
 	}
-	return pgtype.Text{String: *notes, Valid: true}
+	return pgtype.Text{String: *value, Valid: true}
 }
 
 // notesParamFromState is notesParam's counterpart for a restRowState's
-// already-resolved notes value ("" is its "unset" sentinel, matching
-// location — see restRowState.notes).
-func notesParamFromState(notes string) pgtype.Text {
-	if notes == "" {
+// already-resolved string value ("" is its "unset" sentinel, matching
+// location — see restRowState.notes/placeLabel). Shared by `notes` and
+// `place_label` for the same reason notesParam is.
+func notesParamFromState(value string) pgtype.Text {
+	if value == "" {
 		return pgtype.Text{}
 	}
-	return pgtype.Text{String: notes, Valid: true}
+	return pgtype.Text{String: value, Valid: true}
 }
 
 // textOf reads a stored pgtype.Text column back as a plain string ("" when
@@ -273,6 +286,9 @@ func validateCreate(body apiaryCreateRequest) (uuid.UUID, []problem.FieldError) 
 	}
 	if body.Notes != nil && len(*body.Notes) > maxNotesLength {
 		errs = append(errs, problem.FieldError{Field: "notes", Code: "too_long", Message: "notes must be at most 10000 characters"})
+	}
+	if body.PlaceLabel != nil && len(*body.PlaceLabel) > maxPlaceLabelLength {
+		errs = append(errs, problem.FieldError{Field: "place_label", Code: "too_long", Message: "place_label must be at most 200 characters"})
 	}
 	errs = append(errs, body.Location.validate("location")...)
 	return id, errs
@@ -328,7 +344,7 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes)}
+		before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel)}
 		want := before
 		if nameSet {
 			want.name = *body.Name
@@ -339,6 +355,10 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 		_, notesSet := fields["notes"]
 		if notesSet {
 			want.notes = strPtrValue(body.Notes)
+		}
+		_, placeLabelSet := fields["place_label"]
+		if placeLabelSet {
+			want.placeLabel = strPtrValue(body.PlaceLabel)
 		}
 		var lon, lat pgtype.Float8
 		if locationSet {
@@ -355,10 +375,11 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 		nowTS := pgtype.Timestamptz{Time: now, Valid: true}
 		updated, err := txq.UpdateApiaryWithLocation(r.Context(), sqlcgen.UpdateApiaryWithLocationParams{
 			OrganizationID: org, ID: pgID,
-			Name:      want.name,
-			Notes:     notesParamFromState(want.notes),
-			UpdatedAt: nowTS,
-			Lon:       lon, Lat: lat,
+			Name:       want.name,
+			Notes:      notesParamFromState(want.notes),
+			PlaceLabel: notesParamFromState(want.placeLabel),
+			UpdatedAt:  nowTS,
+			Lon:        lon, Lat: lat,
 		})
 		if err != nil {
 			problem.Write(w, r, problem.Internal())
@@ -397,6 +418,7 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			Name:           updated.Name,
 			HiveCount:      want.hive,
 			Location:       parseGeoJSONPoint(updated.LocationGeojson),
+			PlaceLabel:     textPtr(updated.PlaceLabel),
 			Notes:          textPtr(updated.Notes),
 			CreatedAt:      updated.CreatedAt.Time,
 			UpdatedAt:      updated.UpdatedAt.Time,
@@ -409,7 +431,8 @@ func validateUpdate(fields map[string]json.RawMessage, body apiaryUpdateRequest,
 	_, hiveSet := fields["hive_count"]
 	_, locSet := fields["location"]
 	_, notesSet := fields["notes"]
-	if !nameSet && !hiveSet && !locSet && !notesSet {
+	_, placeLabelSet := fields["place_label"]
+	if !nameSet && !hiveSet && !locSet && !notesSet && !placeLabelSet {
 		errs = append(errs, problem.FieldError{Field: "(body)", Code: "required", Message: "request must change at least one field"})
 	}
 	if nameSet {
@@ -425,6 +448,9 @@ func validateUpdate(fields map[string]json.RawMessage, body apiaryUpdateRequest,
 	}
 	if body.Notes != nil && len(*body.Notes) > maxNotesLength {
 		errs = append(errs, problem.FieldError{Field: "notes", Code: "too_long", Message: "notes must be at most 10000 characters"})
+	}
+	if body.PlaceLabel != nil && len(*body.PlaceLabel) > maxPlaceLabelLength {
+		errs = append(errs, problem.FieldError{Field: "place_label", Code: "too_long", Message: "place_label must be at most 200 characters"})
 	}
 	errs = append(errs, body.Location.validate("location")...)
 	return errs
@@ -475,7 +501,7 @@ func deleteApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson}
+		before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel)}
 		if err := writeAuditLogTx(r.Context(), txq, org, userID, id, history.ChangeDelete, now, before, restRowState{}); err != nil {
 			problem.Write(w, r, problem.Internal())
 			return
@@ -532,10 +558,11 @@ func currentLonLat(locationGeojson string) (pgtype.Float8, pgtype.Float8) {
 // history.ComputeChange expects regardless of which write path (REST or
 // sync-apply) produced it.
 type restRowState struct {
-	name     string
-	hive     int32
-	location string // "" means unset, matching location_geojson's sentinel
-	notes    string // "" means unset — an apiary's own free-text content, not personal data (§7.3)
+	name       string
+	hive       int32
+	location   string // "" means unset, matching location_geojson's sentinel
+	notes      string // "" means unset — an apiary's own free-text content, not personal data (§7.3)
+	placeLabel string // "" means unset — a place NAME (e.g. "Montargil"), not personal data (#252, §7.3)
 }
 
 // fields projects a restRowState to the plain field map history.ComputeChange
@@ -543,7 +570,8 @@ type restRowState struct {
 // location is included as its GeoJSON string (an opaque, non-personal
 // value) so a location change shows up in the update delta; notes similarly
 // (FR-AP-8, #196) — it's the apiary's own content, not personal data about
-// a person.
+// a person; place_label (#252) likewise — a place name the apiary's owner
+// chose, not personal data about anyone.
 func (a restRowState) fields() map[string]any {
 	m := map[string]any{"name": a.name, "hive_count": a.hive}
 	if a.location != "" {
@@ -551,6 +579,9 @@ func (a restRowState) fields() map[string]any {
 	}
 	if a.notes != "" {
 		m["notes"] = a.notes
+	}
+	if a.placeLabel != "" {
+		m["place_label"] = a.placeLabel
 	}
 	return m
 }

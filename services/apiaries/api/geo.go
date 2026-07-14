@@ -86,6 +86,36 @@ func parseGeoJSONPoint(raw string) *geoPointDTO {
 	return &pt
 }
 
+// lonLatFromGeoJSON parses a stored `location_geojson` column value (the
+// same shape parseGeoJSONPoint consumes) into a plain (*float64, *float64)
+// pair — nil-together when the apiary has no stored location. This is
+// sync.go's rowState-shaped counterpart of write.go's currentLonLat (which
+// instead returns pgtype.Float8 params for a direct SQL call); both read the
+// same GeoJSON string, just for a different caller's internal representation
+// (#252's applyOp needs `current.lon`/`current.lat` as plain values so
+// mergeOp's "absent ⇒ preserve current" logic can compare/carry them the
+// same way it already does for name/hive/notes/place_label).
+func lonLatFromGeoJSON(locationGeojson string) (lon, lat *float64) {
+	pt := parseGeoJSONPoint(locationGeojson)
+	if pt == nil {
+		return nil, nil
+	}
+	lonV, latV := pt.Coordinates[0], pt.Coordinates[1]
+	return &lonV, &latV
+}
+
+// float8Ptr converts an optional plain float64 (rowState's lon/lat
+// representation) to the sqlc nullable float8 param InsertApiary/
+// UpdateApiary expect — nil maps to an invalid (NULL) Float8, matching
+// geoPointInput.lon()/lat()'s own nil-safe conversion for the REST path's
+// equivalent *geoPointInput input.
+func float8Ptr(v *float64) pgtype.Float8 {
+	if v == nil {
+		return pgtype.Float8{}
+	}
+	return pgtype.Float8{Float64: *v, Valid: true}
+}
+
 // etagFor derives a deterministic, opaque ETag from a row's updated_at —
 // already the row's LWW version stamp (sync.go/data-model.md §4.3), so it
 // changes exactly when the row's mutable content changes and is stable

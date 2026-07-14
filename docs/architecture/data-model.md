@@ -242,15 +242,28 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 
 ## 6. Geo / PostGIS (FR-AP-2, FR-AP-5)
 
-- `apiaries.location` is **`geography(Point, 4326)`** with a **GIST index**.
+- `apiaries.location` is **`geography(Point, 4326)`** with a **GIST index**. Set via the
+  client's map-pin picker or "use current location" (#252) — both the REST write path
+  (`write.go`) and the offline sync-apply path (`sync.go`'s `apiaryData`) accept it, so an
+  apiary created entirely offline gets the same coordinates an online create would.
 - **Proximity list (FR-AP-2):** server orders by `location <-> :user_point` (KNN) /
   `ST_Distance`; **offline**, the client computes **haversine** over the replicated apiaries
-  slice — both paths needed because the list is a field feature (FR-OF-1).
+  slice — both paths needed because the list is a field feature (FR-OF-1). The list also shows
+  each row's distance from the device (FR-AP-2, #253), locale-formatted (NFR-I18N-1).
 - **Distance between two apiaries (FR-AP-5):** `ST_Distance(a.location, b.location)` —
   **straight-line** per the [Q-DIST](../../requirements/open-questions.md) recommended default;
   driving distance (routing, online-only) is out of v1 scope.
-- **Search (FR-AP-6):** name search via trigram index (`pg_trgm`); spatial/attribute search
-  composes with the geo index. Search scope (offline/online, which entities) is **Q-SEARCH**.
+- **Search (FR-AP-6, D-17):** client-side over the locally-synced apiary set, matching on
+  **name** and, since #252/#254, **`place_label`** — an apiary's optional free-text place name
+  (below), diacritic-insensitive (PT "São" ≈ "sao"). Not server-side trigram search: D-17
+  resolved FR-AP-6's scope to client-side/apiaries-only, so the `q` query param
+  `contracts/openapi/apiaries.openapi.yaml` still accepts is a documented no-op server-side
+  (`api/apiaries.go`'s `listApiaries`), not backed by a `pg_trgm` index.
+- **`place_label`** (#252): an optional free-text place name (e.g. "Montargil"), independent of
+  `location`'s coordinates and of the apiary's own `name` — a plain nullable `TEXT` column
+  (migration `00006_add_apiary_place_label.sql`), capped at 200 chars like a short label, not
+  free-form prose (unlike `notes`'s 10,000-char cap). Threaded through the same write paths as
+  `location` (REST + sync-apply) and the PowerSync sync-rules bucket/client schema.
 
 ---
 

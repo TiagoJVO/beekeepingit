@@ -289,10 +289,16 @@ Core technology decisions (2026-06-27). Detail and rationale in
   the locally-synced apiary set (so it works fully offline per FR-OF-1), and matches on **name**
   and **location** (the apiary's stored location label/address text, not free-text notes), per the
   Melargil prototype's apiary-list search.
+- **Realized (#252/#254):** the "location label/address text" this decision anticipated is the
+  apiary's new optional free-text `place_label` column (#252, e.g. "Montargil") — search now
+  matches name OR `place_label`, case- and diacritic-insensitive (PT "São" ≈ "sao"). Not a
+  revision of this decision, just its originally-intended scope materializing once the field
+  existed to search against (client/lib/features/apiaries/apiaries_repository.dart's
+  `filterApiariesByQuery` previously noted this gap explicitly).
 - **Deferred:** extending search to activities/journeys/todos is out of scope for FR-AP-6 — it is
   a separate, future cross-entity search requirement (not yet specified) to consider if/when those
   domains land.
-- **Supersedes:** Q-SEARCH. Touches FR-AP-6, #36.
+- **Supersedes:** Q-SEARCH. Touches FR-AP-6, #36, #252, #254.
 
 ## D-18 — Accessibility baseline: WCAG 2.2 AA, 44x44 tap targets
 

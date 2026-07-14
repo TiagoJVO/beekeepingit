@@ -78,12 +78,22 @@ auth:
 # tombstone of their own (a counter is always either the current value or
 # absent; its apiary's tombstone already removes the apiary — and with it
 # every dependent read — from the device's slice).
+#
+# place_label (#252, migration 00006): a plain nullable text column, added to
+# the explicit apiaries SELECT alongside name — no ST_X/ST_Y-style projection
+# needed (unlike location, it's already client-representable SQL text).
+# IMPORTANT: because this list is explicit (not `SELECT *`), it must stay a
+# SUPERSET of the client's local schema (powersync_schema.dart) — a column
+# missing here doesn't error anywhere, it silently stays NULL on every device
+# that didn't write it locally itself. Every additive apiaries.apiaries
+# column needs a matching addition here in the SAME change that adds it
+# server-side, not a follow-up.
 syncConfig:
   bucket_definitions:
     by_organization:
       parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
       data:
-        - SELECT id, organization_id, name, created_at, updated_at,
+        - SELECT id, organization_id, name, place_label, created_at, updated_at,
           ST_X(location) AS location_lon, ST_Y(location) AS location_lat
           FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
         - SELECT * FROM apiaries.apiary_counters WHERE organization_id = bucket.organization_id
