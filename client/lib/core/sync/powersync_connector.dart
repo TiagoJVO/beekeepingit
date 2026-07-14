@@ -4,8 +4,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:powersync/powersync.dart';
+import 'package:uuid/uuid.dart';
 
 import '../config/app_config.dart';
+import 'local_store.dart';
+import 'powersync_local_store.dart';
 import 'powersync_schema.dart';
 import 'sync_events.dart';
 
@@ -19,6 +22,7 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
 
   final Future<String?> Function() getAccessToken;
   final http.Client _http;
+  static const _uuid = Uuid();
 
   /// Emits one event per op the server reports as `superseded` (sync.md
   /// §4.2/§8 — this offline edit lost a last-write-wins conflict). The shell
@@ -27,7 +31,18 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
   final _superseded = StreamController<SupersededChange>.broadcast();
   Stream<SupersededChange> get supersededChanges => _superseded.stream;
 
-  void dispose() => _superseded.close();
+  /// Emits one event per op in a push the server **permanently rejected** (a
+  /// validation-class `4xx`; sync.md §8's `rejected` state, D-12). The op is
+  /// also retained in the local `sync_rejected_ops` dead-letter
+  /// (powersync_schema.dart) so it's recoverable — this stream is only the
+  /// *notification* the shell (EPIC-06 #7) turns into a "needs fixing" notice.
+  final _rejected = StreamController<RejectedChange>.broadcast();
+  Stream<RejectedChange> get rejectedChanges => _rejected.stream;
+
+  void dispose() {
+    _superseded.close();
+    _rejected.close();
+  }
 
   @override
   Future<PowerSyncCredentials?> fetchCredentials() async {
@@ -70,23 +85,129 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
       body: jsonEncode({'ops': ops}),
     );
 
-    if (resp.statusCode == 200) {
-      _notifySuperseded(resp.body);
-      await tx.complete();
-      return;
-    }
-    if (resp.statusCode == 422 ||
-        (resp.statusCode >= 400 && resp.statusCode < 500)) {
-      // A client/validation error can't heal on retry. The user-facing
-      // notify-and-fix flow is EPIC-06 (#58); the skeleton drops the op so
-      // the queue doesn't wedge, and lets it be re-observed via the logs.
-      await tx.complete();
-      return;
-    }
-    // 5xx / network: leave queued so PowerSync's idempotent forward-retry
-    // rolls it forward (sync.md §6.2).
-    throw http.ClientException('sync batch failed: ${resp.statusCode}');
+    await handleUploadResponse(
+      status: resp.statusCode,
+      body: resp.body,
+      ops: ops,
+      store: PowerSyncLocalStore(database),
+      complete: () => tx.complete(),
+    );
   }
+
+  /// Decides what to do with the batch-apply response and acts on it —
+  /// extracted from [uploadData] so the whole decision is unit-testable
+  /// **without a real PowerSync database** (the same reason `_toOp`'s pure
+  /// helpers are split out): a test drives it with a fake [LocalStoreEngine]
+  /// and a [complete] closure, no `getNextCrudTransaction()` needed.
+  ///
+  /// - **`200`** — the push applied. Notify any `superseded` LWW losses
+  ///   (§4.2/§8) and clear any dead-letter rows for the entities in this batch
+  ///   (**clear-on-success**: a corrected re-save uploads a fresh op for the
+  ///   same record, which resolves its earlier rejection), then `complete()`.
+  /// - **`400`/`422`** — a validation-class rejection the identical bytes can't
+  ///   heal on retry. **Retain** every op of the (atomic, all-or-nothing)
+  ///   rejected push in the local dead-letter, **surface** each via
+  ///   [rejectedChanges], then `complete()` so the queue advances — the op is
+  ///   recoverable, not dropped, and the queue doesn't wedge (D-12, sync.md §8).
+  /// - **anything else** (other `4xx`, `5xx`, network) — transient: `throw` to
+  ///   leave the push queued for PowerSync's idempotent forward-retry
+  ///   (sync.md §6.2). This deliberately no longer discards a recoverable
+  ///   `401`/`403` the way the walking-skeleton's blanket `4xx` drop did.
+  @visibleForTesting
+  Future<void> handleUploadResponse({
+    required int status,
+    required String body,
+    required List<Map<String, dynamic>> ops,
+    required LocalStoreEngine store,
+    required Future<void> Function() complete,
+  }) async {
+    final outcome = classifyUploadOutcome(status, body);
+    switch (outcome.disposition) {
+      case UploadDisposition.completed:
+        _notifySuperseded(body);
+        await _clearResolved(store, ops);
+        await complete();
+      case UploadDisposition.retain:
+        await _retainRejected(store, ops, outcome.problem!);
+        await complete();
+      case UploadDisposition.retry:
+        throw http.ClientException('sync batch failed: $status');
+    }
+  }
+
+  /// Writes one dead-letter row per op of a rejected push and emits a
+  /// [RejectedChange] for each. REPLACEs by server identity (delete-then-insert
+  /// keyed on [dedupKeyColumn]) so re-rejecting the same record keeps one live
+  /// entry — PowerSync's local schema has no unique constraints, matching
+  /// `apiaries_repository`'s counter-upsert shape. Every op of the atomic push
+  /// is retained (not just the field-flagged ones): the whole push rolled back
+  /// server-side, so a valid op batched with an invalid one would otherwise be
+  /// lost when the transaction completes.
+  Future<void> _retainRejected(
+    LocalStoreEngine store,
+    List<Map<String, dynamic>> ops,
+    RejectedProblem problem,
+  ) async {
+    for (var i = 0; i < ops.length; i++) {
+      final op = ops[i];
+      final entityType = op['entity_type'] as String;
+      final dedupKey = _dedupKeyFor(op);
+      final fixApiaryId = _fixApiaryIdFor(op);
+      final errors = problem.fieldErrors.where((f) => f.opIndex == i).toList();
+      final detail = jsonEncode({
+        'detail': problem.detail,
+        'errors': [
+          for (final e in errors)
+            {'field': e.field, 'code': e.code, 'message': e.message},
+        ],
+      });
+      await store.execute(
+        'DELETE FROM $rejectedOpsTable WHERE $dedupKeyColumn = ?',
+        [dedupKey],
+      );
+      await store.execute(
+        'INSERT INTO $rejectedOpsTable '
+        '(id, entity_type, $dedupKeyColumn, fix_apiary_id, op, payload, '
+        'error_code, error_detail, rejected_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          _uuid.v4(),
+          entityType,
+          dedupKey,
+          fixApiaryId,
+          op['op'] as String,
+          jsonEncode(op),
+          problem.code,
+          detail,
+          _nowIso(),
+        ],
+      );
+      _rejected.add(
+        RejectedChange(
+          entityType: entityType,
+          entityId: fixApiaryId,
+          errorCode: problem.code,
+        ),
+      );
+    }
+  }
+
+  /// Clear-on-success: deletes any dead-letter row for a record that just
+  /// uploaded cleanly, so a corrected re-save auto-resolves its earlier
+  /// rejection without the user having to dismiss it.
+  Future<void> _clearResolved(
+    LocalStoreEngine store,
+    List<Map<String, dynamic>> ops,
+  ) async {
+    for (final op in ops) {
+      await store.execute(
+        'DELETE FROM $rejectedOpsTable WHERE $dedupKeyColumn = ?',
+        [_dedupKeyFor(op)],
+      );
+    }
+  }
+
+  String _nowIso() => DateTime.now().toUtc().toIso8601String();
 
   Future<Map<String, dynamic>> _toOp(
     PowerSyncDatabase database,
@@ -140,6 +261,32 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     UpdateType.patch => 'patch',
     UpdateType.delete => 'delete',
   };
+
+  /// The dead-letter row's **server identity** key (powersync_schema.dart's
+  /// [rejectedOpsTable] doc): an `apiary_counter` op is keyed by
+  /// `(apiary_id, counter_type)` — its stable server identity — because its
+  /// local row id changes across a reject→fix cycle; every other op is keyed by
+  /// its own id (the apiary id). Reads the enriched op payload `_toOp` built,
+  /// so a counter op's `apiary_id`/`counter_type` are present.
+  String _dedupKeyFor(Map<String, dynamic> op) {
+    if (op['entity_type'] == apiaryCounterEntityType) {
+      final data = op['data'] as Map<String, dynamic>?;
+      return '${data?['apiary_id']}:${data?['counter_type']}';
+    }
+    return op['id'] as String;
+  }
+
+  /// The apiary the needs-fix "Fix" action deep-links to: the owning apiary id
+  /// for an `apiary_counter` op, else the op's own (apiary) id. Falls back to
+  /// the op id if a counter op somehow reached upload without its `apiary_id`
+  /// enriched (the pathological purge/race `_toOp` documents).
+  String _fixApiaryIdFor(Map<String, dynamic> op) {
+    if (op['entity_type'] == apiaryCounterEntityType) {
+      final data = op['data'] as Map<String, dynamic>?;
+      return (data?['apiary_id'] as String?) ?? (op['id'] as String);
+    }
+    return op['id'] as String;
+  }
 
   // Best-effort: a malformed/unexpected body must never fail the upload
   // itself (the transaction already completed server-side), so parse errors
@@ -199,4 +346,115 @@ List<SupersededChange> parseSupersededChanges(String body) {
   } catch (_) {
     return const [];
   }
+}
+
+/// What [BeekeepingitConnector.handleUploadResponse] should do with a batch
+/// response: [completed] (applied — clear + complete), [retain] (a
+/// validation-class rejection — dead-letter + surface + complete), or [retry]
+/// (transient — leave queued).
+enum UploadDisposition { completed, retain, retry }
+
+/// The classified batch-upload outcome: a [disposition] plus, for [retain]
+/// only, the parsed [RejectedProblem].
+@immutable
+class UploadOutcome {
+  const UploadOutcome(this.disposition, [this.problem]);
+
+  final UploadDisposition disposition;
+
+  /// The parsed rejection detail — non-null iff [disposition] is
+  /// [UploadDisposition.retain].
+  final RejectedProblem? problem;
+}
+
+/// Classifies a batch-apply HTTP response into an [UploadOutcome]. Pure (no
+/// I/O) and `@visibleForTesting` so the whole 4xx decision — the crux of the
+/// data-loss fix — is unit-testable without a PowerSync database:
+///
+/// - `200` → [UploadDisposition.completed].
+/// - `400`/`422` → [UploadDisposition.retain]: a validation-class client error
+///   the identical bytes can't heal on retry (RFC 9457 `422` from the sync
+///   coordinator's validate step, or a `400` malformed op). The offline edit is
+///   retained + surfaced, not dropped (D-12, sync.md §8).
+/// - **everything else** (other `4xx`, `5xx`, network) → [UploadDisposition.retry]:
+///   transient — left queued for idempotent forward-retry (sync.md §6.2). A
+///   `401`/`403` heals once a fresh token/permission arrives, so — unlike the
+///   walking-skeleton's blanket-`4xx` drop — it is never discarded here.
+@visibleForTesting
+UploadOutcome classifyUploadOutcome(int status, String body) {
+  if (status == 200) return const UploadOutcome(UploadDisposition.completed);
+  if (status == 422 || status == 400) {
+    return UploadOutcome(UploadDisposition.retain, parseRejectedProblem(body));
+  }
+  return const UploadOutcome(UploadDisposition.retry);
+}
+
+/// The parsed RFC 9457 problem body of a rejected push (services/servicetemplate/
+/// problem's `Problem` shape): the machine [code], human [detail], and
+/// per-field [fieldErrors].
+@immutable
+class RejectedProblem {
+  const RejectedProblem({
+    required this.code,
+    required this.detail,
+    required this.fieldErrors,
+  });
+
+  final String code;
+  final String detail;
+  final List<RejectedFieldError> fieldErrors;
+}
+
+/// One RFC 9457 field error, with the batch op it refers to resolved from the
+/// server's `ops[<i>].<field>` field path ([opIndex] = `i`, [field] = the rest).
+/// [opIndex] is null for a non-op-scoped field the client can't attribute.
+@immutable
+class RejectedFieldError {
+  const RejectedFieldError({
+    required this.opIndex,
+    required this.field,
+    required this.code,
+    required this.message,
+  });
+
+  final int? opIndex;
+  final String field;
+  final String code;
+  final String message;
+}
+
+/// Parses a `422`/`400` problem+json body into a [RejectedProblem]. Pure and
+/// `@visibleForTesting`. Best-effort like [parseSupersededChanges]: a
+/// malformed/unexpected body yields an **empty-detail** problem rather than
+/// throwing — the op is still retained and surfaced (needs fixing), never lost
+/// to a parse error.
+@visibleForTesting
+RejectedProblem parseRejectedProblem(String body) {
+  try {
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    final rawErrors = json['errors'] as List<dynamic>?;
+    return RejectedProblem(
+      code: (json['code'] as String?) ?? '',
+      detail: (json['detail'] as String?) ?? (json['title'] as String?) ?? '',
+      fieldErrors: [
+        for (final e in rawErrors ?? const [])
+          if (e is Map<String, dynamic>) _rejectedFieldError(e),
+      ],
+    );
+  } catch (_) {
+    return const RejectedProblem(code: '', detail: '', fieldErrors: []);
+  }
+}
+
+final _opFieldPrefix = RegExp(r'^ops\[(\d+)\]\.?(.*)$');
+
+RejectedFieldError _rejectedFieldError(Map<String, dynamic> e) {
+  final field = (e['field'] as String?) ?? '';
+  final match = _opFieldPrefix.firstMatch(field);
+  return RejectedFieldError(
+    opIndex: match == null ? null : int.parse(match.group(1)!),
+    field: match == null ? field : match.group(2)!,
+    code: (e['code'] as String?) ?? '',
+    message: (e['message'] as String?) ?? '',
+  );
 }

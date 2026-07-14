@@ -16,6 +16,37 @@ const apiaryEntityType = 'apiary';
 const apiaryCountersTable = 'apiary_counters';
 const apiaryCounterEntityType = 'apiary_counter';
 
+/// Local **dead-letter** table for offline writes the server permanently
+/// rejects on upload (a validation-class `4xx` — RFC 9457 `422`/`400`, sync.md
+/// §8's `rejected` state, D-12 notify-and-fix, #256/#260). The connector
+/// (`powersync_connector.dart`'s `handleUploadResponse`) writes one row per op
+/// in a rejected push before it `complete()`s the CRUD transaction — so the op
+/// leaves PowerSync's upload queue (the queue can't wedge) **without** the
+/// user's edit being lost: it is retained here, surfaced via the needs-fix UI,
+/// and cleared when a corrected re-save uploads (clear-on-success) or the user
+/// dismisses it.
+///
+/// **Local-only** ([Table.localOnly]) on purpose: a rejected op (i) must never
+/// sync up — it's a client-side needs-fix record, not domain data; (ii) must
+/// survive an app restart (durability is the whole point); (iii) is org data
+/// that must ride the §3.5 logout / membership-loss purge — and
+/// `disconnectAndClear()` (via `LocalStoreEngine.clear()`) wipes local-only
+/// rows too under its default `clearLocal: true`, so no extra teardown is
+/// needed.
+///
+/// Keyed by **server identity**, not the local row id: [dedupKeyColumn] is the
+/// apiary id for an `apiary` op and `"<apiary_id>:<counter_type>"` for an
+/// `apiary_counter` op (a counter's local row id isn't stable across a
+/// reject→fix cycle — `_upsertCounter` may re-INSERT after a down-sync). The
+/// connector REPLACEs by that key (delete-then-insert; PowerSync's local schema
+/// has no unique constraints, same as the counters table), so one live entry
+/// per record. `fix_apiary_id` is the apiary the needs-fix "Fix" action
+/// deep-links to (the apiary id for both op kinds).
+const rejectedOpsTable = 'sync_rejected_ops';
+
+/// The server-identity dedup column of [rejectedOpsTable] (see its doc).
+const dedupKeyColumn = 'dedup_key';
+
 /// The on-device SQLite schema PowerSync manages. The `id` primary key is
 /// implicit (client-generated UUID). `deleted_at` is NOT a local column:
 /// the Sync Rules exclude tombstoned rows, so a server-side delete simply
@@ -77,5 +108,20 @@ const appSchema = Schema([
     Column.integer('value'),
     Column.text('created_at'),
     Column.text('updated_at'),
+  ]),
+  // Dead-letter for permanently-rejected uploads (see [rejectedOpsTable] doc).
+  // Local-only: never syncs up/down, wiped by clear() with the rest of the
+  // local slice on logout / membership loss (§3.5).
+  Table.localOnly(rejectedOpsTable, [
+    Column.text('entity_type'), // 'apiary' | 'apiary_counter'
+    Column.text(dedupKeyColumn), // server identity (see doc)
+    Column.text('fix_apiary_id'), // apiary the "Fix" action deep-links to
+    Column.text('op'), // 'put' | 'patch' | 'delete'
+    Column.text('payload'), // JSON of the op we POSTed
+    Column.text('error_code'), // RFC 9457 problem code (e.g. validation.failed)
+    Column.text(
+      'error_detail',
+    ), // JSON: { detail, errors[] } field-level detail
+    Column.text('rejected_at'), // device time, ISO-8601 UTC
   ]),
 ]);

@@ -361,10 +361,17 @@ sequenceDiagram
 ```
 
 If any op fails **validation**, step ⑤ short-circuits before any write: the coordinator returns
-`422` problem+json with the offending op(s) and the whole push stays queued
-([sync.md](sync.md) §6.2 — nothing written, D-12 honored). A **post-validation transient**
-failure heals by idempotent forward-retry of the same batch. The skeleton implements both
-server behaviors; the _user-facing_ fix flow is EPIC-06.
+`422` problem+json with the offending op(s) — **nothing written server-side**, D-12 honored
+([sync.md](sync.md) §6.2). A **post-validation transient** failure heals by idempotent
+forward-retry of the same batch. The skeleton implements both server behaviors.
+
+> **Update (#256/#260):** the skeleton connector originally **dropped** a `422`-rejected op
+> (`tx.complete()` with no retention) so the queue couldn't wedge — losing the offline edit,
+> since the server never accepted it. That stopgap is retired: the connector now **retains** the
+> rejected op in a local dead-letter and **surfaces** it for the user to fix and re-queue, still
+> completing the transaction so the queue advances (the client half of notify-and-fix; see
+> [sync.md](sync.md) §8 "As built"). Other, transient `4xx` are now left queued for forward-retry
+> rather than dropped.
 
 ---
 

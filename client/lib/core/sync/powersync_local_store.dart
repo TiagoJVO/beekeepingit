@@ -36,11 +36,15 @@ class PowerSyncLocalStore implements LocalStoreEngine {
 
   /// Delegates to [ps.PowerSyncDatabase.disconnectAndClear] — disconnects
   /// the sync stream and wipes every locally-replicated row plus the upload
-  /// queue. `clearLocal: true` (the default) is correct here: BeekeepingIT
-  /// has no local-only tables the way PowerSync's own docs use that flag for
-  /// (e.g. draft-only tables kept across logout), so a full clear is what
-  /// "log out on a shared device" (auth_controller.dart's `logout()`) and
-  /// #125's planned `disconnectAndClear` both need.
+  /// queue. `clearLocal: true` (the default) is correct here and is relied on:
+  /// BeekeepingIT's one local-only table, `sync_rejected_ops` (the rejected-op
+  /// dead-letter, powersync_schema.dart), holds org data that must **not**
+  /// outlive the session on a shared/lost/re-assigned device (§3.5, NFR-SEC-1),
+  /// so it must be wiped too — and only the default `clearLocal: true` clears
+  /// local-only tables ("to preserve data in local-only tables, set clearLocal
+  /// to false"). A full clear is exactly what "log out on a shared device"
+  /// (auth_controller.dart's `logout()`) and the #125 membership-loss purge
+  /// both need; the dead-letter has no reason to survive either.
   @override
   Future<void> clear() => _db.disconnectAndClear();
 
