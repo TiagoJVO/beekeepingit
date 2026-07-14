@@ -739,6 +739,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'© OpenStreetMap contributors'**
   String get apiaryMapAttributionOsm;
+
+  /// Optional free-text place name field label on the apiary form, and its label on the detail screen (#252, e.g. "Montargil")
+  ///
+  /// In en, this message translates to:
+  /// **'Place label'**
+  String get apiaryPlaceLabelLabel;
+
+  /// Placeholder hint text in the apiary form's place label field (#252)
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Montargil'**
+  String get apiaryPlaceLabelHint;
+
+  /// Section label above the map-pin picker on the apiary form (#252)
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get apiaryLocationSectionLabel;
+
+  /// Button on the apiary form that sets the location to the device's current position (#252)
+  ///
+  /// In en, this message translates to:
+  /// **'Use current location'**
+  String get apiaryUseCurrentLocationAction;
+
+  /// Button on the apiary form that clears the currently-set location (#252 AC: the location is editable and clearable)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear location'**
+  String get apiaryLocationClearAction;
+
+  /// Shown on the apiary form when "use current location" fails because location permission was denied or is unavailable — the map-pin picker is offered as the fallback (#252 AC: graceful permission handling)
+  ///
+  /// In en, this message translates to:
+  /// **'Location access denied — you can still place a pin on the map.'**
+  String get apiaryFormLocationPermissionDenied;
+
+  /// Status text on the apiary form's map-pin picker when a location is currently set (#252)
+  ///
+  /// In en, this message translates to:
+  /// **'Location set: {lat}, {lon}'**
+  String apiaryFormLocationSet(String lat, String lon);
+
+  /// Status text on the apiary form's map-pin picker when no location is set yet (#252)
+  ///
+  /// In en, this message translates to:
+  /// **'No location set — tap the map to place a pin'**
+  String get apiaryFormLocationNotSet;
+
+  /// Semantics label for the embedded map-pin picker on the apiary form (#252)
+  ///
+  /// In en, this message translates to:
+  /// **'Map: tap to place the apiary\'s pin'**
+  String get apiaryMapPickerLabel;
+
+  /// Distance from the device's current location shown on an apiaries list row, locale-formatted (FR-AP-2, #253)
+  ///
+  /// In en, this message translates to:
+  /// **'{distanceKm} km away'**
+  String apiaryDistanceValue(String distanceKm);
+
+  /// Title of the confirmation dialog shown before deleting an apiary (#255)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete apiary?'**
+  String get deleteApiaryConfirmTitle;
+
+  /// Body of the confirmation dialog shown before deleting an apiary, naming it (#255 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently deletes “{name}”. This cannot be undone.'**
+  String deleteApiaryConfirmMessage(String name);
+
+  /// Confirm action in the delete-apiary confirmation dialog (#255)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteApiaryConfirmAction;
+
+  /// Cancel action in the delete-apiary confirmation dialog (#255 AC: cancel is a no-op)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get deleteApiaryCancelAction;
 }
 
 class _AppLocalizationsDelegate

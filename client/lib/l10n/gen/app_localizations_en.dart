@@ -390,4 +390,54 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryMapAttributionOsm => '© OpenStreetMap contributors';
+
+  @override
+  String get apiaryPlaceLabelLabel => 'Place label';
+
+  @override
+  String get apiaryPlaceLabelHint => 'e.g. Montargil';
+
+  @override
+  String get apiaryLocationSectionLabel => 'Location';
+
+  @override
+  String get apiaryUseCurrentLocationAction => 'Use current location';
+
+  @override
+  String get apiaryLocationClearAction => 'Clear location';
+
+  @override
+  String get apiaryFormLocationPermissionDenied =>
+      'Location access denied — you can still place a pin on the map.';
+
+  @override
+  String apiaryFormLocationSet(String lat, String lon) {
+    return 'Location set: $lat, $lon';
+  }
+
+  @override
+  String get apiaryFormLocationNotSet =>
+      'No location set — tap the map to place a pin';
+
+  @override
+  String get apiaryMapPickerLabel => 'Map: tap to place the apiary\'s pin';
+
+  @override
+  String apiaryDistanceValue(String distanceKm) {
+    return '$distanceKm km away';
+  }
+
+  @override
+  String get deleteApiaryConfirmTitle => 'Delete apiary?';
+
+  @override
+  String deleteApiaryConfirmMessage(String name) {
+    return 'This permanently deletes “$name”. This cannot be undone.';
+  }
+
+  @override
+  String get deleteApiaryConfirmAction => 'Delete';
+
+  @override
+  String get deleteApiaryCancelAction => 'Cancel';
 }

@@ -1,11 +1,15 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/apiaries/apiary_form_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/a11y_matchers.dart';
 
 /// Fixtures mirroring widget_test.dart's/app_shell_test.dart's own — kept
 /// local rather than imported since those files' fixtures are file-private.
@@ -91,6 +95,119 @@ void main() {
   );
 
   testWidgets(
+    'the create form has a place label field and an embedded map-pin picker '
+    '(#252)',
+    (tester) async {
+      await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
+
+      // Place label field accepts free text (#252 AC: optional free-text
+      // place label).
+      expect(find.byKey(const Key('apiary-place-label-field')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('apiary-place-label-field')),
+        'Montargil',
+      );
+      await tester.pump();
+      expect(find.text('Montargil'), findsOneWidget);
+
+      // The embedded map-pin picker (#252 AC: "placing/dragging a pin on an
+      // embedded map picker") renders, and the "use current location" /
+      // status text affordances are present (#252 AC: use-current-location,
+      // editable/clearable).
+      expect(find.byKey(const Key('apiary-location-picker')), findsOneWidget);
+      expect(
+        find.byKey(const Key('apiary-use-current-location-button')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('apiary-location-status')), findsOneWidget);
+      // No location set yet — the "clear location" action isn't shown (it
+      // only appears once a location exists, mirroring the map screen's own
+      // "only show what's actionable" convention).
+      expect(
+        find.byKey(const Key('apiary-clear-location-button')),
+        findsNothing,
+      );
+
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'tapping the map-pin picker sets a location, and it becomes clearable '
+    '(#252 AC: editable and clearable)',
+    (tester) async {
+      await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
+
+      // No location set initially.
+      expect(
+        find.byKey(const Key('apiary-clear-location-button')),
+        findsNothing,
+      );
+      expect(
+        find.text('No location set — tap the map to place a pin'),
+        findsOneWidget,
+      );
+
+      // Tap the map to place a pin. flutter_map's internal tap gesture
+      // recognizer debounces a plain tap behind a short internal timer (to
+      // disambiguate it from the start of a double-tap-to-zoom) before
+      // invoking MapOptions.onTap — a single pump() right after the tap
+      // observes the pre-debounce state, so this waits past that window
+      // (confirmed against flutter_map 8.3.1's
+      // MapInteractiveViewerState._handleOnTapUp, whose FakeTimer fires at
+      // ~250ms) rather than asserting immediately. This widget test doesn't
+      // assert on the exact lon/lat the tap resolves to (that depends on
+      // flutter_map's screen-to-geographic projection, which isn't this
+      // screen's own logic to verify) — only that a location becomes set as
+      // a result, which the repository/backend round-trip tests
+      // (apiaries_repository_test.dart, main_test.go) cover precisely.
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const Key('apiary-location-picker'))),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // The clear action now appears (a location exists to clear), and the
+      // status text no longer reads "not set".
+      expect(
+        find.byKey(const Key('apiary-clear-location-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('No location set — tap the map to place a pin'),
+        findsNothing,
+      );
+
+      // Clearing removes it again. Scrolled into view first: the button
+      // appearing shifted the form's layout (the row it's in only renders
+      // once a location exists), which can leave its previous cached
+      // position outside the scroll view's visible bounds.
+      final clearButton = find.byKey(const Key('apiary-clear-location-button'));
+      await tester.ensureVisible(clearButton);
+      await tester.pumpAndSettle();
+      await tester.tap(clearButton);
+      await tester.pump();
+      expect(
+        find.byKey(const Key('apiary-clear-location-button')),
+        findsNothing,
+      );
+      expect(
+        find.text('No location set — tap the map to place a pin'),
+        findsOneWidget,
+      );
+
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'navigating to the edit form from the detail screen works without error',
     (tester) async {
       // apiary_form_screen.dart's edit mode (isEdit) always re-fetches the
@@ -140,4 +257,182 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  group('DeleteApiaryConfirmDialog (#255)', () {
+    // Pumps just the dialog (via showDialog, matching how the real edit form
+    // opens it) behind a minimal MaterialApp/l10n host — no repository/
+    // PowerSync dependency, unlike the full ApiaryFormScreen's edit mode
+    // (see this file's own doc comments above on why edit-mode tests can't
+    // drive the form to completion). This is exactly what #255's AC asks to
+    // be covered: "Widget tests cover both confirm and cancel paths" — the
+    // dialog's own behavior, independent of the screen that opens it.
+    Widget hostApp() => MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (_) =>
+                      const DeleteApiaryConfirmDialog(apiaryName: 'Monte Alto'),
+                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('result: $confirmed')));
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('names the apiary in the confirmation message (#255 AC)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(hostApp());
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('apiary-delete-confirm-dialog')),
+        findsOneWidget,
+      );
+      expect(find.text('Delete apiary?'), findsOneWidget);
+      expect(
+        find.text(
+          'This permanently deletes “Monte Alto”. This cannot be undone.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('confirm pops true and dismisses the dialog', (tester) async {
+      await tester.pumpWidget(hostApp());
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('apiary-delete-confirm-delete')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('apiary-delete-confirm-dialog')),
+        findsNothing,
+      );
+      expect(find.text('result: true'), findsOneWidget);
+    });
+
+    testWidgets(
+      'cancel pops false, dismisses the dialog, and is a no-op (#255 AC)',
+      (tester) async {
+        await tester.pumpWidget(hostApp());
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-delete-confirm-cancel')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-delete-confirm-dialog')),
+          findsNothing,
+        );
+        expect(find.text('result: false'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'dismissing via the barrier (tap outside) is treated the same as cancel',
+      (tester) async {
+        await tester.pumpWidget(hostApp());
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        // Tap the scrim well outside the dialog's content — a barrier
+        // dismiss, not a button tap.
+        await tester.tapAt(const Offset(5, 5));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-delete-confirm-dialog')),
+          findsNothing,
+        );
+        expect(find.text('result: null'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'both actions meet the 44x44 minimum tap target size (D-18, gloves-friendly)',
+      (tester) async {
+        await tester.pumpWidget(hostApp());
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-delete-confirm-cancel')),
+        );
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-delete-confirm-delete')),
+        );
+      },
+    );
+
+    testWidgets('both actions have non-empty semantics labels (D-18)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(hostApp());
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expectHasSemanticsLabel(
+        tester,
+        const Key('apiary-delete-confirm-cancel'),
+      );
+      expectHasSemanticsLabel(
+        tester,
+        const Key('apiary-delete-confirm-delete'),
+      );
+    });
+
+    testWidgets('renders correctly in Portuguese (NFR-I18N-1)', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('pt'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () => showDialog<bool>(
+                    context: context,
+                    builder: (_) => const DeleteApiaryConfirmDialog(
+                      apiaryName: 'Monte Alto',
+                    ),
+                  ),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Eliminar apiário?'), findsOneWidget);
+      expect(
+        find.text(
+          'Isto elimina permanentemente “Monte Alto”. Esta ação não pode ser desfeita.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Cancelar'), findsOneWidget);
+      expect(find.text('Eliminar'), findsOneWidget);
+    });
+  });
 }
