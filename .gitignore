@@ -57,3 +57,8 @@ services/*/app
 
 # --- Misc ---
 *.tsbuildinfo
+
+# --- Generated tool reports (ecc tooling) ---
+# Point-in-time run logs (e.g. /ecc:update-codemaps' analysis report) — regenerated on
+# every run, not meant to accumulate history in git.
+.reports/

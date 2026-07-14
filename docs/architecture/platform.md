@@ -207,8 +207,9 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
   This is the scanning stage EPIC-14 #89 shares and tunes.
 - [`build-publish.yml`](../../.github/workflows/build-publish.yml) — a `detect` job emits a matrix
   of only the changed directories containing a `Dockerfile`; each builds → **Trivy image scan** →
-  on merge to `main`, publishes to **ghcr.io** tagged by commit. **Dormant** until the first
-  service ships a `Dockerfile` (empty matrix ⇒ skipped). macOS/iOS runners are deferred to M5 /
+  on merge to `main`, publishes to **ghcr.io** tagged by commit. **Active**: `client/` and all four
+  domain services (`identity`/`organizations`/`apiaries`/`sync`) each ship a `Dockerfile`, so the
+  matrix builds real components on every change. macOS/iOS runners are deferred to M5 /
   EPIC-15 (a disabled placeholder job records this).
 - [`helm-ci.yml`](../../.github/workflows/helm-ci.yml) — on any change under `infra/helm/**`:
   `helm dependency build`, `helm lint`, and `helm template` (base + each environment overlay) as a

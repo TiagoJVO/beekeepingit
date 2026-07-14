@@ -6,7 +6,7 @@
 - **Requirements:** NFR-ARC-1, NFR-MNT-1, NFR-SEC-1, NFR-TST-1, NFR-I18N-1, NFR-RL-1
 - **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
   (microservices → inter-service contracts), [D-5](../../requirements/decisions.md) (Go/Flutter/React),
-  [D-7](../../requirements/decisions.md) (OIDC JWT — Authentik in v1)
+  [D-7](../../requirements/decisions.md) (OIDC JWT — Keycloak at this ADR's date, later Authentik per [ADR-0016](0016-replace-keycloak-with-authentik.md))
 - **Open questions:** Q-SYNC (resolved → [sync.md](../architecture/sync.md) / [ADR-0006](0006-sync-conflict-resolution.md)),
   Q-AUTH / Q-ROLE (resolved → [ADR-0004](0004-authn-authz.md))
 - **Design doc:** [api-contracts.md](../architecture/api-contracts.md) ·
@@ -41,7 +41,8 @@ Adopt **contract-first REST + OpenAPI 3.1** for all client-facing APIs, with the
 5. **Versioning:** **major version in the URL path (`/vN`)**, owned by the gateway; only
    backward-compatible changes within a major; breaking changes ship a new major alongside the
    old and go through deprecate → `Sunset` → next major.
-6. **Auth & tenancy:** OIDC **JWT bearer** on every operation (D-7 — Authentik in v1); the caller's
+6. **Auth & tenancy:** OIDC **JWT bearer** on every operation (D-7 — Keycloak at this ADR's date,
+   later Authentik per [ADR-0016](0016-replace-keycloak-with-authentik.md)); the caller's
    `organization_id` is derived **from the token + membership** and is **never** a client
    parameter ([ADR-0002](0002-multi-tenancy.md)); out-of-scope ids return `404`.
 7. **Offline-aware verbs:** client-generated UUIDs, `Idempotency-Key` on `POST`, `ETag`/`If-Match`

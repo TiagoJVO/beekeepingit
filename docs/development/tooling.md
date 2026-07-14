@@ -113,5 +113,6 @@ needs `k3d`, `kubectl`, and `helm` on `PATH`; these are pinned in [`mise.toml`](
 The [`ci`](../../.github/workflows/ci.yml) workflow runs `task ci` (lint + test) on every PR
 via `mise-action`. It does **not** cover Helm charts — those have their own path-filtered
 [`helm-ci.yml`](../../.github/workflows/helm-ci.yml), triggered only when `infra/helm/**` changes.
-Per-language, path-filtered build/test matrices and the OpenAPI/contract tooling land in
-**EPIC-13** (see [FOLLOWUPS.md](../../FOLLOWUPS.md)).
+Per-language, path-filtered build/test matrices ([`build-publish.yml`](../../.github/workflows/build-publish.yml))
+and the OpenAPI/contract tooling ([`contracts-ci.yml`](../../.github/workflows/contracts-ci.yml),
+`task openapi:lint`/`breaking-diff`) shipped as part of **EPIC-13** (#88, closed).

@@ -4,8 +4,8 @@
 - **Date:** 2026-07-01
 - **Issue / Epic:** #109 / #103 (EPIC-DESIGN) · **Milestone:** M0
 - **Requirements:** NFR-SEC-1, NFR-ROL-1, NFR-ROL-2, FR-TEN-1, FR-TEN-2, FR-ONB-1/2/3, FR-OF-1
-- **Decisions:** [D-7](../../requirements/decisions.md#d-7--identity--auth-keycloak-self-hosted)
-  (Keycloak), [D-3](../../requirements/decisions.md) (org creator = admin), [D-10](../../requirements/decisions.md) (PWA-first)
+- **Decisions:** [D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary)
+  (Keycloak at the time; see Update below), [D-3](../../requirements/decisions.md) (org creator = admin), [D-10](../../requirements/decisions.md) (PWA-first)
 - **Open questions:** [Q-AUTH](../../requirements/open-questions.md) (resolved),
   [Q-ROLE](../../requirements/open-questions.md) (resolved), [Q-TEN](../../requirements/open-questions.md)
 - **Design doc:** [auth.md](../architecture/auth.md)
@@ -19,7 +19,7 @@
 
 ## Context
 
-[D-7](../../requirements/decisions.md#d-7--identity--auth-keycloak-self-hosted) sets the mechanism —
+[D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary) sets the mechanism —
 **Keycloak** (OIDC), **offline token caching**, and **app-level org-scoped authorization** on top —
 but leaves the detail to design. Two prior EPIC-DESIGN decisions **depend on that detail**:
 [ADR-0002](0002-multi-tenancy.md) makes app-layer scoping the primary tenancy control and explicitly
@@ -125,7 +125,7 @@ Full specification, diagrams, and the capability matrix are in the
   layer **in addition to** per-service validation.
 - **ReBAC now (OpenFGA / Ory Keto)** for fine-grained/relationship access. **Deferred:** unnecessary
   for org-level isolation in v1; slots in after authN when cross-org sharing or per-resource ACLs
-  appear (design doc §5.5). Noted in [tech-stack.md](../../requirements/tech-stack.md#identity--keycloak).
+  appear (design doc §5.5). Noted in [tech-stack.md](../../requirements/tech-stack.md#identity--authentik-behind-a-provider-agnostic-oidc-boundary).
 
 ## Follow-ups
 

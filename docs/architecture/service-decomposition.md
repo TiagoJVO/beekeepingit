@@ -72,16 +72,20 @@ Per [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-arch
 named contexts. Each domain service is a **Go** service (D-5) owning **one Postgres schema**
 (D-6), exposing a **REST + OpenAPI** contract through the gateway (conventions → #108).
 
-| #   | Service (schema)                    | Responsibility                                                                                                                                                                                                            | Owns                                                                                         | Key requirements                                         |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| 1   | **identity** (`identity`)           | App-side user **profile** & account settings; maps the OIDC subject → app user. AuthN itself is the OIDC IdP (Authentik). Holds the subscription **feature-toggle stub** (no billing).                                    | `users` (profile, keyed by OIDC `sub` in `oidc_sub`), account settings, feature-toggle flags | FR-ONB-1, FR-AU-1, FR-AU-2 (stub, D-4)                   |
-| 2   | **organizations** (`organizations`) | Organization CRUD; **membership** (user↔org + role); **invitations**; system of record for **org-scoped authorization** (who is in which org, with what role).                                                            | `organizations`, `memberships`, `invitations`                                                | FR-ONB-2, FR-ONB-3, FR-TEN-1/2, NFR-ROL-1 (D-3)          |
-| 3   | **apiaries** (`apiaries`)           | Apiary CRUD; **hive count** (D-2); **geo** (PostGIS) for proximity ordering & distance; search.                                                                                                                           | `apiaries` (incl. `location geography(Point)`, `hive_count`)                                 | FR-AP-1..7                                               |
-| 4   | **activities** (`activities`)       | Activity CRUD with **per-type JSONB attributes**; recorded against the **performing user** and referencing an apiary.                                                                                                     | `activities` (`apiary_id` ref, `performed_by` ref, `type`, `attributes jsonb`)               | FR-AC-1..6 (D-2)                                         |
-| 5   | **journeys** (`journeys`)           | Journey CRUD; **planned-vs-actual aggregation** (apiaries visited, hives harvested, honey collected, missing).                                                                                                            | `journeys`, journey↔activity attribution (model is **Q-JOUR**, open)                         | FR-JO-1..4                                               |
-| 6   | **todos** (`todos`)                 | Todo CRUD + lifecycle; association to apiary/area; filters.                                                                                                                                                               | `todos` (`org_id`, due date, priority, status, optional `apiary_id`/assignee)                | FR-TD-1 (lifecycle **Q-TODO**, open)                     |
-| 7   | **ai** (`ai`)                       | NL→**query & action** assistant; **cloud LLM** (D-8); org/apiary/journey-scoped. Reads are parameterized; writes are **proposed** (user-confirmed, owner-executed) — **no direct write access**. Online-only (PWA phase). | Minimal: consent records / query **+ action** logs. **Owns no domain data.**                 | FR-AI-1/2, NFR-AI-1/4 (consent **Q-AICLOUD**, gating)    |
-| 8   | **history** (`history`)             | **Append-only** change history (actor + timestamp) for every create/update/delete; per-entity history views; must survive offline edits + sync.                                                                           | `audit_log` (append-only; `entity_type`, `entity_id`, `org_id`, `actor`, `change`, `ts`)     | FR-HIS-1 (capture mechanism → #107; retention **Q-HIS**) |
+| #   | Service (schema)                    | Responsibility                                                                                                                                                                                                            | Owns                                                                                         | Key requirements                                      |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 1   | **identity** (`identity`)           | App-side user **profile** & account settings; maps the OIDC subject → app user. AuthN itself is the OIDC IdP (Authentik). Holds the subscription **feature-toggle stub** (no billing).                                    | `users` (profile, keyed by OIDC `sub` in `oidc_sub`), account settings, feature-toggle flags | FR-ONB-1, FR-AU-1, FR-AU-2 (stub, D-4)                |
+| 2   | **organizations** (`organizations`) | Organization CRUD; **membership** (user↔org + role); **invitations**; system of record for **org-scoped authorization** (who is in which org, with what role).                                                            | `organizations`, `memberships`, `invitations`                                                | FR-ONB-2, FR-ONB-3, FR-TEN-1/2, NFR-ROL-1 (D-3)       |
+| 3   | **apiaries** (`apiaries`)           | Apiary CRUD; **hive count** (D-2, as one of the typed **apiary_counters**, D-20); **geo** (PostGIS) for proximity ordering & distance; search.                                                                            | `apiaries` (incl. `location geography(Point)`), `apiary_counters` (1-N, e.g. `hive`)         | FR-AP-1..7                                            |
+| 4   | **activities** (`activities`)       | Activity CRUD with **per-type JSONB attributes**; recorded against the **performing user** and referencing an apiary.                                                                                                     | `activities` (`apiary_id` ref, `performed_by` ref, `type`, `attributes jsonb`)               | FR-AC-1..6 (D-2)                                      |
+| 5   | **journeys** (`journeys`)           | Journey CRUD; **planned-vs-actual aggregation** (apiaries visited, hives harvested, honey collected, missing).                                                                                                            | `journeys`, journey↔activity attribution (model is **Q-JOUR**, open)                         | FR-JO-1..4                                            |
+| 6   | **todos** (`todos`)                 | Todo CRUD + lifecycle; association to apiary/area; filters.                                                                                                                                                               | `todos` (`org_id`, due date, priority, status, optional `apiary_id`/assignee)                | FR-TD-1 (lifecycle **Q-TODO**, open)                  |
+| 7   | **ai** (`ai`)                       | NL→**query & action** assistant; **cloud LLM** (D-8); org/apiary/journey-scoped. Reads are parameterized; writes are **proposed** (user-confirmed, owner-executed) — **no direct write access**. Online-only (PWA phase). | Minimal: consent records / query **+ action** logs. **Owns no domain data.**                 | FR-AI-1/2, NFR-AI-1/4 (consent **Q-AICLOUD**, gating) |
+
+**Not its own service:** history (FR-HIS-1) is **not** a standalone `history` service — as
+implemented, each owning service holds its own append-only `audit_log` co-located in its own
+schema (`identity.audit_log`, `organizations.audit_log`, `apiaries.audit_log`), written in the
+same transaction as the domain write. See [history.md](history.md) §5 for the rationale.
 
 ### "admin" is a client, not a new domain service
 
@@ -237,7 +241,8 @@ umbrella chart** (#83). This decomposition yields the umbrella's **subchart list
 hand-off #104 owes EPIC-13):
 
 **Domain service subcharts (Go):** `identity` · `organizations` · `apiaries` · `activities` ·
-`journeys` · `todos` · `ai` · `history`
+`journeys` · `todos` · `ai` (no separate `history` subchart — see the "Not its own service" note
+in §3)
 
 **Platform/infra subcharts:**
 
@@ -279,7 +284,8 @@ first consolidation to consider (see [ADR-0001](../adr/0001-service-decompositio
 
 ## 9. Acceptance-criteria traceability (#104)
 
-- [x] Bounded contexts identified & mapped to services (the 8 domain services + admin-as-client) — §3
+- [x] Bounded contexts identified & mapped to services (the 7 domain services + admin-as-client;
+      history is co-located per service, not its own service) — §3
 - [x] Each service's responsibility, owned data, and public interface documented; no
       data-ownership ambiguity — §3 + §4
 - [x] C4 **context** and **container** diagrams committed — §5, §6
