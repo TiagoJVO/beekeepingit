@@ -4,13 +4,23 @@
 -- Used when the contract's `near` param is absent (FR-AP-2/#33);
 -- ListApiariesByProximity below is the `near`-supplied, distance-ordered
 -- variant.
-SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
-FROM apiaries.apiaries
-WHERE organization_id = $1
-  AND deleted_at IS NULL
-  AND (sqlc.narg('cursor')::uuid IS NULL OR id > sqlc.narg('cursor')::uuid)
-ORDER BY id
+--
+-- hive_count (#256): LEFT JOIN'd from apiary_counters rather than a column on
+-- this table — one JOIN over the page (not one query per row, avoiding N+1)
+-- resolves every row's hive count in the same round trip; COALESCE(...,0)
+-- gives the "0 when no counter row exists" default every read path shares
+-- (FR-AP-7 AC), matching how apiaries.hive_count's own NOT NULL DEFAULT 0
+-- behaved before the column was retired.
+SELECT a.id, a.organization_id, a.name, a.notes, a.created_at, a.updated_at,
+       COALESCE(hc.value, 0)::integer AS hive_count,
+       COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
+FROM apiaries.apiaries a
+LEFT JOIN apiaries.apiary_counters hc
+    ON hc.apiary_id = a.id AND hc.counter_type = 'hive'
+WHERE a.organization_id = $1
+  AND a.deleted_at IS NULL
+  AND (sqlc.narg('cursor')::uuid IS NULL OR a.id > sqlc.narg('cursor')::uuid)
+ORDER BY a.id
 LIMIT $2;
 
 -- name: ListApiariesByProximity :many
@@ -51,10 +61,13 @@ LIMIT $2;
 -- verified: ST_Distance and `<->` differ by ~0.1% at ~100km), fine for
 -- ordering; the selected `distance_m` column still uses the exact
 -- ST_Distance for the value actually returned to the client.
+--
+-- hive_count (#256): same LEFT JOIN as ListApiaries above.
 WITH ranked AS (
-    SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson,
-           public.ST_Distance(location, public.ST_SetSRID(public.ST_MakePoint(sqlc.arg('lon')::double precision, sqlc.arg('lat')::double precision), 4326)::public.geography) AS distance_m,
+    SELECT a.id, a.organization_id, a.name, a.notes, a.created_at, a.updated_at,
+           COALESCE(hc.value, 0)::integer AS hive_count,
+           COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson,
+           public.ST_Distance(a.location, public.ST_SetSRID(public.ST_MakePoint(sqlc.arg('lon')::double precision, sqlc.arg('lat')::double precision), 4326)::public.geography) AS distance_m,
            -- The KNN operator itself is schema-qualified the same way the
            -- functions above are (#221): `<->` is also defined by the
            -- postgis extension in `public`, not just its functions/types, so
@@ -62,22 +75,29 @@ WITH ranked AS (
            -- too (SQLSTATE 42883 "operator does not exist"). Postgres
            -- operators use OPERATOR(schema.op) to schema-qualify, unlike
            -- functions/types which take a plain schema. prefix.
-           location OPERATOR(public.<->) public.ST_SetSRID(public.ST_MakePoint(sqlc.arg('lon')::double precision, sqlc.arg('lat')::double precision), 4326)::public.geography AS knn_distance
-    FROM apiaries.apiaries
-    WHERE organization_id = $1
-      AND deleted_at IS NULL
+           a.location OPERATOR(public.<->) public.ST_SetSRID(public.ST_MakePoint(sqlc.arg('lon')::double precision, sqlc.arg('lat')::double precision), 4326)::public.geography AS knn_distance
+    FROM apiaries.apiaries a
+    LEFT JOIN apiaries.apiary_counters hc
+        ON hc.apiary_id = a.id AND hc.counter_type = 'hive'
+    WHERE a.organization_id = $1
+      AND a.deleted_at IS NULL
 )
-SELECT id, organization_id, name, hive_count, notes, created_at, updated_at, location_geojson, distance_m
+SELECT id, organization_id, name, notes, created_at, updated_at, hive_count, location_geojson, distance_m
 FROM ranked
 ORDER BY knn_distance ASC NULLS LAST, id
 LIMIT $2
 OFFSET $3;
 
 -- name: GetApiary :one
-SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
-FROM apiaries.apiaries
-WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
+-- hive_count (#256): LEFT JOIN'd from apiary_counters, same convention as
+-- ListApiaries above.
+SELECT a.id, a.organization_id, a.name, a.notes, a.created_at, a.updated_at,
+       COALESCE(hc.value, 0)::integer AS hive_count,
+       COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
+FROM apiaries.apiaries a
+LEFT JOIN apiaries.apiary_counters hc
+    ON hc.apiary_id = a.id AND hc.counter_type = 'hive'
+WHERE a.organization_id = $1 AND a.id = $2 AND a.deleted_at IS NULL;
 
 -- name: GetApiaryDistance :one
 -- Distance endpoint (GET /v1/apiaries/{apiaryId}/distance, #37/FR-AP-5):
@@ -111,62 +131,89 @@ WHERE a.organization_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
 
 -- name: GetApiaryForUpdate :one
 -- Locks the row (or reports its absence) for the LWW apply / REST
--- create-or-update transaction.
-SELECT id, organization_id, name, hive_count, notes, created_at, updated_at, deleted_at,
-       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
-FROM apiaries.apiaries
-WHERE organization_id = $1 AND id = $2
-FOR UPDATE;
+-- create-or-update transaction. hive_count (#256): LEFT JOIN'd the same way
+-- as GetApiary — FOR UPDATE only locks apiaries.apiaries itself (the row
+-- being written); the counter row is separately locked/upserted by
+-- UpsertApiaryCounter's own ON CONFLICT (atomic per-row, no extra lock
+-- needed for a single-row upsert).
+SELECT a.id, a.organization_id, a.name, a.notes, a.created_at, a.updated_at, a.deleted_at,
+       COALESCE(hc.value, 0)::integer AS hive_count,
+       COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
+FROM apiaries.apiaries a
+LEFT JOIN apiaries.apiary_counters hc
+    ON hc.apiary_id = a.id AND hc.counter_type = 'hive'
+WHERE a.organization_id = $1 AND a.id = $2
+FOR UPDATE OF a;
 
 -- name: InsertApiary :exec
 -- Sync-apply create (no location — the sync wire shape carries only
--- name/hive_count/notes, sync.go's apiaryData). REST create uses InsertApiaryWithLocation.
-INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, notes, updated_at, deleted_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+-- name/hive_count/notes, sync.go's apiaryData). REST create uses
+-- InsertApiaryWithLocation. hive_count (#256) is no longer a column here —
+-- the caller (sync.go's applyOp) upserts it into apiary_counters via
+-- UpsertApiaryCounter in the same transaction, mirroring how the REST path
+-- (write.go's createApiary) does the same.
+INSERT INTO apiaries.apiaries (id, organization_id, name, notes, updated_at, deleted_at)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: InsertApiaryWithLocation :one
 -- REST create (POST /v1/apiaries, #31): full row including the optional
 -- GeoJSON location. sqlc.narg('lon')/sqlc.narg('lat') are both-or-neither —
 -- callers pass either both valid or both NULL (api/apiaries.go's toPoint).
-INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, notes, updated_at, location)
+-- hive_count (#256): returned as a literal 0 here (COALESCE over a join that
+-- can never match yet — the row was just inserted, so no counter row exists
+-- until the caller's follow-up UpsertApiaryCounter call in the same
+-- transaction) rather than a real join, since there is nothing to join
+-- against for a brand-new id; the caller (write.go's createApiary) always
+-- upserts the real value immediately after and uses ITS result, not this
+-- one, for hive_count in the response it builds.
+INSERT INTO apiaries.apiaries (id, organization_id, name, notes, updated_at, location)
 VALUES (
-    $1, $2, $3, $4, $5, $6,
+    $1, $2, $3, $4, $5,
     CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
          ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
     END
 )
-RETURNING id, organization_id, name, hive_count, notes, created_at, updated_at,
+RETURNING id, organization_id, name, notes, created_at, updated_at,
           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson;
 
 -- name: UpdateApiary :exec
--- Sync-apply update (name/hive_count/notes/tombstone only — location is not
--- part of the sync wire shape yet). REST update uses UpdateApiaryWithLocation.
+-- Sync-apply update (name/notes/tombstone only — hive_count (#256) is
+-- upserted separately into apiary_counters by the caller in the same
+-- transaction; location is not part of the sync wire shape yet). REST
+-- update uses UpdateApiaryWithLocation.
 UPDATE apiaries.apiaries
-SET name = $3, hive_count = $4, notes = $5, updated_at = $6, deleted_at = $7, recorded_at = now()
+SET name = $3, notes = $4, updated_at = $5, deleted_at = $6, recorded_at = now()
 WHERE organization_id = $1 AND id = $2;
 
 -- name: UpdateApiaryWithLocation :one
 -- REST update (PATCH /v1/apiaries/{id}, #31): the caller computes the full
 -- desired row first (matching sync.go's mergeOp pattern), so this always
--- sets every mutable column.
+-- sets every mutable column. hive_count (#256) is upserted separately by the
+-- caller (write.go's updateApiary) via UpsertApiaryCounter in the same
+-- transaction — not returned here (the caller already has the value it
+-- wants to write and uses that for the response, not a re-read).
 UPDATE apiaries.apiaries
 SET name = $3,
-    hive_count = $4,
-    notes = $5,
-    updated_at = $6,
+    notes = $4,
+    updated_at = $5,
     location = CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
                      ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
                END,
     recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, hive_count, notes, created_at, updated_at,
+RETURNING id, organization_id, name, notes, created_at, updated_at,
           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson;
 
 -- name: SoftDeleteApiary :execrows
 -- REST delete (DELETE /v1/apiaries/{id}, #31): tombstone, matching the sync
 -- path's deleted_at convention so the delete propagates to devices
 -- (data-model.md). :execrows so the caller can distinguish "already gone"
--- (0 rows) from success without a separate SELECT.
+-- (0 rows) from success without a separate SELECT. Counter rows are left in
+-- place (not cascaded) — soft-delete is not a real DELETE, so the FK's ON
+-- DELETE CASCADE never fires; they simply stop being reachable through any
+-- read path once the apiary itself is filtered out by deleted_at IS NULL,
+-- matching apiaries.audit_log/sync_conflict_log's own "orphaned but inert"
+-- treatment of a soft-deleted entity's history.
 UPDATE apiaries.apiaries
 SET deleted_at = $3, updated_at = $3, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;

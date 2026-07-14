@@ -99,7 +99,6 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			ID:             pgID,
 			OrganizationID: org,
 			Name:           body.Name,
-			HiveCount:      hiveCount,
 			Notes:          notesParam(body.Notes),
 			UpdatedAt:      pgtype.Timestamptz{Time: now, Valid: true},
 			Lon:            body.Location.lon(),
@@ -129,7 +128,23 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		want := restRowState{name: row.Name, hive: row.HiveCount, notes: textOf(row.Notes)}
+		// hive_count (#256): upserted into apiary_counters in the same
+		// transaction as the just-inserted apiaries row — never a column on
+		// that row itself. Uses the request's own hiveCount value directly
+		// (there is nothing to join against yet for a brand-new id, per
+		// InsertApiaryWithLocation's doc comment), so the response DTO below
+		// and the history "want" state both reflect exactly what the caller
+		// asked to create. Unconditional here (unlike updateApiary's
+		// body.HiveCount nil-guard): a REST create is a full-resource create
+		// whose contract defaults hive_count to 0, and the id was just minted
+		// by this caller — no offline device can hold a pending counter edit
+		// for it, so there is no LWW interaction to protect.
+		if err := upsertCounter(r.Context(), txq, org, pgID, counterTypeHive, hiveCount, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		want := restRowState{name: row.Name, hive: hiveCount, notes: textOf(row.Notes)}
 		if err := writeAuditLogTx(r.Context(), txq, org, userID, id, history.ChangeCreate, now, restRowState{}, want); err != nil {
 			problem.Write(w, r, problem.Internal())
 			return
@@ -145,7 +160,7 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			ID:             uuidString(row.ID),
 			OrganizationID: uuidString(row.OrganizationID),
 			Name:           row.Name,
-			HiveCount:      row.HiveCount,
+			HiveCount:      hiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
 			Notes:          textPtr(row.Notes),
 			CreatedAt:      row.CreatedAt.Time,
@@ -337,16 +352,33 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		now := time.Now().UTC()
+		nowTS := pgtype.Timestamptz{Time: now, Valid: true}
 		updated, err := txq.UpdateApiaryWithLocation(r.Context(), sqlcgen.UpdateApiaryWithLocationParams{
 			OrganizationID: org, ID: pgID,
-			Name: want.name, HiveCount: want.hive,
+			Name:      want.name,
 			Notes:     notesParamFromState(want.notes),
-			UpdatedAt: pgtype.Timestamptz{Time: now, Valid: true},
+			UpdatedAt: nowTS,
 			Lon:       lon, Lat: lat,
 		})
 		if err != nil {
 			problem.Write(w, r, problem.Internal())
 			return
+		}
+
+		// hive_count (#256): upserted into apiary_counters in the same
+		// transaction — but ONLY when this PATCH actually carried it. A
+		// hive-less PATCH (e.g. an Admin-App name edit) must not touch the
+		// counter row at all: re-upserting the unchanged value would bump
+		// the counter's own updated_at to server-now, which would then
+		// LWW-supersede a field device's pending OFFLINE hive-count edit
+		// (an older device timestamp) that had nothing to conflict with —
+		// exactly the cross-field clobbering #256's decoupling exists to
+		// prevent (sync.md §4.4's lossy case, now solved for hive).
+		if body.HiveCount != nil {
+			if err := upsertCounter(r.Context(), txq, org, pgID, counterTypeHive, want.hive, nowTS); err != nil {
+				problem.Write(w, r, problem.Internal())
+				return
+			}
 		}
 
 		if err := writeAuditLogTx(r.Context(), txq, org, userID, id, history.ChangeUpdate, now, before, want); err != nil {
@@ -363,7 +395,7 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			ID:             uuidString(updated.ID),
 			OrganizationID: uuidString(updated.OrganizationID),
 			Name:           updated.Name,
-			HiveCount:      updated.HiveCount,
+			HiveCount:      want.hive,
 			Location:       parseGeoJSONPoint(updated.LocationGeojson),
 			Notes:          textPtr(updated.Notes),
 			CreatedAt:      updated.CreatedAt.Time,

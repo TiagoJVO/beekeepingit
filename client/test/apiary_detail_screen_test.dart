@@ -50,11 +50,25 @@ class _ExistingOrganizationController extends OrganizationController {
 /// channel/network), so the form is left showing its own indefinite busy
 /// spinner rather than the loaded field — expected and asserted on, not a
 /// bug in the screen under test.
-Widget _buildApp({required List<Apiary> apiaries}) {
+Widget _buildApp({
+  required List<Apiary> apiaries,
+  Map<String, List<ApiaryCounter>> counters = const {},
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      // The detail screen's generic counters section (#256) watches this
+      // family provider per apiary id. Un-overridden it depends on the real
+      // (never-resolving in tests) apiariesRepositoryProvider, so the tests
+      // that don't care about non-hive counters simply see it stay in
+      // loading state (only the always-on hive badge renders — exactly the
+      // "hives always shows" default). Tests that DO exercise other-type
+      // rendering pass a fixed list here.
+      apiaryCountersProvider.overrideWith(
+        (ref, apiaryId) =>
+            Stream.value(counters[apiaryId] ?? const <ApiaryCounter>[]),
+      ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
@@ -210,4 +224,98 @@ void main() {
     }
     expect(find.byKey(const Key('apiary-detail-header')), findsOneWidget);
   });
+
+  // --- Counters section (#256, FR-AP-7) ---
+
+  testWidgets(
+    'the hives badge ALWAYS shows (0 when the apiary has no counter row) '
+    '(#256 AC)',
+    (tester) async {
+      // No hive counter row for this apiary at all — hive_count resolves to
+      // 0 at the repository (the "0 default" here comes in via hiveCount: 0
+      // on the model, which the real repo derives from the absent counter),
+      // and the badge must still render.
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 0)],
+          counters: const {'a1': <ApiaryCounter>[]},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+
+      // The hive badge is present and reads the "no hives" plural — the exact
+      // text the e2e depends on, unchanged by the counters decoupling.
+      expect(find.byKey(const Key('apiary-detail-hive-count')), findsOneWidget);
+      expect(find.text('No hives'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'the hives badge shows the counter-backed value (e2e "12 hives" stays '
+    'identical) (#256)',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [
+            Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+          ],
+          counters: const {
+            'a1': [
+              ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 12),
+            ],
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('apiary-detail-hive-count')), findsOneWidget);
+      expect(find.text('12 hives'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'an unknown/newer-server counter type is skipped, not rendered as raw '
+    'internals (#256: additive row shapes degrade gracefully)',
+    (tester) async {
+      // A counter type this client version has no label for
+      // (counter_types.dart's counterValueLabel returns null). It must NOT
+      // appear on screen (no badge, no leaked type string), while the hive
+      // badge still renders normally.
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [
+            Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 4),
+          ],
+          counters: const {
+            'a1': [
+              ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 4),
+              ApiaryCounter(
+                apiaryId: 'a1',
+                counterType: 'nucs_from_future',
+                value: 7,
+              ),
+            ],
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('4 hives'), findsOneWidget);
+      expect(
+        find.byKey(const Key('apiary-detail-counter-nucs_from_future')),
+        findsNothing,
+      );
+      expect(find.textContaining('nucs_from_future'), findsNothing);
+      expect(find.textContaining('7'), findsNothing);
+    },
+  );
 }

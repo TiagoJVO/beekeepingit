@@ -57,6 +57,7 @@ erDiagram
     ORGANIZATIONS ||--o{ ACTIVITIES : "owns"
     ORGANIZATIONS ||--o{ JOURNEYS : "owns"
     ORGANIZATIONS ||--o{ TODOS : "owns"
+    APIARIES ||--o{ APIARY_COUNTERS : "has typed counters (D-20)"
     APIARIES ||--o{ ACTIVITIES : "site of (soft)"
     JOURNEYS ||--o{ JOURNEY_PLAN_ITEMS : "plans"
     JOURNEYS ||--o{ JOURNEY_ACTIVITIES : "attributes (soft, Q-JOUR)"
@@ -95,8 +96,14 @@ erDiagram
         uuid organization_id "soft -> organizations"
         text name
         geography location "Point,4326 (PostGIS)"
-        int hive_count "D-2"
         timestamptz deleted_at "tombstone"
+    }
+    APIARY_COUNTERS {
+        uuid id PK
+        uuid organization_id "soft -> organizations"
+        uuid apiary_id FK "ON DELETE CASCADE"
+        text counter_type "known set: hive|... (D-20)"
+        int value "CHECK >= 0"
     }
     ACTIVITIES {
         uuid id PK
@@ -179,7 +186,7 @@ One Postgres cluster; **one schema per service**; a service writes **only** its 
 | --------------- | ------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `identity`      | identity      | `users`, `user_settings`, `entitlements`(stub)         | **`users` is global** (not org-owned → no `organization_id`); `entitlements` is the D-4 feature-toggle stub                                                                                                                                      |
 | `organizations` | organizations | `organizations`, `memberships`, `invitations`          | `organizations` is the **tenant root** (its `id` is the tenant key); membership carries the role (NFR-ROL-1)                                                                                                                                     |
-| `apiaries`      | apiaries      | `apiaries`                                             | PostGIS `location`; `hive_count` (D-2)                                                                                                                                                                                                           |
+| `apiaries`      | apiaries      | `apiaries`, `apiary_counters`                          | PostGIS `location`; typed 1-N counters (`apiary_counters`, D-20 — hive count is a counter row, not an `apiaries` column) — §7                                                                                                                    |
 | `activities`    | activities    | `activities`                                           | JSONB `attributes` + promoted `hives_involved`/`honey_kg`                                                                                                                                                                                        |
 | `journeys`      | journeys      | `journeys`, `journey_plan_items`, `journey_activities` | planned-vs-actual; attribution is **Q-JOUR**                                                                                                                                                                                                     |
 | `todos`         | todos         | `todos`                                                | lifecycle/assignment/area are **Q-TODO**                                                                                                                                                                                                         |
@@ -249,6 +256,26 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
 
 ## 7. Notable modeling decisions
 
+- **Apiary counters — typed 1-N child table, not a column** (D-20, #256, FR-AP-7): an apiary's
+  countable current-state quantities (hives first; nucs/supers/queens conceivable later) live in
+  **`apiaries.apiary_counters`** — `(id, organization_id, apiary_id → apiaries ON DELETE CASCADE,
+counter_type text, value int CHECK ≥ 0)` with **`UNIQUE (apiary_id, counter_type)`** so an
+  apiary can never hold two counters of the same type. Hive count was a plain `apiaries.hive_count`
+  column (the original D-2 shape); every future countable would have meant altering the `apiaries`
+  table, so it is **decoupled** into this child table and the column retired (migration in the
+  apiaries service; the sync-rules bucket, the REST/sync wire shape, and the client schema were
+  coordinated in the same change — walking-skeleton phase, no legacy clients). `counter_type` is
+  an **open set validated in the owning service** (initially `['hive']`), **not** a DB
+  enum/CHECK — the same "extensible enums" convention (§2) as activity `type`/membership `role`,
+  so adding a type is a code-only append (server + client constants), no migration. **Relation to
+  D-2:** D-2's split still holds — a counter is the apiary's **current state** (how many hives are
+  there now), while an activity's `hives_involved` (a promoted JSONB attribute, above) is an
+  **event record** (how many hives a given harvest touched); the two are complementary, not
+  redundant. Writes ride the offline-sync path as their own `apiary_counter` op (record-level LWW
+  keyed by `(apiary_id, counter_type)`, upsert semantics) and are audited in `apiaries.audit_log`
+  under `entity_type = 'apiary_counter'` like any other change (FR-HIS). The client's REST/sync
+  reads still expose a top-level `hive_count` field (resolved from the counter, 0 when absent) so
+  the decoupling is invisible to API consumers.
 - **Activity attributes — hybrid:** keep the open per-type bag in `JSONB` (FR-AC-1 extensibility)
   but **promote** the two values journeys aggregate — `hives_involved` (D-2) and `honey_kg` —
   to **typed, indexable columns**. Keeps FR-JO-1 stats fast without giving up type flexibility.

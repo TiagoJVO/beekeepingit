@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
+import 'counter_types.dart';
 
 /// Read-focused apiary detail (FR-AP-7, #32): name, location, hive count and
 /// notes (FR-AP-8, #196), matching the Melargil prototype's "Apiário
@@ -102,7 +103,7 @@ class _ApiaryDetailBody extends StatelessWidget {
                     const SizedBox(height: 12),
                     _LocationRow(apiary: apiary),
                     const SizedBox(height: 16),
-                    _HiveCountBadge(apiary: apiary),
+                    _CountersSection(apiary: apiary),
                   ],
                 ),
               ),
@@ -178,24 +179,82 @@ class _LocationRow extends StatelessWidget {
   }
 }
 
-class _HiveCountBadge extends StatelessWidget {
-  const _HiveCountBadge({required this.apiary});
+/// The apiary's typed counters (#256, FR-AP-7), rendered generically over
+/// the known set (counter_types.dart):
+///
+///   - the HIVES counter always displays — 0 when no counter row exists —
+///     sourced from [Apiary.hiveCount] (already the counters-backed value,
+///     apiaries_repository.dart), so it renders synchronously with the rest
+///     of the header and its text/key stay byte-identical to the pre-#256
+///     badge (the e2e's "12 hives"/"No hives" assertions);
+///   - every OTHER known type renders only when a counter row exists for
+///     this apiary ([apiaryCountersProvider]); types this client version has
+///     no label for are skipped ([counterValueLabel] returns null). Adding a
+///     future countable is a constants-and-strings append — no changes here.
+///
+/// While the counter rows are still loading (or errored), only the hives
+/// badge shows — no spinner: the extra badges are progressive enhancement,
+/// and the always-on hives badge already covers the screen's primary
+/// content (also keeps widget tests' pumpAndSettle safe — an indefinite
+/// spinner would never settle in the PowerSync-less test environment).
+class _CountersSection extends ConsumerWidget {
+  const _CountersSection({required this.apiary});
 
   final Apiary apiary;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+    final counters = ref.watch(apiaryCountersProvider(apiary.id));
+
+    final others = <ApiaryCounter>[
+      for (final counter in counters.value ?? const <ApiaryCounter>[])
+        if (counter.counterType != counterTypeHive &&
+            counterValueLabel(l10n, counter.counterType, counter.value) !=
+                null)
+          counter,
+    ];
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _CounterBadge(
+          key: const Key('apiary-detail-hive-count'),
+          label: l10n.hiveCountValue(apiary.hiveCount),
+        ),
+        for (final counter in others)
+          _CounterBadge(
+            key: Key('apiary-detail-counter-${counter.counterType}'),
+            label: counterValueLabel(
+              l10n,
+              counter.counterType,
+              counter.value,
+            )!,
+          ),
+      ],
+    );
+  }
+}
+
+/// One counter value pill — the visual shape of the original hive-count
+/// badge, now shared by every counter type the section renders.
+class _CounterBadge extends StatelessWidget {
+  const _CounterBadge({required this.label, super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
-      key: const Key('apiary-detail-hive-count'),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Text(
-        l10n.hiveCountValue(apiary.hiveCount),
+        label,
         style: theme.textTheme.titleMedium?.copyWith(
           color: theme.colorScheme.primary,
           fontWeight: FontWeight.bold,
