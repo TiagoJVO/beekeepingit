@@ -107,6 +107,22 @@
   "apiaryMapLayerStreetsAction": "Ruas",
   "apiaryMapAttributionEsri": "Powered by Esri — Fonte: Esri, Maxar, Earthstar Geographics e a comunidade de utilizadores GIS",
   "apiaryMapAttributionOsm": "© Colaboradores do OpenStreetMap",
+  "apiaryPlaceLabelLabel": "Nome do local",
+  "apiaryPlaceLabelHint": "ex.: Montargil",
+  "apiaryLocationSectionLabel": "Localização",
+  "apiaryUseCurrentLocationAction": "Usar localização atual",
+  "apiarySetOnMapAction": "Definir no mapa",
+  "apiaryHideMapAction": "Ocultar mapa",
+  "apiaryLocationClearAction": "Limpar localização",
+  "apiaryFormLocationPermissionDenied": "Acesso à localização negado — ainda pode colocar um alfinete no mapa.",
+  "apiaryFormLocationSet": "Localização definida: {lat}, {lon}",
+  "apiaryFormLocationNotSet": "Sem localização definida — toque no mapa para colocar um alfinete",
+  "apiaryMapPickerLabel": "Mapa: toque para colocar o alfinete do apiário",
+  "apiaryDistanceValue": "a {distanceKm} km",
+  "deleteApiaryConfirmTitle": "Eliminar apiário?",
+  "deleteApiaryConfirmMessage": "Isto elimina permanentemente “{name}”. Esta ação não pode ser desfeita.",
+  "deleteApiaryConfirmAction": "Eliminar",
+  "deleteApiaryCancelAction": "Cancelar",
   "@apiaryMapMeasureHintSelectSecond": {
     "placeholders": {
       "name": {
@@ -123,6 +139,30 @@
         "type": "String"
       },
       "distanceKm": {
+        "type": "String"
+      }
+    }
+  },
+  "@apiaryFormLocationSet": {
+    "placeholders": {
+      "lat": {
+        "type": "String"
+      },
+      "lon": {
+        "type": "String"
+      }
+    }
+  },
+  "@apiaryDistanceValue": {
+    "placeholders": {
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  },
+  "@deleteApiaryConfirmMessage": {
+    "placeholders": {
+      "name": {
         "type": "String"
       }
     }

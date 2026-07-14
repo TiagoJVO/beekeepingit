@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/geo/distance.dart';
+import '../../core/l10n/diacritics.dart';
 import '../../core/sync/local_store.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
@@ -9,13 +10,17 @@ import '../../core/sync/powersync_service.dart';
 import 'counter_types.dart';
 
 /// A local apiary row (name + hive count + optional free-text notes,
-/// FR-AP-8/#196 + optional location). Location is nullable (#33/#34/#37,
-/// FR-AP-2/FR-AP-3/FR-AP-5): older/incomplete records or apiaries created
-/// without a map pin have no coordinates, and callers (offline proximity
-/// ordering, the map screen, the offline distance calculation) must
-/// skip/handle that case rather than assume every apiary is located.
-/// `locationLon`/`locationLat` are null exactly when the apiary has no
-/// location set server-side (powersync_schema.dart's doc comment).
+/// FR-AP-8/#196 + optional location + optional place label, #252).
+/// Location is nullable (#33/#34/#37, FR-AP-2/FR-AP-3/FR-AP-5):
+/// older/incomplete records or apiaries created without a map pin have no
+/// coordinates, and callers (offline proximity ordering, the map screen, the
+/// offline distance calculation) must skip/handle that case rather than
+/// assume every apiary is located. `locationLon`/`locationLat` are null
+/// exactly when the apiary has no location set server-side
+/// (powersync_schema.dart's doc comment). `placeLabel` (#252) is an
+/// independent optional free-text place name (e.g. "Montargil") — unrelated
+/// to the coordinates and to the apiary's own [name]; used by the detail
+/// screen and by #254's search.
 ///
 /// [hiveCount] (#256) is no longer a column on the local apiaries table — it
 /// is resolved from the apiary's `hive` counter row (apiary_counters, the
@@ -29,6 +34,7 @@ class Apiary {
     required this.hiveCount,
     this.locationLon,
     this.locationLat,
+    this.placeLabel,
     this.notes,
   });
 
@@ -37,6 +43,7 @@ class Apiary {
   final int hiveCount;
   final double? locationLon;
   final double? locationLat;
+  final String? placeLabel;
   final String? notes;
 
   bool get hasLocation => locationLon != null && locationLat != null;
@@ -92,7 +99,7 @@ class ApiariesRepository {
   Stream<List<Apiary>> watchAll() {
     return _store
         .watch(
-          'SELECT a.id, a.name, a.notes, a.location_lon, a.location_lat, '
+          'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
           'FROM $apiariesTable a ORDER BY a.created_at DESC, a.name',
         )
@@ -101,7 +108,7 @@ class ApiariesRepository {
 
   Future<Apiary?> getById(String id) async {
     final row = await _store.getOptional(
-      'SELECT a.id, a.name, a.notes, a.location_lon, a.location_lat, '
+      'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
       'COALESCE($_hiveCountSubquery, 0) AS hive_count '
       'FROM $apiariesTable a WHERE a.id = ?',
       [id],
@@ -126,10 +133,19 @@ class ApiariesRepository {
         .map(_countersFromRows);
   }
 
+  /// Creates an apiary. [locationLon]/[locationLat] (#252) are both-or-
+  /// neither — a location-less create passes both null (the pre-#252
+  /// default), matching the server's REST/sync-apply "both valid or both
+  /// NULL" convention (api/geo.go's geoPointInput, api/sync.go's
+  /// apiaryData doc comment) so the queued op never carries a lone lon or
+  /// lat. [placeLabel] (#252) is independent free-text, alongside [notes].
   Future<String> create({
     required String name,
     required int hiveCount,
     String? notes,
+    String? placeLabel,
+    double? locationLon,
+    double? locationLat,
   }) async {
     final id = _uuid.v4();
     final now = _nowIso();
@@ -138,25 +154,34 @@ class ApiariesRepository {
     // the apiary row (FK) — this ordering guarantees the parent exists by
     // the time the counter op applies.
     await _store.execute(
-      'INSERT INTO $apiariesTable (id, name, notes, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?)',
-      [id, name, notes, now, now],
+      'INSERT INTO $apiariesTable '
+      '(id, name, notes, place_label, location_lon, location_lat, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, name, notes, placeLabel, locationLon, locationLat, now, now],
     );
     await _insertCounter(id, counterTypeHive, hiveCount, now);
     return id;
   }
 
-  /// Updates the given fields of an existing apiary. `notes` uses a
-  /// present-vs-absent sentinel via [notesProvided] (rather than treating
-  /// null as "leave unchanged") so a caller can explicitly clear notes back
-  /// to empty — mirroring the server's PATCH semantics (write.go's
-  /// `notesSet`/`fields["notes"]` presence check).
+  /// Updates the given fields of an existing apiary. `notes`/`placeLabel`
+  /// use a present-vs-absent sentinel via [notesProvided]/[placeLabelProvided]
+  /// (rather than treating null as "leave unchanged") so a caller can
+  /// explicitly clear either back to empty — mirroring the server's PATCH
+  /// semantics (write.go's `notesSet`/`fields["notes"]` presence check,
+  /// mirrored for `place_label`).
+  ///
+  /// Location (#252) uses its own [locationProvided] sentinel rather than a
+  /// plain nullable pair: `null` lon/lat is itself a meaningful value
+  /// ("clear the location", the form's own clear affordance), so "the
+  /// caller didn't touch location at all" needs a THIRD state a bare
+  /// nullable pair can't express — the same reason [notesProvided] exists
+  /// for `notes` rather than treating its own null as ambiguous.
   ///
   /// Writes are change-scoped (#256): the apiaries row is written only when
-  /// name/notes actually change, and the hive counter row only when
-  /// [hiveCount] is provided and differs — so a hive-only edit queues one
-  /// counter op (and never bumps the apiary row's LWW stamp), and a
-  /// name-only edit never touches the counter (whose own LWW stamp would
+  /// name/notes/place_label/location actually change, and the hive counter
+  /// row only when [hiveCount] is provided and differs — so a hive-only edit
+  /// queues one counter op (and never bumps the apiary row's LWW stamp), and
+  /// a name-only edit never touches the counter (whose own LWW stamp would
   /// otherwise supersede another device's pending offline hive edit). This
   /// is the client half of what decoupling the counter buys: name and hive
   /// edits from different devices no longer collide on one record
@@ -167,16 +192,29 @@ class ApiariesRepository {
     int? hiveCount,
     String? notes,
     bool notesProvided = false,
+    String? placeLabel,
+    bool placeLabelProvided = false,
+    double? locationLon,
+    double? locationLat,
+    bool locationProvided = false,
   }) async {
     final current = await getById(id);
     if (current == null) return;
 
     final newName = name ?? current.name;
     final newNotes = notesProvided ? notes : current.notes;
-    if (newName != current.name || newNotes != current.notes) {
+    final newPlaceLabel = placeLabelProvided ? placeLabel : current.placeLabel;
+    final newLon = locationProvided ? locationLon : current.locationLon;
+    final newLat = locationProvided ? locationLat : current.locationLat;
+    if (newName != current.name ||
+        newNotes != current.notes ||
+        newPlaceLabel != current.placeLabel ||
+        newLon != current.locationLon ||
+        newLat != current.locationLat) {
       await _store.execute(
-        'UPDATE $apiariesTable SET name = ?, notes = ?, updated_at = ? WHERE id = ?',
-        [newName, newNotes, _nowIso(), id],
+        'UPDATE $apiariesTable SET name = ?, notes = ?, place_label = ?, '
+        'location_lon = ?, location_lat = ?, updated_at = ? WHERE id = ?',
+        [newName, newNotes, newPlaceLabel, newLon, newLat, _nowIso(), id],
       );
     }
 
@@ -202,7 +240,11 @@ class ApiariesRepository {
   /// is maintained by this look-up-then-write shape (single-writer local UI,
   /// no concurrency to race) and authoritatively by the server's ON CONFLICT
   /// upsert keyed the same way.
-  Future<void> _upsertCounter(String apiaryId, String counterType, int value) async {
+  Future<void> _upsertCounter(
+    String apiaryId,
+    String counterType,
+    int value,
+  ) async {
     final existing = await _store.getOptional(
       'SELECT id FROM $apiaryCountersTable WHERE apiary_id = ? AND counter_type = ? '
       'ORDER BY updated_at DESC LIMIT 1',
@@ -239,6 +281,7 @@ class ApiariesRepository {
     hiveCount: (r['hive_count'] as int?) ?? 0,
     locationLon: (r['location_lon'] as num?)?.toDouble(),
     locationLat: (r['location_lat'] as num?)?.toDouble(),
+    placeLabel: r['place_label'] as String?,
     notes: r['notes'] as String?,
   );
 
@@ -292,17 +335,28 @@ final apiaryCountersProvider = StreamProvider.autoDispose
     });
 
 /// Client-side search over the locally-synced apiary set (FR-AP-6, D-17:
-/// client-side, apiaries-only, matches on name and location). There is no
-/// free-text location/address field on an apiary yet (just the GeoPoint,
-/// #33's own scope) — the coordinates aren't meaningful to match against a
-/// typed query, so "search by location" currently has nothing textual to
-/// search against and this only matches [Apiary.name]. Case-insensitive,
-/// substring match (not prefix-only) so "orte" matches "Encosta Norte".
-/// An empty/whitespace-only query returns [apiaries] unfiltered.
+/// client-side, apiaries-only, matches on name and location). Originally
+/// name-only: there was no free-text location/address field on an apiary
+/// (just the GeoPoint, #33's own scope), so "search by location" had
+/// nothing textual to search against. #252/#254 add [Apiary.placeLabel] —
+/// the place NAME a beekeeper can now attach independent of the map pin —
+/// so this now also matches that field, closing D-17's original gap.
+/// Case-insensitive AND diacritic-insensitive (#254 AC: PT "São" matches
+/// "sao" — [normalizeForSearch] folds both the query and the candidate text
+/// the same way before comparing), substring match (not prefix-only) so
+/// "orte" matches "Encosta Norte". An empty/whitespace-only query returns
+/// [apiaries] unfiltered.
 List<Apiary> filterApiariesByQuery(List<Apiary> apiaries, String query) {
-  final needle = query.trim().toLowerCase();
+  final needle = normalizeForSearch(query.trim());
   if (needle.isEmpty) return apiaries;
-  return apiaries.where((a) => a.name.toLowerCase().contains(needle)).toList();
+  return apiaries
+      .where(
+        (a) =>
+            normalizeForSearch(a.name).contains(needle) ||
+            (a.placeLabel != null &&
+                normalizeForSearch(a.placeLabel!).contains(needle)),
+      )
+      .toList();
 }
 
 /// Offline proximity ordering (FR-AP-2, #33 AC: "the list works offline

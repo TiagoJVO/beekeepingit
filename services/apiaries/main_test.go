@@ -320,6 +320,32 @@ func patchNotes(id, notes string, ts time.Time) api.Op {
 	return api.Op{Op: "patch", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
 }
 
+// patchLocation is patchNotes's counterpart for location (#252): the plain
+// location_lon/location_lat keys the client's local PowerSync schema uses
+// (api/sync.go's apiaryData doc comment) — not a nested GeoJSON object like
+// the REST wire shape.
+func patchLocation(id string, lon, lat float64, ts time.Time) api.Op {
+	data, _ := json.Marshal(map[string]any{"location_lon": lon, "location_lat": lat})
+	return api.Op{Op: "patch", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
+}
+
+// patchPlaceLabel is patchNotes's counterpart for place_label (#252).
+func patchPlaceLabel(id, label string, ts time.Time) api.Op {
+	data, _ := json.Marshal(map[string]any{"place_label": label})
+	return api.Op{Op: "patch", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
+}
+
+// putOpWithLocation is putOp's counterpart carrying an initial location +
+// place_label (#252) — used by the create-with-location sync-apply tests.
+func putOpWithLocation(id, name string, hive int32, lon, lat float64, placeLabel string, ts time.Time) api.Op {
+	data, _ := json.Marshal(map[string]any{
+		"name": name, "hive_count": hive,
+		"location_lon": lon, "location_lat": lat,
+		"place_label": placeLabel,
+	})
+	return api.Op{Op: "put", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
+}
+
 // TestApiariesSlice_CreateReadLWWConflictIdempotencyTombstone walks the whole
 // apply/read matrix the skeleton must guarantee (sync.md §4–§5).
 func TestApiariesSlice_CreateReadLWWConflictIdempotencyTombstone(t *testing.T) {
@@ -1061,6 +1087,13 @@ func TestApiariesRest_ResponsesConformToOpenAPIContract(t *testing.T) {
 	}
 	doc.ValidateResponseBody(t, http.MethodPatch, patchPath, http.StatusOK, recNotes.Body.Bytes())
 
+	// place_label (#252) — new field, validated against the contract too.
+	recPlaceLabel := f.do(t, http.MethodPatch, patchPath, map[string]any{"place_label": "Montargil"})
+	if recPlaceLabel.Code != http.StatusOK {
+		t.Fatalf("place_label update status = %d, want 200, body = %s", recPlaceLabel.Code, recPlaceLabel.Body.String())
+	}
+	doc.ValidateResponseBody(t, http.MethodPatch, patchPath, http.StatusOK, recPlaceLabel.Body.Bytes())
+
 	recInvalid := f.do(t, http.MethodPatch, patchPath, map[string]any{"hive_count": -1})
 	if recInvalid.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid update status = %d, want 422, body = %s", recInvalid.Code, recInvalid.Body.String())
@@ -1097,6 +1130,14 @@ func createBody(id, name string, hiveCount *int32, loc *geoPointView) map[string
 func createBodyWithNotes(id, name string, hiveCount *int32, loc *geoPointView, notes string) map[string]any {
 	body := createBody(id, name, hiveCount, loc)
 	body["notes"] = notes
+	return body
+}
+
+// createBodyWithPlaceLabel is createBodyWithNotes's counterpart for
+// place_label (#252) — same "separate helper, don't widen createBody" reason.
+func createBodyWithPlaceLabel(id, name string, hiveCount *int32, loc *geoPointView, placeLabel string) map[string]any {
+	body := createBody(id, name, hiveCount, loc)
+	body["place_label"] = placeLabel
 	return body
 }
 
@@ -1529,6 +1570,92 @@ func TestApiariesRest_History_NotesChangeProducesAuditRowWithChangedField(t *tes
 	}
 }
 
+// TestApiariesRest_PlaceLabel_CreateAndUpdateRoundTrip is #252's core REST
+// AC: place_label is optional on create, present on read when set, and
+// independently updatable via PATCH — mirroring
+// TestApiariesRest_Notes_CreateAndUpdateRoundTrip's shape for the new column
+// (TestApiariesRest_CreateReadUpdateDelete exercises hive_count/location).
+func TestApiariesRest_PlaceLabel_CreateAndUpdateRoundTrip(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	// Create without place_label: omitted from the response (omitempty, like
+	// notes'/location's own "unset" convention).
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Encosta Nova", nil, nil))
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+	if strings.Contains(recCreate.Body.String(), `"place_label"`) {
+		t.Fatalf("create response unexpectedly contains a place_label key: %s", recCreate.Body.String())
+	}
+
+	// Create a second apiary with place_label set up front.
+	id2 := uuid.NewString()
+	recCreate2 := f.do(t, http.MethodPost, "/v1/apiaries", createBodyWithPlaceLabel(id2, "Monte Alto", int32Ptr(4), nil, "Montargil"))
+	if recCreate2.Code != http.StatusCreated {
+		t.Fatalf("create-with-place_label status = %d, want 201, body = %s", recCreate2.Code, recCreate2.Body.String())
+	}
+	var created2 apiaryView
+	if err := json.Unmarshal(recCreate2.Body.Bytes(), &created2); err != nil {
+		t.Fatalf("decode create-with-place_label response: %v", err)
+	}
+	if created2.PlaceLabel == nil || *created2.PlaceLabel != "Montargil" {
+		t.Fatalf("created apiary place_label = %v, want %q", created2.PlaceLabel, "Montargil")
+	}
+
+	// PATCH sets place_label on the apiary created without it; other fields
+	// unaffected (partial update semantics).
+	recUpdate := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"place_label": "São Domingos"})
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+	var updated apiaryView
+	if err := json.Unmarshal(recUpdate.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode update response: %v", err)
+	}
+	if updated.PlaceLabel == nil || *updated.PlaceLabel != "São Domingos" {
+		t.Fatalf("updated apiary place_label = %v, want %q", updated.PlaceLabel, "São Domingos")
+	}
+	if updated.Name != "Encosta Nova" {
+		t.Fatalf("updated apiary name = %q, want unchanged %q", updated.Name, "Encosta Nova")
+	}
+
+	// A subsequent GET reflects the same place_label (persisted, not just echoed).
+	got := f.getApiary(t, id)
+	if got.PlaceLabel == nil || *got.PlaceLabel != "São Domingos" {
+		t.Fatalf("get apiary place_label = %v, want %q", got.PlaceLabel, "São Domingos")
+	}
+
+	// PATCH clearing place_label back to empty string is a valid (if
+	// unusual) request — matching notes' own clear-to-empty convention.
+	recClear := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"place_label": ""})
+	if recClear.Code != http.StatusOK {
+		t.Fatalf("clear-place_label status = %d, want 200, body = %s", recClear.Code, recClear.Body.String())
+	}
+}
+
+// TestApiariesRest_PlaceLabel_ValidationRejectsTooLong matches sync.go's
+// validateApiaryOp place_label-length rule (200 chars, maxPlaceLabelLength)
+// on the REST create/update path.
+func TestApiariesRest_PlaceLabel_ValidationRejectsTooLong(t *testing.T) {
+	f := newApiariesFixture(t)
+	tooLong := strings.Repeat("x", 201)
+
+	recCreate := f.do(t, http.MethodPost, "/v1/apiaries", createBodyWithPlaceLabel(uuid.NewString(), "Foo", nil, nil, tooLong))
+	if recCreate.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("create with too-long place_label status = %d, want 422, body = %s", recCreate.Code, recCreate.Body.String())
+	}
+
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Foo", nil, nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	recUpdate := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"place_label": tooLong})
+	if recUpdate.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("update with too-long place_label status = %d, want 422, body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+}
+
 // TestApiariesSlice_Notes_SyncApplyRoundTrip is #196's offline-sync AC
 // ("notes sync offline"): notes flows through the sync-apply put/patch path
 // exactly like name/hive_count, mirroring
@@ -1561,6 +1688,218 @@ func TestApiariesSlice_Notes_SyncApplyRoundTrip(t *testing.T) {
 	}
 	if len(rows[1].ChangedFields) != 1 || rows[1].ChangedFields[0] != "notes" {
 		t.Fatalf("notes sync-apply changed_fields = %v, want [notes]", rows[1].ChangedFields)
+	}
+}
+
+// TestApiariesSlice_Location_SyncApplyCreateWithLocation is #252's core gap:
+// before this issue, the sync-apply path (api/sync.go's apiaryData) had NO
+// location field at all — an apiary created entirely offline had no
+// coordinates even though the REST path (write.go) already supported them.
+// This asserts an offline create carrying location_lon/location_lat/
+// place_label applies and reads back correctly through the client-facing
+// REST read path (the same one the map/proximity/measure features use).
+func TestApiariesSlice_Location_SyncApplyCreateWithLocation(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOpWithLocation(id, "Encosta Nova", 3, -8.611, 41.148, "Montargil", t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create-with-location result = %+v, want applied", got.Results[0])
+	}
+
+	created := f.getApiary(t, id)
+	if created.Location == nil || created.Location.Coordinates != [2]float64{-8.611, 41.148} {
+		t.Fatalf("created apiary location = %+v, want [-8.611, 41.148]", created.Location)
+	}
+	if created.PlaceLabel == nil || *created.PlaceLabel != "Montargil" {
+		t.Fatalf("created apiary place_label = %v, want %q", created.PlaceLabel, "Montargil")
+	}
+}
+
+// TestApiariesSlice_Location_SyncApplyPatchMovesPin covers an offline EDIT of
+// an already-located apiary's pin (#252 AC: "the location is editable") via
+// patch, plus the LWW matrix (newer wins, older loses/conflict-logs,
+// idempotent re-send is a no-op) — mirroring
+// TestApiariesSlice_CreateReadLWWConflictIdempotencyTombstone's shape but for
+// location specifically, since that test predates #252 and never touches it.
+func TestApiariesSlice_Location_SyncApplyPatchMovesPin(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOpWithLocation(id, "Encosta Nova", 0, -8.611, 41.148, "", t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %+v, want applied", got.Results[0])
+	}
+
+	// Newer edit moves the pin — applied.
+	t1 := t0.Add(time.Minute)
+	if got := f.apply(t, patchLocation(id, -9.0, 41.5, t1)); got.Results[0].Result != "applied" {
+		t.Fatalf("newer location patch result = %+v, want applied", got.Results[0])
+	}
+	moved := f.getApiary(t, id)
+	if moved.Location == nil || moved.Location.Coordinates != [2]float64{-9.0, 41.5} {
+		t.Fatalf("moved apiary location = %+v, want [-9.0, 41.5]", moved.Location)
+	}
+	// The apiary's name/hive_count, untouched by this patch, must survive
+	// (mergeOp's patch branch only overlays fields the op actually carries).
+	if moved.Name != "Encosta Nova" || moved.HiveCount != 0 {
+		t.Fatalf("moved apiary name/hive_count = %q/%d, want unchanged", moved.Name, moved.HiveCount)
+	}
+
+	// Older edit loses → superseded, server (moved) value kept, conflict logged.
+	if got := f.apply(t, patchLocation(id, 0, 0, t0.Add(-time.Minute))); got.Results[0].Result != "superseded" {
+		t.Fatalf("older location patch result = %+v, want superseded", got.Results[0])
+	}
+	stillMoved := f.getApiary(t, id)
+	if stillMoved.Location == nil || stillMoved.Location.Coordinates != [2]float64{-9.0, 41.5} {
+		t.Fatalf("apiary location after superseded patch = %+v, want unchanged [-9.0, 41.5]", stillMoved.Location)
+	}
+	if n := f.conflictCount(t); n != 1 {
+		t.Fatalf("conflict rows = %d, want 1", n)
+	}
+
+	// Idempotent re-send of the winning edit → applied, no new conflict.
+	if got := f.apply(t, patchLocation(id, -9.0, 41.5, t1)); got.Results[0].Result != "applied" {
+		t.Fatalf("idempotent re-send result = %+v, want applied", got.Results[0])
+	}
+	if n := f.conflictCount(t); n != 1 {
+		t.Fatalf("conflict rows after idempotent re-send = %d, want 1", n)
+	}
+}
+
+// TestApiariesSlice_Location_SyncApplyPutWithoutLocationClearsIt confirms a
+// full `put` (offline create/replace) that omits location results in NO
+// stored location — matching how `put` already treats an absent `notes` as
+// "clear it" (mergeOp's doc comment: location/place_label follow the same
+// full-replace convention as notes, not hive's "absent ⇒ preserve" rule).
+func TestApiariesSlice_Location_SyncApplyPutWithoutLocationClearsIt(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Sem Localização", 0, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %+v, want applied", got.Results[0])
+	}
+	created := f.getApiary(t, id)
+	if created.Location != nil {
+		t.Fatalf("created apiary location = %+v, want nil (put omitted it)", created.Location)
+	}
+}
+
+// TestApiariesSlice_PlaceLabel_SyncApplyRoundTrip is #252's place_label AC
+// ("optional free-text place label... stored... end-to-end"), mirroring
+// TestApiariesSlice_Notes_SyncApplyRoundTrip's shape for the new column.
+func TestApiariesSlice_PlaceLabel_SyncApplyRoundTrip(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Encosta Nova", 0, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %+v, want applied", got.Results[0])
+	}
+	created := f.getApiary(t, id)
+	if created.PlaceLabel != nil {
+		t.Fatalf("created apiary place_label = %v, want nil (not set)", created.PlaceLabel)
+	}
+
+	t1 := t0.Add(time.Minute)
+	if got := f.apply(t, patchPlaceLabel(id, "Montargil", t1)); got.Results[0].Result != "applied" {
+		t.Fatalf("place_label patch result = %+v, want applied", got.Results[0])
+	}
+	updated := f.getApiary(t, id)
+	if updated.PlaceLabel == nil || *updated.PlaceLabel != "Montargil" {
+		t.Fatalf("updated apiary place_label = %v, want %q", updated.PlaceLabel, "Montargil")
+	}
+
+	rows := f.auditLogFor(t, id)
+	if len(rows) != 2 || rows[1].ChangeType != "update" {
+		t.Fatalf("audit rows after place_label sync-apply = %+v, want [create, update]", rows)
+	}
+	if len(rows[1].ChangedFields) != 1 || rows[1].ChangedFields[0] != "place_label" {
+		t.Fatalf("place_label sync-apply changed_fields = %v, want [place_label]", rows[1].ChangedFields)
+	}
+}
+
+// TestApiariesSlice_Location_MapProximityMeasureWorkForInAppCreatedApiary is
+// #252's headline AC: "Map pin, proximity ordering, and tap-to-measure work
+// for an apiary created entirely in-app." An in-app apiary is created via
+// the sync-apply path (never REST — walking-skeleton.md §4.4), so this
+// exercises the map (GET, location present), proximity (`near`-ordered
+// list, distance_m present) and measure (the /distance endpoint) features
+// end-to-end against a sync-created row, not a REST-seeded one.
+func TestApiariesSlice_Location_MapProximityMeasureWorkForInAppCreatedApiary(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	otherID := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOpWithLocation(id, "Porto", 2, -8.6109, 41.1496, "Baixa do Porto", t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %+v, want applied", got.Results[0])
+	}
+	if got := f.apply(t, putOpWithLocation(otherID, "Braga", 1, -8.4265, 41.5503, "", t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create (other) result = %+v, want applied", got.Results[0])
+	}
+
+	// Map: GET returns the stored location (what apiary_map_screen.dart's
+	// marker rendering needs — Apiary.hasLocation).
+	if a := f.getApiary(t, id); a.Location == nil {
+		t.Fatalf("get apiary location = nil, want the stored point")
+	}
+
+	// Proximity: a `near` point close to Porto orders it first, with a
+	// distance_m present on both rows (api/apiaries.go's
+	// listApiariesByProximity).
+	near := f.listApiariesNear(t, -8.6, 41.15)
+	if len(near.Data) < 2 || near.Data[0].ID != id {
+		t.Fatalf("proximity list = %+v, want %q ordered first (nearest to the near point)", near.Data, id)
+	}
+	if near.Data[0].DistanceM == nil {
+		t.Fatalf("proximity list first row distance_m = nil, want a computed distance")
+	}
+
+	// Measure: the /distance endpoint (D-15's straight-line/#37 contract
+	// completeness path) computes a real distance between the two in-app
+	// created apiaries.
+	rec := f.do(t, http.MethodGet, "/v1/apiaries/"+id+"/distance?to="+otherID, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("distance status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var dist distanceView
+	if err := json.Unmarshal(rec.Body.Bytes(), &dist); err != nil {
+		t.Fatalf("decode distance: %v", err)
+	}
+	if dist.DistanceM <= 0 {
+		t.Fatalf("distance_m = %v, want > 0 (Porto to Braga is a real distance)", dist.DistanceM)
+	}
+}
+
+// TestApiariesSlice_Location_ValidationRejectsOutOfRangeAndPartialCoordinates
+// mirrors TestApiariesRest_CreateValidation_RejectsBadInput's location bounds
+// check for the sync-apply path's plain lon/lat wire shape (#252): out-of-
+// range coordinates and a lon-without-lat (or vice versa) are both rejected
+// by validateApiaryOp before apply ever runs (sync.md §6.2 validate-first).
+func TestApiariesSlice_Location_ValidationRejectsOutOfRangeAndPartialCoordinates(t *testing.T) {
+	f := newApiariesFixture(t)
+	t0 := time.Now().UTC()
+
+	cases := []struct {
+		name string
+		data map[string]any
+	}{
+		{"lon out of range", map[string]any{"name": "Foo", "location_lon": 200.0, "location_lat": 41.0}},
+		{"lat out of range", map[string]any{"name": "Foo", "location_lon": -8.6, "location_lat": 100.0}},
+		{"lon without lat", map[string]any{"name": "Foo", "location_lon": -8.6}},
+		{"lat without lon", map[string]any{"name": "Foo", "location_lat": 41.0}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, _ := json.Marshal(tc.data)
+			op := api.Op{Op: "put", EntityType: "apiary", ID: uuid.NewString(), Data: data, UpdatedAt: t0}
+			rec := f.do(t, http.MethodPost, "/internal/sync/validate", api.Batch{Ops: []api.Op{op}})
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("validate status = %d, want 422, body = %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -2011,12 +2350,13 @@ type geoPointView struct {
 }
 
 type apiaryView struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	HiveCount int32         `json:"hive_count"`
-	Location  *geoPointView `json:"location,omitempty"`
-	Notes     *string       `json:"notes,omitempty"`
-	DistanceM *float64      `json:"distance_m,omitempty"`
+	ID         string        `json:"id"`
+	Name       string        `json:"name"`
+	HiveCount  int32         `json:"hive_count"`
+	Location   *geoPointView `json:"location,omitempty"`
+	PlaceLabel *string       `json:"place_label,omitempty"`
+	Notes      *string       `json:"notes,omitempty"`
+	DistanceM  *float64      `json:"distance_m,omitempty"`
 }
 
 func (f *apiariesFixture) getApiary(t *testing.T, id string) apiaryView {

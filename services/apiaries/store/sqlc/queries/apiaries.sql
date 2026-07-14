@@ -11,7 +11,11 @@
 -- gives the "0 when no counter row exists" default every read path shares
 -- (FR-AP-7 AC), matching how apiaries.hive_count's own NOT NULL DEFAULT 0
 -- behaved before the column was retired.
-SELECT a.id, a.organization_id, a.name, a.notes, a.created_at, a.updated_at,
+--
+-- place_label (#252): a plain nullable text column, selected alongside notes
+-- — no join/derivation needed, unlike location (GeoJSON) or hive_count
+-- (counters join).
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
        COALESCE(hc.value, 0)::integer AS hive_count,
        COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
 FROM apiaries.apiaries a
@@ -62,9 +66,10 @@ LIMIT $2;
 -- ordering; the selected `distance_m` column still uses the exact
 -- ST_Distance for the value actually returned to the client.
 --
--- hive_count (#256): same LEFT JOIN as ListApiaries above.
+-- hive_count (#256): same LEFT JOIN as ListApiaries above. place_label
+-- (#252): same plain column as ListApiaries above.
 WITH ranked AS (
-    SELECT a.id, a.organization_id, a.name, a.notes, a.created_at, a.updated_at,
+    SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
            COALESCE(hc.value, 0)::integer AS hive_count,
            COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson,
            public.ST_Distance(a.location, public.ST_SetSRID(public.ST_MakePoint(sqlc.arg('lon')::double precision, sqlc.arg('lat')::double precision), 4326)::public.geography) AS distance_m,
@@ -82,7 +87,7 @@ WITH ranked AS (
     WHERE a.organization_id = $1
       AND a.deleted_at IS NULL
 )
-SELECT id, organization_id, name, notes, created_at, updated_at, hive_count, location_geojson, distance_m
+SELECT id, organization_id, name, notes, place_label, created_at, updated_at, hive_count, location_geojson, distance_m
 FROM ranked
 ORDER BY knn_distance ASC NULLS LAST, id
 LIMIT $2
@@ -90,8 +95,9 @@ OFFSET $3;
 
 -- name: GetApiary :one
 -- hive_count (#256): LEFT JOIN'd from apiary_counters, same convention as
--- ListApiaries above.
-SELECT a.id, a.organization_id, a.name, a.notes, a.created_at, a.updated_at,
+-- ListApiaries above. place_label (#252): same plain column as ListApiaries
+-- above.
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
        COALESCE(hc.value, 0)::integer AS hive_count,
        COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
 FROM apiaries.apiaries a
@@ -135,8 +141,9 @@ WHERE a.organization_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
 -- as GetApiary — FOR UPDATE only locks apiaries.apiaries itself (the row
 -- being written); the counter row is separately locked/upserted by
 -- UpsertApiaryCounter's own ON CONFLICT (atomic per-row, no extra lock
--- needed for a single-row upsert).
-SELECT a.id, a.organization_id, a.name, a.notes, a.created_at, a.updated_at, a.deleted_at,
+-- needed for a single-row upsert). place_label (#252): same plain column as
+-- GetApiary above.
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at, a.deleted_at,
        COALESCE(hc.value, 0)::integer AS hive_count,
        COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
 FROM apiaries.apiaries a
@@ -146,14 +153,26 @@ WHERE a.organization_id = $1 AND a.id = $2
 FOR UPDATE OF a;
 
 -- name: InsertApiary :exec
--- Sync-apply create (no location — the sync wire shape carries only
--- name/hive_count/notes, sync.go's apiaryData). REST create uses
--- InsertApiaryWithLocation. hive_count (#256) is no longer a column here —
--- the caller (sync.go's applyOp) upserts it into apiary_counters via
--- UpsertApiaryCounter in the same transaction, mirroring how the REST path
--- (write.go's createApiary) does the same.
-INSERT INTO apiaries.apiaries (id, organization_id, name, notes, updated_at, deleted_at)
-VALUES ($1, $2, $3, $4, $5, $6);
+-- Sync-apply create. Historically this omitted location entirely (the sync
+-- wire shape carried only name/hive_count/notes) — #252 closes that gap: the
+-- field client's offline-created apiary now writes its map-pin/current-
+-- location coordinates through this same path, matching the REST path's
+-- InsertApiaryWithLocation (both write the same apiaries.apiaries table and
+-- must apply the same rules, write.go's package doc comment). Location
+-- shape/params match InsertApiaryWithLocation exactly (both-or-neither
+-- lon/lat; api/geo.go's geoPointInput.lon/lat already produce this for
+-- either caller). hive_count (#256) is still not a column here — the caller
+-- (sync.go's applyOp) upserts it into apiary_counters via UpsertApiaryCounter
+-- in the same transaction, mirroring how the REST path (write.go's
+-- createApiary) does the same. place_label (#252): plain nullable text,
+-- alongside notes.
+INSERT INTO apiaries.apiaries (id, organization_id, name, notes, place_label, updated_at, deleted_at, location)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7,
+    CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
+         ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
+    END
+);
 
 -- name: InsertApiaryWithLocation :one
 -- REST create (POST /v1/apiaries, #31): full row including the optional
@@ -165,24 +184,38 @@ VALUES ($1, $2, $3, $4, $5, $6);
 -- transaction) rather than a real join, since there is nothing to join
 -- against for a brand-new id; the caller (write.go's createApiary) always
 -- upserts the real value immediately after and uses ITS result, not this
--- one, for hive_count in the response it builds.
-INSERT INTO apiaries.apiaries (id, organization_id, name, notes, updated_at, location)
+-- one, for hive_count in the response it builds. place_label (#252): plain
+-- nullable text, alongside notes — no join/derivation, so it's read back
+-- straight from the just-inserted row like every other scalar column here.
+INSERT INTO apiaries.apiaries (id, organization_id, name, notes, place_label, updated_at, location)
 VALUES (
-    $1, $2, $3, $4, $5,
+    $1, $2, $3, $4, $5, $6,
     CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
          ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
     END
 )
-RETURNING id, organization_id, name, notes, created_at, updated_at,
+RETURNING id, organization_id, name, notes, place_label, created_at, updated_at,
           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson;
 
 -- name: UpdateApiary :exec
--- Sync-apply update (name/notes/tombstone only — hive_count (#256) is
--- upserted separately into apiary_counters by the caller in the same
--- transaction; location is not part of the sync wire shape yet). REST
--- update uses UpdateApiaryWithLocation.
+-- Sync-apply update. Historically name/notes/tombstone only — #252 adds
+-- location here too (same both-or-neither lon/lat shape as
+-- UpdateApiaryWithLocation below), closing the same sync-apply location gap
+-- InsertApiary's doc comment describes: an offline edit that moves an
+-- apiary's pin now applies through this path exactly like a name/notes edit
+-- already did. hive_count (#256) is still upserted separately into
+-- apiary_counters by the caller in the same transaction. place_label (#252):
+-- plain nullable text, alongside notes.
 UPDATE apiaries.apiaries
-SET name = $3, notes = $4, updated_at = $5, deleted_at = $6, recorded_at = now()
+SET name = $3,
+    notes = $4,
+    place_label = $5,
+    updated_at = $6,
+    deleted_at = $7,
+    location = CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
+                     ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
+               END,
+    recorded_at = now()
 WHERE organization_id = $1 AND id = $2;
 
 -- name: UpdateApiaryWithLocation :one
@@ -191,17 +224,19 @@ WHERE organization_id = $1 AND id = $2;
 -- sets every mutable column. hive_count (#256) is upserted separately by the
 -- caller (write.go's updateApiary) via UpsertApiaryCounter in the same
 -- transaction — not returned here (the caller already has the value it
--- wants to write and uses that for the response, not a re-read).
+-- wants to write and uses that for the response, not a re-read). place_label
+-- (#252): plain nullable text, alongside notes.
 UPDATE apiaries.apiaries
 SET name = $3,
     notes = $4,
-    updated_at = $5,
+    place_label = $5,
+    updated_at = $6,
     location = CASE WHEN sqlc.narg('lon')::double precision IS NULL THEN NULL
                      ELSE public.ST_SetSRID(public.ST_MakePoint(sqlc.narg('lon')::double precision, sqlc.narg('lat')::double precision), 4326)::public.geography
                END,
     recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, notes, created_at, updated_at,
+RETURNING id, organization_id, name, notes, place_label, created_at, updated_at,
           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson;
 
 -- name: SoftDeleteApiary :execrows
