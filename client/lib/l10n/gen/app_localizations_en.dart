@@ -298,6 +298,48 @@ class AppLocalizationsEn extends AppLocalizations {
       'One of your offline changes was overwritten by a newer edit.';
 
   @override
+  String get syncRejectedNotice =>
+      'One of your changes was rejected and needs fixing.';
+
+  @override
+  String get syncNeedsFixTitle => 'Changes to fix';
+
+  @override
+  String get syncNeedsFixEmpty => 'No changes need fixing.';
+
+  @override
+  String syncNeedsFixLoadError(String error) {
+    return 'Couldn\'t load the changes to fix: $error';
+  }
+
+  @override
+  String syncNeedsFixCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes need fixing',
+      one: '1 change needs fixing',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get syncNeedsFixApiaryLabel => 'Apiary change';
+
+  @override
+  String get syncNeedsFixCounterLabel => 'Hive count change';
+
+  @override
+  String get syncNeedsFixGenericProblem =>
+      'This change was rejected and needs your attention.';
+
+  @override
+  String get syncNeedsFixFixAction => 'Fix';
+
+  @override
+  String get syncNeedsFixDismissAction => 'Dismiss';
+
+  @override
   String get accountSyncSectionTitle => 'Sync';
 
   @override

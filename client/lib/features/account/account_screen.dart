@@ -10,6 +10,7 @@ import '../../l10n/gen/app_localizations.dart';
 import '../../shell/sync_status.dart';
 import '../organization/organization_repository.dart';
 import '../profile/profile_repository.dart';
+import '../sync/sync_rejected_repository.dart';
 import 'account_platform.dart';
 
 /// Account settings screen (FR-AU-1, #29): update profile information
@@ -139,6 +140,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   // override (AC: "a failed sync can be retried"; sync.md §7.1).
   List<Widget> _buildSyncSection(BuildContext context, AppLocalizations l10n) {
     final syncStatus = ref.watch(syncStatusProvider);
+    final needsFixCount = ref.watch(syncNeedsFixCountProvider).value ?? 0;
     final statusLabel = syncStatus.syncing
         ? l10n.syncStatusSyncing
         : syncStatus.isOnline
@@ -163,6 +165,17 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         key: const Key('account-sync-pending-text'),
         style: Theme.of(context).textTheme.bodyMedium,
       ),
+      // Rejected offline writes awaiting a fix (D-12 notify-and-fix): a
+      // call-to-action into the needs-fix list, shown only when there are any.
+      if (needsFixCount > 0) ...[
+        const SizedBox(height: 12),
+        SecondaryActionButton(
+          key: const Key('account-needs-fix-button'),
+          label: l10n.syncNeedsFixCount(needsFixCount),
+          icon: Icons.sync_problem_outlined,
+          onPressed: () => context.go('/sync-needs-fix'),
+        ),
+      ],
       const SizedBox(height: 16),
       SecondaryActionButton(
         key: const Key('account-sync-now-button'),

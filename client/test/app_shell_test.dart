@@ -6,6 +6,7 @@ import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,6 +57,8 @@ Widget _buildShellApp({
   List<Apiary>? apiaries,
   SyncStatus? syncStatus,
   Stream<SupersededChange>? supersededChanges,
+  Stream<RejectedChange>? rejectedChanges,
+  int needsFixCount = 0,
 }) {
   return ProviderScope(
     overrides: [
@@ -77,6 +80,15 @@ Widget _buildShellApp({
       ),
       supersededNotificationProvider.overrideWith(
         (ref) => supersededChanges ?? const Stream.empty(),
+      ),
+      // The notify-and-fix seams the shell now watches (D-12): the rejection
+      // toast stream and the account-button badge count. Overridden so shell
+      // tests never touch a real PowerSync database, like the two above.
+      rejectedNotificationProvider.overrideWith(
+        (ref) => rejectedChanges ?? const Stream.empty(),
+      ),
+      syncNeedsFixCountProvider.overrideWith(
+        (ref) => Stream.value(needsFixCount),
       ),
     ],
     child: const BeekeepingitApp(),
@@ -389,4 +401,46 @@ void main() {
       );
     },
   );
+
+  testWidgets('a rejected change surfaces a notify-and-fix toast with a Fix '
+      'action (D-12, #256/#260)', (tester) async {
+    final controller = StreamController<RejectedChange>();
+    addTearDown(controller.close);
+
+    await tester.pumpWidget(_buildShellApp(rejectedChanges: controller.stream));
+    await tester.pumpAndSettle();
+
+    controller.add(
+      const RejectedChange(
+        entityType: 'apiary_counter',
+        entityId: 'apiary-1',
+        errorCode: 'validation.failed',
+      ),
+    );
+    await tester.pump(); // deliver the ref.listen callback
+    await tester.pump(); // let the SnackBar animate in
+
+    expect(
+      find.text('One of your changes was rejected and needs fixing.'),
+      findsOneWidget,
+    );
+    // Carries the "Fix" action that routes into the needs-fix flow.
+    expect(find.widgetWithText(SnackBarAction, 'Fix'), findsOneWidget);
+  });
+
+  testWidgets('the account button is badged with the needs-fix count', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildShellApp(needsFixCount: 3));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('shell-needs-fix-badge')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('shell-needs-fix-badge')),
+        matching: find.text('3'),
+      ),
+      findsOneWidget,
+    );
+  });
 }
