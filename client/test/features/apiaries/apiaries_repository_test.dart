@@ -55,16 +55,18 @@ class FakeLocalStore implements LocalStoreEngine {
         'updated_at': args[5],
       });
     } else if (normalized.startsWith('INSERT INTO APIARIES')) {
-      // (id, name, notes, created_at, updated_at) — hive_count is no longer
-      // an apiaries column (#256).
+      // (id, name, notes, place_label, location_lon, location_lat,
+      // created_at, updated_at) — hive_count is no longer an apiaries
+      // column (#256); place_label/location_lon/location_lat are new (#252).
       rows.add({
         'id': args[0],
         'name': args[1],
         'notes': args[2],
-        'created_at': args[3],
-        'updated_at': args[4],
-        'location_lon': null,
-        'location_lat': null,
+        'place_label': args[3],
+        'location_lon': args[4],
+        'location_lat': args[5],
+        'created_at': args[6],
+        'updated_at': args[7],
       });
     } else if (normalized.startsWith('UPDATE APIARY_COUNTERS')) {
       // SET value = ?, updated_at = ? WHERE id = ?
@@ -73,12 +75,18 @@ class FakeLocalStore implements LocalStoreEngine {
       row['value'] = args[0];
       row['updated_at'] = args[1];
     } else if (normalized.startsWith('UPDATE APIARIES')) {
-      // SET name = ?, notes = ?, updated_at = ? WHERE id = ?
-      final id = args[3];
+      // SET name = ?, notes = ?, place_label = ?, location_lon = ?,
+      // location_lat = ?, updated_at = ? WHERE id = ? (#252 adds
+      // place_label/location_lon/location_lat to the pre-existing
+      // name/notes/updated_at set).
+      final id = args[6];
       final row = rows.firstWhere((r) => r['id'] == id);
       row['name'] = args[0];
       row['notes'] = args[1];
-      row['updated_at'] = args[2];
+      row['place_label'] = args[2];
+      row['location_lon'] = args[3];
+      row['location_lat'] = args[4];
+      row['updated_at'] = args[5];
     } else if (normalized.startsWith('DELETE FROM APIARIES')) {
       final id = args[0];
       rows.removeWhere((r) => r['id'] == id);
@@ -142,8 +150,7 @@ class FakeLocalStore implements LocalStoreEngine {
     final matches =
         counterRows
             .where(
-              (r) =>
-                  r['apiary_id'] == apiaryId && r['counter_type'] == 'hive',
+              (r) => r['apiary_id'] == apiaryId && r['counter_type'] == 'hive',
             )
             .toList()
           ..sort(
@@ -257,6 +264,138 @@ void main() {
     );
   });
 
+  group('ApiariesRepository location + place_label (#252)', () {
+    test(
+      'create() writes location_lon/location_lat/place_label together',
+      () async {
+        final id = await repo.create(
+          name: 'Encosta',
+          hiveCount: 1,
+          placeLabel: 'Montargil',
+          locationLon: -8.611,
+          locationLat: 41.148,
+        );
+
+        final apiary = await repo.getById(id);
+        expect(apiary!.locationLon, -8.611);
+        expect(apiary.locationLat, 41.148);
+        expect(apiary.placeLabel, 'Montargil');
+        expect(apiary.hasLocation, isTrue);
+      },
+    );
+
+    test('create() without location leaves both columns null', () async {
+      final id = await repo.create(name: 'Sem Local', hiveCount: 0);
+
+      final apiary = await repo.getById(id);
+      expect(apiary!.locationLon, isNull);
+      expect(apiary.locationLat, isNull);
+      expect(apiary.hasLocation, isFalse);
+      expect(apiary.placeLabel, isNull);
+    });
+
+    test(
+      'update() with locationProvided sets a previously-unset location',
+      () async {
+        final id = await repo.create(name: 'Encosta', hiveCount: 0);
+
+        await repo.update(
+          id,
+          locationLon: -9.0,
+          locationLat: 41.5,
+          locationProvided: true,
+        );
+
+        final apiary = await repo.getById(id);
+        expect(apiary!.locationLon, -9.0);
+        expect(apiary.locationLat, 41.5);
+        expect(apiary.hasLocation, isTrue);
+      },
+    );
+
+    test('update() with locationProvided and null lon/lat clears the location '
+        '(#252 AC: the location is editable and clearable)', () async {
+      final id = await repo.create(
+        name: 'Encosta',
+        hiveCount: 0,
+        locationLon: -9.0,
+        locationLat: 41.5,
+      );
+
+      await repo.update(id, locationProvided: true);
+
+      final apiary = await repo.getById(id);
+      expect(apiary!.locationLon, isNull);
+      expect(apiary.locationLat, isNull);
+      expect(apiary.hasLocation, isFalse);
+    });
+
+    test(
+      'update() without locationProvided leaves an existing location untouched',
+      () async {
+        final id = await repo.create(
+          name: 'Encosta',
+          hiveCount: 0,
+          locationLon: -9.0,
+          locationLat: 41.5,
+        );
+
+        await repo.update(id, name: 'Encosta Norte');
+
+        final apiary = await repo.getById(id);
+        expect(apiary!.name, 'Encosta Norte');
+        expect(apiary.locationLon, -9.0);
+        expect(apiary.locationLat, 41.5);
+      },
+    );
+
+    test(
+      'update() with placeLabelProvided sets/clears place_label independently '
+      'of location',
+      () async {
+        final id = await repo.create(
+          name: 'Encosta',
+          hiveCount: 0,
+          locationLon: -9.0,
+          locationLat: 41.5,
+        );
+
+        await repo.update(
+          id,
+          placeLabel: 'São Domingos',
+          placeLabelProvided: true,
+        );
+
+        var apiary = await repo.getById(id);
+        expect(apiary!.placeLabel, 'São Domingos');
+        expect(apiary.locationLon, -9.0, reason: 'location untouched');
+
+        await repo.update(id, placeLabelProvided: true);
+
+        apiary = await repo.getById(id);
+        expect(apiary!.placeLabel, isNull);
+      },
+    );
+
+    test(
+      'a location-only update does not write an unrelated field change',
+      () async {
+        final id = await repo.create(name: 'Encosta', hiveCount: 0);
+
+        await repo.update(
+          id,
+          locationLon: -9.0,
+          locationLat: 41.5,
+          locationProvided: true,
+        );
+
+        final apiary = await repo.getById(id);
+        expect(apiary!.name, 'Encosta');
+        expect(apiary.notes, isNull);
+      },
+    );
+  });
+
   group('ApiariesRepository counters (#256)', () {
     test('create() writes the hive count as a counter row, not an apiaries '
         'column', () async {
@@ -307,17 +446,19 @@ void main() {
       expect((await repo.getById(id))!.hiveCount, 12);
     });
 
-    test('a hive-only update never touches the apiaries row (decoupled '
-        'records: no LWW/audit churn on the apiary for a counter edit)',
-        () async {
-      final id = await repo.create(name: 'Encosta', hiveCount: 2);
-      final apiaryUpdatedAt = store.rows.single['updated_at'];
+    test(
+      'a hive-only update never touches the apiaries row (decoupled '
+      'records: no LWW/audit churn on the apiary for a counter edit)',
+      () async {
+        final id = await repo.create(name: 'Encosta', hiveCount: 2);
+        final apiaryUpdatedAt = store.rows.single['updated_at'];
 
-      await repo.update(id, hiveCount: 9);
+        await repo.update(id, hiveCount: 9);
 
-      expect(store.rows.single['updated_at'], apiaryUpdatedAt);
-      expect(store.counterRows.single['value'], 9);
-    });
+        expect(store.rows.single['updated_at'], apiaryUpdatedAt);
+        expect(store.counterRows.single['value'], 9);
+      },
+    );
 
     test('a name-only update never touches the counter row (whose LWW stamp '
         'must not supersede another device\'s pending hive edit)', () async {
@@ -339,20 +480,22 @@ void main() {
       expect(store.counterRows.single['updated_at'], counterUpdatedAt);
     });
 
-    test('delete() leaves counter rows in place (counters have no delete op '
-        '— the server rejects one; orphans are unreachable via reads)',
-        () async {
-      final id = await repo.create(name: 'Temp', hiveCount: 3);
+    test(
+      'delete() leaves counter rows in place (counters have no delete op '
+      '— the server rejects one; orphans are unreachable via reads)',
+      () async {
+        final id = await repo.create(name: 'Temp', hiveCount: 3);
 
-      await repo.delete(id);
+        await repo.delete(id);
 
-      expect(await repo.getById(id), isNull);
-      expect(
-        store.counterRows.where((r) => r['apiary_id'] == id),
-        hasLength(1),
-        reason: 'no counter DELETE may ever be queued',
-      );
-    });
+        expect(await repo.getById(id), isNull);
+        expect(
+          store.counterRows.where((r) => r['apiary_id'] == id),
+          hasLength(1),
+          reason: 'no counter DELETE may ever be queued',
+        );
+      },
+    );
 
     test('watchCountersFor() emits typed rows, newest-per-type, known types '
         'first', () async {
@@ -384,7 +527,11 @@ void main() {
 
       expect(counters, hasLength(2));
       expect(counters[0].counterType, 'hive');
-      expect(counters[0].value, 2, reason: 'newest hive row wins, not the stale 99');
+      expect(
+        counters[0].value,
+        2,
+        reason: 'newest hive row wins, not the stale 99',
+      );
       expect(counters[1].counterType, 'nucs');
       expect(counters[1].value, 3);
     });

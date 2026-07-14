@@ -35,7 +35,15 @@ const apiaryCounterEntityType = 'apiary_counter';
 /// this client has no parser for. Both null together when the apiary has no
 /// stored location (nullable, matching the DB column's own optionality).
 /// Used by #33's offline proximity ordering and #34/#37's map + offline
-/// distance measurement alike.
+/// distance measurement alike. #252 wires these into the create/edit WRITE
+/// path too (apiaries_repository.dart) — previously only ever read, never
+/// written locally, so an in-app-created apiary had no coordinates even
+/// though this column pair already existed.
+///
+/// `place_label` (#252) is an optional free-text place name (e.g.
+/// "Montargil"), independent of `location`'s coordinates and of the
+/// apiary's own `name` — nullable like `notes`, same plain-text column
+/// shape (no projection needed, unlike location).
 ///
 /// `hive_count` is NOT a column on [apiariesTable] anymore (#256): it was
 /// retired server-side (apiaries migration 00005) in favor of the
@@ -48,6 +56,7 @@ const appSchema = Schema([
     Column.text('organization_id'),
     Column.text('name'),
     Column.text('notes'),
+    Column.text('place_label'),
     Column.text('created_at'),
     Column.text('updated_at'),
     Column.real('location_lon'),

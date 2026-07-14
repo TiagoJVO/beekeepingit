@@ -12,8 +12,12 @@ import 'counter_types.dart';
 /// form (apiary_form_screen.dart). Reachable from the list (list screen's
 /// onTap) and, once the map screen lands (parallel #33 work), from there
 /// too. Renders gracefully when optional fields (location, notes) are empty
-/// (#32 AC). Editing happens via the FAB, which pushes the existing form at
-/// `/apiaries/:id/edit`.
+/// (#32 AC). `location` now genuinely reflects the form-set coordinates
+/// (#252 wires the form's write path through — this screen's own render
+/// logic was already correct, it just had nothing to show before). The
+/// optional free-text place label (#252, e.g. "Montargil") renders alongside
+/// the coordinates when set. Editing happens via the FAB, which pushes the
+/// existing form at `/apiaries/:id/edit`.
 class ApiaryDetailScreen extends ConsumerWidget {
   const ApiaryDetailScreen({required this.apiaryId, super.key});
 
@@ -157,23 +161,54 @@ class _LocationRow extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final color = theme.colorScheme.onPrimaryContainer;
-    // The repository's Apiary model doesn't carry location yet — this slice
-    // (#32) renders "no location set" until a future slice threads location
-    // through the local schema/repository the way notes was threaded here
-    // (#196). Kept as an explicit, honest empty state rather than a mini-map
-    // (out of scope for this issue, per the map screen's own build).
-    return Row(
-      key: const Key('apiary-detail-location'),
-      mainAxisSize: MainAxisSize.min,
+    // Location (#252): the repository's Apiary model now carries
+    // locationLon/locationLat (threaded through the local schema/repository
+    // the same way notes was threaded here by #196) — render the formatted
+    // coordinates when set, the honest "not set" empty state otherwise. No
+    // mini-map here (out of scope for this row — the full map view,
+    // apiary_map_screen.dart, is reachable from the list's map toggle).
+    final locationText = apiary.hasLocation
+        ? l10n.apiaryLocationValue(
+            apiary.locationLat!.toStringAsFixed(5),
+            apiary.locationLon!.toStringAsFixed(5),
+          )
+        : l10n.apiaryLocationNotSet;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.location_on_outlined, size: 17, color: color),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            l10n.apiaryLocationNotSet,
-            style: theme.textTheme.bodyMedium?.copyWith(color: color),
-          ),
+        Row(
+          key: const Key('apiary-detail-location'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.location_on_outlined, size: 17, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                locationText,
+                style: theme.textTheme.bodyMedium?.copyWith(color: color),
+              ),
+            ),
+          ],
         ),
+        if (apiary.placeLabel != null &&
+            apiary.placeLabel!.trim().isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Row(
+            key: const Key('apiary-detail-place-label'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.place_outlined, size: 17, color: color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  apiary.placeLabel!,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: color),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -210,8 +245,7 @@ class _CountersSection extends ConsumerWidget {
     final others = <ApiaryCounter>[
       for (final counter in counters.value ?? const <ApiaryCounter>[])
         if (counter.counterType != counterTypeHive &&
-            counterValueLabel(l10n, counter.counterType, counter.value) !=
-                null)
+            counterValueLabel(l10n, counter.counterType, counter.value) != null)
           counter,
     ];
 
@@ -226,11 +260,7 @@ class _CountersSection extends ConsumerWidget {
         for (final counter in others)
           _CounterBadge(
             key: Key('apiary-detail-counter-${counter.counterType}'),
-            label: counterValueLabel(
-              l10n,
-              counter.counterType,
-              counter.value,
-            )!,
+            label: counterValueLabel(l10n, counter.counterType, counter.value)!,
           ),
       ],
     );

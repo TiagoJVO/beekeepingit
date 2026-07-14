@@ -511,5 +511,87 @@
   "apiaryMapAttributionOsm": "© OpenStreetMap contributors",
   "@apiaryMapAttributionOsm": {
     "description": "Attribution overlay text shown when the streets (OSM) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by the OSM tile usage policy)"
+  },
+  "apiaryPlaceLabelLabel": "Place label",
+  "@apiaryPlaceLabelLabel": {
+    "description": "Optional free-text place name field label on the apiary form, and its label on the detail screen (#252, e.g. \"Montargil\")"
+  },
+  "apiaryPlaceLabelHint": "e.g. Montargil",
+  "@apiaryPlaceLabelHint": {
+    "description": "Placeholder hint text in the apiary form's place label field (#252)"
+  },
+  "apiaryLocationSectionLabel": "Location",
+  "@apiaryLocationSectionLabel": {
+    "description": "Section label above the map-pin picker on the apiary form (#252)"
+  },
+  "apiaryUseCurrentLocationAction": "Use current location",
+  "@apiaryUseCurrentLocationAction": {
+    "description": "Button on the apiary form that sets the location to the device's current position (#252)"
+  },
+  "apiarySetOnMapAction": "Set on map",
+  "@apiarySetOnMapAction": {
+    "description": "Button on the apiary form that expands the embedded map-pin picker (collapsed by default so the Save action stays reachable) (#252)"
+  },
+  "apiaryHideMapAction": "Hide map",
+  "@apiaryHideMapAction": {
+    "description": "Button on the apiary form that collapses the expanded map-pin picker (#252)"
+  },
+  "apiaryLocationClearAction": "Clear location",
+  "@apiaryLocationClearAction": {
+    "description": "Button on the apiary form that clears the currently-set location (#252 AC: the location is editable and clearable)"
+  },
+  "apiaryFormLocationPermissionDenied": "Location access denied — you can still place a pin on the map.",
+  "@apiaryFormLocationPermissionDenied": {
+    "description": "Shown on the apiary form when \"use current location\" fails because location permission was denied or is unavailable — the map-pin picker is offered as the fallback (#252 AC: graceful permission handling)"
+  },
+  "apiaryFormLocationSet": "Location set: {lat}, {lon}",
+  "@apiaryFormLocationSet": {
+    "description": "Status text on the apiary form's map-pin picker when a location is currently set (#252)",
+    "placeholders": {
+      "lat": {
+        "type": "String"
+      },
+      "lon": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryFormLocationNotSet": "No location set — tap the map to place a pin",
+  "@apiaryFormLocationNotSet": {
+    "description": "Status text on the apiary form's map-pin picker when no location is set yet (#252)"
+  },
+  "apiaryMapPickerLabel": "Map: tap to place the apiary's pin",
+  "@apiaryMapPickerLabel": {
+    "description": "Semantics label for the embedded map-pin picker on the apiary form (#252)"
+  },
+  "apiaryDistanceValue": "{distanceKm} km away",
+  "@apiaryDistanceValue": {
+    "description": "Distance from the device's current location shown on an apiaries list row, locale-formatted (FR-AP-2, #253)",
+    "placeholders": {
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteApiaryConfirmTitle": "Delete apiary?",
+  "@deleteApiaryConfirmTitle": {
+    "description": "Title of the confirmation dialog shown before deleting an apiary (#255)"
+  },
+  "deleteApiaryConfirmMessage": "This permanently deletes “{name}”. This cannot be undone.",
+  "@deleteApiaryConfirmMessage": {
+    "description": "Body of the confirmation dialog shown before deleting an apiary, naming it (#255 AC)",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteApiaryConfirmAction": "Delete",
+  "@deleteApiaryConfirmAction": {
+    "description": "Confirm action in the delete-apiary confirmation dialog (#255)"
+  },
+  "deleteApiaryCancelAction": "Cancel",
+  "@deleteApiaryCancelAction": {
+    "description": "Cancel action in the delete-apiary confirmation dialog (#255 AC: cancel is a no-op)"
   }
 }

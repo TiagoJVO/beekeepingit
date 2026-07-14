@@ -33,10 +33,26 @@ type Batch struct {
 	Ops []Op `json:"ops"`
 }
 
+// apiaryData is the sync wire shape for an entityTypeApiary op's `data`.
+// LocationLon/LocationLat (#252) mirror the client's LOCAL PowerSync column
+// names verbatim (client/lib/core/sync/powersync_schema.dart's
+// `location_lon`/`location_lat` REAL columns) — the connector uploads a
+// queued CRUD entry's opData as-is (powersync_connector.dart's `_toOp`, no
+// per-column translation for the apiaries table, unlike the counter-identity
+// enrichment it does for apiary_counters), so this is the plain
+// lon/lat-per-key shape that arrives, not a nested GeoJSON object like the
+// REST wire shape (geoPointInput) uses. Both are pointers, both-or-neither
+// in practice (the client only ever writes both together — see
+// apiaries_repository.dart's create/update), matching how REST's
+// geoPointInput.lon()/lat() already produce a both-valid-or-both-NULL pair
+// for the shared InsertApiary/UpdateApiary queries this data now flows into.
 type apiaryData struct {
-	Name      *string `json:"name"`
-	HiveCount *int32  `json:"hive_count"`
-	Notes     *string `json:"notes"`
+	Name        *string  `json:"name"`
+	HiveCount   *int32   `json:"hive_count"`
+	Notes       *string  `json:"notes"`
+	PlaceLabel  *string  `json:"place_label"`
+	LocationLon *float64 `json:"location_lon"`
+	LocationLat *float64 `json:"location_lat"`
 }
 
 // counterData is the sync wire shape for an entityTypeApiaryCounter op
@@ -124,9 +140,11 @@ func validateOp(i int, op Op) []problem.FieldError {
 }
 
 // validateApiaryOp is the original entityTypeApiary validation (name/
-// hive_count/notes on the apiaries row itself) — unchanged in behavior from
-// before #256, just renamed/split out now that validateOp dispatches on
-// entity_type. entity_type itself is validated permissively here (accepting
+// hive_count/notes on the apiaries row itself), now also validating
+// location/place_label (#252) the same way the REST path's
+// geoPointInput.validate/validateCreate do — a sync-apply write and a REST
+// write must accept exactly the same content, per write.go's package doc
+// comment. entity_type itself is validated permissively here (accepting
 // either known type falls through to the matching validator; anything else
 // is rejected as invalid, matching the pre-#256 "must be apiary" message's
 // intent generalized to "must be a known type").
@@ -172,7 +190,31 @@ func validateApiaryOp(i int, op Op) []problem.FieldError {
 	if data.Notes != nil && len(*data.Notes) > 10000 {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.notes", Code: "too_long", Message: "notes must be at most 10000 characters"})
 	}
-	if op.Op == "patch" && data.Name == nil && data.HiveCount == nil && data.Notes == nil {
+	if data.PlaceLabel != nil && len(*data.PlaceLabel) > maxPlaceLabelLength {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.place_label", Code: "too_long", Message: "place_label must be at most 200 characters"})
+	}
+	// Location bounds (#252): mirrors geoPointInput.validate's lon/lat range
+	// check — the wire shape differs (plain lon/lat keys, not a nested
+	// GeoJSON point, per apiaryData's doc comment) but the rule is the same.
+	// Both-or-neither is enforced here too: a lone lon or lat (the client
+	// never produces this — both columns are always written together, see
+	// apiaries_repository.dart) is rejected rather than silently treated as
+	// "no location" or as 0 for the missing half.
+	switch {
+	case data.LocationLon != nil && data.LocationLat == nil:
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.location_lat", Code: "required", Message: "location_lat is required when location_lon is set"})
+	case data.LocationLat != nil && data.LocationLon == nil:
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.location_lon", Code: "required", Message: "location_lon is required when location_lat is set"})
+	case data.LocationLon != nil && data.LocationLat != nil:
+		if *data.LocationLon < -180 || *data.LocationLon > 180 {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.location_lon", Code: "out_of_range", Message: "location_lon must be between -180 and 180"})
+		}
+		if *data.LocationLat < -90 || *data.LocationLat > 90 {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.location_lat", Code: "out_of_range", Message: "location_lat must be between -90 and 90"})
+		}
+	}
+	if op.Op == "patch" && data.Name == nil && data.HiveCount == nil && data.Notes == nil &&
+		data.PlaceLabel == nil && data.LocationLon == nil && data.LocationLat == nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data", Code: "required", Message: "patch must change at least one field"})
 	}
 	return errs
@@ -274,25 +316,55 @@ func applyBatch(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// rowState is the mutable projection of an apiary the LWW logic reasons about.
+// rowState is the mutable projection of an apiary the LWW logic reasons
+// about. lon/lat (#252) are nil-together exactly when the apiary has no
+// stored location — pointers rather than restRowState's GeoJSON-string
+// sentinel, since this type reasons about the plain lon/lat wire shape
+// directly (apiaryData's doc comment) with no GeoJSON round-trip needed
+// internally.
 type rowState struct {
-	name      string
-	hive      int32
-	notes     string // "" means unset — an apiary's own free-text content, not personal data (§7.3)
-	deletedAt pgtype.Timestamptz
+	name       string
+	hive       int32
+	notes      string // "" means unset — an apiary's own free-text content, not personal data (§7.3)
+	placeLabel string // "" means unset — a place NAME (e.g. "Montargil"), not personal data (#252, §7.3)
+	lon        *float64
+	lat        *float64
+	deletedAt  pgtype.Timestamptz
 }
 
 func (a rowState) sameAs(b rowState) bool {
-	return a.name == b.name && a.hive == b.hive && a.notes == b.notes && a.deletedAt.Valid == b.deletedAt.Valid
+	return a.name == b.name && a.hive == b.hive && a.notes == b.notes && a.placeLabel == b.placeLabel &&
+		floatPtrEqual(a.lon, b.lon) && floatPtrEqual(a.lat, b.lat) && a.deletedAt.Valid == b.deletedAt.Valid
+}
+
+// floatPtrEqual compares two optional float64s by value — nil-vs-nil is
+// equal, nil-vs-set or differing values are not. Used by rowState.sameAs so
+// a location change (including a set→unset or unset→set transition) is
+// never mistaken for an idempotent no-op re-send.
+func floatPtrEqual(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // fields projects a rowState to the plain field map history.ComputeChange
 // diffs — only soft/scalar values, never denormalized personal data (§7.3).
-// notes is the apiary's own content (FR-AP-8, #196), not personal data.
+// notes is the apiary's own content (FR-AP-8, #196), not personal data;
+// place_label (#252) likewise. location (#252) is included as a "lon,lat"
+// string (an opaque, non-personal value, mirroring restRowState.fields'
+// GeoJSON-string treatment of the same column) so a location change shows
+// up in the sync-apply update delta exactly like the REST path's.
 func (a rowState) fields() map[string]any {
 	m := map[string]any{"name": a.name, "hive_count": a.hive}
 	if a.notes != "" {
 		m["notes"] = a.notes
+	}
+	if a.placeLabel != "" {
+		m["place_label"] = a.placeLabel
+	}
+	if a.lon != nil && a.lat != nil {
+		m["location"] = fmt.Sprintf("%g,%g", *a.lon, *a.lat)
 	}
 	return m
 }
@@ -326,8 +398,10 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 		want := mergeOp(rowState{}, op, data)
 		if err := q.InsertApiary(ctx, sqlcgen.InsertApiaryParams{
 			ID: pgID, OrganizationID: org, Name: want.name,
-			Notes:     notesParamFromState(want.notes),
-			UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
+			Notes:      notesParamFromState(want.notes),
+			PlaceLabel: notesParamFromState(want.placeLabel),
+			UpdatedAt:  incomingTS, DeletedAt: want.deletedAt,
+			Lon: float8Ptr(want.lon), Lat: float8Ptr(want.lat),
 		}); err != nil {
 			return OpResult{}, err
 		}
@@ -353,15 +427,18 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 	}
 
-	current := rowState{name: stored.Name, hive: stored.HiveCount, notes: textOf(stored.Notes), deletedAt: stored.DeletedAt}
+	storedLon, storedLat := lonLatFromGeoJSON(stored.LocationGeojson)
+	current := rowState{name: stored.Name, hive: stored.HiveCount, notes: textOf(stored.Notes), placeLabel: textOf(stored.PlaceLabel), lon: storedLon, lat: storedLat, deletedAt: stored.DeletedAt}
 	want := mergeOp(current, op, data)
 
 	// Strictly-newer incoming wins (§4.1).
 	if op.UpdatedAt.After(stored.UpdatedAt.Time) {
 		if err := q.UpdateApiary(ctx, sqlcgen.UpdateApiaryParams{
 			OrganizationID: org, ID: pgID, Name: want.name,
-			Notes:     notesParamFromState(want.notes),
-			UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
+			Notes:      notesParamFromState(want.notes),
+			PlaceLabel: notesParamFromState(want.placeLabel),
+			UpdatedAt:  incomingTS, DeletedAt: want.deletedAt,
+			Lon: float8Ptr(want.lon), Lat: float8Ptr(want.lat),
 		}); err != nil {
 			return OpResult{}, err
 		}
@@ -481,6 +558,13 @@ func applyCounterOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, us
 // 0 would make the audit diff record a 12→0 change that never actually
 // happened. For a create, current is rowState{} (hive 0), so absent-on-create
 // still yields the 0 default — same observable as before.
+//
+// location/place_label (#252): unlike hive, these follow the SAME full-replace
+// convention `put` already applies to notes — an absent field on a put
+// resets it to unset, since the client's local apiaries row always carries
+// its current location_lon/location_lat/place_label together (they're plain
+// columns on the same row, not a separate counter record), so a `put`
+// genuinely is that row's complete content at write time, same as name/notes.
 func mergeOp(current rowState, op Op, data apiaryData) rowState {
 	switch op.Op {
 	case "put":
@@ -493,6 +577,12 @@ func mergeOp(current rowState, op Op, data apiaryData) rowState {
 		}
 		if data.Notes != nil {
 			out.notes = *data.Notes
+		}
+		if data.PlaceLabel != nil {
+			out.placeLabel = *data.PlaceLabel
+		}
+		if data.LocationLon != nil && data.LocationLat != nil {
+			out.lon, out.lat = data.LocationLon, data.LocationLat
 		}
 		return out
 	case "delete":
@@ -507,6 +597,12 @@ func mergeOp(current rowState, op Op, data apiaryData) rowState {
 		}
 		if data.Notes != nil {
 			current.notes = *data.Notes
+		}
+		if data.PlaceLabel != nil {
+			current.placeLabel = *data.PlaceLabel
+		}
+		if data.LocationLon != nil && data.LocationLat != nil {
+			current.lon, current.lat = data.LocationLon, data.LocationLat
 		}
 		return current
 	}
@@ -554,12 +650,14 @@ func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, use
 
 func logConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, stored sqlcgen.GetApiaryForUpdateRow) error {
 	winning, err := json.Marshal(map[string]any{
-		"id":         uuidString(stored.ID),
-		"name":       stored.Name,
-		"hive_count": stored.HiveCount,
-		"notes":      textPtr(stored.Notes),
-		"updated_at": stored.UpdatedAt.Time,
-		"deleted_at": timePtr(stored.DeletedAt),
+		"id":          uuidString(stored.ID),
+		"name":        stored.Name,
+		"hive_count":  stored.HiveCount,
+		"notes":       textPtr(stored.Notes),
+		"place_label": textPtr(stored.PlaceLabel),
+		"location":    parseGeoJSONPoint(stored.LocationGeojson),
+		"updated_at":  stored.UpdatedAt.Time,
+		"deleted_at":  timePtr(stored.DeletedAt),
 	})
 	if err != nil {
 		return err

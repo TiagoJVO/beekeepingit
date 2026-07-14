@@ -64,12 +64,14 @@ Apiary _apiary(
   int hiveCount = 0,
   double? lon,
   double? lat,
+  String? placeLabel,
 }) => Apiary(
   id: id,
   name: name,
   hiveCount: hiveCount,
   locationLon: lon,
   locationLat: lat,
+  placeLabel: placeLabel,
 );
 
 void main() {
@@ -164,6 +166,51 @@ void main() {
       expect(find.text('Serra Norte'), findsOneWidget);
       expect(find.text('Vale Sul'), findsOneWidget);
     });
+
+    testWidgets(
+      'a query matching only the place label (not the name) still finds the '
+      'apiary (#252/#254)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [
+              _apiary('a1', 'Colmeia 3', placeLabel: 'Montargil'),
+              _apiary('a2', 'Colmeia 4', placeLabel: 'Alcácer'),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiaries-search-field')),
+          'montargil',
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Colmeia 3'), findsOneWidget);
+        expect(find.text('Colmeia 4'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the place label match is diacritic-insensitive (PT "São" ≈ "sao", #254 AC)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Colmeia 1', placeLabel: 'São Domingos')],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiaries-search-field')),
+          'sao domingos',
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Colmeia 1'), findsOneWidget);
+      },
+    );
   });
 
   group('proximity ordering (FR-AP-2, #33)', () {
@@ -282,6 +329,63 @@ void main() {
             .map((t) => (t.title as Text).data)
             .toList(growable: false);
         expect(titles, ['Near', 'No Location']);
+      },
+    );
+  });
+
+  group('distance display (FR-AP-2, #253)', () {
+    testWidgets(
+      'a located apiary shows its distance from the device location',
+      (tester) async {
+        // ~1.1km east at the equator (0.01° longitude ≈ 1.11km).
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('near', 'Near', lon: 0.01, lat: 0.0)],
+            location: const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final tile = tester.widget<ListTile>(find.byType(ListTile));
+        final subtitle = (tile.subtitle as Text).data!;
+        expect(subtitle, contains('km away'));
+        // Also still shows the hive count (distance is appended, not
+        // replacing the existing subtitle content, #253 AC).
+        expect(subtitle, contains('hives'));
+      },
+    );
+
+    testWidgets(
+      'an apiary without a location shows no distance (no placeholder noise, #253 AC)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('none', 'No Location')],
+            location: const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final tile = tester.widget<ListTile>(find.byType(ListTile));
+        final subtitle = (tile.subtitle as Text).data!;
+        expect(subtitle, isNot(contains('km away')));
+      },
+    );
+
+    testWidgets(
+      'no distance is shown when the device location is unavailable (#253 AC)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte', lon: 0.01, lat: 0.0)],
+            location: const DeviceLocationPermissionDenied(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final tile = tester.widget<ListTile>(find.byType(ListTile));
+        final subtitle = (tile.subtitle as Text).data!;
+        expect(subtitle, isNot(contains('km away')));
       },
     );
   });
@@ -429,6 +533,44 @@ void main() {
       expect(filterApiariesByQuery(apiaries, ''), apiaries);
       expect(filterApiariesByQuery(apiaries, '   '), apiaries);
       expect(filterApiariesByQuery(apiaries, 'zzz'), isEmpty);
+    });
+
+    test(
+      'filterApiariesByQuery also matches place_label, diacritic-insensitively '
+      '(FR-AP-6, #252/#254)',
+      () {
+        final apiaries = [
+          _apiary('a', 'Colmeia 1', placeLabel: 'Montargil'),
+          _apiary('b', 'Colmeia 2', placeLabel: 'São Domingos'),
+          _apiary('c', 'Colmeia 3'), // no place_label
+        ];
+        expect(filterApiariesByQuery(apiaries, 'montargil').map((a) => a.id), [
+          'a',
+        ]);
+        // PT "São" ≈ "sao" — case AND diacritic-insensitive (#254 AC).
+        expect(
+          filterApiariesByQuery(apiaries, 'sao domingos').map((a) => a.id),
+          ['b'],
+        );
+        expect(filterApiariesByQuery(apiaries, 'SÃO').map((a) => a.id), ['b']);
+        // An apiary with no place_label never throws/matches spuriously.
+        expect(filterApiariesByQuery(apiaries, 'zzz'), isEmpty);
+      },
+    );
+
+    test('filterApiariesByQuery matches either name OR place_label — a query '
+        'need not appear in both', () {
+      final apiaries = [_apiary('a', 'Encosta Norte', placeLabel: 'Alcácer')];
+      expect(
+        filterApiariesByQuery(apiaries, 'encosta').map((a) => a.id),
+        ['a'],
+        reason: 'name-only match still works',
+      );
+      expect(
+        filterApiariesByQuery(apiaries, 'alcacer').map((a) => a.id),
+        ['a'],
+        reason: 'place_label-only match, diacritic-folded',
+      );
     });
 
     test(

@@ -1,15 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:latlong2/latlong.dart' as ll;
 
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
+
+/// Default map-picker center/zoom when no location is set yet — same
+/// mainland-Portugal default as apiary_map_screen.dart's `_fallbackCenter`
+/// (the Melargil prototype and this project's dev-seed data are
+/// Portugal-based).
+const _pickerFallbackCenter = ll.LatLng(39.5, -8.0);
+const _pickerFallbackZoom = 6.0;
+const _pickerFocusedZoom = 13.0;
 
 /// Create (when [apiaryId] is null) or edit an apiary. Writes go local-first
 /// through the repository; there is no direct REST write (walking-skeleton.md
 /// §4.4).
+///
+/// Location capture (#252, FR-AP-2/3/5): the map/proximity/measure features
+/// already read the apiary's stored PostGIS location, but until this issue
+/// the form never SET it, so an in-app-created apiary had no coordinates.
+/// Two ways to set it, matching the AC: an embedded [_LocationPicker]
+/// (`flutter_map`, tap to place/move the pin — reusing apiary_map_screen.dart's
+/// satellite tile layer) and a "use current location" button (`geolocator`,
+/// the same graceful-permission-handling pattern the map screen already
+/// uses for its own user-location marker). An optional free-text
+/// [_placeLabelController] (e.g. "Montargil") is stored independently.
+///
+/// The map picker is **collapsed by default** ([_mapPickerExpanded]) — it
+/// expands inline only when the user taps "Set on map", or automatically
+/// when editing an apiary that already has a location. Location is entirely
+/// optional (#252 AC: editable and clearable), so the primary Save action
+/// must never be pushed below the fold or obscured by an always-on 220px
+/// map in the scrollable form: the walking-skeleton e2e creates an apiary
+/// with only name+hives (never touching location), and an always-embedded
+/// map crowded/collided with the Save button in the constrained CI viewport
+/// (the map's own gesture region also competes with the form's scroll). A
+/// compact summary + on-demand expansion keeps the default create form
+/// short and Save immediately reachable, while still offering the embedded
+/// map picker when wanted.
 class ApiaryFormScreen extends ConsumerStatefulWidget {
   const ApiaryFormScreen({this.apiaryId, super.key});
 
@@ -25,7 +60,21 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
   final _nameController = TextEditingController();
   final _hiveController = TextEditingController(text: '0');
   final _notesController = TextEditingController();
+  final _placeLabelController = TextEditingController();
   bool _busy = false;
+
+  /// The pin's current position, or null when no location is set — mirrors
+  /// [Apiary.hasLocation]'s "both or neither" convention. Editable/clearable
+  /// per #252's AC via [_LocationPicker]'s tap handler, the "use current
+  /// location" action, and the "clear location" action.
+  ll.LatLng? _location;
+  bool _locationPermissionDenied = false;
+
+  /// Whether the inline map picker is expanded. Collapsed by default (keeps
+  /// the primary Save action reachable — see the class doc comment); the
+  /// user expands it via "Set on map", and it auto-expands when editing an
+  /// apiary that already has a location so the existing pin is visible.
+  bool _mapPickerExpanded = false;
 
   @override
   void initState() {
@@ -38,6 +87,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
     _nameController.dispose();
     _hiveController.dispose();
     _notesController.dispose();
+    _placeLabelController.dispose();
     super.dispose();
   }
 
@@ -50,9 +100,69 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
       _nameController.text = existing.name;
       _hiveController.text = existing.hiveCount.toString();
       _notesController.text = existing.notes ?? '';
+      _placeLabelController.text = existing.placeLabel ?? '';
+      if (existing.hasLocation) {
+        _location = ll.LatLng(existing.locationLat!, existing.locationLon!);
+        // Show the existing pin without an extra tap when editing a located
+        // apiary — the collapse-by-default rule is about keeping a fresh
+        // create form short, not hiding a location the apiary already has.
+        _mapPickerExpanded = true;
+      }
     }
     setState(() => _busy = false);
   }
+
+  /// "Use current location" (#252 AC): geolocator, graceful permission
+  /// handling — the same pattern apiary_map_screen.dart's
+  /// `_loadUserLocation` already uses for its own user-location marker, but
+  /// here the result becomes the apiary's pin itself rather than a separate
+  /// "you are here" marker.
+  Future<void> _useCurrentLocation() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        setState(() => _locationPermissionDenied = true);
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        setState(() => _locationPermissionDenied = true);
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() {
+        _location = ll.LatLng(position.latitude, position.longitude);
+        _locationPermissionDenied = false;
+        // Reveal the pin that was just set so the user can confirm/adjust it.
+        _mapPickerExpanded = true;
+      });
+    } on Exception {
+      // Any platform/plugin failure degrades to the same "denied/unavailable"
+      // state rather than crashing the form (#252 AC: graceful permission
+      // handling) — the map-pin picker remains available as a fallback.
+      if (!mounted) return;
+      setState(() => _locationPermissionDenied = true);
+    }
+  }
+
+  void _onMapTap(ll.LatLng point) {
+    setState(() {
+      _location = point;
+      _locationPermissionDenied = false;
+    });
+  }
+
+  void _clearLocation() => setState(() => _location = null);
+
+  void _toggleMapPicker() =>
+      setState(() => _mapPickerExpanded = !_mapPickerExpanded);
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -68,6 +178,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
     final name = _nameController.text.trim();
     final hives = int.tryParse(_hiveController.text.trim()) ?? 0;
     final notes = _notesController.text.trim();
+    final placeLabel = _placeLabelController.text.trim();
     if (widget.isEdit) {
       await repo.update(
         widget.apiaryId!,
@@ -75,6 +186,11 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
         hiveCount: hives,
         notes: notes.isEmpty ? null : notes,
         notesProvided: true,
+        placeLabel: placeLabel.isEmpty ? null : placeLabel,
+        placeLabelProvided: true,
+        locationLon: _location?.longitude,
+        locationLat: _location?.latitude,
+        locationProvided: true,
       );
       if (!mounted) return;
       context.go('/apiaries/${widget.apiaryId}');
@@ -83,11 +199,33 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
         name: name,
         hiveCount: hives,
         notes: notes.isEmpty ? null : notes,
+        placeLabel: placeLabel.isEmpty ? null : placeLabel,
+        locationLon: _location?.longitude,
+        locationLat: _location?.latitude,
       );
       if (!mounted) return;
       context.go('/apiaries');
     }
     messenger.showSnackBar(SnackBar(content: Text(l10n.apiarySaveSuccess)));
+  }
+
+  /// Delete confirmation (#255, FR-UX-1, D-18): the field-first checklist
+  /// reserves interruption for destructive/hard-to-undo actions — delete is
+  /// exactly that (a gloved mis-tap on the previously-immediate delete
+  /// button destroyed the apiary and synced the deletion org-wide). Danger
+  /// styling reuses the theme's error color (the same `destructive` tint
+  /// `SecondaryActionButton` already applies to this very delete button),
+  /// 44px+ targets via [PrimaryActionButton]/`TextButton` sized to
+  /// [kMinTapTarget], and a semantics label naming the apiary. Confirm
+  /// deletes and toasts as before; cancel is a no-op (dismisses only).
+  Future<void> _confirmDelete() async {
+    final name = _nameController.text.trim();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => DeleteApiaryConfirmDialog(apiaryName: name),
+    );
+    if (confirmed != true) return;
+    await _delete();
   }
 
   Future<void> _delete() async {
@@ -153,6 +291,88 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                       ),
                       const SizedBox(height: 16),
                       TextFormField(
+                        key: const Key('apiary-place-label-field'),
+                        controller: _placeLabelController,
+                        textInputAction: TextInputAction.next,
+                        maxLength: 200,
+                        decoration: InputDecoration(
+                          labelText: l10n.apiaryPlaceLabelLabel,
+                          hintText: l10n.apiaryPlaceLabelHint,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        l10n.apiaryLocationSectionLabel,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          _location == null
+                              ? l10n.apiaryFormLocationNotSet
+                              : l10n.apiaryFormLocationSet(
+                                  _location!.latitude.toStringAsFixed(5),
+                                  _location!.longitude.toStringAsFixed(5),
+                                ),
+                          key: const Key('apiary-location-status'),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                      if (_locationPermissionDenied) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          l10n.apiaryFormLocationPermissionDenied,
+                          key: const Key('apiary-location-permission-denied'),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        ),
+                      ],
+                      // Location capture is COLLAPSED by default: only a single
+                      // compact "set on map" toggle shows until the user opts
+                      // in. This keeps the primary Save action reachable in a
+                      // fresh create form — an always-on 220px map + its
+                      // control buttons used to push Save below the fold and
+                      // collide with it in a constrained viewport (the
+                      // regression the walking-skeleton e2e caught). When
+                      // expanded, the full picker + "use current location" +
+                      // "clear" appear.
+                      const SizedBox(height: 8),
+                      SecondaryActionButton(
+                        key: const Key('apiary-toggle-map-button'),
+                        label: _mapPickerExpanded
+                            ? l10n.apiaryHideMapAction
+                            : l10n.apiarySetOnMapAction,
+                        icon: _mapPickerExpanded
+                            ? Icons.expand_less
+                            : Icons.map_outlined,
+                        onPressed: _toggleMapPicker,
+                      ),
+                      if (_mapPickerExpanded) ...[
+                        const SizedBox(height: 8),
+                        _LocationPicker(location: _location, onTap: _onMapTap),
+                        const SizedBox(height: 8),
+                        SecondaryActionButton(
+                          key: const Key('apiary-use-current-location-button'),
+                          label: l10n.apiaryUseCurrentLocationAction,
+                          icon: Icons.my_location,
+                          onPressed: _useCurrentLocation,
+                        ),
+                        if (_location != null) ...[
+                          const SizedBox(height: 8),
+                          SecondaryActionButton(
+                            key: const Key('apiary-clear-location-button'),
+                            label: l10n.apiaryLocationClearAction,
+                            icon: Icons.location_off_outlined,
+                            onPressed: _clearLocation,
+                          ),
+                        ],
+                      ],
+                      const SizedBox(height: 16),
+                      TextFormField(
                         key: const Key('apiary-notes-field'),
                         controller: _notesController,
                         minLines: 3,
@@ -179,7 +399,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                           label: l10n.deleteApiary,
                           icon: Icons.delete_outline,
                           destructive: true,
-                          onPressed: _delete,
+                          onPressed: _confirmDelete,
                         ),
                       ],
                     ],
@@ -188,5 +408,159 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
               ),
             ),
           );
+  }
+}
+
+/// The embedded map-pin picker (#252 AC: "placing/dragging a pin on an
+/// embedded map picker"). A single tap places/moves the pin — flutter_map
+/// has no built-in draggable-marker gesture, and a tap-to-place interaction
+/// is both simpler and already the established pattern this app's map
+/// screen uses for its own tap-to-measure selection
+/// (apiary_map_screen.dart's `_onApiaryTap`), so "drag" here means
+/// "tap again elsewhere to move it" rather than a press-and-drag gesture —
+/// fully equivalent for placing a pin, and far less finicky on a touchscreen
+/// (especially gloved, FR-UX-1) than precision dragging would be. Reuses
+/// the satellite tile layer + attribution apiary_map_screen.dart already
+/// established (#257) rather than re-deriving a tile source, since a field
+/// user recognizes terrain/tree cover for siting an apiary the same way
+/// they do when browsing the full map.
+class _LocationPicker extends StatelessWidget {
+  const _LocationPicker({required this.location, required this.onTap});
+
+  final ll.LatLng? location;
+  final void Function(ll.LatLng) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Semantics(
+      label: l10n.apiaryMapPickerLabel,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          key: const Key('apiary-location-picker'),
+          height: 220,
+          child: Stack(
+            children: [
+              FlutterMap(
+                options: MapOptions(
+                  initialCenter: location ?? _pickerFallbackCenter,
+                  initialZoom: location != null
+                      ? _pickerFocusedZoom
+                      : _pickerFallbackZoom,
+                  onTap: (tapPosition, point) => onTap(point),
+                ),
+                children: [
+                  TileLayer(
+                    key: const Key('apiary-location-picker-tile-layer'),
+                    urlTemplate:
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/'
+                        'World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    userAgentPackageName: 'com.beekeepingit.client',
+                  ),
+                  if (location != null)
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          key: const Key('apiary-location-picker-pin'),
+                          point: location!,
+                          width: 44,
+                          height: 44,
+                          child: Icon(
+                            Icons.location_on,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 36,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+              Positioned(
+                right: 6,
+                bottom: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surface.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    l10n.apiaryMapAttributionEsri,
+                    key: const Key('apiary-location-picker-attribution'),
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Confirmation dialog shown before deleting an apiary (#255, FR-UX-1,
+/// D-18). Pulled out as its own public widget (rather than an inline
+/// `showDialog` builder closure) so it's directly pumpable/testable without
+/// needing the full [ApiaryFormScreen] to have finished loading an existing
+/// apiary first — that screen's edit-mode data load depends on a real
+/// PowerSync-backed repository this test environment can't stand up (see
+/// apiary_form_screen_test.dart's doc comments on that existing limit); this
+/// dialog has no such dependency, taking only the plain [apiaryName] string
+/// to interpolate into its message.
+///
+/// The field-first checklist (docs/design/accessibility-field-ux-checklist.md)
+/// reserves interruption for destructive/hard-to-undo actions — delete is
+/// exactly that (a gloved mis-tap on the previously-immediate delete button
+/// destroyed the apiary and synced the deletion org-wide). Danger styling
+/// reuses the theme's error color (the same `destructive` tint
+/// `SecondaryActionButton` already applies to the delete button that opens
+/// this), 44px+ tap targets via [kMinTapTarget], and semantics labels naming
+/// the apiary (via [AlertDialog]'s own title/content, which
+/// `showDialog`/`AlertDialog` already exposes to a screen reader). Pops
+/// `true` on confirm, `false` on cancel/dismiss — the caller
+/// (`_ApiaryFormScreenState._confirmDelete`) only deletes on an explicit
+/// `true`, so a barrier-dismiss or back-button dismissal is treated the same
+/// as Cancel (#255 AC: "cancel is a no-op").
+class DeleteApiaryConfirmDialog extends StatelessWidget {
+  const DeleteApiaryConfirmDialog({required this.apiaryName, super.key});
+
+  final String apiaryName;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return AlertDialog(
+      key: const Key('apiary-delete-confirm-dialog'),
+      icon: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+      title: Text(l10n.deleteApiaryConfirmTitle),
+      content: Text(l10n.deleteApiaryConfirmMessage(apiaryName)),
+      actions: [
+        TextButton(
+          key: const Key('apiary-delete-confirm-cancel'),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+          ),
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(l10n.deleteApiaryCancelAction),
+        ),
+        TextButton(
+          key: const Key('apiary-delete-confirm-delete'),
+          style: TextButton.styleFrom(
+            foregroundColor: theme.colorScheme.error,
+            minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+          ),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text(l10n.deleteApiaryConfirmAction),
+        ),
+      ],
+    );
   }
 }

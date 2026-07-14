@@ -392,4 +392,61 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiaryMapAttributionOsm => '© Colaboradores do OpenStreetMap';
+
+  @override
+  String get apiaryPlaceLabelLabel => 'Nome do local';
+
+  @override
+  String get apiaryPlaceLabelHint => 'ex.: Montargil';
+
+  @override
+  String get apiaryLocationSectionLabel => 'Localização';
+
+  @override
+  String get apiaryUseCurrentLocationAction => 'Usar localização atual';
+
+  @override
+  String get apiarySetOnMapAction => 'Definir no mapa';
+
+  @override
+  String get apiaryHideMapAction => 'Ocultar mapa';
+
+  @override
+  String get apiaryLocationClearAction => 'Limpar localização';
+
+  @override
+  String get apiaryFormLocationPermissionDenied =>
+      'Acesso à localização negado — ainda pode colocar um alfinete no mapa.';
+
+  @override
+  String apiaryFormLocationSet(String lat, String lon) {
+    return 'Localização definida: $lat, $lon';
+  }
+
+  @override
+  String get apiaryFormLocationNotSet =>
+      'Sem localização definida — toque no mapa para colocar um alfinete';
+
+  @override
+  String get apiaryMapPickerLabel =>
+      'Mapa: toque para colocar o alfinete do apiário';
+
+  @override
+  String apiaryDistanceValue(String distanceKm) {
+    return 'a $distanceKm km';
+  }
+
+  @override
+  String get deleteApiaryConfirmTitle => 'Eliminar apiário?';
+
+  @override
+  String deleteApiaryConfirmMessage(String name) {
+    return 'Isto elimina permanentemente “$name”. Esta ação não pode ser desfeita.';
+  }
+
+  @override
+  String get deleteApiaryConfirmAction => 'Eliminar';
+
+  @override
+  String get deleteApiaryCancelAction => 'Cancelar';
 }

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/geo/device_location.dart';
+import '../../core/geo/distance.dart';
+import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
@@ -62,11 +64,14 @@ final apiariesLocationProvider =
 /// now owns them — see account_screen.dart.
 ///
 /// Also owns two #33/#36 ACs on top of the plain list:
-///  - a search field filtering the local set by name (FR-AP-6, D-17);
+///  - a search field filtering the local set by name **or place label**
+///    (FR-AP-6, D-17, extended by #252/#254 once `place_label` existed to
+///    search against), case- and diacritic-insensitive;
 ///  - proximity ordering using the device's current location, offline via a
 ///    local haversine computation, falling back to a deterministic
 ///    (by-name) order with a visible indication when location is
-///    unavailable/denied (FR-AP-2).
+///    unavailable/denied (FR-AP-2). Each located row also shows its
+///    computed distance from the device, locale-formatted (#253).
 ///
 /// Also owns the list/map toggle (#35, FR-AP-4): a segmented control next to
 /// the search field switches [apiariesViewProvider] between [ApiariesView.list]
@@ -160,7 +165,8 @@ class ApiariesListScreen extends ConsumerWidget {
                     );
                   }
 
-                  final ordered = switch (location.value) {
+                  final deviceLocation = location.value;
+                  final ordered = switch (deviceLocation) {
                     DeviceLocationAvailable(:final lon, :final lat) =>
                       sortApiariesByDistance(
                         filtered,
@@ -175,6 +181,12 @@ class ApiariesListScreen extends ConsumerWidget {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, i) {
                       final apiary = ordered[i];
+                      final distanceText = _distanceSubtitle(
+                        context,
+                        l10n,
+                        apiary,
+                        deviceLocation,
+                      );
                       return ListTile(
                         key: Key('apiary-${apiary.id}'),
                         contentPadding: const EdgeInsets.symmetric(
@@ -182,7 +194,11 @@ class ApiariesListScreen extends ConsumerWidget {
                           vertical: 8,
                         ),
                         title: Text(apiary.name),
-                        subtitle: Text(l10n.hiveCountValue(apiary.hiveCount)),
+                        subtitle: Text(
+                          distanceText == null
+                              ? l10n.hiveCountValue(apiary.hiveCount)
+                              : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
+                        ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => context.go('/apiaries/${apiary.id}'),
                       );
@@ -197,6 +213,39 @@ class ApiariesListScreen extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// Straight-line distance from the device's current location to [apiary], as
+/// a row-ready localized string (FR-AP-2, #253), or null when it can't be
+/// shown: [deviceLocation] isn't [DeviceLocationAvailable] (permission
+/// denied/services off/unavailable — the same states the fallback banner
+/// above already surfaces, so this degrades silently rather than repeating
+/// that messaging per-row, #253 AC: "no placeholder noise"), or [apiary]
+/// itself has no stored location ([Apiary.hasLocation]). Computed via the
+/// same offline haversine primitive [sortApiariesByDistance] already uses
+/// (core/geo/distance.dart, D-15's approach) — this is purely the per-row
+/// DISPLAY value, ordering itself is unchanged. `LocaleFormatting.decimal`
+/// (NFR-I18N-1, #253 AC) renders the km figure with the active locale's
+/// grouping/decimal separators (e.g. PT's `12,3` vs EN's `12.3`).
+String? _distanceSubtitle(
+  BuildContext context,
+  AppLocalizations l10n,
+  Apiary apiary,
+  DeviceLocation? deviceLocation,
+) {
+  if (deviceLocation is! DeviceLocationAvailable || !apiary.hasLocation) {
+    return null;
+  }
+  final km =
+      haversineDistanceMeters(
+        lon1: deviceLocation.lon,
+        lat1: deviceLocation.lat,
+        lon2: apiary.locationLon!,
+        lat2: apiary.locationLat!,
+      ) /
+      1000;
+  final formatted = LocaleFormatting.of(context).decimal(km);
+  return l10n.apiaryDistanceValue(formatted);
 }
 
 /// The list/map segmented toggle (#35, FR-AP-4). Two icon segments rather
