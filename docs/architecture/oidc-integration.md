@@ -1,9 +1,10 @@
 # OIDC integration contract (v1) — provider-agnostic identity, deployed on Authentik
 
-> **Status:** Frozen contract — Phase 0 of the Keycloak→Authentik migration. This is the
-> **seam every workstream builds against**; treat its fixed values as authoritative. Intent:
-> [D-7](../../requirements/decisions.md#d-7). Provider-neutral design model:
-> [auth.md](auth.md). Decision + rationale: [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md).
+> **Status:** Frozen contract — the migration this defined (Keycloak→Authentik) has since
+> **shipped across infra, backend, and client** ([auth.md](auth.md) §8.5-8.9 documents each
+> workstream as-built). This remains the **seam every workstream builds against**; treat its
+> fixed values as authoritative. Intent: [D-7](../../requirements/decisions.md#d-7). Provider-neutral
+> design model: [auth.md](auth.md). Decision + rationale: [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md).
 
 **Requirements:** NFR-SEC-1, NFR-ROL-1/2, FR-TEN, FR-OF-1, NFR-ARC-2, NFR-I18N
 **Decisions:** [D-7](../../requirements/decisions.md#d-7) (Authentik + boundary), [D-6](../../requirements/decisions.md) (Postgres)

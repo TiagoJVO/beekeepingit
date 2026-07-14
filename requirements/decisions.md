@@ -225,7 +225,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
 ## D-14 — Delivery model: per-feature milestones + cross-cutting streams
 
 - **Decision:** Milestones are **thin, incremental, per-feature delivery slices**, each independently
-  pickable: **M0** Walking Skeleton (done) → **M1** Identity & Onboarding (done) → **M2** Apiaries →
+  pickable: **M0** Walking Skeleton (done) → **M1** Identity & Onboarding (done) → **M2** Apiaries (done) →
   **M3** Activities → **M4** Journeys ∥ **M5** Todos → **M6** Import/Export → **M7** Admin App →
   **M8** AI Assistant → **M9** Settings & Notifications → **M10** Android → **M11** iOS & on-device AI.
 - **Streams:** the cross-cutting concerns — **offline/sync (EPIC-06)**, **history/audit (EPIC-07)**,
