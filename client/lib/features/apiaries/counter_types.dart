@@ -20,7 +20,11 @@ const knownCounterTypes = [counterTypeHive];
 /// rendered as raw internals; additive row shapes are the sync contract,
 /// sync.md §5.1 rule 6, so unknown types must degrade gracefully, not
 /// crash or leak identifiers into the UI).
-String? counterValueLabel(AppLocalizations l10n, String counterType, int value) {
+String? counterValueLabel(
+  AppLocalizations l10n,
+  String counterType,
+  int value,
+) {
   return switch (counterType) {
     counterTypeHive => l10n.hiveCountValue(value),
     _ => null,
