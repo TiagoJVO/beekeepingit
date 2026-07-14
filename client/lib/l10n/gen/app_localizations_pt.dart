@@ -300,6 +300,48 @@ class AppLocalizationsPt extends AppLocalizations {
       'Uma das suas alterações offline foi substituída por uma edição mais recente.';
 
   @override
+  String get syncRejectedNotice =>
+      'Uma das suas alterações foi rejeitada e precisa de correção.';
+
+  @override
+  String get syncNeedsFixTitle => 'Alterações a corrigir';
+
+  @override
+  String get syncNeedsFixEmpty => 'Não há alterações a corrigir.';
+
+  @override
+  String syncNeedsFixLoadError(String error) {
+    return 'Não foi possível carregar as alterações a corrigir: $error';
+  }
+
+  @override
+  String syncNeedsFixCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count alterações a corrigir',
+      one: '1 alteração a corrigir',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get syncNeedsFixApiaryLabel => 'Alteração de apiário';
+
+  @override
+  String get syncNeedsFixCounterLabel => 'Alteração de nº de colmeias';
+
+  @override
+  String get syncNeedsFixGenericProblem =>
+      'Esta alteração foi rejeitada e precisa da sua atenção.';
+
+  @override
+  String get syncNeedsFixFixAction => 'Corrigir';
+
+  @override
+  String get syncNeedsFixDismissAction => 'Dispensar';
+
+  @override
   String get accountSyncSectionTitle => 'Sincronização';
 
   @override
