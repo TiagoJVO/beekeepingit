@@ -348,24 +348,21 @@ void main() {
     },
   );
 
-  testWidgets(
-    'the sync-status pill shows "Waiting for better signal" when the '
-    'connection-quality gate is backing off (FR-OF-3, #55)',
-    (tester) async {
-      await tester.pumpWidget(
-        _buildShellApp(
-          syncStatus: const SyncStatus(
-            connectivity: SyncConnectivity.offline,
-            pendingCount: 1,
-            gateState: SyncGateState.waitingForSignal,
-          ),
+  testWidgets('the sync-status pill shows "Waiting for better signal" when the '
+      'connection-quality gate is backing off (FR-OF-3, #55)', (tester) async {
+    await tester.pumpWidget(
+      _buildShellApp(
+        syncStatus: const SyncStatus(
+          connectivity: SyncConnectivity.offline,
+          pendingCount: 1,
+          gateState: SyncGateState.waitingForSignal,
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('Waiting for better signal'), findsOneWidget);
-    },
-  );
+    expect(find.text('Waiting for better signal'), findsOneWidget);
+  });
 
   testWidgets(
     'a superseded change surfaces a non-blocking toast notification',

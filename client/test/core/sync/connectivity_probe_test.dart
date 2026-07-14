@@ -27,16 +27,13 @@ void main() {
       },
     );
 
-    test(
-      'a non-2xx response still counts as a pass (reachability, not '
-      'a status-code contract)',
-      () async {
-        final client = MockClient((req) async => http.Response('', 503));
-        final probe = HttpConnectivityProbe(client: client);
+    test('a non-2xx response still counts as a pass (reachability, not '
+        'a status-code contract)', () async {
+      final client = MockClient((req) async => http.Response('', 503));
+      final probe = HttpConnectivityProbe(client: client);
 
-        expect(await probe.check(), isTrue);
-      },
-    );
+      expect(await probe.check(), isTrue);
+    });
 
     test(
       'a thrown transport error resolves to a fail, never propagates',

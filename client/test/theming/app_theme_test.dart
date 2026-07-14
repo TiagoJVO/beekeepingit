@@ -39,8 +39,10 @@ void main() {
   });
 
   group('bundled typography wiring', () {
-    for (final entry in {'light': AppTheme.light(), 'dark': AppTheme.dark()}
-        .entries) {
+    for (final entry in {
+      'light': AppTheme.light(),
+      'dark': AppTheme.dark(),
+    }.entries) {
       final name = entry.key;
       final theme = entry.value;
 
@@ -64,7 +66,10 @@ void main() {
         }
         // Body/label stay on Archivo (Playfair is titles-only).
         expect(theme.textTheme.bodyLarge?.fontFamily, AppTheme.bodyFontFamily);
-        expect(theme.textTheme.labelMedium?.fontFamily, AppTheme.bodyFontFamily);
+        expect(
+          theme.textTheme.labelMedium?.fontFamily,
+          AppTheme.bodyFontFamily,
+        );
       });
 
       test('$name: the app-bar title uses the Playfair title style', () {

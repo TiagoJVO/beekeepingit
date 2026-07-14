@@ -18,8 +18,7 @@ class OrganizationScreen extends ConsumerStatefulWidget {
   const OrganizationScreen({super.key});
 
   @override
-  ConsumerState<OrganizationScreen> createState() =>
-      _OrganizationScreenState();
+  ConsumerState<OrganizationScreen> createState() => _OrganizationScreenState();
 }
 
 class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {

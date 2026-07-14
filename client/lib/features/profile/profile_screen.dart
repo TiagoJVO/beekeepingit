@@ -77,9 +77,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         _fieldErrors = {for (final fe in e.fieldErrors) fe.field: fe.message};
       });
       if (_fieldErrors.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.profileSaveError(e.detail))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.profileSaveError(e.detail))),
+        );
       }
     } catch (e) {
       if (!mounted) return;

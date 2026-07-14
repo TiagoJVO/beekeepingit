@@ -47,7 +47,8 @@ class _FakeProfileController extends ProfileController {
         name: name ?? _initial.name,
         email: email ?? _initial.email,
         locale: locale ?? _initial.locale,
-        complete: (name ?? _initial.name).isNotEmpty &&
+        complete:
+            (name ?? _initial.name).isNotEmpty &&
             (email ?? _initial.email).isNotEmpty,
       ),
     );
@@ -71,7 +72,9 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _buildScreen(
-        _FakeProfileController(_profile(name: 'Ana', email: 'ana@example.com', complete: true)),
+        _FakeProfileController(
+          _profile(name: 'Ana', email: 'ana@example.com', complete: true),
+        ),
       ),
     );
     await tester.pumpAndSettle();
