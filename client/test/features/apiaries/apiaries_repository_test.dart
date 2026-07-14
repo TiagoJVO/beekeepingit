@@ -10,8 +10,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// Dart fake, with no PowerSync database, no `powersync` package, no
 /// platform channel — the whole point of depending on [LocalStoreEngine]
 /// rather than a concrete `PowerSyncDatabase`.
+///
+/// Models the two local tables the repository touches since #256: `apiaries`
+/// ([rows]) and `apiary_counters` ([counterRows]) — the hive count reads
+/// resolve through the counters list exactly like the real correlated
+/// subquery (newest row per (apiary_id, counter_type), 0 when none).
 class FakeLocalStore implements LocalStoreEngine {
   final List<Map<String, Object?>> rows = [];
+  final List<Map<String, Object?>> counterRows = [];
   final _watchController = StreamController<void>.broadcast();
   bool cleared = false;
 
@@ -38,26 +44,42 @@ class FakeLocalStore implements LocalStoreEngine {
   @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
-    if (normalized.startsWith('INSERT')) {
+    if (normalized.startsWith('INSERT INTO APIARY_COUNTERS')) {
+      // (id, apiary_id, counter_type, value, created_at, updated_at)
+      counterRows.add({
+        'id': args[0],
+        'apiary_id': args[1],
+        'counter_type': args[2],
+        'value': args[3],
+        'created_at': args[4],
+        'updated_at': args[5],
+      });
+    } else if (normalized.startsWith('INSERT INTO APIARIES')) {
+      // (id, name, notes, created_at, updated_at) — hive_count is no longer
+      // an apiaries column (#256).
       rows.add({
         'id': args[0],
         'name': args[1],
-        'hive_count': args[2],
-        'notes': args[3],
-        'created_at': args[4],
-        'updated_at': args[5],
+        'notes': args[2],
+        'created_at': args[3],
+        'updated_at': args[4],
         'location_lon': null,
         'location_lat': null,
       });
-    } else if (normalized.startsWith('UPDATE')) {
-      // UPDATE apiaries SET name=?, hive_count=?, notes=?, updated_at=? WHERE id=?
-      final id = args[4];
+    } else if (normalized.startsWith('UPDATE APIARY_COUNTERS')) {
+      // SET value = ?, updated_at = ? WHERE id = ?
+      final id = args[2];
+      final row = counterRows.firstWhere((r) => r['id'] == id);
+      row['value'] = args[0];
+      row['updated_at'] = args[1];
+    } else if (normalized.startsWith('UPDATE APIARIES')) {
+      // SET name = ?, notes = ?, updated_at = ? WHERE id = ?
+      final id = args[3];
       final row = rows.firstWhere((r) => r['id'] == id);
       row['name'] = args[0];
-      row['hive_count'] = args[1];
-      row['notes'] = args[2];
-      row['updated_at'] = args[3];
-    } else if (normalized.startsWith('DELETE')) {
+      row['notes'] = args[1];
+      row['updated_at'] = args[2];
+    } else if (normalized.startsWith('DELETE FROM APIARIES')) {
       final id = args[0];
       rows.removeWhere((r) => r['id'] == id);
     } else {
@@ -69,17 +91,41 @@ class FakeLocalStore implements LocalStoreEngine {
   @override
   Future<void> clear() async {
     rows.clear();
+    counterRows.clear();
     cleared = true;
     _notify();
   }
 
   List<Map<String, Object?>> _select(String sql, List<Object?> args) {
     final normalized = sql.toUpperCase();
-    var results = List<Map<String, Object?>>.from(rows);
-    if (normalized.contains('WHERE ID = ?')) {
+
+    // The repository's counter reads: watchCountersFor's list (WHERE
+    // apiary_id = ?) and _upsertCounter's existence probe (WHERE apiary_id =
+    // ? AND counter_type = ?), both newest-first by updated_at.
+    if (normalized.contains('FROM APIARY_COUNTERS') &&
+        !normalized.contains('FROM APIARIES A')) {
+      var results = List<Map<String, Object?>>.from(counterRows)
+        ..sort(
+          (a, b) =>
+              (b['updated_at'] as String).compareTo(a['updated_at'] as String),
+        );
+      results = results.where((r) => r['apiary_id'] == args[0]).toList();
+      if (normalized.contains('AND COUNTER_TYPE = ?')) {
+        results = results.where((r) => r['counter_type'] == args[1]).toList();
+      }
+      return results;
+    }
+
+    // The apiaries reads (watchAll/getById): one row per apiary, hive_count
+    // resolved through the newest matching counter row — the fake's
+    // equivalent of the real correlated subquery + COALESCE 0.
+    var results = [
+      for (final r in rows) {...r, 'hive_count': _hiveCountFor(r['id'])},
+    ];
+    if (normalized.contains('WHERE A.ID = ?')) {
       results = results.where((r) => r['id'] == args[0]).toList();
     }
-    if (normalized.contains('ORDER BY CREATED_AT DESC, NAME')) {
+    if (normalized.contains('ORDER BY A.CREATED_AT DESC, A.NAME')) {
       results.sort((a, b) {
         final byCreated = (b['created_at'] as String).compareTo(
           a['created_at'] as String,
@@ -90,6 +136,22 @@ class FakeLocalStore implements LocalStoreEngine {
       });
     }
     return results;
+  }
+
+  int _hiveCountFor(Object? apiaryId) {
+    final matches =
+        counterRows
+            .where(
+              (r) =>
+                  r['apiary_id'] == apiaryId && r['counter_type'] == 'hive',
+            )
+            .toList()
+          ..sort(
+            (a, b) => (b['updated_at'] as String).compareTo(
+              a['updated_at'] as String,
+            ),
+          );
+    return matches.isEmpty ? 0 : matches.first['value'] as int;
   }
 
   void dispose() => _watchController.close();
@@ -180,9 +242,152 @@ void main() {
         await repo.create(name: 'A', hiveCount: 1);
         await pumpEventQueue();
 
-        expect(emissions, [0, 1]);
+        // The initial empty emission, then at least one re-emission showing
+        // the created apiary. create() now issues two local writes (the
+        // apiary row + its hive counter row, #256), so the fake's change
+        // notifier fires more than once — assert the invariant (starts at 0,
+        // converges to exactly one apiary) rather than a brittle exact
+        // emission count that's an artifact of how many writes create() does.
+        // The real PowerSync engine coalesces watch emissions per
+        // transaction; this fake notifies per execute().
+        expect(emissions.first, 0);
+        expect(emissions.last, 1);
+        expect(emissions.every((n) => n == 0 || n == 1), isTrue);
       },
     );
+  });
+
+  group('ApiariesRepository counters (#256)', () {
+    test('create() writes the hive count as a counter row, not an apiaries '
+        'column', () async {
+      final id = await repo.create(name: 'Serra Norte', hiveCount: 4);
+
+      expect(store.counterRows, hasLength(1));
+      final counter = store.counterRows.single;
+      expect(counter['apiary_id'], id);
+      expect(counter['counter_type'], 'hive');
+      expect(counter['value'], 4);
+      // The apiaries row itself carries no hive_count (#256: column retired;
+      // reads resolve it through the counter).
+      expect(store.rows.single.containsKey('hive_count'), isFalse);
+    });
+
+    test('hive count reads 0 when no counter row exists (#256 AC: hives '
+        'always displays, 0 default)', () async {
+      // Seed an apiary row directly with NO counter row — the shape of a
+      // pre-counter row or a hive-less create replicated from the server.
+      store.rows.add({
+        'id': 'a1',
+        'name': 'Sem Contador',
+        'notes': null,
+        'created_at': '2026-01-01T00:00:00Z',
+        'updated_at': '2026-01-01T00:00:00Z',
+        'location_lon': null,
+        'location_lat': null,
+      });
+
+      final apiary = await repo.getById('a1');
+      expect(apiary, isNotNull);
+      expect(apiary!.hiveCount, 0);
+    });
+
+    test('update() with a changed hiveCount upserts the one counter row '
+        '(never a second row for the same type)', () async {
+      final id = await repo.create(name: 'Encosta', hiveCount: 2);
+
+      await repo.update(id, hiveCount: 7);
+      await repo.update(id, hiveCount: 12);
+
+      expect(
+        store.counterRows.where((r) => r['apiary_id'] == id),
+        hasLength(1),
+        reason: 'one row per (apiary, counter_type) — upsert, not insert',
+      );
+      expect(store.counterRows.single['value'], 12);
+      expect((await repo.getById(id))!.hiveCount, 12);
+    });
+
+    test('a hive-only update never touches the apiaries row (decoupled '
+        'records: no LWW/audit churn on the apiary for a counter edit)',
+        () async {
+      final id = await repo.create(name: 'Encosta', hiveCount: 2);
+      final apiaryUpdatedAt = store.rows.single['updated_at'];
+
+      await repo.update(id, hiveCount: 9);
+
+      expect(store.rows.single['updated_at'], apiaryUpdatedAt);
+      expect(store.counterRows.single['value'], 9);
+    });
+
+    test('a name-only update never touches the counter row (whose LWW stamp '
+        'must not supersede another device\'s pending hive edit)', () async {
+      final id = await repo.create(name: 'Encosta', hiveCount: 2);
+      final counterUpdatedAt = store.counterRows.single['updated_at'];
+
+      await repo.update(id, name: 'Encosta Norte');
+
+      expect(store.counterRows.single['updated_at'], counterUpdatedAt);
+      expect(store.rows.single['name'], 'Encosta Norte');
+    });
+
+    test('an update passing the unchanged hive value writes nothing', () async {
+      final id = await repo.create(name: 'Encosta', hiveCount: 2);
+      final counterUpdatedAt = store.counterRows.single['updated_at'];
+
+      await repo.update(id, hiveCount: 2);
+
+      expect(store.counterRows.single['updated_at'], counterUpdatedAt);
+    });
+
+    test('delete() leaves counter rows in place (counters have no delete op '
+        '— the server rejects one; orphans are unreachable via reads)',
+        () async {
+      final id = await repo.create(name: 'Temp', hiveCount: 3);
+
+      await repo.delete(id);
+
+      expect(await repo.getById(id), isNull);
+      expect(
+        store.counterRows.where((r) => r['apiary_id'] == id),
+        hasLength(1),
+        reason: 'no counter DELETE may ever be queued',
+      );
+    });
+
+    test('watchCountersFor() emits typed rows, newest-per-type, known types '
+        'first', () async {
+      final id = await repo.create(name: 'Encosta', hiveCount: 2);
+      // An unknown, newer-server counter type replicated down — must come
+      // through (after the known types) so a future client can render it,
+      // and so the detail screen's label-less skip logic (not this
+      // repository) is what decides visibility.
+      store.counterRows.add({
+        'id': 'c-nucs',
+        'apiary_id': id,
+        'counter_type': 'nucs',
+        'value': 3,
+        'created_at': '2026-01-01T00:00:00Z',
+        'updated_at': '2026-01-01T00:00:00Z',
+      });
+      // A stale duplicate hive row (the transient optimistic window —
+      // repository doc comment): the newest one must win.
+      store.counterRows.add({
+        'id': 'c-stale',
+        'apiary_id': id,
+        'counter_type': 'hive',
+        'value': 99,
+        'created_at': '2020-01-01T00:00:00Z',
+        'updated_at': '2020-01-01T00:00:00Z',
+      });
+
+      final counters = await repo.watchCountersFor(id).first;
+
+      expect(counters, hasLength(2));
+      expect(counters[0].counterType, 'hive');
+      expect(counters[0].value, 2, reason: 'newest hive row wins, not the stale 99');
+      expect(counters[1].counterType, 'nucs');
+      expect(counters[1].value, 3);
+    });
   });
 
   group('LocalStoreEngine.clear()', () {
@@ -195,10 +400,12 @@ void main() {
       () async {
         await repo.create(name: 'To be wiped', hiveCount: 1);
         expect(store.rows, isNotEmpty);
+        expect(store.counterRows, isNotEmpty);
 
         await store.clear();
 
         expect(store.rows, isEmpty);
+        expect(store.counterRows, isEmpty);
         expect(store.cleared, isTrue);
       },
     );

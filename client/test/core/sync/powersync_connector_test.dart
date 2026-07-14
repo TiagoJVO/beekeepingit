@@ -1,4 +1,5 @@
 import 'package:beekeepingit_client/core/sync/powersync_connector.dart';
+import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Unit tests for [parseSupersededChanges] — the pure parsing step behind
@@ -6,6 +7,21 @@ import 'package:flutter_test/flutter_test.dart';
 /// §4.2/§8, #58). The server's shape is `services/apiaries/api/sync.go`'s
 /// `ApplyResponse`: `{"results": [{"id","op","result"}]}`.
 void main() {
+  group('entityTypeForTable (#256)', () {
+    test('apiaries rows map to the apiary entity type', () {
+      expect(entityTypeForTable(apiariesTable), apiaryEntityType);
+    });
+
+    test('apiary_counters rows map to the apiary_counter entity type — the '
+        'new op the server routes to applyCounterOp', () {
+      expect(entityTypeForTable(apiaryCountersTable), apiaryCounterEntityType);
+    });
+
+    test('an unrecognized table defaults to the apiary entity type', () {
+      expect(entityTypeForTable('something_else'), apiaryEntityType);
+    });
+  });
+
   group('parseSupersededChanges', () {
     test('returns one change per superseded op', () {
       final changes = parseSupersededChanges('''

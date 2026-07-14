@@ -6,6 +6,16 @@ import 'package:powersync/powersync.dart';
 const apiariesTable = 'apiaries';
 const apiaryEntityType = 'apiary';
 
+/// Local table + entity type for `apiaries.apiary_counters` (#256, FR-AP-7):
+/// typed 1-N counters decoupled from the apiaries table. The connector maps
+/// each queued CRUD entry's source table to its entity type
+/// (powersync_connector.dart's `_toOp`), so counter writes upload as their
+/// own `apiary_counter` ops — keyed server-side by (apiary_id, counter_type),
+/// never by this table's local row id (services/apiaries/api/sync.go's
+/// applyCounterOp).
+const apiaryCountersTable = 'apiary_counters';
+const apiaryCounterEntityType = 'apiary_counter';
+
 /// The on-device SQLite schema PowerSync manages. The `id` primary key is
 /// implicit (client-generated UUID). `deleted_at` is NOT a local column:
 /// the Sync Rules exclude tombstoned rows, so a server-side delete simply
@@ -26,15 +36,37 @@ const apiaryEntityType = 'apiary';
 /// stored location (nullable, matching the DB column's own optionality).
 /// Used by #33's offline proximity ordering and #34/#37's map + offline
 /// distance measurement alike.
+///
+/// `hive_count` is NOT a column on [apiariesTable] anymore (#256): it was
+/// retired server-side (apiaries migration 00005) in favor of the
+/// [apiaryCountersTable] 1-N child table below, and this local schema
+/// mirrors that — the repository reads the hive count via a local LEFT JOIN
+/// (0 when no row exists) and writes it as a counter row, never as an
+/// apiaries column.
 const appSchema = Schema([
   Table(apiariesTable, [
     Column.text('organization_id'),
     Column.text('name'),
-    Column.integer('hive_count'),
     Column.text('notes'),
     Column.text('created_at'),
     Column.text('updated_at'),
     Column.real('location_lon'),
     Column.real('location_lat'),
+  ]),
+  // apiary_counters (#256): one row per (apiary, counter_type) — the server
+  // enforces that uniqueness (a UNIQUE constraint + upsert keyed by
+  // (apiary_id, counter_type), never by this table's client-generated row
+  // id); locally the repository's own upsert-shaped writes
+  // (apiaries_repository.dart's update) maintain it, since PowerSync's
+  // local schema has no unique-constraint support of its own. counter_type
+  // comes from the known set in features/apiaries/counter_types.dart,
+  // mirrored from the owning service (services/apiaries/api/counters.go).
+  Table(apiaryCountersTable, [
+    Column.text('organization_id'),
+    Column.text('apiary_id'),
+    Column.text('counter_type'),
+    Column.integer('value'),
+    Column.text('created_at'),
+    Column.text('updated_at'),
   ]),
 ]);

@@ -12,13 +12,22 @@ type ApiariesApiary struct {
 	ID             pgtype.UUID        `json:"id"`
 	OrganizationID pgtype.UUID        `json:"organization_id"`
 	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 	Location       interface{}        `json:"location"`
 	Notes          pgtype.Text        `json:"notes"`
+}
+
+type ApiariesApiaryCounter struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ApiaryID       pgtype.UUID        `json:"apiary_id"`
+	CounterType    string             `json:"counter_type"`
+	Value          int32              `json:"value"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ApiariesAuditLog struct {

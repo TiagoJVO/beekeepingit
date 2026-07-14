@@ -67,14 +67,26 @@ auth:
 # interval`) would need re-evaluation server-side to keep rolling forward,
 # which Sync Rules also doesn't do — that refinement is deferred (tracked in
 # FOLLOWUPS.md) rather than approximated here.
+#
+# apiaries.apiary_counters (#256, FR-AP-7): typed 1-N counters decoupled from
+# the apiaries table — hive_count is no longer a column on apiaries.apiaries
+# (retired by that service's migration 00005), so it is gone from the
+# apiaries SELECT below and the per-type counter rows stream instead. The
+# publication needs no change: it is schema-scoped (`FOR TABLES IN SCHEMA
+# apiaries, ...`, charts/postgres/templates/cluster.yaml), so the new table
+# is captured automatically. No `deleted_at` filter — counters have no
+# tombstone of their own (a counter is always either the current value or
+# absent; its apiary's tombstone already removes the apiary — and with it
+# every dependent read — from the device's slice).
 syncConfig:
   bucket_definitions:
     by_organization:
       parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
       data:
-        - SELECT id, organization_id, name, hive_count, created_at, updated_at,
+        - SELECT id, organization_id, name, created_at, updated_at,
           ST_X(location) AS location_lon, ST_Y(location) AS location_lat
           FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        - SELECT * FROM apiaries.apiary_counters WHERE organization_id = bucket.organization_id
         - SELECT * FROM organizations.organizations WHERE id = bucket.organization_id
         - SELECT * FROM apiaries.audit_log WHERE organization_id = bucket.organization_id
         - SELECT * FROM apiaries.sync_conflict_log WHERE organization_id = bucket.organization_id

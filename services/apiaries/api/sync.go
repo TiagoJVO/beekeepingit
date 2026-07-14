@@ -39,6 +39,23 @@ type apiaryData struct {
 	Notes     *string `json:"notes"`
 }
 
+// counterData is the sync wire shape for an entityTypeApiaryCounter op
+// (#256): apiary_id + counter_type identify WHICH counter this op targets —
+// the client-generated Op.ID is only the local row's own PK (PowerSync's
+// CRUD-queue key), never the server's identity for this row. The server's
+// real uniqueness is (apiary_id, counter_type) — the table's UNIQUE
+// constraint (00005_create_apiary_counters.sql) — so two different devices
+// creating a "hive" counter for the same apiary offline generate two
+// DIFFERENT client ids for what the server correctly collapses into ONE row
+// via applyCounterOp's upsert. Value is a pointer (not a plain int32) so
+// validateOp can distinguish "absent" (a patch with nothing to change) from
+// "explicitly zero".
+type counterData struct {
+	ApiaryID    *string `json:"apiary_id"`
+	CounterType *string `json:"counter_type"`
+	Value       *int32  `json:"value"`
+}
+
 // Per-op apply outcomes (§5.2).
 const (
 	resultApplied    = "applied"
@@ -93,7 +110,27 @@ func validateBatch() http.HandlerFunc {
 	}
 }
 
+// validateOp dry-runs one op against the same rules applyOp/applyCounterOp
+// enforce, branching on entity_type (#256 adds entityTypeApiaryCounter
+// alongside the original entityTypeApiary) — a single batch may freely mix
+// both kinds of op.
 func validateOp(i int, op Op) []problem.FieldError {
+	switch op.EntityType {
+	case entityTypeApiaryCounter:
+		return validateCounterOp(i, op)
+	default:
+		return validateApiaryOp(i, op)
+	}
+}
+
+// validateApiaryOp is the original entityTypeApiary validation (name/
+// hive_count/notes on the apiaries row itself) — unchanged in behavior from
+// before #256, just renamed/split out now that validateOp dispatches on
+// entity_type. entity_type itself is validated permissively here (accepting
+// either known type falls through to the matching validator; anything else
+// is rejected as invalid, matching the pre-#256 "must be apiary" message's
+// intent generalized to "must be a known type").
+func validateApiaryOp(i int, op Op) []problem.FieldError {
 	prefix := fmt.Sprintf("ops[%d]", i)
 	var errs []problem.FieldError
 
@@ -103,7 +140,7 @@ func validateOp(i int, op Op) []problem.FieldError {
 		errs = append(errs, problem.FieldError{Field: prefix + ".op", Code: "invalid", Message: "op must be put, patch or delete"})
 	}
 	if op.EntityType != entityTypeApiary {
-		errs = append(errs, problem.FieldError{Field: prefix + ".entity_type", Code: "invalid", Message: "entity_type must be apiary"})
+		errs = append(errs, problem.FieldError{Field: prefix + ".entity_type", Code: "invalid", Message: "entity_type must be apiary or apiary_counter"})
 	}
 	if _, err := uuid.Parse(op.ID); err != nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".id", Code: "invalid", Message: "id must be a UUID"})
@@ -141,6 +178,54 @@ func validateOp(i int, op Op) []problem.FieldError {
 	return errs
 }
 
+// validateCounterOp validates an entityTypeApiaryCounter op (#256): put/patch
+// only (a counter has no independent delete — it has no lifecycle apart from
+// its apiary, data-model.md §2's soft-delete convention doesn't apply to a
+// row that's always either "the current value" or simply absent), a valid
+// apiary_id, a KNOWN counter_type (the server-side half of #256 AC 2 — this
+// is where an unknown type is actually rejected, unlike the always-hive
+// wire shape apiary ops carry), and a non-negative value.
+func validateCounterOp(i int, op Op) []problem.FieldError {
+	prefix := fmt.Sprintf("ops[%d]", i)
+	var errs []problem.FieldError
+
+	switch op.Op {
+	case "put", "patch":
+	default:
+		errs = append(errs, problem.FieldError{Field: prefix + ".op", Code: "invalid", Message: "op must be put or patch for apiary_counter (counters have no delete)"})
+	}
+	if _, err := uuid.Parse(op.ID); err != nil {
+		errs = append(errs, problem.FieldError{Field: prefix + ".id", Code: "invalid", Message: "id must be a UUID"})
+	}
+	if op.UpdatedAt.IsZero() {
+		errs = append(errs, problem.FieldError{Field: prefix + ".updated_at", Code: "required", Message: "updated_at is required"})
+	}
+
+	var data counterData
+	if len(op.Data) > 0 {
+		if err := json.Unmarshal(op.Data, &data); err != nil {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data", Code: "invalid", Message: "data must be an object"})
+			return errs
+		}
+	}
+	if data.ApiaryID == nil {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "required", Message: "apiary_id is required"})
+	} else if _, err := uuid.Parse(*data.ApiaryID); err != nil {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
+	}
+	if data.CounterType == nil {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.counter_type", Code: "required", Message: "counter_type is required"})
+	} else if !isKnownCounterType(*data.CounterType) {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.counter_type", Code: "invalid", Message: "counter_type must be one of the known counter types"})
+	}
+	if data.Value == nil {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.value", Code: "required", Message: "value is required"})
+	} else if *data.Value < 0 {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.value", Code: "out_of_range", Message: "value must be >= 0"})
+	}
+	return errs
+}
+
 // applyBatch applies the batch in one local transaction: record-level LWW +
 // conflict log + tombstones + idempotency on the client UUID PK (§4, §5.2).
 func applyBatch(pool *pgxpool.Pool) http.HandlerFunc {
@@ -165,7 +250,15 @@ func applyBatch(pool *pgxpool.Pool) http.HandlerFunc {
 		q := sqlcgen.New(tx)
 		results := make([]OpResult, 0, len(batch.Ops))
 		for _, op := range batch.Ops {
-			res, err := applyOp(r.Context(), q, org, userID, op)
+			var (
+				res OpResult
+				err error
+			)
+			if op.EntityType == entityTypeApiaryCounter {
+				res, err = applyCounterOp(r.Context(), q, org, userID, op)
+			} else {
+				res, err = applyOp(r.Context(), q, org, userID, op)
+			}
 			if err != nil {
 				problem.Write(w, r, problem.Internal())
 				return
@@ -232,11 +325,27 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 		}
 		want := mergeOp(rowState{}, op, data)
 		if err := q.InsertApiary(ctx, sqlcgen.InsertApiaryParams{
-			ID: pgID, OrganizationID: org, Name: want.name, HiveCount: want.hive,
+			ID: pgID, OrganizationID: org, Name: want.name,
 			Notes:     notesParamFromState(want.notes),
 			UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
 		}); err != nil {
 			return OpResult{}, err
+		}
+		// hive_count (#256): upserted into apiary_counters, not a column on
+		// the just-inserted row — same local transaction (q wraps the
+		// caller's pgx.Tx), so the apiary and its hive counter commit
+		// together. ONLY when the op explicitly carries hive_count: the new
+		// client sends the hive count as its own entityTypeApiaryCounter op
+		// (same batch, same device timestamp) instead of embedding it here,
+		// and an unconditional 0-value upsert at this op's timestamp would
+		// make that sibling counter op lose LWW ("equal ts, different value"
+		// ⇒ superseded in applyCounterOp) and silently drop the user's real
+		// hive count. Absent hive_count ⇒ no counter row; every read path
+		// COALESCEs to 0 (the "0 when no row exists" default, #256 AC).
+		if data.HiveCount != nil {
+			if err := upsertCounter(ctx, q, org, pgID, counterTypeHive, want.hive, incomingTS); err != nil {
+				return OpResult{}, err
+			}
 		}
 		if err := writeAuditLog(ctx, q, org, userID, op, history.ChangeCreate, rowState{}, want); err != nil {
 			return OpResult{}, err
@@ -250,11 +359,23 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 	// Strictly-newer incoming wins (§4.1).
 	if op.UpdatedAt.After(stored.UpdatedAt.Time) {
 		if err := q.UpdateApiary(ctx, sqlcgen.UpdateApiaryParams{
-			OrganizationID: org, ID: pgID, Name: want.name, HiveCount: want.hive,
+			OrganizationID: org, ID: pgID, Name: want.name,
 			Notes:     notesParamFromState(want.notes),
 			UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
 		}); err != nil {
 			return OpResult{}, err
+		}
+		// hive_count (#256): written only when the op explicitly carries it —
+		// same reasoning as the create branch above (an op that doesn't
+		// mention hive_count must not touch the counter row: it would bump
+		// the counter's own updated_at and could LWW-supersede a legitimate
+		// sibling entityTypeApiaryCounter op in the same batch). A delete op
+		// never carries data, so it's excluded by the same nil check —
+		// tombstoning an apiary isn't a hive-count change.
+		if data.HiveCount != nil && op.Op != "delete" {
+			if err := upsertCounter(ctx, q, org, pgID, counterTypeHive, want.hive, incomingTS); err != nil {
+				return OpResult{}, err
+			}
 		}
 		changeType := history.ChangeUpdate
 		if op.Op == "delete" {
@@ -278,13 +399,92 @@ func applyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID st
 	return OpResult{ID: op.ID, Op: op.Op, Result: resultSuperseded}, nil
 }
 
+// applyCounterOp applies one entityTypeApiaryCounter op (#256) — the
+// apiary_counters counterpart of applyOp, but keyed by (apiary_id,
+// counter_type) rather than the client-generated Op.ID: that id is only the
+// local row's own PK on the client (PowerSync's CRUD-queue key), never the
+// server's identity for a counter row, since two different devices creating
+// the same apiary's "hive" counter offline generate two different client
+// ids for what the server correctly collapses into ONE row (the table's
+// UNIQUE(apiary_id, counter_type) constraint). LWW (§4.1) still applies,
+// compared against the STORED counter row's own updated_at — record-level,
+// same as applyOp, just for a one-field "record".
+func applyCounterOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op) (OpResult, error) {
+	var data counterData
+	if len(op.Data) > 0 {
+		if err := json.Unmarshal(op.Data, &data); err != nil {
+			return OpResult{}, err
+		}
+	}
+	// validateOp already guarantees these are non-nil/well-formed by the time
+	// apply runs (validate-first, sync.md §6.2) — applyBatch never reaches
+	// apply on a batch that failed validate.
+	apiaryID, err := uuid.Parse(*data.ApiaryID)
+	if err != nil {
+		return OpResult{}, err
+	}
+	pgApiaryID := pgtype.UUID{Bytes: apiaryID, Valid: true}
+	counterType := *data.CounterType
+	incomingValue := *data.Value
+	incomingTS := pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
+
+	stored, err := q.GetApiaryCounter(ctx, sqlcgen.GetApiaryCounterParams{OrganizationID: org, ApiaryID: pgApiaryID, CounterType: counterType})
+	missing := errors.Is(err, pgx.ErrNoRows)
+	if err != nil && !missing {
+		return OpResult{}, err
+	}
+
+	// No stored row: offline create — always applies (nothing to compare
+	// against, mirroring applyOp's own "missing ⇒ create" branch).
+	if missing {
+		if err := upsertCounter(ctx, q, org, pgApiaryID, counterType, incomingValue, incomingTS); err != nil {
+			return OpResult{}, err
+		}
+		if err := writeCounterAuditLog(ctx, q, org, userID, op, history.ChangeCreate, apiaryID, counterType, nil, incomingValue); err != nil {
+			return OpResult{}, err
+		}
+		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+	}
+
+	// Strictly-newer incoming wins (§4.1).
+	if op.UpdatedAt.After(stored.UpdatedAt.Time) {
+		if err := upsertCounter(ctx, q, org, pgApiaryID, counterType, incomingValue, incomingTS); err != nil {
+			return OpResult{}, err
+		}
+		if err := writeCounterAuditLog(ctx, q, org, userID, op, history.ChangeUpdate, apiaryID, counterType, &stored.Value, incomingValue); err != nil {
+			return OpResult{}, err
+		}
+		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+	}
+
+	// Equal or older. Same value ⇒ idempotent re-send, applied, no conflict.
+	// Different value ⇒ the server value is kept and the loss is logged
+	// (§4.1/§4.2), matching applyOp's own equal-or-older branch.
+	if incomingValue == stored.Value {
+		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+	}
+	if err := logCounterConflict(ctx, q, org, userID, op, stored); err != nil {
+		return OpResult{}, err
+	}
+	return OpResult{ID: op.ID, Op: op.Op, Result: resultSuperseded}, nil
+}
+
 // mergeOp computes the row an op would produce, given the current state (empty
 // for a create). put replaces; patch overlays provided fields; delete sets the
 // tombstone (§4.5).
+//
+// hive (#256): on put, an ABSENT hive_count preserves current.hive rather
+// than resetting it to 0 — hive now lives in its own apiary_counters record
+// (its writes ride the entityTypeApiaryCounter op or an explicit hive_count
+// field), so a put that doesn't mention it must not claim it changed: the
+// counter row wouldn't be written (applyOp's nil-guard), and a want.hive of
+// 0 would make the audit diff record a 12→0 change that never actually
+// happened. For a create, current is rowState{} (hive 0), so absent-on-create
+// still yields the 0 default — same observable as before.
 func mergeOp(current rowState, op Op, data apiaryData) rowState {
 	switch op.Op {
 	case "put":
-		out := rowState{}
+		out := rowState{hive: current.hive}
 		if data.Name != nil {
 			out.name = *data.Name
 		}
@@ -375,6 +575,81 @@ func logConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userI
 		OrganizationID: org,
 		EntityType:     entityTypeApiary,
 		EntityID:       stored.ID,
+		WinningPayload: winning,
+		LosingPayload:  losing,
+		Winner:         "server",
+		ActorUserID:    parseActor(userID),
+		OccurredAt:     pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true},
+	})
+}
+
+// writeCounterAuditLog is writeAuditLog's counterpart for an applied
+// entityTypeApiaryCounter create/update (#256) — counters have no delete
+// (validateCounterOp), so there is no ChangeDelete branch to mirror.
+// entity_id is the apiary_id (a counter row has no client-stable id of its
+// own — see applyCounterOp's doc comment), so this apiary's combined history
+// timeline (apiaries.audit_log rows for entity_type=apiary AND
+// entity_type=apiary_counter, both keyed by the same apiary_id) reads as one
+// coherent per-apiary story: "this apiary's name changed... this apiary's
+// hive counter changed...". before is nil on create (baseline, matching
+// writeAuditLog's own create convention); non-nil on update, diffed via
+// history.ComputeChange exactly like every other field this service audits.
+func writeCounterAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, changeType string, apiaryID uuid.UUID, counterType string, before *int32, after int32) error {
+	var oldFields map[string]any
+	if before != nil {
+		oldFields = map[string]any{counterType: *before}
+	}
+	newFields := map[string]any{counterType: after}
+	changedFields, change := history.ComputeChange(changeType, oldFields, newFields)
+
+	changeJSON, err := json.Marshal(change)
+	if err != nil {
+		return err
+	}
+
+	auditID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	return q.InsertAuditLog(ctx, sqlcgen.InsertAuditLogParams{
+		ID:             auditID,
+		OrganizationID: org,
+		EntityType:     entityTypeApiaryCounter,
+		EntityID:       pgtype.UUID{Bytes: apiaryID, Valid: true},
+		ChangeType:     changeType,
+		ActorUserID:    parseActor(userID),
+		OccurredAt:     pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true},
+		ChangedFields:  changedFields,
+		Change:         changeJSON,
+	})
+}
+
+// logCounterConflict is logConflict's counterpart for an LWW-losing
+// entityTypeApiaryCounter op (#256): the losing offline edit is preserved
+// (history.md §6 "LWW losers are not lost"), not silently dropped, exactly
+// like an apiary-op conflict — just against the counter's (apiary_id,
+// counter_type, value) shape instead of the full apiary row. The losing
+// (incoming) value itself doesn't need its own parameter — it's already
+// captured verbatim in the marshaled losing payload below (op.Data carries
+// it), mirroring how logConflict's own losing payload is just json.Marshal(op).
+func logCounterConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, stored sqlcgen.ApiariesApiaryCounter) error {
+	winning, err := json.Marshal(map[string]any{
+		"apiary_id":    uuidString(stored.ApiaryID),
+		"counter_type": stored.CounterType,
+		"value":        stored.Value,
+		"updated_at":   stored.UpdatedAt.Time,
+	})
+	if err != nil {
+		return err
+	}
+	losing, err := json.Marshal(op)
+	if err != nil {
+		return err
+	}
+
+	conflictID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	return q.InsertConflict(ctx, sqlcgen.InsertConflictParams{
+		ID:             conflictID,
+		OrganizationID: org,
+		EntityType:     entityTypeApiaryCounter,
+		EntityID:       stored.ApiaryID,
 		WinningPayload: winning,
 		LosingPayload:  losing,
 		Winner:         "server",

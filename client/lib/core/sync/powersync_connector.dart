@@ -58,7 +58,9 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     final token = await getAccessToken();
     if (token == null) return; // will retry once authenticated
 
-    final ops = tx.crud.map(_toOp).toList();
+    final ops = <Map<String, dynamic>>[
+      for (final e in tx.crud) await _toOp(database, e),
+    ];
     final resp = await _http.post(
       Uri.parse(AppConfig.syncBatchUrl),
       headers: {
@@ -86,8 +88,37 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     throw http.ClientException('sync batch failed: ${resp.statusCode}');
   }
 
-  Map<String, dynamic> _toOp(CrudEntry e) {
-    final data = e.opData;
+  Future<Map<String, dynamic>> _toOp(
+    PowerSyncDatabase database,
+    CrudEntry e,
+  ) async {
+    var data = e.opData;
+    // apiary_counter identity enrichment (#256): a local counter-value
+    // UPDATE queues a `patch` whose opData carries only the CHANGED columns
+    // (value, updated_at) — but the server identifies a counter by
+    // (apiary_id, counter_type), never by the client row id (two devices'
+    // rows for the same counter collapse into one server row, so ids don't
+    // correlate — services/apiaries/api/sync.go's applyCounterOp). Re-attach
+    // the identity columns from the local row so every counter op is
+    // self-describing. If the local row is somehow gone by upload time (a
+    // pathological purge/race), the op goes out as-is and the server's
+    // validation rejects it with field-level detail — surfaced through the
+    // existing 4xx handling above, never a silent wrong-row write.
+    if (e.table == apiaryCountersTable &&
+        data != null &&
+        (data['apiary_id'] == null || data['counter_type'] == null)) {
+      final row = await database.getOptional(
+        'SELECT apiary_id, counter_type FROM $apiaryCountersTable WHERE id = ?',
+        [e.id],
+      );
+      if (row != null) {
+        data = {
+          ...data,
+          'apiary_id': data['apiary_id'] ?? row['apiary_id'],
+          'counter_type': data['counter_type'] ?? row['counter_type'],
+        };
+      }
+    }
     // Device edit time is the LWW comparator (sync.md §4.3). PUT/PATCH carry
     // it in `updated_at`; DELETE has no payload, so fall back to now (the
     // skeleton doesn't preserve offline-delete time — offline edits, which the
@@ -97,7 +128,7 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
         DateTime.now().toUtc().toIso8601String();
     return {
       'op': _opName(e.op),
-      'entity_type': apiaryEntityType,
+      'entity_type': entityTypeForTable(e.table),
       'id': e.id,
       'data': data,
       'updated_at': updatedAt,
@@ -120,6 +151,20 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
   }
 }
 
+/// Maps a queued CRUD entry's source table to its wire entity_type (#256:
+/// the queue now carries two tables' writes — [apiariesTable] rows and
+/// [apiaryCountersTable] rows — where before #256 everything was an apiary).
+/// Any unrecognized table defaults to the apiary entity type, preserving the
+/// previous hardcoded behavior for safety; a genuinely new syncable table
+/// must add its own mapping here alongside its schema entry
+/// (powersync_schema.dart). Top-level + `@visibleForTesting` so the dispatch
+/// is unit-testable without a real PowerSync database.
+@visibleForTesting
+String entityTypeForTable(String table) => switch (table) {
+  apiaryCountersTable => apiaryCounterEntityType,
+  _ => apiaryEntityType,
+};
+
 /// Parses the apply endpoint's `{"results": [{"id","op","result"}]}` body
 /// (services/apiaries/api/sync.go's `ApplyResponse`) and returns one
 /// [SupersededChange] per op the server reports as `superseded` (sync.md
@@ -128,6 +173,15 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
 /// PowerSync database; returns an empty list for a malformed/unexpected body
 /// rather than throwing, matching [BeekeepingitConnector.uploadData]'s
 /// best-effort handling of this response.
+///
+/// entityType approximation (#256): the per-op result carries no entity_type
+/// of its own, so a superseded `apiary_counter` op is also labeled with the
+/// apiary entity type here. Today that distinction is invisible — the only
+/// consumer (app_shell.dart's listener on supersededNotificationProvider)
+/// shows one generic "your change was overwritten" toast regardless of
+/// entity — so no extra response plumbing is warranted yet; when a
+/// notify-and-fix UI needs per-entity fidelity (EPIC-06), add entity_type to
+/// the server's OpResult (additive) and read it here.
 @visibleForTesting
 List<SupersededChange> parseSupersededChanges(String body) {
   try {

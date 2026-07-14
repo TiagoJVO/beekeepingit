@@ -6,7 +6,7 @@ wins over earlier requirement wording.
 > Decisions are the working **default, not immutable**. If contradicting one makes sense,
 > propose it to the user; on confirmation, update it here (and the affected requirements).
 
-_Last updated: 2026-07-12._
+_Last updated: 2026-07-13._
 
 ---
 
@@ -30,6 +30,10 @@ _Last updated: 2026-07-12._
 - **Decision:** **No hive entities.** Apiary keeps a **hive count** (FR-AP-7), and
   relevant activities capture a **"number of hives involved"** attribute. Activities
   remain recorded at the **apiary** level.
+- **Refined by D-20 (2026-07-13):** the hive **count** is still not an entity, but it now
+  lives as a typed row in the `apiary_counters` 1-N child table rather than an `apiaries.hive_count`
+  column (so future countables need no `apiaries`-table change). The current-state-vs-event split
+  below is unchanged.
 - **Supersedes:** Q-HIVE, Q-GRAN.
 - **Affected requirements:**
   - **FR-AC-1** — Honey harvest gains **"number of hives harvested"**; treatment/
@@ -345,6 +349,38 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Not decided here (deferred to feature epics):** whether/when to actually implement any of
   the five future-relevant data points above. This decision **scopes the obligations**, it
   does not commit to schema changes.
+
+## D-20 — Apiary counters: typed 1-N child table, decoupled from the apiaries row
+
+- **Decision (user, 2026-07-13):** an apiary's countable current-state quantities live in a
+  **1-N child table `apiary_counters`** (`apiary → counters`), **not** as columns on the
+  `apiaries` table. Each row is one **typed counter** — `(id, organization_id, apiary_id →
+apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with **`UNIQUE
+(apiary_id, counter_type)`**, so an apiary can never hold two counters of the same type (apiary
+  X can never have two "hive" counts). The **known set of counter types** is **validated in the
+  owning service** (initially `['hive']`), **not** a DB enum/CHECK on the type — mirroring the
+  `data-model.md` §2 "extensible enums" convention (activity `type`, membership `role`) — so
+  adding a future countable (nucs, supers, queens, …) is a **code-only append** (server + client
+  constants), with **no `apiaries`-table migration**.
+- **Hive count is now a counter row.** This **revises D-2's shape** (which kept hive count as a
+  plain `apiaries.hive_count` column): the column is **retired**, existing values migrated into
+  `hive` counter rows, and the sync-rules bucket, the REST/sync wire shape, and the client schema
+  were coordinated in the **same change** (walking-skeleton phase, no legacy clients). **D-2's
+  substance stands:** there are still **no hive entities**, and the current-state-vs-event split
+  is unchanged — a counter is the apiary's **current state** ("how many hives are here now"),
+  while an activity's `hives_involved` attribute is an **event record** ("how many hives this
+  harvest touched"). The two are complementary, not redundant.
+- **Behavior:** on the detail screen the **hives counter always displays (0 when no row exists)**;
+  every other known type renders **only when a row exists**, built generically over the known set
+  so a future type appears by adding a constant. Counter writes flow through the offline-sync path
+  as their own `apiary_counter` op — record-level LWW keyed by `(apiary_id, counter_type)` with
+  upsert semantics (the client-generated row id is not the server's identity) — and are audited in
+  `apiaries.audit_log` under `entity_type = 'apiary_counter'` like any change (FR-HIS). API/sync
+  reads still expose a top-level `hive_count` field (resolved from the counter, 0 when absent), so
+  the decoupling is invisible to consumers.
+- **Supersedes/refines:** the `hive_count`-column part of **D-2** (kept as a counter, not an
+  entity). Touches **FR-AP-7**, FR-HIS-1, D-6 (sync), #256. Design in
+  [`docs/architecture/data-model.md`](../docs/architecture/data-model.md) §7.
 
 ---
 

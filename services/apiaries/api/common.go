@@ -19,6 +19,14 @@ import (
 
 const entityTypeApiary = "apiary"
 
+// entityTypeApiaryCounter is the sync-apply entity_type for apiary_counters
+// rows (#256) — a second, parallel entity_type the same batch endpoint
+// accepts alongside entityTypeApiary (sync.go's validateOp/applyOp branch on
+// it), so a client transaction can freely mix apiary and counter ops in one
+// push. Kept as its own constant (not inlined) since it appears in both
+// sync.go (validate/apply) and history/conflict-log rows.
+const entityTypeApiaryCounter = "apiary_counter"
+
 // requireOrg is the tenancy-context hand-off point (FR-TEN-2, #30 AC:
 // "a tenancy context is propagated from the validated token through the
 // service layer to the data layer"): it pulls the org id
