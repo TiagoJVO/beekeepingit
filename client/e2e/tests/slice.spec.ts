@@ -204,7 +204,14 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.getByLabel("Number of hives").click();
   await page.keyboard.type("0");
   await page.getByLabel("Notes").click();
-  await page.keyboard.type(apiaryNotes);
+  // Same Flutter-web dropped-keystroke workaround as the hive-count edit
+  // below: observed in CI dropping a variable-length prefix ("South " gone
+  // on one run, just "S" on a retry) when typing starts right after focus.
+  // The no-op clear settles the input connection before the real content.
+  await page.keyboard.press("Control+A");
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type(apiaryNotes, { delay: 80 });
   await page.getByText("Save", { exact: true }).click();
 
   await expect(page.getByText(apiaryName)).toBeVisible();
