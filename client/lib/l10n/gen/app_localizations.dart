@@ -764,6 +764,18 @@ abstract class AppLocalizations {
   /// **'Use current location'**
   String get apiaryUseCurrentLocationAction;
 
+  /// Button on the apiary form that expands the embedded map-pin picker (collapsed by default so the Save action stays reachable) (#252)
+  ///
+  /// In en, this message translates to:
+  /// **'Set on map'**
+  String get apiarySetOnMapAction;
+
+  /// Button on the apiary form that collapses the expanded map-pin picker (#252)
+  ///
+  /// In en, this message translates to:
+  /// **'Hide map'**
+  String get apiaryHideMapAction;
+
   /// Button on the apiary form that clears the currently-set location (#252 AC: the location is editable and clearable)
   ///
   /// In en, this message translates to:

@@ -111,6 +111,8 @@
   "apiaryPlaceLabelHint": "ex.: Montargil",
   "apiaryLocationSectionLabel": "Localização",
   "apiaryUseCurrentLocationAction": "Usar localização atual",
+  "apiarySetOnMapAction": "Definir no mapa",
+  "apiaryHideMapAction": "Ocultar mapa",
   "apiaryLocationClearAction": "Limpar localização",
   "apiaryFormLocationPermissionDenied": "Acesso à localização negado — ainda pode colocar um alfinete no mapa.",
   "apiaryFormLocationSet": "Localização definida: {lat}, {lon}",

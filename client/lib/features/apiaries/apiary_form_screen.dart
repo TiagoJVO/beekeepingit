@@ -32,6 +32,19 @@ const _pickerFocusedZoom = 13.0;
 /// the same graceful-permission-handling pattern the map screen already
 /// uses for its own user-location marker). An optional free-text
 /// [_placeLabelController] (e.g. "Montargil") is stored independently.
+///
+/// The map picker is **collapsed by default** ([_mapPickerExpanded]) — it
+/// expands inline only when the user taps "Set on map", or automatically
+/// when editing an apiary that already has a location. Location is entirely
+/// optional (#252 AC: editable and clearable), so the primary Save action
+/// must never be pushed below the fold or obscured by an always-on 220px
+/// map in the scrollable form: the walking-skeleton e2e creates an apiary
+/// with only name+hives (never touching location), and an always-embedded
+/// map crowded/collided with the Save button in the constrained CI viewport
+/// (the map's own gesture region also competes with the form's scroll). A
+/// compact summary + on-demand expansion keeps the default create form
+/// short and Save immediately reachable, while still offering the embedded
+/// map picker when wanted.
 class ApiaryFormScreen extends ConsumerStatefulWidget {
   const ApiaryFormScreen({this.apiaryId, super.key});
 
@@ -56,6 +69,12 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
   /// location" action, and the "clear location" action.
   ll.LatLng? _location;
   bool _locationPermissionDenied = false;
+
+  /// Whether the inline map picker is expanded. Collapsed by default (keeps
+  /// the primary Save action reachable — see the class doc comment); the
+  /// user expands it via "Set on map", and it auto-expands when editing an
+  /// apiary that already has a location so the existing pin is visible.
+  bool _mapPickerExpanded = false;
 
   @override
   void initState() {
@@ -84,6 +103,10 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
       _placeLabelController.text = existing.placeLabel ?? '';
       if (existing.hasLocation) {
         _location = ll.LatLng(existing.locationLat!, existing.locationLon!);
+        // Show the existing pin without an extra tap when editing a located
+        // apiary — the collapse-by-default rule is about keeping a fresh
+        // create form short, not hiding a location the apiary already has.
+        _mapPickerExpanded = true;
       }
     }
     setState(() => _busy = false);
@@ -117,6 +140,8 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
       setState(() {
         _location = ll.LatLng(position.latitude, position.longitude);
         _locationPermissionDenied = false;
+        // Reveal the pin that was just set so the user can confirm/adjust it.
+        _mapPickerExpanded = true;
       });
     } on Exception {
       // Any platform/plugin failure degrades to the same "denied/unavailable"
@@ -135,6 +160,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
   }
 
   void _clearLocation() => setState(() => _location = null);
+
+  void _toggleMapPicker() =>
+      setState(() => _mapPickerExpanded = !_mapPickerExpanded);
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -278,9 +306,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                         l10n.apiaryLocationSectionLabel,
                         style: Theme.of(context).textTheme.labelLarge,
                       ),
-                      const SizedBox(height: 8),
-                      _LocationPicker(location: _location, onTap: _onMapTap),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Semantics(
                         liveRegion: true,
                         child: Text(
@@ -305,32 +331,46 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                               ),
                         ),
                       ],
+                      // Location capture is COLLAPSED by default: only a single
+                      // compact "set on map" toggle shows until the user opts
+                      // in. This keeps the primary Save action reachable in a
+                      // fresh create form — an always-on 220px map + its
+                      // control buttons used to push Save below the fold and
+                      // collide with it in a constrained viewport (the
+                      // regression the walking-skeleton e2e caught). When
+                      // expanded, the full picker + "use current location" +
+                      // "clear" appear.
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SecondaryActionButton(
-                              key: const Key(
-                                'apiary-use-current-location-button',
-                              ),
-                              label: l10n.apiaryUseCurrentLocationAction,
-                              icon: Icons.my_location,
-                              onPressed: _useCurrentLocation,
-                            ),
-                          ),
-                          if (_location != null) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: SecondaryActionButton(
-                                key: const Key('apiary-clear-location-button'),
-                                label: l10n.apiaryLocationClearAction,
-                                icon: Icons.location_off_outlined,
-                                onPressed: _clearLocation,
-                              ),
-                            ),
-                          ],
-                        ],
+                      SecondaryActionButton(
+                        key: const Key('apiary-toggle-map-button'),
+                        label: _mapPickerExpanded
+                            ? l10n.apiaryHideMapAction
+                            : l10n.apiarySetOnMapAction,
+                        icon: _mapPickerExpanded
+                            ? Icons.expand_less
+                            : Icons.map_outlined,
+                        onPressed: _toggleMapPicker,
                       ),
+                      if (_mapPickerExpanded) ...[
+                        const SizedBox(height: 8),
+                        _LocationPicker(location: _location, onTap: _onMapTap),
+                        const SizedBox(height: 8),
+                        SecondaryActionButton(
+                          key: const Key('apiary-use-current-location-button'),
+                          label: l10n.apiaryUseCurrentLocationAction,
+                          icon: Icons.my_location,
+                          onPressed: _useCurrentLocation,
+                        ),
+                        if (_location != null) ...[
+                          const SizedBox(height: 8),
+                          SecondaryActionButton(
+                            key: const Key('apiary-clear-location-button'),
+                            label: l10n.apiaryLocationClearAction,
+                            icon: Icons.location_off_outlined,
+                            onPressed: _clearLocation,
+                          ),
+                        ],
+                      ],
                       const SizedBox(height: 16),
                       TextFormField(
                         key: const Key('apiary-notes-field'),

@@ -404,6 +404,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiaryUseCurrentLocationAction => 'Use current location';
 
   @override
+  String get apiarySetOnMapAction => 'Set on map';
+
+  @override
+  String get apiaryHideMapAction => 'Hide map';
+
+  @override
   String get apiaryLocationClearAction => 'Clear location';
 
   @override

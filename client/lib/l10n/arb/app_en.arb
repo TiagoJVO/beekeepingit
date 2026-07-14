@@ -528,6 +528,14 @@
   "@apiaryUseCurrentLocationAction": {
     "description": "Button on the apiary form that sets the location to the device's current position (#252)"
   },
+  "apiarySetOnMapAction": "Set on map",
+  "@apiarySetOnMapAction": {
+    "description": "Button on the apiary form that expands the embedded map-pin picker (collapsed by default so the Save action stays reachable) (#252)"
+  },
+  "apiaryHideMapAction": "Hide map",
+  "@apiaryHideMapAction": {
+    "description": "Button on the apiary form that collapses the expanded map-pin picker (#252)"
+  },
   "apiaryLocationClearAction": "Clear location",
   "@apiaryLocationClearAction": {
     "description": "Button on the apiary form that clears the currently-set location (#252 AC: the location is editable and clearable)"

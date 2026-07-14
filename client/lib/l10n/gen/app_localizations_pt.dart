@@ -406,6 +406,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiaryUseCurrentLocationAction => 'Usar localização atual';
 
   @override
+  String get apiarySetOnMapAction => 'Definir no mapa';
+
+  @override
+  String get apiaryHideMapAction => 'Ocultar mapa';
+
+  @override
   String get apiaryLocationClearAction => 'Limpar localização';
 
   @override
