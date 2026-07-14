@@ -8,7 +8,7 @@ Router: `github.com/go-chi/chi/v5`. Errors: RFC 9457 problem+json.
 
 ## Middleware chain
 
-```
+```text
 servicetemplate.New:  otelhttp → Recover → RequestID → RequestLogger
    + GET /healthz, GET /readyz            (unauthenticated)
 Domain routes mounted behind:  authnMW(JWT) → orgMW(org-resolver) → roleMW(RequireRole)
@@ -21,7 +21,7 @@ Domain routes mounted behind:  authnMW(JWT) → orgMW(org-resolver) → roleMW(R
 
 ### identity (main.go; authnMW)
 
-```
+```text
 GET   /v1/profile              → getProfile      api/profile.go
 PATCH /v1/profile              → updateProfile   api/profile.go
 GET   /internal/users/by-sub/{sub} → getUserBySub api/users.go
@@ -29,7 +29,7 @@ GET   /internal/users/by-sub/{sub} → getUserBySub api/users.go
 
 ### organizations (main.go; authnMW; resolver→identity)
 
-```
+```text
 POST   /v1/organizations                         → createOrganization  api/organizations.go
 GET    /v1/organizations/me                       → getMyOrganization   api/organizations.go
 GET    /v1/organizations/{orgId}                  → getOrganization     api/organizations.go
@@ -42,7 +42,7 @@ GET    /internal/memberships/active               → getActiveMembership api/me
 
 ### apiaries (main.go; authnMW→orgMW→RequireRole(admin,user))
 
-```
+```text
 GET    /v1/apiaries                    → listApiaries       api/apiaries.go
 GET    /v1/apiaries/{id}               → getApiary          api/apiaries.go
 GET    /v1/apiaries/{id}/distance      → getApiaryDistance  api/apiaries.go (geo.go, PostGIS)
@@ -57,7 +57,7 @@ REST writes serve online-only/direct callers (Admin App, scripts); the PWA uses 
 
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 
-```
+```text
 GET   /v1/sync/token           → TokenHandler   api/handlers.go (mint short-TTL org token)
 POST  /v1/sync/batch           → BatchHandler   api/handlers.go → Coordinator (coordinator.go)
 GET   /internal/sync/jwks.json → JWKSHandler    api/handlers.go (unauth; PowerSync validates)
@@ -68,7 +68,7 @@ GET   /internal/sync/jwks.json → JWKSHandler    api/handlers.go (unauth; Power
 
 ## Service → store mapping (per DB-backed service)
 
-```
+```text
 api/*.go (handlers)
   → store/sqlc/gen/*.sql.go   (typed queries, sqlc-generated from queries/*.sql)
   → pgxpool.Pool              (dbaccess.Connect, services/shared/dbaccess/pool.go)

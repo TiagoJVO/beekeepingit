@@ -20,7 +20,7 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 
 ## Inter-service dependency graph (internal HTTP)
 
-```
+```text
 client ──JWT──► identity, organizations, apiaries, sync   (all via Traefik /v1/*)
 organizations ─► identity            (INTERNAL_IDENTITY_URL, user resolve)
 apiaries       ─► identity, organizations   (org-resolver: sub→user, →membership)
@@ -33,7 +33,7 @@ Stable in-cluster DNS `http://<service>:8080`; `sync` holds no DB, no schema cre
 
 ## Backend third-party (Go — go.work modules)
 
-```
+```text
 go-chi/chi/v5         HTTP router + middleware
 jackc/pgx/v5          Postgres driver + pool
 pressly/goose/v3      migrations                  (shared/dbaccess)
@@ -46,7 +46,7 @@ testcontainers-go     integration tests (Postgres, MinIO)
 
 ## Frontend third-party (Dart — client/pubspec.yaml)
 
-```
+```text
 powersync ^1.18         local-first sync engine + on-device SQLite
 flutter_riverpod ^3.3   state management
 go_router ^17.2         routing
@@ -60,7 +60,7 @@ fonts: Archivo, Playfair Display (bundled, offline — no google_fonts/CDN)
 
 ## Shared internal modules
 
-```
+```text
 services/servicetemplate  (Go module): authn, config, health, logging, otelboot,
                           problem (RFC 9457), contracttest — every service bootstraps from it
 services/shared           (Go module): dbaccess (pool/migrate/tenancy), objectstore,

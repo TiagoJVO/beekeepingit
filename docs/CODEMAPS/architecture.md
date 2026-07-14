@@ -8,7 +8,7 @@ append-only history. Source of intent: `requirements/`; as-built: `docs/`.
 
 ## System diagram
 
-```
+```text
                     Traefik gateway  (app.beekeepingit.local:8443)
   ┌───────────────────────┼───────────────────────┬──────────────────┐
   │ /                     │ /v1/*                  │ /sync-stream/**  │
@@ -37,7 +37,7 @@ Flutter PWA          Go services (chi)         PowerSync svc          │
 
 ## Data flow — local-first write (walking-skeleton §4.4)
 
-```
+```text
 UI mutation → ApiariesRepository → local SQLite (PowerSync CRUD queue)
    → connector.uploadData → POST /v1/sync/batch (sync svc)
    → Coordinator: validate-ALL then apply  (forwards caller bearer, zero-trust)

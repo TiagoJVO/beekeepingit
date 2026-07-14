@@ -9,7 +9,7 @@ i18n EN/PT (`lib/l10n/`), accessibility + gloves-friendly targets. Entry: `lib/m
 
 ## Route tree (lib/routing/app_router.dart, go_router)
 
-```
+```text
 redirect gate:  !auth → /login │ profile incomplete → /profile │ no org → /organization/new
 /login                     LoginScreen            features/auth
 /profile                   ProfileScreen          features/profile   (onboarding FR-ONB-1)
@@ -30,7 +30,7 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
 
 ## Layer flow
 
-```
+```text
 Screen (ConsumerWidget)
   → watches Riverpod provider (StreamProvider / FutureProvider)
   → Repository (features/*/*_repository.dart)
@@ -57,7 +57,7 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 
 ## Sync flow (client) — core/sync/
 
-```
+```text
 powerSyncProvider: open PowerSyncDatabase(appSchema) → BeekeepingitConnector, gated by SyncGate
 BeekeepingitConnector (powersync_connector.dart):
   fetchCredentials → GET /v1/sync/token   (OIDC access token → short-TTL PowerSync token)

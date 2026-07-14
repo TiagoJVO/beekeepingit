@@ -11,7 +11,7 @@ Migrations: goose, `services/<svc>/store/migrations/*.sql`, applied at boot.
 
 ### `identity`
 
-```
+```text
 users        (id PK, oidc_sub UNIQUE, name, email, locale, created_at, updated_at)
 audit_log    (id PK, organization_id NULL, entity_type, entity_id, change_type,
               actor_user_id, occurred_at, recorded_at, changed_fields[], change JSONB)
@@ -21,7 +21,7 @@ audit_log    (id PK, organization_id NULL, entity_type, entity_id, change_type,
 
 ### `organizations`
 
-```
+```text
 organizations (id PK, name, address, created_by, created_at, updated_at)
 memberships   (id PK, organization_id FK→organizations, user_id, role[admin|user],
                status[active|invited|removed], UNIQUE(organization_id,user_id))
@@ -32,7 +32,7 @@ audit_log     (… entity_type[organization|membership|invitation], change JSONB
 
 ### `apiaries`
 
-```
+```text
 apiaries          (id PK, organization_id, name, created_at, updated_at, recorded_at,
                    deleted_at, location geography(Point,4326) NULL, notes NULL≤10k,
                    place_label NULL≤200)          -- hive_count column RETIRED (#256)
@@ -47,7 +47,7 @@ audit_log         (… change_type[create|update|delete], changed_fields[], chan
 
 ## Relationships
 
-```
+```text
 identity.users ──(oidc_sub ← JWT sub; user_id ref, no FK)──► organizations.memberships
 organizations.organizations ─1─N─► memberships, invitations
 apiaries.apiaries ─1─N─► apiary_counters (hive count lives here, not on apiaries)
@@ -59,7 +59,7 @@ never SQL FKs — each schema is independently owned.
 
 ## Client-side (on-device SQLite, PowerSync — powersync_schema.dart)
 
-```
+```text
 apiaries          (id, organization_id, name, notes, place_label,
                    location_lon REAL, location_lat REAL, created_at, updated_at)
 apiary_counters   (id, organization_id, apiary_id, counter_type, value, timestamps)
@@ -73,7 +73,7 @@ down-sync (no local `deleted_at`).
 
 ## Migration history
 
-```
+```text
 identity:       00001 create_users · 00002 rename keycloak_sub→oidc_sub · 00003 audit_log
 organizations:  00001 create_organizations · 00002 create_invitations · 00003 audit_log
 apiaries:       00001 create_apiaries · 00002 audit_log · 00003 add_location(PostGIS)
