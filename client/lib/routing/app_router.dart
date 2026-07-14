@@ -13,6 +13,7 @@ import '../features/organization/organization_repository.dart';
 import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/sync/sync_needs_fix_screen.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../shell/app_shell.dart';
 import '../shell/coming_soon_screen.dart';
@@ -110,6 +111,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/account',
         name: 'account',
         builder: (context, state) => const AccountScreen(),
+      ),
+      // The needs-fix list (EPIC-06 #7, D-12 notify-and-fix): offline writes
+      // the server permanently rejected, retained in the local dead-letter so
+      // the user can fix & re-queue them. A normal authenticated route (not
+      // part of the onboarding gate), reached from the account screen, the
+      // header badge, and the rejection toast's "Fix" action.
+      GoRoute(
+        path: '/sync-needs-fix',
+        name: 'syncNeedsFix',
+        builder: (context, state) => const SyncNeedsFixScreen(),
       ),
       // The app shell (FR-UX-2, #197): 5-tab bottom nav, each tab its own
       // navigation stack via StatefulShellRoute.indexedStack. Only Apiaries

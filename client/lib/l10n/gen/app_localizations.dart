@@ -596,6 +596,66 @@ abstract class AppLocalizations {
   /// **'One of your offline changes was overwritten by a newer edit.'**
   String get syncSupersededNotice;
 
+  /// Non-blocking toast (with a Fix action) shown when an offline write was permanently rejected on upload (sync.md §8 notify-and-fix, D-12, #256/#260)
+  ///
+  /// In en, this message translates to:
+  /// **'One of your changes was rejected and needs fixing.'**
+  String get syncRejectedNotice;
+
+  /// App bar title of the needs-fix list — offline writes the server rejected that the user must correct and re-save
+  ///
+  /// In en, this message translates to:
+  /// **'Changes to fix'**
+  String get syncNeedsFixTitle;
+
+  /// Empty state of the needs-fix list when there are no rejected offline writes
+  ///
+  /// In en, this message translates to:
+  /// **'No changes need fixing.'**
+  String get syncNeedsFixEmpty;
+
+  /// Error state of the needs-fix list when the local read fails
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the changes to fix: {error}'**
+  String syncNeedsFixLoadError(String error);
+
+  /// Count of offline writes awaiting a fix — the account-screen entry, header account-badge tooltip, and needs-fix link label (D-12 notify-and-fix)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 change needs fixing} other{{count} changes need fixing}}'**
+  String syncNeedsFixCount(int count);
+
+  /// Needs-fix list row title for a rejected apiary write
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary change'**
+  String get syncNeedsFixApiaryLabel;
+
+  /// Needs-fix list row title for a rejected apiary hive-counter write (#256)
+  ///
+  /// In en, this message translates to:
+  /// **'Hive count change'**
+  String get syncNeedsFixCounterLabel;
+
+  /// Needs-fix list row fallback message when the server returned no field-level detail
+  ///
+  /// In en, this message translates to:
+  /// **'This change was rejected and needs your attention.'**
+  String get syncNeedsFixGenericProblem;
+
+  /// Needs-fix action (and rejection toast action) that opens the offending record's edit screen to correct and re-save it
+  ///
+  /// In en, this message translates to:
+  /// **'Fix'**
+  String get syncNeedsFixFixAction;
+
+  /// Needs-fix action that discards a rejected offline write the user chooses not to fix
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get syncNeedsFixDismissAction;
+
   /// Section heading on the account screen for sync status + manual sync (#58)
   ///
   /// In en, this message translates to:

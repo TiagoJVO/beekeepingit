@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/widgets/tap_target.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
+import '../features/sync/sync_rejected_repository.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../theming/brand_tokens.dart';
 import 'sync_status.dart';
@@ -84,6 +85,10 @@ class AppShell extends ConsumerWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final activeTab = tabs[navigationShell.currentIndex];
     final syncStatus = ref.watch(syncStatusProvider);
+    // Count of offline writes awaiting a fix (D-12 notify-and-fix) — drives the
+    // account-button badge. Defaults to 0 while the sync engine is still
+    // opening, like the rest of the header's always-available state.
+    final needsFixCount = ref.watch(syncNeedsFixCountProvider).value ?? 0;
     final routeName = GoRouterState.of(context).topRoute?.name;
 
     // Non-blocking notice when an offline edit lost a last-write-wins
@@ -98,6 +103,26 @@ class AppShell extends ConsumerWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(l10n.syncSupersededNotice)));
+    });
+
+    // Non-blocking notice when an offline write was permanently rejected
+    // (sync.md §8, D-12 notify-and-fix): a toast with a "Fix" action routing to
+    // the needs-fix list, where the user opens the offending record, corrects
+    // it and re-saves. The edit itself is retained in the local dead-letter
+    // (syncRejectedOpsProvider) — this is just the one-shot notification, and
+    // the account-button badge below is the persistent affordance.
+    ref.listen(rejectedNotificationProvider, (previous, next) {
+      final change = next.value;
+      if (change == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.syncRejectedNotice),
+          action: SnackBarAction(
+            label: l10n.syncNeedsFixFixAction,
+            onPressed: () => context.go('/sync-needs-fix'),
+          ),
+        ),
+      );
     });
 
     // Whether there's somewhere to go back to *within the active tab's own
@@ -133,6 +158,7 @@ class AppShell extends ConsumerWidget {
       appBar: _ShellHeader(
         title: _titleFor(routeName, activeTab, l10n),
         syncStatus: syncStatus,
+        needsFixCount: needsFixCount,
         onBack: canGoBack ? () => _popBranch() : null,
         onSyncTap: () => context.go('/account'),
         onAccountTap: () => context.go('/account'),
@@ -222,6 +248,7 @@ class _ShellHeader extends StatelessWidget implements PreferredSizeWidget {
   const _ShellHeader({
     required this.title,
     required this.syncStatus,
+    required this.needsFixCount,
     required this.onBack,
     required this.onSyncTap,
     required this.onAccountTap,
@@ -229,6 +256,7 @@ class _ShellHeader extends StatelessWidget implements PreferredSizeWidget {
 
   final String title;
   final SyncStatus syncStatus;
+  final int needsFixCount;
   final VoidCallback? onBack;
   final VoidCallback onSyncTap;
   final VoidCallback onAccountTap;
@@ -265,11 +293,22 @@ class _ShellHeader extends StatelessWidget implements PreferredSizeWidget {
           ),
         ),
         const SizedBox(width: 4),
-        IconButton(
-          key: const Key('shell-account-button'),
-          icon: const Icon(Icons.account_circle_outlined),
-          tooltip: l10n.accountTitle,
-          onPressed: onAccountTap,
+        // Account entry, badged when offline writes need fixing (D-12
+        // notify-and-fix): the persistent affordance the rejection toast's
+        // one-shot notice complements. The badge count also rides the tooltip
+        // so it's announced to screen readers, not only shown visually.
+        Badge(
+          key: const Key('shell-needs-fix-badge'),
+          isLabelVisible: needsFixCount > 0,
+          label: Text('$needsFixCount'),
+          child: IconButton(
+            key: const Key('shell-account-button'),
+            icon: const Icon(Icons.account_circle_outlined),
+            tooltip: needsFixCount > 0
+                ? l10n.syncNeedsFixCount(needsFixCount)
+                : l10n.accountTitle,
+            onPressed: onAccountTap,
+          ),
         ),
       ],
     );

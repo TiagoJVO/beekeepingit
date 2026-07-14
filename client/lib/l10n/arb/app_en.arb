@@ -377,6 +377,56 @@
   "@syncSupersededNotice": {
     "description": "Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)"
   },
+  "syncRejectedNotice": "One of your changes was rejected and needs fixing.",
+  "@syncRejectedNotice": {
+    "description": "Non-blocking toast (with a Fix action) shown when an offline write was permanently rejected on upload (sync.md §8 notify-and-fix, D-12, #256/#260)"
+  },
+  "syncNeedsFixTitle": "Changes to fix",
+  "@syncNeedsFixTitle": {
+    "description": "App bar title of the needs-fix list — offline writes the server rejected that the user must correct and re-save"
+  },
+  "syncNeedsFixEmpty": "No changes need fixing.",
+  "@syncNeedsFixEmpty": {
+    "description": "Empty state of the needs-fix list when there are no rejected offline writes"
+  },
+  "syncNeedsFixLoadError": "Couldn't load the changes to fix: {error}",
+  "@syncNeedsFixLoadError": {
+    "description": "Error state of the needs-fix list when the local read fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "syncNeedsFixCount": "{count, plural, =1{1 change needs fixing} other{{count} changes need fixing}}",
+  "@syncNeedsFixCount": {
+    "description": "Count of offline writes awaiting a fix — the account-screen entry, header account-badge tooltip, and needs-fix link label (D-12 notify-and-fix)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncNeedsFixApiaryLabel": "Apiary change",
+  "@syncNeedsFixApiaryLabel": {
+    "description": "Needs-fix list row title for a rejected apiary write"
+  },
+  "syncNeedsFixCounterLabel": "Hive count change",
+  "@syncNeedsFixCounterLabel": {
+    "description": "Needs-fix list row title for a rejected apiary hive-counter write (#256)"
+  },
+  "syncNeedsFixGenericProblem": "This change was rejected and needs your attention.",
+  "@syncNeedsFixGenericProblem": {
+    "description": "Needs-fix list row fallback message when the server returned no field-level detail"
+  },
+  "syncNeedsFixFixAction": "Fix",
+  "@syncNeedsFixFixAction": {
+    "description": "Needs-fix action (and rejection toast action) that opens the offending record's edit screen to correct and re-save it"
+  },
+  "syncNeedsFixDismissAction": "Dismiss",
+  "@syncNeedsFixDismissAction": {
+    "description": "Needs-fix action that discards a rejected offline write the user chooses not to fix"
+  },
   "accountSyncSectionTitle": "Sync",
   "@accountSyncSectionTitle": {
     "description": "Section heading on the account screen for sync status + manual sync (#58)"

@@ -7,7 +7,7 @@ import '../core/sync/powersync_service.dart';
 import '../core/sync/sync_events.dart';
 import '../core/sync/sync_gate.dart';
 
-export '../core/sync/sync_events.dart' show SupersededChange;
+export '../core/sync/sync_events.dart' show SupersededChange, RejectedChange;
 export '../core/sync/sync_gate.dart' show SyncGateState;
 
 /// Connectivity/pending-change state shown by the header's sync-status pill
@@ -62,6 +62,20 @@ final supersededNotificationProvider =
       final session = await ref.watch(powerSyncProvider.future);
       yield* session.connector.supersededChanges;
     });
+
+/// Broadcasts a [RejectedChange] every time [BeekeepingitConnector.uploadData]
+/// permanently rejects an offline write (a validation-class `4xx`; sync.md §8's
+/// `rejected` state, D-12). The shell listens (via `ref.listen`) to show a
+/// one-shot, non-blocking toast routing to the needs-fix list — the durable
+/// record lives in the `sync_rejected_ops` dead-letter (read via
+/// `syncRejectedOpsProvider`), so this stream is purely the notification, like
+/// [supersededNotificationProvider].
+final rejectedNotificationProvider = StreamProvider.autoDispose<RejectedChange>(
+  (ref) async* {
+    final session = await ref.watch(powerSyncProvider.future);
+    yield* session.connector.rejectedChanges;
+  },
+);
 
 /// Real connectivity + pending-change count, sourced from
 /// [ps.PowerSyncDatabase.statusStream] (connectivity/uploading/error),
