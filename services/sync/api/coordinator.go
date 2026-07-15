@@ -9,12 +9,17 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
 // Coordinator fans a client transaction out to owning services. In the
@@ -32,7 +37,10 @@ func NewCoordinator(apiariesURL string) (*Coordinator, error) {
 		return nil, fmt.Errorf("sync: NewCoordinator requires apiariesURL")
 	}
 	return &Coordinator{
-		apiariesURL: apiariesURL,
+		// Trim a trailing slash so an operator-supplied URL (env var, config)
+		// never produces a double slash when concatenated with the internal
+		// endpoint paths below.
+		apiariesURL: strings.TrimRight(apiariesURL, "/"),
 		client: &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
@@ -55,6 +63,7 @@ type upstreamResponse struct {
 func (c *Coordinator) handle(ctx context.Context, bearer string, body []byte) upstreamResponse {
 	validate, err := c.post(ctx, c.apiariesURL+"/internal/sync/validate", bearer, body)
 	if err != nil {
+		slog.ErrorContext(ctx, "sync validate call failed", slog.Any("error", err))
 		return badGateway("sync validation is unavailable")
 	}
 	switch validate.status {
@@ -68,6 +77,7 @@ func (c *Coordinator) handle(ctx context.Context, bearer string, body []byte) up
 
 	apply, err := c.post(ctx, c.apiariesURL+"/internal/sync/apply", bearer, body)
 	if err != nil {
+		slog.ErrorContext(ctx, "sync apply call failed", slog.Any("error", err))
 		return badGateway("sync apply is unavailable")
 	}
 	if apply.status != http.StatusOK {
@@ -95,7 +105,10 @@ func (c *Coordinator) post(ctx context.Context, url, bearer string, body []byte)
 	}
 	defer resp.Body.Close()
 
-	out, err := io.ReadAll(resp.Body)
+	// Cap the upstream response read symmetrically with the request-side cap
+	// (maxBatchBytes) — an owning service is trusted, but not to the point of
+	// letting a runaway or misbehaving response exhaust memory here.
+	out, err := io.ReadAll(io.LimitReader(resp.Body, maxBatchBytes))
 	if err != nil {
 		return upstreamResponse{}, err
 	}
@@ -103,11 +116,23 @@ func (c *Coordinator) post(ctx context.Context, url, bearer string, body []byte)
 }
 
 func badGateway(detail string) upstreamResponse {
-	// RFC 9457 problem, hand-built (the shared problem package has no 502
-	// constructor). code lets clients branch on "retryable upstream".
-	body := fmt.Sprintf(
-		`{"title":"Bad Gateway","status":502,"detail":%q,"code":"sync.upstream_unavailable"}`,
-		detail,
-	)
-	return upstreamResponse{status: http.StatusBadGateway, contentType: "application/problem+json", body: []byte(body)}
+	// RFC 9457 problem, built through the shared Problem shape (the shared
+	// problem package has no 502 constructor, so it's assembled here rather
+	// than hand-rolled as a JSON string). code lets clients branch on
+	// "retryable upstream".
+	p := problem.Problem{
+		Title:  "Bad Gateway",
+		Status: http.StatusBadGateway,
+		Detail: detail,
+		Code:   "sync.upstream_unavailable",
+	}
+	body, err := json.Marshal(p)
+	if err != nil {
+		// Marshaling a static struct of plain strings/ints cannot fail in
+		// practice; fall back to a minimal, still-valid problem+json body
+		// rather than panicking or losing the 502 semantics.
+		slog.Error("marshal bad gateway problem", slog.Any("error", err))
+		body = []byte(`{"title":"Bad Gateway","status":502,"code":"sync.upstream_unavailable"}`)
+	}
+	return upstreamResponse{status: http.StatusBadGateway, contentType: "application/problem+json", body: body}
 }

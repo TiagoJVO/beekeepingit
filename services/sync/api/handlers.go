@@ -19,12 +19,25 @@ type SyncTokenResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// requireOrgClaims fetches the resolved caller identity from the request
+// context and reports whether it carries an org scope. Both client-facing
+// handlers below fail fast on an unauthenticated/unresolved caller before
+// doing any work; the owning service re-checks the forwarded bearer
+// regardless (zero-trust).
+func requireOrgClaims(r *http.Request) (authn.Claims, bool) {
+	claims, ok := authn.FromContext(r.Context())
+	if !ok || claims.OrganizationID == "" {
+		return authn.Claims{}, false
+	}
+	return claims, true
+}
+
 // TokenHandler mints a short-lived, org-scoped sync token for the caller.
 // Mount behind OIDC authn + the org-resolver so Claims carry sub + org.
 func TokenHandler(minter *token.Minter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := authn.FromContext(r.Context())
-		if !ok || claims.OrganizationID == "" {
+		claims, ok := requireOrgClaims(r)
+		if !ok {
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -55,13 +68,21 @@ func BatchHandler(coord *Coordinator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Fail fast on an unauthenticated/unresolved caller; the owning
 		// service re-checks the forwarded bearer regardless (zero-trust).
-		if claims, ok := authn.FromContext(r.Context()); !ok || claims.OrganizationID == "" {
+		if _, ok := requireOrgClaims(r); !ok {
 			problem.Write(w, r, problem.Internal())
 			return
 		}
-		body, err := io.ReadAll(io.LimitReader(r.Body, maxBatchBytes))
+		// Read one byte past the cap so an oversized body can be told apart
+		// from one that landed exactly at the cap: io.LimitReader alone
+		// stops silently at maxBatchBytes with a nil err, which would let a
+		// truncated (not rejected) body get forwarded upstream.
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxBatchBytes+1))
 		if err != nil {
 			problem.Write(w, r, problem.ValidationFailed("could not read request body"))
+			return
+		}
+		if len(body) > maxBatchBytes {
+			problem.Write(w, r, problem.ValidationFailed("client transaction exceeds the maximum batch size"))
 			return
 		}
 
