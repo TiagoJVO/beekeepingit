@@ -339,6 +339,92 @@ void main() {
       },
     );
   });
+
+  group('dispose (HIGH #1 — resource leak)', () {
+    test('closes the injected http.Client', () {
+      final client = _TrackingHttpClient();
+      final connector = BeekeepingitConnector(
+        getAccessToken: () async => null,
+        client: client,
+      );
+
+      connector.dispose();
+
+      expect(client.closed, isTrue);
+    });
+  });
+
+  group(
+    'lwwTimestampFor (MEDIUM #1 — retried DELETE must not get an '
+    'ever-later timestamp)',
+    () {
+      test(
+        'a put/patch payload\'s own updated_at is passed through untouched, '
+        'and nothing is cached for it',
+        () {
+          final cache = <String, String>{};
+
+          final result = lwwTimestampFor('row-1', {
+            'updated_at': '2026-07-14T10:00:00Z',
+          }, cache);
+
+          expect(result, '2026-07-14T10:00:00Z');
+          expect(cache, isEmpty);
+        },
+      );
+
+      test(
+        'a delete (no payload) gets a device timestamp, captured once and '
+        'reused on every subsequent retry of the same queued op — not '
+        'recomputed fresh each time',
+        () async {
+          final cache = <String, String>{};
+
+          final firstAttempt = lwwTimestampFor('row-1', null, cache);
+          // A real retry is separated in time (the SDK's forward-retry
+          // backoff); without the fix each call recomputes DateTime.now(),
+          // so this delay would otherwise make the values differ.
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+          final retryAttempt = lwwTimestampFor('row-1', null, cache);
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+          final secondRetryAttempt = lwwTimestampFor('row-1', null, cache);
+
+          expect(
+            retryAttempt,
+            firstAttempt,
+            reason:
+                'a retry must reuse the original delete time, not a fresh '
+                'now() that could spuriously win a later LWW conflict',
+          );
+          expect(secondRetryAttempt, firstAttempt);
+        },
+      );
+
+      test('two different deleted rows get independent timestamps', () {
+        final cache = <String, String>{};
+
+        lwwTimestampFor('row-1', null, cache);
+        lwwTimestampFor('row-2', null, cache);
+
+        expect(cache.keys, containsAll(<String>['row-1', 'row-2']));
+        expect(cache, hasLength(2));
+      });
+    },
+  );
+}
+
+/// A minimal [http.Client] that records whether [close] was called, so
+/// [BeekeepingitConnector.dispose] can be asserted to actually release its
+/// injected client rather than merely existing as a no-op method.
+class _TrackingHttpClient extends http.BaseClient {
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      throw UnsupportedError('not used by this test');
+
+  @override
+  void close() => closed = true;
 }
 
 /// A minimal in-memory [LocalStoreEngine] that interprets only the two SQL
