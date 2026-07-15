@@ -505,6 +505,30 @@ func applyCounterOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, us
 	incomingValue := *data.Value
 	incomingTS := pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
 
+	// Tenancy guard (FR-TEN-2, CRITICAL fix): the client-supplied apiary_id
+	// must actually belong to the caller's org BEFORE any counter data is
+	// read or written for it. Without this, an unknown/foreign apiary_id
+	// makes GetApiaryCounter below miss (its own WHERE is org-scoped, so a
+	// row that belongs to a different org simply never matches) and the
+	// missing-branch below would treat that as "offline create" and upsert
+	// UNCONDITIONALLY — letting any org inject/overwrite another org's
+	// hive-count data via the table's ON CONFLICT (apiary_id, counter_type)
+	// target, with no LWW check at all (mirrors applyOp's own org-scoped
+	// GetApiaryForUpdate lookup, sync.md §4.3's zero-trust re-check). An
+	// unknown/foreign apiary_id is a no-op (mirrors
+	// TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow's "missing
+	// row ⇒ nothing to do" convention for apiary ops) rather than a
+	// distinguishable error — ADR-0002 scope-hiding, same as every other
+	// cross-org read/write path in this service.
+	if _, err := q.GetApiaryForUpdate(ctx, sqlcgen.GetApiaryForUpdateParams{
+		OrganizationID: org, ID: pgApiaryID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil // unknown/foreign apiary: no-op
+		}
+		return OpResult{}, err
+	}
+
 	stored, err := q.GetApiaryCounter(ctx, sqlcgen.GetApiaryCounterParams{OrganizationID: org, ApiaryID: pgApiaryID, CounterType: counterType})
 	missing := errors.Is(err, pgx.ErrNoRows)
 	if err != nil && !missing {

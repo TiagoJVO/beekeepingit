@@ -540,3 +540,73 @@ func TestApiariesMigration_ApiaryCountersTableShape(t *testing.T) {
 		t.Fatalf("raw negative-value insert unexpectedly succeeded — CHECK(value >= 0) not enforced at the DB level")
 	}
 }
+
+// --- Cross-tenant IDOR (CRITICAL fix: applyCounterOp must verify apiary
+// ownership before writing counter data) ---
+
+// TestApiariesSlice_CrossOrg_CounterOpCannotMutateOtherOrgsCounter is the
+// counter-op counterpart of main_test.go's
+// TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow: applyCounterOp
+// (api/sync.go) took the client-supplied apiary_id from a counter op and
+// never verified it belongs to the caller's org before writing. Because
+// GetApiaryCounter is itself org-scoped, a foreign org's lookup always
+// misses (the org-scoped WHERE never matches a row that belongs to a
+// different org), which used to fall straight into the "missing => create"
+// branch and upsert UNCONDITIONALLY -- no LWW comparison at all, since
+// "missing" always short-circuited to an unconditional write. The table's
+// UNIQUE(apiary_id, counter_type) ON CONFLICT target then let that
+// unconditional upsert silently overwrite the VICTIM's existing counter
+// row's value (organization_id itself isn't in the ON CONFLICT SET clause,
+// so the row doesn't change owner -- but its value does). This proves org B
+// cannot inject/overwrite org A's hive count via a counter op targeting org
+// A's apiary_id.
+func TestApiariesSlice_CrossOrg_CounterOpCannotMutateOtherOrgsCounter(t *testing.T) {
+	f := newApiariesFixture(t)
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	other := otherOrgCaller()
+
+	// Org A creates an apiary with a real hive count.
+	apiaryID := uuid.NewString()
+	if got := f.apply(t, putOp(apiaryID, "Org A Apiary", 5, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create org A apiary result = %q, want applied", got.Results[0].Result)
+	}
+	before := f.countersFor(t, apiaryID)
+	if len(before) != 1 || before[0].Value != 5 {
+		t.Fatalf("org A counters before attack = %+v, want [{hive 5}]", before)
+	}
+
+	// Org B submits a counter op targeting ORG A's apiary_id -- a forged
+	// cross-tenant write attempt, at a timestamp far in the future so LWW
+	// alone (were it even consulted) would let it win.
+	attack := counterOp(apiaryID, counterTypeHive, 9999, t0.Add(time.Hour))
+	got := f.applyAs(t, other, attack)
+	if got.Results[0].Result != "applied" {
+		t.Fatalf("cross-org counter attack result = %q, want applied (no-op, not rejected -- matches the existing cross-org delete convention, TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow)", got.Results[0].Result)
+	}
+
+	// Org A's counter must be completely unaffected: same value, same row id.
+	after := f.countersFor(t, apiaryID)
+	if len(after) != 1 {
+		t.Fatalf("org A counters after attack = %+v, want exactly 1 row (attack must not create a second row)", after)
+	}
+	if after[0].Value != 5 {
+		t.Fatalf("org A counter value after cross-org attack = %d, want unchanged 5 (was overwritten by the attacker's 9999)", after[0].Value)
+	}
+	if after[0].ID != before[0].ID {
+		t.Fatalf("org A counter row id changed from %s to %s -- attack must not touch the existing row", before[0].ID, after[0].ID)
+	}
+
+	// The apiary's own hive_count read (COALESCE over the counter join) must
+	// also still reflect org A's real value, not the attacker's.
+	if a := f.getApiary(t, apiaryID); a.HiveCount != 5 {
+		t.Fatalf("org A apiary hive_count after cross-org counter attack = %d, want unchanged 5", a.HiveCount)
+	}
+
+	// No apiary_counter-typed audit row should have been written for this
+	// no-op -- a no-op against a foreign/unknown apiary applies no domain
+	// change, so it gets no audit row (mirrors writeAuditLog's "no domain
+	// change => no audit row" contract already proven for entity_type=apiary).
+	if rows := f.counterAuditLogFor(t, apiaryID); len(rows) != 0 {
+		t.Fatalf("counter audit rows after cross-org no-op = %+v, want none", rows)
+	}
+}
