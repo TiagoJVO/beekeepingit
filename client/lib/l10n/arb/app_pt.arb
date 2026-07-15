@@ -28,6 +28,7 @@
   "profileSaveButton": "Guardar perfil",
   "profileSaveSuccess": "Perfil guardado.",
   "profileSaveError": "Não foi possível guardar o seu perfil: {error}",
+  "profileGenericError": "Ocorreu um erro. Tente novamente.",
   "organizationTitle": "A sua organização",
   "organizationOnboardingIntro": "Crie a sua organização para começar a gerir apiários.",
   "organizationNameLabel": "Nome da organização",

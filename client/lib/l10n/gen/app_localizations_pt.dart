@@ -108,6 +108,9 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get profileGenericError => 'Ocorreu um erro. Tente novamente.';
+
+  @override
   String get organizationTitle => 'A sua organização';
 
   @override

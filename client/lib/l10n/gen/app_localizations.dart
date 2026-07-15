@@ -266,6 +266,12 @@ abstract class AppLocalizations {
   /// **'Could not save your profile: {error}'**
   String profileSaveError(String error);
 
+  /// Fixed, non-interpolated message shown when the profile fails to load, or a save fails with something other than a structured ApiException — never the raw exception text (avoids leaking internal error details to the field user)
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Please try again.'**
+  String get profileGenericError;
+
   /// Organization creation screen app bar title
   ///
   /// In en, this message translates to:

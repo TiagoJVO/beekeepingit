@@ -127,6 +127,10 @@
       }
     }
   },
+  "profileGenericError": "Something went wrong. Please try again.",
+  "@profileGenericError": {
+    "description": "Fixed, non-interpolated message shown when the profile fails to load, or a save fails with something other than a structured ApiException — never the raw exception text (avoids leaking internal error details to the field user)"
+  },
   "organizationTitle": "Your organization",
   "@organizationTitle": {
     "description": "Organization creation screen app bar title"
