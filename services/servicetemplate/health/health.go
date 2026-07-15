@@ -5,11 +5,13 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
@@ -47,7 +49,9 @@ func (r *Registry) Healthz() http.HandlerFunc {
 
 // Readyz reports readiness: every registered Checker must succeed within a
 // bounded timeout. On failure it responds 503 as a problem.Problem naming
-// each failing check, so an operator can see why without digging into logs.
+// each failing check by name; the checker's raw error (which can carry
+// internal hostnames/ports/usernames, e.g. from a DSN) is logged
+// server-side, never echoed into this unauthenticated response body.
 func (r *Registry) Readyz() http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		r.mu.RLock()
@@ -63,7 +67,10 @@ func (r *Registry) Readyz() http.HandlerFunc {
 		var failures []problem.FieldError
 		for name, c := range checkers {
 			if err := c(ctx); err != nil {
-				failures = append(failures, problem.FieldError{Field: name, Code: "check_failed", Message: err.Error()})
+				logging.FromContext(req.Context()).ErrorContext(req.Context(), "readiness check failed",
+					slog.String("check", name), slog.Any("error", err))
+				failures = append(failures, problem.FieldError{Field: name, Code: "check_failed", Message: "check failed"})
+				continue
 			}
 		}
 

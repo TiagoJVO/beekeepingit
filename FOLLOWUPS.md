@@ -9,19 +9,26 @@
 
 ---
 
-## `fix/go-shared-history-objectstore-tenancy`
+## `fix/flutter-sync` (client sync-engine code-review fixes)
 
-- **`dbaccess.Config.validate()`'s new SearchPath check isn't wired into every DSN-building
-  path** — found while fixing the HIGH #3 connection-string-injection finding
-  (`services/shared/dbaccess/config.go`). `Connect()` calls `validate()` before `DSN()`, so
-  that path is covered. But `Migrate()` takes a raw `dsn string`, not a `Config`, and every
-  current caller (`services/{apiaries,identity,organizations}/main.go`) builds it via
-  `cfg.DB.DSN()` directly, bypassing `validate()` entirely. In practice `SearchPath` there
-  comes from each service's own env-configured, infra-trusted value (D-6 schema-per-service),
-  not runtime user input, so this isn't currently exploitable — but the guard doesn't actually
-  gate that call path. Options for a follow-up: have `Migrate` accept a `Config` (or a
-  pre-validated DSN type) instead of a bare string, or have each service's config loader call
-  `validate()` before handing the DSN to `Migrate`. Out of scope for this PR (would require
-  touching `main.go` in three other services, beyond the mechanical `ComputeChange` call-site
-  updates already carried here). Track as a GitHub issue if not picked up before this branch
-  merges.
+- **Status:** ready for review — HIGH #1/#2/#3 and MEDIUM #1 fixed with
+  passing regression tests; `flutter analyze`/`flutter test` both green.
+- **Open finding (not before-merge-blocking, needs a reviewer check in real
+  CI):** `flutter test` in this sandbox (WSL2, `/mnt/c` mounted filesystem)
+  still logs `[PowerSync] WARNING: ... Multiple instances ...` — 43
+  occurrences across the suite, unchanged before/after this PR's fix. Root-
+  caused via debug instrumentation: `PowerSyncDatabase.initialize()` itself
+  never completes within any `testWidgets` run in this sandbox (neither a
+  print placed right after `db.initialize()` nor one inside
+  `powerSyncProvider`'s `ref.onDispose` callback ever fires, even after 90+
+  real seconds) — so `ref.onDispose` never runs at all for these test-opened
+  instances, meaning the warning here is **not** the HIGH #2 async-dispose
+  race this PR fixes (verified independently via `TeardownGuard`'s own
+  red/green unit tests, `client/test/core/sync/powersync_service_test.dart`).
+  It looks like a sandbox/environment characteristic (possibly the WSL2 9p
+  filesystem interacting with PowerSync's native SQLite extension loading),
+  pre-existing before this PR. **Action for whoever picks this up:** re-run
+  `flutter test` on the real CI runner (not this WSL sandbox) and confirm the
+  warning is actually gone there; if it still appears in real CI, that's a
+  distinct bug worth its own issue — if it doesn't, this note can just be
+  pruned.

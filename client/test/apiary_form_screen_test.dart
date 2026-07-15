@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiary_form_screen.dart';
@@ -11,6 +12,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/a11y_matchers.dart';
+
+/// A deterministic fake for [DeviceLocationService] (CRITICAL finding — the
+/// form's "use current location" button now goes through
+/// `deviceLocationServiceProvider`, core/geo/device_location.dart, instead
+/// of its own raw Geolocator calls), mirroring
+/// apiaries_list_screen_test.dart's/apiary_map_screen_test.dart's own fakes.
+class _FakeDeviceLocationService implements DeviceLocationService {
+  const _FakeDeviceLocationService(this.result);
+  final DeviceLocation result;
+
+  @override
+  Future<DeviceLocation> current() async => result;
+}
 
 /// A no-op [LocalStoreEngine] — the superclass constructor requires one, but
 /// [_FakeApiariesRepository] overrides every method the form touches, so it's
@@ -35,10 +49,35 @@ class _NoopLocalStore implements LocalStoreEngine {
 /// Records `create()` calls so the form's save-with-no-location path can be
 /// asserted without a real PowerSync backend (the seam the suite's other
 /// create tests can't reach). Overrides only what the form calls.
+///
+/// The `throwOn*` flags (HIGH finding) let a test drive a failing
+/// create/update/delete/getById without a real backend — proving the form
+/// now catches the error, resets `_busy`, and surfaces a toast instead of
+/// hanging on an indefinite spinner or crashing with an unhandled exception.
 class _FakeApiariesRepository extends ApiariesRepository {
-  _FakeApiariesRepository() : super(_NoopLocalStore());
+  _FakeApiariesRepository({
+    this.throwOnCreate = false,
+    this.throwOnUpdate = false,
+    this.throwOnDelete = false,
+    this.throwOnGetById = false,
+    this.existing,
+  }) : super(_NoopLocalStore());
+
+  final bool throwOnCreate;
+  final bool throwOnUpdate;
+  final bool throwOnDelete;
+  final bool throwOnGetById;
+  final Apiary? existing;
 
   final List<Apiary> created = [];
+  bool updateCalled = false;
+  bool deleteCalled = false;
+
+  @override
+  Future<Apiary?> getById(String id) async {
+    if (throwOnGetById) throw Exception('boom-load');
+    return existing;
+  }
 
   @override
   Future<String> create({
@@ -49,6 +88,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
     double? locationLon,
     double? locationLat,
   }) async {
+    if (throwOnCreate) throw Exception('boom-create');
     created.add(
       Apiary(
         id: 'fake-${created.length}',
@@ -61,6 +101,29 @@ class _FakeApiariesRepository extends ApiariesRepository {
       ),
     );
     return 'fake-${created.length - 1}';
+  }
+
+  @override
+  Future<void> update(
+    String id, {
+    String? name,
+    int? hiveCount,
+    String? notes,
+    bool notesProvided = false,
+    String? placeLabel,
+    bool placeLabelProvided = false,
+    double? locationLon,
+    double? locationLat,
+    bool locationProvided = false,
+  }) async {
+    updateCalled = true;
+    if (throwOnUpdate) throw Exception('boom-update');
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    deleteCalled = true;
+    if (throwOnDelete) throw Exception('boom-delete');
   }
 }
 
@@ -110,13 +173,33 @@ class _ExistingOrganizationController extends OrganizationController {
 Widget _buildApp({
   required List<Apiary> apiaries,
   ApiariesRepository? repositoryOverride,
+  DeviceLocationService? locationService,
 }) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      // The detail screen (reached via the apiary-a1 -> edit-button chain
+      // several tests below drive) watches apiaryByIdProvider (HIGH
+      // finding), not the whole-org apiariesStreamProvider — overridden
+      // here the same way apiary_detail_screen_test.dart already does, so
+      // navigating into the detail screen resolves immediately instead of
+      // hanging on the real (never-resolving in this environment)
+      // apiariesRepositoryProvider chain.
+      apiaryByIdProvider.overrideWith(
+        (ref, apiaryId) => Stream.value(
+          apiaries.cast<Apiary?>().firstWhere(
+            (a) => a!.id == apiaryId,
+            orElse: () => null,
+          ),
+        ),
+      ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
+      // Only the "use current location" test passes this (CRITICAL
+      // finding); every other test leaves it un-overridden, same as before.
+      if (locationService != null)
+        deviceLocationServiceProvider.overrideWithValue(locationService),
       // Only the "save with no location" test passes a fake here so the
       // create path can complete without a real PowerSync backend; every
       // other test leaves it un-overridden (matching the suite's existing
@@ -400,6 +483,302 @@ void main() {
       // only additionally confirms the transition into edit-mode's
       // (indefinite, PowerSync-less) loading state doesn't throw.
       expect(find.text('Edit apiary'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  group('"use current location" (CRITICAL finding: shared '
+      'deviceLocationServiceProvider, not raw Geolocator)', () {
+    testWidgets(
+      'tapping "use current location" sets the pin from the overridden '
+      'deviceLocationServiceProvider',
+      (tester) async {
+        // A tall viewport so "use current location" is on-screen without
+        // scrolling — same rationale as the "save with no location" test
+        // above (the default 800x600 test viewport puts it below the
+        // fold once the map picker is expanded).
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('apiary-use-current-location-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Location set: 41.14960, -8.61090'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a denied/unavailable location shows the permission-denied message, '
+      'not a crash',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationPermissionDenied(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('apiary-use-current-location-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-location-permission-denied')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('error handling on create/update/delete/load (HIGH finding)', () {
+    testWidgets(
+      'a failing create() resets busy and shows an error toast instead of '
+      'hanging on an indefinite spinner',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeApiariesRepository(throwOnCreate: true);
+        await tester.pumpWidget(
+          _buildApp(apiaries: const [], repositoryOverride: repo),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          'Encosta Nova',
+        );
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Still on the form — a failed create must not navigate away.
+        expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
+        // Not stuck on an indefinite busy spinner.
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(
+          find.textContaining('Could not save the apiary'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'a failing update() (edit mode) resets busy and shows an error toast',
+      (tester) async {
+        // Tall viewport so Save is on-screen without scrolling.
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        const existingApiary = Apiary(
+          id: 'a1',
+          name: 'Monte Alto',
+          hiveCount: 4,
+        );
+        final repo = _FakeApiariesRepository(
+          existing: existingApiary,
+          throwOnUpdate: true,
+        );
+        await tester.pumpWidget(
+          _buildApp(apiaries: const [existingApiary], repositoryOverride: repo),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('apiary-save-button')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(
+          find.textContaining('Could not save the apiary'),
+          findsOneWidget,
+        );
+        expect(repo.updateCalled, isTrue);
+      },
+    );
+
+    testWidgets('a failing delete() resets busy and shows an error toast', (
+      tester,
+    ) async {
+      // Tall viewport so the delete button is on-screen without scrolling.
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const existingApiary = Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4);
+      final repo = _FakeApiariesRepository(
+        existing: existingApiary,
+        throwOnDelete: true,
+      );
+      await tester.pumpWidget(
+        _buildApp(apiaries: const [existingApiary], repositoryOverride: repo),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('apiary-delete-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-delete-confirm-delete')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(
+        find.textContaining('Could not delete the apiary'),
+        findsOneWidget,
+      );
+      expect(repo.deleteCalled, isTrue);
+    });
+
+    testWidgets(
+      'a failing initial load (edit mode) resets busy and shows an error '
+      'instead of an indefinite spinner',
+      (tester) async {
+        final repo = _FakeApiariesRepository(throwOnGetById: true);
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4),
+            ],
+            repositoryOverride: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(
+          find.textContaining('Could not load the apiary'),
+          findsOneWidget,
+        );
+      },
+    );
+  });
+
+  testWidgets(
+    '_confirmDelete does not act on a disposed screen (MEDIUM finding: '
+    'missing mounted check after await showDialog)',
+    (tester) async {
+      // A tall viewport so the delete button (below notes/location/save) is
+      // on-screen without scrolling — same rationale as the other tall-
+      // viewport tests in this file.
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = _FakeApiariesRepository(
+        existing: const Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4),
+      );
+      final showForm = ValueNotifier<bool>(true);
+      addTearDown(showForm.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            apiariesRepositoryProvider.overrideWith((ref) async => repo),
+          ],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: ValueListenableBuilder<bool>(
+              valueListenable: showForm,
+              builder: (context, show, _) => Scaffold(
+                body: show
+                    ? const ApiaryFormScreen(apiaryId: 'a1')
+                    : const Text('replaced'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('apiary-delete-button')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('apiary-delete-confirm-dialog')),
+        findsOneWidget,
+      );
+
+      // Simulate the form being torn down while its OWN confirm dialog is
+      // still open above it (e.g. an auth/redirect elsewhere) — the dialog
+      // route itself (pushed on the app's Navigator) stays open; only the
+      // ApiaryFormScreen underneath is disposed.
+      showForm.value = false;
+      await tester.pump();
+
+      // Resolve the dialog as if the user tapped confirm. Before the fix,
+      // _confirmDelete would proceed straight into _delete(), which touches
+      // AppLocalizations.of(context)/ScaffoldMessenger.of(context) on the
+      // now-disposed State. The `if (!mounted) return;` guard must stop it.
+      await tester.tap(find.byKey(const Key('apiary-delete-confirm-delete')));
+      await tester.pumpAndSettle();
+
+      expect(repo.deleteCalled, isFalse);
       expect(tester.takeException(), isNull);
     },
   );

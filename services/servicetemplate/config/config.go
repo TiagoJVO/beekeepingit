@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
@@ -17,10 +18,15 @@ import (
 // Config is the environment-driven configuration every service built on the
 // template needs.
 type Config struct {
-	ServiceName      string
-	HTTPAddr         string
-	LogLevel         slog.Level
-	OTelEndpoint     string
+	ServiceName  string
+	HTTPAddr     string
+	LogLevel     slog.Level
+	OTelEndpoint string
+	// OTelInsecure controls whether the OTLP/gRPC exporters skip TLS when
+	// talking to the collector (otelboot.Config.Insecure). Defaults to true
+	// (no TLS), matching an in-cluster/local-dev collector; set
+	// OTEL_INSECURE=false for a collector that requires TLS.
+	OTelInsecure     bool
 	OIDCIssuerURL    string
 	OIDCAudience     string
 	OIDCDiscoveryURL string
@@ -49,7 +55,7 @@ func Load() (Config, error) {
 			Host:       req("DB_HOST"),
 			Port:       envDefault("DB_PORT", "5432"),
 			User:       req("DB_USER"),
-			Password:   os.Getenv("DB_PASSWORD"),
+			Password:   req("DB_PASSWORD"),
 			Database:   req("DB_NAME"),
 			SSLMode:    envDefault("DB_SSLMODE", "require"),
 			SearchPath: os.Getenv("DB_SEARCH_PATH"),
@@ -62,6 +68,12 @@ func Load() (Config, error) {
 	}
 	cfg.LogLevel = level
 
+	insecure, err := parseBool("OTEL_INSECURE", envDefault("OTEL_INSECURE", "true"))
+	if err != nil {
+		errs = append(errs, err)
+	}
+	cfg.OTelInsecure = insecure
+
 	if len(errs) > 0 {
 		return Config{}, errors.Join(errs...)
 	}
@@ -73,6 +85,17 @@ func envDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// parseBool parses s as a boolean for env var key, returning an error naming
+// key (not just the raw value) so a misconfigured env var is easy to spot in
+// the aggregated Load() error.
+func parseBool(key, s string) (bool, error) {
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return false, fmt.Errorf("config: %s %q is not a valid boolean", key, s)
+	}
+	return v, nil
 }
 
 func parseLogLevel(s string) (slog.Level, error) {

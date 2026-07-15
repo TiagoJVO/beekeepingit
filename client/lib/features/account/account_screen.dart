@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
+import '../../core/validation/email.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../shell/sync_status.dart';
@@ -133,60 +134,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     }
   }
 
-  // Prototype's "Definições / Sync": current status (mirrors the header
-  // pill's state, sync.md §8's vocabulary generalized to the connection),
-  // the pending-change count (AC: "see that there are queued/unsynced local
-  // changes and roughly how many"), and the manual "Sincronizar agora"
-  // override (AC: "a failed sync can be retried"; sync.md §7.1).
-  List<Widget> _buildSyncSection(BuildContext context, AppLocalizations l10n) {
-    final syncStatus = ref.watch(syncStatusProvider);
-    final needsFixCount = ref.watch(syncNeedsFixCountProvider).value ?? 0;
-    final statusLabel = syncStatus.syncing
-        ? l10n.syncStatusSyncing
-        : syncStatus.isOnline
-        ? l10n.syncStatusOnline
-        : syncStatus.isWaitingForSignal
-        ? l10n.syncStatusWaitingForSignal
-        : l10n.syncStatusOffline;
-    return [
-      Text(
-        l10n.accountSyncSectionTitle,
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      const SizedBox(height: 8),
-      Text(
-        l10n.accountSyncStatusLabel(statusLabel),
-        key: const Key('account-sync-status-text'),
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 4),
-      Text(
-        l10n.accountSyncPendingCount(syncStatus.pendingCount),
-        key: const Key('account-sync-pending-text'),
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      // Rejected offline writes awaiting a fix (D-12 notify-and-fix): a
-      // call-to-action into the needs-fix list, shown only when there are any.
-      if (needsFixCount > 0) ...[
-        const SizedBox(height: 12),
-        SecondaryActionButton(
-          key: const Key('account-needs-fix-button'),
-          label: l10n.syncNeedsFixCount(needsFixCount),
-          icon: Icons.sync_problem_outlined,
-          onPressed: () => context.go('/sync-needs-fix'),
-        ),
-      ],
-      const SizedBox(height: 16),
-      SecondaryActionButton(
-        key: const Key('account-sync-now-button'),
-        label: l10n.accountSyncNowButton,
-        icon: Icons.sync,
-        busy: _syncing,
-        onPressed: () => _syncNow(l10n),
-      ),
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -195,7 +142,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
+          key: const Key('account-back-button'),
           icon: const Icon(Icons.arrow_back),
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
           onPressed: () => context.go('/apiaries'),
         ),
         title: Text(l10n.accountTitle),
@@ -250,7 +199,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                               if (value.isEmpty) {
                                 return l10n.profileEmailRequired;
                               }
-                              if (!_looksLikeEmail(value)) {
+                              if (!looksLikeEmail(value)) {
                                 return l10n.profileEmailInvalid;
                               }
                               return null;
@@ -291,7 +240,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
-                    ..._buildSyncSection(context, l10n),
+                    _SyncSection(
+                      syncing: _syncing,
+                      onSyncNow: () => _syncNow(l10n),
+                    ),
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
@@ -356,8 +308,78 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       ),
     );
   }
+}
 
-  bool _looksLikeEmail(String value) {
-    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
+/// The account screen's "Sync" section (prototype's "Definições / Sync"):
+/// current status (mirrors the header pill's state, sync.md §8's vocabulary
+/// generalized to the connection), the pending-change count (AC: "see that
+/// there are queued/unsynced local changes and roughly how many"), and the
+/// manual "Sincronizar agora" override (AC: "a failed sync can be retried";
+/// sync.md §7.1). A proper widget class (not a private `_build*()` helper on
+/// [_AccountScreenState]) so it reads its own providers directly and keeps
+/// [_AccountScreenState.build] from growing further — [_syncing] and the
+/// [_syncNow] handler stay on the state (they need `setState`/`mounted`/
+/// `ScaffoldMessenger`), passed down as plain data + a callback.
+class _SyncSection extends ConsumerWidget {
+  const _SyncSection({required this.syncing, required this.onSyncNow});
+
+  /// Whether a manual "sync now" request is currently in flight.
+  final bool syncing;
+
+  final VoidCallback onSyncNow;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final syncStatus = ref.watch(syncStatusProvider);
+    final needsFixCount = ref.watch(syncNeedsFixCountProvider).value ?? 0;
+    final statusLabel = syncStatus.syncing
+        ? l10n.syncStatusSyncing
+        : syncStatus.isOnline
+        ? l10n.syncStatusOnline
+        : syncStatus.isWaitingForSignal
+        ? l10n.syncStatusWaitingForSignal
+        : l10n.syncStatusOffline;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.accountSyncSectionTitle,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          l10n.accountSyncStatusLabel(statusLabel),
+          key: const Key('account-sync-status-text'),
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          l10n.accountSyncPendingCount(syncStatus.pendingCount),
+          key: const Key('account-sync-pending-text'),
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        // Rejected offline writes awaiting a fix (D-12 notify-and-fix): a
+        // call-to-action into the needs-fix list, shown only when there are
+        // any.
+        if (needsFixCount > 0) ...[
+          const SizedBox(height: 12),
+          SecondaryActionButton(
+            key: const Key('account-needs-fix-button'),
+            label: l10n.syncNeedsFixCount(needsFixCount),
+            icon: Icons.sync_problem_outlined,
+            onPressed: () => context.go('/sync-needs-fix'),
+          ),
+        ],
+        const SizedBox(height: 16),
+        SecondaryActionButton(
+          key: const Key('account-sync-now-button'),
+          label: l10n.accountSyncNowButton,
+          icon: Icons.sync,
+          busy: syncing,
+          onPressed: onSyncNow,
+        ),
+      ],
+    );
   }
 }

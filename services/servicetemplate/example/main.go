@@ -38,7 +38,7 @@ func run(ctx context.Context) error {
 		ServiceName:       cfg.ServiceName,
 		ServiceNamespace:  "beekeepingit",
 		CollectorEndpoint: cfg.OTelEndpoint,
-		Insecure:          true,
+		Insecure:          cfg.OTelInsecure,
 	})
 	if err != nil {
 		return fmt.Errorf("bootstrap otel: %w", err)

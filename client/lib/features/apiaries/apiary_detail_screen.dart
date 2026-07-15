@@ -26,15 +26,17 @@ class ApiaryDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    // Reuses the same apiariesStreamProvider the list screen watches (rather
-    // than a new by-id query) so widget tests can drive this screen the same
-    // way widget_test.dart already overrides the list (a fixed in-memory
-    // Stream<List<Apiary>>, no real PowerSync/DB needed) — and so the detail
-    // screen updates live if the list does.
-    final apiariesAsync = ref.watch(apiariesStreamProvider);
+    // A narrow per-id watch (HIGH finding) rather than the whole-org
+    // apiariesStreamProvider: this screen only ever renders ONE apiary, so
+    // watching the entire list just to firstWhere() it meant any write to
+    // any OTHER apiary/counter in the org re-triggered this screen's full
+    // rebuild+rescan. apiaryByIdProvider (apiaries_repository.dart) is a
+    // family-keyed StreamProvider mirroring apiaryCountersProvider's
+    // existing per-id pattern -- overridable in widget tests the same way.
+    final apiaryAsync = ref.watch(apiaryByIdProvider(apiaryId));
 
     return Scaffold(
-      body: apiariesAsync.when(
+      body: apiaryAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(
           child: Padding(
@@ -42,11 +44,7 @@ class ApiaryDetailScreen extends ConsumerWidget {
             child: Text(l10n.apiariesError('$err')),
           ),
         ),
-        data: (apiaries) {
-          final apiary = apiaries.cast<Apiary?>().firstWhere(
-            (a) => a!.id == apiaryId,
-            orElse: () => null,
-          );
+        data: (apiary) {
           if (apiary == null) {
             // Deleted/not found (e.g. a stale deep link) — nothing sensible
             // to render; bounce back to the list rather than show a blank
