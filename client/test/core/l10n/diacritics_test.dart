@@ -28,6 +28,41 @@ void main() {
     test('leaves plain ASCII text unchanged', () {
       expect(stripDiacritics('Encosta Norte'), 'Encosta Norte');
     });
+
+    test('folds a decomposed (NFD) accented character the same as its '
+        'precomposed (NFC) form', () {
+      // 'a' (U+0061) followed by COMBINING TILDE (U+0303) is the NFD
+      // spelling of the same grapheme as the precomposed 'ã' (U+00E3,
+      // NFC) used elsewhere in this file. Built via explicit code points
+      // (rather than a literal in this source file) so the combining
+      // mark's position is unambiguous regardless of editor/encoding.
+      // Dart has no built-in NFC/NFD normalizer, and text from other
+      // systems (e.g. macOS's filesystem, which normalizes to NFD) can
+      // arrive already decomposed — stripDiacritics must fold both
+      // spellings to the same result.
+      final nfd = String.fromCharCodes(const [
+        0x53, // S
+        0x61, // a
+        0x0303, // COMBINING TILDE
+        0x6f, // o
+      ]);
+      const nfc = 'São'; // precomposed atilde (same grapheme as nfd)
+      expect(stripDiacritics(nfd), stripDiacritics(nfc));
+      expect(stripDiacritics(nfd), 'Sao');
+    });
+
+    test(
+      'normalizeForSearch matches an NFD-encoded query against NFC text',
+      () {
+        final nfdQuery = String.fromCharCodes(const [
+          0x73, // s
+          0x61, // a
+          0x0303, // COMBINING TILDE
+          0x6f, // o
+        ]);
+        expect(normalizeForSearch(nfdQuery), normalizeForSearch('São'));
+      },
+    );
   });
 
   group('normalizeForSearch', () {
