@@ -1,8 +1,8 @@
 // Package api holds the identity service's HTTP surface. In the walking
 // skeleton that is a single internal, east-west endpoint: resolve an OIDC
 // subject to its identity.users row, called by the shared auth middleware of
-// other services (auth.md §5.1 step 1, walking-skeleton.md §5.2). It is never
-// exposed through the gateway.
+// other services (auth.md §5.1 step 1, walking-skeleton.md
+// §5.2). It is never exposed through the gateway.
 package api
 
 import (
@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/identity/store/sqlc/gen"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
@@ -51,6 +52,7 @@ func getUserBySub(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "users: get user by oidc sub failed", "error", err)
 			problem.Write(w, r, problem.Internal())
 			return
 		}

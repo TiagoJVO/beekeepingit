@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -283,7 +284,14 @@ func createSchema(ctx context.Context, t *testing.T, cfg dbaccess.Config, name s
 		t.Fatalf("connect to create schema: %v", err)
 	}
 	defer conn.Close(ctx)
-	if _, err := conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+name); err != nil {
+	// Parameterized/sanitized rather than raw string concatenation (coding
+	// standards: "parameterized queries only") — a schema name can't be a
+	// bind parameter (DDL doesn't accept them), so pgx.Identifier.Sanitize
+	// is the equivalent safeguard for an identifier. name is always a
+	// literal ("identity") today, but this keeps the helper consistent with
+	// the convention even if a future caller passes something less trusted.
+	stmt := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pgx.Identifier{name}.Sanitize())
+	if _, err := conn.Exec(ctx, stmt); err != nil {
 		t.Fatalf("create schema %s: %v", name, err)
 	}
 }
