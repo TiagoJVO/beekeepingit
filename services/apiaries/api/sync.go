@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -15,9 +16,44 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/apiaries/store/sqlc/gen"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
+
+// maxBatchOps caps the number of ops a single sync batch (validate or apply)
+// may carry (MEDIUM: no cap on sync batch size). applyBatch runs the whole
+// batch in one DB transaction, holding row locks (GetApiaryForUpdate's FOR
+// UPDATE) for its duration — an unbounded batch is both a resource-exhaustion
+// risk and an availability risk (one huge batch holding locks for a long
+// time). 500 is a generous multiple of a realistic device's offline queue
+// (walking-skeleton.md's sync flow batches per-connectivity-window, not
+// per-op) while still bounding worst-case transaction size.
+const maxBatchOps = 500
+
+// maxSyncBatchBodyBytes caps the raw request body size for validate/apply
+// (MEDIUM: no cap on request body size), via http.MaxBytesReader, so a
+// client can't force an unbounded json.Decode buffer regardless of how many
+// ops are inside it. Generous headroom over maxBatchOps ops' worst-case
+// wire size (a "put" op's data can carry a 10000-char notes field).
+const maxSyncBatchBodyBytes = 8 << 20 // 8 MiB
+
+// checkBatchSize rejects a batch carrying more than maxBatchOps ops with a
+// field-level RFC 9457 error, shared by validateBatch and applyBatch — both
+// must enforce the identical rule (this package's write.go doc comment: "a
+// sync-apply write and a REST write must accept exactly the same content").
+func checkBatchSize(w http.ResponseWriter, r *http.Request, batch Batch) bool {
+	if len(batch.Ops) <= maxBatchOps {
+		return true
+	}
+	problem.Write(w, r, problem.ValidationFailed("batch too large",
+		problem.FieldError{
+			Field:   "ops",
+			Code:    "too_many",
+			Message: fmt.Sprintf("batch must contain at most %d ops (got %d)", maxBatchOps, len(batch.Ops)),
+		}))
+	return false
+}
 
 // Op is one CRUD op in a client sync batch (walking-skeleton.md §5.1).
 type Op struct {
@@ -108,9 +144,13 @@ func validateBatch() http.HandlerFunc {
 		if _, _, ok := requireOrg(w, r); !ok {
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxSyncBatchBodyBytes)
 		var batch Batch
 		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
 			problem.Write(w, r, problem.ValidationFailed("malformed sync batch"))
+			return
+		}
+		if !checkBatchSize(w, r, batch) {
 			return
 		}
 
@@ -122,7 +162,7 @@ func validateBatch() http.HandlerFunc {
 			problem.Write(w, r, problem.ValidationFailed("one or more ops are invalid", fieldErrs...))
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]bool{"valid": true})
+		writeJSON(w, r, http.StatusOK, map[string]bool{"valid": true})
 	}
 }
 
@@ -276,43 +316,42 @@ func applyBatch(pool *pgxpool.Pool) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxSyncBatchBodyBytes)
 		var batch Batch
 		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
 			problem.Write(w, r, problem.ValidationFailed("malformed sync batch"))
 			return
 		}
+		if !checkBatchSize(w, r, batch) {
+			return
+		}
 
-		tx, err := pool.Begin(r.Context())
+		var results []OpResult
+		err := withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+			results = make([]OpResult, 0, len(batch.Ops))
+			for _, op := range batch.Ops {
+				var (
+					res OpResult
+					err error
+				)
+				if op.EntityType == entityTypeApiaryCounter {
+					res, err = applyCounterOp(r.Context(), q, org, userID, op)
+				} else {
+					res, err = applyOp(r.Context(), q, org, userID, op)
+				}
+				if err != nil {
+					return err
+				}
+				results = append(results, res)
+			}
+			return nil
+		})
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "apply sync batch failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
-		defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
-
-		q := sqlcgen.New(tx)
-		results := make([]OpResult, 0, len(batch.Ops))
-		for _, op := range batch.Ops {
-			var (
-				res OpResult
-				err error
-			)
-			if op.EntityType == entityTypeApiaryCounter {
-				res, err = applyCounterOp(r.Context(), q, org, userID, op)
-			} else {
-				res, err = applyOp(r.Context(), q, org, userID, op)
-			}
-			if err != nil {
-				problem.Write(w, r, problem.Internal())
-				return
-			}
-			results = append(results, res)
-		}
-
-		if err := tx.Commit(r.Context()); err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		writeJSON(w, http.StatusOK, ApplyResponse{Results: results})
+		writeJSON(w, r, http.StatusOK, ApplyResponse{Results: results})
 	}
 }
 
@@ -505,6 +544,30 @@ func applyCounterOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, us
 	incomingValue := *data.Value
 	incomingTS := pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
 
+	// Tenancy guard (FR-TEN-2, CRITICAL fix): the client-supplied apiary_id
+	// must actually belong to the caller's org BEFORE any counter data is
+	// read or written for it. Without this, an unknown/foreign apiary_id
+	// makes GetApiaryCounter below miss (its own WHERE is org-scoped, so a
+	// row that belongs to a different org simply never matches) and the
+	// missing-branch below would treat that as "offline create" and upsert
+	// UNCONDITIONALLY — letting any org inject/overwrite another org's
+	// hive-count data via the table's ON CONFLICT (apiary_id, counter_type)
+	// target, with no LWW check at all (mirrors applyOp's own org-scoped
+	// GetApiaryForUpdate lookup, sync.md §4.3's zero-trust re-check). An
+	// unknown/foreign apiary_id is a no-op (mirrors
+	// TestApiariesSlice_CrossOrg_SyncApplyCannotMutateOtherOrgsRow's "missing
+	// row ⇒ nothing to do" convention for apiary ops) rather than a
+	// distinguishable error — ADR-0002 scope-hiding, same as every other
+	// cross-org read/write path in this service.
+	if _, err := q.GetApiaryForUpdate(ctx, sqlcgen.GetApiaryForUpdateParams{
+		OrganizationID: org, ID: pgApiaryID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil // unknown/foreign apiary: no-op
+		}
+		return OpResult{}, err
+	}
+
 	stored, err := q.GetApiaryCounter(ctx, sqlcgen.GetApiaryCounterParams{OrganizationID: org, ApiaryID: pgApiaryID, CounterType: counterType})
 	missing := errors.Is(err, pgx.ErrNoRows)
 	if err != nil && !missing {
@@ -644,7 +707,7 @@ func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, use
 		EntityType:     entityTypeApiary,
 		EntityID:       pgtype.UUID{Bytes: id, Valid: true},
 		ChangeType:     changeType,
-		ActorUserID:    parseActor(userID),
+		ActorUserID:    parseActor(ctx, userID),
 		OccurredAt:     pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true},
 		ChangedFields:  changedFields,
 		Change:         changeJSON,
@@ -679,7 +742,7 @@ func logConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userI
 		WinningPayload: winning,
 		LosingPayload:  losing,
 		Winner:         "server",
-		ActorUserID:    parseActor(userID),
+		ActorUserID:    parseActor(ctx, userID),
 		OccurredAt:     pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true},
 	})
 }
@@ -718,7 +781,7 @@ func writeCounterAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtype.UU
 		EntityType:     entityTypeApiaryCounter,
 		EntityID:       pgtype.UUID{Bytes: apiaryID, Valid: true},
 		ChangeType:     changeType,
-		ActorUserID:    parseActor(userID),
+		ActorUserID:    parseActor(ctx, userID),
 		OccurredAt:     pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true},
 		ChangedFields:  changedFields,
 		Change:         changeJSON,
@@ -757,14 +820,23 @@ func logCounterConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID
 		WinningPayload: winning,
 		LosingPayload:  losing,
 		Winner:         "server",
-		ActorUserID:    parseActor(userID),
+		ActorUserID:    parseActor(ctx, userID),
 		OccurredAt:     pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true},
 	})
 }
 
-func parseActor(userID string) pgtype.UUID {
+// parseActor resolves userID (the sync-apply caller's resolved user id) to
+// the nullable pgtype.UUID audit_log/sync_conflict_log's actor_user_id
+// column expects. A malformed userID should never happen (requireOrg's
+// caller already resolved it from a verified token), so a parse failure
+// here is a wiring bug, not a client input problem — logged (rather than
+// silently nulling the actor, which would otherwise make an audit/conflict
+// row look anonymous with no trace of why) before falling back to NULL so
+// the write still proceeds.
+func parseActor(ctx context.Context, userID string) pgtype.UUID {
 	u, err := uuid.Parse(userID)
 	if err != nil {
+		logging.FromContext(ctx).ErrorContext(ctx, "parseActor: userID is not a valid UUID; audit actor will be recorded as NULL", slog.Any("error", err))
 		return pgtype.UUID{Valid: false}
 	}
 	return pgtype.UUID{Bytes: u, Valid: true}

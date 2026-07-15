@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/apiaries/store/sqlc/gen"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
@@ -164,6 +166,7 @@ func listApiaries(q *sqlcgen.Queries) http.HandlerFunc {
 			Cursor:         cursor,
 		})
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list apiaries failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -189,7 +192,7 @@ func listApiaries(q *sqlcgen.Queries) http.HandlerFunc {
 				UpdatedAt:      row.UpdatedAt.Time,
 			})
 		}
-		writeJSON(w, http.StatusOK, listDTO{Data: data, Page: page})
+		writeJSON(w, r, http.StatusOK, listDTO{Data: data, Page: page})
 	}
 }
 
@@ -210,6 +213,7 @@ func listApiariesByProximity(w http.ResponseWriter, r *http.Request, q *sqlcgen.
 		Offset:         0,
 	})
 	if err != nil {
+		logging.FromContext(r.Context()).ErrorContext(r.Context(), "list apiaries by proximity failed", slog.Any("error", err))
 		problem.Write(w, r, problem.Internal())
 		return
 	}
@@ -234,7 +238,7 @@ func listApiariesByProximity(w http.ResponseWriter, r *http.Request, q *sqlcgen.
 			UpdatedAt:      row.UpdatedAt.Time,
 		})
 	}
-	writeJSON(w, http.StatusOK, listDTO{Data: data, Page: page})
+	writeJSON(w, r, http.StatusOK, listDTO{Data: data, Page: page})
 }
 
 // distancePtr's input is untyped (`interface{}`) in ListApiariesByProximityRow: its SQL
@@ -298,12 +302,13 @@ func getApiary(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "get apiary failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
 
 		w.Header().Set("ETag", etagFor(row.UpdatedAt))
-		writeJSON(w, http.StatusOK, apiaryDTO{
+		writeJSON(w, r, http.StatusOK, apiaryDTO{
 			ID:             uuidString(row.ID),
 			OrganizationID: uuidString(row.OrganizationID),
 			Name:           row.Name,
@@ -361,6 +366,7 @@ func getApiaryDistance(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "get apiary distance failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -372,7 +378,7 @@ func getApiaryDistance(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, distanceDTO{
+		writeJSON(w, r, http.StatusOK, distanceDTO{
 			From:      uuidString(row.FromID),
 			To:        uuidString(row.ToID),
 			DistanceM: row.DistanceM,

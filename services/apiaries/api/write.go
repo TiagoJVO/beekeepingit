@@ -14,18 +14,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/apiaries/store/sqlc/gen"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
@@ -90,79 +91,74 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			hiveCount = *body.HiveCount
 		}
 		now := time.Now().UTC()
-
-		tx, err := pool.Begin(r.Context())
-		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
-
-		txq := sqlcgen.New(tx)
 		pgID := pgtype.UUID{Bytes: id, Valid: true}
-		row, err := txq.InsertApiaryWithLocation(r.Context(), sqlcgen.InsertApiaryWithLocationParams{
-			ID:             pgID,
-			OrganizationID: org,
-			Name:           body.Name,
-			Notes:          notesParam(body.Notes),
-			PlaceLabel:     notesParam(body.PlaceLabel),
-			UpdatedAt:      pgtype.Timestamptz{Time: now, Valid: true},
-			Lon:            body.Location.lon(),
-			Lat:            body.Location.lat(),
-		})
-		if isUniqueViolation(err) {
-			// Idempotency (Idempotency-Key + client-generated UUID PK,
-			// api-contracts.md §4): the id itself is the natural idempotency
-			// anchor. A re-sent create with the same id and the same content
-			// returns the original result (201, unchanged) rather than
-			// erroring; a genuinely different payload reusing the same id is
-			// a real conflict (409).
-			//
-			// The failed INSERT already aborted tx (Postgres: any error
-			// inside a transaction poisons it — every further statement on
-			// tx fails until rollback), so the lookup below must run on a
-			// fresh pool-backed Queries, not txq.
-			if rbErr := tx.Rollback(r.Context()); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
-				problem.Write(w, r, problem.Internal())
-				return
+
+		var row sqlcgen.InsertApiaryWithLocationRow
+		err := withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+			var err error
+			row, err = q.InsertApiaryWithLocation(r.Context(), sqlcgen.InsertApiaryWithLocationParams{
+				ID:             pgID,
+				OrganizationID: org,
+				Name:           body.Name,
+				Notes:          notesParam(body.Notes),
+				PlaceLabel:     notesParam(body.PlaceLabel),
+				UpdatedAt:      pgtype.Timestamptz{Time: now, Valid: true},
+				Lon:            body.Location.lon(),
+				Lat:            body.Location.lat(),
+			})
+			if isUniqueViolation(err) {
+				// Idempotency (Idempotency-Key + client-generated UUID PK,
+				// api-contracts.md §4): the id itself is the natural
+				// idempotency anchor. A re-sent create with the same id and
+				// the same content returns the original result (201,
+				// unchanged) rather than erroring; a genuinely different
+				// payload reusing the same id is a real conflict (409).
+				//
+				// The failed INSERT already aborted this tx (Postgres: any
+				// error inside a transaction poisons it — every further
+				// statement fails until rollback, which withTx's deferred
+				// Rollback performs once this function returns), so the
+				// lookup below runs on a fresh pool-backed Queries, not q.
+				respondIdempotentCreateOrConflict(w, r, sqlcgen.New(pool), org, id, body, hiveCount)
+				return errResponseWritten
 			}
-			respondIdempotentCreateOrConflict(w, r, sqlcgen.New(pool), org, id, body, hiveCount)
-			return
-		}
+			if err != nil {
+				return fmt.Errorf("insert apiary: %w", err)
+			}
+
+			// hive_count (#256): upserted into apiary_counters in the same
+			// transaction as the just-inserted apiaries row — never a column
+			// on that row itself. Uses the request's own hiveCount value
+			// directly (there is nothing to join against yet for a
+			// brand-new id, per InsertApiaryWithLocation's doc comment), so
+			// the response DTO below and the history "want" state both
+			// reflect exactly what the caller asked to create.
+			// Unconditional here (unlike updateApiary's body.HiveCount
+			// nil-guard): a REST create is a full-resource create whose
+			// contract defaults hive_count to 0, and the id was just minted
+			// by this caller — no offline device can hold a pending counter
+			// edit for it, so there is no LWW interaction to protect.
+			if err := upsertCounter(r.Context(), q, org, pgID, counterTypeHive, hiveCount, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
+				return fmt.Errorf("upsert hive counter: %w", err)
+			}
+
+			want := restRowState{name: row.Name, hive: hiveCount, notes: textOf(row.Notes), placeLabel: textOf(row.PlaceLabel)}
+			if err := writeAuditLogTx(r.Context(), q, org, userID, id, history.ChangeCreate, now, restRowState{}, want); err != nil {
+				return fmt.Errorf("write audit log: %w", err)
+			}
+			return nil
+		})
 		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-
-		// hive_count (#256): upserted into apiary_counters in the same
-		// transaction as the just-inserted apiaries row — never a column on
-		// that row itself. Uses the request's own hiveCount value directly
-		// (there is nothing to join against yet for a brand-new id, per
-		// InsertApiaryWithLocation's doc comment), so the response DTO below
-		// and the history "want" state both reflect exactly what the caller
-		// asked to create. Unconditional here (unlike updateApiary's
-		// body.HiveCount nil-guard): a REST create is a full-resource create
-		// whose contract defaults hive_count to 0, and the id was just minted
-		// by this caller — no offline device can hold a pending counter edit
-		// for it, so there is no LWW interaction to protect.
-		if err := upsertCounter(r.Context(), txq, org, pgID, counterTypeHive, hiveCount, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-
-		want := restRowState{name: row.Name, hive: hiveCount, notes: textOf(row.Notes), placeLabel: textOf(row.PlaceLabel)}
-		if err := writeAuditLogTx(r.Context(), txq, org, userID, id, history.ChangeCreate, now, restRowState{}, want); err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		if err := tx.Commit(r.Context()); err != nil {
-			problem.Write(w, r, problem.Internal())
+			if !errors.Is(err, errResponseWritten) {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "create apiary failed", slog.Any("error", err))
+				problem.Write(w, r, problem.Internal())
+			}
 			return
 		}
 
 		w.Header().Set("Location", "/v1/apiaries/"+uuidString(row.ID))
 		w.Header().Set("ETag", etagFor(row.UpdatedAt))
-		writeJSON(w, http.StatusCreated, apiaryDTO{
+		writeJSON(w, r, http.StatusCreated, apiaryDTO{
 			ID:             uuidString(row.ID),
 			OrganizationID: uuidString(row.OrganizationID),
 			Name:           row.Name,
@@ -199,7 +195,7 @@ func respondIdempotentCreateOrConflict(w http.ResponseWriter, r *http.Request, q
 	}
 	w.Header().Set("Location", "/v1/apiaries/"+uuidString(existing.ID))
 	w.Header().Set("ETag", etagFor(existing.UpdatedAt))
-	writeJSON(w, http.StatusCreated, apiaryDTO{
+	writeJSON(w, r, http.StatusCreated, apiaryDTO{
 		ID:             uuidString(existing.ID),
 		OrganizationID: uuidString(existing.OrganizationID),
 		Name:           existing.Name,
@@ -325,95 +321,96 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		tx, err := pool.Begin(r.Context())
-		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
-
-		txq := sqlcgen.New(tx)
 		pgID := pgtype.UUID{Bytes: id, Valid: true}
-		current, err := txq.GetApiaryForUpdate(r.Context(), sqlcgen.GetApiaryForUpdateParams{OrganizationID: org, ID: pgID})
-		if err != nil || current.DeletedAt.Valid {
-			problem.Write(w, r, problem.NotFound("apiary not found"))
-			return
-		}
+		var (
+			updated sqlcgen.UpdateApiaryWithLocationRow
+			want    restRowState
+		)
+		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+			current, err := q.GetApiaryForUpdate(r.Context(), sqlcgen.GetApiaryForUpdateParams{OrganizationID: org, ID: pgID})
+			if err != nil || current.DeletedAt.Valid {
+				problem.Write(w, r, problem.NotFound("apiary not found"))
+				return errResponseWritten
+			}
 
-		if !ifMatchOK(r, etagFor(current.UpdatedAt)) {
-			problem.Write(w, r, problem.Conflict("If-Match does not match the current version"))
-			return
-		}
+			if !ifMatchOK(r, etagFor(current.UpdatedAt)) {
+				problem.Write(w, r, problem.Conflict("If-Match does not match the current version"))
+				return errResponseWritten
+			}
 
-		before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel)}
-		want := before
-		if nameSet {
-			want.name = *body.Name
-		}
-		if body.HiveCount != nil {
-			want.hive = *body.HiveCount
-		}
-		_, notesSet := fields["notes"]
-		if notesSet {
-			want.notes = strPtrValue(body.Notes)
-		}
-		_, placeLabelSet := fields["place_label"]
-		if placeLabelSet {
-			want.placeLabel = strPtrValue(body.PlaceLabel)
-		}
-		var lon, lat pgtype.Float8
-		if locationSet {
-			want.location = geoJSONOf(body.Location)
-			lon, lat = body.Location.lon(), body.Location.lat()
-		} else {
-			// Location untouched: re-send the currently stored point so
-			// UpdateApiaryWithLocation (which always sets every mutable
-			// column, mirroring sync.go's mergeOp) doesn't clear it.
-			lon, lat = currentLonLat(current.LocationGeojson)
-		}
+			before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel)}
+			want = before
+			if nameSet {
+				want.name = *body.Name
+			}
+			if body.HiveCount != nil {
+				want.hive = *body.HiveCount
+			}
+			_, notesSet := fields["notes"]
+			if notesSet {
+				want.notes = strPtrValue(body.Notes)
+			}
+			_, placeLabelSet := fields["place_label"]
+			if placeLabelSet {
+				want.placeLabel = strPtrValue(body.PlaceLabel)
+			}
+			var lon, lat pgtype.Float8
+			if locationSet {
+				want.location = geoJSONOf(body.Location)
+				lon, lat = body.Location.lon(), body.Location.lat()
+			} else {
+				// Location untouched: re-send the currently stored point so
+				// UpdateApiaryWithLocation (which always sets every mutable
+				// column, mirroring sync.go's mergeOp) doesn't clear it.
+				lon, lat = currentLonLat(current.LocationGeojson)
+			}
 
-		now := time.Now().UTC()
-		nowTS := pgtype.Timestamptz{Time: now, Valid: true}
-		updated, err := txq.UpdateApiaryWithLocation(r.Context(), sqlcgen.UpdateApiaryWithLocationParams{
-			OrganizationID: org, ID: pgID,
-			Name:       want.name,
-			Notes:      notesParamFromState(want.notes),
-			PlaceLabel: notesParamFromState(want.placeLabel),
-			UpdatedAt:  nowTS,
-			Lon:        lon, Lat: lat,
+			now := time.Now().UTC()
+			nowTS := pgtype.Timestamptz{Time: now, Valid: true}
+			var updateErr error
+			updated, updateErr = q.UpdateApiaryWithLocation(r.Context(), sqlcgen.UpdateApiaryWithLocationParams{
+				OrganizationID: org, ID: pgID,
+				Name:       want.name,
+				Notes:      notesParamFromState(want.notes),
+				PlaceLabel: notesParamFromState(want.placeLabel),
+				UpdatedAt:  nowTS,
+				Lon:        lon, Lat: lat,
+			})
+			if updateErr != nil {
+				return fmt.Errorf("update apiary: %w", updateErr)
+			}
+
+			// hive_count (#256): upserted into apiary_counters in the same
+			// transaction — but ONLY when this PATCH actually carried it. A
+			// hive-less PATCH (e.g. an Admin-App name edit) must not touch
+			// the counter row at all: re-upserting the unchanged value would
+			// bump the counter's own updated_at to server-now, which would
+			// then LWW-supersede a field device's pending OFFLINE
+			// hive-count edit (an older device timestamp) that had nothing
+			// to conflict with — exactly the cross-field clobbering #256's
+			// decoupling exists to prevent (sync.md §4.4's lossy case, now
+			// solved for hive).
+			if body.HiveCount != nil {
+				if err := upsertCounter(r.Context(), q, org, pgID, counterTypeHive, want.hive, nowTS); err != nil {
+					return fmt.Errorf("upsert hive counter: %w", err)
+				}
+			}
+
+			if err := writeAuditLogTx(r.Context(), q, org, userID, id, history.ChangeUpdate, now, before, want); err != nil {
+				return fmt.Errorf("write audit log: %w", err)
+			}
+			return nil
 		})
 		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-
-		// hive_count (#256): upserted into apiary_counters in the same
-		// transaction — but ONLY when this PATCH actually carried it. A
-		// hive-less PATCH (e.g. an Admin-App name edit) must not touch the
-		// counter row at all: re-upserting the unchanged value would bump
-		// the counter's own updated_at to server-now, which would then
-		// LWW-supersede a field device's pending OFFLINE hive-count edit
-		// (an older device timestamp) that had nothing to conflict with —
-		// exactly the cross-field clobbering #256's decoupling exists to
-		// prevent (sync.md §4.4's lossy case, now solved for hive).
-		if body.HiveCount != nil {
-			if err := upsertCounter(r.Context(), txq, org, pgID, counterTypeHive, want.hive, nowTS); err != nil {
+			if !errors.Is(err, errResponseWritten) {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "update apiary failed", slog.Any("error", err))
 				problem.Write(w, r, problem.Internal())
-				return
 			}
-		}
-
-		if err := writeAuditLogTx(r.Context(), txq, org, userID, id, history.ChangeUpdate, now, before, want); err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		if err := tx.Commit(r.Context()); err != nil {
-			problem.Write(w, r, problem.Internal())
 			return
 		}
 
 		w.Header().Set("ETag", etagFor(updated.UpdatedAt))
-		writeJSON(w, http.StatusOK, apiaryDTO{
+		writeJSON(w, r, http.StatusOK, apiaryDTO{
 			ID:             uuidString(updated.ID),
 			OrganizationID: uuidString(updated.OrganizationID),
 			Name:           updated.Name,
@@ -468,47 +465,43 @@ func deleteApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			problem.Write(w, r, problem.NotFound("apiary not found"))
 			return
 		}
-
-		tx, err := pool.Begin(r.Context())
-		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
-
-		txq := sqlcgen.New(tx)
 		pgID := pgtype.UUID{Bytes: id, Valid: true}
-		current, err := txq.GetApiaryForUpdate(r.Context(), sqlcgen.GetApiaryForUpdateParams{OrganizationID: org, ID: pgID})
-		if err != nil || current.DeletedAt.Valid {
-			problem.Write(w, r, problem.NotFound("apiary not found"))
-			return
-		}
 
-		if !ifMatchOK(r, etagFor(current.UpdatedAt)) {
-			problem.Write(w, r, problem.Conflict("If-Match does not match the current version"))
-			return
-		}
+		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+			current, err := q.GetApiaryForUpdate(r.Context(), sqlcgen.GetApiaryForUpdateParams{OrganizationID: org, ID: pgID})
+			if err != nil || current.DeletedAt.Valid {
+				problem.Write(w, r, problem.NotFound("apiary not found"))
+				return errResponseWritten
+			}
 
-		now := time.Now().UTC()
-		rowsAffected, err := txq.SoftDeleteApiary(r.Context(), sqlcgen.SoftDeleteApiaryParams{
-			OrganizationID: org, ID: pgID, DeletedAt: pgtype.Timestamptz{Time: now, Valid: true},
+			if !ifMatchOK(r, etagFor(current.UpdatedAt)) {
+				problem.Write(w, r, problem.Conflict("If-Match does not match the current version"))
+				return errResponseWritten
+			}
+
+			now := time.Now().UTC()
+			rowsAffected, err := q.SoftDeleteApiary(r.Context(), sqlcgen.SoftDeleteApiaryParams{
+				OrganizationID: org, ID: pgID, DeletedAt: pgtype.Timestamptz{Time: now, Valid: true},
+			})
+			if err != nil {
+				return fmt.Errorf("soft delete apiary: %w", err)
+			}
+			if rowsAffected == 0 {
+				problem.Write(w, r, problem.NotFound("apiary not found"))
+				return errResponseWritten
+			}
+
+			before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel)}
+			if err := writeAuditLogTx(r.Context(), q, org, userID, id, history.ChangeDelete, now, before, restRowState{}); err != nil {
+				return fmt.Errorf("write audit log: %w", err)
+			}
+			return nil
 		})
 		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		if rowsAffected == 0 {
-			problem.Write(w, r, problem.NotFound("apiary not found"))
-			return
-		}
-
-		before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel)}
-		if err := writeAuditLogTx(r.Context(), txq, org, userID, id, history.ChangeDelete, now, before, restRowState{}); err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		if err := tx.Commit(r.Context()); err != nil {
-			problem.Write(w, r, problem.Internal())
+			if !errors.Is(err, errResponseWritten) {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "delete apiary failed", slog.Any("error", err))
+				problem.Write(w, r, problem.Internal())
+			}
 			return
 		}
 
@@ -618,7 +611,7 @@ func writeAuditLogTx(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, u
 		EntityType:     entityTypeApiary,
 		EntityID:       pgtype.UUID{Bytes: entityID, Valid: true},
 		ChangeType:     changeType,
-		ActorUserID:    parseActor(userID),
+		ActorUserID:    parseActor(ctx, userID),
 		OccurredAt:     pgtype.Timestamptz{Time: occurredAt, Valid: true},
 		ChangedFields:  changedFields,
 		Change:         changeJSON,
