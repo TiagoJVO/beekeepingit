@@ -3,11 +3,6 @@ SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
 WHERE oidc_sub = $1;
 
--- name: GetUserByID :one
-SELECT id, oidc_sub, name, email, locale, created_at, updated_at
-FROM identity.users
-WHERE id = $1;
-
 -- name: UpsertUserOnFirstSeen :one
 -- Get-or-create on first authenticated profile read (#25, FR-ONB-1): if no row
 -- exists yet for oidc_sub, insert one with empty name/email so the client
