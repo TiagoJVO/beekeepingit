@@ -16,11 +16,18 @@ import (
 // Config holds the connection details for an S3-compatible endpoint.
 // Populate it from environment/config/secrets — never hardcode credentials.
 type Config struct {
-	Endpoint  string // host:port, no scheme (e.g. "minio:9000")
+	Endpoint string // host:port, no scheme (e.g. "minio:9000")
+	// AccessKey is the S3-compatible access key ID. Populate from
+	// environment/config/secrets — never hardcode.
 	AccessKey string
+	// SecretKey is the S3-compatible secret access key. Populate from
+	// environment/config/secrets — never hardcode, never log.
 	SecretKey string
-	UseSSL    bool
-	Region    string // optional; leave empty for providers that don't require one
+	// UseSSL selects https (true) vs http (false) for the endpoint
+	// connection. Production endpoints should set this true; false is
+	// typically only appropriate for local/dev MinIO without TLS.
+	UseSSL bool
+	Region string // optional; leave empty for providers that don't require one
 }
 
 // Store is an S3-compatible object storage client.

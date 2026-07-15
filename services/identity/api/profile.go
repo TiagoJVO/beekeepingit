@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -101,7 +102,10 @@ func writeProfileAuditLog(ctx context.Context, q *sqlcgen.Queries, entityID pgty
 	if changeType != history.ChangeCreate {
 		oldFields = profileFields(before)
 	}
-	changedFields, change := history.ComputeChange(changeType, oldFields, profileFields(after))
+	changedFields, change, err := history.ComputeChange(changeType, oldFields, profileFields(after))
+	if err != nil {
+		return fmt.Errorf("compute profile change: %w", err)
+	}
 
 	changeJSON, err := json.Marshal(change)
 	if err != nil {

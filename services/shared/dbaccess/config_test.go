@@ -66,6 +66,16 @@ func TestConfig_validate(t *testing.T) {
 		{name: "missing user", cfg: Config{Host: "h", Database: "d"}, wantErr: true},
 		{name: "missing database", cfg: Config{Host: "h", User: "u"}, wantErr: true},
 		{name: "zero value", cfg: Config{}, wantErr: true},
+		{name: "valid search path", cfg: Config{Host: "h", User: "u", Database: "d", SearchPath: "apiaries"}, wantErr: false},
+		{name: "valid search path with underscore", cfg: Config{Host: "h", User: "u", Database: "d", SearchPath: "apiaries_svc"}, wantErr: false},
+		// HIGH #3 regression: SearchPath is concatenated unvalidated into
+		// libpq's `options=-c search_path=<value>` connection parameter
+		// (DSN). A value containing a space lets a caller (or config typo)
+		// inject additional `-c` options into the connection string.
+		{name: "search path with space injects extra options", cfg: Config{Host: "h", User: "u", Database: "d", SearchPath: "public -c statement_timeout=1"}, wantErr: true},
+		{name: "search path with -c flag", cfg: Config{Host: "h", User: "u", Database: "d", SearchPath: "-c"}, wantErr: true},
+		{name: "search path starting with digit", cfg: Config{Host: "h", User: "u", Database: "d", SearchPath: "1invalid"}, wantErr: true},
+		{name: "search path with special characters", cfg: Config{Host: "h", User: "u", Database: "d", SearchPath: "schema;drop table x"}, wantErr: true},
 	}
 
 	for _, tt := range tests {
