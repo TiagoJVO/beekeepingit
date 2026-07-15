@@ -1,8 +1,8 @@
-// Package api (this file) — member listing + email invitations (FR-ONB-3,
+// Package api (this file) -- member listing + email invitations (FR-ONB-3,
 // FR-TEN-2, NFR-ROL-1, D-3, #27). Every route here is admin-only within the
-// caller's own org (auth.md §5.3: "member/invitation endpoints are
+// caller's own org (auth.md section 5.3: "member/invitation endpoints are
 // admin-only, 403 for a user") and asserts {orgId} matches the caller's own
-// resolved org before doing anything else (ADR-0002 — the path never widens
+// resolved org before doing anything else (ADR-0002 -- the path never widens
 // scope; a caller from a *different* org gets 404, matching
 // organizations.go's getOrganization, since there's nothing to reveal about
 // another org's existence to a non-member).
@@ -12,20 +12,23 @@
 // not itself an HTTP handler, just the accept-on-login step "an invited user
 // who logs in is joined to the inviting organization" (FR-ONB-3 AC). The
 // email it matches against must already be the caller's JWT-verified,
-// email_verified-gated address — never identity.users.email — see its own
+// email_verified-gated address -- never identity.users.email -- see its own
 // doc comment and organizations.go's getMyOrganization/ResolvedUser comments
 // for the security reasoning (a #170-review-found vulnerability, now fixed).
 //
 // History recording (FR-HIS-1, #165): invite/revoke/accept each write an
 // organizations.audit_log row (entity_type "invitation", plus a "membership"
 // create row on accept) in the same local transaction as their domain write
-// — see audit.go's shared writeAuditLog helper and organizations.go's
+// -- see audit.go's shared writeAuditLog helper and organizations.go's
 // package doc for the parallel organization-create wiring.
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -39,6 +42,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/organizations/store/sqlc/gen"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
@@ -47,13 +51,13 @@ const (
 	defaultPageLimit = 50
 	maxPageLimit     = 200
 	// maxEmailLength matches services/identity/api/profile.go's own constant
-	// (RFC 5321 upper bound) — duplicated, not imported: identity and
+	// (RFC 5321 upper bound) -- duplicated, not imported: identity and
 	// organizations are separate Go modules/services (service-decomposition.md
 	// rule 2), so there is no shared package to pull this from.
 	maxEmailLength = 320
 )
 
-// emailPattern matches services/identity/api/profile.go's own validation —
+// emailPattern matches services/identity/api/profile.go's own validation --
 // duplicated for the same cross-service reason as maxEmailLength above.
 var emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
@@ -101,11 +105,11 @@ type invitationCreateRequest struct {
 
 // registerMemberAndInvitationRoutes mounts the admin-only member/invitation
 // sub-resources under the same /v1 router organizations.go's PublicRouter
-// returns — kept in this file rather than duplicating PublicRouter, since
+// returns -- kept in this file rather than duplicating PublicRouter, since
 // these routes share its request-resolution helpers (resolveActiveMembership).
 // Invite/revoke now open their own local transaction (pool, not just q) so
 // their #165 audit_log row commits atomically with the domain write
-// (history.md §4) — see createInvitationHandler/revokeInvitationHandler.
+// (history.md section 4) -- see createInvitationHandler/revokeInvitationHandler.
 func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) {
 	r.Get("/organizations/{orgId}/members", listMembersHandler(q, resolver))
 	r.Get("/organizations/{orgId}/invitations", listInvitationsHandler(q, resolver))
@@ -115,7 +119,7 @@ func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlc
 
 // requireOrgAdmin resolves the caller's active membership, asserts {orgId}
 // matches it (404 otherwise, ADR-0002), and asserts the caller is an org
-// admin (403 otherwise, auth.md §5.3). Every member/invitation route needs
+// admin (403 otherwise, auth.md section 5.3). Every member/invitation route needs
 // exactly this sequence, so it's centralized rather than repeated per
 // handler.
 func requireOrgAdmin(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, resolver UserResolver) (callerMembership, bool) {
@@ -152,6 +156,7 @@ func listMembersHandler(q *sqlcgen.Queries, resolver UserResolver) http.HandlerF
 			Cursor:         cursor,
 		})
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list members failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -170,7 +175,7 @@ func listMembersHandler(q *sqlcgen.Queries, resolver UserResolver) http.HandlerF
 				Status: row.Status,
 			})
 		}
-		writeJSON(w, http.StatusOK, memberListResponse{Data: data, Page: page})
+		writeJSON(w, r, http.StatusOK, memberListResponse{Data: data, Page: page})
 	}
 }
 
@@ -191,6 +196,7 @@ func listInvitationsHandler(q *sqlcgen.Queries, resolver UserResolver) http.Hand
 			Cursor:         cursor,
 		})
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list invitations failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -205,7 +211,7 @@ func listInvitationsHandler(q *sqlcgen.Queries, resolver UserResolver) http.Hand
 		for _, row := range rows {
 			data = append(data, toInvitationResponse(row))
 		}
-		writeJSON(w, http.StatusOK, invitationListResponse{Data: data, Page: page})
+		writeJSON(w, r, http.StatusOK, invitationListResponse{Data: data, Page: page})
 	}
 }
 
@@ -243,44 +249,41 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 		}
 
 		// History (FR-HIS-1, #165): the invitation's create row commits in
-		// the same local transaction as the domain insert (history.md §4).
-		tx, err := pool.Begin(r.Context())
-		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
-		txq := q.WithTx(tx)
-
-		invitation, err := txq.CreateInvitation(r.Context(), sqlcgen.CreateInvitationParams{
-			ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
-			OrganizationID: member.OrgID,
-			Email:          email,
-			Role:           role,
-			InvitedBy:      member.UserID,
-		})
-		if isUniqueViolation(err) {
-			problem.Write(w, r, problem.Conflict("this email already has a pending invitation to this organization"))
-			return
-		}
-		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-
+		// the same local transaction as the domain insert (history.md section 4).
+		var invitation sqlcgen.OrganizationsInvitation
 		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-		if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, invitation.ID, member.UserID, now,
-			history.ChangeCreate, nil, invitationFields(invitation)); err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		if err := tx.Commit(r.Context()); err != nil {
+		txErr := withTx(r.Context(), pool, func(tx pgx.Tx) error {
+			txq := q.WithTx(tx)
+			var err error
+			invitation, err = txq.CreateInvitation(r.Context(), sqlcgen.CreateInvitationParams{
+				ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
+				OrganizationID: member.OrgID,
+				Email:          email,
+				Role:           role,
+				InvitedBy:      member.UserID,
+			})
+			if err != nil {
+				return fmt.Errorf("create invitation: %w", err)
+			}
+
+			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, invitation.ID, member.UserID, now,
+				history.ChangeCreate, nil, invitationFields(invitation)); err != nil {
+				return fmt.Errorf("write invitation audit log: %w", err)
+			}
+			return nil
+		})
+		if txErr != nil {
+			if isUniqueViolation(txErr) {
+				problem.Write(w, r, problem.Conflict("this email already has a pending invitation to this organization"))
+				return
+			}
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "create invitation failed", slog.Any("error", txErr))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
 
 		w.Header().Set("Location", "/v1/organizations/"+uuidString(member.OrgID)+"/invitations/"+uuidString(invitation.ID))
-		writeJSON(w, http.StatusCreated, toInvitationResponse(invitation))
+		writeJSON(w, r, http.StatusCreated, toInvitationResponse(invitation))
 	}
 }
 
@@ -298,10 +301,10 @@ func revokeInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 		}
 
 		// Distinguish "doesn't exist in this org" (404) from "exists but
-		// isn't pending anymore" (also 404 — a resolved invitation isn't a
+		// isn't pending anymore" (also 404 -- a resolved invitation isn't a
 		// resource this endpoint can still act on, and re-checking here
 		// keeps the response honest about *why* without leaking whether a
-		// non-pending row exists for a non-admin — moot here since the
+		// non-pending row exists for a non-admin -- moot here since the
 		// caller is already asserted admin of this exact org, but keeps the
 		// two branches simple rather than a single ambiguous message).
 		before, err := q.GetInvitation(r.Context(), sqlcgen.GetInvitationParams{
@@ -313,40 +316,41 @@ func revokeInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 			return
 		}
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "get invitation before revoke failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
 
 		// History (FR-HIS-1, #165): the revoke's update row commits in the
-		// same local transaction as the domain update (history.md §4).
-		tx, err := pool.Begin(r.Context())
-		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
-		txq := q.WithTx(tx)
+		// same local transaction as the domain update (history.md section 4).
+		var revoked sqlcgen.OrganizationsInvitation
+		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		txErr := withTx(r.Context(), pool, func(tx pgx.Tx) error {
+			txq := q.WithTx(tx)
+			var err error
+			revoked, err = txq.RevokeInvitation(r.Context(), sqlcgen.RevokeInvitationParams{
+				ID:             pgtype.UUID{Bytes: invitationID, Valid: true},
+				OrganizationID: member.OrgID,
+			})
+			if err != nil {
+				// includes pgx.ErrNoRows: invitation is no longer pending --
+				// returned as-is (not wrapped) so the errors.Is check below
+				// still matches.
+				return err
+			}
 
-		revoked, err := txq.RevokeInvitation(r.Context(), sqlcgen.RevokeInvitationParams{
-			ID:             pgtype.UUID{Bytes: invitationID, Valid: true},
-			OrganizationID: member.OrgID,
+			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, revoked.ID, member.UserID, now,
+				history.ChangeUpdate, invitationFields(before), invitationFields(revoked)); err != nil {
+				return fmt.Errorf("write invitation audit log: %w", err)
+			}
+			return nil
 		})
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(txErr, pgx.ErrNoRows) {
 			problem.Write(w, r, problem.NotFound("invitation is no longer pending"))
 			return
 		}
-		if err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-
-		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-		if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, revoked.ID, member.UserID, now,
-			history.ChangeUpdate, invitationFields(before), invitationFields(revoked)); err != nil {
-			problem.Write(w, r, problem.Internal())
-			return
-		}
-		if err := tx.Commit(r.Context()); err != nil {
+		if txErr != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "revoke invitation failed", slog.Any("error", txErr))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -359,7 +363,7 @@ func revokeInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 // (FR-ONB-3 AC: "an invited user who logs in is joined to the inviting
 // organization rather than prompted to create a new one"). Looks up a
 // pending invitation for email; if found, marks it accepted and creates the
-// membership at the invitation's role, in one DB transaction — the same
+// membership at the invitation's role, in one DB transaction -- the same
 // atomicity pattern as organizations.go's CreateOrganization+CreateMembership
 // (D-3), so an invitation is never left pending after its membership exists,
 // or vice versa. Returns pgx.ErrNoRows when there is no pending invitation
@@ -367,61 +371,67 @@ func revokeInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 // must already be the caller's verified email (getMyOrganization passes ""
 // when claims.EmailVerified is false, deliberately routing an unverified
 // caller through this same "nothing pending" path rather than a distinct
-// one) — see getMyOrganization's security-critical doc comment.
-func acceptPendingInvitationByEmail(r *http.Request, pool *pgxpool.Pool, q *sqlcgen.Queries, userID pgtype.UUID, email string) (callerMembership, error) {
+// one) -- see getMyOrganization's security-critical doc comment.
+//
+// Takes ctx directly (not *http.Request): it does no request-specific work
+// beyond the context, and organizations.go's getMyOrganization is its only
+// caller.
+func acceptPendingInvitationByEmail(ctx context.Context, pool *pgxpool.Pool, q *sqlcgen.Queries, userID pgtype.UUID, email string) (callerMembership, error) {
 	if email == "" {
 		return callerMembership{}, pgx.ErrNoRows
 	}
-	invitation, err := q.GetPendingInvitationByEmail(r.Context(), email)
+	invitation, err := q.GetPendingInvitationByEmail(ctx, email)
 	if err != nil {
-		return callerMembership{}, err // includes pgx.ErrNoRows: no pending invitation
+		// includes pgx.ErrNoRows: no pending invitation -- wrapping with %w
+		// preserves errors.Is(err, pgx.ErrNoRows) for getMyOrganization.
+		return callerMembership{}, fmt.Errorf("get pending invitation by email: %w", err)
 	}
 
-	tx, err := pool.Begin(r.Context())
-	if err != nil {
-		return callerMembership{}, err
-	}
-	defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after a successful Commit
-	txq := q.WithTx(tx)
-
-	accepted, err := txq.AcceptInvitation(r.Context(), invitation.ID)
-	if err != nil {
-		// Lost the race with another accept/revoke of the same invitation
-		// between the read above and this update — surface as "not found"
-		// rather than 500; the caller (getMyOrganization) still has no org.
-		return callerMembership{}, err
-	}
-
-	// History (FR-HIS-1, #165): the accept is an update on the invitation
-	// (pending -> accepted) — the accepting user IS the actor here (there is
-	// no admin action on this path), in the same transaction as the domain
-	// update (history.md §4).
+	var membership sqlcgen.OrganizationsMembership
 	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-	if err := writeAuditLog(r.Context(), txq, accepted.OrganizationID, entityTypeInvitation, accepted.ID, userID, now,
-		history.ChangeUpdate, invitationFields(invitation), invitationFields(accepted)); err != nil {
-		return callerMembership{}, err
-	}
+	txErr := withTx(ctx, pool, func(tx pgx.Tx) error {
+		txq := q.WithTx(tx)
 
-	membership, err := txq.CreateMembershipWithRole(r.Context(), sqlcgen.CreateMembershipWithRoleParams{
-		ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		OrganizationID: accepted.OrganizationID,
-		UserID:         userID,
-		Role:           accepted.Role,
+		accepted, err := txq.AcceptInvitation(ctx, invitation.ID)
+		if err != nil {
+			// Lost the race with another accept/revoke of the same
+			// invitation between the read above and this update. Wrapped
+			// with %w (not returned bare) -- errors.Is unwraps through it,
+			// so getMyOrganization's errors.Is(err, pgx.ErrNoRows) still
+			// matches; the caller still has no org.
+			return fmt.Errorf("accept invitation: %w", err)
+		}
+
+		// History (FR-HIS-1, #165): the accept is an update on the
+		// invitation (pending -> accepted) -- the accepting user IS the
+		// actor here (there is no admin action on this path), in the same
+		// transaction as the domain update (history.md section 4).
+		if err := writeAuditLog(ctx, txq, accepted.OrganizationID, entityTypeInvitation, accepted.ID, userID, now,
+			history.ChangeUpdate, invitationFields(invitation), invitationFields(accepted)); err != nil {
+			return fmt.Errorf("write invitation audit log: %w", err)
+		}
+
+		membership, err = txq.CreateMembershipWithRole(ctx, sqlcgen.CreateMembershipWithRoleParams{
+			ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
+			OrganizationID: accepted.OrganizationID,
+			UserID:         userID,
+			Role:           accepted.Role,
+		})
+		if err != nil {
+			return fmt.Errorf("create membership: %w", err)
+		}
+
+		// The new membership this acceptance creates is its own entity/create
+		// row, same transaction (mirrors organizations.go's createOrganization
+		// writing both the org's and its creator membership's rows together).
+		if err := writeAuditLog(ctx, txq, membership.OrganizationID, entityTypeMembership, membership.ID, userID, now,
+			history.ChangeCreate, nil, membershipFields(membership)); err != nil {
+			return fmt.Errorf("write membership audit log: %w", err)
+		}
+		return nil
 	})
-	if err != nil {
-		return callerMembership{}, err
-	}
-
-	// The new membership this acceptance creates is its own entity/create
-	// row, same transaction (mirrors organizations.go's createOrganization
-	// writing both the org's and its creator membership's rows together).
-	if err := writeAuditLog(r.Context(), txq, membership.OrganizationID, entityTypeMembership, membership.ID, userID, now,
-		history.ChangeCreate, nil, membershipFields(membership)); err != nil {
-		return callerMembership{}, err
-	}
-
-	if err := tx.Commit(r.Context()); err != nil {
-		return callerMembership{}, err
+	if txErr != nil {
+		return callerMembership{}, txErr
 	}
 	return callerMembership{OrgID: membership.OrganizationID, UserID: userID, Role: membership.Role}, nil
 }
@@ -439,15 +449,21 @@ func toInvitationResponse(inv sqlcgen.OrganizationsInvitation) InvitationRespons
 
 // parsePage parses the shared limit/cursor query params (matches apiaries'
 // ReadRouter convention). Writes a 422 and returns ok=false on a malformed
-// cursor.
+// limit or cursor -- limit used to silently fall back to defaultPageLimit on
+// a non-numeric or non-positive value while cursor 422'd on a malformed
+// value; both are now validated the same way (MEDIUM review finding).
 func parsePage(w http.ResponseWriter, r *http.Request) (limit int, cursor pgtype.UUID, ok bool) {
 	limit = defaultPageLimit
 	if raw := r.URL.Query().Get("limit"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n >= 1 {
-			limit = n
-			if limit > maxPageLimit {
-				limit = maxPageLimit
-			}
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			problem.Write(w, r, problem.ValidationFailed("limit must be a positive integer",
+				problem.FieldError{Field: "limit", Code: "invalid", Message: "must be a positive integer"}))
+			return 0, pgtype.UUID{}, false
+		}
+		limit = n
+		if limit > maxPageLimit {
+			limit = maxPageLimit
 		}
 	}
 	if raw := r.URL.Query().Get("cursor"); raw != "" {

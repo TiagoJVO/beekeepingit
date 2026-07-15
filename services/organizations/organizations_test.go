@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -683,5 +685,187 @@ func TestCreateOrganization_History_ChangePayloadNeverEmbedsActorPersonalData(t 
 			// key here would have to be a leaked actor/member address.
 			t.Fatalf("change payload unexpectedly embeds an email field: %s", string(row.Change))
 		}
+	}
+}
+
+// TestCreateOrganization_ConcurrentCreates_OnlyOneSucceeds is the CRITICAL
+// review finding's regression test: the pre-check in createOrganization
+// (GetActiveMembershipByUser before the create transaction) is a TOCTOU
+// race, not the actual enforcement mechanism -- two concurrent
+// createOrganization calls for the SAME caller can both pass that check
+// before either commits. Before migration 00004's
+// idx_memberships_one_active_per_user unique partial index existed, both
+// requests below would land as 201 Created, giving one user two active
+// memberships and violating the single-org-per-user invariant (C-1). With
+// the index in place, exactly one commits and the loser's CreateMembership
+// insert hits a 23505 unique_violation, which createOrganization maps to
+// the same 409 TestCreateOrganization_CallerAlreadyHasOrg_Returns409 covers
+// for the sequential case.
+//
+// Fires both requests from goroutines released by a shared start channel so
+// they race as closely together as the real HTTP/DB round trips allow,
+// against a real Postgres test container (not a mock) -- exactly the
+// interleaving a sequential test can't exercise.
+func TestCreateOrganization_ConcurrentCreates_OnlyOneSucceeds(t *testing.T) {
+	sub := "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1"
+	userID := "a0000000-0000-7000-8000-0000000000a2"
+	f := newOrgFixture(t, map[string]string{sub: userID})
+	bearer := f.token(t, sub)
+
+	const n = 2
+	orgIDs := []string{
+		"c1000000-0000-7000-8000-000000000001",
+		"c1000000-0000-7000-8000-000000000002",
+	}
+
+	post := func(orgID string) int {
+		body, err := json.Marshal(map[string]string{"id": orgID, "name": "Concurrent Org " + orgID})
+		if err != nil {
+			// Marshaling a static map[string]string cannot fail; a panic
+			// here would indicate a logic error, and this runs in a
+			// goroutine where t.Fatal is unsafe to call (testing.T.FailNow
+			// must run on the test's own goroutine).
+			panic(err)
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v1/organizations", bytes.NewReader(body))
+		req.Header.Set("Authorization", bearer)
+		f.srv.Router().ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	codes := make([]int, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			codes[i] = post(orgIDs[i])
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	var created, conflicts int
+	for _, code := range codes {
+		switch code {
+		case http.StatusCreated:
+			created++
+		case http.StatusConflict:
+			conflicts++
+		default:
+			t.Errorf("unexpected status %d among concurrent create responses %v", code, codes)
+		}
+	}
+	if created != 1 || conflicts != 1 {
+		t.Fatalf("concurrent create responses = %v, want exactly one 201 and one 409 (idx_memberships_one_active_per_user, migration 00004)", codes)
+	}
+
+	// The caller ends up with exactly one active membership, whichever org
+	// won the race.
+	recMe := f.do(t, http.MethodGet, "/v1/organizations/me", bearer, nil)
+	if recMe.Code != http.StatusOK {
+		t.Fatalf("GET /organizations/me after race status = %d, want 200, body = %s", recMe.Code, recMe.Body.String())
+	}
+	var me api.OrganizationResponse
+	if err := json.Unmarshal(recMe.Body.Bytes(), &me); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if me.ID != orgIDs[0] && me.ID != orgIDs[1] {
+		t.Fatalf("caller's org after race = %q, want one of %v", me.ID, orgIDs)
+	}
+}
+
+// TestCreateOrganization_NameTooLong_Returns422 covers the name length
+// validation branch (MEDIUM review finding: previously untested), using a
+// name whose ASCII length is under maxOrgNameLength runes but whose UTF-8
+// BYTE length exceeds it -- would have false-passed the old len(name)
+// (byte-counting) check, since len() counts bytes not runes. Every rune here
+// is an accented PT character (2 bytes each in UTF-8), so 150 of them is
+// 150 runes / 300 bytes: under the 200-rune limit but over a naive 200-byte
+// one, proving the fix counts runes.
+func TestCreateOrganization_NameTooLong_Returns422(t *testing.T) {
+	sub := "b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1"
+	f := newOrgFixture(t, map[string]string{sub: "a0000000-0000-7000-8000-0000000000b1"})
+	bearer := f.token(t, sub)
+
+	longName := strings.Repeat("á", 250) // 250 runes, well over maxOrgNameLength=200
+	rec := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": "c2000000-0000-7000-8000-000000000001", "name": longName,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %s", rec.Code, rec.Body.String())
+	}
+	var p struct {
+		Errors []struct {
+			Field string `json:"field"`
+			Code  string `json:"code"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	found := false
+	for _, e := range p.Errors {
+		if e.Field == "name" && e.Code == "too_long" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("errors = %+v, want a too_long error on name", p.Errors)
+	}
+}
+
+// TestCreateOrganization_NameWithinRuneLimitButOverByteLimit_Succeeds is the
+// positive counterpart to the rune-vs-byte fix: a name of exactly 200
+// accented runes (400 UTF-8 bytes) must be ACCEPTED, since the limit is on
+// runes, not bytes -- the pre-fix len(name) (byte count) check would have
+// wrongly rejected this as "too long".
+func TestCreateOrganization_NameWithinRuneLimitButOverByteLimit_Succeeds(t *testing.T) {
+	sub := "b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2"
+	f := newOrgFixture(t, map[string]string{sub: "a0000000-0000-7000-8000-0000000000b2"})
+	bearer := f.token(t, sub)
+
+	name := strings.Repeat("á", 200) // exactly 200 runes, 400 bytes
+	rec := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": "c2000000-0000-7000-8000-000000000002", "name": name,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCreateOrganization_AddressTooLong_Returns422 covers the MEDIUM review
+// finding that address previously had no length cap at all.
+func TestCreateOrganization_AddressTooLong_Returns422(t *testing.T) {
+	sub := "b3b3b3b3-b3b3-4b3b-8b3b-b3b3b3b3b3b3"
+	f := newOrgFixture(t, map[string]string{sub: "a0000000-0000-7000-8000-0000000000b3"})
+	bearer := f.token(t, sub)
+
+	rec := f.do(t, http.MethodPost, "/v1/organizations", bearer, map[string]string{
+		"id": "c3000000-0000-7000-8000-000000000001", "name": "Org", "address": strings.Repeat("x", 501),
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %s", rec.Code, rec.Body.String())
+	}
+	var p struct {
+		Errors []struct {
+			Field string `json:"field"`
+			Code  string `json:"code"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	found := false
+	for _, e := range p.Errors {
+		if e.Field == "address" && e.Code == "too_long" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("errors = %+v, want a too_long error on address", p.Errors)
 	}
 }
