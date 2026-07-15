@@ -18,6 +18,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loginButton => 'Sign in';
 
   @override
+  String get loginError =>
+      'Couldn\'t sign in — check your connection and try again.';
+
+  @override
   String get logout => 'Sign out';
 
   @override
@@ -106,6 +110,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String profileSaveError(String error) {
     return 'Could not save your profile: $error';
   }
+
+  @override
+  String get profileGenericError => 'Something went wrong. Please try again.';
 
   @override
   String get organizationTitle => 'Your organization';
@@ -325,6 +332,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncStatusWaitingForSignal => 'Waiting for better signal';
+
+  @override
+  String get syncStatusError => 'Sync error';
+
+  @override
+  String get offlineBannerErrorMessage =>
+      'Some changes failed to sync and PowerSync is retrying.';
 
   @override
   String get syncSupersededNotice =>
