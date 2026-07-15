@@ -49,6 +49,26 @@ class SyncStatus {
   /// connect/flush yet (sync.md §7.1). Manual "sync now" always bypasses
   /// this (`syncNowProvider`).
   bool get isWaitingForSignal => gateState == SyncGateState.waitingForSignal;
+
+  // Value equality (MEDIUM-2): this is fed to the header pill/offline
+  // banner via `ref.watch` on every engine/gate status tick — without this,
+  // two structurally-identical statuses compare unequal (default identity
+  // equality), so Riverpod/Flutter can't skip a redundant rebuild when
+  // nothing actually changed.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncStatus &&
+          runtimeType == other.runtimeType &&
+          connectivity == other.connectivity &&
+          pendingCount == other.pendingCount &&
+          syncing == other.syncing &&
+          hasError == other.hasError &&
+          gateState == other.gateState);
+
+  @override
+  int get hashCode =>
+      Object.hash(connectivity, pendingCount, syncing, hasError, gateState);
 }
 
 /// Broadcasts a [SupersededChange] every time [BeekeepingitConnector.uploadData]
@@ -136,6 +156,10 @@ final _syncStatusStreamProvider = StreamProvider<SyncStatus>((ref) async* {
   controller.onCancel = () async {
     await engineSub.cancel();
     await gateSub.cancel();
+    // MEDIUM-6: without this the controller is cancelled-from-below but
+    // never itself closed — a dangling resource that outlives the
+    // subscriptions feeding it.
+    await controller.close();
   };
 
   unawaited(emit());
