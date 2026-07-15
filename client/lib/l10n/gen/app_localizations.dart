@@ -338,6 +338,12 @@ abstract class AppLocalizations {
   /// **'Enter an email address.'**
   String get membersInviteEmailRequired;
 
+  /// Validation message for a malformed invite email
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid email address.'**
+  String get membersInviteEmailInvalid;
+
   /// Submit button to send an invitation
   ///
   /// In en, this message translates to:
@@ -391,6 +397,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Invitation revoked.'**
   String get membersRevokeSuccess;
+
+  /// Localized label for the 'admin' member/invitation role (organizations migration 00001/00002: role IN ('admin', 'user'))
+  ///
+  /// In en, this message translates to:
+  /// **'Admin'**
+  String get memberRoleAdmin;
+
+  /// Localized label for the 'user' member/invitation role
+  ///
+  /// In en, this message translates to:
+  /// **'Member'**
+  String get memberRoleUser;
+
+  /// Localized label for a membership's 'active' status (organizations migration 00001: status IN ('active', 'invited', 'removed'))
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get memberStatusActive;
+
+  /// Localized label for a membership's 'invited' status
+  ///
+  /// In en, this message translates to:
+  /// **'Invited'**
+  String get memberStatusInvited;
+
+  /// Localized label for a membership's 'removed' status
+  ///
+  /// In en, this message translates to:
+  /// **'Removed'**
+  String get memberStatusRemoved;
+
+  /// Localized label for an invitation's 'pending' status (organizations migration 00002: status IN ('pending', 'accepted', 'expired', 'revoked'))
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get invitationStatusPending;
+
+  /// Localized label for an invitation's 'accepted' status
+  ///
+  /// In en, this message translates to:
+  /// **'Accepted'**
+  String get invitationStatusAccepted;
+
+  /// Localized label for an invitation's 'expired' status
+  ///
+  /// In en, this message translates to:
+  /// **'Expired'**
+  String get invitationStatusExpired;
+
+  /// Localized label for an invitation's 'revoked' status
+  ///
+  /// In en, this message translates to:
+  /// **'Revoked'**
+  String get invitationStatusRevoked;
+
+  /// Action to fetch the next cursor-paginated page of members/invitations (server: limit/cursor/page.next_cursor)
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get membersLoadMoreButton;
 
   /// Admin-only action on the account screen, linking to the members/invitations screen (#172, relocated from the apiaries app bar by #197)
   ///
