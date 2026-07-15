@@ -33,6 +33,34 @@ class Profile {
   final bool profileComplete;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  // Value equality (MEDIUM-2): profileProvider is watched by the router's
+  // redirect logic (app_router.dart) — without this, a re-fetch that
+  // returns the same profile compares unequal (default identity equality)
+  // and can trigger a redundant redirect re-evaluation/rebuild.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Profile &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          email == other.email &&
+          locale == other.locale &&
+          profileComplete == other.profileComplete &&
+          createdAt == other.createdAt &&
+          updatedAt == other.updatedAt);
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    email,
+    locale,
+    profileComplete,
+    createdAt,
+    updatedAt,
+  );
 }
 
 /// Reads/writes the caller's profile via `GET`/`PATCH /v1/profile`. GET

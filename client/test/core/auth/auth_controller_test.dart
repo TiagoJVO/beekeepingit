@@ -181,6 +181,36 @@ http.Response _tokenResponse(
 }
 
 void main() {
+  group('AuthSession value equality (MEDIUM-2)', () {
+    // Built via a runtime function (not a `const` literal) so two "equal"
+    // instances are genuinely distinct objects, not the same
+    // const-canonicalized instance — otherwise this would pass even
+    // without a custom `operator==`.
+    AuthSession session({String access = 'a', DateTime? expiresAt}) =>
+        AuthSession(
+          accessToken: access,
+          refreshToken: 'r',
+          idToken: 'i',
+          expiresAt: expiresAt ?? DateTime.utc(2026, 1, 1),
+        );
+
+    test('two distinct instances with the same fields are ==', () {
+      final a = session();
+      final b = session();
+
+      expect(identical(a, b), isFalse, reason: 'test setup sanity check');
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+    });
+
+    test('instances differing in any field are not ==', () {
+      final base = session();
+
+      expect(base, isNot(equals(session(access: 'other'))));
+      expect(base, isNot(equals(session(expiresAt: DateTime.utc(2026, 2, 1)))));
+    });
+  });
+
   group('login()', () {
     test(
       'redirects to the discovered authorize URL with PKCE challenge/state/redirect_uri',
@@ -360,6 +390,37 @@ void main() {
         expect(platform.readSession('bk.id_token'), isNull);
       },
     );
+  });
+
+  group('refresh-network-failure', () {
+    test('refresh fails due to a network error, not rejection → session/tokens '
+        'are retained', () async {
+      final client = MockClient((req) async {
+        final body = Uri(query: req.body).queryParameters;
+        if (body['grant_type'] == 'refresh_token') {
+          // A network/discovery failure while offline — distinct from a
+          // provider-rejected grant (OpenIdException, covered by the
+          // refresh-token-rejected group above). Offline-first: this must
+          // NOT be treated the same as an explicit rejection.
+          throw http.ClientException('Failed host lookup');
+        }
+        // Seed code-exchange: expire almost immediately to force a refresh.
+        return _tokenResponse(req, refresh: 'refresh-keep', expiresIn: 5);
+      });
+      final (_, platform, notifier) = await buildLoggedInContainer(
+        client: client,
+      );
+
+      final token = await notifier.accessToken();
+
+      // The refresh token was never rejected — just unreachable — so the
+      // session must be retained rather than wiped, and the stale access
+      // token is still handed back rather than null.
+      expect(token, 'access-1');
+      expect(notifier.state.value, isNotNull);
+      expect(platform.readSession('bk.refresh_token'), 'refresh-keep');
+      expect(platform.readSession('bk.id_token'), isNotEmpty);
+    });
   });
 
   group('logout()', () {

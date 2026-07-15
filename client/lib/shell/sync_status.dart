@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:meta/meta.dart';
 import 'package:powersync/powersync.dart' as ps;
 
 import '../core/sync/powersync_service.dart';
@@ -49,6 +50,26 @@ class SyncStatus {
   /// connect/flush yet (sync.md §7.1). Manual "sync now" always bypasses
   /// this (`syncNowProvider`).
   bool get isWaitingForSignal => gateState == SyncGateState.waitingForSignal;
+
+  // Value equality (MEDIUM-2): this is fed to the header pill/offline
+  // banner via `ref.watch` on every engine/gate status tick — without this,
+  // two structurally-identical statuses compare unequal (default identity
+  // equality), so Riverpod/Flutter can't skip a redundant rebuild when
+  // nothing actually changed.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncStatus &&
+          runtimeType == other.runtimeType &&
+          connectivity == other.connectivity &&
+          pendingCount == other.pendingCount &&
+          syncing == other.syncing &&
+          hasError == other.hasError &&
+          gateState == other.gateState);
+
+  @override
+  int get hashCode =>
+      Object.hash(connectivity, pendingCount, syncing, hasError, gateState);
 }
 
 /// Broadcasts a [SupersededChange] every time [BeekeepingitConnector.uploadData]
@@ -103,20 +124,73 @@ final _syncStatusStreamProvider = StreamProvider<SyncStatus>((ref) async* {
   final db = session.db;
   final gate = session.gate;
 
+  yield* combineSyncStatus(
+    engineStatus: db.statusStream.map(_engineConnectivityOf),
+    initialEngineStatus: _engineConnectivityOf(db.currentStatus),
+    gateState: gate.stateStream,
+    initialGateState: gate.state,
+    pendingCount: () async => (await db.getUploadQueueStats()).count,
+  );
+});
+
+/// The subset of [ps.SyncStatus] the combine step actually needs, as a plain
+/// record rather than the real PowerSync type — whose constructor is
+/// `@internal` (application code must never construct one directly) — so
+/// [combineSyncStatus] is unit-testable with a fake `Stream` of these,
+/// independent of a real [ps.PowerSyncDatabase].
+typedef EngineConnectivity = ({
+  bool connected,
+  bool uploading,
+  bool downloading,
+  Object? anyError,
+});
+
+EngineConnectivity _engineConnectivityOf(ps.SyncStatus s) => (
+  connected: s.connected,
+  uploading: s.uploading,
+  downloading: s.downloading,
+  anyError: s.anyError,
+);
+
+/// Combines the engine's connectivity/upload-in-progress stream and the
+/// gate's own state stream into a single [SyncStatus] stream — the actual
+/// combining logic of [_syncStatusStreamProvider], split out so it's
+/// unit-testable with fake streams and a fake `pendingCount` supplier (HIGH
+/// finding: this provider body previously had zero test coverage; mirrors
+/// `handleUploadResponse`'s extraction in powersync_connector.dart).
+///
+/// [pendingCount] is invoked to (re)read the upload-queue depth every time
+/// either input changes — see [_syncStatusStreamProvider]'s original doc for
+/// why (the `powersync` package's own `SyncStatus` doesn't carry queue
+/// depth). Emits one initial [SyncStatus] right away from
+/// [initialEngineStatus]/[initialGateState], same as the original
+/// `unawaited(emit())` behavior. Cancelling the returned stream's
+/// subscription cancels both [engineStatus] and [gateState] subscriptions.
+///
+/// `@visibleForTesting` — production only ever calls this from
+/// [_syncStatusStreamProvider].
+@visibleForTesting
+Stream<SyncStatus> combineSyncStatus({
+  required Stream<EngineConnectivity> engineStatus,
+  required EngineConnectivity initialEngineStatus,
+  required Stream<SyncGateState> gateState,
+  required SyncGateState initialGateState,
+  required Future<int> Function() pendingCount,
+}) {
   final controller = StreamController<SyncStatus>();
-  var lastEngine = db.currentStatus;
-  var lastGate = gate.state;
+  var lastEngine = initialEngineStatus;
+  var lastGate = initialGateState;
 
   Future<void> emit() async {
     if (controller.isClosed) return;
-    final queue = await db.getUploadQueueStats();
+    final count = await pendingCount();
     if (controller.isClosed) return;
     controller.add(
       SyncStatus(
         connectivity: lastEngine.connected
             ? SyncConnectivity.online
             : SyncConnectivity.offline,
-        pendingCount: queue.count,
+        pendingCount: count,
         syncing: lastEngine.uploading || lastEngine.downloading,
         hasError: lastEngine.anyError != null,
         gateState: lastGate,
@@ -124,11 +198,11 @@ final _syncStatusStreamProvider = StreamProvider<SyncStatus>((ref) async* {
     );
   }
 
-  final engineSub = db.statusStream.listen((s) {
+  final engineSub = engineStatus.listen((s) {
     lastEngine = s;
     emit();
   });
-  final gateSub = gate.stateStream.listen((s) {
+  final gateSub = gateState.listen((s) {
     lastGate = s;
     emit();
   });
@@ -136,12 +210,16 @@ final _syncStatusStreamProvider = StreamProvider<SyncStatus>((ref) async* {
   controller.onCancel = () async {
     await engineSub.cancel();
     await gateSub.cancel();
+    // MEDIUM-6: without this the controller is cancelled-from-below but
+    // never itself closed — a dangling resource that outlives the
+    // subscriptions feeding it.
+    await controller.close();
   };
 
   unawaited(emit());
 
-  yield* controller.stream;
-});
+  return controller.stream;
+}
 
 /// Public seam (#197's stub, replaced in #58): connectivity + pending-count
 /// state for the header pill and offline banner. Reports **offline,

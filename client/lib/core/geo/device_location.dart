@@ -67,7 +67,13 @@ class DeviceLocationService {
         lon: position.longitude,
         lat: position.latitude,
       );
-    } catch (_) {
+    } on Exception {
+      // Narrowed from a bare `catch` (MEDIUM finding): a bare catch also
+      // swallows `Error` subtypes (e.g. a programming mistake surfacing as
+      // a `StateError`/`TypeError`), silently reporting a real bug as the
+      // user-facing "location unavailable" state instead of surfacing it.
+      // Only genuine platform/plugin failures (timeouts, unsupported
+      // platform, ...) are `Exception`s and degrade gracefully here.
       return const DeviceLocationUnavailable();
     }
   }
@@ -78,3 +84,34 @@ class DeviceLocationService {
 final deviceLocationServiceProvider = Provider<DeviceLocationService>(
   (ref) => const DeviceLocationService(),
 );
+
+/// Caches the device's current location behind a Riverpod provider so every
+/// simultaneously-mounted consumer shares exactly ONE underlying
+/// permission/location request rather than each independently calling
+/// [DeviceLocationService.current] and re-triggering the OS location
+/// prompt (CRITICAL finding: apiaries_list_screen.dart's proximity-ordering
+/// banner and apiary_map_screen.dart's user-location marker are both alive
+/// at once inside the list/map `IndexedStack`, #35 — before this, the map
+/// screen re-implemented its own raw `Geolocator` calls instead of sharing
+/// this cache, firing a second redundant request every time the Apiaries
+/// tab opened). [AsyncNotifier] rather than a plain future provider because
+/// callers need a "try again" affordance after a denial/failure — [retry]
+/// re-invokes [build] via [Ref.invalidateSelf], showing loading state in
+/// between rather than jumping straight from the old error to new data.
+class DeviceLocationController extends AsyncNotifier<DeviceLocation> {
+  @override
+  Future<DeviceLocation> build() {
+    return ref.read(deviceLocationServiceProvider).current();
+  }
+
+  Future<void> retry() async {
+    state = const AsyncLoading();
+    ref.invalidateSelf();
+    await future;
+  }
+}
+
+final deviceLocationProvider =
+    AsyncNotifierProvider<DeviceLocationController, DeviceLocation>(
+      DeviceLocationController.new,
+    );

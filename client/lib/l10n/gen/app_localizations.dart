@@ -116,6 +116,12 @@ abstract class AppLocalizations {
   /// **'Sign in'**
   String get loginButton;
 
+  /// Shown on the login screen when starting sign-in fails (e.g. OIDC discovery unreachable while offline); tapping "Sign in" again retries
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t sign in — check your connection and try again.'**
+  String get loginError;
+
   /// Sign-out action in the app bar
   ///
   /// In en, this message translates to:
@@ -266,6 +272,12 @@ abstract class AppLocalizations {
   /// **'Could not save your profile: {error}'**
   String profileSaveError(String error);
 
+  /// Fixed, non-interpolated message shown when the profile fails to load, or a save fails with something other than a structured ApiException — never the raw exception text (avoids leaking internal error details to the field user)
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Please try again.'**
+  String get profileGenericError;
+
   /// Organization creation screen app bar title
   ///
   /// In en, this message translates to:
@@ -338,6 +350,12 @@ abstract class AppLocalizations {
   /// **'Enter an email address.'**
   String get membersInviteEmailRequired;
 
+  /// Validation message for a malformed invite email
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid email address.'**
+  String get membersInviteEmailInvalid;
+
   /// Submit button to send an invitation
   ///
   /// In en, this message translates to:
@@ -391,6 +409,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Invitation revoked.'**
   String get membersRevokeSuccess;
+
+  /// Localized label for the 'admin' member/invitation role (organizations migration 00001/00002: role IN ('admin', 'user'))
+  ///
+  /// In en, this message translates to:
+  /// **'Admin'**
+  String get memberRoleAdmin;
+
+  /// Localized label for the 'user' member/invitation role
+  ///
+  /// In en, this message translates to:
+  /// **'Member'**
+  String get memberRoleUser;
+
+  /// Localized label for a membership's 'active' status (organizations migration 00001: status IN ('active', 'invited', 'removed'))
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get memberStatusActive;
+
+  /// Localized label for a membership's 'invited' status
+  ///
+  /// In en, this message translates to:
+  /// **'Invited'**
+  String get memberStatusInvited;
+
+  /// Localized label for a membership's 'removed' status
+  ///
+  /// In en, this message translates to:
+  /// **'Removed'**
+  String get memberStatusRemoved;
+
+  /// Localized label for an invitation's 'pending' status (organizations migration 00002: status IN ('pending', 'accepted', 'expired', 'revoked'))
+  ///
+  /// In en, this message translates to:
+  /// **'Pending'**
+  String get invitationStatusPending;
+
+  /// Localized label for an invitation's 'accepted' status
+  ///
+  /// In en, this message translates to:
+  /// **'Accepted'**
+  String get invitationStatusAccepted;
+
+  /// Localized label for an invitation's 'expired' status
+  ///
+  /// In en, this message translates to:
+  /// **'Expired'**
+  String get invitationStatusExpired;
+
+  /// Localized label for an invitation's 'revoked' status
+  ///
+  /// In en, this message translates to:
+  /// **'Revoked'**
+  String get invitationStatusRevoked;
+
+  /// Action to fetch the next cursor-paginated page of members/invitations (server: limit/cursor/page.next_cursor)
+  ///
+  /// In en, this message translates to:
+  /// **'Load more'**
+  String get membersLoadMoreButton;
 
   /// Admin-only action on the account screen, linking to the members/invitations screen (#172, relocated from the apiaries app bar by #197)
   ///
@@ -524,6 +602,24 @@ abstract class AppLocalizations {
   /// **'Apiary deleted.'**
   String get apiaryDeleteSuccess;
 
+  /// Toast shown after a failed apiary create/update — resets the form's busy state rather than leaving an indefinite spinner
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the apiary: {error}'**
+  String apiarySaveError(String error);
+
+  /// Toast shown after a failed apiary delete — resets the form's busy state rather than leaving an indefinite spinner
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete the apiary: {error}'**
+  String apiaryDeleteError(String error);
+
+  /// Toast shown when the edit form's initial load of the existing apiary fails — resets the form's busy state rather than leaving an indefinite spinner
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load the apiary: {error}'**
+  String apiaryLoadError(String error);
+
   /// Placeholder text in the apiaries list search field (FR-AP-6, #36)
   ///
   /// In en, this message translates to:
@@ -589,6 +685,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Waiting for better signal'**
   String get syncStatusWaitingForSignal;
+
+  /// App-shell header sync-status pill label when the last upload/download attempt errored and PowerSync is waiting to retry (SyncStatus.hasError) — distinct from merely offline, so a beekeeper whose uploads keep failing isn't shown the same pill as someone who simply has no signal
+  ///
+  /// In en, this message translates to:
+  /// **'Sync error'**
+  String get syncStatusError;
+
+  /// Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)
+  ///
+  /// In en, this message translates to:
+  /// **'Some changes failed to sync and PowerSync is retrying.'**
+  String get offlineBannerErrorMessage;
 
   /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
   ///
