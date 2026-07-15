@@ -239,6 +239,21 @@ void main() {
     expect(find.byKey(const Key('account-logout-button')), findsOneWidget);
   });
 
+  testWidgets(
+    'the back button has a tooltip/semantic label (matches the shell\'s '
+    'own back button)',
+    (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<IconButton>(
+        find.byKey(const Key('account-back-button')),
+      );
+      expect(button.tooltip, isNotNull);
+      expect(button.tooltip, isNotEmpty);
+    },
+  );
+
   group('Sync section (#58)', () {
     testWidgets('shows the current status and pending-change count', (
       tester,
