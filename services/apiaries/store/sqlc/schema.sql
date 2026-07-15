@@ -1,9 +1,9 @@
 -- sqlc's virtual schema for codegen only — mirrors the "up" side of
 -- ../migrations/00001_create_apiaries.sql, 00002_create_audit_log.sql,
 -- 00003_add_apiary_location.sql, 00004_add_apiary_notes.sql,
--- 00005_create_apiary_counters.sql and 00006_add_apiary_place_label.sql (no
--- down migration; runtime schema changes only ever happen via goose). Update
--- all files together.
+-- 00005_create_apiary_counters.sql, 00006_add_apiary_place_label.sql and
+-- 00007_apiary_counters_org_scoped_unique.sql (no down migration; runtime
+-- schema changes only ever happen via goose). Update all files together.
 CREATE SCHEMA IF NOT EXISTS apiaries;
 
 CREATE TABLE apiaries.apiaries (
@@ -23,10 +23,14 @@ CREATE TABLE apiaries.apiaries (
 );
 
 -- apiary_counters — typed 1-N counters decoupled from apiaries (#256).
--- UNIQUE(apiary_id, counter_type): an apiary can never hold two counters of
--- the same type. counter_type is validated against a known set in Go
--- (api/counters.go), not a DB enum/CHECK, so a future type is a code-only
--- append (data-model.md §2 "Extensible enums" convention).
+-- UNIQUE(organization_id, apiary_id, counter_type) (widened by
+-- 00007_apiary_counters_org_scoped_unique.sql, tenant-IDOR defense in
+-- depth): an apiary can never hold two counters of the same type, and the
+-- upsert's ON CONFLICT target itself now encodes tenancy, so it can never
+-- collide across two different orgs' rows even in principle. counter_type
+-- is validated against a known set in Go (api/counters.go), not a DB
+-- enum/CHECK, so a future type is a code-only append (data-model.md §2
+-- "Extensible enums" convention).
 CREATE TABLE apiaries.apiary_counters (
     id              UUID PRIMARY KEY,
     organization_id UUID NOT NULL,
@@ -35,7 +39,7 @@ CREATE TABLE apiaries.apiary_counters (
     value           INTEGER NOT NULL CHECK (value >= 0),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_apiary_counters_apiary_type UNIQUE (apiary_id, counter_type)
+    CONSTRAINT uq_apiary_counters_org_apiary_type UNIQUE (organization_id, apiary_id, counter_type)
 );
 
 CREATE TABLE apiaries.sync_conflict_log (

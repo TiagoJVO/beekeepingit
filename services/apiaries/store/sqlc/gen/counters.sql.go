@@ -91,7 +91,7 @@ const upsertApiaryCounter = `-- name: UpsertApiaryCounter :one
 
 INSERT INTO apiaries.apiary_counters (id, organization_id, apiary_id, counter_type, value, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (apiary_id, counter_type)
+ON CONFLICT (organization_id, apiary_id, counter_type)
 DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
 RETURNING id, organization_id, apiary_id, counter_type, value, created_at, updated_at
 `
@@ -110,14 +110,18 @@ type UpsertApiaryCounterParams struct {
 // (apiary, counter_type); a future counter type (nucs, supers, queens, ...)
 // is a code-only append to the known set (api/counters.go), never a new
 // migration or new query here — every type shares these same four queries.
-// Enforces "only one row per (apiary, type)" via ON CONFLICT on the table's
-// UNIQUE(apiary_id, counter_type) constraint — an upsert, not a
-// check-then-insert/update pair, so this is safe under concurrent writers
-// (two offline devices both setting the hive count) without an explicit
-// application-level lock. Callers (api/counters.go's upsertHiveCounter) pass
-// a fresh id on every call; on a genuine insert it's used, on a conflict
-// (existing row) it's discarded in favor of the stored id — RETURNING always
-// reports the row's real, stable id either way.
+// Enforces "only one row per (org, apiary, type)" via ON CONFLICT on the
+// table's UNIQUE(organization_id, apiary_id, counter_type) constraint
+// (widened by 00007_apiary_counters_org_scoped_unique.sql, tenant-IDOR
+// defense in depth — the conflict target itself now encodes tenancy, so it
+// can never collide across two different orgs' rows even in principle) —
+// an upsert, not a check-then-insert/update pair, so this is safe under
+// concurrent writers (two offline devices both setting the hive count)
+// without an explicit application-level lock. Callers
+// (api/counters.go's upsertHiveCounter) pass a fresh id on every call; on a
+// genuine insert it's used, on a conflict (existing row) it's discarded in
+// favor of the stored id — RETURNING always reports the row's real, stable
+// id either way.
 func (q *Queries) UpsertApiaryCounter(ctx context.Context, arg UpsertApiaryCounterParams) (ApiariesApiaryCounter, error) {
 	row := q.db.QueryRow(ctx, upsertApiaryCounter,
 		arg.ID,
