@@ -10,9 +10,20 @@ import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart'
 import 'package:beekeepingit_client/shell/sync_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'widget_test.dart' show FakeDeviceLocationService;
+
+/// A test-controlled stand-in for the real, PowerSync-backed
+/// [syncStatusProvider] (#58) — a plain [StateProvider] so a test can push a
+/// new [SyncStatus] value *after* the initial pump (unlike
+/// `overrideWithValue`, which is fixed for the container's lifetime), to
+/// exercise HIGH-4's rebuild-scoping regression below.
+final _testSyncStatus = StateProvider<SyncStatus>(
+  (ref) =>
+      const SyncStatus(connectivity: SyncConnectivity.online, pendingCount: 0),
+);
 
 /// Fixtures mirroring widget_test.dart's/app_router_test.dart's own — kept
 /// local rather than imported since those files' fixtures are file-private.
@@ -377,6 +388,49 @@ void main() {
   });
 
   testWidgets(
+    'the sync-status pill shows a distinct error state when the last sync '
+    "attempt errored — not the same 'Offline' pill as no-signal-at-all",
+    (tester) async {
+      await tester.pumpWidget(
+        _buildShellApp(
+          syncStatus: const SyncStatus(
+            connectivity: SyncConnectivity.online,
+            pendingCount: 2,
+            hasError: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sync error'), findsOneWidget);
+      expect(find.text('Online'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'the offline banner shows a distinct message when offline with a sync '
+    'error, not the generic offline-changes-saved-locally message',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildShellApp(
+          syncStatus: const SyncStatus(
+            connectivity: SyncConnectivity.offline,
+            pendingCount: 2,
+            hasError: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell-offline-banner')), findsOneWidget);
+      expect(
+        find.text('Some changes failed to sync and PowerSync is retrying.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
     'a superseded change surfaces a non-blocking toast notification',
     (tester) async {
       final controller = StreamController<SupersededChange>();
@@ -443,4 +497,81 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'a sync-status change does not force AppShell.build() to reconstruct '
+    'unrelated chrome (the bottom nav) — HIGH-4: syncStatusProvider must be '
+    'watched by the smaller widget that needs it (_ShellHeader/'
+    '_OfflineBanner), not threaded through AppShell.build() itself',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            isAuthenticatedProvider.overrideWithValue(true),
+            deviceLocationServiceProvider.overrideWithValue(
+              const FakeDeviceLocationService(),
+            ),
+            apiariesStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+            profileProvider.overrideWith(_CompleteProfileController.new),
+            organizationProvider.overrideWith(
+              _ExistingOrganizationController.new,
+            ),
+            // Dynamic (unlike overrideWithValue) so the test can push a new
+            // value after the initial pump.
+            syncStatusProvider.overrideWith(
+              (ref) => ref.watch(_testSyncStatus),
+            ),
+            supersededNotificationProvider.overrideWith(
+              (ref) => const Stream.empty(),
+            ),
+            rejectedNotificationProvider.overrideWith(
+              (ref) => const Stream.empty(),
+            ),
+            syncNeedsFixCountProvider.overrideWith((ref) => Stream.value(0)),
+          ],
+          child: const BeekeepingitApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // AppShell.build() constructs a brand-new (non-const) NavigationBar
+      // every time it runs, so capturing the mounted widget instance and
+      // comparing identity across a provider change tells us whether
+      // AppShell.build() itself re-ran — a widget-tree-observable proxy for
+      // "did the whole shell rebuild", with no test-only instrumentation
+      // needed in production code.
+      final navBefore = tester.widget<NavigationBar>(
+        find.byKey(const Key('shell-bottom-nav')),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(BeekeepingitApp)),
+      );
+
+      container.read(_testSyncStatus.notifier).state = const SyncStatus(
+        connectivity: SyncConnectivity.offline,
+        pendingCount: 3,
+        hasError: true,
+      );
+      await tester.pump();
+
+      final navAfter = tester.widget<NavigationBar>(
+        find.byKey(const Key('shell-bottom-nav')),
+      );
+      expect(
+        identical(navBefore, navAfter),
+        isTrue,
+        reason:
+            'AppShell.build() re-ran (a new NavigationBar instance was '
+            'constructed) even though nothing it directly needs changed — '
+            'syncStatusProvider is being watched too high up the tree',
+      );
+
+      // Sanity: the new status DID reach the widgets that are actually
+      // supposed to react to it.
+      expect(find.byKey(const Key('shell-offline-banner')), findsOneWidget);
+      expect(find.text('Sync error'), findsOneWidget);
+    },
+  );
 }

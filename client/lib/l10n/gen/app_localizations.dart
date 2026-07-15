@@ -116,6 +116,12 @@ abstract class AppLocalizations {
   /// **'Sign in'**
   String get loginButton;
 
+  /// Shown on the login screen when starting sign-in fails (e.g. OIDC discovery unreachable while offline); tapping "Sign in" again retries
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t sign in — check your connection and try again.'**
+  String get loginError;
+
   /// Sign-out action in the app bar
   ///
   /// In en, this message translates to:
@@ -589,6 +595,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Waiting for better signal'**
   String get syncStatusWaitingForSignal;
+
+  /// App-shell header sync-status pill label when the last upload/download attempt errored and PowerSync is waiting to retry (SyncStatus.hasError) — distinct from merely offline, so a beekeeper whose uploads keep failing isn't shown the same pill as someone who simply has no signal
+  ///
+  /// In en, this message translates to:
+  /// **'Sync error'**
+  String get syncStatusError;
+
+  /// Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)
+  ///
+  /// In en, this message translates to:
+  /// **'Some changes failed to sync and PowerSync is retrying.'**
+  String get offlineBannerErrorMessage;
 
   /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
   ///

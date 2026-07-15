@@ -12,6 +12,10 @@
   "@loginButton": {
     "description": "Primary login action — starts the OIDC redirect to the identity provider"
   },
+  "loginError": "Couldn't sign in — check your connection and try again.",
+  "@loginError": {
+    "description": "Shown on the login screen when starting sign-in fails (e.g. OIDC discovery unreachable while offline); tapping \"Sign in\" again retries"
+  },
   "logout": "Sign out",
   "@logout": {
     "description": "Sign-out action in the app bar"
@@ -372,6 +376,14 @@
   "syncStatusWaitingForSignal": "Waiting for better signal",
   "@syncStatusWaitingForSignal": {
     "description": "App-shell header sync-status pill / account screen status label while the connection-quality gate is backing off after a failed probe (FR-OF-3, sync.md §7.1, #55)"
+  },
+  "syncStatusError": "Sync error",
+  "@syncStatusError": {
+    "description": "App-shell header sync-status pill label when the last upload/download attempt errored and PowerSync is waiting to retry (SyncStatus.hasError) — distinct from merely offline, so a beekeeper whose uploads keep failing isn't shown the same pill as someone who simply has no signal"
+  },
+  "offlineBannerErrorMessage": "Some changes failed to sync and PowerSync is retrying.",
+  "@offlineBannerErrorMessage": {
+    "description": "Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)"
   },
   "syncSupersededNotice": "One of your offline changes was overwritten by a newer edit.",
   "@syncSupersededNotice": {

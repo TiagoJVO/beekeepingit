@@ -18,6 +18,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get loginButton => 'Iniciar sessão';
 
   @override
+  String get loginError =>
+      'Não foi possível iniciar sessão — verifique a ligação e tente novamente.';
+
+  @override
   String get logout => 'Terminar sessão';
 
   @override
@@ -294,6 +298,13 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get syncStatusWaitingForSignal => 'A aguardar melhor sinal';
+
+  @override
+  String get syncStatusError => 'Erro de sincronização';
+
+  @override
+  String get offlineBannerErrorMessage =>
+      'Algumas alterações não foram sincronizadas e o PowerSync está a tentar novamente.';
 
   @override
   String get syncSupersededNotice =>
