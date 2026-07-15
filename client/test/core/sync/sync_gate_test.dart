@@ -21,6 +21,9 @@ class FakeConnectivityProbe implements ConnectivityProbe {
     callCount++;
     return result;
   }
+
+  @override
+  void dispose() {}
 }
 
 void main() {
