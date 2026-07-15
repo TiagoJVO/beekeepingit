@@ -58,6 +58,20 @@ Widget _buildApp({
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      // The detail screen watches apiaryByIdProvider (HIGH finding: a
+      // narrow per-id family provider, not the whole-org
+      // apiariesStreamProvider) — overridden here the same way
+      // apiaryCountersProvider already is, resolving from the same fixed
+      // [apiaries] list by id so existing fixtures/tests don't need to
+      // change shape.
+      apiaryByIdProvider.overrideWith(
+        (ref, apiaryId) => Stream.value(
+          apiaries.cast<Apiary?>().firstWhere(
+            (a) => a!.id == apiaryId,
+            orElse: () => null,
+          ),
+        ),
+      ),
       // The detail screen's generic counters section (#256) watches this
       // family provider per apiary id. Un-overridden it depends on the real
       // (never-resolving in tests) apiariesRepositoryProvider, so the tests
@@ -314,6 +328,46 @@ void main() {
       );
       expect(find.textContaining('nucs_from_future'), findsNothing);
       expect(find.textContaining('7'), findsNothing);
+    },
+  );
+
+  // --- Error state (HIGH #4: no test previously drove the error: branch) ---
+
+  testWidgets(
+    'shows an error state (not a crash/blank page) when the per-apiary '
+    'stream errors',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            isAuthenticatedProvider.overrideWithValue(true),
+            apiariesStreamProvider.overrideWith(
+              (ref) => Stream.value(const [
+                Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+              ]),
+            ),
+            apiaryByIdProvider.overrideWith(
+              (ref, apiaryId) => Stream<Apiary?>.error('boom'),
+            ),
+            apiaryCountersProvider.overrideWith(
+              (ref, apiaryId) => Stream.value(const <ApiaryCounter>[]),
+            ),
+            profileProvider.overrideWith(_CompleteProfileController.new),
+            organizationProvider.overrideWith(
+              _ExistingOrganizationController.new,
+            ),
+          ],
+          child: const BeekeepingitApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Could not load apiaries'), findsOneWidget);
+      expect(find.byKey(const Key('apiary-detail-header')), findsNothing);
+      expect(tester.takeException(), isNull);
     },
   );
 }

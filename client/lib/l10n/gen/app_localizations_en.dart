@@ -258,6 +258,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiaryDeleteSuccess => 'Apiary deleted.';
 
   @override
+  String apiarySaveError(String error) {
+    return 'Could not save the apiary: $error';
+  }
+
+  @override
+  String apiaryDeleteError(String error) {
+    return 'Could not delete the apiary: $error';
+  }
+
+  @override
+  String apiaryLoadError(String error) {
+    return 'Could not load the apiary: $error';
+  }
+
+  @override
   String get apiariesSearchHint => 'Search apiaries by name';
 
   @override

@@ -329,6 +329,33 @@
   "@apiaryDeleteSuccess": {
     "description": "Toast shown after successfully deleting an apiary (#197)"
   },
+  "apiarySaveError": "Could not save the apiary: {error}",
+  "@apiarySaveError": {
+    "description": "Toast shown after a failed apiary create/update — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryDeleteError": "Could not delete the apiary: {error}",
+  "@apiaryDeleteError": {
+    "description": "Toast shown after a failed apiary delete — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryLoadError": "Could not load the apiary: {error}",
+  "@apiaryLoadError": {
+    "description": "Toast shown when the edit form's initial load of the existing apiary fails — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "apiariesSearchHint": "Search apiaries by name",
   "@apiariesSearchHint": {
     "description": "Placeholder text in the apiaries list search field (FR-AP-6, #36)"

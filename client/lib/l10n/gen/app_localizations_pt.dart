@@ -259,6 +259,21 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiaryDeleteSuccess => 'Apiário eliminado.';
 
   @override
+  String apiarySaveError(String error) {
+    return 'Não foi possível guardar o apiário: $error';
+  }
+
+  @override
+  String apiaryDeleteError(String error) {
+    return 'Não foi possível eliminar o apiário: $error';
+  }
+
+  @override
+  String apiaryLoadError(String error) {
+    return 'Não foi possível carregar o apiário: $error';
+  }
+
+  @override
   String get apiariesSearchHint => 'Pesquisar apiários por nome';
 
   @override
