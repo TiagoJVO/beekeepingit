@@ -1,15 +1,15 @@
-/// Shared, dependency-free "looks like an email" check used by client-side
-/// form validators. Intentionally permissive (no full RFC 5322 grammar) —
-/// its job is to catch obviously-malformed input before a round trip to the
-/// server, not to be the source of truth for email validity (the server
-/// still validates on submit).
+/// Shared client-side "looks like an email" format check — a pragmatic
+/// sniff test, not full RFC 5322 validation. Mirrors the server's own
+/// `emailPattern` (services/organizations/api/invitations.go,
+/// services/identity/api/profile.go), so the client rejects an obviously
+/// malformed address before round-tripping to the server.
 ///
-/// Extracted from `features/profile/profile_screen.dart`'s previously
-/// private `_looksLikeEmail`, which was byte-for-byte duplicated in
-/// `features/account/account_screen.dart`. Only `profile_screen.dart` imports
-/// this today; `account_screen.dart` keeps its own copy for now to avoid
-/// touching a file with changes in flight on a separate PR — consolidating
-/// it onto this shared helper is a follow-up once that PR lands.
-bool looksLikeEmail(String value) {
-  return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
-}
+/// Extracted here (rather than living as a private method on one screen) so
+/// every email field shares exactly one definition: account_screen.dart's
+/// profile-email field and members_screen.dart's invite-email field both use
+/// this, instead of members_screen.dart having no format check at all while
+/// account_screen.dart carried its own private copy of the same regex.
+final RegExp _emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+
+/// Whether [value] looks like a valid email address.
+bool looksLikeEmail(String value) => _emailPattern.hasMatch(value);
