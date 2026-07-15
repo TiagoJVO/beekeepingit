@@ -1,5 +1,7 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/core/geo/haversine.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiary_map_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
@@ -10,21 +12,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' as intl;
 
 import 'support/a11y_matchers.dart';
 
-/// A deterministic fake for [GeolocatorPlatform] (#34 AC — the map's
+/// A deterministic fake for [DeviceLocationService] (#34 AC — the map's
 /// permission-denied path must be testable without depending on the real
-/// plugin's MethodChannel, which has no handler under flutter_test and
-/// resolves via a real platform round-trip that flutter_test's fake async
-/// zone can't reliably wait out). Reports location services as disabled,
-/// exercising the same "no user marker, denied banner shown" branch a real
-/// denial would.
-class _LocationServicesDisabledGeolocator extends GeolocatorPlatform {
+/// `geolocator` plugin's MethodChannel, which has no handler under
+/// flutter_test). CRITICAL finding fix: this replaces the previous
+/// `GeolocatorPlatform.instance` fake — the map screen now goes through
+/// `deviceLocationServiceProvider` (core/geo/device_location.dart) the same
+/// way apiaries_list_screen_test.dart already overrides it, rather than the
+/// screen reaching past that abstraction to the raw plugin. [result] is
+/// returned from every [current] call, letting a test fix the location
+/// outcome (available, denied, disabled, ...) deterministically. [onCalled]
+/// (optional) lets a test count invocations — see the "only ONE location
+/// request" regression test below.
+class _FakeDeviceLocationService implements DeviceLocationService {
+  const _FakeDeviceLocationService(this.result, {this.onCalled});
+  final DeviceLocation result;
+  final void Function()? onCalled;
+
   @override
-  Future<bool> isLocationServiceEnabled() async => false;
+  Future<DeviceLocation> current() async {
+    onCalled?.call();
+    return result;
+  }
 }
 
 /// Mirrors widget_test.dart's onboarding-gate stubs (profile/organization
@@ -71,11 +85,24 @@ const _valeDasEguas = Apiary(
 );
 const _semLocal = Apiary(id: 'a3', name: 'Sem Local', hiveCount: 2);
 
-Widget _buildApp(List<Apiary> apiaries) {
+/// [locationService] defaults to reporting location services disabled —
+/// the same "no user marker, denied banner shown" branch the previous
+/// `GeolocatorPlatform` fake exercised by default, now driven through
+/// `deviceLocationServiceProvider` (CRITICAL fix — both the map screen and
+/// the list's proximity-ordering banner share this one override, matching
+/// how they share the real `deviceLocationProvider` cache in production).
+Widget _buildApp(
+  List<Apiary> apiaries, {
+  DeviceLocationService? locationService,
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      deviceLocationServiceProvider.overrideWithValue(
+        locationService ??
+            const _FakeDeviceLocationService(DeviceLocationServicesDisabled()),
+      ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
@@ -85,8 +112,17 @@ Widget _buildApp(List<Apiary> apiaries) {
 
 /// Switches from the apiaries list (the router's initial location) to the
 /// map view via the list/map toggle's map segment (#34, #35).
-Future<void> _goToMap(WidgetTester tester) async {
-  await tester.pumpWidget(_buildApp([_serraNorte, _valeDasEguas, _semLocal]));
+Future<void> _goToMap(
+  WidgetTester tester, {
+  DeviceLocationService? locationService,
+}) async {
+  await tester.pumpWidget(
+    _buildApp([
+      _serraNorte,
+      _valeDasEguas,
+      _semLocal,
+    ], locationService: locationService),
+  );
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
   await tester.pumpAndSettle();
@@ -124,10 +160,6 @@ Future<void> _longPressMarker(WidgetTester tester, Key key) async {
 }
 
 void main() {
-  setUp(() {
-    GeolocatorPlatform.instance = _LocationServicesDisabledGeolocator();
-  });
-
   testWidgets(
     'renders a marker for each apiary with a location, skipping unlocated ones',
     (tester) async {
@@ -479,5 +511,202 @@ void main() {
       addTearDown(container.dispose);
       expect(container.read(mapLayerProvider), MapLayer.satellite);
     });
+  });
+
+  group('device location sharing (CRITICAL finding)', () {
+    testWidgets(
+      'only ONE location request fires when the list and map screens are '
+      'both alive in the IndexedStack',
+      (tester) async {
+        var callCount = 0;
+        await tester.pumpWidget(
+          _buildApp(
+            [_serraNorte, _valeDasEguas, _semLocal],
+            locationService: _FakeDeviceLocationService(
+              const DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+              onCalled: () => callCount++,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Before the fix, the list screen's own proximity-ordering banner
+        // fetch (via deviceLocationProvider) and the map screen's
+        // independent raw-Geolocator _loadUserLocation each fired their own
+        // request as soon as the Apiaries tab opened — both views are
+        // mounted at once inside the list/map IndexedStack (#35), so that
+        // was already 2 requests before the user ever touched the toggle.
+        expect(callCount, 1);
+
+        // Switching to the map view must not fire a second request either
+        // — the map screen shares the same cached deviceLocationProvider
+        // the list screen already resolved, rather than re-fetching its own.
+        await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+        await tester.pumpAndSettle();
+
+        expect(callCount, 1);
+      },
+    );
+
+    testWidgets(
+      'the map screen renders the user-location marker when the shared '
+      'provider resolves to an available location',
+      (tester) async {
+        await _goToMap(
+          tester,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        );
+
+        expect(find.byKey(const Key('apiary-map-user-marker')), findsOneWidget);
+        expect(
+          find.byKey(const Key('apiary-map-location-denied')),
+          findsNothing,
+        );
+      },
+    );
+  });
+
+  group('error state (HIGH #4: no test previously drove the error branch)', () {
+    testWidgets(
+      'shows an error state (not a crash) when the apiaries stream errors',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              isAuthenticatedProvider.overrideWithValue(true),
+              apiariesStreamProvider.overrideWith(
+                (ref) => Stream<List<Apiary>>.error('boom'),
+              ),
+              deviceLocationServiceProvider.overrideWithValue(
+                const _FakeDeviceLocationService(
+                  DeviceLocationServicesDisabled(),
+                ),
+              ),
+              profileProvider.overrideWith(_CompleteProfileController.new),
+              organizationProvider.overrideWith(
+                _ExistingOrganizationController.new,
+              ),
+            ],
+            child: const BeekeepingitApp(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('Could not load apiaries'), findsWidgets);
+        expect(find.byKey(const Key('apiary-map')), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('locale-aware measurement (MEDIUM finding)', () {
+    testWidgets(
+      'the measure result uses a comma decimal separator in Portuguese, not '
+      'a hardcoded period',
+      (tester) async {
+        // Forcing the platform locale (rather than wrapping ApiaryMapScreen
+        // in its own standalone MaterialApp) reuses the full app/_goToMap
+        // harness every other test in this file relies on — the map's
+        // camera-fit position for these two markers is only verified
+        // tap-reachable at THIS harness's viewport (a standalone
+        // MaterialApp(home: Scaffold(body: ApiaryMapScreen())) fits the
+        // markers differently at the default 800x600 test viewport, close
+        // enough to the bottom measure/attribution overlay that the first
+        // tap lands on the overlay instead of the marker underneath).
+        tester.platformDispatcher.localeTestValue = const Locale('pt');
+        tester.platformDispatcher.localesTestValue = const [Locale('pt')];
+        addTearDown(tester.platformDispatcher.clearLocaleTestValue);
+        addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+
+        await _goToMap(tester);
+
+        await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+        await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
+
+        // Compute the expected PT-formatted value directly (rather than
+        // hardcoding an assumed distance) so this test doesn't depend on
+        // guessing the exact haversine result to 2 decimal places.
+        final km = haversineDistanceKm(
+          lat1: _serraNorte.locationLat!,
+          lon1: _serraNorte.locationLon!,
+          lat2: _valeDasEguas.locationLat!,
+          lon2: _valeDasEguas.locationLon!,
+        );
+        final ptFormatted = intl.NumberFormat.decimalPatternDigits(
+          locale: 'pt',
+          decimalDigits: 2,
+        ).format(km);
+        expect(
+          ptFormatted,
+          contains(','),
+          reason: 'sanity: PT formatting must actually use a comma here',
+        );
+
+        // Was previously always km.toStringAsFixed(2), which renders a
+        // literal period regardless of locale.
+        expect(find.textContaining(ptFormatted), findsOneWidget);
+        expect(
+          find.textContaining(km.toStringAsFixed(2)),
+          findsNothing,
+          reason: 'the locale-unaware, period-separated form must be gone',
+        );
+      },
+    );
+  });
+
+  group('theme-token pin styling (MEDIUM finding)', () {
+    testWidgets('the apiary pin hive-count badge derives its style from '
+        'theme.textTheme, not a hardcoded TextStyle', (tester) async {
+      await _goToMap(tester);
+
+      final markerFinder = find.byKey(Key('apiary-marker-${_serraNorte.id}'));
+      final theme = Theme.of(tester.element(markerFinder));
+      final countText = tester.widget<Text>(
+        find.descendant(
+          of: markerFinder,
+          matching: find.text('${_serraNorte.hiveCount}'),
+        ),
+      );
+
+      expect(
+        countText.style,
+        theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onPrimary,
+          fontWeight: FontWeight.bold,
+        ),
+      );
+    });
+
+    testWidgets(
+      'the user-location pin label derives its style from theme.textTheme, '
+      'not a hardcoded TextStyle',
+      (tester) async {
+        await _goToMap(
+          tester,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        );
+
+        final userMarker = find.byKey(const Key('apiary-map-user-marker'));
+        final theme = Theme.of(tester.element(userMarker));
+        final labelText = tester.widget<Text>(
+          find.descendant(of: userMarker, matching: find.text('You')),
+        );
+
+        expect(
+          labelText.style,
+          theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onTertiary,
+            fontWeight: FontWeight.bold,
+          ),
+        );
+      },
+    );
   });
 }

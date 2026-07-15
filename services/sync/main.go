@@ -36,74 +36,113 @@ func main() {
 	}
 }
 
+// run wires the sync service together and blocks serving it. Each stage of
+// setup (observability, token minting, the write-back coordinator, the
+// authn/org-resolver chain, route mounting) is a small named helper below so
+// this stays a flat, skimmable assembly list.
 func run(ctx context.Context) error {
-	env, err := loadEnv()
+	e, err := loadEnv()
 	if err != nil {
 		return err
 	}
 
-	providers, err := otelboot.Bootstrap(ctx, otelboot.Config{
-		ServiceName:       env.serviceName,
-		ServiceNamespace:  "beekeepingit",
-		CollectorEndpoint: env.otelEndpoint,
-		Insecure:          true,
-	})
+	providers, cfg, logger, err := setupObservability(ctx, e)
 	if err != nil {
-		return fmt.Errorf("bootstrap otel: %w", err)
+		return err
 	}
 
-	cfg := config.Config{ServiceName: env.serviceName, HTTPAddr: env.httpAddr, LogLevel: env.logLevel}
-	logger := logging.NewLogger(cfg, providers.LoggerProvider)
-	slog.SetDefault(logger)
-
-	priv, generated, err := token.LoadOrGenerateKey(env.tokenPrivateKey)
+	minter, err := buildTokenMinter(e, logger)
 	if err != nil {
-		return fmt.Errorf("load sync-token key: %w", err)
-	}
-	if generated {
-		logger.Warn("sync-token signing key generated in-process (dev/CI only) — set SYNC_TOKEN_PRIVATE_KEY in production so tokens survive restarts")
-	}
-	minter, err := token.NewMinter(priv, env.tokenIssuer, env.tokenAudience, env.tokenTTL)
-	if err != nil {
-		return fmt.Errorf("build token minter: %w", err)
+		return err
 	}
 
-	coord, err := api.NewCoordinator(env.apiariesURL)
+	coord, err := api.NewCoordinator(e.apiariesURL)
 	if err != nil {
 		return fmt.Errorf("build coordinator: %w", err)
 	}
 
-	authnMW, err := authn.NewMiddleware(ctx, authn.Config{
-		IssuerURL:    env.oidcIssuerURL,
-		Audience:     env.oidcAudience,
-		DiscoveryURL: env.oidcDiscoveryURL,
-	})
+	syncMW, err := buildSyncAuthnMiddleware(ctx, e)
 	if err != nil {
-		return fmt.Errorf("build authn middleware: %w", err)
-	}
-	orgMW, err := authn.NewOrgResolver(authn.ResolveConfig{
-		IdentityBaseURL:      env.identityURL,
-		OrganizationsBaseURL: env.organizationsURL,
-	})
-	if err != nil {
-		return fmt.Errorf("build org resolver: %w", err)
+		return err
 	}
 
 	srv, err := servicetemplate.New(cfg, providers, logger, health.NewRegistry())
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}
+	mountRoutes(srv, minter, coord, syncMW)
 
+	return srv.Run(ctx)
+}
+
+// setupObservability bootstraps OTel and builds the service's config/logger,
+// installing the logger as slog's default so package-level slog.* calls
+// elsewhere (e.g. the coordinator's upstream-failure logging) use it.
+func setupObservability(ctx context.Context, e env) (*otelboot.Providers, config.Config, *slog.Logger, error) {
+	providers, err := otelboot.Bootstrap(ctx, otelboot.Config{
+		ServiceName:       e.serviceName,
+		ServiceNamespace:  "beekeepingit",
+		CollectorEndpoint: e.otelEndpoint,
+		Insecure:          true,
+	})
+	if err != nil {
+		return nil, config.Config{}, nil, fmt.Errorf("bootstrap otel: %w", err)
+	}
+
+	cfg := config.Config{ServiceName: e.serviceName, HTTPAddr: e.httpAddr, LogLevel: e.logLevel}
+	logger := logging.NewLogger(cfg, providers.LoggerProvider)
+	slog.SetDefault(logger)
+	return providers, cfg, logger, nil
+}
+
+// buildTokenMinter loads (or, dev/CI-only, generates) the signing key and
+// builds the sync-token Minter.
+func buildTokenMinter(e env, logger *slog.Logger) (*token.Minter, error) {
+	priv, generated, err := token.LoadOrGenerateKey(e.tokenPrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("load sync-token key: %w", err)
+	}
+	if generated {
+		logger.Warn("sync-token signing key generated in-process (dev/CI only) — set SYNC_TOKEN_PRIVATE_KEY in production so tokens survive restarts")
+	}
+	minter, err := token.NewMinter(priv, e.tokenIssuer, e.tokenAudience, e.tokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("build token minter: %w", err)
+	}
+	return minter, nil
+}
+
+// buildSyncAuthnMiddleware composes the OIDC authn + org-resolver chain the
+// client-facing sync endpoints are mounted behind.
+func buildSyncAuthnMiddleware(ctx context.Context, e env) (func(http.Handler) http.Handler, error) {
+	authnMW, err := authn.NewMiddleware(ctx, authn.Config{
+		IssuerURL:    e.oidcIssuerURL,
+		Audience:     e.oidcAudience,
+		DiscoveryURL: e.oidcDiscoveryURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build authn middleware: %w", err)
+	}
+	orgMW, err := authn.NewOrgResolver(authn.ResolveConfig{
+		IdentityBaseURL:      e.identityURL,
+		OrganizationsBaseURL: e.organizationsURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build org resolver: %w", err)
+	}
+	return func(next http.Handler) http.Handler { return authnMW(orgMW(next)) }, nil
+}
+
+// mountRoutes wires the sync service's HTTP surface onto srv's router.
+func mountRoutes(srv *servicetemplate.Server, minter *token.Minter, coord *api.Coordinator, syncMW func(http.Handler) http.Handler) {
 	// Client-facing sync endpoints: OIDC-authenticated + org-resolved.
 	srv.Router().Group(func(r chi.Router) {
-		r.Use(func(next http.Handler) http.Handler { return authnMW(orgMW(next)) })
+		r.Use(syncMW)
 		r.Get("/v1/sync/token", api.TokenHandler(minter))
 		r.Post("/v1/sync/batch", api.BatchHandler(coord))
 	})
 	// Internal JWKS for PowerSync — a public key set, unauthenticated.
 	srv.Router().Get("/internal/sync/jwks.json", api.JWKSHandler(minter))
-
-	return srv.Run(ctx)
 }
 
 type env struct {

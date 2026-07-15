@@ -1,5 +1,29 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(go build*)",
+      "Bash(go vet*)",
+      "Bash(go test*)",
+      "Bash(flutter analyze*)",
+      "Bash(flutter test*)",
+      "Bash(flutter pub get*)",
+      "Bash(gh pr view*)",
+      "Bash(gh pr list*)",
+      "Bash(gh issue view*)",
+      "Bash(gh issue list*)"
+    ],
+    "deny": ["Bash(git push --force*)", "Bash(git push -f*)", "Bash(git reset --hard*)"],
+    "ask": ["Edit(.github/workflows)", "Write(.github/workflows)", "Edit(infra)", "Write(infra)"]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +32,18 @@
             "type": "command",
             "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"[BeekeepingIT] Nothing is built yet; source of truth (intent) is requirements/. When PLANNING a task, READ: requirements/ (context, FRs, NFRs, decisions, open-questions, tech-stack) — at planning, not implementation. Intent lives in requirements/; docs/ documents what gets built. As you implement, document the real architecture in docs/ (+ ADRs in docs/adr/). Decisions/requirements are revisitable: if contradicting one makes sense, get user confirmation, then update requirements/. Respect rollout order (D-10) and deferred scope (D-4). Full rules: CLAUDE.md + .claude/rules/.\"}}'",
             "statusMessage": "Loading BeekeepingIT workflow rules"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .claude/hooks/secret_file_guard.py ]; then python3 .claude/hooks/secret_file_guard.py 2>/dev/null || python .claude/hooks/secret_file_guard.py 2>/dev/null || echo '{}'; else echo '{}'; fi",
+            "statusMessage": "Checking for secret-file access"
           }
         ]
       }

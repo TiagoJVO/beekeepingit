@@ -57,5 +57,33 @@ void main() {
 
       expect(await probe.check(), isFalse);
     });
+
+    test(
+      'dispose() closes the injected http.Client (HIGH #1 — resource leak: '
+      'the probe owns an http.Client never closed on logout/membership-purge '
+      'teardown)',
+      () {
+        final client = _TrackingHttpClient();
+        final probe = HttpConnectivityProbe(client: client);
+
+        probe.dispose();
+
+        expect(client.closed, isTrue);
+      },
+    );
   });
+}
+
+/// A minimal [http.Client] that records whether [close] was called, so
+/// [HttpConnectivityProbe.dispose] can be asserted to actually release its
+/// injected client rather than merely existing as a no-op method.
+class _TrackingHttpClient extends http.BaseClient {
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      throw UnsupportedError('not used by this test');
+
+  @override
+  void close() => closed = true;
 }

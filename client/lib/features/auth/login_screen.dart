@@ -13,6 +13,12 @@ class LoginScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+    // Non-null when the last login attempt failed (e.g. OIDC discovery
+    // unreachable while offline, #HIGH-2) — surfaced through
+    // [loginErrorProvider] rather than an unhandled thrown Future. Tapping
+    // "Sign in" again is the retry affordance: login() resets this to null
+    // at the start of every attempt.
+    final loginError = ref.watch(loginErrorProvider);
     return Scaffold(
       appBar: AppBar(title: Text(l10n.appTitle)),
       body: Center(
@@ -35,9 +41,21 @@ class LoginScreen extends ConsumerWidget {
                   key: const Key('login-button'),
                   label: l10n.loginButton,
                   icon: Icons.login,
-                  onPressed: () =>
-                      ref.read(authControllerProvider.notifier).login(),
+                  onPressed: () async {
+                    await ref.read(authControllerProvider.notifier).login();
+                  },
                 ),
+                if (loginError != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    key: const Key('login-error-message'),
+                    l10n.loginError,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
