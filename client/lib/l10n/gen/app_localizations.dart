@@ -602,6 +602,24 @@ abstract class AppLocalizations {
   /// **'Apiary deleted.'**
   String get apiaryDeleteSuccess;
 
+  /// Toast shown after a failed apiary create/update — resets the form's busy state rather than leaving an indefinite spinner
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the apiary: {error}'**
+  String apiarySaveError(String error);
+
+  /// Toast shown after a failed apiary delete — resets the form's busy state rather than leaving an indefinite spinner
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete the apiary: {error}'**
+  String apiaryDeleteError(String error);
+
+  /// Toast shown when the edit form's initial load of the existing apiary fails — resets the form's busy state rather than leaving an indefinite spinner
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load the apiary: {error}'**
+  String apiaryLoadError(String error);
+
   /// Placeholder text in the apiaries list search field (FR-AP-6, #36)
   ///
   /// In en, this message translates to:

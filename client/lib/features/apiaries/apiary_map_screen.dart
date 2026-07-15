@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
+import '../../core/geo/device_location.dart';
 import '../../core/geo/haversine.dart';
+import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
@@ -76,62 +77,10 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
   /// single-slot-then-second-slot flow.
   final List<Apiary> _selected = [];
 
-  ll.LatLng? _userLocation;
-  bool _locationPermissionDenied = false;
-  bool _locationLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUserLocation();
-  }
-
   @override
   void dispose() {
     _mapController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadUserLocation() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        if (!mounted) return;
-        setState(() {
-          _locationPermissionDenied = true;
-          _locationLoading = false;
-        });
-        return;
-      }
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        if (!mounted) return;
-        setState(() {
-          _locationPermissionDenied = true;
-          _locationLoading = false;
-        });
-        return;
-      }
-      final position = await Geolocator.getCurrentPosition();
-      if (!mounted) return;
-      setState(() {
-        _userLocation = ll.LatLng(position.latitude, position.longitude);
-        _locationLoading = false;
-      });
-    } on Exception {
-      // Any platform/plugin failure (unsupported platform, timeout, ...)
-      // degrades to the same "no user marker" state rather than crashing
-      // the map screen (#34 AC: graceful empty/permission-denied handling).
-      if (!mounted) return;
-      setState(() {
-        _locationPermissionDenied = true;
-        _locationLoading = false;
-      });
-    }
   }
 
   void _onApiaryTap(Apiary apiary) {
@@ -160,6 +109,30 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
     final l10n = AppLocalizations.of(context);
     final apiariesAsync = ref.watch(apiariesStreamProvider);
     final mapLayer = ref.watch(mapLayerProvider);
+    // CRITICAL fix: share the SAME cached device-location fetch
+    // apiaries_list_screen.dart's proximity-ordering banner already uses
+    // (core/geo/device_location.dart's deviceLocationProvider) instead of
+    // this screen independently re-implementing raw Geolocator.* calls —
+    // that duplication meant opening the Apiaries tab fired TWO redundant
+    // location/permission requests, since both this screen and the list
+    // screen are alive at once inside the list/map IndexedStack (#35).
+    final locationAsync = ref.watch(deviceLocationProvider);
+    final userLocation = switch (locationAsync) {
+      AsyncData(value: DeviceLocationAvailable(:final lon, :final lat)) =>
+        ll.LatLng(lat, lon),
+      _ => null,
+    };
+    // Denied/disabled/unavailable/error all degrade to the same "no user
+    // marker, show the banner" state (#34 AC: graceful permission-denied
+    // handling) — collapsing the old ad hoc boolean flags onto a single
+    // switch over the DeviceLocation sealed type. Still loading is neither
+    // (no marker yet, but no banner either — matches the pre-fix behavior
+    // of showing nothing until resolved).
+    final locationDenied = switch (locationAsync) {
+      AsyncData(value: DeviceLocationAvailable()) => false,
+      AsyncLoading() => false,
+      _ => true,
+    };
 
     return apiariesAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -178,7 +151,7 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
               controller: _mapController,
               apiaries: located,
               selected: _selected,
-              userLocation: _userLocation,
+              userLocation: userLocation,
               userLocationLabel: l10n.apiaryMapUserLocationLabel,
               layer: mapLayer,
               onApiaryTap: _onApiaryTap,
@@ -198,7 +171,7 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
                   ),
                 ),
               ),
-            if (!_locationLoading && _locationPermissionDenied)
+            if (locationDenied)
               Positioned(
                 // Right inset leaves room for the layer toggle in the
                 // opposite top-right corner (below) so a long permission
@@ -355,8 +328,15 @@ class _Map extends StatelessWidget {
               Marker(
                 key: const Key('apiary-map-user-marker'),
                 point: userLocation!,
-                width: 44,
-                height: 44,
+                // 56x56 (matching _ApiaryPin's own marker box below), not the
+                // previous 44x44: that box was too tight for the badge+icon
+                // column at ANY font size (a pre-existing overflow —
+                // Column overflowed by 20+ pixels — that no prior test
+                // caught, since none previously rendered this marker with an
+                // actually-available location; surfaced by this PR's new
+                // theme-token coverage).
+                width: 56,
+                height: 56,
                 child: _UserPin(label: userLocationLabel),
               ),
           ],
@@ -413,10 +393,9 @@ class _ApiaryPin extends StatelessWidget {
               ),
               child: Text(
                 '${apiary.hiveCount}',
-                style: TextStyle(
+                style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onPrimary,
                   fontWeight: FontWeight.bold,
-                  fontSize: 12,
                 ),
               ),
             ),
@@ -451,10 +430,9 @@ class _UserPin extends StatelessWidget {
             ),
             child: Text(
               label,
-              style: TextStyle(
+              style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onTertiary,
                 fontWeight: FontWeight.bold,
-                fontSize: 12,
               ),
             ),
           ),
@@ -675,7 +653,11 @@ class _MeasureOverlay extends StatelessWidget {
       text = l10n.apiaryMapMeasureResult(
         from.name,
         to.name,
-        km.toStringAsFixed(2),
+        // Locale-aware formatting (MEDIUM finding — was locale-unaware
+        // km.toStringAsFixed(2)), matching apiaries_list_screen.dart's own
+        // per-row distance display (LocaleFormatting.decimal, NFR-I18N-1):
+        // PT renders `47,60` (comma decimal separator) vs EN's `47.60`.
+        LocaleFormatting.of(context).decimal(km, decimalDigits: 2),
       );
     }
 

@@ -234,6 +234,53 @@ void main() {
       expect(await repo.getById(id), isNull);
     });
 
+    group('watchById() (#HIGH-1 narrow per-id watch)', () {
+      test(
+        'emits the single matching row and re-emits after a write to it',
+        () async {
+          final id = await repo.create(name: 'Serra Norte', hiveCount: 2);
+          final names = <String?>[];
+          final sub = repo.watchById(id).listen((a) => names.add(a?.name));
+          addTearDown(sub.cancel);
+
+          await pumpEventQueue();
+          expect(names.last, 'Serra Norte');
+
+          await repo.update(id, name: 'Serra Norte Renomeada');
+          await pumpEventQueue();
+
+          expect(names.last, 'Serra Norte Renomeada');
+        },
+      );
+
+      test('emits null for an id that does not exist', () async {
+        final apiary = await repo.watchById('missing').first;
+        expect(apiary, isNull);
+      });
+
+      test('is unaffected by a write to a DIFFERENT apiary (the whole point of '
+          'the narrow watch vs. watchAll())', () async {
+        final id = await repo.create(name: 'Serra Norte', hiveCount: 2);
+        final other = await repo.create(name: 'Vale Sul', hiveCount: 1);
+        final names = <String?>[];
+        final sub = repo.watchById(id).listen((a) => names.add(a?.name));
+        addTearDown(sub.cancel);
+
+        await pumpEventQueue();
+        expect(names, ['Serra Norte']);
+
+        await repo.update(other, name: 'Vale Sul Renomeado');
+        await pumpEventQueue();
+
+        // The fake's watch() re-runs the query on every write regardless
+        // of table (it has no per-row change filtering, mirroring the
+        // real engine's watch semantics of "re-run on any relevant
+        // write") — what matters is the RESULT stays the same apiary,
+        // unaffected by the other row's change.
+        expect(names.every((n) => n == 'Serra Norte'), isTrue);
+      });
+    });
+
     test(
       'watchAll() emits the current set and re-emits after a write',
       () async {
