@@ -49,8 +49,8 @@ func New(cfg config.Config, providers *otelboot.Providers, logger *slog.Logger, 
 
 	r := chi.NewRouter()
 	r.Use(otelhttp.NewMiddleware(cfg.ServiceName))
-	r.Use(problem.RecoverMiddleware(logger))
 	r.Use(chimiddleware.RequestID)
+	r.Use(problem.RecoverMiddleware(logger))
 	r.Use(logging.RequestLogger(logger))
 
 	r.Get("/healthz", checks.Healthz())

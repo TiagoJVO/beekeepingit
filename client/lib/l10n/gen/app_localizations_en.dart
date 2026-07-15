@@ -18,6 +18,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loginButton => 'Sign in';
 
   @override
+  String get loginError =>
+      'Couldn\'t sign in — check your connection and try again.';
+
+  @override
   String get logout => 'Sign out';
 
   @override
@@ -108,6 +112,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get profileGenericError => 'Something went wrong. Please try again.';
+
+  @override
   String get organizationTitle => 'Your organization';
 
   @override
@@ -149,6 +156,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get membersInviteEmailRequired => 'Enter an email address.';
 
   @override
+  String get membersInviteEmailInvalid => 'Enter a valid email address.';
+
+  @override
   String get membersInviteButton => 'Invite';
 
   @override
@@ -176,6 +186,36 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get membersRevokeSuccess => 'Invitation revoked.';
+
+  @override
+  String get memberRoleAdmin => 'Admin';
+
+  @override
+  String get memberRoleUser => 'Member';
+
+  @override
+  String get memberStatusActive => 'Active';
+
+  @override
+  String get memberStatusInvited => 'Invited';
+
+  @override
+  String get memberStatusRemoved => 'Removed';
+
+  @override
+  String get invitationStatusPending => 'Pending';
+
+  @override
+  String get invitationStatusAccepted => 'Accepted';
+
+  @override
+  String get invitationStatusExpired => 'Expired';
+
+  @override
+  String get invitationStatusRevoked => 'Revoked';
+
+  @override
+  String get membersLoadMoreButton => 'Load more';
 
   @override
   String get manageMembers => 'Manage members';
@@ -292,6 +332,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncStatusWaitingForSignal => 'Waiting for better signal';
+
+  @override
+  String get syncStatusError => 'Sync error';
+
+  @override
+  String get offlineBannerErrorMessage =>
+      'Some changes failed to sync and PowerSync is retrying.';
 
   @override
   String get syncSupersededNotice =>
