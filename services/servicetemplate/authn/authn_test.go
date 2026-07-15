@@ -25,6 +25,13 @@ const testAudience = "beekeepingit-example"
 type testIDP struct {
 	mu   sync.Mutex
 	keys []jose.JSONWebKey
+	// algs, when non-empty, is advertised in the discovery document's
+	// id_token_signing_alg_values_supported — set before the middleware's
+	// startup discovery fetch (i.e. before newMiddleware/newTestIDP's caller
+	// hands the issuer URL to authn.NewMiddleware) to simulate a
+	// misconfigured or compromised issuer narrowing/widening the accepted
+	// signing algorithm set.
+	algs []string
 	srv  *httptest.Server
 }
 
@@ -32,10 +39,14 @@ func newTestIDP(t *testing.T) *testIDP {
 	idp := &testIDP{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		doc := map[string]any{
 			"issuer":   idp.srv.URL,
 			"jwks_uri": idp.srv.URL + "/jwks",
-		})
+		}
+		if len(idp.algs) > 0 {
+			doc["id_token_signing_alg_values_supported"] = idp.algs
+		}
+		_ = json.NewEncoder(w).Encode(doc)
 	})
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
 		idp.mu.Lock()
@@ -180,6 +191,32 @@ func TestMiddleware_MissingHeader_Rejected(t *testing.T) {
 	rec := doRequest(mw, protectedHandler(new(authn.Claims)), "")
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestMiddleware_PinsRS256_IgnoringDiscoveryAlgorithms is a regression test:
+// NewMiddleware must only ever accept RS256-signed tokens, independent of
+// whatever algorithm(s) the issuer's discovery document happens to
+// advertise. Without pinning SupportedSigningAlgs explicitly,
+// coreos/go-oidc defaults to *whatever the discovery document claims to
+// support* (falling back to RS256 only when discovery declares nothing) —
+// so a misconfigured or compromised discovery document silently controls
+// the accepted signing algorithm. Here the (attacker-controlled-in-spirit)
+// discovery document advertises only ES256, and a normally RS256-signed,
+// otherwise fully valid token must still verify.
+func TestMiddleware_PinsRS256_IgnoringDiscoveryAlgorithms(t *testing.T) {
+	idp := newTestIDP(t)
+	priv, pub := generateKey(t, "key-1")
+	idp.addKey(pub)
+	idp.algs = []string{"ES256"} // narrows discovery away from RS256
+	mw := newMiddleware(t, idp.srv.URL)
+
+	token := mintToken(t, priv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), nil)
+
+	rec := doRequest(mw, protectedHandler(new(authn.Claims)), "Bearer "+token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (RS256 token must verify regardless of what discovery advertises), body = %s",
+			rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 
