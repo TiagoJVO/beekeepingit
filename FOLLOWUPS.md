@@ -9,16 +9,4 @@
 
 ---
 
-## `fix/flutter-profile-theming`
-
-- **Consolidate the duplicated "looks like an email" validator onto the new
-  shared helper.** `client/lib/core/validation/email.dart` (`looksLikeEmail`)
-  was extracted from `profile_screen.dart`'s previously-private
-  `_looksLikeEmail`, which was byte-for-byte duplicated in
-  `client/lib/features/account/account_screen.dart:360-362`. `account_screen.dart`
-  was left untouched here because a separate, concurrent PR is already
-  editing that file (per this branch's review scope) — once that PR lands,
-  switch `account_screen.dart`'s copy over to `core/validation/email.dart`'s
-  `looksLikeEmail` and delete its own private `_looksLikeEmail`. Not tied to
-  a tracked issue; low-risk cleanup, do in whichever PR touches
-  `account_screen.dart` next.
+_Currently empty — no pending before-merge follow-ups on in-flight branches._
