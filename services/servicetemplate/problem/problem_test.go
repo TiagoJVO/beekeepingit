@@ -112,3 +112,32 @@ func TestRecoverMiddleware_PassesThroughWithoutPanic(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusTeapot)
 	}
 }
+
+// TestRecoverMiddleware_RePanicsOnErrAbortHandler is a regression test: a
+// handler that intentionally aborts a streamed/partial response via
+// http.ErrAbortHandler (the documented net/http mechanism for that) must
+// NOT be converted into a 500 problem+json body — net/http specifically
+// suppresses its own panic logging for this sentinel and expects it to
+// keep propagating so the connection is simply closed.
+func TestRecoverMiddleware_RePanicsOnErrAbortHandler(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	aborting := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic(http.ErrAbortHandler)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/apiaries", nil)
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		problem.RecoverMiddleware(logger)(aborting).ServeHTTP(rec, req)
+	}()
+
+	if recovered != http.ErrAbortHandler {
+		t.Fatalf("recovered = %v, want %v (ErrAbortHandler must propagate, not be swallowed)", recovered, http.ErrAbortHandler)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("response body = %q, want empty (no Write(w, r, Internal()) for an aborted response)", rec.Body.String())
+	}
+}
