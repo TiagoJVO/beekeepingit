@@ -116,6 +116,26 @@ class ApiariesRepository {
     return row == null ? null : _fromRow(row);
   }
 
+  /// Live single-row watch for one apiary by id (HIGH finding: the detail
+  /// screen no longer needs to watch/rescan the whole org apiary list, via
+  /// [watchAll]/`apiariesStreamProvider`, just to `firstWhere` one row by
+  /// id — a write to any OTHER apiary/counter in the org used to re-trigger
+  /// that screen's full rebuild). Mirrors [watchCountersFor]'s existing
+  /// per-id/family pattern. Emits null when the id doesn't (or no longer)
+  /// exist — deleted, or a stale deep link — which the caller
+  /// (apiary_detail_screen.dart) already handles by bouncing back to the
+  /// list.
+  Stream<Apiary?> watchById(String id) {
+    return _store
+        .watch(
+          'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
+          'COALESCE($_hiveCountSubquery, 0) AS hive_count '
+          'FROM $apiariesTable a WHERE a.id = ?',
+          [id],
+        )
+        .map((rows) => rows.isEmpty ? null : _fromRow(rows.first));
+  }
+
   /// The apiary's counter rows (#256), newest-per-type (deduplicated the
   /// same way [_hiveCountSubquery] resolves the hive value, for the same
   /// optimistic-window reason), ordered with [knownCounterTypes] first (in
@@ -333,6 +353,18 @@ final apiaryCountersProvider = StreamProvider.autoDispose
       final repo = await ref.watch(apiariesRepositoryProvider.future);
       yield* repo.watchCountersFor(apiaryId);
     });
+
+/// Live single apiary by id (HIGH finding) — what the detail screen watches
+/// instead of the whole-org [apiariesStreamProvider]. Family-keyed +
+/// autoDispose, mirroring [apiaryCountersProvider]'s existing pattern, so a
+/// write to an unrelated apiary/counter no longer re-triggers this screen.
+final apiaryByIdProvider = StreamProvider.autoDispose.family<Apiary?, String>((
+  ref,
+  apiaryId,
+) async* {
+  final repo = await ref.watch(apiariesRepositoryProvider.future);
+  yield* repo.watchById(apiaryId);
+});
 
 /// Client-side search over the locally-synced apiary set (FR-AP-6, D-17:
 /// client-side, apiaries-only, matches on name and location). Originally

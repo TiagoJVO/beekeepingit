@@ -156,6 +156,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get membersInviteEmailRequired => 'Enter an email address.';
 
   @override
+  String get membersInviteEmailInvalid => 'Enter a valid email address.';
+
+  @override
   String get membersInviteButton => 'Invite';
 
   @override
@@ -183,6 +186,36 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get membersRevokeSuccess => 'Invitation revoked.';
+
+  @override
+  String get memberRoleAdmin => 'Admin';
+
+  @override
+  String get memberRoleUser => 'Member';
+
+  @override
+  String get memberStatusActive => 'Active';
+
+  @override
+  String get memberStatusInvited => 'Invited';
+
+  @override
+  String get memberStatusRemoved => 'Removed';
+
+  @override
+  String get invitationStatusPending => 'Pending';
+
+  @override
+  String get invitationStatusAccepted => 'Accepted';
+
+  @override
+  String get invitationStatusExpired => 'Expired';
+
+  @override
+  String get invitationStatusRevoked => 'Revoked';
+
+  @override
+  String get membersLoadMoreButton => 'Load more';
 
   @override
   String get manageMembers => 'Manage members';
@@ -263,6 +296,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryDeleteSuccess => 'Apiary deleted.';
+
+  @override
+  String apiarySaveError(String error) {
+    return 'Could not save the apiary: $error';
+  }
+
+  @override
+  String apiaryDeleteError(String error) {
+    return 'Could not delete the apiary: $error';
+  }
+
+  @override
+  String apiaryLoadError(String error) {
+    return 'Could not load the apiary: $error';
+  }
 
   @override
   String get apiariesSearchHint => 'Search apiaries by name';

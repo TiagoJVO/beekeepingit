@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
+import '../../core/geo/device_location.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -93,63 +93,73 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
 
   Future<void> _loadExisting() async {
     setState(() => _busy = true);
-    final repo = await ref.read(apiariesRepositoryProvider.future);
-    final existing = await repo.getById(widget.apiaryId!);
-    if (!mounted) return;
-    if (existing != null) {
-      _nameController.text = existing.name;
-      _hiveController.text = existing.hiveCount.toString();
-      _notesController.text = existing.notes ?? '';
-      _placeLabelController.text = existing.placeLabel ?? '';
-      if (existing.hasLocation) {
-        _location = ll.LatLng(existing.locationLat!, existing.locationLon!);
-        // Show the existing pin without an extra tap when editing a located
-        // apiary — the collapse-by-default rule is about keeping a fresh
-        // create form short, not hiding a location the apiary already has.
-        _mapPickerExpanded = true;
+    // HIGH finding: this used to have no error handling at all — a thrown
+    // repository/lookup failure left `_busy` stuck true forever (an
+    // indefinite spinner, no way out) with no message. l10n/messenger are
+    // deliberately NOT grabbed here at the top (unlike _save/_delete, which
+    // are always button-triggered): _loadExisting runs synchronously from
+    // initState() up to its first `await`, and looking up an
+    // InheritedWidget (AppLocalizations.of/ScaffoldMessenger.of) during
+    // initState throws ("dependOnInheritedWidgetOfExactType() ... called
+    // before initState() completed") — so they're only read inside the
+    // catch block below, which can only run after the first await has
+    // already suspended and resumed.
+    try {
+      final repo = await ref.read(apiariesRepositoryProvider.future);
+      final existing = await repo.getById(widget.apiaryId!);
+      if (!mounted) return;
+      if (existing != null) {
+        _nameController.text = existing.name;
+        _hiveController.text = existing.hiveCount.toString();
+        _notesController.text = existing.notes ?? '';
+        _placeLabelController.text = existing.placeLabel ?? '';
+        if (existing.hasLocation) {
+          _location = ll.LatLng(existing.locationLat!, existing.locationLon!);
+          // Show the existing pin without an extra tap when editing a
+          // located apiary — the collapse-by-default rule is about keeping
+          // a fresh create form short, not hiding a location the apiary
+          // already has.
+          _mapPickerExpanded = true;
+        }
       }
+    } catch (e) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.apiaryLoadError('$e'))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    setState(() => _busy = false);
   }
 
-  /// "Use current location" (#252 AC): geolocator, graceful permission
-  /// handling — the same pattern apiary_map_screen.dart's
-  /// `_loadUserLocation` already uses for its own user-location marker, but
-  /// here the result becomes the apiary's pin itself rather than a separate
-  /// "you are here" marker.
+  /// "Use current location" (#252 AC): a fresh, explicit one-shot fetch via
+  /// the module's shared [deviceLocationServiceProvider] (CRITICAL fix —
+  /// this used to re-implement raw Geolocator.*/permission-handling calls
+  /// directly, an independent copy of apiary_map_screen.dart's own
+  /// (now-also-fixed) logic). Deliberately reads the *service* directly
+  /// rather than the cached `deviceLocationProvider` (core/geo/
+  /// device_location.dart): tapping this button means "get where I am
+  /// RIGHT NOW", which should always re-request, not silently reuse
+  /// whatever the list/map screens' shared cache last resolved to.
+  /// [DeviceLocationService.current] never throws (its own doc comment) —
+  /// it resolves to one of [DeviceLocation]'s variants — so no try/catch is
+  /// needed here; the switch simply collapses every non-available variant
+  /// onto the same "denied/unavailable" UI state.
   Future<void> _useCurrentLocation() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        if (!mounted) return;
-        setState(() => _locationPermissionDenied = true);
-        return;
+    final result = await ref.read(deviceLocationServiceProvider).current();
+    if (!mounted) return;
+    setState(() {
+      switch (result) {
+        case DeviceLocationAvailable(:final lon, :final lat):
+          _location = ll.LatLng(lat, lon);
+          _locationPermissionDenied = false;
+          // Reveal the pin that was just set so the user can confirm/adjust it.
+          _mapPickerExpanded = true;
+        default:
+          _locationPermissionDenied = true;
       }
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        if (!mounted) return;
-        setState(() => _locationPermissionDenied = true);
-        return;
-      }
-      final position = await Geolocator.getCurrentPosition();
-      if (!mounted) return;
-      setState(() {
-        _location = ll.LatLng(position.latitude, position.longitude);
-        _locationPermissionDenied = false;
-        // Reveal the pin that was just set so the user can confirm/adjust it.
-        _mapPickerExpanded = true;
-      });
-    } on Exception {
-      // Any platform/plugin failure degrades to the same "denied/unavailable"
-      // state rather than crashing the form (#252 AC: graceful permission
-      // handling) — the map-pin picker remains available as a fallback.
-      if (!mounted) return;
-      setState(() => _locationPermissionDenied = true);
-    }
+    });
   }
 
   void _onMapTap(ll.LatLng point) {
@@ -174,39 +184,50 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
     // the on-device write, not that it has synced — that's #58's job).
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
-    final repo = await ref.read(apiariesRepositoryProvider.future);
-    final name = _nameController.text.trim();
-    final hives = int.tryParse(_hiveController.text.trim()) ?? 0;
-    final notes = _notesController.text.trim();
-    final placeLabel = _placeLabelController.text.trim();
-    if (widget.isEdit) {
-      await repo.update(
-        widget.apiaryId!,
-        name: name,
-        hiveCount: hives,
-        notes: notes.isEmpty ? null : notes,
-        notesProvided: true,
-        placeLabel: placeLabel.isEmpty ? null : placeLabel,
-        placeLabelProvided: true,
-        locationLon: _location?.longitude,
-        locationLat: _location?.latitude,
-        locationProvided: true,
-      );
+    // HIGH finding: no try/catch previously wrapped repo.update/create — a
+    // thrown error left `_busy` stuck true forever (an indefinite spinner)
+    // with no error message and no way to retry.
+    try {
+      final repo = await ref.read(apiariesRepositoryProvider.future);
+      final name = _nameController.text.trim();
+      final hives = int.tryParse(_hiveController.text.trim()) ?? 0;
+      final notes = _notesController.text.trim();
+      final placeLabel = _placeLabelController.text.trim();
+      if (widget.isEdit) {
+        await repo.update(
+          widget.apiaryId!,
+          name: name,
+          hiveCount: hives,
+          notes: notes.isEmpty ? null : notes,
+          notesProvided: true,
+          placeLabel: placeLabel.isEmpty ? null : placeLabel,
+          placeLabelProvided: true,
+          locationLon: _location?.longitude,
+          locationLat: _location?.latitude,
+          locationProvided: true,
+        );
+        if (!mounted) return;
+        context.go('/apiaries/${widget.apiaryId}');
+      } else {
+        await repo.create(
+          name: name,
+          hiveCount: hives,
+          notes: notes.isEmpty ? null : notes,
+          placeLabel: placeLabel.isEmpty ? null : placeLabel,
+          locationLon: _location?.longitude,
+          locationLat: _location?.latitude,
+        );
+        if (!mounted) return;
+        context.go('/apiaries');
+      }
+      messenger.showSnackBar(SnackBar(content: Text(l10n.apiarySaveSuccess)));
+    } catch (e) {
       if (!mounted) return;
-      context.go('/apiaries/${widget.apiaryId}');
-    } else {
-      await repo.create(
-        name: name,
-        hiveCount: hives,
-        notes: notes.isEmpty ? null : notes,
-        placeLabel: placeLabel.isEmpty ? null : placeLabel,
-        locationLon: _location?.longitude,
-        locationLat: _location?.latitude,
+      setState(() => _busy = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.apiarySaveError('$e'))),
       );
-      if (!mounted) return;
-      context.go('/apiaries');
     }
-    messenger.showSnackBar(SnackBar(content: Text(l10n.apiarySaveSuccess)));
   }
 
   /// Delete confirmation (#255, FR-UX-1, D-18): the field-first checklist
@@ -224,6 +245,13 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
       context: context,
       builder: (_) => DeleteApiaryConfirmDialog(apiaryName: name),
     );
+    // MEDIUM finding: missing mounted check after the await, inconsistent
+    // with the rest of the file (e.g. _save/_delete both check it
+    // immediately after their own awaits) — without it, a screen disposed
+    // while the dialog was open would call _delete(), which touches
+    // context-dependent objects (AppLocalizations.of/ScaffoldMessenger.of)
+    // on an unmounted State.
+    if (!mounted) return;
     if (confirmed != true) return;
     await _delete();
   }
@@ -232,11 +260,21 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
-    final repo = await ref.read(apiariesRepositoryProvider.future);
-    await repo.delete(widget.apiaryId!);
-    if (!mounted) return;
-    context.go('/apiaries');
-    messenger.showSnackBar(SnackBar(content: Text(l10n.apiaryDeleteSuccess)));
+    // HIGH finding: no try/catch previously wrapped repo.delete — a thrown
+    // error left `_busy` stuck true forever with no error message.
+    try {
+      final repo = await ref.read(apiariesRepositoryProvider.future);
+      await repo.delete(widget.apiaryId!);
+      if (!mounted) return;
+      context.go('/apiaries');
+      messenger.showSnackBar(SnackBar(content: Text(l10n.apiaryDeleteSuccess)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.apiaryDeleteError('$e'))),
+      );
+    }
   }
 
   @override

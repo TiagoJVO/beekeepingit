@@ -193,6 +193,10 @@
   "@membersInviteEmailRequired": {
     "description": "Validation message for an empty invite email"
   },
+  "membersInviteEmailInvalid": "Enter a valid email address.",
+  "@membersInviteEmailInvalid": {
+    "description": "Validation message for a malformed invite email"
+  },
   "membersInviteButton": "Invite",
   "@membersInviteButton": {
     "description": "Submit button to send an invitation"
@@ -233,6 +237,46 @@
   "membersRevokeSuccess": "Invitation revoked.",
   "@membersRevokeSuccess": {
     "description": "Snackbar shown after successfully revoking an invitation"
+  },
+  "memberRoleAdmin": "Admin",
+  "@memberRoleAdmin": {
+    "description": "Localized label for the 'admin' member/invitation role (organizations migration 00001/00002: role IN ('admin', 'user'))"
+  },
+  "memberRoleUser": "Member",
+  "@memberRoleUser": {
+    "description": "Localized label for the 'user' member/invitation role"
+  },
+  "memberStatusActive": "Active",
+  "@memberStatusActive": {
+    "description": "Localized label for a membership's 'active' status (organizations migration 00001: status IN ('active', 'invited', 'removed'))"
+  },
+  "memberStatusInvited": "Invited",
+  "@memberStatusInvited": {
+    "description": "Localized label for a membership's 'invited' status"
+  },
+  "memberStatusRemoved": "Removed",
+  "@memberStatusRemoved": {
+    "description": "Localized label for a membership's 'removed' status"
+  },
+  "invitationStatusPending": "Pending",
+  "@invitationStatusPending": {
+    "description": "Localized label for an invitation's 'pending' status (organizations migration 00002: status IN ('pending', 'accepted', 'expired', 'revoked'))"
+  },
+  "invitationStatusAccepted": "Accepted",
+  "@invitationStatusAccepted": {
+    "description": "Localized label for an invitation's 'accepted' status"
+  },
+  "invitationStatusExpired": "Expired",
+  "@invitationStatusExpired": {
+    "description": "Localized label for an invitation's 'expired' status"
+  },
+  "invitationStatusRevoked": "Revoked",
+  "@invitationStatusRevoked": {
+    "description": "Localized label for an invitation's 'revoked' status"
+  },
+  "membersLoadMoreButton": "Load more",
+  "@membersLoadMoreButton": {
+    "description": "Action to fetch the next cursor-paginated page of members/invitations (server: limit/cursor/page.next_cursor)"
   },
   "manageMembers": "Manage members",
   "@manageMembers": {
@@ -336,6 +380,33 @@
   "apiaryDeleteSuccess": "Apiary deleted.",
   "@apiaryDeleteSuccess": {
     "description": "Toast shown after successfully deleting an apiary (#197)"
+  },
+  "apiarySaveError": "Could not save the apiary: {error}",
+  "@apiarySaveError": {
+    "description": "Toast shown after a failed apiary create/update — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryDeleteError": "Could not delete the apiary: {error}",
+  "@apiaryDeleteError": {
+    "description": "Toast shown after a failed apiary delete — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryLoadError": "Could not load the apiary: {error}",
+  "@apiaryLoadError": {
+    "description": "Toast shown when the edit form's initial load of the existing apiary fails — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "apiariesSearchHint": "Search apiaries by name",
   "@apiariesSearchHint": {

@@ -156,6 +156,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get membersInviteEmailRequired => 'Introduza um endereço de email.';
 
   @override
+  String get membersInviteEmailInvalid =>
+      'Introduza um endereço de email válido.';
+
+  @override
   String get membersInviteButton => 'Convidar';
 
   @override
@@ -183,6 +187,36 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get membersRevokeSuccess => 'Convite revogado.';
+
+  @override
+  String get memberRoleAdmin => 'Administrador';
+
+  @override
+  String get memberRoleUser => 'Membro';
+
+  @override
+  String get memberStatusActive => 'Ativo';
+
+  @override
+  String get memberStatusInvited => 'Convidado';
+
+  @override
+  String get memberStatusRemoved => 'Removido';
+
+  @override
+  String get invitationStatusPending => 'Pendente';
+
+  @override
+  String get invitationStatusAccepted => 'Aceite';
+
+  @override
+  String get invitationStatusExpired => 'Expirado';
+
+  @override
+  String get invitationStatusRevoked => 'Revogado';
+
+  @override
+  String get membersLoadMoreButton => 'Carregar mais';
 
   @override
   String get manageMembers => 'Gerir membros';
@@ -264,6 +298,21 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiaryDeleteSuccess => 'Apiário eliminado.';
+
+  @override
+  String apiarySaveError(String error) {
+    return 'Não foi possível guardar o apiário: $error';
+  }
+
+  @override
+  String apiaryDeleteError(String error) {
+    return 'Não foi possível eliminar o apiário: $error';
+  }
+
+  @override
+  String apiaryLoadError(String error) {
+    return 'Não foi possível carregar o apiário: $error';
+  }
 
   @override
   String get apiariesSearchHint => 'Pesquisar apiários por nome';
