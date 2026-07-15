@@ -12,6 +12,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -36,7 +37,10 @@ const (
 // Field maps must carry only the entity's own scalar/soft-ID fields, never
 // denormalized personal data (§7.3) — see the per-entity *Fields helpers.
 func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, orgID pgtype.UUID, entityType string, entityID pgtype.UUID, actorUserID pgtype.UUID, occurredAt pgtype.Timestamptz, changeType string, before, after map[string]any) error {
-	changedFields, change := history.ComputeChange(changeType, before, after)
+	changedFields, change, err := history.ComputeChange(changeType, before, after)
+	if err != nil {
+		return fmt.Errorf("compute organization change: %w", err)
+	}
 
 	changeJSON, err := json.Marshal(change)
 	if err != nil {

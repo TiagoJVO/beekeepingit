@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -600,7 +601,10 @@ func writeAuditLogTx(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, u
 	if changeType == history.ChangeDelete {
 		newFields = nil
 	}
-	changedFields, change := history.ComputeChange(changeType, oldFields, newFields)
+	changedFields, change, err := history.ComputeChange(changeType, oldFields, newFields)
+	if err != nil {
+		return fmt.Errorf("compute apiary change: %w", err)
+	}
 
 	changeJSON, err := json.Marshal(change)
 	if err != nil {

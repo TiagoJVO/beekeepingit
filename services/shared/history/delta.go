@@ -1,6 +1,7 @@
 package history
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 )
@@ -34,20 +35,23 @@ type FieldChange struct {
 // Equality is determined with Go's == where possible; values are compared
 // via reflect.DeepEqual so this also works for slices/maps/pointers passed
 // as field values (e.g. a nullable field represented as *string).
-func ComputeChange(changeType string, old, updated map[string]any) (changedFields []string, change map[string]any) {
+//
+// An unrecognized changeType is a caller bug — a typo, or a new change type
+// this package hasn't been taught yet. It is reported via the error return
+// rather than silently producing an empty/wrong audit row: every consuming
+// service's audit_log is append-only and immutable (history.md §7.1), so a
+// bad row written here can never be corrected in place, only compounded.
+func ComputeChange(changeType string, old, updated map[string]any) (changedFields []string, change map[string]any, err error) {
 	switch changeType {
 	case ChangeCreate:
-		return nil, baseline(updated)
+		return nil, baseline(updated), nil
 	case ChangeDelete:
-		return nil, tombstone()
+		return nil, tombstone(), nil
 	case ChangeUpdate:
-		return diff(old, updated)
+		cf, c := diff(old, updated)
+		return cf, c, nil
 	default:
-		// Unknown change types are a caller bug, not a runtime condition to
-		// recover from gracefully — surfaced by the empty result rather than
-		// a panic, since ComputeChange has no error return (keeps call
-		// sites simple; callers only ever pass the three package constants).
-		return nil, map[string]any{}
+		return nil, nil, fmt.Errorf("history: unknown change type %q", changeType)
 	}
 }
 
@@ -78,7 +82,7 @@ func diff(old, updated map[string]any) ([]string, map[string]any) {
 		seen[k] = true
 	}
 
-	var changedFields []string
+	changedFields := make([]string, 0, len(seen))
 	change := make(map[string]any, len(seen))
 	for field := range seen {
 		oldVal, oldOK := old[field]
