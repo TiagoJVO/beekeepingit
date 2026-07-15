@@ -596,4 +596,99 @@ void main() {
       expect(sorted.map((a) => a.id).toList(), ['a', 'z']);
     });
   });
+
+  group('apiariesViewModelProvider memoization (HIGH #2)', () {
+    test('an unrelated provider change (the list/map view toggle) does not '
+        'recompute the filtered/sorted list — only the actual inputs '
+        '(stream, query, location) do', () async {
+      final container = ProviderContainer(
+        overrides: [
+          apiariesStreamProvider.overrideWith(
+            (ref) =>
+                Stream.value([_apiary('z', 'Zulu'), _apiary('a', 'Alpha')]),
+          ),
+          // Avoids touching the real geolocator plugin (no platform
+          // channel under a plain test(), unlike testWidgets()) — this
+          // test only cares about apiariesViewModelProvider's own caching
+          // behavior, not the resolved location value.
+          deviceLocationServiceProvider.overrideWithValue(
+            const _FakeDeviceLocationService(DeviceLocationUnavailable()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // Establish a listener so the stream provider is actually evaluated
+      // (a bare container.read of a StreamProvider's own .future can hang
+      // without an active listener keeping it subscribed), then let its
+      // first emission flow through the event queue before reading —
+      // otherwise the first read could observe AsyncLoading, which is a
+      // different AsyncValue instance every time regardless of
+      // memoization. Mirrors apiaries_repository_test.dart's own
+      // listen()+pumpEventQueue() pattern for watch()-backed streams.
+      container.listen(apiariesStreamProvider, (previous, next) {});
+      await pumpEventQueue();
+
+      final first = container.read(apiariesViewModelProvider);
+
+      // Before the fix, this computation ran straight inside build(), so
+      // ANY rebuild of ApiariesListScreen — including one triggered by an
+      // unrelated provider like this view toggle — redid the O(n)
+      // filter+haversine-sort. Hoisted into its own Provider, Riverpod
+      // caches the result: reading it again without touching one of its
+      // three real inputs (stream/query/location) must return the exact
+      // same object.
+      container.read(apiariesViewProvider.notifier).state = ApiariesView.map;
+      final second = container.read(apiariesViewModelProvider);
+
+      expect(
+        identical(first, second),
+        isTrue,
+        reason:
+            'unrelated apiariesViewProvider change must not recompute '
+            'apiariesViewModelProvider',
+      );
+
+      // Changing an actual input (the search query) DOES recompute.
+      container.read(apiariesSearchQueryProvider.notifier).state = 'zulu';
+      final third = container.read(apiariesViewModelProvider);
+
+      expect(
+        identical(first, third),
+        isFalse,
+        reason: 'a real input change (search query) must recompute it',
+      );
+    });
+  });
+
+  group('error state (HIGH #4: no test previously drove the error branch)', () {
+    testWidgets(
+      'shows an error state (not a crash) when the apiaries stream errors',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              apiariesStreamProvider.overrideWith(
+                (ref) => Stream<List<Apiary>>.error('boom'),
+              ),
+              deviceLocationServiceProvider.overrideWithValue(
+                const _FakeDeviceLocationService(
+                  DeviceLocationServicesDisabled(),
+                ),
+              ),
+            ],
+            child: const MaterialApp(
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: Scaffold(body: ApiariesListScreen()),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('Could not load apiaries'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
 }

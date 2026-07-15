@@ -63,13 +63,32 @@ const Map<String, String> _diacriticFold = {
   'Ñ': 'N',
 };
 
+/// Unicode "Combining Diacritical Marks" block (U+0300–U+036F). [_diacriticFold]
+/// only maps *precomposed* (NFC) accented characters (e.g. U+00E3 'ã' as a
+/// single code point) — text that instead arrives already *decomposed*
+/// (NFD: a base letter followed by one of these standalone combining
+/// marks, e.g. 'a' U+0061 + COMBINING TILDE U+0303) would fold to nothing
+/// via that map and silently keep its accent. Dropping any code point in
+/// this range as a second pass handles that case without a full NFC/NFD
+/// normalization routine (see the file-level doc comment on why this file
+/// avoids pulling in a normalization package).
+const int _kCombiningMarksStart = 0x0300;
+const int _kCombiningMarksEnd = 0x036F;
+
 /// Strips the diacritics [_diacriticFold] knows about from [value], leaving
 /// everything else (case, other characters) untouched — callers combine this
 /// with `.toLowerCase()` themselves for a full case+diacritic-insensitive
 /// comparison (matching how [normalizeForSearch] below composes it).
+///
+/// Handles both precomposed (NFC) input, via [_diacriticFold], and
+/// decomposed (NFD) input, by dropping standalone Unicode combining marks
+/// (U+0300–U+036F) left over after the base letter is copied through.
 String stripDiacritics(String value) {
   final buffer = StringBuffer();
   for (final rune in value.runes) {
+    if (rune >= _kCombiningMarksStart && rune <= _kCombiningMarksEnd) {
+      continue;
+    }
     final ch = String.fromCharCode(rune);
     buffer.write(_diacriticFold[ch] ?? ch);
   }

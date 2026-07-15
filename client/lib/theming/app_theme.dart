@@ -19,8 +19,14 @@ import 'brand_tokens.dart';
 /// `PrimaryActionButton`/`FilledButton` and the shell FAB draw the *same*
 /// honey ("honey is the only primary action") — with a dark on-primary
 /// ([BrandTokens.onHoney]) because white-on-honey fails AA. Every `on*` role
-/// the app renders text on is chosen for WCAG 2.2 AA and enforced in
-/// `test/theming/app_theme_contrast_test.dart`.
+/// pair the scheme defines is enforced in
+/// `test/theming/app_theme_contrast_test.dart`, each against the bar its
+/// actual usage needs: WCAG 2.2 AA text contrast (4.5:1) for the pairs used
+/// as body/label text, except the light-mode `tertiary`/`onTertiary` pair
+/// (gold-on-paper, ~3.3:1) — used only for a small map-pin badge, not body
+/// text — which is held to WCAG 2.2 SC 1.4.11's non-text/graphical floor
+/// (3:1) instead, the same documented gap [BrandTokens.gold] itself already
+/// calls out for body-text usage.
 ///
 /// Typography is bundled (offline-first, no runtime font fetching): **Archivo**
 /// is the app-wide default (`fontFamily`) for all UI/body; **Playfair Display**

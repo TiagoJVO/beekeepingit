@@ -32,28 +32,63 @@ final apiariesViewProvider = StateProvider<ApiariesView>(
   (ref) => ApiariesView.list,
 );
 
-/// The device location fetched for offline/live proximity ordering (#33).
-/// [AsyncNotifier] rather than a plain future provider because the screen
-/// needs a "try again" affordance after a denial/failure — [retry]
-/// re-invokes [build] via [Ref.invalidateSelf], showing loading state in
-/// between rather than jumping straight from the old error to new data.
-class ApiariesLocationController extends AsyncNotifier<DeviceLocation> {
-  @override
-  Future<DeviceLocation> build() {
-    return ref.read(deviceLocationServiceProvider).current();
-  }
+/// The device location fetched for offline/live proximity ordering (#33) —
+/// [deviceLocationProvider] (core/geo/device_location.dart). Moved out of
+/// this file (CRITICAL finding) so apiary_map_screen.dart's own
+/// user-location marker can share the exact same cached fetch instead of
+/// independently re-triggering a second permission/location request when
+/// both screens are alive at once in the list/map `IndexedStack`.
 
-  Future<void> retry() async {
-    state = const AsyncLoading();
-    ref.invalidateSelf();
-    await future;
-  }
+/// The list screen's derived, ready-to-render apiary state (HIGH finding):
+/// [filterApiariesByQuery]/[sortApiariesByDistance]/[sortApiariesByName] are
+/// O(n) (the sort does a haversine calculation per apiary) and used to run
+/// directly inside [ApiariesListScreen.build] — i.e. on every keystroke,
+/// every location tick, and every unrelated counter/apiary write anywhere
+/// in the org (since [apiariesStreamProvider] re-emits the whole list on
+/// any change). Hoisting the computation into its own [Provider] lets
+/// Riverpod memoize it: it only recomputes when one of its three actual
+/// inputs — the raw stream, the search query, or the device location —
+/// changes, not on every rebuild of the screen for an unrelated reason
+/// (e.g. toggling [apiariesViewProvider]).
+class ApiariesViewModel {
+  const ApiariesViewModel({
+    required this.hasAnyApiaries,
+    required this.ordered,
+  });
+
+  /// Whether the org has any apiary at all (unfiltered) — distinguishes the
+  /// "no apiaries yet" onboarding empty state from "the search matched
+  /// nothing", which both look like an empty [ordered] list on their own.
+  final bool hasAnyApiaries;
+
+  /// The query-filtered set, ordered by distance (device location
+  /// available) or by name (fallback) — exactly what the list renders.
+  final List<Apiary> ordered;
 }
 
-final apiariesLocationProvider =
-    AsyncNotifierProvider<ApiariesLocationController, DeviceLocation>(
-      ApiariesLocationController.new,
+final apiariesViewModelProvider = Provider<AsyncValue<ApiariesViewModel>>((
+  ref,
+) {
+  final apiariesAsync = ref.watch(apiariesStreamProvider);
+  final query = ref.watch(apiariesSearchQueryProvider);
+  final locationAsync = ref.watch(deviceLocationProvider);
+  return apiariesAsync.whenData((apiaries) {
+    final filtered = filterApiariesByQuery(apiaries, query);
+    final deviceLocation = locationAsync.value;
+    final ordered = switch (deviceLocation) {
+      DeviceLocationAvailable(:final lon, :final lat) => sortApiariesByDistance(
+        filtered,
+        originLon: lon,
+        originLat: lat,
+      ),
+      _ => sortApiariesByName(filtered),
+    };
+    return ApiariesViewModel(
+      hasAnyApiaries: apiaries.isNotEmpty,
+      ordered: ordered,
     );
+  });
+});
 
 /// The home screen: the org's apiaries, read live from local SQLite (works
 /// offline). Tapping a row opens the edit form. No own AppBar/FAB: this
@@ -88,9 +123,14 @@ class ApiariesListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final apiaries = ref.watch(apiariesStreamProvider);
+    // The heavy filter+sort work is memoized in apiariesViewModelProvider
+    // (HIGH finding) rather than recomputed here on every rebuild; this
+    // screen still watches the raw location separately since the banner
+    // and each row's distance subtitle need the resolved DeviceLocation
+    // value directly, not just the ordered list.
+    final viewModel = ref.watch(apiariesViewModelProvider);
     final query = ref.watch(apiariesSearchQueryProvider);
-    final location = ref.watch(apiariesLocationProvider);
+    final location = ref.watch(deviceLocationProvider);
     final view = ref.watch(apiariesViewProvider);
 
     return Column(
@@ -142,7 +182,7 @@ class ApiariesListScreen extends ConsumerWidget {
           child: IndexedStack(
             index: view == ApiariesView.list ? 0 : 1,
             children: [
-              apiaries.when(
+              viewModel.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (err, _) => Center(
                   child: Padding(
@@ -150,13 +190,11 @@ class ApiariesListScreen extends ConsumerWidget {
                     child: Text(l10n.apiariesError('$err')),
                   ),
                 ),
-                data: (list) {
-                  final filtered = filterApiariesByQuery(list, query);
-
-                  if (list.isEmpty) {
+                data: (vm) {
+                  if (!vm.hasAnyApiaries) {
                     return Center(child: Text(l10n.apiariesEmpty));
                   }
-                  if (filtered.isEmpty) {
+                  if (vm.ordered.isEmpty) {
                     return Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
@@ -166,21 +204,12 @@ class ApiariesListScreen extends ConsumerWidget {
                   }
 
                   final deviceLocation = location.value;
-                  final ordered = switch (deviceLocation) {
-                    DeviceLocationAvailable(:final lon, :final lat) =>
-                      sortApiariesByDistance(
-                        filtered,
-                        originLon: lon,
-                        originLat: lat,
-                      ),
-                    _ => sortApiariesByName(filtered),
-                  };
 
                   return ListView.separated(
-                    itemCount: ordered.length,
+                    itemCount: vm.ordered.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, i) {
-                      final apiary = ordered[i];
+                      final apiary = vm.ordered[i];
                       final distanceText = _distanceSubtitle(
                         context,
                         l10n,
@@ -406,8 +435,7 @@ class _LocationFallbackBanner extends ConsumerWidget {
             style: TextButton.styleFrom(
               minimumSize: const Size(kMinTapTarget, kMinTapTarget),
             ),
-            onPressed: () =>
-                ref.read(apiariesLocationProvider.notifier).retry(),
+            onPressed: () => ref.read(deviceLocationProvider.notifier).retry(),
             child: Text(l10n.apiariesLocationRetry),
           ),
         ],

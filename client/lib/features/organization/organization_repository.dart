@@ -38,6 +38,27 @@ class Organization {
   final String role;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  // Value equality (MEDIUM-2): organizationProvider is watched by the
+  // router's redirect logic (app_router.dart) — without this, a re-fetch
+  // that returns the same organization compares unequal (default identity
+  // equality) and can trigger a redundant redirect re-evaluation/rebuild.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Organization &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          address == other.address &&
+          createdBy == other.createdBy &&
+          role == other.role &&
+          createdAt == other.createdAt &&
+          updatedAt == other.updatedAt);
+
+  @override
+  int get hashCode =>
+      Object.hash(id, name, address, createdBy, role, createdAt, updatedAt);
 }
 
 /// Reads/creates the caller's organization via `GET /v1/organizations/me` and
