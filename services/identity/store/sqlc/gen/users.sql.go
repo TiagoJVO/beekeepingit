@@ -11,27 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getUserByID = `-- name: GetUserByID :one
-SELECT id, oidc_sub, name, email, locale, created_at, updated_at
-FROM identity.users
-WHERE id = $1
-`
-
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (IdentityUser, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i IdentityUser
-	err := row.Scan(
-		&i.ID,
-		&i.OidcSub,
-		&i.Name,
-		&i.Email,
-		&i.Locale,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getUserByOidcSub = `-- name: GetUserByOidcSub :one
 SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
