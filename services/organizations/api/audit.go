@@ -44,10 +44,10 @@ func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, orgID pgtype.UUID, e
 
 	changeJSON, err := json.Marshal(change)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal organization change: %w", err)
 	}
 
-	return q.InsertAuditLog(ctx, sqlcgen.InsertAuditLogParams{
+	if err := q.InsertAuditLog(ctx, sqlcgen.InsertAuditLogParams{
 		ID:             pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		OrganizationID: orgID,
 		EntityType:     entityType,
@@ -57,7 +57,10 @@ func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, orgID pgtype.UUID, e
 		OccurredAt:     occurredAt,
 		ChangedFields:  changedFields,
 		Change:         changeJSON,
-	})
+	}); err != nil {
+		return fmt.Errorf("insert audit log: %w", err)
+	}
+	return nil
 }
 
 // organizationFields projects an organization row to the plain field map
