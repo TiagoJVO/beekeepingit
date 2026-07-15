@@ -23,7 +23,7 @@ content) fails `MD040/fenced-code-language`.
   `docs/architecture/sync.md`, `docs/architecture/history.md`, `docs/spikes/sp-1-*.md`, and root
   `README.md`'s repo-layout tree. Grep for it before guessing if unsure:
   `grep -rn '^```text$' docs/`.
-- The closing fence stays bare (` ``` ` with no language) — only the *opening* fence needs the tag.
+- The closing fence stays bare (` ``` ` with no language) — only the _opening_ fence needs the tag.
 - When fixing a CI-reported batch of these errors, the number of openers you tag should exactly
   match the reported error count — verify by counting bare vs. tagged fences before re-pushing.
 
