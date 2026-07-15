@@ -43,8 +43,9 @@ SyncStatus _status({
 /// `powersync_connector.dart`'s `handleUploadResponse` extraction pattern).
 void main() {
   group('combineSyncStatus', () {
-    test('emits an initial status right away, before either stream emits', (
-      () async {
+    test(
+      'emits an initial status right away, before either stream emits',
+      (() async {
         final stream = combineSyncStatus(
           engineStatus: const Stream.empty(),
           initialEngineStatus: _connectedIdle,
@@ -61,8 +62,9 @@ void main() {
       }),
     );
 
-    test('re-emits with the new connectivity when engineStatus changes', (
-      () async {
+    test(
+      're-emits with the new connectivity when engineStatus changes',
+      (() async {
         final engine = StreamController<EngineConnectivity>();
         addTearDown(engine.close);
 
@@ -76,15 +78,18 @@ void main() {
         ).listen(statuses.add);
         addTearDown(sub.cancel);
 
+        await pumpEventQueue();
         engine.add(_connectedIdle);
         await pumpEventQueue();
 
+        expect(statuses.first.isOnline, isFalse);
         expect(statuses.last.isOnline, isTrue);
       }),
     );
 
-    test('re-emits with the new gate state when gateState changes', (
-      () async {
+    test(
+      're-emits when gateState changes independently of engine status',
+      (() async {
         final gate = StreamController<SyncGateState>();
         addTearDown(gate.close);
 
@@ -93,24 +98,89 @@ void main() {
           engineStatus: const Stream.empty(),
           initialEngineStatus: _connectedIdle,
           gateState: gate.stream,
-          initialGateState: SyncGateState.waitingForSignal,
+          initialGateState: SyncGateState.probing,
           pendingCount: () async => 0,
         ).listen(statuses.add);
         addTearDown(sub.cancel);
 
-        gate.add(SyncGateState.backoff);
+        await pumpEventQueue();
+        gate.add(SyncGateState.waitingForSignal);
         await pumpEventQueue();
 
-        expect(statuses.last.gateState, SyncGateState.backoff);
+        expect(statuses.first.gateState, SyncGateState.probing);
+        expect(statuses.last.gateState, SyncGateState.waitingForSignal);
+        expect(statuses.last.isWaitingForSignal, isTrue);
       }),
     );
 
-    test('cancelling the subscription detaches from both source streams', (
+    test('syncing reflects uploading OR downloading', () async {
+      final stream = combineSyncStatus(
+        engineStatus: const Stream.empty(),
+        initialEngineStatus: (
+          connected: true,
+          uploading: true,
+          downloading: false,
+          anyError: null,
+        ),
+        gateState: const Stream.empty(),
+        initialGateState: SyncGateState.passed,
+        pendingCount: () async => 0,
+      );
+
+      expect((await stream.first).syncing, isTrue);
+    });
+
+    test('hasError reflects a non-null anyError', () async {
+      final stream = combineSyncStatus(
+        engineStatus: const Stream.empty(),
+        initialEngineStatus: (
+          connected: true,
+          uploading: false,
+          downloading: false,
+          anyError: Exception('boom'),
+        ),
+        gateState: const Stream.empty(),
+        initialGateState: SyncGateState.passed,
+        pendingCount: () async => 0,
+      );
+
+      expect((await stream.first).hasError, isTrue);
+    });
+
+    test(
+      're-reads pendingCount on every re-emit, not just the first',
       () async {
         final engine = StreamController<EngineConnectivity>();
         addTearDown(engine.close);
+        var callCount = 0;
+
+        final statuses = <SyncStatus>[];
+        final sub = combineSyncStatus(
+          engineStatus: engine.stream,
+          initialEngineStatus: _connectedIdle,
+          gateState: const Stream.empty(),
+          initialGateState: SyncGateState.passed,
+          pendingCount: () async => ++callCount,
+        ).listen(statuses.add);
+        addTearDown(sub.cancel);
+
+        await pumpEventQueue();
+        engine.add(_connectedIdle);
+        await pumpEventQueue();
+
+        expect(statuses.map((s) => s.pendingCount), [1, 2]);
+      },
+    );
+
+    test(
+      'cancelling the combined stream cancels both source subscriptions',
+      (() async {
+        final engine = StreamController<EngineConnectivity>();
         final gate = StreamController<SyncGateState>();
-        addTearDown(gate.close);
+        addTearDown(() {
+          engine.close();
+          gate.close();
+        });
 
         final sub = combineSyncStatus(
           engineStatus: engine.stream,
