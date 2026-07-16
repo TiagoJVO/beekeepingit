@@ -730,5 +730,33 @@
   "deleteApiaryCancelAction": "Cancel",
   "@deleteApiaryCancelAction": {
     "description": "Cancel action in the delete-apiary confirmation dialog (#255 AC: cancel is a no-op)"
+  },
+  "activityTypeHarvestLabel": "Honey harvest",
+  "@activityTypeHarvestLabel": {
+    "description": "Display label for the harvest activity type (#38, FR-AC-1)"
+  },
+  "activityTypeFeedingLabel": "Feeding",
+  "@activityTypeFeedingLabel": {
+    "description": "Display label for the feeding activity type (#38, FR-AC-1)"
+  },
+  "activityTypeTreatmentLabel": "Treatment",
+  "@activityTypeTreatmentLabel": {
+    "description": "Display label for the treatment activity type (#38, FR-AC-1)"
+  },
+  "activityTypeGenericLabel": "Generic",
+  "@activityTypeGenericLabel": {
+    "description": "Display label for the generic (date + notes only) activity type (#38, FR-AC-1)"
+  },
+  "treatmentContextGeneralLabel": "General / preventive",
+  "@treatmentContextGeneralLabel": {
+    "description": "Display label for a treatment with no disease tied to it (#38, FR-AC-1, D-19)"
+  },
+  "treatmentContextDiseaseSpecificLabel": "Specific disease/condition",
+  "@treatmentContextDiseaseSpecificLabel": {
+    "description": "Display label for a treatment tied to a named disease/condition (#38, FR-AC-1, D-19)"
+  },
+  "treatmentContextDetectionOnlyLabel": "Detection only (no treatment yet)",
+  "@treatmentContextDetectionOnlyLabel": {
+    "description": "Display label for a disease-detection report with no treatment applied yet (#38, FR-AC-1, D-19)"
   }
 }

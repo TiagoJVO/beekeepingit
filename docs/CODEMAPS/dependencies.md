@@ -24,6 +24,9 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 client ──JWT──► identity, organizations, apiaries, sync   (all via Traefik /v1/*)
 organizations ─► identity            (INTERNAL_IDENTITY_URL, user resolve)
 apiaries       ─► identity, organizations   (org-resolver: sub→user, →membership)
+activities     ─► identity, organizations   (org-resolver, same wiring as apiaries; #38 ships
+                                              only /internal/activities/validate — not yet
+                                              reachable via the gateway/client, #39+)
 sync           ─► identity, organizations   (org-resolver, on /v1)
 sync           ─► apiaries            (INTERNAL_APIARIES_URL: /internal/sync/validate+apply)
 PowerSync      ─► sync                (validates tokens against /internal/sync/jwks.json)
