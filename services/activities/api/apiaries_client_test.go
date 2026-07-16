@@ -52,7 +52,7 @@ func TestApiaryVerifier_BelongsToOrg_200IsTrue(t *testing.T) {
 // a different organization (ADR-0002 scope-hiding) — both must be treated
 // as "reject this write", never as "allow it".
 func TestApiaryVerifier_BelongsToOrg_404IsFalse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
@@ -71,7 +71,7 @@ func TestApiaryVerifier_BelongsToOrg_404IsFalse(t *testing.T) {
 }
 
 func TestApiaryVerifier_BelongsToOrg_5xxIsUnavailableError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
