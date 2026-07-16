@@ -251,6 +251,29 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Refines:** the flat-milestone framing and the `backlog-management` skill (streams are now a
   first-class kind). Touches D-4, D-10, EPIC-06/07/11/14/15. Applied to GitHub Issues 2026-07-11.
 
+- **Recommended build phasing (added 2026-07-16, from the story-level dependency graph):** the
+  milestone numbering is a naming order, not a strict build order — the story-level `blocked-by`
+  graph (itself a product of this same 2026-07-16 backlog reorg) supports real parallelism. The
+  actual buildable sequence:
+  - **Phase 1 (start immediately, parallel):** **M3** Activities (build `#38` activity-type model
+    first — nearly everything downstream needs it) ∥ **M5** Todos (no dependency on M3/M4, only
+    needs the already-shipped Apiaries) ∥ **M7** Admin App (a separate web app, zero dependency
+    on M3–M6) ∥ **M8**'s groundwork — the AI provider research spike and EPIC-14's GDPR framework
+    have no code prerequisites and have their own lead time, worth starting early.
+  - **Phase 2 (once M3's `#38`/`#39` land):** **M4** Journeys (`#46`, the journey picker, needs
+    the Activities model) and **M6** Export (needs Activities' `#38` and Journeys' `#45`).
+  - **Phase 3 (once M5 lands):** **M9** Settings & Notifications (`#82` needs the Todos due-date
+    field).
+  - **Phase 4 (once M3+M4+M5 are far enough along):** **M8**'s core query/write features (need
+    Activities' `#38`, Todos' `#50`/`#51`, and Journeys' `#46`/`#48` for full context-scope
+    coverage).
+  - **Phase 5 (native rollout, deliberately last per D-10):** **M10** Android, then **M11** iOS &
+    on-device AI — no code dependency on M3–M9, but D-10's own rationale ("native only when a
+    feature needs it") argues against front-loading this.
+  - **Phase 6 (explicitly deferred to the very end, D-25):** **M12** Import (Apiaries).
+  - This phasing is exactly what an `ecc:orch-*` agent run at the milestone level should follow;
+    each milestone's GitHub description carries a short phase tag for the same reason.
+
 ## D-15 — Apiary distance: straight-line (haversine), offline
 
 - **Decision:** the two-apiary distance feature (FR-AP-5) computes **straight-line (haversine)
