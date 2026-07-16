@@ -24,26 +24,6 @@ where there's a sensible one.
 
 ## Tier 2 — Functional gaps to close
 
-### Q-AICLOUD — Cloud AI privacy & GDPR (now near-term per D-8)
-
-- **Affects:** FR-AI-1, NFR-AI-1, NFR-CMP. The PWA phase sends org data to a hosted
-  LLM. Needed before building the AI feature: **provider choice** (e.g. Claude API),
-  a **DPA**, a **no-training** guarantee, **EU data residency**, an **explicit
-  consent** UX, and **PII minimization** (what may leave the device).
-
-### Q-JOUR — Journey planned-vs-actual model
-
-- **Affects:** FR-JO-1, FR-JO-4. "How much is missing" needs a **plan** (intended
-  apiaries/activities) compared against **executed** activities. Define how
-  activities link to a journey (manual selection, or auto-match by
-  apiary+type+date window).
-
-### Q-TODO — Todo lifecycle & associations
-
-- **Affects:** FR-TD-1, FR-AI-1. Only create + list are specified. Need: complete /
-  reopen / edit / delete, assignment to a user, and association to an **apiary or
-  area** (the AI example "todos pending for the area of apiary X" requires it).
-
 ### Q-MAP — Offline-tile caching strategy & production-traffic tile provider (narrowed, was: map provider & offline tiles)
 
 - **Affects:** FR-AP-3, FR-OF-1. The map _interaction_ shape (markers, user location, measure
@@ -58,18 +38,6 @@ where there's a sensible one.
   needed before real traffic; and (2) the **offline-tile caching strategy** (what to pre-cache,
   storage budget, refresh). This has licensing and cost implications; does not block M2/M3
   (online-only map ships first).
-
-### Q-IMP — Import semantics
-
-- **Affects:** FR-IE-2. Merge vs. replace, ID preservation, duplicate handling, and
-  how import interacts with sync/history.
-
-### Q-NOTIF — Notifications
-
-- **Affects:** FR-ST-1, FR-TD-1. "Notification preferences" implies a notification
-  system, but none is otherwise specified. What events (todo due, sync results),
-  what channel (in-app, push), and does push require a backend service + store
-  registration?
 
 ---
 
