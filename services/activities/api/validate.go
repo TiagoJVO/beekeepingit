@@ -28,6 +28,13 @@ import (
 // store/migrations/00001_create_activities.sql).
 const dateLayout = "2006-01-02"
 
+// maxValidateBodyBytes caps the raw request body for the stateless validate
+// endpoint (a single activity payload — a handful of known keys, notes capped
+// at maxNotesLength chars), via http.MaxBytesReader, so a client can't force
+// an unbounded json.Decode buffer. Mirrors apiaries' maxSyncBatchBodyBytes
+// (services/apiaries/api/sync.go).
+const maxValidateBodyBytes = 256 << 10 // 256 KiB
+
 // validateRequestBody is the wire shape for POST /internal/activities/validate
 // — the same {type, occurred_at, attributes} triple #39's create request will
 // eventually carry, but validated only, never persisted.
@@ -53,6 +60,8 @@ func validateHandler() http.HandlerFunc {
 		if _, _, ok := requireOrg(w, r); !ok {
 			return
 		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, maxValidateBodyBytes)
 
 		var body validateRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -87,18 +96,24 @@ func validateRequestErrors(body validateRequestBody) []problem.FieldError {
 		}
 	}
 
+	// attrsOK is tracked separately from attrs's nil-ness: json.Unmarshal sets
+	// a map target to nil (with err == nil) for the literal JSON `null`, so
+	// keying the ValidateActivity call off `attrs != nil` would let
+	// {"attributes": null} silently skip all per-type validation (including
+	// required fields). Treat `null` the same as any other non-object.
 	attrs := map[string]any{}
+	attrsOK := true
 	if len(body.Attributes) > 0 {
-		if err := json.Unmarshal(body.Attributes, &attrs); err != nil {
+		if err := json.Unmarshal(body.Attributes, &attrs); err != nil || attrs == nil {
 			errs = append(errs, problem.FieldError{Field: "attributes", Code: "invalid", Message: "attributes must be a JSON object"})
-			attrs = nil
+			attrsOK = false
 		}
 	}
 
 	switch {
 	case strings.TrimSpace(body.Type) == "":
 		errs = append(errs, problem.FieldError{Field: "type", Code: "required", Message: "type is required"})
-	case attrs != nil:
+	case attrsOK:
 		errs = append(errs, ValidateActivity(body.Type, attrs)...)
 	}
 

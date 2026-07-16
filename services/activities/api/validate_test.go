@@ -67,6 +67,22 @@ func TestValidateRequestErrors_MalformedAttributesJSON(t *testing.T) {
 	}
 }
 
+func TestValidateRequestErrors_NullAttributesRejected(t *testing.T) {
+	// The literal JSON `null` for attributes must NOT silently skip per-type
+	// validation: json.Unmarshal sets a map target to nil with err == nil for
+	// `null`, so a required-field type like harvest would otherwise return
+	// valid with no attributes at all. Regression for the #38 review HIGH
+	// finding (validate.go attrsOK tracking).
+	body := validateRequestBody{
+		Type: TypeHarvest, OccurredAt: "2026-07-16",
+		Attributes: json.RawMessage(`null`),
+	}
+	errs := validateRequestErrors(body)
+	if !hasFieldCode(errs, "attributes", "invalid") {
+		t.Fatalf("validateRequestErrors(%+v) = %+v, want attributes/invalid", body, errs)
+	}
+}
+
 func TestValidateRequestErrors_UnknownAndMissingAttributesCombine(t *testing.T) {
 	// Harvest missing its required honey_supers AND carrying an unrecognized
 	// key — both violations must surface together (#38 AC: reject unknown OR
