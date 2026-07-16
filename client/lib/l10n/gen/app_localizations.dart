@@ -1003,6 +1003,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get deleteApiaryCancelAction;
+
+  /// Display label for the harvest activity type (#38, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Honey harvest'**
+  String get activityTypeHarvestLabel;
+
+  /// Display label for the feeding activity type (#38, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Feeding'**
+  String get activityTypeFeedingLabel;
+
+  /// Display label for the treatment activity type (#38, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Treatment'**
+  String get activityTypeTreatmentLabel;
+
+  /// Display label for the generic (date + notes only) activity type (#38, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Generic'**
+  String get activityTypeGenericLabel;
+
+  /// Display label for a treatment with no disease tied to it (#38, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'General / preventive'**
+  String get treatmentContextGeneralLabel;
+
+  /// Display label for a treatment tied to a named disease/condition (#38, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Specific disease/condition'**
+  String get treatmentContextDiseaseSpecificLabel;
+
+  /// Display label for a disease-detection report with no treatment applied yet (#38, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Detection only (no treatment yet)'**
+  String get treatmentContextDetectionOnlyLabel;
 }
 
 class _AppLocalizationsDelegate

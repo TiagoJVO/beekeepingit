@@ -194,5 +194,12 @@
         "type": "String"
       }
     }
-  }
+  },
+  "activityTypeHarvestLabel": "Cresta",
+  "activityTypeFeedingLabel": "Alimentação",
+  "activityTypeTreatmentLabel": "Tratamento",
+  "activityTypeGenericLabel": "Genérica",
+  "treatmentContextGeneralLabel": "Geral / preventivo",
+  "treatmentContextDiseaseSpecificLabel": "Doença/condição específica",
+  "treatmentContextDetectionOnlyLabel": "Deteção apenas (sem tratamento ainda)"
 }

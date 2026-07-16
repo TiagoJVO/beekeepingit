@@ -55,6 +55,17 @@ POST   /internal/sync/apply            → applyBatch         api/sync.go (count
 
 REST writes serve online-only/direct callers (Admin App, scripts); the PWA uses sync.
 
+### activities (main.go; authnMW→orgMW→RequireRole(admin,user))
+
+```text
+POST  /internal/activities/validate → validateHandler  api/validate.go
+```
+
+#38's scope is the data model (`api/types.go`'s type registry + JSONB
+attribute validation) + tenancy, not the CRUD API — the validate-only route
+above proves the wiring; create/edit/delete/list REST + sync validate/apply
+are #39+.
+
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 
 ```text

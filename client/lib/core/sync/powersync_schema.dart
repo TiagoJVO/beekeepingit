@@ -16,6 +16,15 @@ const apiaryEntityType = 'apiary';
 const apiaryCountersTable = 'apiary_counters';
 const apiaryCounterEntityType = 'apiary_counter';
 
+/// Local table + entity type for `activities.activities` (#38, FR-AC-1,
+/// FR-TEN-2). Read-only groundwork for now: this table is declared so the
+/// Sync Rules stream can (once configured server-side, #39+) replicate the
+/// org's activities down to the device, but nothing writes to it yet — the
+/// add/edit UI and the local write path are #39 and later EPIC-03 stories,
+/// per that issue's scope split from #38 (data model only).
+const activitiesTable = 'activities';
+const activityEntityType = 'activity';
+
 /// Local **dead-letter** table for offline writes the server permanently
 /// rejects on upload (a validation-class `4xx` — RFC 9457 `422`/`400`, sync.md
 /// §8's `rejected` state, D-12 notify-and-fix, #256/#260). The connector
@@ -106,6 +115,29 @@ const appSchema = Schema([
     Column.text('apiary_id'),
     Column.text('counter_type'),
     Column.integer('value'),
+    Column.text('created_at'),
+    Column.text('updated_at'),
+  ]),
+  // activities (#38, FR-AC-1, FR-TEN-2): one row per activity, matching the
+  // owning service's shape (services/activities/store/migrations/00001_
+  // create_activities.sql). `type` is the extensible activity-type string
+  // (client mirror: features/activities/activity_types.dart); `attributes`
+  // is the per-type JSONB bag, stored locally as its JSON-encoded text
+  // (PowerSync's local schema has no native JSON column type, same
+  // convention as [rejectedOpsTable]'s `payload`/`error_detail` columns
+  // below). `occurred_at` is a plain ISO-8601 date string, not part of
+  // `attributes` — promoted to its own column server-side too, so date-range
+  // filtering (FR-AC-5/FR-AC-6) doesn't need to unpack JSON. `journey_id`
+  // (D-21) is nullable and unused until M4 (journeys). No write path reads
+  // or writes this table yet (#39+, see [activitiesTable]'s doc).
+  Table(activitiesTable, [
+    Column.text('organization_id'),
+    Column.text('apiary_id'),
+    Column.text('performed_by'),
+    Column.text('journey_id'),
+    Column.text('type'),
+    Column.text('occurred_at'),
+    Column.text('attributes'),
     Column.text('created_at'),
     Column.text('updated_at'),
   ]),

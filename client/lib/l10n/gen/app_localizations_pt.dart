@@ -554,4 +554,27 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteApiaryCancelAction => 'Cancelar';
+
+  @override
+  String get activityTypeHarvestLabel => 'Cresta';
+
+  @override
+  String get activityTypeFeedingLabel => 'Alimentação';
+
+  @override
+  String get activityTypeTreatmentLabel => 'Tratamento';
+
+  @override
+  String get activityTypeGenericLabel => 'Genérica';
+
+  @override
+  String get treatmentContextGeneralLabel => 'Geral / preventivo';
+
+  @override
+  String get treatmentContextDiseaseSpecificLabel =>
+      'Doença/condição específica';
+
+  @override
+  String get treatmentContextDetectionOnlyLabel =>
+      'Deteção apenas (sem tratamento ainda)';
 }
