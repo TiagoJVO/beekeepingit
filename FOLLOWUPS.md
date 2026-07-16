@@ -9,4 +9,11 @@
 
 ---
 
-_Currently empty — no pending before-merge follow-ups on in-flight branches._
+## `claude/epic-rules-backlog-review-c91e55`
+
+- **Open a PR for the `requirements/` decision updates** — commit `34c3f20` records
+  `D-21`..`D-25` (journey attribution, AI provider/GDPR posture, todo assignment,
+  notifications, import semantics) and retires the five `Q-*` they resolve. Committed
+  locally, not yet pushed/PR'd. The GitHub-issue side of the same backlog reorg (labels,
+  milestones incl. new `M12 · Import`, ~12 net-new stories, dependency graph) is already
+  live — that part has no branch/PR, it's direct issue-tracker state.
