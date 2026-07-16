@@ -104,7 +104,7 @@ func TestCoordinator_Handle(t *testing.T) {
 			var stub *stubApiaries
 			if tc.useUnreachableURL {
 				var err error
-				c, err = NewCoordinator("http://127.0.0.1:1")
+				c, err = NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1")
 				if err != nil {
 					t.Fatalf("NewCoordinator: %v", err)
 				}
@@ -113,7 +113,7 @@ func TestCoordinator_Handle(t *testing.T) {
 				stub.validateStatus = tc.validateStatus
 				stub.applyStatus = tc.applyStatus
 				var err error
-				c, err = NewCoordinator(stub.server.URL)
+				c, err = NewCoordinator(stub.server.URL, stub.server.URL)
 				if err != nil {
 					t.Fatalf("NewCoordinator: %v", err)
 				}
@@ -141,7 +141,7 @@ func TestCoordinator_Handle(t *testing.T) {
 func TestCoordinator_Success_ForwardsBearerAndRelaysApplyBody(t *testing.T) {
 	stub := newStubApiaries(t)
 	stub.applyBody = `{"results":[{"id":"x","op":"put","result":"applied"}]}`
-	c, err := NewCoordinator(stub.server.URL)
+	c, err := NewCoordinator(stub.server.URL, stub.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestCoordinator_Success_ForwardsBearerAndRelaysApplyBody(t *testing.T) {
 // still mapping to a 502 for the caller.
 func TestCoordinator_ValidateTransportFailure_LogsAndReturns502(t *testing.T) {
 	buf := captureDefaultLogger(t)
-	c, err := NewCoordinator("http://127.0.0.1:1")
+	c, err := NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1")
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestCoordinator_ApplyTransportFailure_LogsAndReturns502(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	c, err := NewCoordinator(server.URL)
+	c, err := NewCoordinator(server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestCoordinator_UpstreamResponseBody_IsSizeCapped(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	c, err := NewCoordinator(server.URL)
+	c, err := NewCoordinator(server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -279,14 +279,202 @@ func TestBadGateway_BuildsRFC9457ProblemJSON(t *testing.T) {
 }
 
 // TestNewCoordinator_TrimsTrailingSlash is MEDIUM #3: an operator-supplied
-// INTERNAL_APIARIES_URL with a trailing slash must not produce a
-// double-slash path when concatenated with "/internal/sync/...".
+// INTERNAL_APIARIES_URL/INTERNAL_ACTIVITIES_URL with a trailing slash must
+// not produce a double-slash path when concatenated with
+// "/internal/sync/...".
 func TestNewCoordinator_TrimsTrailingSlash(t *testing.T) {
-	c, err := NewCoordinator("http://apiaries.internal.svc/")
+	c, err := NewCoordinator("http://apiaries.internal.svc/", "http://activities.internal.svc/")
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
 	if c.apiariesURL != "http://apiaries.internal.svc" {
 		t.Errorf("apiariesURL = %q, want %q (trailing slash trimmed)", c.apiariesURL, "http://apiaries.internal.svc")
+	}
+	if c.activitiesURL != "http://activities.internal.svc" {
+		t.Errorf("activitiesURL = %q, want %q (trailing slash trimmed)", c.activitiesURL, "http://activities.internal.svc")
+	}
+}
+
+func TestNewCoordinator_RequiresActivitiesURL(t *testing.T) {
+	if _, err := NewCoordinator("http://apiaries.internal.svc", ""); err == nil {
+		t.Fatalf("NewCoordinator with an empty activitiesURL succeeded, want an error")
+	}
+}
+
+// --- Multi-owning-service routing (#39, sync.md §6.1/§6.3: the first real
+// second owning service) ---
+
+// stubOwner is a minimal owning-service double recording which ops its
+// validate/apply endpoints received, so a routing test can assert an op
+// landed at the RIGHT service.
+type stubOwner struct {
+	server         *httptest.Server
+	validateStatus int
+	applyResults   string // the {"results":[...]} body to answer apply with
+	validatedOps   []Op
+	appliedOps     []Op
+}
+
+func newStubOwner(t *testing.T) *stubOwner {
+	s := &stubOwner{validateStatus: http.StatusOK, applyResults: `{"results":[]}`}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/internal/sync/validate", func(w http.ResponseWriter, r *http.Request) {
+		var batch struct {
+			Ops []Op `json:"ops"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&batch)
+		s.validatedOps = append(s.validatedOps, batch.Ops...)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(s.validateStatus)
+		if s.validateStatus == http.StatusUnprocessableEntity {
+			_, _ = w.Write([]byte(`{"title":"Validation failed","status":422,"code":"validation.failed"}`))
+		}
+	})
+	mux.HandleFunc("/internal/sync/apply", func(w http.ResponseWriter, r *http.Request) {
+		var batch struct {
+			Ops []Op `json:"ops"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&batch)
+		s.appliedOps = append(s.appliedOps, batch.Ops...)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(s.applyResults))
+	})
+	s.server = httptest.NewServer(mux)
+	t.Cleanup(s.server.Close)
+	return s
+}
+
+// Op is the minimal per-op shape these routing tests decode — a local
+// stand-in for the wire shape services/apiaries/api/sync.go's Op and
+// services/activities/api/sync.go's Op both use (entity_type + id are all
+// that's needed to prove routing).
+type Op struct {
+	EntityType string `json:"entity_type"`
+	ID         string `json:"id"`
+}
+
+// TestCoordinator_Handle_RoutesByEntityType is the core routing guarantee
+// this PR adds: an "activity" op must reach activitiesURL, every other op
+// must reach apiariesURL — NOT whichever service happens to be listed
+// first, and NOT both services receiving every op.
+func TestCoordinator_Handle_RoutesByEntityType(t *testing.T) {
+	apiaries := newStubOwner(t)
+	activities := newStubOwner(t)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+
+	body := []byte(`{"ops":[
+		{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
+		{"op":"put","entity_type":"activity","id":"activity-1","updated_at":"2026-07-16T10:00:00Z","data":{}}
+	]}`)
+	resp := c.handle(context.Background(), "Bearer tok", body)
+	if resp.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", resp.status, resp.body)
+	}
+
+	if len(apiaries.validatedOps) != 1 || apiaries.validatedOps[0].ID != "apiary-1" {
+		t.Fatalf("apiaries validated ops = %+v, want exactly the apiary-1 op", apiaries.validatedOps)
+	}
+	if len(activities.validatedOps) != 1 || activities.validatedOps[0].ID != "activity-1" {
+		t.Fatalf("activities validated ops = %+v, want exactly the activity-1 op", activities.validatedOps)
+	}
+	if len(apiaries.appliedOps) != 1 || apiaries.appliedOps[0].ID != "apiary-1" {
+		t.Fatalf("apiaries applied ops = %+v, want exactly the apiary-1 op", apiaries.appliedOps)
+	}
+	if len(activities.appliedOps) != 1 || activities.appliedOps[0].ID != "activity-1" {
+		t.Fatalf("activities applied ops = %+v, want exactly the activity-1 op", activities.appliedOps)
+	}
+}
+
+// TestCoordinator_Handle_MultiService_MergesApplyResults proves the merged
+// response actually carries BOTH services' per-op results back to the
+// client — a client watching for its own op's id in the response must see
+// it regardless of which owning service applied it.
+func TestCoordinator_Handle_MultiService_MergesApplyResults(t *testing.T) {
+	apiaries := newStubOwner(t)
+	apiaries.applyResults = `{"results":[{"id":"apiary-1","op":"put","result":"applied"}]}`
+	activities := newStubOwner(t)
+	activities.applyResults = `{"results":[{"id":"activity-1","op":"put","result":"applied"}]}`
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+
+	body := []byte(`{"ops":[
+		{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
+		{"op":"put","entity_type":"activity","id":"activity-1","updated_at":"2026-07-16T10:00:00Z","data":{}}
+	]}`)
+	resp := c.handle(context.Background(), "Bearer tok", body)
+	if resp.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", resp.status, resp.body)
+	}
+	var got struct {
+		Results []struct {
+			ID string `json:"id"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(resp.body, &got); err != nil {
+		t.Fatalf("decode merged response: %v, body = %s", err, resp.body)
+	}
+	ids := map[string]bool{}
+	for _, r := range got.Results {
+		ids[r.ID] = true
+	}
+	if !ids["apiary-1"] || !ids["activity-1"] {
+		t.Fatalf("merged results = %+v, want both apiary-1 and activity-1", got.Results)
+	}
+}
+
+// TestCoordinator_Handle_MultiService_OneRejectionAppliesNeither is the
+// atomicity guarantee (sync.md §6.3): if the activities op fails validation,
+// the apiaries op — even though its OWN service would happily validate it —
+// must never be applied either. The whole client transaction is one unit of
+// intent (sync.md §6.1).
+func TestCoordinator_Handle_MultiService_OneRejectionAppliesNeither(t *testing.T) {
+	apiaries := newStubOwner(t)
+	activities := newStubOwner(t)
+	activities.validateStatus = http.StatusUnprocessableEntity
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+
+	body := []byte(`{"ops":[
+		{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
+		{"op":"put","entity_type":"activity","id":"activity-1","updated_at":"2026-07-16T10:00:00Z","data":{}}
+	]}`)
+	resp := c.handle(context.Background(), "Bearer tok", body)
+	if resp.status != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (activities rejection must abort the whole push), body = %s", resp.status, resp.body)
+	}
+	if len(apiaries.appliedOps) != 0 {
+		t.Fatalf("apiaries.appliedOps = %+v, want none applied — a sibling service's rejection must abort the whole push", apiaries.appliedOps)
+	}
+	if len(activities.appliedOps) != 0 {
+		t.Fatalf("activities.appliedOps = %+v, want none applied", activities.appliedOps)
+	}
+}
+
+// TestCoordinator_Handle_SingleServiceBatch_NeverCallsTheOtherService is the
+// common-case regression guard (sync.md §1's "overwhelming majority"): a
+// batch with only apiary ops must not touch activitiesURL at all.
+func TestCoordinator_Handle_SingleServiceBatch_NeverCallsTheOtherService(t *testing.T) {
+	apiaries := newStubOwner(t)
+	activities := newStubOwner(t)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+
+	body := []byte(`{"ops":[{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}}]}`)
+	resp := c.handle(context.Background(), "Bearer tok", body)
+	if resp.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", resp.status, resp.body)
+	}
+	if len(activities.validatedOps) != 0 || len(activities.appliedOps) != 0 {
+		t.Fatalf("activities service was contacted for an apiary-only batch: validated=%+v applied=%+v", activities.validatedOps, activities.appliedOps)
 	}
 }

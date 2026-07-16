@@ -3,13 +3,19 @@
 // `activities.sync_conflict_log` and `activities.audit_log` tables and the
 // per-type JSONB-attribute model + server-side validation (api/types.go).
 //
-// #38's scope is deliberately the DATA MODEL, not the CRUD API: this service
-// exposes only a thin internal validate endpoint (api/validate.go) proving
-// the tenancy + validation wiring end-to-end. The client-facing create/edit/
-// delete/list REST surface and the sync validate/apply endpoints are #39 and
-// later EPIC-03 stories — they extend this same wiring (authn + org-resolver
-// + RequireRole, following services/apiaries/main.go) rather than starting
-// from scratch. Wiring follows services/servicetemplate/example/main.go.
+// #38's scope was deliberately the DATA MODEL, not the CRUD API — that
+// thin internal validate endpoint (api/validate.go) proved the tenancy +
+// validation wiring end-to-end. #39 extends this same wiring (authn +
+// org-resolver + RequireRole, following services/apiaries/main.go) with the
+// real write paths: the client-facing REST create route (api/write.go,
+// POST /v1/activities) and the internal sync validate/apply endpoints
+// (api/sync.go) the write-back coordinator (services/sync) calls so an
+// offline-created activity reconciles on sync (FR-OF-1). Both write paths
+// verify a client-supplied apiary_id belongs to the caller's organization
+// via the apiaries service itself (api/apiaries_client.go) before writing
+// anything — activities has no database access to the apiaries schema
+// (ownership rule 1). Edit/delete/list are later EPIC-03 stories.
+// Wiring follows services/servicetemplate/example/main.go.
 package main
 
 import (
@@ -45,8 +51,13 @@ func run(ctx context.Context) error {
 
 	identityURL := os.Getenv("INTERNAL_IDENTITY_URL")
 	organizationsURL := os.Getenv("INTERNAL_ORGANIZATIONS_URL")
-	if identityURL == "" || organizationsURL == "" {
-		return fmt.Errorf("config: INTERNAL_IDENTITY_URL and INTERNAL_ORGANIZATIONS_URL are required")
+	apiariesURL := os.Getenv("INTERNAL_APIARIES_URL")
+	if identityURL == "" || organizationsURL == "" || apiariesURL == "" {
+		return fmt.Errorf("config: INTERNAL_IDENTITY_URL, INTERNAL_ORGANIZATIONS_URL and INTERNAL_APIARIES_URL are required")
+	}
+	apiaryVerifier, err := api.NewApiaryVerifier(apiariesURL, nil)
+	if err != nil {
+		return fmt.Errorf("build apiary verifier: %w", err)
 	}
 
 	providers, err := otelboot.Bootstrap(ctx, otelboot.Config{
@@ -101,6 +112,8 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("build server: %w", err)
 	}
 	srv.Mount("/internal/activities", scoped(api.InternalValidateRouter()))
+	srv.Mount("/v1/activities", scoped(api.Router(pool, apiaryVerifier)))
+	srv.Mount("/internal/sync", scoped(api.InternalSyncRouter(pool, apiaryVerifier)))
 
 	return srv.Run(ctx)
 }

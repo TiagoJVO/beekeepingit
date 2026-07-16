@@ -61,6 +61,25 @@ services:
     env:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+  # #39: the first write path (REST create + internal sync validate/apply,
+  # api/write.go + api/sync.go) built on #38's data-model-only service —
+  # needs its own DB role/secret (activities schema, matching apiaries'
+  # shape) plus apiaries' URL for the cross-service apiary_id ownership
+  # check (api/apiaries_client.go).
+  activities:
+    component: services-activities
+    port: 8080
+    db:
+      {
+        enabled: true,
+        role: activities_svc,
+        secret: activities-svc-credentials,
+        schema: activities,
+      }
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
+      INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+      INTERNAL_APIARIES_URL: http://apiaries:8080
   sync:
     component: services-sync
     port: 8080
@@ -69,6 +88,10 @@ services:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
       INTERNAL_APIARIES_URL: http://apiaries:8080
+      # #39: routes "activity"-entity_type ops to the activities service's
+      # own internal sync validate/apply (api/coordinator.go's
+      # groupOpsByOwner) so an offline-created activity reconciles on sync.
+      INTERNAL_ACTIVITIES_URL: http://activities:8080
       SYNC_TOKEN_ISSUER: http://sync:8080
       SYNC_TOKEN_AUDIENCE: powersync
 

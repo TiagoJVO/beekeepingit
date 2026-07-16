@@ -47,7 +47,7 @@ func countingApiaries(t *testing.T) (*httptest.Server, *int32) {
 // silently truncated and forwarded to the owning service.
 func TestBatchHandler_OversizedBody_Rejected(t *testing.T) {
 	server, validateHits := countingApiaries(t)
-	coord, err := NewCoordinator(server.URL)
+	coord, err := NewCoordinator(server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestBatchHandler_OversizedBody_Rejected(t *testing.T) {
 // body of exactly maxBatchBytes must still be accepted and forwarded.
 func TestBatchHandler_BodyAtMaxSize_NotRejected(t *testing.T) {
 	server, validateHits := countingApiaries(t)
-	coord, err := NewCoordinator(server.URL)
+	coord, err := NewCoordinator(server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestBatchHandler_BodyAtMaxSize_NotRejected(t *testing.T) {
 // (requireOrgClaims) can't silently change it.
 func TestBatchHandler_MissingOrgClaims_ReturnsInternalProblem(t *testing.T) {
 	server, _ := countingApiaries(t)
-	coord, err := NewCoordinator(server.URL)
+	coord, err := NewCoordinator(server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}

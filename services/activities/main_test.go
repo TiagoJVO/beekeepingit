@@ -36,6 +36,13 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/shared/devseed"
 )
 
+// testOrgHeader lets a test request stand in as a caller resolved to a
+// different org/user/role than the devseed default — mirrors
+// apiaries/main_test.go's identical helper, the only way these in-process
+// tests can exercise a cross-organization apiary_id attempt without a live
+// identity/organizations pair to resolve against.
+const testOrgHeader = "X-Test-Org-Claims"
+
 // injectClaims stands in for the authn + org-resolver chain, mirroring
 // apiaries/main_test.go's helper of the same name: these tests exercise the
 // route handler directly with a known org/user rather than standing up a
@@ -52,6 +59,12 @@ func injectClaims(next http.Handler) http.Handler {
 			OrganizationID: devseed.OrganizationID,
 			Role:           devseed.MembershipRole,
 		}
+		if override := r.Header.Get(testOrgHeader); override != "" {
+			parts := strings.SplitN(override, "|", 4)
+			if len(parts) == 4 {
+				claims = authn.Claims{Sub: parts[0], UserID: parts[1], OrganizationID: parts[2], Role: parts[3]}
+			}
+		}
 		ctx := authn.ContextWithClaims(r.Context(), claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -62,9 +75,44 @@ type activitiesFixture struct {
 	pool *pgxpool.Pool
 }
 
-func newActivitiesFixture(t *testing.T) *activitiesFixture {
+// newFakeApiariesServer stands in for the real apiaries service's
+// GET /v1/apiaries/{id} (api/apiaries_client.go's ApiaryVerifier target):
+// 200 for any id in knownApiaryIDs, 404 otherwise — enough to exercise the
+// CRITICAL cross-org apiary_id tenancy guard (#39's carry-over from #38's
+// review, mirroring #284's cross-tenant IDOR fix) without standing up a
+// second real service + database in this test binary.
+func newFakeApiariesServer(t *testing.T, knownApiaryIDs map[string]bool) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/v1/apiaries/")
+		if knownApiaryIDs[id] {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// newActivitiesFixture builds the test fixture. knownApiaryIDs (variadic —
+// most tests below don't create anything and need none) seeds the fake
+// apiaries server's known set; a REST-create/sync-apply test that expects a
+// SUCCESSFUL write must pass its apiary_id here, otherwise the (correct)
+// tenancy guard rejects it, exactly as it must for a real foreign id.
+func newActivitiesFixture(t *testing.T, knownApiaryIDs ...string) *activitiesFixture {
 	t.Helper()
 	ctx := context.Background()
+
+	known := make(map[string]bool, len(knownApiaryIDs))
+	for _, id := range knownApiaryIDs {
+		known[id] = true
+	}
+	fakeApiaries := newFakeApiariesServer(t, known)
+	verifier, err := api.NewApiaryVerifier(fakeApiaries.URL, fakeApiaries.Client())
+	if err != nil {
+		t.Fatalf("NewApiaryVerifier: %v", err)
+	}
 	const (
 		dbUser = "beekeepingit_test"
 		dbPass = "beekeepingit_test"
@@ -116,6 +164,8 @@ func newActivitiesFixture(t *testing.T) *activitiesFixture {
 		t.Fatalf("New: %v", err)
 	}
 	srv.Mount("/internal/activities", injectClaims(api.InternalValidateRouter()))
+	srv.Mount("/v1/activities", injectClaims(api.Router(pool, verifier)))
+	srv.Mount("/internal/sync", injectClaims(api.InternalSyncRouter(pool, verifier)))
 
 	return &activitiesFixture{srv: srv, pool: pool}
 }
@@ -302,6 +352,11 @@ func newUUID(t *testing.T) pgtype.UUID {
 	return pgtype.UUID{Bytes: uuid.New(), Valid: true}
 }
 
+// uuidString reads a stored pgtype.UUID column back as its string form —
+// this test file's own copy of api's unexported helper of the same name
+// (can't import an unexported identifier across packages).
+func uuidString(u pgtype.UUID) string { return uuid.UUID(u.Bytes).String() }
+
 func TestActivitiesStore_InsertAndGet_RoundTrip(t *testing.T) {
 	f := newActivitiesFixture(t)
 	ctx := context.Background()
@@ -432,5 +487,345 @@ func TestActivitiesMigration_ThreeTablesCreated(t *testing.T) {
 		if !exists {
 			t.Fatalf("activities.%s table does not exist", table)
 		}
+	}
+}
+
+// --- POST /v1/activities (#39, FR-AC-2) ---
+
+func validHarvestBody(id, apiaryID string) map[string]any {
+	return map[string]any{
+		"id":          id,
+		"apiary_id":   apiaryID,
+		"type":        api.TypeHarvest,
+		"occurred_at": "2026-07-16",
+		"attributes":  map[string]any{"honey_supers": 4, "honey_kg": 12.5},
+	}
+}
+
+func TestActivitiesRest_Create_Success(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		ID          string         `json:"id"`
+		ApiaryID    string         `json:"apiary_id"`
+		PerformedBy string         `json:"performed_by"`
+		Type        string         `json:"type"`
+		OccurredAt  string         `json:"occurred_at"`
+		Attributes  map[string]any `json:"attributes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v, body = %s", err, rec.Body.String())
+	}
+	if got.ID != id || got.ApiaryID != apiaryID || got.Type != api.TypeHarvest || got.OccurredAt != "2026-07-16" {
+		t.Fatalf("created activity = %+v, want id=%s apiary_id=%s type=%s occurred_at=2026-07-16", got, id, apiaryID, api.TypeHarvest)
+	}
+	if got.Attributes["honey_supers"] != float64(4) {
+		t.Fatalf("attributes.honey_supers = %v, want 4", got.Attributes["honey_supers"])
+	}
+}
+
+// TestActivitiesRest_Create_CrossOrgApiaryIdIsRejected is the CRITICAL test
+// this PR exists to add (carry-over from #38's review, mirroring #284's
+// "fix(apiaries): close cross-tenant IDOR on counter sync"): an apiary_id
+// that exists but belongs to a DIFFERENT organization than the caller's
+// resolved org must never be accepted — the create must be rejected before
+// any row is written, and no activity or audit row must be left behind.
+func TestActivitiesRest_Create_CrossOrgApiaryIdIsRejected(t *testing.T) {
+	foreignApiaryID := uuid.NewString()
+	// The fake apiaries server is org-agnostic (mirrors the real GET
+	// /v1/apiaries/{id}'s scope-hiding: apiaries itself is what enforces
+	// "this id belongs to org X", not this test double) — the point being
+	// tested here is that activities' OWN write path still must call it and
+	// honor a rejection for an id the CALLER does not have access to. Model
+	// that by NOT registering foreignApiaryID as known at all: from this
+	// service's perspective, "belongs to another org" and "doesn't exist"
+	// are the same 404 (ADR-0002 scope-hiding) — either way, the write must
+	// be rejected.
+	f := newActivitiesFixture(t) // no known apiary ids at all
+	id := uuid.NewString()
+
+	rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, foreignApiaryID))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (cross-org/unknown apiary_id must be rejected), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "apiary_id", "not_found") {
+		t.Fatalf("problem errors = %+v, want apiary_id/not_found", p.Errors)
+	}
+
+	// Nothing must have been written — the tenancy guard runs BEFORE the
+	// insert (write.go's createActivity), so a rejected cross-org create
+	// leaves no row and no audit trail at all.
+	q := sqlcgen.New(f.pool)
+	if _, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	}); err == nil {
+		t.Fatalf("GetActivity found a row after a rejected cross-org create — the write must not have happened")
+	}
+}
+
+// TestActivitiesRest_Create_AttributionIsFromClaims_NeverClientSupplied
+// (FR-TEN-2): performed_by is derived server-side from the caller's
+// resolved user id (requireOrg → authn.FromContext), never from any
+// client-supplied field — the request body has no performed_by field at
+// all (activityCreateRequest's doc comment), so this proves the stored
+// value is the devseed caller's own id regardless of what else is in play.
+func TestActivitiesRest_Create_AttributionIsFromClaims_NeverClientSupplied(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		PerformedBy string `json:"performed_by"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.PerformedBy != devseed.UserID {
+		t.Fatalf("performed_by = %q, want the resolved caller's own id %q", got.PerformedBy, devseed.UserID)
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if uuidString(row.PerformedBy) != devseed.UserID {
+		t.Fatalf("stored performed_by = %q, want %q", uuidString(row.PerformedBy), devseed.UserID)
+	}
+}
+
+func TestActivitiesRest_Create_IdempotentReplayDoesNotDuplicate(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	body := validHarvestBody(id, apiaryID)
+
+	first := f.do(t, http.MethodPost, "/v1/activities", body)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first create status = %d, want 201, body = %s", first.Code, first.Body.String())
+	}
+	second := f.do(t, http.MethodPost, "/v1/activities", body)
+	if second.Code != http.StatusCreated {
+		t.Fatalf("replayed create status = %d, want 201 (idempotent replay), body = %s", second.Code, second.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListActivitiesByOrg(context.Background(), sqlcgen.ListActivitiesByOrgParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true}, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("ListActivitiesByOrg: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("activities after idempotent replay = %d, want 1 (no duplicate)", len(rows))
+	}
+}
+
+func TestActivitiesRest_Create_DifferentContentSameIdIsConflict(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	first := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID))
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first create status = %d, want 201, body = %s", first.Code, first.Body.String())
+	}
+	changed := validHarvestBody(id, apiaryID)
+	changed["attributes"] = map[string]any{"honey_supers": 9}
+	second := f.do(t, http.MethodPost, "/v1/activities", changed)
+	if second.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (same id, different content), body = %s", second.Code, second.Body.String())
+	}
+}
+
+func TestActivitiesRest_Create_ValidationRejectsBadInput(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+
+	rec := f.do(t, http.MethodPost, "/v1/activities", map[string]any{
+		"id": "not-a-uuid", "apiary_id": apiaryID, "type": api.TypeGeneric, "occurred_at": "2026-07-16",
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (invalid id), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "id", "invalid") {
+		t.Fatalf("problem errors = %+v, want id/invalid", p.Errors)
+	}
+}
+
+func TestActivitiesRest_History_CreateProducesOneAuditRow(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListAuditLog(context.Background(), sqlcgen.ListAuditLogParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		EntityType:     "activity",
+		EntityID:       pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLog: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("audit rows = %d, want 1 (FR-HIS-1)", len(rows))
+	}
+	if rows[0].ChangeType != "create" {
+		t.Fatalf("change_type = %q, want create", rows[0].ChangeType)
+	}
+	if uuidString(rows[0].ActorUserID) != devseed.UserID {
+		t.Fatalf("audit actor_user_id = %q, want the creating user %q (FR-HIS-1: actor + timestamp)", uuidString(rows[0].ActorUserID), devseed.UserID)
+	}
+}
+
+// --- /internal/sync validate/apply (#39, FR-OF-1/Q-SYNC — offline create) ---
+
+func syncOp(id, apiaryID string) map[string]any {
+	return map[string]any{
+		"op":          "put",
+		"entity_type": "activity",
+		"id":          id,
+		"updated_at":  "2026-07-16T10:00:00Z",
+		"data": map[string]any{
+			"apiary_id":   apiaryID,
+			"type":        api.TypeGeneric,
+			"occurred_at": "2026-07-16",
+			"attributes":  map[string]any{"notes": "queued offline"},
+		},
+	}
+}
+
+func TestActivitiesSync_ValidateThenApply_CreateActivity_Success(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	batch := map[string]any{"ops": []any{syncOp(id, apiaryID)}}
+
+	validateRec := f.do(t, http.MethodPost, "/internal/sync/validate", batch)
+	if validateRec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200, body = %s", validateRec.Code, validateRec.Body.String())
+	}
+
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+	var got struct {
+		Results []struct {
+			ID     string `json:"id"`
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(applyRec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode apply response: %v", err)
+	}
+	if len(got.Results) != 1 || got.Results[0].Result != "applied" {
+		t.Fatalf("apply results = %+v, want one applied op", got.Results)
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	// Offline create attribution (FR-TEN-2) must survive the sync path too —
+	// performed_by is resolved server-side from the sync-apply caller's own
+	// claims, same as the REST path, never from the queued op's payload
+	// (which carries no performed_by field at all).
+	if uuidString(row.PerformedBy) != devseed.UserID {
+		t.Fatalf("performed_by after sync apply = %q, want %q", uuidString(row.PerformedBy), devseed.UserID)
+	}
+}
+
+// TestActivitiesSync_Validate_RejectsCrossOrgApiaryId is the sync-path
+// counterpart of TestActivitiesRest_Create_CrossOrgApiaryIdIsRejected — the
+// offline queue must not be able to bypass the same tenancy guard the
+// online REST path enforces.
+func TestActivitiesSync_Validate_RejectsCrossOrgApiaryId(t *testing.T) {
+	foreignApiaryID := uuid.NewString()
+	f := newActivitiesFixture(t) // no known apiary ids
+	id := uuid.NewString()
+	batch := map[string]any{"ops": []any{syncOp(id, foreignApiaryID)}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (cross-org/unknown apiary_id), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "ops[0].data.apiary_id", "not_found") {
+		t.Fatalf("problem errors = %+v, want ops[0].data.apiary_id/not_found", p.Errors)
+	}
+}
+
+// TestActivitiesSync_Apply_CrossOrgApiaryIdIsNoOp proves the apply endpoint
+// re-checks ownership independently of validate (zero-trust, sync.md §6.2 —
+// apply is a separate request) rather than trusting that validate already
+// ran for this exact op, and that a rejected op writes nothing.
+func TestActivitiesSync_Apply_CrossOrgApiaryIdIsNoOp(t *testing.T) {
+	foreignApiaryID := uuid.NewString()
+	f := newActivitiesFixture(t) // no known apiary ids
+	id := uuid.NewString()
+	batch := map[string]any{"ops": []any{syncOp(id, foreignApiaryID)}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200 (unknown/foreign apiary_id is a no-op, not an error), body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	if _, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	}); err == nil {
+		t.Fatalf("GetActivity found a row for a cross-org apiary_id op — it must have been a no-op")
+	}
+}
+
+func TestActivitiesSync_Apply_IdempotentReplayDoesNotDuplicate(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	batch := map[string]any{"ops": []any{syncOp(id, apiaryID)}}
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch); rec.Code != http.StatusOK {
+		t.Fatalf("first apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch); rec.Code != http.StatusOK {
+		t.Fatalf("replayed apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListActivitiesByOrg(context.Background(), sqlcgen.ListActivitiesByOrgParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true}, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("ListActivitiesByOrg: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("activities after idempotent replay = %d, want 1 (no duplicate)", len(rows))
 	}
 }

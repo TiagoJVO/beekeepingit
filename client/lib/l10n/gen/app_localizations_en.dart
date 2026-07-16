@@ -573,4 +573,57 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get treatmentContextDetectionOnlyLabel =>
       'Detection only (no treatment yet)';
+
+  @override
+  String get newActivityTitle => 'Add activity';
+
+  @override
+  String get addActivityAction => 'Add activity';
+
+  @override
+  String get activityTypeFieldLabel => 'Activity type';
+
+  @override
+  String get activityOccurredAtLabel => 'Date';
+
+  @override
+  String get activityHoneySupersLabel => 'Honey supers harvested';
+
+  @override
+  String get activityHoneyKgLabel => 'Honey harvested (kg)';
+
+  @override
+  String get activityHivesInvolvedLabel => 'Hives involved';
+
+  @override
+  String get activityFeedTypeLabel => 'Feed type';
+
+  @override
+  String get activityFeedAmountLabel => 'Feed amount';
+
+  @override
+  String get activityTreatmentContextFieldLabel => 'Treatment context';
+
+  @override
+  String get activityTreatmentTypeLabel => 'Treatment product';
+
+  @override
+  String get activityDiseaseLabel => 'Disease / condition';
+
+  @override
+  String get activityNotesLabel => 'Notes';
+
+  @override
+  String get activityFieldRequired => 'This field is required';
+
+  @override
+  String get activityFieldInvalid => 'This value isn\'t valid';
+
+  @override
+  String get activitySaveSuccess => 'Activity saved';
+
+  @override
+  String activitySaveError(String error) {
+    return 'Couldn\'t save the activity: $error';
+  }
 }
