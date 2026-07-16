@@ -71,14 +71,14 @@ final Map<String, List<_AttrSpec>> _typeSchemas = {
     const _AttrSpec('notes', maxLen: _maxNotesLength),
   ],
   activityTypeFeeding: [
-    _AttrSpec('feed_type', required: true, vocab: feedTypes),
+    const _AttrSpec('feed_type', required: true, vocab: feedTypes),
     const _AttrSpec('feed_amount', required: true, kind: _Kind.number, min: 0),
     const _AttrSpec('hives_involved', kind: _Kind.integer, min: 0),
     const _AttrSpec('notes', maxLen: _maxNotesLength),
   ],
   activityTypeTreatment: [
-    _AttrSpec('treatment_context', required: true, vocab: treatmentContexts),
-    _AttrSpec('treatment_type', required: true, vocab: treatmentTypes),
+    const _AttrSpec('treatment_context', required: true, vocab: treatmentContexts),
+    const _AttrSpec('treatment_type', required: true, vocab: treatmentTypes),
     _AttrSpec(
       'disease',
       maxLen: 200,
@@ -99,7 +99,7 @@ final Map<String, List<_AttrSpec>> _typeSchemas = {
 /// attribute key not part of that type's schema, a missing required
 /// attribute (including a conditionally-required one), or a malformed value
 /// — or an empty list when [attributes] is valid for [type]. Mirrors
-/// ValidateActivity's field-path convention ("attributes.<key>", bare "type"
+/// ValidateActivity's field-path convention (`attributes.<key>`, bare `type`
 /// for the type-itself error) so error codes line up with the server's.
 List<ActivityAttributeError> validateActivityAttributes(
   String type,

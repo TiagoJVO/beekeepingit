@@ -550,4 +550,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteApiaryCancelAction => 'Cancel';
+
+  @override
+  String get activityTypeHarvestLabel => 'Honey harvest';
+
+  @override
+  String get activityTypeFeedingLabel => 'Feeding';
+
+  @override
+  String get activityTypeTreatmentLabel => 'Treatment';
+
+  @override
+  String get activityTypeGenericLabel => 'Generic';
+
+  @override
+  String get treatmentContextGeneralLabel => 'General / preventive';
+
+  @override
+  String get treatmentContextDiseaseSpecificLabel =>
+      'Specific disease/condition';
+
+  @override
+  String get treatmentContextDetectionOnlyLabel =>
+      'Detection only (no treatment yet)';
 }
