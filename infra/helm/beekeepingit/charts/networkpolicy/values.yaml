@@ -51,6 +51,13 @@ edges:
     from: { namespaceSelector: kube-system }
     to: { app.kubernetes.io/name: apiaries }
     port: 8080
+  # #39: the /v1/activities REST route (charts/gateway/values.yaml `routes`)
+  # for online-only/direct callers — the field PWA writes activities via sync,
+  # not this route, but the route exists so this ingress allow must too.
+  - name: gateway-to-activities
+    from: { namespaceSelector: kube-system }
+    to: { app.kubernetes.io/name: activities }
+    port: 8080
   - name: gateway-to-organizations
     from: { namespaceSelector: kube-system }
     to: { app.kubernetes.io/name: organizations }
@@ -104,6 +111,30 @@ edges:
     from: { app.kubernetes.io/name: powersync }
     to: { app.kubernetes.io/name: sync }
     port: 8080
+  # --- activities east-west (#39, services/values.yaml activities.env
+  # INTERNAL_*_URL + sync.env INTERNAL_ACTIVITIES_URL) ---
+  # activities resolves the caller's org via identity+organizations (same
+  # org-resolver wiring as apiaries), and verifies a client-supplied
+  # apiary_id belongs to the caller's org by dialing apiaries' own
+  # GET /v1/apiaries/{id} (api/apiaries_client.go) — the cross-service
+  # tenancy guard #39 added. sync's write-back coordinator calls activities'
+  # /internal/sync/validate+apply (coordinator.go groupOpsByOwner).
+  - name: activities-to-identity
+    from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: activities-to-organizations
+    from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  - name: activities-to-apiaries
+    from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: apiaries }
+    port: 8080
+  - name: sync-to-activities
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: activities }
+    port: 8080
 
   # --- OIDC discovery/JWKS (docs/architecture/auth.md §4, internal split) ---
   # Our domain services are under default-deny and must reach authentik for
@@ -145,6 +176,13 @@ edges:
     to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
+  # #39: activities' authn.NewMiddleware fetches OIDC discovery at startup,
+  # same as every other domain service.
+  - name: activities-to-authentik-server
+    from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
   # `helm test` hook (charts/authentik/templates/tests/ready-test.yaml) —
   # probes authentik-server's readiness endpoint; runs in CI (helm-e2e.yml).
   #
@@ -178,6 +216,16 @@ edges:
     port: 5432
   - name: apiaries-to-postgres
     from: { app.kubernetes.io/name: apiaries }
+    to: { cnpgCluster: true }
+    port: 5432
+  # #39 (THE CRASH FIX): activities' dbaccess.Migrate + runtime pool connect
+  # to postgres-rw:5432. Without this edge the default-deny baseline blocks
+  # activities' egress to postgres, so its startup migration `dial` is refused
+  # and the pod CrashLoopBackOffs forever while postgres is healthy — the
+  # first-ever in-cluster deploy of activities (#38 shipped no image) was
+  # never added to this allowlist. Mirrors apiaries-to-postgres above.
+  - name: activities-to-postgres
+    from: { app.kubernetes.io/name: activities }
     to: { cnpgCluster: true }
     port: 5432
   # PS_DATA_SOURCE_URI (logical replication) + PS_STORAGE_SOURCE_URI
@@ -243,6 +291,13 @@ edges:
     egressOnly: true
   - name: sync-to-otel-collector
     from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+  # #39: activities exports traces/metrics/logs to the collector like every
+  # other Go service (services/values.yaml otelEndpoint).
+  - name: activities-to-otel-collector
+    from: { app.kubernetes.io/name: activities }
     to: { app.kubernetes.io/name: otel-collector }
     port: 4317
     egressOnly: true
