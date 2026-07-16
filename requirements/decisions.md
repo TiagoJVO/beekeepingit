@@ -226,8 +226,12 @@ Core technology decisions (2026-06-27). Detail and rationale in
 
 - **Decision:** Milestones are **thin, incremental, per-feature delivery slices**, each independently
   pickable: **M0** Walking Skeleton (done) → **M1** Identity & Onboarding (done) → **M2** Apiaries (done) →
-  **M3** Activities → **M4** Journeys ∥ **M5** Todos → **M6** Import/Export → **M7** Admin App →
-  **M8** AI Assistant → **M9** Settings & Notifications → **M10** Android → **M11** iOS & on-device AI.
+  **M3** Activities → **M4** Journeys ∥ **M5** Todos → **M6** Export → **M7** Admin App →
+  **M8** AI Assistant → **M9** Settings & Notifications → **M10** Android → **M11** iOS & on-device AI →
+  **M12** Import (Apiaries — deferred to the end of the rollout, D-25).
+  - **Revised 2026-07-16 (D-25):** M6 was "Import/Export"; Import is split out into its own
+    milestone (**M12**), scheduled last, and narrowed to apiaries-only. M6 keeps Export
+    (apiaries + activities + journeys, unchanged scope).
 - **Streams:** the cross-cutting concerns — **offline/sync (EPIC-06)**, **history/audit (EPIC-07)**,
   **i18n/a11y (EPIC-11)**, **security/compliance/DR (EPIC-14)**, **platform rollout (EPIC-15)** — are
   **continuous streams, not milestones**: their epics carry **no milestone** (labeled **`stream`**) and
@@ -239,12 +243,36 @@ Core technology decisions (2026-06-27). Detail and rationale in
   single true backward edge (`#16 ◂ #9`, an M0 epic blocked by an M3 epic) plus several whole-epic
   gates. Splitting the two axes makes each milestone buildable on its own.
 - **Scope gating:** a feature milestone's **story-level** scope is finalized only when its open `Q-*`
-  resolves — `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2, `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M6,
-  `Q-AICLOUD` → M8, `Q-NOTIF` → M9 (resolve per the `requirements-folder` skill).
+  resolves — `Q-MAP`/`Q-DIST`/`Q-SEARCH` → M2 (`Q-DIST`/`Q-SEARCH` resolved, `Q-MAP` narrowed-open).
+  `Q-JOUR` → M4, `Q-TODO` → M5, `Q-IMP` → M12, `Q-AICLOUD` → M8, `Q-NOTIF` → M9 are now all
+  **resolved** — see D-21 (Q-JOUR), D-23 (Q-TODO), D-25 (Q-IMP), D-22 (Q-AICLOUD), D-24 (Q-NOTIF).
 - **Keeps:** the **D-10** rollout order (PWA → Android → iOS) and **D-4** deferrals (billing/quotas
   EPIC-90/91 stay milestone-less) unchanged — this only re-slices _how_ the work is bucketed.
 - **Refines:** the flat-milestone framing and the `backlog-management` skill (streams are now a
   first-class kind). Touches D-4, D-10, EPIC-06/07/11/14/15. Applied to GitHub Issues 2026-07-11.
+
+- **Recommended build phasing (added 2026-07-16, from the story-level dependency graph):** the
+  milestone numbering is a naming order, not a strict build order — the story-level `blocked-by`
+  graph (itself a product of this same 2026-07-16 backlog reorg) supports real parallelism. The
+  actual buildable sequence:
+  - **Phase 1 (start immediately, parallel):** **M3** Activities (build `#38` activity-type model
+    first — nearly everything downstream needs it) ∥ **M5** Todos (no dependency on M3/M4, only
+    needs the already-shipped Apiaries) ∥ **M7** Admin App (a separate web app, zero dependency
+    on M3–M6) ∥ **M8**'s groundwork — the AI provider research spike and EPIC-14's GDPR framework
+    have no code prerequisites and have their own lead time, worth starting early.
+  - **Phase 2 (once M3's `#38`/`#39` land):** **M4** Journeys (`#46`, the journey picker, needs
+    the Activities model) and **M6** Export (needs Activities' `#38` and Journeys' `#45`).
+  - **Phase 3 (once M5 lands):** **M9** Settings & Notifications (`#82` needs the Todos due-date
+    field).
+  - **Phase 4 (once M3+M4+M5 are far enough along):** **M8**'s core query/write features (need
+    Activities' `#38`, Todos' `#50`/`#51`, and Journeys' `#46`/`#48` for full context-scope
+    coverage).
+  - **Phase 5 (native rollout, deliberately last per D-10):** **M10** Android, then **M11** iOS &
+    on-device AI — no code dependency on M3–M9, but D-10's own rationale ("native only when a
+    feature needs it") argues against front-loading this.
+  - **Phase 6 (explicitly deferred to the very end, D-25):** **M12** Import (Apiaries).
+  - This phasing is exactly what an `ecc:orch-*` agent run at the milestone level should follow;
+    each milestone's GitHub description carries a short phase tag for the same reason.
 
 ## D-15 — Apiary distance: straight-line (haversine), offline
 
@@ -387,6 +415,84 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **Supersedes/refines:** the `hive_count`-column part of **D-2** (kept as a counter, not an
   entity). Touches **FR-AP-7**, FR-HIS-1, D-6 (sync), #256. Design in
   [`docs/architecture/data-model.md`](../docs/architecture/data-model.md) §7.
+
+## D-21 — Journey attribution: smart auto-select with manual override
+
+- **Decision:** an activity carries a **stored, nullable `journey_id`** link — not a purely
+  derived value. When logging an activity, the app looks for an **open** journey whose apiary
+  and activity type match the activity being logged, and **pre-fills** that journey as the
+  activity's `journey_id` (a default, not a hard rule). From the activity form the user can:
+  **deselect** the pre-filled journey (leaves `journey_id` null); **switch** to a different
+  matching open journey; **create a journey on the spot** (a shortcut starts a new journey —
+  name + apiaries + main activity — without leaving the activity form, then attaches the
+  activity to it); or **attach to a closed journey** (closed journeys are selectable but
+  hidden by default behind a "show hidden journeys" toggle, and saving against one requires an
+  explicit confirm-to-proceed warning).
+- **Progress and statistics** ("feitos/planeados"; apiaries visited, hives harvested — Σ
+  hive-count attribute, D-2 — honey kg, média alças/colmeia) are computed from the **stored**
+  `journey_id` links, not a live re-match — editing/deleting an activity, or re-scoping a
+  journey's plan, does not retroactively change other activities' links.
+- **Narrows FR-JO-4** to one main activity per journey for M4; a manual per-apiary
+  activity-list plan is a deferred future extension.
+- **Supersedes:** Q-JOUR. **Touches:** FR-JO-1, FR-JO-4, #38, #39, #46.
+
+## D-22 — Cloud AI provider & GDPR posture
+
+- **Decision:** the cloud AI provider is **not yet chosen** — Google, AWS, Anthropic, and
+  other candidates are all live options, resolved via a dedicated research spike (EPIC-08)
+  rather than assumed to be any one vendor. Hard requirements for the chosen provider: a
+  signed **Data Processing Agreement**, and **EU-region processing** available (or an
+  explicit, user-consented exception if unavailable). **Not** a hard requirement: a
+  no-training/no-retention-for-training guarantee — the research spike records whether each
+  candidate offers one and prefers a provider that does when terms are otherwise comparable,
+  but a provider that may train on submitted data is acceptable **provided the consent screen
+  discloses this plainly** (an explicit "may be used to improve provider models" line, not
+  just "sent to a processor").
+- **PII minimization rule:** prompts sent to the provider carry only the data needed to
+  answer the scoped question; personal identifiers (names, emails, etc.) are minimized or
+  omitted where not required to answer it.
+- **Consent UX:** drafted against GDPR requirements and general good practice at spec/design
+  time (not specified further here).
+- **Supersedes:** Q-AICLOUD. **Touches:** FR-AI-1, NFR-AI-1, NFR-CMP, #63, #66,
+  EPIC-08's provider-research story.
+
+## D-23 — Todo assignment: optional assignee, not an access boundary
+
+- **Decision:** todos gain an optional `assignee` field, referencing an org member. Default
+  is unassigned. Both assigned and unassigned todos remain **visible and actionable to every
+  member of the organization** (FR-TEN-2) — assignment is a "who's taking this" hint, not an
+  access-control boundary.
+- **Supersedes:** Q-TODO. **Touches:** FR-TD-1.
+
+## D-24 — Notifications: in-app only for v1, checked on app-open
+
+- **Decision:** the v1 notification system covers two event families: **todo due-date
+  reminders** (FR-TD-1) and **sync results** — a push failure that needs the user to fix
+  rejected queued changes (FR-OF-2's notify-and-fix rule) and sync completion. Delivery is
+  **in-app only** (toast/banner via the existing app-shell chrome — offline banner, sync
+  pill, save/sync toasts); there is no backend push service or device-token registration in
+  the PWA phase, so **push notifications are deferred to the native phase** (M10/M11, EPIC-15).
+  Because there's no background service in the PWA phase, the notification check runs **when
+  the app is opened or brought to the foreground**, not on a timer or poll.
+- **Supersedes:** Q-NOTIF. **Touches:** FR-ST-1, FR-TD-1, FR-OF-2, #82.
+
+## D-25 — Import semantics: apiaries-only, merged with assisted matching, deferred to M12
+
+- **Decision:** v1 import is scoped to **apiaries only** (not activities or journeys), and is
+  delivered in its own milestone (**M12**), scheduled after all other feature milestones —
+  reflecting that it is a lower-priority, more migration/admin-flavored capability than the
+  rest of the field app (D-14 revised accordingly). Import **merges** with the existing
+  apiary set: when an imported apiary's name matches an existing one, the app **suggests the
+  match** to the user ("is this the same apiary?") rather than silently merging or silently
+  creating a duplicate — the user decides per suggested match whether to merge into the
+  existing record or create a new one. Imported apiaries **always receive newly-generated
+  IDs**; file-supplied IDs are never trusted as identity. A **dry-run preview** (what will be
+  created / updated / left as a suggested-match decision) is mandatory before the import
+  commits. Import writes flow through the normal apiaries-service write path — record-level
+  LWW (D-6), atomic write-back + validation parity (D-12), history capture (FR-HIS-1) — no
+  privileged import bypass.
+- **Supersedes:** Q-IMP. **Refines:** D-14 (milestone list, adds M12). **Touches:** FR-IE-2,
+  #70.
 
 ---
 
