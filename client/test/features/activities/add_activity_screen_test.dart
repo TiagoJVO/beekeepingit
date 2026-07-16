@@ -205,8 +205,18 @@ void main() {
 
   group('required-field validation before save (#39 AC)', () {
     testWidgets(
-      'saving a harvest without the required honey_supers is blocked, nothing is created',
+      'saving a harvest without the required honey_supers is genuinely blocked '
+      '(Form.validate() returns false), nothing is created, no navigation',
       (tester) async {
+        // Tall viewport + ensureVisible so the Save tap actually lands on the
+        // button and runs _save() — the previous version tapped an off-screen
+        // button (viewport 800x600, button at y=671), so _save() never ran and
+        // the assertion was a false positive against a cosmetic error string.
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
         final repo = _FakeActivitiesRepository();
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
@@ -217,15 +227,63 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Harvest is already selected; honey_supers is left empty.
-        await tester.tap(find.byKey(const Key('activity-save-button')));
+        // Before submission, no validation error is shown (validators only
+        // run on validate()/user interaction — this proves the "This field is
+        // required" assertion below can't be a pre-existing cosmetic string).
+        expect(find.text('This field is required'), findsNothing);
+
+        // Harvest is already selected; honey_supers (required) is left empty.
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Genuinely blocked: nothing queued, the form did NOT navigate away
+        // (Save button still present), and the required-field error now shows.
+        expect(repo.created, isEmpty);
+        expect(find.byKey(const Key('activity-save-button')), findsOneWidget);
+        expect(find.text('This field is required'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a required dropdown (feeding feed_type) left unselected also blocks save',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch to feeding — feed_type + feed_amount are both required and
+        // both left empty.
+        await tester.tap(find.byKey(const Key('activity-type-field')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Feeding').last);
+        await tester.pumpAndSettle();
+
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
 
         expect(repo.created, isEmpty);
-        expect(find.text('This field is required'), findsOneWidget);
-        // Still on the form.
         expect(find.byKey(const Key('activity-save-button')), findsOneWidget);
+        // At least one required-field error is shown (feed_type/feed_amount).
+        expect(find.text('This field is required'), findsWidgets);
       },
     );
 

@@ -126,6 +126,15 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
   /// itself is plain (server-mirroring) English, not localized, so this
   /// maps by [ActivityAttributeError.code] to a localized string instead of
   /// displaying it directly.
+  ///
+  /// This is wired as each field's `validator:` (not merely as a cosmetic
+  /// `errorText`), so `_formKey.currentState!.validate()` in [_save]
+  /// genuinely returns false — and blocks the write — when a required
+  /// attribute (e.g. `honey_supers`, `feed_type`, `feed_amount`,
+  /// `treatment_context`/`treatment_type`, the conditionally-required
+  /// `disease`) is missing or invalid, rather than queuing a payload the
+  /// server would only reject at sync time (D-12: catch it on the client
+  /// against the same rules the server applies).
   String? _attrError(AppLocalizations l10n, String key) {
     for (final e in validateActivityAttributes(_selectedType, _buildAttributes())) {
       if (e.field == 'attributes.$key') {
@@ -241,26 +250,29 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       case activityTypeHarvest:
         return [
           _numberField(
+            l10n: l10n,
             key: 'activity-honey-supers-field',
             controller: _honeySupersController,
             label: l10n.activityHoneySupersLabel,
+            attrKey: 'honey_supers',
             integerOnly: true,
-            errorText: _attrError(l10n, 'honey_supers'),
           ),
           const SizedBox(height: 16),
           _numberField(
+            l10n: l10n,
             key: 'activity-honey-kg-field',
             controller: _honeyKgController,
             label: l10n.activityHoneyKgLabel,
-            errorText: _attrError(l10n, 'honey_kg'),
+            attrKey: 'honey_kg',
           ),
           const SizedBox(height: 16),
           _numberField(
+            l10n: l10n,
             key: 'activity-hives-involved-field',
             controller: _hivesInvolvedController,
             label: l10n.activityHivesInvolvedLabel,
+            attrKey: 'hives_involved',
             integerOnly: true,
-            errorText: _attrError(l10n, 'hives_involved'),
           ),
           const SizedBox(height: 16),
           _notesField(l10n),
@@ -268,27 +280,30 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       case activityTypeFeeding:
         return [
           _dropdownField(
+            l10n: l10n,
             key: 'activity-feed-type-field',
             label: l10n.activityFeedTypeLabel,
             value: _feedType,
             options: feedTypes,
+            attrKey: 'feed_type',
             onChanged: (v) => setState(() => _feedType = v),
-            errorText: _attrError(l10n, 'feed_type'),
           ),
           const SizedBox(height: 16),
           _numberField(
+            l10n: l10n,
             key: 'activity-feed-amount-field',
             controller: _feedAmountController,
             label: l10n.activityFeedAmountLabel,
-            errorText: _attrError(l10n, 'feed_amount'),
+            attrKey: 'feed_amount',
           ),
           const SizedBox(height: 16),
           _numberField(
+            l10n: l10n,
             key: 'activity-hives-involved-field',
             controller: _hivesInvolvedController,
             label: l10n.activityHivesInvolvedLabel,
+            attrKey: 'hives_involved',
             integerOnly: true,
-            errorText: _attrError(l10n, 'hives_involved'),
           ),
           const SizedBox(height: 16),
           _notesField(l10n),
@@ -299,42 +314,47 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
             _treatmentContext == treatmentContextDetectionOnly;
         return [
           _dropdownField(
+            l10n: l10n,
             key: 'activity-treatment-context-field',
             label: l10n.activityTreatmentContextFieldLabel,
             value: _treatmentContext,
             options: treatmentContexts,
+            attrKey: 'treatment_context',
             optionLabel: (v) => treatmentContextLabel(l10n, v) ?? v,
             onChanged: (v) => setState(() => _treatmentContext = v),
-            errorText: _attrError(l10n, 'treatment_context'),
           ),
           const SizedBox(height: 16),
           _dropdownField(
+            l10n: l10n,
             key: 'activity-treatment-type-field',
             label: l10n.activityTreatmentTypeLabel,
             value: _treatmentType,
             options: treatmentTypes,
+            attrKey: 'treatment_type',
             onChanged: (v) => setState(() => _treatmentType = v),
-            errorText: _attrError(l10n, 'treatment_type'),
           ),
           if (requiresDisease) ...[
             const SizedBox(height: 16),
             TextFormField(
               key: const Key('activity-disease-field'),
               controller: _diseaseController,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              validator: (_) => _attrError(l10n, 'disease'),
+              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: l10n.activityDiseaseLabel,
                 border: const OutlineInputBorder(),
-                errorText: _attrError(l10n, 'disease'),
               ),
             ),
           ],
           const SizedBox(height: 16),
           _numberField(
+            l10n: l10n,
             key: 'activity-hives-involved-field',
             controller: _hivesInvolvedController,
             label: l10n.activityHivesInvolvedLabel,
+            attrKey: 'hives_involved',
             integerOnly: true,
-            errorText: _attrError(l10n, 'hives_involved'),
           ),
           const SizedBox(height: 16),
           _notesField(l10n),
@@ -351,19 +371,21 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     maxLines: 6,
     maxLength: 10000,
     textInputAction: TextInputAction.newline,
+    autovalidateMode: AutovalidateMode.onUserInteraction,
+    validator: (_) => _attrError(l10n, 'notes'),
     decoration: InputDecoration(
       labelText: l10n.activityNotesLabel,
       border: const OutlineInputBorder(),
       alignLabelWithHint: true,
-      errorText: _attrError(l10n, 'notes'),
     ),
   );
 
   Widget _numberField({
+    required AppLocalizations l10n,
     required String key,
     required TextEditingController controller,
     required String label,
-    required String? errorText,
+    required String attrKey,
     bool integerOnly = false,
   }) {
     return TextFormField(
@@ -373,32 +395,40 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       inputFormatters: integerOnly
           ? [FilteringTextInputFormatter.digitsOnly]
           : [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+      // A real validator (not a cosmetic errorText) so Form.validate() in
+      // _save() genuinely blocks submission when a required numeric
+      // attribute is missing/invalid (HIGH review fix).
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      validator: (_) => _attrError(l10n, attrKey),
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
-        errorText: errorText,
       ),
       onChanged: (_) => setState(() {}),
     );
   }
 
   Widget _dropdownField({
+    required AppLocalizations l10n,
     required String key,
     required String label,
     required String? value,
     required List<String> options,
+    required String attrKey,
     required void Function(String?) onChanged,
-    required String? errorText,
     String Function(String)? optionLabel,
   }) {
     return DropdownButtonFormField<String>(
       key: Key(key),
       initialValue: value,
       isExpanded: true, // see the type-field dropdown's own doc comment above
+      // A real validator so an unselected required dropdown (feed_type,
+      // treatment_context, treatment_type) blocks Form.validate() (HIGH fix).
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      validator: (_) => _attrError(l10n, attrKey),
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
-        errorText: errorText,
       ),
       items: [
         for (final option in options)

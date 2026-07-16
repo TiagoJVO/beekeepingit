@@ -111,12 +111,56 @@ func checkBatchSize(w http.ResponseWriter, r *http.Request, batch Batch) bool {
 	return false
 }
 
+// resolveApiaryOwnership verifies every DISTINCT, well-formed apiary_id in
+// the batch up front — **de-duplicated** (HIGH/MEDIUM review fix: N ops
+// against the same apiary cost exactly ONE upstream call, not N) and
+// **before any DB transaction is opened** (HIGH review fix: never hold a
+// pooled Postgres connection open across a blocking cross-service HTTP call —
+// a 500-op batch × a 5s upstream timeout could otherwise pin one pooled
+// connection for minutes and let a single authenticated caller exhaust the
+// pool). It returns a per-request `apiary_id string → belongs?` map both the
+// apply and validate paths then consult purely in-memory.
+//
+// Fail-closed (unchanged semantics): a transport/5xx error verifying ANY
+// distinct id aborts the WHOLE batch (returned error → the caller writes a
+// 500/relayed 502, the batch stays queued and heals on retry). A 404 /
+// cross-org id is NOT an error — it lands in the map as `false`, so the
+// per-op check rejects (validate) or no-ops (apply) exactly as before. Ops
+// whose apiary_id is missing or malformed are skipped here (structural
+// validation rejects them independently, and there is nothing to look up).
+func resolveApiaryOwnership(ctx context.Context, verifier *ApiaryVerifier, bearer string, batch Batch) (map[string]bool, error) {
+	owned := map[string]bool{}
+	for _, op := range batch.Ops {
+		var data activityData
+		if len(op.Data) > 0 {
+			if err := json.Unmarshal(op.Data, &data); err != nil {
+				continue // malformed data — structural validation handles it
+			}
+		}
+		if data.ApiaryID == nil {
+			continue
+		}
+		apiaryID := *data.ApiaryID
+		if _, err := uuid.Parse(apiaryID); err != nil {
+			continue // malformed id — structural validation handles it
+		}
+		if _, done := owned[apiaryID]; done {
+			continue // already resolved this distinct id — the de-dup
+		}
+		belongs, err := verifier.BelongsToOrg(ctx, bearer, apiaryID)
+		if err != nil {
+			return nil, err // fail closed: whole batch aborts
+		}
+		owned[apiaryID] = belongs
+	}
+	return owned, nil
+}
+
 // validateActivityBatch dry-runs every op against the same rules
 // applyActivityOp enforces, INCLUDING the cross-org apiary_id ownership
-// check (mirroring how apiaries' own validateBatch is a pure structural
-// check with no DB/upstream call — but activities' tenancy guard lives
-// behind an HTTP call, not a local query, so this validate pass makes that
-// same call too, keeping validate-then-apply symmetric with the REST path).
+// check. The ownership HTTP calls are made ONCE per distinct apiary_id, up
+// front (resolveApiaryOwnership); the per-op check below is then a pure
+// in-memory map lookup, so validate is both cheap and symmetric with apply.
 func validateActivityBatch(verifier *ApiaryVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, _, ok := requireOrg(w, r); !ok {
@@ -133,15 +177,16 @@ func validateActivityBatch(verifier *ApiaryVerifier) http.HandlerFunc {
 		}
 
 		bearer := r.Header.Get("Authorization")
+		owned, err := resolveApiaryOwnership(r.Context(), verifier, bearer, batch)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "validate activity batch: verify apiary ownership failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
 		var fieldErrs []problem.FieldError
 		for i, op := range batch.Ops {
-			errs, err := validateActivityOp(r.Context(), verifier, bearer, i, op)
-			if err != nil {
-				logging.FromContext(r.Context()).ErrorContext(r.Context(), "validate activity batch: verify apiary ownership failed", slog.Any("error", err))
-				problem.Write(w, r, problem.Internal())
-				return
-			}
-			fieldErrs = append(fieldErrs, errs...)
+			fieldErrs = append(fieldErrs, validateActivityOp(i, op, owned)...)
 		}
 		if len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more ops are invalid", fieldErrs...))
@@ -151,12 +196,11 @@ func validateActivityBatch(verifier *ApiaryVerifier) http.HandlerFunc {
 	}
 }
 
-// validateActivityOp validates one op's shape/attribute-schema, and — when
-// those pass — the cross-org apiary_id ownership guard (CRITICAL, same
-// rationale as write.go's createActivity). Returns a transport/upstream
-// error separately from field errors so the caller can 500 rather than
-// mis-report an outage as "your data is invalid".
-func validateActivityOp(ctx context.Context, verifier *ApiaryVerifier, bearer string, i int, op Op) ([]problem.FieldError, error) {
+// validateActivityOp validates one op's shape/attribute-schema and, when
+// well-formed, the cross-org apiary_id ownership guard — consulting the
+// pre-resolved `owned` map (resolveApiaryOwnership already made the single
+// upstream call per distinct id) rather than making any HTTP call itself.
+func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldError {
 	prefix := fmt.Sprintf("ops[%d]", i)
 	var errs []problem.FieldError
 
@@ -177,7 +221,7 @@ func validateActivityOp(ctx context.Context, verifier *ApiaryVerifier, bearer st
 	if len(op.Data) > 0 {
 		if err := json.Unmarshal(op.Data, &data); err != nil {
 			errs = append(errs, problem.FieldError{Field: prefix + ".data", Code: "invalid", Message: "data must be an object"})
-			return errs, nil
+			return errs
 		}
 	}
 
@@ -217,25 +261,23 @@ func validateActivityOp(ctx context.Context, verifier *ApiaryVerifier, bearer st
 		}
 	}
 
-	// Only make the cross-service ownership call once the op is otherwise
-	// well-formed — an apiary_id that never parsed has nothing to verify.
-	if apiaryID != "" {
-		belongs, err := verifier.BelongsToOrg(ctx, bearer, apiaryID)
-		if err != nil {
-			return nil, err
-		}
-		if !belongs {
-			errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary in this organization"})
-		}
+	// Ownership: a pure map lookup against the pre-resolved result — only when
+	// the apiary_id was well-formed (a malformed/missing id has nothing to
+	// verify and is already reported above; resolveApiaryOwnership resolves
+	// every well-formed distinct id, so the key is always present here).
+	if apiaryID != "" && !owned[apiaryID] {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary in this organization"})
 	}
 
-	return errs, nil
+	return errs
 }
 
 // applyActivityBatch applies the batch in one local transaction (sync.md
-// §5.2/§6.2 "apply" phase — validate-all already ran, so this mostly
-// re-derives what it needs rather than re-validating from scratch, same as
-// apiaries' applyBatch/applyOp split).
+// §5.2/§6.2 "apply" phase). The cross-org apiary_id ownership guard is
+// resolved UP FRONT, OUTSIDE the transaction (resolveApiaryOwnership — HIGH
+// review fix: no blocking cross-service HTTP call ever runs while a pooled
+// Postgres connection is held), de-duplicated to one upstream call per
+// distinct apiary_id; applyActivityOp then consults that map in-memory.
 func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, userID, ok := requireOrg(w, r)
@@ -252,12 +294,24 @@ func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handl
 			return
 		}
 
+		// Resolve ownership for every distinct apiary_id BEFORE opening the
+		// transaction (zero-trust re-check — apply is a separate request from
+		// validate, sync.md §6.2 — but done once, up front, not per-op inside
+		// the tx). Fail closed on an upstream error: the whole batch aborts
+		// and heals on PowerSync's idempotent forward-retry.
 		bearer := r.Header.Get("Authorization")
+		owned, err := resolveApiaryOwnership(r.Context(), verifier, bearer, batch)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "apply activity sync batch: verify apiary ownership failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
 		var results []OpResult
-		err := withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
 			results = make([]OpResult, 0, len(batch.Ops))
 			for _, op := range batch.Ops {
-				res, err := applyActivityOp(r.Context(), q, verifier, bearer, org, userID, op)
+				res, err := applyActivityOp(r.Context(), q, owned, org, userID, op)
 				if err != nil {
 					return err
 				}
@@ -274,13 +328,14 @@ func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handl
 	}
 }
 
-// applyActivityOp applies one create-only op (#39 scope): verifies the
-// apiary_id ownership guard again (zero-trust re-check — validate and apply
-// are separate requests, sync.md §6.2), then either inserts a brand-new row
-// or, for a retried id, compares content for an idempotent no-op vs a
-// content conflict (logged, server wins — there is no edit path yet for a
-// genuinely different resend to legitimately win via LWW).
-func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, verifier *ApiaryVerifier, bearer string, org pgtype.UUID, userID string, op Op) (OpResult, error) {
+// applyActivityOp applies one create-only op (#39 scope): consults the
+// pre-resolved `owned` ownership map (resolveApiaryOwnership already made the
+// single up-front upstream call per distinct apiary_id — NO HTTP call happens
+// here, inside the transaction), then either inserts a brand-new row or, for
+// a retried id, compares content for an idempotent no-op vs a content
+// conflict (logged, server wins — there is no edit path yet for a genuinely
+// different resend to legitimately win via LWW).
+func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool, org pgtype.UUID, userID string, op Op) (OpResult, error) {
 	id, err := uuid.Parse(op.ID)
 	if err != nil {
 		return OpResult{}, err
@@ -300,19 +355,11 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, verifier *ApiaryVe
 		return OpResult{}, err
 	}
 
-	// Tenancy guard (FR-TEN-2, CRITICAL — re-checked here too, not just in
-	// validate: apply is a separate request and must never trust that an
-	// earlier validate call for the same op actually ran, mirrors
-	// applyCounterOp's own "re-check, don't just rely on validateOp" note in
-	// apiaries/api/sync.go).
-	belongs, err := verifier.BelongsToOrg(ctx, bearer, apiaryID.String())
-	if err != nil {
-		return OpResult{}, err
-	}
-	if !belongs {
-		// Unknown/foreign apiary_id — no-op (mirrors applyCounterOp's own
-		// "missing row ⇒ nothing to do" convention), not a distinguishable
-		// error (ADR-0002 scope-hiding).
+	// Tenancy guard (FR-TEN-2, CRITICAL) — a pure in-memory lookup against the
+	// up-front ownership resolution; an unknown/foreign apiary_id is a no-op
+	// (mirrors applyCounterOp's own "missing row ⇒ nothing to do" convention,
+	// ADR-0002 scope-hiding), never a distinguishable error.
+	if !owned[apiaryID.String()] {
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 	}
 

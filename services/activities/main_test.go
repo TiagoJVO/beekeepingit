@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,28 +72,57 @@ func injectClaims(next http.Handler) http.Handler {
 }
 
 type activitiesFixture struct {
-	srv  *servicetemplate.Server
-	pool *pgxpool.Pool
+	srv      *servicetemplate.Server
+	pool     *pgxpool.Pool
+	apiaries *fakeApiaries
 }
 
-// newFakeApiariesServer stands in for the real apiaries service's
-// GET /v1/apiaries/{id} (api/apiaries_client.go's ApiaryVerifier target):
-// 200 for any id in knownApiaryIDs, 404 otherwise — enough to exercise the
-// CRITICAL cross-org apiary_id tenancy guard (#39's carry-over from #38's
-// review, mirroring #284's cross-tenant IDOR fix) without standing up a
-// second real service + database in this test binary.
-func newFakeApiariesServer(t *testing.T, knownApiaryIDs map[string]bool) *httptest.Server {
+// fakeApiaries stands in for the real apiaries service's GET /v1/apiaries/{id}
+// (api/apiaries_client.go's ApiaryVerifier target): 200 for any id in
+// `known`, 404 otherwise — enough to exercise the CRITICAL cross-org
+// apiary_id tenancy guard (#39's carry-over from #38's review, mirroring
+// #284's cross-tenant IDOR fix) without standing up a second real service +
+// database in this test binary. It also **counts per-id hits** so a test can
+// prove the batch write path de-duplicates its ownership calls (one upstream
+// call per distinct apiary, not one per op — the HIGH/MEDIUM review fix).
+type fakeApiaries struct {
+	server *httptest.Server
+	mu     sync.Mutex
+	hits   map[string]int
+}
+
+func (f *fakeApiaries) hitCount(apiaryID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hits[apiaryID]
+}
+
+func (f *fakeApiaries) totalHits() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.hits {
+		n += c
+	}
+	return n
+}
+
+func newFakeApiaries(t *testing.T, known map[string]bool) *fakeApiaries {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f := &fakeApiaries{hits: map[string]int{}}
+	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/v1/apiaries/")
-		if knownApiaryIDs[id] {
+		f.mu.Lock()
+		f.hits[id]++
+		f.mu.Unlock()
+		if known[id] {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	t.Cleanup(srv.Close)
-	return srv
+	t.Cleanup(f.server.Close)
+	return f
 }
 
 // newActivitiesFixture builds the test fixture. knownApiaryIDs (variadic —
@@ -108,8 +138,8 @@ func newActivitiesFixture(t *testing.T, knownApiaryIDs ...string) *activitiesFix
 	for _, id := range knownApiaryIDs {
 		known[id] = true
 	}
-	fakeApiaries := newFakeApiariesServer(t, known)
-	verifier, err := api.NewApiaryVerifier(fakeApiaries.URL, fakeApiaries.Client())
+	fakeApiaries := newFakeApiaries(t, known)
+	verifier, err := api.NewApiaryVerifier(fakeApiaries.server.URL, fakeApiaries.server.Client())
 	if err != nil {
 		t.Fatalf("NewApiaryVerifier: %v", err)
 	}
@@ -167,7 +197,7 @@ func newActivitiesFixture(t *testing.T, knownApiaryIDs ...string) *activitiesFix
 	srv.Mount("/v1/activities", injectClaims(api.Router(pool, verifier)))
 	srv.Mount("/internal/sync", injectClaims(api.InternalSyncRouter(pool, verifier)))
 
-	return &activitiesFixture{srv: srv, pool: pool}
+	return &activitiesFixture{srv: srv, pool: pool, apiaries: fakeApiaries}
 }
 
 func (f *activitiesFixture) do(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
@@ -827,5 +857,66 @@ func TestActivitiesSync_Apply_IdempotentReplayDoesNotDuplicate(t *testing.T) {
 	}
 	if len(rows) != 1 {
 		t.Fatalf("activities after idempotent replay = %d, want 1 (no duplicate)", len(rows))
+	}
+}
+
+// TestActivitiesSync_Apply_DedupesApiaryOwnershipCalls is the regression
+// guard for the HIGH/MEDIUM review finding: the per-op cross-service
+// ownership call must be resolved ONCE per distinct apiary_id, up front
+// (resolveApiaryOwnership), NOT once per op inside the DB transaction. A
+// batch of three ops all against the SAME apiary must therefore hit the
+// (fake) apiaries service exactly ONCE — proving both the de-duplication and
+// that no ownership HTTP call is made per-op inside the transaction.
+func TestActivitiesSync_Apply_DedupesApiaryOwnershipCalls(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	batch := map[string]any{"ops": []any{
+		syncOp(uuid.NewString(), apiaryID),
+		syncOp(uuid.NewString(), apiaryID),
+		syncOp(uuid.NewString(), apiaryID),
+	}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	if got := f.apiaries.hitCount(apiaryID); got != 1 {
+		t.Fatalf("apiaries ownership calls for apiary %s = %d, want exactly 1 (batch must de-dup ownership checks, one call per distinct apiary, not per op)", apiaryID, got)
+	}
+	// All three ops must still have been applied.
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListActivitiesByOrg(context.Background(), sqlcgen.ListActivitiesByOrgParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true}, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("ListActivitiesByOrg: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("activities created = %d, want 3 (all ops applied despite the single ownership call)", len(rows))
+	}
+}
+
+// TestActivitiesSync_Validate_DedupesApiaryOwnershipCalls is the validate-path
+// counterpart of the de-dup regression guard above: validate also fans the
+// ownership check out once per distinct apiary_id, not once per op.
+func TestActivitiesSync_Validate_DedupesApiaryOwnershipCalls(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	batch := map[string]any{"ops": []any{
+		syncOp(uuid.NewString(), apiaryID),
+		syncOp(uuid.NewString(), apiaryID),
+		syncOp(uuid.NewString(), apiaryID),
+	}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := f.apiaries.hitCount(apiaryID); got != 1 {
+		t.Fatalf("apiaries ownership calls for apiary %s = %d, want exactly 1 (validate must de-dup too)", apiaryID, got)
+	}
+	if got := f.apiaries.totalHits(); got != 1 {
+		t.Fatalf("total apiaries ownership calls = %d, want exactly 1", got)
 	}
 }

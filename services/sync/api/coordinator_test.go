@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -306,27 +307,66 @@ func TestNewCoordinator_RequiresActivitiesURL(t *testing.T) {
 
 // stubOwner is a minimal owning-service double recording which ops its
 // validate/apply endpoints received, so a routing test can assert an op
-// landed at the RIGHT service.
+// landed at the RIGHT service. It models the owning service's own
+// idempotency (real InsertApiary/InsertActivity are keyed on the
+// client-generated UUID PK): appliedOps de-duplicates by op id, so a batch
+// re-sent by the coordinator's forward-retry never records the same op twice
+// — the property the forward-retry design depends on.
 type stubOwner struct {
 	server         *httptest.Server
+	mu             sync.Mutex
 	validateStatus int
+	applyStatus    int    // status the apply endpoint answers with (default 200)
 	applyResults   string // the {"results":[...]} body to answer apply with
 	validatedOps   []Op
-	appliedOps     []Op
+	appliedIDs     map[string]bool // idempotent record of ops applied (by id)
+	applyCalls     int             // how many times apply was invoked (incl. retries)
+}
+
+func (s *stubOwner) appliedCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.appliedIDs)
+}
+
+func (s *stubOwner) applied(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.appliedIDs[id]
+}
+
+func (s *stubOwner) applyCallCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.applyCalls
+}
+
+func (s *stubOwner) setApplyStatus(status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.applyStatus = status
 }
 
 func newStubOwner(t *testing.T) *stubOwner {
-	s := &stubOwner{validateStatus: http.StatusOK, applyResults: `{"results":[]}`}
+	s := &stubOwner{
+		validateStatus: http.StatusOK,
+		applyStatus:    http.StatusOK,
+		applyResults:   `{"results":[]}`,
+		appliedIDs:     map[string]bool{},
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/internal/sync/validate", func(w http.ResponseWriter, r *http.Request) {
 		var batch struct {
 			Ops []Op `json:"ops"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&batch)
+		s.mu.Lock()
 		s.validatedOps = append(s.validatedOps, batch.Ops...)
+		vs := s.validateStatus
+		s.mu.Unlock()
 		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(s.validateStatus)
-		if s.validateStatus == http.StatusUnprocessableEntity {
+		w.WriteHeader(vs)
+		if vs == http.StatusUnprocessableEntity {
 			_, _ = w.Write([]byte(`{"title":"Validation failed","status":422,"code":"validation.failed"}`))
 		}
 	})
@@ -335,10 +375,24 @@ func newStubOwner(t *testing.T) *stubOwner {
 			Ops []Op `json:"ops"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&batch)
-		s.appliedOps = append(s.appliedOps, batch.Ops...)
+		s.mu.Lock()
+		s.applyCalls++
+		as := s.applyStatus
+		// A failed apply applies NOTHING (the owning service's own tx rolls
+		// back), so only record ops on a 200 — modeling that a transient
+		// failure leaves no partial state to duplicate on retry.
+		if as == http.StatusOK {
+			for _, op := range batch.Ops {
+				s.appliedIDs[op.ID] = true // idempotent: re-sent id is a no-op
+			}
+		}
+		body := s.applyResults
+		s.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(s.applyResults))
+		w.WriteHeader(as)
+		if as == http.StatusOK {
+			_, _ = w.Write([]byte(body))
+		}
 	})
 	s.server = httptest.NewServer(mux)
 	t.Cleanup(s.server.Close)
@@ -381,11 +435,11 @@ func TestCoordinator_Handle_RoutesByEntityType(t *testing.T) {
 	if len(activities.validatedOps) != 1 || activities.validatedOps[0].ID != "activity-1" {
 		t.Fatalf("activities validated ops = %+v, want exactly the activity-1 op", activities.validatedOps)
 	}
-	if len(apiaries.appliedOps) != 1 || apiaries.appliedOps[0].ID != "apiary-1" {
-		t.Fatalf("apiaries applied ops = %+v, want exactly the apiary-1 op", apiaries.appliedOps)
+	if apiaries.appliedCount() != 1 || !apiaries.applied("apiary-1") {
+		t.Fatalf("apiaries applied = %d op(s), want exactly the apiary-1 op", apiaries.appliedCount())
 	}
-	if len(activities.appliedOps) != 1 || activities.appliedOps[0].ID != "activity-1" {
-		t.Fatalf("activities applied ops = %+v, want exactly the activity-1 op", activities.appliedOps)
+	if activities.appliedCount() != 1 || !activities.applied("activity-1") {
+		t.Fatalf("activities applied = %d op(s), want exactly the activity-1 op", activities.appliedCount())
 	}
 }
 
@@ -450,11 +504,11 @@ func TestCoordinator_Handle_MultiService_OneRejectionAppliesNeither(t *testing.T
 	if resp.status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422 (activities rejection must abort the whole push), body = %s", resp.status, resp.body)
 	}
-	if len(apiaries.appliedOps) != 0 {
-		t.Fatalf("apiaries.appliedOps = %+v, want none applied — a sibling service's rejection must abort the whole push", apiaries.appliedOps)
+	if apiaries.appliedCount() != 0 {
+		t.Fatalf("apiaries applied %d op(s), want none — a sibling service's rejection must abort the whole push", apiaries.appliedCount())
 	}
-	if len(activities.appliedOps) != 0 {
-		t.Fatalf("activities.appliedOps = %+v, want none applied", activities.appliedOps)
+	if activities.appliedCount() != 0 {
+		t.Fatalf("activities applied %d op(s), want none", activities.appliedCount())
 	}
 }
 
@@ -474,7 +528,63 @@ func TestCoordinator_Handle_SingleServiceBatch_NeverCallsTheOtherService(t *test
 	if resp.status != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body = %s", resp.status, resp.body)
 	}
-	if len(activities.validatedOps) != 0 || len(activities.appliedOps) != 0 {
-		t.Fatalf("activities service was contacted for an apiary-only batch: validated=%+v applied=%+v", activities.validatedOps, activities.appliedOps)
+	if len(activities.validatedOps) != 0 || activities.appliedCount() != 0 {
+		t.Fatalf("activities service was contacted for an apiary-only batch: validated=%+v applied=%d", activities.validatedOps, activities.appliedCount())
+	}
+}
+
+// TestCoordinator_Handle_MultiService_PartialApplyFailureHealsOnRetry is the
+// eventual-consistency regression the design comments assert (sync.md
+// §6.2/§6.3): in a multi-service push, group A (apiaries) apply succeeds but
+// group B (activities) apply then fails transiently (502) → the client gets
+// 502 and the whole batch stays queued. On PowerSync's idempotent
+// forward-retry of the SAME batch, group A is re-sent but — because the
+// owning service is idempotent on the client UUID PK — does NOT duplicate its
+// already-applied op, and group B now succeeds, so the retry completes 200.
+func TestCoordinator_Handle_MultiService_PartialApplyFailureHealsOnRetry(t *testing.T) {
+	apiaries := newStubOwner(t)
+	activities := newStubOwner(t)
+	// Group B's apply fails transiently on the first attempt.
+	activities.setApplyStatus(http.StatusInternalServerError)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+
+	body := []byte(`{"ops":[
+		{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
+		{"op":"put","entity_type":"activity","id":"activity-1","updated_at":"2026-07-16T10:00:00Z","data":{}}
+	]}`)
+
+	// First push: apiaries applied apiary-1, activities apply 502 → client 502.
+	first := c.handle(context.Background(), "Bearer tok", body)
+	if first.status != http.StatusBadGateway {
+		t.Fatalf("first push status = %d, want 502 (activities apply failed transiently), body = %s", first.status, first.body)
+	}
+	if !apiaries.applied("apiary-1") {
+		t.Fatalf("apiary-1 should have been applied on the first push (its group's apply succeeded before activities failed)")
+	}
+	if activities.appliedCount() != 0 {
+		t.Fatalf("activities applied %d op(s) on a 502, want 0 (a failed apply commits nothing)", activities.appliedCount())
+	}
+
+	// Group B recovers; PowerSync retries the whole batch idempotently.
+	activities.setApplyStatus(http.StatusOK)
+	second := c.handle(context.Background(), "Bearer tok", body)
+	if second.status != http.StatusOK {
+		t.Fatalf("retry status = %d, want 200 (the batch heals on forward-retry), body = %s", second.status, second.body)
+	}
+
+	// The key property: apiary-1 was NOT duplicated by the retry (the owning
+	// service's idempotency on the client UUID PK absorbed the re-send), and
+	// activity-1 is now applied exactly once.
+	if apiaries.appliedCount() != 1 {
+		t.Fatalf("apiaries applied %d distinct op(s) after retry, want 1 — forward-retry must not duplicate an already-applied op", apiaries.appliedCount())
+	}
+	if apiaries.applyCallCount() != 2 {
+		t.Fatalf("apiaries apply was called %d time(s), want 2 (once per push — the coordinator DOES re-send; idempotency lives in the owning service)", apiaries.applyCallCount())
+	}
+	if activities.appliedCount() != 1 || !activities.applied("activity-1") {
+		t.Fatalf("activities applied = %d op(s) after retry, want exactly activity-1", activities.appliedCount())
 	}
 }
