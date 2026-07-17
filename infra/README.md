@@ -9,7 +9,9 @@ for the as-built design; intent/decisions live in
 ## Quickstart
 
 A single command brings up the whole local dev environment (`#22`, `NFR-ARC-2`/`NFR-ARC-3`) —
-Postgres+PostGIS, Authentik, PowerSync, MinIO, and the gateway/ingress — and another tears it down:
+Postgres+PostGIS, Authentik, PowerSync, MinIO, and the gateway/ingress — waits until it's
+genuinely reachable from a browser (not just "pods Available"), and prints the URL + the
+seeded dev login; another command tears it down:
 
 ```sh
 infra/cluster/dev-up.sh    # idempotent: safe to re-run against an already-provisioned cluster
@@ -18,6 +20,28 @@ infra/cluster/dev-down.sh  # uninstalls the releases, then deletes the k3d clust
 
 Requires `k3d`, `kubectl`, `helm`, `flux`, and `flock` on `PATH`. On Windows, run these from the
 WSL2 environment (see the local-dev-environment notes) — the scripts are plain POSIX `bash`.
+
+**On Windows, once per machine**, before the first `dev-up.sh`, run
+[`infra/cluster/windows-host-setup.ps1`](cluster/windows-host-setup.ps1) from an ordinary
+PowerShell prompt (it self-elevates only if it actually needs to change anything — a re-run on
+an already-set-up machine needs no elevation and is a no-op). It adds the gateway's two dev
+hostnames (`app.beekeepingit.local`, `auth.beekeepingit.local`) to the Windows hosts file — a
+browser can't resolve them otherwise — and makes sure `.wslconfig` actually disables WSL's own
+idle-VM shutdown (`vmIdleTimeout=-1`), restarting WSL once if it had to change that. Everything
+after that first run is just `dev-up.sh` → open the printed URL; no manual hosts/browser steps.
+
+Two things stay outside any script's reach, both by design:
+
+- **The self-signed dev cert**: the gateway's TLS is a Helm-generated self-signed cert
+  (`infra/helm/beekeepingit/charts/gateway/Chart.yaml`) — trusted-cert issuance (cert-manager) is
+  deferred to `EPIC-14`. The first visit to `https://app.beekeepingit.local:8443` needs one manual
+  click-through past the browser's cert warning.
+- **The host machine going to sleep**: `dev-up.sh`'s own keep-alive heartbeat (see its doc
+  comment) stops WSL's _own_ idle-VM shutdown from tearing the cluster down between commands —
+  it can't stop Windows itself from sleeping the whole machine (a different, OS-level
+  mechanism). If the cluster goes down while you're away from the keyboard for a while, that's
+  the machine sleeping, not the dev tooling; disable sleep for the duration of a dev session if
+  that's disruptive.
 
 `dev-up.sh` does NOT apply `infra/gitops/clusters/dev/` (the one-time GitOps bootstrap that makes
 Flux auto-sync from this repo's `main` branch) — that would deploy the umbrella chart from
@@ -88,9 +112,33 @@ kubectl -n beekeepingit-dev rollout status deployment/beekeepingit-powersync --t
 kubectl -n beekeepingit-dev wait --for=condition=ready pod -l app.kubernetes.io/instance=authentik --timeout=420s
 kubectl -n beekeepingit-dev rollout status deployment/authentik-server --timeout=420s
 kubectl -n beekeepingit-dev wait --for=condition=ready pod -l app=minio,release=minio --timeout=180s
+
+# 9. The server being Ready isn't enough for the domain services: the WORKER applies
+#    the blueprint (provider/application/seed user) asynchronously after boot, and
+#    until it lands, OIDC discovery 404s and every Go service crash-restarts with a
+#    growing backoff — the same race helm-e2e.yml's CI job (#215) hit and fixes. Wait
+#    for the worker rollout, poll discovery (via `kubectl exec` into authentik-server,
+#    immune to the NetworkPolicy default-deny #89 a port-forward would hit), then
+#    restart every umbrella-chart app once to clear the accumulated backoff:
+kubectl -n beekeepingit-dev rollout status deployment/authentik-worker --timeout=600s
+# (poll .well-known/openid-configuration via kubectl exec until it 200s — see dev-up.sh)
+kubectl -n beekeepingit-dev rollout restart deployment -l app.kubernetes.io/part-of=beekeepingit
+
+# 10. Now a clean boot: wait for every umbrella-chart Deployment (services/pwa/
+#     powersync — the ones that carry app.kubernetes.io/part-of=beekeepingit) to
+#     actually become Available, then smoke-test the backing services (PostGIS; #84):
+kubectl -n beekeepingit-dev wait --for=condition=available deployment \
+  -l app.kubernetes.io/part-of=beekeepingit --timeout=600s
 helm test beekeepingit --namespace beekeepingit-dev
 
-# 9. Tear down
+# 11. Warm the gateway on both dev hosts before declaring it browser-ready — a
+#     Deployment being Available doesn't mean Traefik's route to it is warm yet
+#     (a fresh route can still 502 for a short window):
+curl -sk --resolve app.beekeepingit.local:8443:127.0.0.1 https://app.beekeepingit.local:8443/
+curl -sk --resolve auth.beekeepingit.local:8443:127.0.0.1 \
+  https://auth.beekeepingit.local:8443/application/o/beekeepingit/.well-known/openid-configuration
+
+# 12. Tear down
 infra/cluster/with-lock.sh kubectl delete --ignore-not-found \
   -f infra/gitops/apps/dev/authentik-helmrelease.yaml \
   -f infra/gitops/apps/dev/minio-helmrelease.yaml
@@ -161,14 +209,14 @@ shared local cluster, and CI has no such shared resource to protect.
 
 ## Layout
 
-| Path                                                         | What it is                                                                                                                                                 |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`) |
-| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                        |
-| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                 |
-| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                 |
-| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                             |
-| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                 |
+| Path                                                         | What it is                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`), genuinely browser-ready on success; one-time Windows host/WSL setup (`windows-host-setup.ps1`) |
+| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                                                                                                                        |
+| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                                                                                                                 |
+| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                                                                                                                 |
+| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                                                                                                                             |
+| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                                                                                                                 |
 
 Postgres+PostGIS, the OIDC provider (Authentik — [ADR-0016](../docs/adr/0016-replace-keycloak-with-authentik.md),
 originally Keycloak at **#84**), MinIO and the gateway are the umbrella chart's first real

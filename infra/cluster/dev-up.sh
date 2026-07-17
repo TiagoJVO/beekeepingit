@@ -50,6 +50,27 @@ wait_for_pod() {
   kubectl -n "$namespace" wait --for=condition=ready pod -l "$selector" --timeout="$timeout"
 }
 
+# Keep this WSL distro's process table non-empty for the whole dev session.
+# Observed live (2026-07-17): the k3s server container gets SIGTERM'd and
+# gracefully drains within ~1-2 minutes of no attached WSL process, even with
+# `vmIdleTimeout=-1` in .wslconfig (windows-host-setup.ps1) — so a session
+# with gaps between commands (exactly what driving this from outside WSL looks
+# like) can silently tear the cluster down mid-session. A trivial detached
+# heartbeat sidesteps whichever exact WSL/idle mechanism is responsible.
+# Idempotent (checked via the recorded PID, not just file existence) so
+# re-running dev-up.sh never stacks up duplicate heartbeats; stopped by
+# dev-down.sh. This can't prevent the HOST machine itself from sleeping —
+# see infra/README.md's note on that separate, unscriptable cause.
+keepalive_pidfile="/tmp/beekeeping-keepalive.pid"
+if [ -f "$keepalive_pidfile" ] && kill -0 "$(cat "$keepalive_pidfile")" 2>/dev/null; then
+  echo "keep-alive heartbeat already running (pid $(cat "$keepalive_pidfile"))"
+else
+  (while true; do sleep 20; done) &
+  disown
+  echo $! > "$keepalive_pidfile"
+  echo "started keep-alive heartbeat (pid $(cat "$keepalive_pidfile")) — stopped by dev-down.sh"
+fi
+
 "$script_dir/up.sh"
 
 echo
@@ -114,11 +135,91 @@ kubectl -n "$namespace" rollout status deployment/authentik-server --timeout=420
 wait_for_pod app=minio,release=minio 180s
 
 echo
+echo "waiting for the Authentik blueprint (OIDC discovery answers), resetting backoffs"
+# The server being Ready is NOT enough for the domain services: the WORKER
+# applies the blueprint (provider/application/seed user) asynchronously after
+# boot, and until it lands, OIDC discovery 404s and every Go service
+# crash-restarts with a growing backoff (up to 5 min) — ported from the same
+# fix in .github/workflows/helm-e2e.yml (#215), which hit this exact race in
+# CI; observed live in this repo's own dev cluster too (identity/organizations/
+# apiaries/activities/sync all CrashLoopBackOff on a cold multi-service boot).
+# Wait for the worker rollout (it does the apply), poll discovery until it
+# 200s, then restart every app once to clear the accumulated CrashLoopBackOff
+# — otherwise the readiness wait below races pod backoff timers, not real
+# readiness. Discovery is polled by exec-ing INTO the authentik-server pod and
+# curling its own localhost — exec runs over the kube API (not pod
+# networking), immune to the NetworkPolicy default-deny (#89) a runner/host
+# port-forward would hit. Re-resolve the pod each iteration: authentik-server
+# can restart mid-poll on a cold DB (migrations, startup-probe cycling), and a
+# name captured once goes stale.
+kubectl -n "$namespace" rollout status deployment/authentik-worker --timeout=600s
+for i in $(seq 1 90); do
+  pod=$(kubectl -n "$namespace" get pod \
+    -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
+    --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+  if [ -n "$pod" ] && kubectl -n "$namespace" exec "$pod" -- \
+       curl -sf http://localhost:9000/application/o/beekeepingit/.well-known/openid-configuration >/dev/null 2>&1; then
+    echo "discovery answered after ~$((i * 10))s"
+    break
+  fi
+  if [ "$i" = "90" ]; then
+    echo "error: blueprint never applied — discovery still 404 after 900s" >&2
+    exit 1
+  fi
+  sleep 10
+done
+kubectl -n "$namespace" rollout restart deployment -l app.kubernetes.io/part-of=beekeepingit
+
+echo
+echo "waiting for domain-service deployments (clean boot after the reset above)"
+kubectl -n "$namespace" wait --for=condition=available deployment \
+  -l app.kubernetes.io/part-of=beekeepingit --timeout=600s
+
+echo
 echo "running helm test (PostGIS smoke query)"
 helm test beekeepingit --namespace "$namespace"
 
+echo
+echo "waiting for the gateway to serve the PWA + OIDC discovery"
+# The domain-service wait above asserts the pods are Available, but Traefik's
+# route to the PWA can still answer 502 for a short window after that
+# (endpoints/first-request not warm). Warm both dev hosts (resolving to
+# loopback, matching windows-host-setup.ps1's /etc/hosts entries) before
+# declaring the environment browser-ready — mirrors helm-e2e.yml's own `warm`
+# gate ahead of its Playwright run. Accept any response under 500 as warm (even
+# a redirect/401) — a 5xx/000 (connection refused) is not.
+warm() {
+  local name="$1" host="$2" path="$3" code=000
+  for _ in $(seq 1 60); do
+    code=$(curl -sk -o /dev/null -w '%{http_code}' \
+      --resolve "$host:8443:127.0.0.1" "https://$host:8443$path" || echo 000)
+    if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then
+      echo "$name warm (HTTP $code)"
+      return 0
+    fi
+    sleep 5
+  done
+  echo "error: $name never warmed (last HTTP $code)" >&2
+  return 1
+}
+warm "PWA" app.beekeepingit.local /
+warm "OIDC discovery" auth.beekeepingit.local \
+  /application/o/beekeepingit/.well-known/openid-configuration
+
 cat <<EOF
 
-Local dev environment ready. See infra/README.md#verify-the-environment for
-the PostGIS/Authentik/MinIO/PowerSync/gateway smoke checks.
+Local dev environment ready — genuinely browser-ready (the gateway is warm on
+both dev hosts, not just "pods Available"). Open:
+
+  https://app.beekeepingit.local:8443
+
+(first visit: a one-time click-through past the self-signed dev cert — see
+infra/README.md; trusted-cert issuance is EPIC-14 scope). Seeded dev login:
+
+  test.beekeeper@beekeepingit.local / dev-password123
+
+First-time-per-machine setup (hosts file + WSL idle-timeout) is
+infra/cluster/windows-host-setup.ps1 — see infra/README.md#quickstart. Further
+smoke checks: infra/README.md#verify-the-environment.
 EOF

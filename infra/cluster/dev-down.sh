@@ -30,3 +30,13 @@ else
 fi
 
 "$script_dir/down.sh"
+
+# Stop the keep-alive heartbeat dev-up.sh started (see its own doc comment) —
+# nothing left needs the distro pinned busy once the cluster is gone.
+keepalive_pidfile="/tmp/beekeeping-keepalive.pid"
+if [ -f "$keepalive_pidfile" ]; then
+  pid="$(cat "$keepalive_pidfile")"
+  kill "$pid" 2>/dev/null || true
+  rm -f "$keepalive_pidfile"
+  echo "stopped keep-alive heartbeat (pid $pid)"
+fi
