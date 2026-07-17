@@ -228,6 +228,8 @@ class AppShell extends ConsumerWidget {
       'apiaryDetail' => l10n.apiaryDetailTitle,
       'apiaryEdit' => l10n.editApiaryTitle,
       'activityNew' => l10n.newActivityTitle,
+      'activityDetail' => l10n.activityDetailTitle,
+      'activityEdit' => l10n.editActivityTitle,
       _ => activeTab.label(l10n),
     };
   }

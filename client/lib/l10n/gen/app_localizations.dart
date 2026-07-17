@@ -806,6 +806,36 @@ abstract class AppLocalizations {
   /// **'Apiary'**
   String get apiaryDetailTitle;
 
+  /// Activity detail screen app bar title (#310, FR-AC-3/5/6)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity'**
+  String get activityDetailTitle;
+
+  /// Section header above an activity's per-type attributes on the detail screen (#310)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get activityDetailAttributesHeader;
+
+  /// Visible field label preceding an activity's performer on the detail screen (#310, FR-TEN-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Performed by'**
+  String get activityPerformedByLabel;
+
+  /// Edit FAB label on the activity detail screen (#310, FR-AC-3)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit activity'**
+  String get editActivityAction;
+
+  /// App bar title for the activity edit form, reached from the detail screen (#310, FR-AC-3)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit activity'**
+  String get editActivityTitle;
+
   /// Formatted lat/lon shown on the apiary detail screen when a location is set (#32)
   ///
   /// In en, this message translates to:
@@ -1165,6 +1195,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No activities logged for this apiary yet.'**
   String get apiaryActivitiesEmpty;
+
+  /// Action at the foot of the apiary detail page's activities preview when it is capped — opens the full per-apiary activities list (#42, FR-AC-5). {count} is the total number of activities matching the current filters.
+  ///
+  /// In en, this message translates to:
+  /// **'View all {count} activities'**
+  String apiaryActivitiesViewAll(int count);
 
   /// Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)
   ///

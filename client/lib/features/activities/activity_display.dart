@@ -58,6 +58,65 @@ List<String> _typeSpecificParts(
   }
 }
 
+/// The full, per-type attribute breakdown for the activity DETAIL screen
+/// (#310, FR-AC-3/5/6) — one `(label, value)` pair per populated attribute of
+/// the activity's type, in the same order the add/edit form lays its fields
+/// out, reusing the SAME `.arb` field labels the form and
+/// [activitySummaryLine] already use (no third, parallel vocabulary).
+///
+/// Unlike the compact [activitySummaryLine], this DOES include free-text
+/// `notes` (the detail screen is exactly the "future detail view" that
+/// function's doc defers notes to) and renders each attribute on its own row
+/// rather than a single joined line. An absent/blank attribute is omitted
+/// entirely (no empty rows); `treatment_context` renders its localized label,
+/// not the raw stored token, mirroring the summary line's own treatment
+/// handling. Vocabulary values (`feed_type`, `treatment_type`, `disease`) are
+/// already human-readable stored strings (activity_types.dart), shown as-is.
+List<({String label, String value})> activityDetailRows(
+  AppLocalizations l10n,
+  Activity activity,
+) {
+  final attrs = activity.attributes;
+  final rows = <({String label, String value})>[];
+
+  void add(String label, String key) {
+    final value = attrs[key];
+    if (value == null) return;
+    final text = value is String ? value : '$value';
+    if (text.trim().isEmpty) return;
+    rows.add((label: label, value: text));
+  }
+
+  switch (activity.type) {
+    case activityTypeHarvest:
+      add(l10n.activityHoneySupersLabel, 'honey_supers');
+      add(l10n.activityHoneyKgLabel, 'honey_kg');
+      add(l10n.activityHivesInvolvedLabel, 'hives_involved');
+      add(l10n.activityLotBatchLabel, 'lot_batch');
+    case activityTypeFeeding:
+      add(l10n.activityFeedTypeLabel, 'feed_type');
+      add(l10n.activityFeedAmountLabel, 'feed_amount');
+      add(l10n.activityHivesInvolvedLabel, 'hives_involved');
+    case activityTypeTreatment:
+      final context = attrs['treatment_context'] as String?;
+      if (context != null && context.isNotEmpty) {
+        rows.add((
+          label: l10n.activityTreatmentContextFieldLabel,
+          value: treatmentContextLabel(l10n, context) ?? context,
+        ));
+      }
+      add(l10n.activityTreatmentTypeLabel, 'treatment_type');
+      add(l10n.activityDiseaseLabel, 'disease');
+      add(l10n.activityHivesInvolvedLabel, 'hives_involved');
+    default: // activityTypeGeneric, and any unknown future type
+      break;
+  }
+  // Every type carries free-text notes (FR-AC-1); shown last, as the form
+  // orders it.
+  add(l10n.activityNotesLabel, 'notes');
+  return rows;
+}
+
 /// The attribution display text for one activity (#44, FR-TEN-2): [l10n]'s
 /// "You" when [currentUserId] matches [Activity.performedBy], otherwise a
 /// short, per-performer-distinguishable placeholder.
