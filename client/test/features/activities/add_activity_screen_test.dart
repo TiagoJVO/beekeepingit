@@ -681,6 +681,40 @@ void main() {
     );
 
     testWidgets(
+      'editing a Treatment whose stored disease is outside the curated vocab '
+      'renders without crashing and shows the legacy value (#306 review)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        // A Treatment created while `disease` was still free text (before
+        // #291 narrowed it to a vocab) — or synced from an older client —
+        // whose stored disease isn't in diseaseConditions.
+        const legacyTreatment = Activity(
+          id: 'act1',
+          apiaryId: 'a1',
+          type: 'treatment',
+          occurredAt: '2026-06-01',
+          attributes: {
+            'treatment_context': 'disease_specific',
+            'treatment_type': 'Apivar/amitraz',
+            'disease': 'Some unusual finding',
+          },
+        );
+        final repo = _FakeActivitiesRepository(existing: legacyTreatment);
+        await goToEditForm(tester, repo);
+
+        // The disease dropdown renders (no DropdownButtonFormField
+        // initialValue-must-be-in-items assertion crash) and the stored
+        // out-of-vocab value is visible/kept, not silently dropped.
+        expect(find.byKey(const Key('activity-disease-field')), findsOneWidget);
+        expect(find.text('Some unusual finding'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'clearing the required honey_supers on edit genuinely blocks save '
       '(same wired validators as #39, not a cosmetic errorText)',
       (tester) async {

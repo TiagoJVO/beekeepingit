@@ -514,7 +514,21 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
               key: 'activity-disease-field',
               label: l10n.activityDiseaseLabel,
               value: _disease,
-              options: diseaseConditions,
+              // Include a stored disease value that isn't in the current
+              // curated vocab (an activity created while `disease` was still
+              // free text, or synced from an older client build) so editing
+              // it renders — and shows the value — instead of tripping
+              // DropdownButtonFormField's initialValue-must-be-in-items
+              // assertion (HIGH #306 review). The client validator still
+              // flags it as out-of-vocab on save, so the user is nudged to
+              // pick a valid replacement rather than hitting a silent 422.
+              options: [
+                ...diseaseConditions,
+                if (_disease != null &&
+                    _disease!.isNotEmpty &&
+                    !diseaseConditions.contains(_disease))
+                  _disease!,
+              ],
               attrKey: 'disease',
               onChanged: (v) => setState(() => _disease = v),
             ),
