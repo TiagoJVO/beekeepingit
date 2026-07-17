@@ -194,5 +194,106 @@
         "type": "String"
       }
     }
+  },
+  "activityTypeHarvestLabel": "Cresta",
+  "activityTypeFeedingLabel": "Alimentação",
+  "activityTypeTreatmentLabel": "Tratamento",
+  "activityTypeGenericLabel": "Genérica",
+  "treatmentContextGeneralLabel": "Geral / preventivo",
+  "treatmentContextDiseaseSpecificLabel": "Doença/condição específica",
+  "treatmentContextDetectionOnlyLabel": "Deteção apenas (sem tratamento ainda)",
+  "newActivityTitle": "Adicionar atividade",
+  "addActivityAction": "Adicionar atividade",
+  "activityTypeFieldLabel": "Tipo de atividade",
+  "activityOccurredAtLabel": "Data",
+  "activityHoneySupersLabel": "Alças de mel colhidas",
+  "activityHoneyKgLabel": "Mel colhido (kg)",
+  "activityHivesInvolvedLabel": "Colmeias envolvidas",
+  "activityFeedTypeLabel": "Tipo de alimento",
+  "activityFeedAmountLabel": "Quantidade de alimento",
+  "activityTreatmentContextFieldLabel": "Contexto do tratamento",
+  "activityTreatmentTypeLabel": "Produto de tratamento",
+  "activityDiseaseLabel": "Doença / condição",
+  "activityTreatmentTypeOptionalForDetectionHint": "Opcional para um registo de deteção apenas",
+  "activityLotBatchLabel": "Identificador de lote",
+  "activityNotesLabel": "Notas",
+  "activityFieldRequired": "Este campo é obrigatório",
+  "activityFieldInvalid": "Este valor não é válido",
+  "activitySaveSuccess": "Atividade guardada",
+  "activitySaveError": "Não foi possível guardar a atividade: {error}",
+  "@activitySaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryActivitiesEmpty": "Ainda não há atividades registadas para este apiário.",
+  "activitiesEmpty": "Ainda não há atividades.",
+  "activitiesFilterNoResults": "Nenhuma atividade corresponde aos filtros.",
+  "activitiesError": "Não foi possível carregar as atividades: {error}",
+  "@activitiesError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterTypeLabel": "Tipo",
+  "activityFilterTypeAll": "Todos os tipos",
+  "activityFilterDateRangeLabel": "Intervalo de datas",
+  "activityFilterDateRangeUnset": "Qualquer data",
+  "activityFilterDateRangeValue": "{start} – {end}",
+  "@activityFilterDateRangeValue": {
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterClearAction": "Limpar filtros",
+  "activityPerformedByYou": "Você",
+  "activityPerformedByMember": "Membro {id}",
+  "@activityPerformedByMember": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "activityPerformedByUnknown": "Desconhecido",
+  "activityPerformedBySemanticLabel": "Realizada por: {who}",
+  "@activityPerformedBySemanticLabel": {
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "activityNoAttributesSummary": "Sem detalhes adicionais",
+  "activityLoadError": "Não foi possível carregar a atividade: {error}",
+  "deleteActivity": "Eliminar atividade",
+  "activityDeleteSuccess": "Atividade eliminada",
+  "activityDeleteError": "Não foi possível eliminar a atividade: {error}",
+  "deleteActivityConfirmTitle": "Eliminar atividade?",
+  "deleteActivityConfirmMessage": "Isto elimina permanentemente esta atividade. Esta ação não pode ser desfeita.",
+  "deleteActivityConfirmAction": "Eliminar",
+  "deleteActivityCancelAction": "Cancelar",
+  "@activityLoadError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@activityDeleteError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   }
 }

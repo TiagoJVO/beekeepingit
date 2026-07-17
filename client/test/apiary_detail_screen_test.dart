@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
@@ -82,6 +83,15 @@ Widget _buildApp({
       apiaryCountersProvider.overrideWith(
         (ref, apiaryId) =>
             Stream.value(counters[apiaryId] ?? const <ApiaryCounter>[]),
+      ),
+      // The activities section (#42) watches this family provider per
+      // apiary id — overridden with an empty stream so opening the detail
+      // screen doesn't hang on the real (never-resolving here)
+      // activitiesRepositoryProvider chain; unlike the counters section,
+      // ActivityListView DOES render a loading spinner, which would make
+      // pumpAndSettle time out if left un-overridden.
+      activitiesByApiaryProvider.overrideWith(
+        (ref, apiaryId) => Stream.value(const <Activity>[]),
       ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
@@ -351,6 +361,9 @@ void main() {
             ),
             apiaryCountersProvider.overrideWith(
               (ref, apiaryId) => Stream.value(const <ApiaryCounter>[]),
+            ),
+            activitiesByApiaryProvider.overrideWith(
+              (ref, apiaryId) => Stream.value(const <Activity>[]),
             ),
             profileProvider.overrideWith(_CompleteProfileController.new),
             organizationProvider.overrideWith(

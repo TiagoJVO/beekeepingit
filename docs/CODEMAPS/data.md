@@ -45,6 +45,22 @@ audit_log         (… change_type[create|update|delete], changed_fields[], chan
 
 `counter_type` validated in Go (`api/counters.go`), not a DB enum (extensible-enum convention).
 
+### `activities`
+
+```text
+activities        (id PK, organization_id, apiary_id NULL-FK(soft), performed_by NULL-FK(soft),
+                   journey_id NULL(soft, unused until M4), type, occurred_at DATE,
+                   attributes JSONB, created_at, updated_at, recorded_at, deleted_at)
+sync_conflict_log  (… same shape as apiaries.sync_conflict_log)
+audit_log          (… same shape as apiaries.audit_log)
+```
+
+`type` + per-type `attributes` keys validated in Go (`api/types.go`'s type registry), not a
+DB enum/CHECK (extensible-enum convention). #38 shipped the schema + validation only; #39
+added create, #40/#41 added edit/delete (delete via `deleted_at` tombstone, same convention
+as `apiaries.apiaries`) — both REST (`api/write.go`) and sync-apply (`api/sync.go`, LWW on
+`updated_at`).
+
 ## Relationships
 
 ```text
@@ -65,6 +81,9 @@ apiaries          (id, organization_id, name, notes, place_label,
 apiary_counters   (id, organization_id, apiary_id, counter_type, value, timestamps)
 sync_rejected_ops (LOCAL-ONLY dead-letter: dedup_key, fix_apiary_id, op, payload,
                    error_code, error_detail, rejected_at)               -- D-12
+activities        (id, organization_id, apiary_id, performed_by, journey_id, type,
+                   occurred_at, attributes TEXT(JSON-encoded), created_at, updated_at)
+                   -- #38: schema declared for future Sync Rules; no read/write path yet
 ```
 
 Projection: server `location geography` → client `location_lon/lat` via `ST_X`/`ST_Y`
@@ -78,6 +97,7 @@ identity:       00001 create_users · 00002 rename keycloak_sub→oidc_sub · 00
 organizations:  00001 create_organizations · 00002 create_invitations · 00003 audit_log
 apiaries:       00001 create_apiaries · 00002 audit_log · 00003 add_location(PostGIS)
                 00004 add_notes · 00005 create_apiary_counters · 00006 add_place_label
+activities:     00001 create_activities(+sync_conflict_log) · 00002 audit_log
 shared/dbaccess:00001 create_example_items (template reference only)
 ```
 

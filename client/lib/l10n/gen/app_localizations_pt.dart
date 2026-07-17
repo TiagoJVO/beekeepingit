@@ -554,4 +554,171 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteApiaryCancelAction => 'Cancelar';
+
+  @override
+  String get activityTypeHarvestLabel => 'Cresta';
+
+  @override
+  String get activityTypeFeedingLabel => 'Alimentação';
+
+  @override
+  String get activityTypeTreatmentLabel => 'Tratamento';
+
+  @override
+  String get activityTypeGenericLabel => 'Genérica';
+
+  @override
+  String get treatmentContextGeneralLabel => 'Geral / preventivo';
+
+  @override
+  String get treatmentContextDiseaseSpecificLabel =>
+      'Doença/condição específica';
+
+  @override
+  String get treatmentContextDetectionOnlyLabel =>
+      'Deteção apenas (sem tratamento ainda)';
+
+  @override
+  String get newActivityTitle => 'Adicionar atividade';
+
+  @override
+  String get addActivityAction => 'Adicionar atividade';
+
+  @override
+  String get activityTypeFieldLabel => 'Tipo de atividade';
+
+  @override
+  String get activityOccurredAtLabel => 'Data';
+
+  @override
+  String get activityHoneySupersLabel => 'Alças de mel colhidas';
+
+  @override
+  String get activityHoneyKgLabel => 'Mel colhido (kg)';
+
+  @override
+  String get activityHivesInvolvedLabel => 'Colmeias envolvidas';
+
+  @override
+  String get activityFeedTypeLabel => 'Tipo de alimento';
+
+  @override
+  String get activityFeedAmountLabel => 'Quantidade de alimento';
+
+  @override
+  String get activityTreatmentContextFieldLabel => 'Contexto do tratamento';
+
+  @override
+  String get activityTreatmentTypeLabel => 'Produto de tratamento';
+
+  @override
+  String get activityDiseaseLabel => 'Doença / condição';
+
+  @override
+  String get activityTreatmentTypeOptionalForDetectionHint =>
+      'Opcional para um registo de deteção apenas';
+
+  @override
+  String get activityLotBatchLabel => 'Identificador de lote';
+
+  @override
+  String get activityNotesLabel => 'Notas';
+
+  @override
+  String get activityFieldRequired => 'Este campo é obrigatório';
+
+  @override
+  String get activityFieldInvalid => 'Este valor não é válido';
+
+  @override
+  String get activitySaveSuccess => 'Atividade guardada';
+
+  @override
+  String activitySaveError(String error) {
+    return 'Não foi possível guardar a atividade: $error';
+  }
+
+  @override
+  String get apiaryActivitiesEmpty =>
+      'Ainda não há atividades registadas para este apiário.';
+
+  @override
+  String get activitiesEmpty => 'Ainda não há atividades.';
+
+  @override
+  String get activitiesFilterNoResults =>
+      'Nenhuma atividade corresponde aos filtros.';
+
+  @override
+  String activitiesError(String error) {
+    return 'Não foi possível carregar as atividades: $error';
+  }
+
+  @override
+  String get activityFilterTypeLabel => 'Tipo';
+
+  @override
+  String get activityFilterTypeAll => 'Todos os tipos';
+
+  @override
+  String get activityFilterDateRangeLabel => 'Intervalo de datas';
+
+  @override
+  String get activityFilterDateRangeUnset => 'Qualquer data';
+
+  @override
+  String activityFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get activityFilterClearAction => 'Limpar filtros';
+
+  @override
+  String get activityPerformedByYou => 'Você';
+
+  @override
+  String activityPerformedByMember(String id) {
+    return 'Membro $id';
+  }
+
+  @override
+  String get activityPerformedByUnknown => 'Desconhecido';
+
+  @override
+  String activityPerformedBySemanticLabel(String who) {
+    return 'Realizada por: $who';
+  }
+
+  @override
+  String get activityNoAttributesSummary => 'Sem detalhes adicionais';
+
+  @override
+  String activityLoadError(String error) {
+    return 'Não foi possível carregar a atividade: $error';
+  }
+
+  @override
+  String get deleteActivity => 'Eliminar atividade';
+
+  @override
+  String get activityDeleteSuccess => 'Atividade eliminada';
+
+  @override
+  String activityDeleteError(String error) {
+    return 'Não foi possível eliminar a atividade: $error';
+  }
+
+  @override
+  String get deleteActivityConfirmTitle => 'Eliminar atividade?';
+
+  @override
+  String get deleteActivityConfirmMessage =>
+      'Isto elimina permanentemente esta atividade. Esta ação não pode ser desfeita.';
+
+  @override
+  String get deleteActivityConfirmAction => 'Eliminar';
+
+  @override
+  String get deleteActivityCancelAction => 'Cancelar';
 }

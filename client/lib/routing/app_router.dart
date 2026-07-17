@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../core/auth/auth_controller.dart';
 import '../features/account/account_screen.dart';
+import '../features/activities/activities_list_screen.dart';
+import '../features/activities/add_activity_screen.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
@@ -159,6 +161,31 @@ final routerProvider = Provider<GoRouter>((ref) {
                           apiaryId: state.pathParameters['id'],
                         ),
                       ),
+                      // Add-activity entry point (#39, FR-AC-2): reachable
+                      // from the apiary detail page.
+                      GoRoute(
+                        path: 'activities/new',
+                        name: 'activityNew',
+                        builder: (context, state) => AddActivityScreen(
+                          apiaryId: state.pathParameters['id']!,
+                        ),
+                      ),
+                      // Edit/delete entry point (#40/#41, FR-AC-3/FR-AC-4):
+                      // the surface exists and is fully reachable by direct
+                      // navigation/deep link now; a tappable list ROW linking
+                      // here (either per-apiary or the main Activities tab,
+                      // still a ComingSoonScreen below) is #42/#43's scope,
+                      // not this one's — following #39's own precedent of
+                      // shipping the write surface before the list exists
+                      // to browse it from.
+                      GoRoute(
+                        path: 'activities/:activityId/edit',
+                        name: 'activityEdit',
+                        builder: (context, state) => AddActivityScreen(
+                          apiaryId: state.pathParameters['id']!,
+                          activityId: state.pathParameters['activityId']!,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -168,13 +195,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             navigatorKey: _activitiesBranchKey,
             routes: [
+              // The main Activities tab (#43, FR-AC-6): every activity
+              // across every apiary in the org, filterable by type/date
+              // range. Per-apiary activity lists (#42) render on the apiary
+              // detail page instead (apiaries branch above), not here.
               GoRoute(
                 path: '/activities',
                 name: 'activities',
-                builder: (context, state) => ComingSoonScreen(
-                  icon: Icons.event_note_outlined,
-                  title: AppLocalizations.of(context).activitiesComingSoon,
-                ),
+                builder: (context, state) => const ActivitiesListScreen(),
               ),
             ],
           ),

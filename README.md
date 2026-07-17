@@ -31,7 +31,7 @@ beekeepingit/
 ├── docs/              # As-built architecture, tech stack, ADRs, CODEMAPS (see docs/README.md)
 ├── infra/             # k8s cluster bring-up/teardown + Helm umbrella chart (EPIC-13)
 ├── contracts/         # Contract-first OpenAPI specs (identity/organizations/apiaries/sync)
-├── services/          # Go backend: identity, organizations, apiaries, sync + shared/ (infra
+├── services/          # Go backend: identity, organizations, apiaries, activities, sync + shared/ (infra
 │                      #   library, #85) + servicetemplate/ (shared service template, #20)
 ├── client/            # Flutter PWA — shell, routing, theming, state mgmt, sync, i18n (#21)
 ├── .claude/           # AI rules + settings (SessionStart workflow hook)

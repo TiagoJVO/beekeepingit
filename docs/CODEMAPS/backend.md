@@ -55,6 +55,28 @@ POST   /internal/sync/apply            → applyBatch         api/sync.go (count
 
 REST writes serve online-only/direct callers (Admin App, scripts); the PWA uses sync.
 
+### activities (main.go; authnMW→orgMW→RequireRole(admin,user))
+
+```text
+POST   /internal/activities/validate → validateHandler  api/validate.go (stateless, #38)
+POST   /v1/activities                → createActivity   api/write.go (#39; online-only/direct callers)
+PATCH  /v1/activities/{id}           → updateActivity   api/write.go (#40; ownership re-verified only if apiary_id sent)
+DELETE /v1/activities/{id}           → deleteActivity   api/write.go (#41; soft-delete/tombstone)
+POST   /internal/sync/validate       → validateActivityBatch api/sync.go (#39/#40/#41; put/patch/delete)
+POST   /internal/sync/apply          → applyActivityBatch    api/sync.go (#39/#40/#41; LWW + tombstone)
+```
+
+#38's scope was the data model (`api/types.go`'s type registry + JSONB
+attribute validation) + tenancy — the validate-only route proved the wiring.
+#39 added the create write path; #40/#41 extend the same REST + sync-apply
+surface with edit and delete (a tombstone, never a hard delete — the
+PowerSync Sync Rules filter `deleted_at IS NULL`). Every write path that
+touches `apiary_id` verifies it belongs to the caller's org via
+`api/apiaries_client.go`'s `ApiaryVerifier` (an HTTP call to apiaries' own
+`GET /v1/apiaries/{id}` — this service has no DB access to the apiaries
+schema) BEFORE writing anything; `performed_by` is derived server-side from
+claims, never the client (FR-TEN-2). List is #42/#43.
+
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 
 ```text
@@ -63,8 +85,12 @@ POST  /v1/sync/batch           → BatchHandler   api/handlers.go → Coordinato
 GET   /internal/sync/jwks.json → JWKSHandler    api/handlers.go (unauth; PowerSync validates)
 ```
 
-`Coordinator.handle` (api/coordinator.go): POST validate → if 200, POST apply → relay.
-422 relayed (nothing written); upstream error → 502 (batch stays queued, idempotent retry).
+`Coordinator.handle` (api/coordinator.go): groups ops by owning service via
+`entity_type` (`activity` → activities, #39; everything else → apiaries),
+validate-all → if every group 200s, apply-all → merge results. Single-group
+batches (the common case) use the byte-identical pre-#39 fast path. 422 from
+any group aborts the whole push (nothing written anywhere); upstream error →
+502 (batch stays queued, idempotent retry).
 
 ## Service → store mapping (per DB-backed service)
 

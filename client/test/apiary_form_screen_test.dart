@@ -2,6 +2,7 @@ import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiary_form_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
@@ -193,6 +194,16 @@ Widget _buildApp({
             orElse: () => null,
           ),
         ),
+      ),
+      // The detail screen's activities section (#42) watches this
+      // family provider per apiary id — overridden with an empty stream so
+      // navigating into the detail screen doesn't hang on the real
+      // (never-resolving here) activitiesRepositoryProvider chain and its
+      // ActivityListView's loading spinner (which, unlike the counters
+      // section, DOES render one, and its animation would make
+      // pumpAndSettle time out).
+      activitiesByApiaryProvider.overrideWith(
+        (ref, apiaryId) => Stream.value(const <Activity>[]),
       ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),

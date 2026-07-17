@@ -1,0 +1,271 @@
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../core/sync/local_store.dart';
+import '../../core/sync/powersync_local_store.dart';
+import '../../core/sync/powersync_schema.dart';
+import '../../core/sync/powersync_service.dart';
+import '../organization/organization_repository.dart';
+
+/// A local activity row (#38/#39, read by #42/#43/#44 — FR-AC-1/FR-AC-5/
+/// FR-AC-6/FR-TEN-2): the client mirror of one `activities.activities` row
+/// replicated down by the org-scoped PowerSync Sync Rule (#39).
+///
+/// [performedBy]/[organizationId] are both nullable — NOT because the
+/// server column is optional (it isn't, FR-TEN-2: every activity carries
+/// both), but because [ActivitiesRepository.create] deliberately never
+/// writes either locally (see its own doc comment): a freshly-created,
+/// not-yet-uploaded row has both columns NULL until the write round-trips
+/// through sync and the server-derived values replicate back down. Callers
+/// that display attribution ([activityAttributionText], activity_display.
+/// dart) handle a null [performedBy] as a distinct "not yet known" state,
+/// not as a display bug.
+class Activity {
+  const Activity({
+    required this.id,
+    required this.apiaryId,
+    required this.type,
+    required this.occurredAt,
+    required this.attributes,
+    this.performedBy,
+    this.organizationId,
+  });
+
+  final String id;
+  final String apiaryId;
+  final String type;
+
+  /// Plain `YYYY-MM-DD` (no time-of-day), matching the server's `DATE`
+  /// column (services/activities/api/validate.go's `dateLayout`).
+  final String occurredAt;
+  final Map<String, dynamic> attributes;
+  final String? performedBy;
+  final String? organizationId;
+
+  DateTime get occurredAtDate => DateTime.parse(occurredAt);
+}
+
+/// Writes activities against the local store (#39/#40/#41, FR-AC-2/3/4,
+/// FR-OF-1), mirroring apiaries_repository.dart's own local-first
+/// convention: every write is queued for the write-back seam
+/// (walking-skeleton.md §4.4, and — for activities specifically —
+/// services/sync/api/coordinator.go's entity_type routing to the activities
+/// service, services/activities/api/sync.go) rather than calling a REST
+/// write endpoint directly.
+///
+/// `organization_id` and `performed_by` are deliberately NOT written here —
+/// exactly like apiaries_repository's own omission of `organization_id` —
+/// both are derived SERVER-SIDE from the authenticated caller's token on
+/// write-back (FR-TEN-2: "each activity is recorded against the user who
+/// performed it"), never from client-supplied data, so a spoofed attribution
+/// is not even representable on the wire. `journey_id` is similarly omitted
+/// (D-21/#46, unused until M4 — there is no journey to attach to yet).
+///
+/// `apiary_id` is likewise never written by [update] (#40): the edit UI
+/// never exposes moving an activity to a different apiary, so every local
+/// UPDATE this repository issues touches only type/occurred_at/attributes —
+/// matching services/activities/api/sync.go's own "apiary_id is optional on
+/// an edit op, unchanged when absent" convention on the server side.
+class ActivitiesRepository {
+  ActivitiesRepository(this._store);
+
+  final LocalStoreEngine _store;
+  static const _uuid = Uuid();
+
+  /// Creates an activity for [apiaryId]. [attributes] must already be the
+  /// exact per-[type] attribute bag (only that type's own keys — an extra
+  /// key would be rejected server-side, api/types.go's ValidateActivity) —
+  /// callers (add_activity_screen.dart) build it via
+  /// activity_attributes.dart's schema and validate it with
+  /// [validateActivityAttributes] BEFORE calling this, matching D-12's
+  /// "client revalidates against the same rules the server will apply"
+  /// requirement. [occurredAt] is a plain `YYYY-MM-DD` string, matching the
+  /// server's `DATE` column (services/activities/api/validate.go's
+  /// `dateLayout`) — no time-of-day component.
+  Future<String> create({
+    required String apiaryId,
+    required String type,
+    required String occurredAt,
+    required Map<String, dynamic> attributes,
+  }) async {
+    final id = _uuid.v4();
+    final now = _nowIso();
+    await _store.execute(
+      'INSERT INTO $activitiesTable '
+      '(id, apiary_id, type, occurred_at, attributes, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, apiaryId, type, occurredAt, jsonEncode(attributes), now, now],
+    );
+    return id;
+  }
+
+  /// One-shot read of an activity by id, or null if it doesn't (or no
+  /// longer) exist — mirrors [ApiariesRepository.getById]. Used by the edit
+  /// form's initial load (add_activity_screen.dart's `_loadExisting`).
+  Future<Activity?> getById(String id) async {
+    final row = await _store.getOptional(
+      'SELECT id, apiary_id, performed_by, organization_id, type, '
+      'occurred_at, attributes FROM $activitiesTable WHERE id = ?',
+      [id],
+    );
+    return row == null ? null : _fromRow(row);
+  }
+
+  /// Live single-row watch for one activity by id — mirrors
+  /// [ApiariesRepository.watchById]'s per-id pattern (not currently
+  /// consumed by a screen yet, added alongside [getById] for the same
+  /// reason that one exists: a future edit-screen provider can watch
+  /// rather than one-shot load without a second read path being added
+  /// later).
+  Stream<Activity?> watchById(String id) {
+    return _store
+        .watch(
+          'SELECT id, apiary_id, performed_by, organization_id, type, '
+          'occurred_at, attributes FROM $activitiesTable WHERE id = ?',
+          [id],
+        )
+        .map((rows) => rows.isEmpty ? null : _fromRow(rows.first));
+  }
+
+  /// Updates an existing activity's type/date/attributes (#40, FR-AC-3).
+  /// [attributes] must already be the exact per-[type] attribute bag,
+  /// validated client-side the same way [create]'s callers do (D-12) — the
+  /// edit form always resubmits the COMPLETE current state (never a sparse
+  /// per-field diff), so this always sets every mutable column in one SQL
+  /// UPDATE — matching services/activities/api/sync.go's own "put/patch are
+  /// both a full resubmit" convention for this table (mergeActivityOp's doc
+  /// comment). apiary_id is deliberately excluded from the SET clause (this
+  /// class's own doc comment).
+  Future<void> update(
+    String id, {
+    required String type,
+    required String occurredAt,
+    required Map<String, dynamic> attributes,
+  }) {
+    return _store.execute(
+      'UPDATE $activitiesTable SET type = ?, occurred_at = ?, attributes = ?, updated_at = ? '
+      'WHERE id = ?',
+      [type, occurredAt, jsonEncode(attributes), _nowIso(), id],
+    );
+  }
+
+  /// Deletes the activity row (#41, FR-AC-4). A plain local DELETE —
+  /// PowerSync's CRUD queue observes it as a `delete` op regardless (the
+  /// same mechanism [ApiariesRepository.delete]'s own doc comment
+  /// describes), which the connector (powersync_connector.dart's
+  /// `entityTypeForTable`) routes to the activities service's sync-apply
+  /// endpoint, where it is applied as a server-side tombstone
+  /// (services/activities/api/sync.go's applyActivityOp) — the row is
+  /// removed from THIS device immediately and propagates to every other
+  /// device on their next sync via the PowerSync Sync Rules'
+  /// `deleted_at IS NULL` filter.
+  Future<void> delete(String id) =>
+      _store.execute('DELETE FROM $activitiesTable WHERE id = ?', [id]);
+
+  /// One apiary's activities (#42, FR-AC-5), newest-first. No org filter is
+  /// needed here — unlike [watchAll] below, an apiary belonging to another
+  /// organization is never locally present to begin with (the apiaries
+  /// Sync Rule already scopes it out), so filtering activities by
+  /// [apiaryId] alone can never cross a tenant boundary.
+  Stream<List<Activity>> watchByApiary(String apiaryId) {
+    return _store
+        .watch(
+          'SELECT id, apiary_id, performed_by, organization_id, type, '
+          'occurred_at, attributes FROM $activitiesTable '
+          'WHERE apiary_id = ? ORDER BY occurred_at DESC, created_at DESC',
+          [apiaryId],
+        )
+        .map((rows) => rows.map(_fromRow).toList());
+  }
+
+  /// Every activity across every apiary in the caller's org (#43, FR-AC-6),
+  /// newest-first. Tenancy (FR-TEN-2) is primarily enforced by the
+  /// org-scoped PowerSync Sync Rule (#39's `activities.activities` bucket)
+  /// that only ever replicates the caller's own org's rows to this device —
+  /// this repository has no other org's data to leak in the first place.
+  ///
+  /// The `organization_id = ? OR organization_id IS NULL` clause is a
+  /// second, defense-in-depth layer specific to this cross-apiary list
+  /// (#42's own [watchByApiary] doesn't need one — see its doc): it must
+  /// tolerate a just-created, not-yet-round-tripped local row (whose
+  /// `organization_id` is NULL until sync — [create] never sets it, see the
+  /// [Activity] class doc) while still excluding any row that DOES carry a
+  /// foreign `organization_id` — which the Sync Rule should already
+  /// guarantee never happens, but this makes "never include another
+  /// organization's activities" (#43 AC) a real, independently testable
+  /// property of this query rather than something only trusted by
+  /// inference from the sync-rule config.
+  ///
+  /// [organizationId] is the caller's own org id (organization_repository.
+  /// dart's `organizationProvider`). A null value (no organization loaded
+  /// yet — the onboarding gate should make this unreachable in practice)
+  /// yields an empty stream rather than an unscoped query.
+  Stream<List<Activity>> watchAll({required String? organizationId}) {
+    if (organizationId == null) return Stream.value(const []);
+    return _store
+        .watch(
+          'SELECT id, apiary_id, performed_by, organization_id, type, '
+          'occurred_at, attributes FROM $activitiesTable '
+          'WHERE organization_id = ? OR organization_id IS NULL '
+          'ORDER BY occurred_at DESC, created_at DESC',
+          [organizationId],
+        )
+        .map((rows) => rows.map(_fromRow).toList());
+  }
+
+  Activity _fromRow(Map<String, Object?> r) => Activity(
+    id: r['id'] as String,
+    apiaryId: r['apiary_id'] as String,
+    performedBy: r['performed_by'] as String?,
+    organizationId: r['organization_id'] as String?,
+    type: r['type'] as String,
+    occurredAt: r['occurred_at'] as String,
+    attributes: r['attributes'] == null
+        ? const {}
+        : (jsonDecode(r['attributes'] as String) as Map<String, dynamic>),
+  );
+
+  String _nowIso() => DateTime.now().toUtc().toIso8601String();
+}
+
+final activitiesRepositoryProvider = FutureProvider<ActivitiesRepository>((
+  ref,
+) async {
+  final session = await ref.watch(powerSyncProvider.future);
+  return ActivitiesRepository(PowerSyncLocalStore(session.db));
+});
+
+/// Live single activity by id (#40/#41) — the edit screen's read path,
+/// mirroring [apiaryByIdProvider]'s family + autoDispose pattern
+/// (apiaries_repository.dart).
+final activityByIdProvider = StreamProvider.autoDispose.family<Activity?, String>((
+  ref,
+  activityId,
+) async* {
+  final repo = await ref.watch(activitiesRepositoryProvider.future);
+  yield* repo.watchById(activityId);
+});
+
+/// One apiary's live activities (#42) — family-keyed + autoDispose, mirroring
+/// apiaries_repository.dart's apiaryCountersProvider/apiaryByIdProvider
+/// convention: a write to an unrelated apiary's activities never re-triggers
+/// this.
+final activitiesByApiaryProvider = StreamProvider.autoDispose
+    .family<List<Activity>, String>((ref, apiaryId) async* {
+      final repo = await ref.watch(activitiesRepositoryProvider.future);
+      yield* repo.watchByApiary(apiaryId);
+    });
+
+/// Every activity across the org (#43), live from local SQLite
+/// (offline-first) — depends on [organizationProvider] so it naturally
+/// re-scopes if the org context ever changes, and stays an empty list
+/// (never an error) while the org is still loading.
+final activitiesStreamProvider = StreamProvider.autoDispose<List<Activity>>((
+  ref,
+) async* {
+  final repo = await ref.watch(activitiesRepositoryProvider.future);
+  final org = await ref.watch(organizationProvider.future);
+  yield* repo.watchAll(organizationId: org?.id);
+});

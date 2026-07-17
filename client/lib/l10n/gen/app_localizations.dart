@@ -1003,6 +1003,300 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get deleteApiaryCancelAction;
+
+  /// Display label for the harvest activity type (#38, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Honey harvest'**
+  String get activityTypeHarvestLabel;
+
+  /// Display label for the feeding activity type (#38, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Feeding'**
+  String get activityTypeFeedingLabel;
+
+  /// Display label for the treatment activity type (#38, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Treatment'**
+  String get activityTypeTreatmentLabel;
+
+  /// Display label for the generic (date + notes only) activity type (#38, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Generic'**
+  String get activityTypeGenericLabel;
+
+  /// Display label for a treatment with no disease tied to it (#38, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'General / preventive'**
+  String get treatmentContextGeneralLabel;
+
+  /// Display label for a treatment tied to a named disease/condition (#38, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Specific disease/condition'**
+  String get treatmentContextDiseaseSpecificLabel;
+
+  /// Display label for a disease-detection report with no treatment applied yet (#38, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Detection only (no treatment yet)'**
+  String get treatmentContextDetectionOnlyLabel;
+
+  /// Screen header title for the add-activity form (#39, FR-AC-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Add activity'**
+  String get newActivityTitle;
+
+  /// Button on the apiary detail page that opens the add-activity form (#39, FR-AC-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Add activity'**
+  String get addActivityAction;
+
+  /// Field label for the activity-type selector on the add-activity form (#39, FR-AC-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity type'**
+  String get activityTypeFieldLabel;
+
+  /// Field label for an activity's date on the add-activity form (#39, FR-AC-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get activityOccurredAtLabel;
+
+  /// Field label for the harvest activity's honey_supers attribute — the primary yield metric (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Honey supers harvested'**
+  String get activityHoneySupersLabel;
+
+  /// Field label for the harvest activity's optional honey_kg attribute (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Honey harvested (kg)'**
+  String get activityHoneyKgLabel;
+
+  /// Field label for the optional hives_involved attribute shared by harvest/feeding/treatment (#38/#39, FR-AC-1, D-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Hives involved'**
+  String get activityHivesInvolvedLabel;
+
+  /// Field label for the feeding activity's feed_type attribute (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Feed type'**
+  String get activityFeedTypeLabel;
+
+  /// Field label for the feeding activity's feed_amount attribute (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Feed amount'**
+  String get activityFeedAmountLabel;
+
+  /// Field label for the treatment activity's treatment_context selector (#38/#39, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Treatment context'**
+  String get activityTreatmentContextFieldLabel;
+
+  /// Field label for the treatment activity's treatment_type attribute (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Treatment product'**
+  String get activityTreatmentTypeLabel;
+
+  /// Field label for the treatment activity's conditionally-required disease attribute (#38/#39, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Disease / condition'**
+  String get activityDiseaseLabel;
+
+  /// Helper text shown under the treatment_type field once the detection-only context is selected, clarifying it isn't required (#291 AC: a detection can be logged with no treatment applied yet)
+  ///
+  /// In en, this message translates to:
+  /// **'Optional for a detection-only report'**
+  String get activityTreatmentTypeOptionalForDetectionHint;
+
+  /// Field label for the harvest activity's optional lot_batch attribute (#292, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Lot / batch identifier'**
+  String get activityLotBatchLabel;
+
+  /// Field label for an activity's free-text notes attribute, shared by every type (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get activityNotesLabel;
+
+  /// Validation message for a required activity attribute left empty (#39, FR-AC-2 AC: required attributes are validated before save)
+  ///
+  /// In en, this message translates to:
+  /// **'This field is required'**
+  String get activityFieldRequired;
+
+  /// Generic validation message for an activity attribute the client-side mirror (activity_attributes.dart) rejects for a reason other than being required (#39)
+  ///
+  /// In en, this message translates to:
+  /// **'This value isn\'t valid'**
+  String get activityFieldInvalid;
+
+  /// Confirmation toast after successfully saving a new activity, offline or online (#39, FR-OF-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity saved'**
+  String get activitySaveSuccess;
+
+  /// Error toast when saving a new activity throws (#39)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the activity: {error}'**
+  String activitySaveError(String error);
+
+  /// Empty state on the apiary detail page's activities section when the apiary has no activities at all yet (#42, FR-AC-5)
+  ///
+  /// In en, this message translates to:
+  /// **'No activities logged for this apiary yet.'**
+  String get apiaryActivitiesEmpty;
+
+  /// Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)
+  ///
+  /// In en, this message translates to:
+  /// **'No activities yet.'**
+  String get activitiesEmpty;
+
+  /// Shown instead of the plain empty state when type/date-range filters are active but match nothing (#42/#43 AC: combined filters + empty/no-results state)
+  ///
+  /// In en, this message translates to:
+  /// **'No activities match your filters.'**
+  String get activitiesFilterNoResults;
+
+  /// Error state on an activities list (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load activities: {error}'**
+  String activitiesError(String error);
+
+  /// Field label for the activity-type filter dropdown (#42/#43, FR-AC-5/FR-AC-6)
+  ///
+  /// In en, this message translates to:
+  /// **'Type'**
+  String get activityFilterTypeLabel;
+
+  /// The activity-type filter's cleared/default option — no type filter applied (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'All types'**
+  String get activityFilterTypeAll;
+
+  /// Field label for the date-range filter control (#42/#43, FR-AC-5/FR-AC-6)
+  ///
+  /// In en, this message translates to:
+  /// **'Date range'**
+  String get activityFilterDateRangeLabel;
+
+  /// The date-range filter's cleared/default state — no date filter applied (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'Any date'**
+  String get activityFilterDateRangeUnset;
+
+  /// The selected date range, both bounds already locale-formatted by the caller (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'{start} – {end}'**
+  String activityFilterDateRangeValue(String start, String end);
+
+  /// Button that resets both the type and date-range filters at once (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get activityFilterClearAction;
+
+  /// Attribution shown on an activity performed by the current caller (#44, FR-TEN-2) — matches the map screen's own 'You' marker label (apiaryMapUserLocationLabel) for consistency
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get activityPerformedByYou;
+
+  /// Attribution shown on an activity performed by another org member, identified by a short id fragment — there is no member-display-name lookup available anywhere in the app for a non-admin caller (#44, see activity_display.dart's doc comment)
+  ///
+  /// In en, this message translates to:
+  /// **'Member {id}'**
+  String activityPerformedByMember(String id);
+
+  /// Fallback attribution for the brief local-only window before a freshly-created activity round-trips through sync and performed_by is populated server-side (#44)
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get activityPerformedByUnknown;
+
+  /// Screen-reader label wrapping an activity row's attribution chip (#44, WCAG 2.2 AA)
+  ///
+  /// In en, this message translates to:
+  /// **'Performed by: {who}'**
+  String activityPerformedBySemanticLabel(String who);
+
+  /// Fallback list-row summary for an activity with no type-specific attributes to show (e.g. a generic activity with no notes) (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'No additional details'**
+  String get activityNoAttributesSummary;
+
+  /// Error toast when loading an existing activity for editing throws (#40)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the activity: {error}'**
+  String activityLoadError(String error);
+
+  /// Destructive button on the edit-activity form that opens the delete confirmation dialog (#41, FR-AC-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete activity'**
+  String get deleteActivity;
+
+  /// Confirmation toast after successfully deleting an activity, offline or online (#41, FR-OF-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity deleted'**
+  String get activityDeleteSuccess;
+
+  /// Error toast when deleting an activity throws (#41)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the activity: {error}'**
+  String activityDeleteError(String error);
+
+  /// Title of the confirmation dialog shown before deleting an activity (#41 AC: a confirmation step to prevent accidental deletion)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete activity?'**
+  String get deleteActivityConfirmTitle;
+
+  /// Body of the confirmation dialog shown before deleting an activity (#41)
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently deletes this activity. This cannot be undone.'**
+  String get deleteActivityConfirmMessage;
+
+  /// Confirm action in the delete-activity confirmation dialog (#41)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteActivityConfirmAction;
+
+  /// Cancel action in the delete-activity confirmation dialog (#41 AC: cancel is a no-op)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get deleteActivityCancelAction;
 }
 
 class _AppLocalizationsDelegate

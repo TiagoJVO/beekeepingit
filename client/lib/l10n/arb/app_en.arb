@@ -730,5 +730,239 @@
   "deleteApiaryCancelAction": "Cancel",
   "@deleteApiaryCancelAction": {
     "description": "Cancel action in the delete-apiary confirmation dialog (#255 AC: cancel is a no-op)"
+  },
+  "activityTypeHarvestLabel": "Honey harvest",
+  "@activityTypeHarvestLabel": {
+    "description": "Display label for the harvest activity type (#38, FR-AC-1)"
+  },
+  "activityTypeFeedingLabel": "Feeding",
+  "@activityTypeFeedingLabel": {
+    "description": "Display label for the feeding activity type (#38, FR-AC-1)"
+  },
+  "activityTypeTreatmentLabel": "Treatment",
+  "@activityTypeTreatmentLabel": {
+    "description": "Display label for the treatment activity type (#38, FR-AC-1)"
+  },
+  "activityTypeGenericLabel": "Generic",
+  "@activityTypeGenericLabel": {
+    "description": "Display label for the generic (date + notes only) activity type (#38, FR-AC-1)"
+  },
+  "treatmentContextGeneralLabel": "General / preventive",
+  "@treatmentContextGeneralLabel": {
+    "description": "Display label for a treatment with no disease tied to it (#38, FR-AC-1, D-19)"
+  },
+  "treatmentContextDiseaseSpecificLabel": "Specific disease/condition",
+  "@treatmentContextDiseaseSpecificLabel": {
+    "description": "Display label for a treatment tied to a named disease/condition (#38, FR-AC-1, D-19)"
+  },
+  "treatmentContextDetectionOnlyLabel": "Detection only (no treatment yet)",
+  "@treatmentContextDetectionOnlyLabel": {
+    "description": "Display label for a disease-detection report with no treatment applied yet (#38, FR-AC-1, D-19)"
+  },
+  "newActivityTitle": "Add activity",
+  "@newActivityTitle": {
+    "description": "Screen header title for the add-activity form (#39, FR-AC-2)"
+  },
+  "addActivityAction": "Add activity",
+  "@addActivityAction": {
+    "description": "Button on the apiary detail page that opens the add-activity form (#39, FR-AC-2)"
+  },
+  "activityTypeFieldLabel": "Activity type",
+  "@activityTypeFieldLabel": {
+    "description": "Field label for the activity-type selector on the add-activity form (#39, FR-AC-2)"
+  },
+  "activityOccurredAtLabel": "Date",
+  "@activityOccurredAtLabel": {
+    "description": "Field label for an activity's date on the add-activity form (#39, FR-AC-2)"
+  },
+  "activityHoneySupersLabel": "Honey supers harvested",
+  "@activityHoneySupersLabel": {
+    "description": "Field label for the harvest activity's honey_supers attribute — the primary yield metric (#38/#39, FR-AC-1)"
+  },
+  "activityHoneyKgLabel": "Honey harvested (kg)",
+  "@activityHoneyKgLabel": {
+    "description": "Field label for the harvest activity's optional honey_kg attribute (#38/#39, FR-AC-1)"
+  },
+  "activityHivesInvolvedLabel": "Hives involved",
+  "@activityHivesInvolvedLabel": {
+    "description": "Field label for the optional hives_involved attribute shared by harvest/feeding/treatment (#38/#39, FR-AC-1, D-2)"
+  },
+  "activityFeedTypeLabel": "Feed type",
+  "@activityFeedTypeLabel": {
+    "description": "Field label for the feeding activity's feed_type attribute (#38/#39, FR-AC-1)"
+  },
+  "activityFeedAmountLabel": "Feed amount",
+  "@activityFeedAmountLabel": {
+    "description": "Field label for the feeding activity's feed_amount attribute (#38/#39, FR-AC-1)"
+  },
+  "activityTreatmentContextFieldLabel": "Treatment context",
+  "@activityTreatmentContextFieldLabel": {
+    "description": "Field label for the treatment activity's treatment_context selector (#38/#39, FR-AC-1, D-19)"
+  },
+  "activityTreatmentTypeLabel": "Treatment product",
+  "@activityTreatmentTypeLabel": {
+    "description": "Field label for the treatment activity's treatment_type attribute (#38/#39, FR-AC-1)"
+  },
+  "activityDiseaseLabel": "Disease / condition",
+  "@activityDiseaseLabel": {
+    "description": "Field label for the treatment activity's conditionally-required disease attribute (#38/#39, FR-AC-1, D-19)"
+  },
+  "activityTreatmentTypeOptionalForDetectionHint": "Optional for a detection-only report",
+  "@activityTreatmentTypeOptionalForDetectionHint": {
+    "description": "Helper text shown under the treatment_type field once the detection-only context is selected, clarifying it isn't required (#291 AC: a detection can be logged with no treatment applied yet)"
+  },
+  "activityLotBatchLabel": "Lot / batch identifier",
+  "@activityLotBatchLabel": {
+    "description": "Field label for the harvest activity's optional lot_batch attribute (#292, FR-AC-1, D-19)"
+  },
+  "activityNotesLabel": "Notes",
+  "@activityNotesLabel": {
+    "description": "Field label for an activity's free-text notes attribute, shared by every type (#38/#39, FR-AC-1)"
+  },
+  "activityFieldRequired": "This field is required",
+  "@activityFieldRequired": {
+    "description": "Validation message for a required activity attribute left empty (#39, FR-AC-2 AC: required attributes are validated before save)"
+  },
+  "activityFieldInvalid": "This value isn't valid",
+  "@activityFieldInvalid": {
+    "description": "Generic validation message for an activity attribute the client-side mirror (activity_attributes.dart) rejects for a reason other than being required (#39)"
+  },
+  "activitySaveSuccess": "Activity saved",
+  "@activitySaveSuccess": {
+    "description": "Confirmation toast after successfully saving a new activity, offline or online (#39, FR-OF-1)"
+  },
+  "activitySaveError": "Couldn't save the activity: {error}",
+  "@activitySaveError": {
+    "description": "Error toast when saving a new activity throws (#39)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryActivitiesEmpty": "No activities logged for this apiary yet.",
+  "@apiaryActivitiesEmpty": {
+    "description": "Empty state on the apiary detail page's activities section when the apiary has no activities at all yet (#42, FR-AC-5)"
+  },
+  "activitiesEmpty": "No activities yet.",
+  "@activitiesEmpty": {
+    "description": "Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)"
+  },
+  "activitiesFilterNoResults": "No activities match your filters.",
+  "@activitiesFilterNoResults": {
+    "description": "Shown instead of the plain empty state when type/date-range filters are active but match nothing (#42/#43 AC: combined filters + empty/no-results state)"
+  },
+  "activitiesError": "Could not load activities: {error}",
+  "@activitiesError": {
+    "description": "Error state on an activities list (#42/#43)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterTypeLabel": "Type",
+  "@activityFilterTypeLabel": {
+    "description": "Field label for the activity-type filter dropdown (#42/#43, FR-AC-5/FR-AC-6)"
+  },
+  "activityFilterTypeAll": "All types",
+  "@activityFilterTypeAll": {
+    "description": "The activity-type filter's cleared/default option — no type filter applied (#42/#43)"
+  },
+  "activityFilterDateRangeLabel": "Date range",
+  "@activityFilterDateRangeLabel": {
+    "description": "Field label for the date-range filter control (#42/#43, FR-AC-5/FR-AC-6)"
+  },
+  "activityFilterDateRangeUnset": "Any date",
+  "@activityFilterDateRangeUnset": {
+    "description": "The date-range filter's cleared/default state — no date filter applied (#42/#43)"
+  },
+  "activityFilterDateRangeValue": "{start} – {end}",
+  "@activityFilterDateRangeValue": {
+    "description": "The selected date range, both bounds already locale-formatted by the caller (#42/#43)",
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterClearAction": "Clear filters",
+  "@activityFilterClearAction": {
+    "description": "Button that resets both the type and date-range filters at once (#42/#43)"
+  },
+  "activityPerformedByYou": "You",
+  "@activityPerformedByYou": {
+    "description": "Attribution shown on an activity performed by the current caller (#44, FR-TEN-2) — matches the map screen's own 'You' marker label (apiaryMapUserLocationLabel) for consistency"
+  },
+  "activityPerformedByMember": "Member {id}",
+  "@activityPerformedByMember": {
+    "description": "Attribution shown on an activity performed by another org member, identified by a short id fragment — there is no member-display-name lookup available anywhere in the app for a non-admin caller (#44, see activity_display.dart's doc comment)",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "activityPerformedByUnknown": "Unknown",
+  "@activityPerformedByUnknown": {
+    "description": "Fallback attribution for the brief local-only window before a freshly-created activity round-trips through sync and performed_by is populated server-side (#44)"
+  },
+  "activityPerformedBySemanticLabel": "Performed by: {who}",
+  "@activityPerformedBySemanticLabel": {
+    "description": "Screen-reader label wrapping an activity row's attribution chip (#44, WCAG 2.2 AA)",
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "activityNoAttributesSummary": "No additional details",
+  "@activityNoAttributesSummary": {
+    "description": "Fallback list-row summary for an activity with no type-specific attributes to show (e.g. a generic activity with no notes) (#42/#43)"
+  },
+  "activityLoadError": "Couldn't load the activity: {error}",
+  "@activityLoadError": {
+    "description": "Error toast when loading an existing activity for editing throws (#40)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteActivity": "Delete activity",
+  "@deleteActivity": {
+    "description": "Destructive button on the edit-activity form that opens the delete confirmation dialog (#41, FR-AC-4)"
+  },
+  "activityDeleteSuccess": "Activity deleted",
+  "@activityDeleteSuccess": {
+    "description": "Confirmation toast after successfully deleting an activity, offline or online (#41, FR-OF-1)"
+  },
+  "activityDeleteError": "Couldn't delete the activity: {error}",
+  "@activityDeleteError": {
+    "description": "Error toast when deleting an activity throws (#41)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteActivityConfirmTitle": "Delete activity?",
+  "@deleteActivityConfirmTitle": {
+    "description": "Title of the confirmation dialog shown before deleting an activity (#41 AC: a confirmation step to prevent accidental deletion)"
+  },
+  "deleteActivityConfirmMessage": "This permanently deletes this activity. This cannot be undone.",
+  "@deleteActivityConfirmMessage": {
+    "description": "Body of the confirmation dialog shown before deleting an activity (#41)"
+  },
+  "deleteActivityConfirmAction": "Delete",
+  "@deleteActivityConfirmAction": {
+    "description": "Confirm action in the delete-activity confirmation dialog (#41)"
+  },
+  "deleteActivityCancelAction": "Cancel",
+  "@deleteActivityCancelAction": {
+    "description": "Cancel action in the delete-activity confirmation dialog (#41 AC: cancel is a no-op)"
   }
 }

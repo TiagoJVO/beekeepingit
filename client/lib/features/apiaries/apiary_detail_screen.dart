@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../l10n/gen/app_localizations.dart';
+import '../activities/activity_filters.dart';
+import '../activities/activity_list_widgets.dart';
 import 'apiaries_repository.dart';
 import 'counter_types.dart';
 
@@ -57,11 +59,29 @@ class ApiaryDetailScreen extends ConsumerWidget {
           return _ApiaryDetailBody(apiary: apiary);
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('apiary-detail-edit-button'),
-        onPressed: () => context.go('/apiaries/$apiaryId/edit'),
-        icon: const Icon(Icons.edit_outlined),
-        label: Text(l10n.editApiaryAction),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Add-activity entry point (#39, FR-AC-2): the natural place to
+          // log an activity is right where the apiary itself already is.
+          // Only the add flow — the activities LIST is #42/#43's scope.
+          FloatingActionButton.extended(
+            key: const Key('apiary-detail-add-activity-button'),
+            heroTag: 'apiary-detail-add-activity-button',
+            onPressed: () => context.go('/apiaries/$apiaryId/activities/new'),
+            icon: const Icon(Icons.event_note_outlined),
+            label: Text(l10n.addActivityAction),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            key: const Key('apiary-detail-edit-button'),
+            heroTag: 'apiary-detail-edit-button',
+            onPressed: () => context.go('/apiaries/$apiaryId/edit'),
+            icon: const Icon(Icons.edit_outlined),
+            label: Text(l10n.editApiaryAction),
+          ),
+        ],
       ),
     );
   }
@@ -141,9 +161,78 @@ class _ApiaryDetailBody extends StatelessWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: 14),
+              _ApiaryActivitiesSection(apiaryId: apiary.id),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// This apiary's activities (#42, FR-AC-5): filterable by type and date
+/// range (combinable), offline over the local synced set — embedded
+/// directly on the detail page rather than a separate pushed screen, per
+/// #42's own AC ("the apiary detail page lists all activities for that
+/// apiary"). Shares [ActivityFilterBar]/[ActivityListView] with #43's main
+/// Activities tab (DRY); `showApiary: false` there since this screen IS the
+/// apiary context already. [ActivityListView.shrinkWrap]s its list — the
+/// outer `SingleChildScrollView` above already owns the page's scrolling, so
+/// this section can't also be an unbounded scrollable.
+class _ApiaryActivitiesSection extends ConsumerWidget {
+  const _ApiaryActivitiesSection({required this.apiaryId});
+
+  final String apiaryId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final type = ref.watch(activityTypeFilterProvider(apiaryId));
+    final dateRange = ref.watch(activityDateRangeFilterProvider(apiaryId));
+    final viewModel = ref.watch(
+      activitiesViewModelProvider((scope: apiaryId, apiaryId: apiaryId)),
+    );
+
+    return Container(
+      key: const Key('apiary-detail-activities-section'),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: Text(
+              l10n.activitiesTitle,
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          ActivityFilterBar(
+            type: type,
+            dateRange: dateRange,
+            onTypeChanged: (v) =>
+                ref.read(activityTypeFilterProvider(apiaryId).notifier).state =
+                    v,
+            onDateRangeChanged: (v) =>
+                ref
+                        .read(
+                          activityDateRangeFilterProvider(apiaryId).notifier,
+                        )
+                        .state =
+                    v,
+          ),
+          ActivityListView(
+            viewModel: viewModel,
+            emptyText: l10n.apiaryActivitiesEmpty,
+            shrinkWrap: true,
+          ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }

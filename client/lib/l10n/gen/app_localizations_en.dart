@@ -550,4 +550,170 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteApiaryCancelAction => 'Cancel';
+
+  @override
+  String get activityTypeHarvestLabel => 'Honey harvest';
+
+  @override
+  String get activityTypeFeedingLabel => 'Feeding';
+
+  @override
+  String get activityTypeTreatmentLabel => 'Treatment';
+
+  @override
+  String get activityTypeGenericLabel => 'Generic';
+
+  @override
+  String get treatmentContextGeneralLabel => 'General / preventive';
+
+  @override
+  String get treatmentContextDiseaseSpecificLabel =>
+      'Specific disease/condition';
+
+  @override
+  String get treatmentContextDetectionOnlyLabel =>
+      'Detection only (no treatment yet)';
+
+  @override
+  String get newActivityTitle => 'Add activity';
+
+  @override
+  String get addActivityAction => 'Add activity';
+
+  @override
+  String get activityTypeFieldLabel => 'Activity type';
+
+  @override
+  String get activityOccurredAtLabel => 'Date';
+
+  @override
+  String get activityHoneySupersLabel => 'Honey supers harvested';
+
+  @override
+  String get activityHoneyKgLabel => 'Honey harvested (kg)';
+
+  @override
+  String get activityHivesInvolvedLabel => 'Hives involved';
+
+  @override
+  String get activityFeedTypeLabel => 'Feed type';
+
+  @override
+  String get activityFeedAmountLabel => 'Feed amount';
+
+  @override
+  String get activityTreatmentContextFieldLabel => 'Treatment context';
+
+  @override
+  String get activityTreatmentTypeLabel => 'Treatment product';
+
+  @override
+  String get activityDiseaseLabel => 'Disease / condition';
+
+  @override
+  String get activityTreatmentTypeOptionalForDetectionHint =>
+      'Optional for a detection-only report';
+
+  @override
+  String get activityLotBatchLabel => 'Lot / batch identifier';
+
+  @override
+  String get activityNotesLabel => 'Notes';
+
+  @override
+  String get activityFieldRequired => 'This field is required';
+
+  @override
+  String get activityFieldInvalid => 'This value isn\'t valid';
+
+  @override
+  String get activitySaveSuccess => 'Activity saved';
+
+  @override
+  String activitySaveError(String error) {
+    return 'Couldn\'t save the activity: $error';
+  }
+
+  @override
+  String get apiaryActivitiesEmpty =>
+      'No activities logged for this apiary yet.';
+
+  @override
+  String get activitiesEmpty => 'No activities yet.';
+
+  @override
+  String get activitiesFilterNoResults => 'No activities match your filters.';
+
+  @override
+  String activitiesError(String error) {
+    return 'Could not load activities: $error';
+  }
+
+  @override
+  String get activityFilterTypeLabel => 'Type';
+
+  @override
+  String get activityFilterTypeAll => 'All types';
+
+  @override
+  String get activityFilterDateRangeLabel => 'Date range';
+
+  @override
+  String get activityFilterDateRangeUnset => 'Any date';
+
+  @override
+  String activityFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get activityFilterClearAction => 'Clear filters';
+
+  @override
+  String get activityPerformedByYou => 'You';
+
+  @override
+  String activityPerformedByMember(String id) {
+    return 'Member $id';
+  }
+
+  @override
+  String get activityPerformedByUnknown => 'Unknown';
+
+  @override
+  String activityPerformedBySemanticLabel(String who) {
+    return 'Performed by: $who';
+  }
+
+  @override
+  String get activityNoAttributesSummary => 'No additional details';
+
+  @override
+  String activityLoadError(String error) {
+    return 'Couldn\'t load the activity: $error';
+  }
+
+  @override
+  String get deleteActivity => 'Delete activity';
+
+  @override
+  String get activityDeleteSuccess => 'Activity deleted';
+
+  @override
+  String activityDeleteError(String error) {
+    return 'Couldn\'t delete the activity: $error';
+  }
+
+  @override
+  String get deleteActivityConfirmTitle => 'Delete activity?';
+
+  @override
+  String get deleteActivityConfirmMessage =>
+      'This permanently deletes this activity. This cannot be undone.';
+
+  @override
+  String get deleteActivityConfirmAction => 'Delete';
+
+  @override
+  String get deleteActivityCancelAction => 'Cancel';
 }
