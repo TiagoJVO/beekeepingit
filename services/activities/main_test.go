@@ -202,6 +202,16 @@ func newActivitiesFixture(t *testing.T, knownApiaryIDs ...string) *activitiesFix
 
 func (f *activitiesFixture) do(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
+	return f.doAs(t, "", method, path, body)
+}
+
+// doAs is do plus a synthetic caller: callerHeader ("sub|userID|orgID|role",
+// via callerClaims) overrides injectClaims' devseed default so a single
+// fixture/server can serve two distinct tenants in one test — the cross-org
+// idiom mirrored from apiaries/main_test.go. An empty callerHeader is the
+// devseed principal (org A).
+func (f *activitiesFixture) doAs(t *testing.T, callerHeader, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -212,8 +222,30 @@ func (f *activitiesFixture) do(t *testing.T, method, path string, body any) *htt
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, path, r)
+	if callerHeader != "" {
+		req.Header.Set(testOrgHeader, callerHeader)
+	}
 	f.srv.Router().ServeHTTP(rec, req)
 	return rec
+}
+
+// callerClaims builds the testOrgHeader value for a synthetic caller distinct
+// from the devseed default (a second org/user for cross-org tests).
+func callerClaims(sub, userID, orgID, role string) string {
+	return strings.Join([]string{sub, userID, orgID, role}, "|")
+}
+
+// otherOrgCaller is a second, distinct principal (org B) used by the cross-org
+// tests — a different sub/user/org from devseed's (org A), so the two calls in
+// a test are genuinely two different tenants, not just two requests with the
+// same claims. Same fixed ids apiaries/main_test.go uses for its own org B.
+func otherOrgCaller() string {
+	return callerClaims(
+		"22222222-2222-4222-8222-222222222222",
+		"a0000000-0000-7000-8000-000000000002",
+		"b0000000-0000-7000-8000-000000000002",
+		"admin",
+	)
 }
 
 // createSchema provisions the service's schema before migrating, standing in
@@ -1163,6 +1195,66 @@ func TestActivitiesRest_Delete_AlreadyDeletedIsNotFound(t *testing.T) {
 	rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("second delete status = %d, want 404 (already gone), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestActivitiesRest_CrossOrg_WritesCannotTouchOtherOrgsRow is the REST-level
+// IDOR regression guard the code-reviewer and security-reviewer flagged as
+// missing on PR #304 (#40/#41): the existing cross-org tests only cover a
+// FOREIGN apiary_id on a SAME-org activity (Update_CrossOrgApiaryIdIsRejected)
+// and unknown-id 404s — none exercise org B calling PATCH/DELETE against an
+// activity id that ACTUALLY belongs to org A. Org B must get a 404 for both
+// (scope-hiding, ADR-0002 — a foreign row is indistinguishable from a
+// non-existent one), and org A's row must be left completely unchanged and NOT
+// tombstoned. Mirrors apiaries' TestApiariesRest_CrossOrg_WritesCannotTouchOtherOrgsRow
+// and the store-level TestActivitiesStore_GetActivity_CrossOrgReadReturnsNoRows.
+// The underlying queries are already org-scoped (WHERE organization_id = $1 AND
+// id = $2), so this is regression protection, not a live-bug fix.
+func TestActivitiesRest_CrossOrg_WritesCannotTouchOtherOrgsRow(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	other := otherOrgCaller()
+
+	// Org A (the devseed default) creates the activity.
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("org A create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// Org B knows the real id but must not be able to edit or delete it: the
+	// org-scoped lookup finds nothing for org B, so both come back 404.
+	recUpdate := f.doAs(t, other, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+	})
+	if recUpdate.Code != http.StatusNotFound {
+		t.Fatalf("org B update status = %d, want 404 (scope-hiding, ADR-0002), body = %s", recUpdate.Code, recUpdate.Body.String())
+	}
+	recDelete := f.doAs(t, other, http.MethodDelete, "/v1/activities/"+id, nil)
+	if recDelete.Code != http.StatusNotFound {
+		t.Fatalf("org B delete status = %d, want 404 (scope-hiding, ADR-0002), body = %s", recDelete.Code, recDelete.Body.String())
+	}
+
+	// Org A's row is untouched: still readable in its org scope (so not
+	// tombstoned — GetActivity filters deleted_at IS NULL), and its content is
+	// exactly as created (org B's patch payload must not have leaked in).
+	q := sqlcgen.New(f.pool)
+	org := pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true}
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{OrganizationID: org, ID: pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetActivity for org A after cross-org attempts: %v (the row must survive untouched)", err)
+	}
+	if row.Type != api.TypeHarvest || uuidString(row.ApiaryID) != apiaryID || row.OccurredAt.Time.Format(dateLayoutForTest) != "2026-07-16" {
+		t.Fatalf("org A activity = %+v, want unchanged (type=harvest, apiary_id=%s, occurred_at=2026-07-16)", row, apiaryID)
+	}
+
+	// Explicitly assert no tombstone was written by org B's DELETE — the
+	// deleted_at-agnostic lookup must find the row with deleted_at still unset.
+	forUpdate, err := q.GetActivityForUpdate(context.Background(), sqlcgen.GetActivityForUpdateParams{OrganizationID: org, ID: pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetActivityForUpdate: %v", err)
+	}
+	if forUpdate.DeletedAt.Valid {
+		t.Fatalf("deleted_at is set on org A's row — org B's cross-org DELETE must not have tombstoned it")
 	}
 }
 
