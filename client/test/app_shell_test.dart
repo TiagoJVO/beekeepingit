@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
@@ -80,6 +81,13 @@ Widget _buildShellApp({
       apiariesStreamProvider.overrideWith(
         (ref) => Stream.value(apiaries ?? const []),
       ),
+      // The main Activities tab (#43) now renders real content in place of
+      // the old ComingSoonScreen placeholder — overridden so switching to
+      // it in these shell-focused tests doesn't hang on the real
+      // (never-resolving here) activitiesRepositoryProvider chain.
+      activitiesStreamProvider.overrideWith(
+        (ref) => Stream.value(const <Activity>[]),
+      ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
       syncStatusProvider.overrideWithValue(
@@ -139,7 +147,10 @@ void main() {
     await tester.tap(find.byKey(const Key('shell-tab-activities')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Activities — coming soon'), findsOneWidget);
+    // The Activities tab (#43) now renders real content — with the
+    // overridden empty activities stream (see _buildShellApp), that's its
+    // own empty state, not the old ComingSoonScreen placeholder text.
+    expect(find.text('No activities yet.'), findsOneWidget);
     var nav = tester.widget<NavigationBar>(
       find.byKey(const Key('shell-bottom-nav')),
     );
@@ -285,12 +296,13 @@ void main() {
     expect(find.byKey(const Key('account-name-field')), findsOneWidget);
   });
 
-  testWidgets('all 4 placeholder tabs render without error', (tester) async {
+  testWidgets('the remaining 3 placeholder tabs render without error '
+      '(Activities is real content since #43 — see the dedicated switching-tabs '
+      'test above)', (tester) async {
     await tester.pumpWidget(_buildShellApp());
     await tester.pumpAndSettle();
 
     const expected = {
-      'activities': 'Activities — coming soon',
       'journeys': 'Journeys — coming soon',
       'todos': 'Todos — coming soon',
       'assistant': 'Assistant — coming soon',

@@ -626,4 +626,58 @@ class AppLocalizationsEn extends AppLocalizations {
   String activitySaveError(String error) {
     return 'Couldn\'t save the activity: $error';
   }
+
+  @override
+  String get apiaryActivitiesEmpty =>
+      'No activities logged for this apiary yet.';
+
+  @override
+  String get activitiesEmpty => 'No activities yet.';
+
+  @override
+  String get activitiesFilterNoResults => 'No activities match your filters.';
+
+  @override
+  String activitiesError(String error) {
+    return 'Could not load activities: $error';
+  }
+
+  @override
+  String get activityFilterTypeLabel => 'Type';
+
+  @override
+  String get activityFilterTypeAll => 'All types';
+
+  @override
+  String get activityFilterDateRangeLabel => 'Date range';
+
+  @override
+  String get activityFilterDateRangeUnset => 'Any date';
+
+  @override
+  String activityFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get activityFilterClearAction => 'Clear filters';
+
+  @override
+  String get activityPerformedByYou => 'You';
+
+  @override
+  String activityPerformedByMember(String id) {
+    return 'Member $id';
+  }
+
+  @override
+  String get activityPerformedByUnknown => 'Unknown';
+
+  @override
+  String activityPerformedBySemanticLabel(String who) {
+    return 'Performed by: $who';
+  }
+
+  @override
+  String get activityNoAttributesSummary => 'No additional details';
 }

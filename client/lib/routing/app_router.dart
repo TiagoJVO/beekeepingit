@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/auth/auth_controller.dart';
 import '../features/account/account_screen.dart';
+import '../features/activities/activities_list_screen.dart';
 import '../features/activities/add_activity_screen.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
@@ -181,13 +182,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             navigatorKey: _activitiesBranchKey,
             routes: [
+              // The main Activities tab (#43, FR-AC-6): every activity
+              // across every apiary in the org, filterable by type/date
+              // range. Per-apiary activity lists (#42) render on the apiary
+              // detail page instead (apiaries branch above), not here.
               GoRoute(
                 path: '/activities',
                 name: 'activities',
-                builder: (context, state) => ComingSoonScreen(
-                  icon: Icons.event_note_outlined,
-                  title: AppLocalizations.of(context).activitiesComingSoon,
-                ),
+                builder: (context, state) => const ActivitiesListScreen(),
               ),
             ],
           ),

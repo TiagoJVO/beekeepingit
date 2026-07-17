@@ -7,6 +7,45 @@ import '../../core/sync/local_store.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import '../organization/organization_repository.dart';
+
+/// A local activity row (#38/#39, read by #42/#43/#44 — FR-AC-1/FR-AC-5/
+/// FR-AC-6/FR-TEN-2): the client mirror of one `activities.activities` row
+/// replicated down by the org-scoped PowerSync Sync Rule (#39).
+///
+/// [performedBy]/[organizationId] are both nullable — NOT because the
+/// server column is optional (it isn't, FR-TEN-2: every activity carries
+/// both), but because [ActivitiesRepository.create] deliberately never
+/// writes either locally (see its own doc comment): a freshly-created,
+/// not-yet-uploaded row has both columns NULL until the write round-trips
+/// through sync and the server-derived values replicate back down. Callers
+/// that display attribution ([activityAttributionText], activity_display.
+/// dart) handle a null [performedBy] as a distinct "not yet known" state,
+/// not as a display bug.
+class Activity {
+  const Activity({
+    required this.id,
+    required this.apiaryId,
+    required this.type,
+    required this.occurredAt,
+    required this.attributes,
+    this.performedBy,
+    this.organizationId,
+  });
+
+  final String id;
+  final String apiaryId;
+  final String type;
+
+  /// Plain `YYYY-MM-DD` (no time-of-day), matching the server's `DATE`
+  /// column (services/activities/api/validate.go's `dateLayout`).
+  final String occurredAt;
+  final Map<String, dynamic> attributes;
+  final String? performedBy;
+  final String? organizationId;
+
+  DateTime get occurredAtDate => DateTime.parse(occurredAt);
+}
 
 /// Writes activities against the local store (#39, FR-AC-2, FR-OF-1),
 /// mirroring apiaries_repository.dart's own local-first convention: every
@@ -55,6 +94,69 @@ class ActivitiesRepository {
     return id;
   }
 
+  /// One apiary's activities (#42, FR-AC-5), newest-first. No org filter is
+  /// needed here — unlike [watchAll] below, an apiary belonging to another
+  /// organization is never locally present to begin with (the apiaries
+  /// Sync Rule already scopes it out), so filtering activities by
+  /// [apiaryId] alone can never cross a tenant boundary.
+  Stream<List<Activity>> watchByApiary(String apiaryId) {
+    return _store
+        .watch(
+          'SELECT id, apiary_id, performed_by, organization_id, type, '
+          'occurred_at, attributes FROM $activitiesTable '
+          'WHERE apiary_id = ? ORDER BY occurred_at DESC, created_at DESC',
+          [apiaryId],
+        )
+        .map((rows) => rows.map(_fromRow).toList());
+  }
+
+  /// Every activity across every apiary in the caller's org (#43, FR-AC-6),
+  /// newest-first. Tenancy (FR-TEN-2) is primarily enforced by the
+  /// org-scoped PowerSync Sync Rule (#39's `activities.activities` bucket)
+  /// that only ever replicates the caller's own org's rows to this device —
+  /// this repository has no other org's data to leak in the first place.
+  ///
+  /// The `organization_id = ? OR organization_id IS NULL` clause is a
+  /// second, defense-in-depth layer specific to this cross-apiary list
+  /// (#42's own [watchByApiary] doesn't need one — see its doc): it must
+  /// tolerate a just-created, not-yet-round-tripped local row (whose
+  /// `organization_id` is NULL until sync — [create] never sets it, see the
+  /// [Activity] class doc) while still excluding any row that DOES carry a
+  /// foreign `organization_id` — which the Sync Rule should already
+  /// guarantee never happens, but this makes "never include another
+  /// organization's activities" (#43 AC) a real, independently testable
+  /// property of this query rather than something only trusted by
+  /// inference from the sync-rule config.
+  ///
+  /// [organizationId] is the caller's own org id (organization_repository.
+  /// dart's `organizationProvider`). A null value (no organization loaded
+  /// yet — the onboarding gate should make this unreachable in practice)
+  /// yields an empty stream rather than an unscoped query.
+  Stream<List<Activity>> watchAll({required String? organizationId}) {
+    if (organizationId == null) return Stream.value(const []);
+    return _store
+        .watch(
+          'SELECT id, apiary_id, performed_by, organization_id, type, '
+          'occurred_at, attributes FROM $activitiesTable '
+          'WHERE organization_id = ? OR organization_id IS NULL '
+          'ORDER BY occurred_at DESC, created_at DESC',
+          [organizationId],
+        )
+        .map((rows) => rows.map(_fromRow).toList());
+  }
+
+  Activity _fromRow(Map<String, Object?> r) => Activity(
+    id: r['id'] as String,
+    apiaryId: r['apiary_id'] as String,
+    performedBy: r['performed_by'] as String?,
+    organizationId: r['organization_id'] as String?,
+    type: r['type'] as String,
+    occurredAt: r['occurred_at'] as String,
+    attributes: r['attributes'] == null
+        ? const {}
+        : (jsonDecode(r['attributes'] as String) as Map<String, dynamic>),
+  );
+
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
 }
 
@@ -63,4 +165,26 @@ final activitiesRepositoryProvider = FutureProvider<ActivitiesRepository>((
 ) async {
   final session = await ref.watch(powerSyncProvider.future);
   return ActivitiesRepository(PowerSyncLocalStore(session.db));
+});
+
+/// One apiary's live activities (#42) — family-keyed + autoDispose, mirroring
+/// apiaries_repository.dart's apiaryCountersProvider/apiaryByIdProvider
+/// convention: a write to an unrelated apiary's activities never re-triggers
+/// this.
+final activitiesByApiaryProvider = StreamProvider.autoDispose
+    .family<List<Activity>, String>((ref, apiaryId) async* {
+      final repo = await ref.watch(activitiesRepositoryProvider.future);
+      yield* repo.watchByApiary(apiaryId);
+    });
+
+/// Every activity across the org (#43), live from local SQLite
+/// (offline-first) — depends on [organizationProvider] so it naturally
+/// re-scopes if the org context ever changes, and stays an empty list
+/// (never an error) while the org is still loading.
+final activitiesStreamProvider = StreamProvider.autoDispose<List<Activity>>((
+  ref,
+) async* {
+  final repo = await ref.watch(activitiesRepositoryProvider.future);
+  final org = await ref.watch(organizationProvider.future);
+  yield* repo.watchAll(organizationId: org?.id);
 });

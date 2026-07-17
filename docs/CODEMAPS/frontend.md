@@ -22,11 +22,14 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
   │       ├ edit           ApiaryFormScreen
-  │       └ activities/new AddActivityScreen  features/activities (#39; add-only, no list yet)
-  ├ /activities  ─┐
-  ├ /journeys     ├ ComingSoonScreen (placeholders, M3–M8 — /activities tab itself is still
-  ├ /todos        │  a placeholder; the activities LIST is #42/#43)
-  └ /assistant   ─┘
+  │       ├ activities/new AddActivityScreen  features/activities (#39, add path)
+  │       └ (embedded)     _ApiaryActivitiesSection on ApiaryDetailScreen (#42; per-apiary
+  │                        activity list, type/date-range filters, attribution — #44)
+  ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
+  │                        activity list, same filters + apiary label per row)
+  ├ /journeys     ─┐
+  ├ /todos         ├ ComingSoonScreen (placeholders, M4–M8)
+  └ /assistant    ─┘
 ```
 
 ## Layer flow
@@ -44,17 +47,21 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 
 ## State management (Riverpod providers)
 
-| Provider                                   | Where                           | Yields                                 |
-| ------------------------------------------ | ------------------------------- | -------------------------------------- |
-| `authControllerProvider`                   | core/auth/auth_controller       | auth state, access token (OIDC)        |
-| `isAuthenticatedProvider`                  | core/auth                       | bool (gates router)                    |
-| `profileProvider` / `organizationProvider` | features/profile, /organization | onboarding gates                       |
-| `powerSyncProvider`                        | core/sync/powersync_service     | `PowerSyncSession` (db+connector+gate) |
-| `localStoreProvider`                       | core/sync/powersync_service     | `LocalStoreEngine`                     |
-| `apiariesRepositoryProvider`               | features/apiaries               | `ApiariesRepository`                   |
-| `apiariesStreamProvider`                   | features/apiaries               | live `List<Apiary>` from SQLite        |
-| `apiaryCountersProvider` (family)          | features/apiaries               | live counters per apiary (#256)        |
-| `membershipLossPurgeProvider`              | core/sync/local_data_purge      | wipes local data on org loss (#125)    |
+| Provider                                   | Where                                | Yields                                                                   |
+| ------------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------ |
+| `authControllerProvider`                   | core/auth/auth_controller            | auth state, access token (OIDC)                                          |
+| `isAuthenticatedProvider`                  | core/auth                            | bool (gates router)                                                      |
+| `profileProvider` / `organizationProvider` | features/profile, /organization      | onboarding gates                                                         |
+| `powerSyncProvider`                        | core/sync/powersync_service          | `PowerSyncSession` (db+connector+gate)                                   |
+| `localStoreProvider`                       | core/sync/powersync_service          | `LocalStoreEngine`                                                       |
+| `apiariesRepositoryProvider`               | features/apiaries                    | `ApiariesRepository`                                                     |
+| `apiariesStreamProvider`                   | features/apiaries                    | live `List<Apiary>` from SQLite                                          |
+| `apiaryCountersProvider` (family)          | features/apiaries                    | live counters per apiary (#256)                                          |
+| `activitiesRepositoryProvider`             | features/activities                  | `ActivitiesRepository`                                                   |
+| `activitiesByApiaryProvider` (family)      | features/activities                  | live activities for one apiary (#42)                                     |
+| `activitiesStreamProvider`                 | features/activities                  | live org-wide activities (#43, org-scoped incl. defense-in-depth filter) |
+| `activitiesViewModelProvider` (family)     | features/activities/activity_filters | filtered list + empty-vs-no-results state (#42/#43)                      |
+| `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                      |
 
 ## Sync flow (client) — core/sync/
 
