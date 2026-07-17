@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/core/sync/powersync_connector.dart';
+import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -130,6 +132,56 @@ void main() {
         expect(row['organization_id'], isNull);
       },
     );
+  });
+
+  group('offline-create → wire op attributes shape (#39, FR-OF-1) — the '
+      'string-vs-object mismatch that rejected every synced activity', () {
+    test('the connector decodes the repository-stored JSON-string attributes '
+        'back to an object, so the POST body carries a nested object', () async {
+      // 1. Real local create: the repository JSON-encodes attributes into the
+      //    TEXT column (there is no JSON column type on-device), so the stored
+      //    value — which PowerSync then queues verbatim as the op's opData — is
+      //    a String, NOT an object.
+      await repo.create(
+        apiaryId: 'a1',
+        type: 'inspection',
+        occurredAt: '2026-06-01',
+        attributes: {'queen_seen': true, 'frames': 8},
+      );
+      final storedAttributes = store.rows.single['attributes'];
+      expect(
+        storedAttributes,
+        isA<String>(),
+        reason:
+            'root cause: attributes is stored as JSON-encoded TEXT, so the '
+            'queued op would upload it as a string without the connector fix',
+      );
+
+      // 2. The connector's normalization (what _toOp applies to every activities
+      //    op before it goes on the wire). Feed it the exact opData shape a put
+      //    carries (the full row's columns).
+      final opData = {
+        'apiary_id': store.rows.single['apiary_id'],
+        'type': store.rows.single['type'],
+        'occurred_at': store.rows.single['occurred_at'],
+        'attributes': storedAttributes,
+        'updated_at': store.rows.single['updated_at'],
+      };
+      final decoded = decodeActivityAttributes(activitiesTable, opData)!;
+
+      // 3. The actual bytes that hit POST /v1/sync/batch (uploadData jsonEncodes
+      //    the ops). Re-decoding proves attributes is a JSON object there, which
+      //    is exactly what services/activities/api/sync.go's activityData
+      //    expects — a JSON string would be rejected "attributes must be a JSON
+      //    object".
+      final body = jsonEncode({
+        'ops': [decoded],
+      });
+      final wire = jsonDecode(body) as Map<String, dynamic>;
+      final wireAttributes = (wire['ops'] as List).single['attributes'];
+      expect(wireAttributes, isA<Map<String, dynamic>>());
+      expect(wireAttributes, {'queen_seen': true, 'frames': 8});
+    });
   });
 
   group('ActivitiesRepository.watchByApiary() (#42, FR-AC-5)', () {
