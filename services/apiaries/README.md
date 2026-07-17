@@ -25,16 +25,17 @@ module, linked through the repo-root `go.work`.
 
 ## Surface
 
-| Route                            | Auth                 | Purpose                                                                                 |
-| -------------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
-| `GET /v1/apiaries`               | OIDC JWT + org scope | Cursor-paginated list of the org's live apiaries (FR-AP-7).                             |
-| `GET /v1/apiaries/{apiaryId}`    | OIDC JWT + org scope | One apiary, or 404.                                                                     |
-| `POST /v1/apiaries`              | OIDC JWT + org scope | Create (client-supplied `id`); `Idempotency-Key`-safe re-send; 201 + `Location`/`ETag`. |
-| `PATCH /v1/apiaries/{apiaryId}`  | OIDC JWT + org scope | Partial update; optional `If-Match`; 200 + `ETag`.                                      |
-| `DELETE /v1/apiaries/{apiaryId}` | OIDC JWT + org scope | Soft-delete (tombstone); optional `If-Match`; 204.                                      |
-| `POST /internal/sync/validate`   | JWT + org scope      | Dry-run a batch; 200 if all valid, else 422 RFC 9457 with field detail. **Internal.**   |
-| `GET /healthz`, `GET /readyz`    | none                 | Liveness / readiness.                                                                   |
-| `POST /internal/sync/apply`      | JWT + org scope      | Apply a batch in one tx: LWW + conflict log + tombstones + idempotency. **Internal.**   |
+| Route                                 | Auth                 | Purpose                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /v1/apiaries`                    | OIDC JWT + org scope | Cursor-paginated list of the org's live apiaries (FR-AP-7).                                                                                                                                                                                                                                                              |
+| `GET /v1/apiaries/{apiaryId}`         | OIDC JWT + org scope | One apiary, or 404.                                                                                                                                                                                                                                                                                                      |
+| `GET /v1/apiaries/{apiaryId}/history` | OIDC JWT + org scope | The apiary's combined change history — audit_log entries plus `superseded` conflict-log events, chronological, unpaginated (#60/FR-HIS-1); 404 if the apiary doesn't exist or belongs to another org. Online fallback only — a synced device renders history from its local PowerSync-replicated tables (history.md §6). |
+| `POST /v1/apiaries`                   | OIDC JWT + org scope | Create (client-supplied `id`); `Idempotency-Key`-safe re-send; 201 + `Location`/`ETag`.                                                                                                                                                                                                                                  |
+| `PATCH /v1/apiaries/{apiaryId}`       | OIDC JWT + org scope | Partial update; optional `If-Match`; 200 + `ETag`.                                                                                                                                                                                                                                                                       |
+| `DELETE /v1/apiaries/{apiaryId}`      | OIDC JWT + org scope | Soft-delete (tombstone); optional `If-Match`; 204.                                                                                                                                                                                                                                                                       |
+| `POST /internal/sync/validate`        | JWT + org scope      | Dry-run a batch; 200 if all valid, else 422 RFC 9457 with field detail. **Internal.**                                                                                                                                                                                                                                    |
+| `GET /healthz`, `GET /readyz`         | none                 | Liveness / readiness.                                                                                                                                                                                                                                                                                                    |
+| `POST /internal/sync/apply`           | JWT + org scope      | Apply a batch in one tx: LWW + conflict log + tombstones + idempotency. **Internal.**                                                                                                                                                                                                                                    |
 
 The REST write routes (`POST`/`PATCH`/`DELETE`) are for **online-only/direct
 callers** (Admin App, scripts) — the field PWA never calls them directly;
@@ -56,7 +57,10 @@ and record history identically.
   sync-apply write path, appends one `apiaries.audit_log` row in the same
   local transaction as the domain write (FR-HIS-1, `services/shared/history`)
   — idempotent replays and LWW losses write no domain audit row (history.md
-  §4/§6).
+  §4/§6). The combined `audit_log` + `sync_conflict_log` timeline (LWW
+  losses surfaced as `superseded` events) is readable per-entity both via
+  `GET /v1/apiaries/{apiaryId}/history` above (#60) and, primarily, from the
+  client's own PowerSync-replicated local tables (history.md §6/§8).
 
 ## Configuration
 
@@ -76,7 +80,7 @@ sqlc generate -f store/sqlc/sqlc.yaml
 go build ./...
 go test ./...   # httptest + testcontainers/Postgres (postgis/postgis image — the location
                 # column needs the extension); REST CRUD + LWW/conflict/idempotency/tombstone
-                # matrix, history (#59/#31), cross-org access-denial (#28), and org-scoping
+                # matrix, history (#59/#31/#60), cross-org access-denial (#28), and org-scoping
                 # schema check (#30)
 ```
 
