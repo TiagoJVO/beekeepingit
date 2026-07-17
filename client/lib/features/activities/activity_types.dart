@@ -49,6 +49,24 @@ String? activityTypeLabel(AppLocalizations l10n, String type) {
 const feedTypes = ['Xarope 1:1', 'Xarope 2:1', 'Candi', 'Pólen'];
 const treatmentTypes = ['Apivar/amitraz', 'Ácido oxálico', 'Timol', 'Outro'];
 
+/// The known disease/condition candidate vocabulary for Treatment
+/// activities' "disease" attribute (#291, FR-AC-1, D-19) — the client mirror
+/// of services/activities/api/types.go's DiseaseConditions, sourced from
+/// DGAV's mandatory-notification bee-disease list (DDO) as enumerated in
+/// docs/research/regulatory-pt-eu-beekeeping.md §B.6, plus an "Outro"
+/// catch-all (mirroring treatmentTypes' own "Outro"). Extending this
+/// vocabulary is a code-only append here AND in the Go set.
+const diseaseConditions = [
+  'Varroose',
+  'Loque americana',
+  'Loque europeia',
+  'Nosemose',
+  'Acariose',
+  'Aethina tumida (pequeno besouro da colmeia)',
+  'Tropilaelaps spp.',
+  'Outro',
+];
+
 /// Treatment-context values (#38, FR-AC-1, confirmed 2026-07-16 as committed
 /// v1 scope): whether a treatment is general/preventive, tied to a specific
 /// named disease/condition, or a detection-only report. Mirrors

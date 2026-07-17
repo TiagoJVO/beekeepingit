@@ -29,6 +29,8 @@ List<String> _typeSpecificParts(
           '${l10n.activityHoneyKgLabel}: ${attrs['honey_kg']}',
         if (attrs['hives_involved'] != null)
           '${l10n.activityHivesInvolvedLabel}: ${attrs['hives_involved']}',
+        if (attrs['lot_batch'] != null)
+          '${l10n.activityLotBatchLabel}: ${attrs['lot_batch']}',
       ];
     case activityTypeFeeding:
       return [

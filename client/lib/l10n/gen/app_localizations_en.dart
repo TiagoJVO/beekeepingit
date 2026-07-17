@@ -611,6 +611,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityDiseaseLabel => 'Disease / condition';
 
   @override
+  String get activityTreatmentTypeOptionalForDetectionHint =>
+      'Optional for a detection-only report';
+
+  @override
+  String get activityLotBatchLabel => 'Lot / batch identifier';
+
+  @override
   String get activityNotesLabel => 'Notes';
 
   @override

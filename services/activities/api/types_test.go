@@ -113,6 +113,21 @@ func TestValidateActivity_Harvest(t *testing.T) {
 			attrs:     map[string]any{"honey_supers": float64(1), "notes": string(make([]byte, maxNotesLength+1))},
 			wantField: "attributes.notes", wantCode: "too_long",
 		},
+		{
+			name:      "valid: optional lot_batch identifier (#292, D-19)",
+			attrs:     map[string]any{"honey_supers": float64(4), "lot_batch": "2026-07-A1"},
+			wantValid: true,
+		},
+		{
+			name:      "lot_batch over the length limit is rejected (#292)",
+			attrs:     map[string]any{"honey_supers": float64(1), "lot_batch": string(make([]byte, maxLotBatchLength+1))},
+			wantField: "attributes.lot_batch", wantCode: "too_long",
+		},
+		{
+			name:      "non-string lot_batch is malformed (#292)",
+			attrs:     map[string]any{"honey_supers": float64(1), "lot_batch": float64(123)},
+			wantField: "attributes.lot_batch", wantCode: "invalid",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,13 +230,29 @@ func TestValidateActivity_Treatment(t *testing.T) {
 			wantValid: true,
 		},
 		{
+			name: "valid: detection_only with disease and NO treatment_type at all " +
+				"(#291 AC: a detection can be logged with no treatment applied yet)",
+			attrs: map[string]any{
+				"treatment_context": TreatmentContextDetectionOnly, "disease": "Varroose",
+			},
+			wantValid: true,
+		},
+		{
 			name:      "missing treatment_context",
 			attrs:     map[string]any{"treatment_type": "Timol"},
 			wantField: "attributes.treatment_context", wantCode: "required",
 		},
 		{
-			name:      "missing treatment_type",
+			name:      "missing treatment_type when general/preventive",
 			attrs:     map[string]any{"treatment_context": TreatmentContextGeneral},
+			wantField: "attributes.treatment_type", wantCode: "required",
+		},
+		{
+			name: "missing treatment_type when disease_specific is still rejected " +
+				"(only detection_only makes treatment_type optional)",
+			attrs: map[string]any{
+				"treatment_context": TreatmentContextDiseaseSpecific, "disease": "Varroose",
+			},
 			wantField: "attributes.treatment_type", wantCode: "required",
 		},
 		{
@@ -247,6 +278,13 @@ func TestValidateActivity_Treatment(t *testing.T) {
 				"treatment_context": TreatmentContextDetectionOnly, "treatment_type": "Timol",
 			},
 			wantField: "attributes.disease", wantCode: "required",
+		},
+		{
+			name: "disease outside the DGAV-DDO-informed candidate vocabulary is rejected (#291)",
+			attrs: map[string]any{
+				"treatment_context": TreatmentContextDiseaseSpecific, "treatment_type": "Timol", "disease": "Made-up disease",
+			},
+			wantField: "attributes.disease", wantCode: "invalid",
 		},
 	}
 	for _, tc := range tests {

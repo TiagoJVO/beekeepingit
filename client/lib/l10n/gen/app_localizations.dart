@@ -1118,6 +1118,18 @@ abstract class AppLocalizations {
   /// **'Disease / condition'**
   String get activityDiseaseLabel;
 
+  /// Helper text shown under the treatment_type field once the detection-only context is selected, clarifying it isn't required (#291 AC: a detection can be logged with no treatment applied yet)
+  ///
+  /// In en, this message translates to:
+  /// **'Optional for a detection-only report'**
+  String get activityTreatmentTypeOptionalForDetectionHint;
+
+  /// Field label for the harvest activity's optional lot_batch attribute (#292, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Lot / batch identifier'**
+  String get activityLotBatchLabel;
+
   /// Field label for an activity's free-text notes attribute, shared by every type (#38/#39, FR-AC-1)
   ///
   /// In en, this message translates to:

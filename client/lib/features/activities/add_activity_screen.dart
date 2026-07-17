@@ -63,12 +63,13 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
   final _honeySupersController = TextEditingController();
   final _honeyKgController = TextEditingController();
   final _hivesInvolvedController = TextEditingController();
+  final _lotBatchController = TextEditingController();
   final _feedAmountController = TextEditingController();
-  final _diseaseController = TextEditingController();
   final _notesController = TextEditingController();
   String? _feedType;
   String? _treatmentContext;
   String? _treatmentType;
+  String? _disease;
 
   @override
   void initState() {
@@ -81,8 +82,8 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     _honeySupersController.dispose();
     _honeyKgController.dispose();
     _hivesInvolvedController.dispose();
+    _lotBatchController.dispose();
     _feedAmountController.dispose();
-    _diseaseController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -127,6 +128,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
         _honeySupersController.text = _numText(attrs['honey_supers']);
         _honeyKgController.text = _numText(attrs['honey_kg']);
         _hivesInvolvedController.text = _numText(attrs['hives_involved']);
+        _lotBatchController.text = (attrs['lot_batch'] as String?) ?? '';
       case activityTypeFeeding:
         _feedType = attrs['feed_type'] as String?;
         _feedAmountController.text = _numText(attrs['feed_amount']);
@@ -134,7 +136,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       case activityTypeTreatment:
         _treatmentContext = attrs['treatment_context'] as String?;
         _treatmentType = attrs['treatment_type'] as String?;
-        _diseaseController.text = (attrs['disease'] as String?) ?? '';
+        _disease = attrs['disease'] as String?;
         _hivesInvolvedController.text = _numText(attrs['hives_involved']);
     }
     _notesController.text = (attrs['notes'] as String?) ?? '';
@@ -168,6 +170,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     final notes = _notesController.text.trim();
     switch (_selectedType) {
       case activityTypeHarvest:
+        final lotBatch = _lotBatchController.text.trim();
         return {
           if (int.tryParse(_honeySupersController.text.trim()) != null)
             'honey_supers': int.parse(_honeySupersController.text.trim()),
@@ -175,6 +178,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
             'honey_kg': double.parse(_honeyKgController.text.trim()),
           if (int.tryParse(_hivesInvolvedController.text.trim()) != null)
             'hives_involved': int.parse(_hivesInvolvedController.text.trim()),
+          if (lotBatch.isNotEmpty) 'lot_batch': lotBatch,
           if (notes.isNotEmpty) 'notes': notes,
         };
       case activityTypeFeeding:
@@ -190,8 +194,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
         return {
           if (_treatmentContext != null) 'treatment_context': _treatmentContext,
           if (_treatmentType != null) 'treatment_type': _treatmentType,
-          if (_diseaseController.text.trim().isNotEmpty)
-            'disease': _diseaseController.text.trim(),
+          if (_disease != null) 'disease': _disease,
           if (int.tryParse(_hivesInvolvedController.text.trim()) != null)
             'hives_involved': int.parse(_hivesInvolvedController.text.trim()),
           if (notes.isNotEmpty) 'notes': notes,
@@ -425,6 +428,21 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
             integerOnly: true,
           ),
           const SizedBox(height: 16),
+          // lot_batch (#292, FR-AC-1, D-19): optional free-text lot/batch
+          // identifier, capture-side only (export is a separate story).
+          TextFormField(
+            key: const Key('activity-lot-batch-field'),
+            controller: _lotBatchController,
+            maxLength: 100,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            validator: (_) => _attrError(l10n, 'lot_batch'),
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: l10n.activityLotBatchLabel,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
           _notesField(l10n),
         ];
       case activityTypeFeeding:
@@ -462,6 +480,11 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
         final requiresDisease =
             _treatmentContext == treatmentContextDiseaseSpecific ||
             _treatmentContext == treatmentContextDetectionOnly;
+        // #291 AC: a detection can be logged with no treatment applied yet
+        // — treatment_type is optional exactly when the context is
+        // detection-only (mirrors the requiredIf in activity_attributes.dart
+        // / api/types.go).
+        final isDetectionOnly = _treatmentContext == treatmentContextDetectionOnly;
         return [
           _dropdownField(
             l10n: l10n,
@@ -481,20 +504,33 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
             value: _treatmentType,
             options: treatmentTypes,
             attrKey: 'treatment_type',
+            helperText: isDetectionOnly ? l10n.activityTreatmentTypeOptionalForDetectionHint : null,
             onChanged: (v) => setState(() => _treatmentType = v),
           ),
           if (requiresDisease) ...[
             const SizedBox(height: 16),
-            TextFormField(
-              key: const Key('activity-disease-field'),
-              controller: _diseaseController,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              validator: (_) => _attrError(l10n, 'disease'),
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: l10n.activityDiseaseLabel,
-                border: const OutlineInputBorder(),
-              ),
+            _dropdownField(
+              l10n: l10n,
+              key: 'activity-disease-field',
+              label: l10n.activityDiseaseLabel,
+              value: _disease,
+              // Include a stored disease value that isn't in the current
+              // curated vocab (an activity created while `disease` was still
+              // free text, or synced from an older client build) so editing
+              // it renders — and shows the value — instead of tripping
+              // DropdownButtonFormField's initialValue-must-be-in-items
+              // assertion (HIGH #306 review). The client validator still
+              // flags it as out-of-vocab on save, so the user is nudged to
+              // pick a valid replacement rather than hitting a silent 422.
+              options: [
+                ...diseaseConditions,
+                if (_disease != null &&
+                    _disease!.isNotEmpty &&
+                    !diseaseConditions.contains(_disease))
+                  _disease!,
+              ],
+              attrKey: 'disease',
+              onChanged: (v) => setState(() => _disease = v),
             ),
           ],
           const SizedBox(height: 16),
@@ -567,17 +603,21 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     required String attrKey,
     required void Function(String?) onChanged,
     String Function(String)? optionLabel,
+    String? helperText,
   }) {
     return DropdownButtonFormField<String>(
       key: Key(key),
       initialValue: value,
       isExpanded: true, // see the type-field dropdown's own doc comment above
       // A real validator so an unselected required dropdown (feed_type,
-      // treatment_context, treatment_type) blocks Form.validate() (HIGH fix).
+      // treatment_context, treatment_type, disease) blocks Form.validate()
+      // (HIGH fix) — a no-op when [attrKey] isn't currently required (e.g.
+      // treatment_type for a detection-only report, #291 AC).
       autovalidateMode: AutovalidateMode.onUserInteraction,
       validator: (_) => _attrError(l10n, attrKey),
       decoration: InputDecoration(
         labelText: label,
+        helperText: helperText,
         border: const OutlineInputBorder(),
       ),
       items: [
