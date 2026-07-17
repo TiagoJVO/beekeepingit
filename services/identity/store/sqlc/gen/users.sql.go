@@ -32,6 +32,45 @@ func (q *Queries) GetUserByOidcSub(ctx context.Context, oidcSub string) (Identit
 	return i, err
 }
 
+const getUsersByNames = `-- name: GetUsersByNames :many
+SELECT id, name
+FROM identity.users
+WHERE id = ANY($1::uuid[])
+`
+
+type GetUsersByNamesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+}
+
+// Batch resolve app user_ids -> display name, backing the internal
+// GET /internal/users/names endpoint the organizations service composes to
+// turn a member roster (user_ids) into display names (#44 follow-up to
+// per-user attribution, FR-TEN-2). Only rows that exist are returned; a
+// caller treats a missing id as "no name" (a removed or never-provisioned
+// user) and falls back to a short id fragment. Returns name only — never the
+// IdP-verified email: names are org-shareable app data (FR-TEN-2), the email
+// is not.
+func (q *Queries) GetUsersByNames(ctx context.Context, ids []pgtype.UUID) ([]GetUsersByNamesRow, error) {
+	rows, err := q.db.Query(ctx, getUsersByNames, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersByNamesRow
+	for rows.Next() {
+		var i GetUsersByNamesRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertAuditLog = `-- name: InsertAuditLog :exec
 INSERT INTO identity.audit_log
     (id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, changed_fields, change)

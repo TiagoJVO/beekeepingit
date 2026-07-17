@@ -171,6 +171,39 @@ paths:
         '403':
           $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
 
+  /organizations/{orgId}/members/names:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      operationId: listMemberNames
+      summary: List member display names (any member)
+      description: >-
+        A least-privilege member roster — `user_id` + display `name` only, no
+        role/status/email — readable by ANY active member of the organization,
+        unlike the admin-only `GET .../members`. Backs per-user attribution
+        display (FR-TEN-2, #44): the client resolves an activity's `performed_by`
+        id to a real name instead of a short id fragment. Names are composed
+        from the identity service; an id with no name yet (incomplete or
+        removed profile) is returned with an empty `name`, which the client
+        renders as a short id fragment. Any org member may read it since org
+        data is shared across all members (FR-TEN-2); a caller who is not an
+        active member of `{orgId}` gets 404 (ADR-0002, never 403).
+      tags: [Members]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: A page of member display names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberNameList'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+
   /organizations/{orgId}/invitations:
     parameters:
       - $ref: '#/components/parameters/OrgId'
@@ -338,6 +371,32 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Member'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
+
+    MemberName:
+      type: object
+      description: >-
+        A member's display name for per-user attribution (#44) — deliberately
+        NOT the full Member (no role/status/email). `name` may be empty when
+        the member's profile has no name yet or the id no longer resolves; the
+        client falls back to a short id fragment in that case.
+      properties:
+        user_id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        name:
+          type: string
+          maxLength: 200
+      required: [user_id, name]
+
+    MemberNameList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberName'
         page:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
       required: [data, page]

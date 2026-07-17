@@ -172,4 +172,45 @@ void main() {
       },
     );
   });
+
+  group('listMemberNames() (#44 — non-admin-safe roster for attribution)', () {
+    test('pages through every result and builds a user_id -> name map, '
+        'skipping empty names (incomplete/removed profiles)', () async {
+      final paths = <String>[];
+      final container = _containerWithMockClient((request) async {
+        paths.add(request.url.toString());
+        final cursor = request.url.queryParameters['cursor'];
+        if (cursor == null) {
+          return http.Response(
+            jsonEncode({
+              'data': [
+                {'user_id': 'u1', 'name': 'Ana'},
+                {'user_id': 'u2', 'name': ''}, // incomplete profile
+              ],
+              'page': {'next_cursor': 'c2', 'limit': 2},
+            }),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'data': [
+              {'user_id': 'u3', 'name': 'Bruno'},
+            ],
+            'page': {'next_cursor': null, 'limit': 2},
+          }),
+          200,
+        );
+      });
+      addTearDown(container.dispose);
+      final repo = container.read(membersRepositoryProvider);
+
+      final names = await repo.listMemberNames('org-1');
+
+      expect(names, {'u1': 'Ana', 'u3': 'Bruno'});
+      expect(names.containsKey('u2'), isFalse); // empty name omitted
+      expect(paths.first, contains('/v1/organizations/org-1/members/names'));
+      expect(paths, hasLength(2)); // followed the cursor to the 2nd page
+    });
+  });
 }
