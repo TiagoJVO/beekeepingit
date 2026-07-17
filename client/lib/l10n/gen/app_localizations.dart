@@ -806,6 +806,36 @@ abstract class AppLocalizations {
   /// **'Apiary'**
   String get apiaryDetailTitle;
 
+  /// Activity detail screen app bar title (#310, FR-AC-3/5/6)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity'**
+  String get activityDetailTitle;
+
+  /// Section header above an activity's per-type attributes on the detail screen (#310)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get activityDetailAttributesHeader;
+
+  /// Visible field label preceding an activity's performer on the detail screen (#310, FR-TEN-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Performed by'**
+  String get activityPerformedByLabel;
+
+  /// Edit FAB label on the activity detail screen (#310, FR-AC-3)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit activity'**
+  String get editActivityAction;
+
+  /// App bar title for the activity edit form, reached from the detail screen (#310, FR-AC-3)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit activity'**
+  String get editActivityTitle;
+
   /// Formatted lat/lon shown on the apiary detail screen when a location is set (#32)
   ///
   /// In en, this message translates to:

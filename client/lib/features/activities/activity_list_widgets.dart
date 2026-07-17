@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
@@ -209,34 +210,45 @@ class ActivityListView extends ConsumerWidget {
           );
         }
         // Cap the rendered rows only when there's a "view all" escape hatch,
-        // so a capped preview never strands rows the user can't reach.
+        // so a capped preview never strands rows the user can't reach (#42/
+        // #308).
         final capping = maxItems != null && onViewAll != null;
         final visible = capping && vm.filtered.length > maxItems!
             ? vm.filtered.take(maxItems!).toList()
             : vm.filtered;
         final showViewAll = visible.length < vm.filtered.length;
-        return ListView.separated(
-          key: const Key('activity-list'),
-          shrinkWrap: shrinkWrap,
-          physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-          itemCount: visible.length + (showViewAll ? 1 : 0),
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, i) {
-            if (i == visible.length) {
-              return _ViewAllActivitiesTile(
-                total: vm.filtered.length,
-                onTap: onViewAll!,
+        // Transparent Material ancestor so each now-tappable [_ActivityTile]
+        // and the "view all" row (#310) paint their ink splash on a Material
+        // nearer than any colored container they're embedded in — the apiary
+        // detail's per-apiary section wraps this list in a surface-tinted
+        // Container (apiary_detail_screen.dart), which would otherwise hide the
+        // tap ink (and trips a debug assertion). No visual change:
+        // MaterialType.transparency paints nothing itself.
+        return Material(
+          type: MaterialType.transparency,
+          child: ListView.separated(
+            key: const Key('activity-list'),
+            shrinkWrap: shrinkWrap,
+            physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+            itemCount: visible.length + (showViewAll ? 1 : 0),
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              if (i == visible.length) {
+                return _ViewAllActivitiesTile(
+                  total: vm.filtered.length,
+                  onTap: onViewAll!,
+                );
+              }
+              final activity = visible[i];
+              return _ActivityTile(
+                activity: activity,
+                currentUserId: currentUserId,
+                apiaryName: showApiary
+                    ? apiaryNameOf?.call(activity.apiaryId)
+                    : null,
               );
-            }
-            final activity = visible[i];
-            return _ActivityTile(
-              activity: activity,
-              currentUserId: currentUserId,
-              apiaryName: showApiary
-                  ? apiaryNameOf?.call(activity.apiaryId)
-                  : null,
-            );
-          },
+            },
+          ),
         );
       },
     );
@@ -266,6 +278,16 @@ class _ActivityTile extends StatelessWidget {
     return ListTile(
       key: Key('activity-${activity.id}'),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      // Tapping a row opens the activity detail (#310, FR-AC-3/5/6). Both the
+      // per-apiary section (apiary detail) and the main all-apiaries tab use
+      // this shared tile, so this single onTap wires both list surfaces. The
+      // detail route lives under the apiaries branch (app_router.dart) — where
+      // every activity view/edit/delete surface lives — so a tap from the
+      // Activities tab crosses into that branch's stack (Back returns to the
+      // apiary context), consistent with where edit/delete already live.
+      onTap: () => context.go(
+        '/apiaries/${activity.apiaryId}/activities/${activity.id}',
+      ),
       leading: Icon(_iconFor(activity.type)),
       title: Text(title),
       subtitle: Text(subtitle),
