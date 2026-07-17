@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../members/members_repository.dart';
 import '../profile/profile_repository.dart';
 import 'activities_repository.dart';
 import 'activity_display.dart';
@@ -164,9 +165,16 @@ class ActivityListView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    // The caller's own id (#44): drives the "You" vs. "Member <id>"
+    // The caller's own id (#44): drives the "You" vs. name/"Member <id>"
     // attribution split (activity_display.dart's activityAttributionText).
     final currentUserId = ref.watch(profileProvider).value?.id;
+    // The org member-name roster (#44), for showing OTHER performers' real
+    // names. Online-fetched + session-cached (memberNamesProvider); empty
+    // offline or before first load, in which case attribution falls back to
+    // a short id fragment — never an error, so the offline-first list still
+    // renders.
+    final memberNames =
+        ref.watch(memberNamesProvider).value ?? const <String, String>{};
 
     return viewModel.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -204,6 +212,7 @@ class ActivityListView extends ConsumerWidget {
             return _ActivityTile(
               activity: activity,
               currentUserId: currentUserId,
+              memberNames: memberNames,
               apiaryName: showApiary
                   ? apiaryNameOf?.call(activity.apiaryId)
                   : null,
@@ -219,11 +228,13 @@ class _ActivityTile extends StatelessWidget {
   const _ActivityTile({
     required this.activity,
     required this.currentUserId,
+    required this.memberNames,
     this.apiaryName,
   });
 
   final Activity activity;
   final String? currentUserId;
+  final Map<String, String> memberNames;
   final String? apiaryName;
 
   @override
@@ -233,7 +244,12 @@ class _ActivityTile extends StatelessWidget {
     final typeLabel = activityTypeLabel(l10n, activity.type) ?? activity.type;
     final title = apiaryName == null ? typeLabel : '$apiaryName · $typeLabel';
     final subtitle = '$dateText · ${activitySummaryLine(l10n, activity)}';
-    final attribution = activityAttributionText(l10n, activity, currentUserId);
+    final attribution = activityAttributionText(
+      l10n,
+      activity,
+      currentUserId,
+      memberNames: memberNames,
+    );
 
     return ListTile(
       key: Key('activity-${activity.id}'),

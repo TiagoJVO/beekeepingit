@@ -307,7 +307,12 @@ PWA/native client focuses on field features. **Admin-only operations are rejecte
 ([#28](https://github.com/TiagoJVO/beekeepingit/issues/28) AC) — the **organizations** OpenAPI
 contract already encodes this: `role` is the open enum `[admin, user]` and the member/invitation
 endpoints are admin-only (`403` for a `user`), with `{orgId}` asserted against membership
-([`organizations.openapi.yaml`](../../contracts/openapi/organizations.openapi.yaml)). There is **no system-wide application
+([`organizations.openapi.yaml`](../../contracts/openapi/organizations.openapi.yaml)). **One deliberate
+exception:** `GET .../members/names` — a least-privilege roster (`user_id` + display `name` only, no
+role/status/email) — is readable by **any active member**, not just admins, because per-user
+attribution (FR-TEN-2, [#44](https://github.com/TiagoJVO/beekeepingit/issues/44)) must resolve another
+member's id to a real name and org data is shared across all members anyway; a non-member still gets
+`404` (ADR-0002, never `403`). There is **no system-wide application
 admin** in v1 — a platform super-admin is the **`platform-operator`** ops group (§3.3), not an app
 role; NFR-ROL-1's "more roles later" can add one when needed. _This resolves
 [Q-ROLE](../../requirements/open-questions.md) (admin = org-scoped)._

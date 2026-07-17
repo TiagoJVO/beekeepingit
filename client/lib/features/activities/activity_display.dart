@@ -58,38 +58,42 @@ List<String> _typeSpecificParts(
   }
 }
 
-/// The attribution display text for one activity (#44, FR-TEN-2): [l10n]'s
-/// "You" when [currentUserId] matches [Activity.performedBy], otherwise a
-/// short, per-performer-distinguishable placeholder.
+/// The attribution display text for one activity (#44, FR-TEN-2), resolved in
+/// precedence order:
 ///
-/// There is deliberately no attempt to resolve [Activity.performedBy] to a
-/// real display name: neither the client nor the server currently expose
-/// one anywhere reachable by a non-admin org member —
-/// contracts/openapi/organizations.openapi.yaml's `Member` schema carries
-/// only `user_id`/`role`/`status` (no name/email), the one endpoint that
-/// DOES return a name (`GET /v1/profile`) only ever returns the CALLER's
-/// own profile, and the member/invitation list endpoints that could
-/// otherwise cross-reference an id to at least confirm identity are
-/// admin-only server-side (services/organizations/api/invitations.go's
-/// `registerMemberAndInvitationRoutes` doc comment) — so a plain member
-/// couldn't use them to build a lookup even client-side. This is a real
-/// product gap (see FOLLOWUPS.md), not an oversight here: every OTHER
-/// member's activity is shown against a short, stable, non-spoofable id
-/// fragment instead of an invented name — distinguishable per performer
-/// (satisfying "attribution remains visible per activity", FR-TEN-2)
-/// without fabricating a display name the app has no way to know. A future
-/// member-display-name capability (e.g. a non-admin-safe roster endpoint)
-/// slots in here without changing any caller of this function.
+/// 1. [l10n]'s "Unknown" when [Activity.performedBy] is null/empty (an
+///    optimistic local write not yet synced back with its server-stamped
+///    performer).
+/// 2. "You" when [Activity.performedBy] matches [currentUserId] — shown in
+///    preference to the caller's own name.
+/// 3. The performer's real display name, when [memberNames] carries a
+///    non-empty entry for [Activity.performedBy]. [memberNames] is the
+///    caller's org roster (`user_id -> name`) from `memberNamesProvider`
+///    (members_repository.dart), backed by the non-admin-safe
+///    `GET /organizations/{orgId}/members/names` endpoint (#44 follow-up) —
+///    the capability that let this function stop fabricating placeholders.
+/// 4. A short, stable, non-spoofable id fragment (`Member <last-8>`) as the
+///    fallback when no name is available: a member with an incomplete profile,
+///    one who has since been removed, or simply the offline / pre-first-fetch
+///    case where the online-only roster hasn't loaded yet. Distinguishable per
+///    performer (satisfying "attribution remains visible per activity",
+///    FR-TEN-2) without inventing a name the app doesn't have.
+///
+/// [memberNames] defaults to empty, so a caller that hasn't wired the roster
+/// (or is offline) keeps exactly the pre-#44 short-id behavior.
 String activityAttributionText(
   AppLocalizations l10n,
   Activity activity,
-  String? currentUserId,
-) {
+  String? currentUserId, {
+  Map<String, String> memberNames = const {},
+}) {
   final performedBy = activity.performedBy;
   if (performedBy == null || performedBy.isEmpty) {
     return l10n.activityPerformedByUnknown;
   }
   if (performedBy == currentUserId) return l10n.activityPerformedByYou;
+  final name = memberNames[performedBy];
+  if (name != null && name.isNotEmpty) return name;
   return l10n.activityPerformedByMember(_shortId(performedBy));
 }
 

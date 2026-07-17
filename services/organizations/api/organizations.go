@@ -137,6 +137,15 @@ type ResolvedUser struct {
 // importing authn's private resolver) so it's trivially fakeable in tests.
 type UserResolver interface {
 	Resolve(ctx context.Context, bearer, sub string) (ResolvedUser, error)
+	// ResolveNames maps a batch of app user_ids to their display names via
+	// identity's internal batch endpoint -- the composition step behind the
+	// member-names endpoint (#44 follow-up): organizations knows which
+	// user_ids are in the caller's org and that the caller may see them,
+	// identity owns the names. Returns a user_id -> name map; ids identity
+	// has no row for are simply absent (a removed/never-provisioned member,
+	// which the client renders as a short id fragment). Never returns email
+	// (FR-TEN-2).
+	ResolveNames(ctx context.Context, bearer string, userIDs []string) (map[string]string, error)
 }
 
 // HTTPUserResolver calls identity's internal resolve endpoint directly --
@@ -199,6 +208,45 @@ func (h *HTTPUserResolver) Resolve(ctx context.Context, bearer, sub string) (Res
 		return ResolvedUser{}, fmt.Errorf("resolve user by sub: decode identity response: %w", err)
 	}
 	return ResolvedUser{UserID: out.UserID, Email: out.Email}, nil
+}
+
+// ResolveNames maps a batch of app user_ids to display names via identity's
+// internal GET /internal/users/names?ids=... -- the composition step behind
+// GET /organizations/{orgId}/members/names (#44 follow-up). Forwards the
+// caller's bearer exactly like Resolve (that endpoint sits behind the same
+// OIDC authn middleware). An empty input is a no-op (no HTTP call). Any
+// non-200, transport error, or malformed body is returned as an error so the
+// handler can surface a 502 rather than silently showing every member as a
+// short id.
+func (h *HTTPUserResolver) ResolveNames(ctx context.Context, bearer string, userIDs []string) (map[string]string, error) {
+	names := make(map[string]string, len(userIDs))
+	if len(userIDs) == 0 {
+		return names, nil
+	}
+	// ids is a comma-separated list; url.QueryEscape keeps the commas intact
+	// as a single value (the ids are UUIDs from our own membership rows, not
+	// free-form input).
+	reqURL := h.IdentityBaseURL + "/internal/users/names?ids=" + url.QueryEscape(strings.Join(userIDs, ","))
+	status, body, err := h.getJSON(ctx, reqURL, bearer)
+	if err != nil {
+		return nil, fmt.Errorf("resolve user names: call identity: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("resolve user names: identity responded %d", status)
+	}
+	var out struct {
+		Data []struct {
+			UserID string `json:"user_id"`
+			Name   string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("resolve user names: decode identity response: %w", err)
+	}
+	for _, u := range out.Data {
+		names[u.UserID] = u.Name
+	}
+	return names, nil
 }
 
 // getJSON issues an authenticated GET against rawURL -- an internal,

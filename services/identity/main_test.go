@@ -30,9 +30,11 @@ import (
 const testAudience = "beekeepingit-identity"
 
 // TestIdentityService_ResolveBySub wires the service as run() does and
-// exercises the internal resolve endpoint over real HTTP against a real
-// Postgres: unauthenticated is rejected, the seeded sub resolves to its
-// user row, and an unknown sub is a 404.
+// exercises the internal resolve endpoints over real HTTP against a real
+// Postgres: for /users/by-sub, unauthenticated is rejected, the seeded sub
+// resolves to its user row, and an unknown sub is a 404; for /users/names
+// (#44 batch name resolve), the seeded user_id resolves to its name, an
+// unknown id in the same batch is omitted, and missing/invalid ids are 422.
 func TestIdentityService_ResolveBySub(t *testing.T) {
 	ctx := context.Background()
 
@@ -136,6 +138,38 @@ func TestIdentityService_ResolveBySub(t *testing.T) {
 	unknown := idp.Mint(t, "00000000-0000-0000-0000-000000000000", testAudience)
 	if rec := get("/internal/users/by-sub/00000000-0000-0000-0000-000000000000", "Bearer "+unknown); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown sub status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	// Batch name resolve (#44): the seeded user_id resolves to its name; an
+	// unknown id in the same batch is simply omitted (the caller falls back
+	// to a short id fragment for it), never an error for the whole batch.
+	const unknownID = "a0000000-0000-7000-8000-0000000000ff"
+	recNames := get("/internal/users/names?ids="+devseed.UserID+","+unknownID, "Bearer "+token)
+	if recNames.Code != http.StatusOK {
+		t.Fatalf("names status = %d, want %d, body = %s", recNames.Code, http.StatusOK, recNames.Body.String())
+	}
+	var namesResp struct {
+		Data []api.UserNameResponse `json:"data"`
+	}
+	if err := json.Unmarshal(recNames.Body.Bytes(), &namesResp); err != nil {
+		t.Fatalf("decode names: %v", err)
+	}
+	if len(namesResp.Data) != 1 {
+		t.Fatalf("names data len = %d, want 1 (unknown id omitted): %+v", len(namesResp.Data), namesResp.Data)
+	}
+	if namesResp.Data[0].UserID != devseed.UserID || namesResp.Data[0].Name != devseed.UserName {
+		t.Errorf("names[0] = %+v, want {user_id:%s name:%s}", namesResp.Data[0], devseed.UserID, devseed.UserName)
+	}
+
+	// Missing ids → 422; a non-UUID id → 422; unauthenticated → 401.
+	if rec := get("/internal/users/names", "Bearer "+token); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("missing ids status = %d, want %d", rec.Code, http.StatusUnprocessableEntity)
+	}
+	if rec := get("/internal/users/names?ids=not-a-uuid", "Bearer "+token); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("invalid id status = %d, want %d", rec.Code, http.StatusUnprocessableEntity)
+	}
+	if rec := get("/internal/users/names?ids="+devseed.UserID, ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated names status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 

@@ -5,6 +5,7 @@ import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiary_form_screen.dart';
+import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -206,6 +207,8 @@ Widget _buildApp({
         (ref, apiaryId) => Stream.value(const <Activity>[]),
       ),
       profileProvider.overrideWith(_CompleteProfileController.new),
+      // Hermetic member-name roster (#44) — see apiary_detail_screen_test.
+      memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
       // Only the "use current location" test passes this (CRITICAL
       // finding); every other test leaves it un-overridden, same as before.

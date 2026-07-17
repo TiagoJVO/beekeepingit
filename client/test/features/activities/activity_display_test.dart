@@ -163,5 +163,51 @@ void main() {
       final text = activityAttributionText(_l10n, _activity(), 'user-1');
       expect(text, 'Unknown');
     });
+
+    test('resolves another performer to their real name when known (#44)', () {
+      final text = activityAttributionText(
+        _l10n,
+        _activity(performedBy: 'user-2'),
+        'user-1',
+        memberNames: const {'user-2': 'Ana Silva'},
+      );
+      expect(text, 'Ana Silva');
+    });
+
+    test(
+      '"You" takes precedence over the caller\'s own name in the roster',
+      () {
+        final text = activityAttributionText(
+          _l10n,
+          _activity(performedBy: 'user-1'),
+          'user-1',
+          memberNames: const {'user-1': 'Me Myself'},
+        );
+        expect(text, 'You');
+      },
+    );
+
+    test('falls back to the short id when the performer is not in the roster '
+        '(e.g. a removed member)', () {
+      final text = activityAttributionText(
+        _l10n,
+        _activity(performedBy: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'),
+        'user-1',
+        memberNames: const {'user-2': 'Ana Silva'},
+      );
+      expect(text, isNot('Ana Silva'));
+      expect(text, contains('eeeeeeee'));
+    });
+
+    test('falls back to the short id when the resolved name is empty '
+        '(incomplete profile)', () {
+      final text = activityAttributionText(
+        _l10n,
+        _activity(performedBy: 'user-aaaaaaaa'),
+        'user-1',
+        memberNames: const {'user-aaaaaaaa': ''},
+      );
+      expect(text, contains('aaaaaaaa'));
+    });
   });
 }
