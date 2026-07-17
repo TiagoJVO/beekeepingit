@@ -73,3 +73,23 @@ beekeepingit-gitops/clusters/dev/` — else its Kustomization goes stale when `i
   the same shape and isn't UI-driven in its own tests either).
 - **Status**: not blocking; a reviewer wanting this covered should add it as
   a follow-up.
+## Branch `feat/history-view-apiary-activity` (#60, FR-HIS-1)
+
+- **`activities.audit_log` / `activities.sync_conflict_log` not yet in the PowerSync sync-rules
+  bucket.** `infra/helm/beekeepingit/charts/powersync/values.yaml`'s
+  `syncConfig.bucket_definitions.by_organization.data` already replicates
+  `apiaries.audit_log`/`apiaries.sync_conflict_log` (#61) but has no equivalent entries for the
+  activities-schema tables, so an activity's history never reaches the client's local `audit_log`/
+  `sync_conflict_log` tables today — only the new `GET /v1/activities/{id}/history` REST fallback
+  (this branch) can read it. Add two more `SELECT *` entries mirroring the existing apiaries ones
+  (same doc-comment style), so activities rows flow into the same local `audit_log`/
+  `sync_conflict_log` tables (polymorphic on `entity_type`/`entity_id`, history.md §3). Out of
+  scope for this branch's backend-only phase (explicitly `infra/` is off-limits here) — needed
+  before or alongside the frontend phase's client history widget, since that widget's offline path
+  depends on this replication existing.
+- **Client-side `audit_log`/`sync_conflict_log` local tables not yet declared.**
+  `client/lib/core/sync/powersync_schema.dart`'s `appSchema` has no `Table()` for either — a real
+  gap even for the apiary rows already streaming through the bucket today (nowhere to land
+  locally). Frontend phase's scope (#60).
+- Client history-timeline widget, repository/query wiring, detail-screen wiring, EN/PT strings —
+  all frontend phase's scope (#60), not started by this backend-only phase.
