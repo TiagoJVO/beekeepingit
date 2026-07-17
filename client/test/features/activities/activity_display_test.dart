@@ -125,6 +125,89 @@ void main() {
     });
   });
 
+  group('activityDetailRows (#310, FR-AC-3/5/6)', () {
+    ({String label, String value})? rowFor(
+      List<({String label, String value})> rows,
+      String label,
+    ) {
+      for (final r in rows) {
+        if (r.label == label) return r;
+      }
+      return null;
+    }
+
+    test('harvest: one labeled row per present attribute, in form order', () {
+      final rows = activityDetailRows(
+        _l10n,
+        _activity(
+          type: 'harvest',
+          attributes: {
+            'honey_supers': 4,
+            'honey_kg': 12.5,
+            'lot_batch': '2026-07-A1',
+          },
+        ),
+      );
+      expect(
+        rowFor(rows, 'Honey supers harvested')?.value,
+        '4',
+      );
+      expect(rowFor(rows, 'Honey harvested (kg)')?.value, '12.5');
+      expect(rowFor(rows, 'Lot / batch identifier')?.value, '2026-07-A1');
+      // Absent optional (hives_involved) yields no row at all.
+      expect(rowFor(rows, 'Hives involved'), isNull);
+    });
+
+    test('notes IS included on the detail (unlike the compact summary line)', () {
+      final rows = activityDetailRows(
+        _l10n,
+        _activity(
+          type: 'generic',
+          attributes: {'notes': 'Full field note visible on detail.'},
+        ),
+      );
+      expect(rows, hasLength(1));
+      expect(rows.single.value, 'Full field note visible on detail.');
+    });
+
+    test('a blank (whitespace-only) attribute is omitted, not an empty row', () {
+      final rows = activityDetailRows(
+        _l10n,
+        _activity(type: 'generic', attributes: {'notes': '   '}),
+      );
+      expect(rows, isEmpty);
+    });
+
+    test('generic with no attributes yields no rows', () {
+      final rows = activityDetailRows(_l10n, _activity(type: 'generic'));
+      expect(rows, isEmpty);
+    });
+
+    test(
+      'treatment: context renders its localized label, not the raw token; a '
+      'detection-only report omits the absent treatment_type (no "null" row)',
+      () {
+        final rows = activityDetailRows(
+          _l10n,
+          _activity(
+            type: 'treatment',
+            attributes: {
+              'treatment_context': 'detection_only',
+              'disease': 'Varroose',
+            },
+          ),
+        );
+        expect(
+          rowFor(rows, 'Treatment context')?.value,
+          'Detection only (no treatment yet)',
+        );
+        expect(rowFor(rows, 'Disease / condition')?.value, 'Varroose');
+        expect(rowFor(rows, 'Treatment product'), isNull);
+        expect(rows.any((r) => r.value.contains('null')), isFalse);
+      },
+    );
+  });
+
   group('activityAttributionText (#44, FR-TEN-2)', () {
     test('shows "You" when performedBy matches the current user', () {
       final text = activityAttributionText(

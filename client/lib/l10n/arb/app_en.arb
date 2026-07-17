@@ -557,6 +557,26 @@
   "@apiaryDetailTitle": {
     "description": "Apiary detail screen app bar title (#32)"
   },
+  "activityDetailTitle": "Activity",
+  "@activityDetailTitle": {
+    "description": "Activity detail screen app bar title (#310, FR-AC-3/5/6)"
+  },
+  "activityDetailAttributesHeader": "Details",
+  "@activityDetailAttributesHeader": {
+    "description": "Section header above an activity's per-type attributes on the detail screen (#310)"
+  },
+  "activityPerformedByLabel": "Performed by",
+  "@activityPerformedByLabel": {
+    "description": "Visible field label preceding an activity's performer on the detail screen (#310, FR-TEN-2)"
+  },
+  "editActivityAction": "Edit activity",
+  "@editActivityAction": {
+    "description": "Edit FAB label on the activity detail screen (#310, FR-AC-3)"
+  },
+  "editActivityTitle": "Edit activity",
+  "@editActivityTitle": {
+    "description": "App bar title for the activity edit form, reached from the detail screen (#310, FR-AC-3)"
+  },
   "apiaryLocationValue": "{lat}, {lon}",
   "@apiaryLocationValue": {
     "description": "Formatted lat/lon shown on the apiary detail screen when a location is set (#32)",
@@ -843,6 +863,15 @@
   "apiaryActivitiesEmpty": "No activities logged for this apiary yet.",
   "@apiaryActivitiesEmpty": {
     "description": "Empty state on the apiary detail page's activities section when the apiary has no activities at all yet (#42, FR-AC-5)"
+  },
+  "apiaryActivitiesViewAll": "View all {count} activities",
+  "@apiaryActivitiesViewAll": {
+    "description": "Action at the foot of the apiary detail page's activities preview when it is capped — opens the full per-apiary activities list (#42, FR-AC-5). {count} is the total number of activities matching the current filters.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "activitiesEmpty": "No activities yet.",
   "@activitiesEmpty": {

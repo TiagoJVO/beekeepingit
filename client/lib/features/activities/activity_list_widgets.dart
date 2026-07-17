@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
@@ -146,6 +147,17 @@ class ActivityFilterBar extends StatelessWidget {
 /// screen's own context. [shrinkWrap] lets #42 embed this inside an outer
 /// `SingleChildScrollView` (apiary_detail_screen.dart) without two nested
 /// unbounded scrollables fighting each other.
+///
+/// [maxItems] caps how many rows this list renders — used by #42's embedded
+/// preview, which is `shrinkWrap`ped and so can't lazily virtualize (every
+/// built row is laid out up front): over many seasons an apiary can
+/// accumulate hundreds of activities, and building them all on every filter
+/// change or sync write is wasteful. When the filtered set exceeds [maxItems]
+/// the surplus rows are hidden behind a "view all" row ([onViewAll]) that
+/// opens the full, properly-virtualized per-apiary list instead. Capping only
+/// takes effect when [onViewAll] is also supplied, so rows are never hidden
+/// with no way to reach them. The full-screen list (`apiary_activities_
+/// screen.dart`) and #43's main tab leave both null and render every row.
 class ActivityListView extends ConsumerWidget {
   const ActivityListView({
     required this.viewModel,
@@ -153,6 +165,8 @@ class ActivityListView extends ConsumerWidget {
     this.showApiary = false,
     this.apiaryNameOf,
     this.shrinkWrap = false,
+    this.maxItems,
+    this.onViewAll,
     super.key,
   });
 
@@ -161,6 +175,8 @@ class ActivityListView extends ConsumerWidget {
   final bool showApiary;
   final String? Function(String apiaryId)? apiaryNameOf;
   final bool shrinkWrap;
+  final int? maxItems;
+  final VoidCallback? onViewAll;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -201,23 +217,47 @@ class ActivityListView extends ConsumerWidget {
             ),
           );
         }
-        return ListView.separated(
-          key: const Key('activity-list'),
-          shrinkWrap: shrinkWrap,
-          physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-          itemCount: vm.filtered.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, i) {
-            final activity = vm.filtered[i];
-            return _ActivityTile(
-              activity: activity,
-              currentUserId: currentUserId,
-              memberNames: memberNames,
-              apiaryName: showApiary
-                  ? apiaryNameOf?.call(activity.apiaryId)
-                  : null,
-            );
-          },
+        // Cap the rendered rows only when there's a "view all" escape hatch,
+        // so a capped preview never strands rows the user can't reach (#42/
+        // #308).
+        final capping = maxItems != null && onViewAll != null;
+        final visible = capping && vm.filtered.length > maxItems!
+            ? vm.filtered.take(maxItems!).toList()
+            : vm.filtered;
+        final showViewAll = visible.length < vm.filtered.length;
+        // Transparent Material ancestor so each now-tappable [_ActivityTile]
+        // and the "view all" row (#310) paint their ink splash on a Material
+        // nearer than any colored container they're embedded in — the apiary
+        // detail's per-apiary section wraps this list in a surface-tinted
+        // Container (apiary_detail_screen.dart), which would otherwise hide the
+        // tap ink (and trips a debug assertion). No visual change:
+        // MaterialType.transparency paints nothing itself.
+        return Material(
+          type: MaterialType.transparency,
+          child: ListView.separated(
+            key: const Key('activity-list'),
+            shrinkWrap: shrinkWrap,
+            physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+            itemCount: visible.length + (showViewAll ? 1 : 0),
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              if (i == visible.length) {
+                return _ViewAllActivitiesTile(
+                  total: vm.filtered.length,
+                  onTap: onViewAll!,
+                );
+              }
+              final activity = visible[i];
+              return _ActivityTile(
+                activity: activity,
+                currentUserId: currentUserId,
+                memberNames: memberNames,
+                apiaryName: showApiary
+                    ? apiaryNameOf?.call(activity.apiaryId)
+                    : null,
+              );
+            },
+          ),
         );
       },
     );
@@ -254,6 +294,16 @@ class _ActivityTile extends StatelessWidget {
     return ListTile(
       key: Key('activity-${activity.id}'),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      // Tapping a row opens the activity detail (#310, FR-AC-3/5/6). Both the
+      // per-apiary section (apiary detail) and the main all-apiaries tab use
+      // this shared tile, so this single onTap wires both list surfaces. The
+      // detail route lives under the apiaries branch (app_router.dart) — where
+      // every activity view/edit/delete surface lives — so a tap from the
+      // Activities tab crosses into that branch's stack (Back returns to the
+      // apiary context), consistent with where edit/delete already live.
+      onTap: () => context.go(
+        '/apiaries/${activity.apiaryId}/activities/${activity.id}',
+      ),
       leading: Icon(_iconFor(activity.type)),
       title: Text(title),
       subtitle: Text(subtitle),
@@ -277,4 +327,55 @@ class _ActivityTile extends StatelessWidget {
     activityTypeTreatment => Icons.healing_outlined,
     _ => Icons.event_note_outlined,
   };
+}
+
+/// The "view all N activities" row shown at the foot of a capped preview
+/// (#42's embedded per-apiary section): opens the full, lazily-virtualized
+/// per-apiary list rather than rendering every hidden row inline. Sized to
+/// the app's gloves-friendly tap minimum (FR-UX-1/FR-AX-1) like the filter
+/// bar's own controls.
+class _ViewAllActivitiesTile extends StatelessWidget {
+  const _ViewAllActivitiesTile({required this.total, required this.onTap});
+
+  final int total;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    // An InkWell (not a ListTile) — the embedded preview wraps this list in a
+    // decorated Container, and a tappable ListTile there trips Flutter's
+    // "ink splashes may be invisible" assertion. Mirrors the filter bar's own
+    // InkWell tap targets, sized to the gloves-friendly minimum
+    // (FR-UX-1/FR-AX-1). Wrapped in Semantics(button:) to keep the button
+    // role a ListTile would have exposed to assistive tech (WCAG 2.2 AA).
+    return Semantics(
+      button: true,
+      child: InkWell(
+        key: const Key('activity-list-view-all'),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: kMinTapTarget),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    l10n.apiaryActivitiesViewAll(total),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: theme.colorScheme.primary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

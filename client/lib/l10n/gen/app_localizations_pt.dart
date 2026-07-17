@@ -439,6 +439,21 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiaryDetailTitle => 'Apiário';
 
   @override
+  String get activityDetailTitle => 'Atividade';
+
+  @override
+  String get activityDetailAttributesHeader => 'Detalhes';
+
+  @override
+  String get activityPerformedByLabel => 'Realizada por';
+
+  @override
+  String get editActivityAction => 'Editar atividade';
+
+  @override
+  String get editActivityTitle => 'Editar atividade';
+
+  @override
   String apiaryLocationValue(String lat, String lon) {
     return '$lat, $lon';
   }
@@ -641,6 +656,11 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get apiaryActivitiesEmpty =>
       'Ainda não há atividades registadas para este apiário.';
+
+  @override
+  String apiaryActivitiesViewAll(int count) {
+    return 'Ver todas as $count atividades';
+  }
 
   @override
   String get activitiesEmpty => 'Ainda não há atividades.';
