@@ -412,14 +412,17 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]b
 		if op.Op == "delete" {
 			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil // nothing to tombstone
 		}
-		// put or patch against a row the server has never seen. Only a
-		// well-formed apiary_id can create it — validateActivityOp GUARANTEES
-		// one for "put"; a "patch" without one (an edit racing ahead of its
-		// own create, or a stray edit for an id the server never received)
-		// has nothing to attach a brand-new row to, so it is a no-op, the
-		// same "missing row ⇒ nothing to do" convention apiaries' applyOp
-		// uses for a non-put op against a missing row.
-		if data.ApiaryID == nil {
+		// put or patch against a row the server has never seen. Materializing
+		// a brand-new row needs the full create-shape — apiary_id + occurred_at
+		// + type. validateActivityOp GUARANTEES all three for "put"; a "patch"
+		// missing any of them (an edit racing ahead of its own create, or a
+		// stray/partial edit for an id the server never received) has nothing
+		// to attach a row to, so it is a no-op — the same "missing row ⇒
+		// nothing to do" convention apiaries' applyOp uses. Guard ALL three
+		// here: apply is an independent endpoint and must not assume /validate
+		// ran on this exact body, so the *OccurredAt / *Type derefs below must
+		// never fire on a nil (which would panic — MEDIUM #304 security review).
+		if data.ApiaryID == nil || data.OccurredAt == nil || data.Type == nil {
 			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 		}
 		apiaryID, err := uuid.Parse(*data.ApiaryID)
