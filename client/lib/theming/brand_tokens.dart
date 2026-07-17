@@ -87,6 +87,46 @@ abstract final class BrandTokens {
   /// Danger `#B3423A` — logout, revoke, destructive actions.
   static const danger = Color(0xFFB3423A);
 
+  /// Muted trailing/chevron tint `#B7AFC7` — the disclosure chevron and other
+  /// low-emphasis row affordances (prototype's list-row `chevron_right`).
+  static const trailingMuted = Color(0xFFB7AFC7);
+
+  // --- Activity-type palette (prototype `TIPOS`) ---
+  // Each activity type has an accent [color] (icon/label) and a soft [tint]
+  // background for its leading icon tile. Cresta reuses [gold]/[sand]; the
+  // other three name the prototype's own hues. The accent colours are used as
+  // icon/label on their own light tint (graphical, not body text) — the tint
+  // pairings clear WCAG 2.2 SC 1.4.11's 3:1 non-text floor.
+
+  /// Cresta (honey harvest) accent — reuses [gold]; tile tint is [sand].
+  static const crestaTint = sand;
+
+  /// Alimentação (feeding) accent `#3E7D53` — a hive green.
+  static const feedingGreen = Color(0xFF3E7D53);
+
+  /// Alimentação tile tint `#E2EEE4`.
+  static const feedingTint = Color(0xFFE2EEE4);
+
+  /// Tratamento (treatment) accent `#B3564D` — a muted terracotta red.
+  static const treatmentRed = Color(0xFFB3564D);
+
+  /// Tratamento tile tint `#F6E4E1`.
+  static const treatmentTint = Color(0xFFF6E4E1);
+
+  /// Genérica (generic) tile tint `#ECE8F0` — pairs with [muted] as the accent.
+  static const genericTint = Color(0xFFECE8F0);
+
+  // --- Notes card (prototype's sand "sticky note" callout) ---
+
+  /// Notes-card ground `#F4EDDB` — reuses [sand].
+  static const notesBg = sand;
+
+  /// Notes-card border `#E3D5AE`.
+  static const notesBorder = Color(0xFFE3D5AE);
+
+  /// Notes-card body text `#5C4E1E` — AA on [notesBg].
+  static const notesText = Color(0xFF5C4E1E);
+
   // --- Derived scheme-support shades ---
   // Not prototype swatches, but kept here so `app_theme.dart` holds NO brand
   // hex of its own: these fill the Material `ColorScheme` container/dark-mode

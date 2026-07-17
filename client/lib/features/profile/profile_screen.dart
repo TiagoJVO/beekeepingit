@@ -203,7 +203,6 @@ class _ProfileFormFields extends StatelessWidget {
           autofocus: showOnboardingIntro,
           decoration: InputDecoration(
             labelText: l10n.profileNameLabel,
-            border: const OutlineInputBorder(),
             errorText: fieldErrors['name'],
           ),
           validator: (v) =>
@@ -216,7 +215,6 @@ class _ProfileFormFields extends StatelessWidget {
           keyboardType: TextInputType.emailAddress,
           decoration: InputDecoration(
             labelText: l10n.profileEmailLabel,
-            border: const OutlineInputBorder(),
             errorText: fieldErrors['email'],
           ),
           validator: (v) {
@@ -232,10 +230,7 @@ class _ProfileFormFields extends StatelessWidget {
         DropdownButtonFormField<String>(
           key: const Key('profile-locale-field'),
           initialValue: locale,
-          decoration: InputDecoration(
-            labelText: l10n.profileLocaleLabel,
-            border: const OutlineInputBorder(),
-          ),
+          decoration: InputDecoration(labelText: l10n.profileLocaleLabel),
           items: const [
             DropdownMenuItem(value: 'en', child: Text('English')),
             DropdownMenuItem(value: 'pt', child: Text('Português')),

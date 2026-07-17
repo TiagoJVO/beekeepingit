@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'brand_dimens.dart';
+import 'brand_theme.dart';
 import 'brand_tokens.dart';
 
 /// Light/dark Material 3 theme, built from the Melargil brand tokens
@@ -153,8 +155,12 @@ abstract final class AppTheme {
         : BrandTokens.plum800;
     const headerForeground = BrandTokens.paper;
 
+    final isLight = scheme.brightness == Brightness.light;
+    final brand = isLight ? BrandTheme.light : BrandTheme.dark;
+
     return base.copyWith(
       textTheme: textTheme,
+      extensions: [brand],
       appBarTheme: base.appBarTheme.copyWith(
         backgroundColor: headerBackground,
         foregroundColor: headerForeground,
@@ -163,6 +169,122 @@ abstract final class AppTheme {
         titleTextStyle: textTheme.titleLarge?.copyWith(color: headerForeground),
         iconTheme: const IconThemeData(color: headerForeground),
       ),
+      // Prototype cards: white on a 1px hairline, flat (no Material shadow),
+      // the 16px content radius (BrandDimens). In dark mode brand.cardColor is
+      // a raised plum so cards still lift off the plum-950 ground.
+      cardTheme: base.cardTheme.copyWith(
+        color: brand.cardColor,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BrandDimens.borderCard,
+          side: BorderSide(color: brand.cardBorder),
+        ),
+      ),
+      // Field controls: filled paper, a 1.5px line border at the 14px field
+      // radius, plum focus ring (the prototype focuses to plum, not honey),
+      // sized to the gloves-friendly 58px control height.
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: brand.cardColor,
+        constraints: const BoxConstraints(minHeight: BrandDimens.heightField),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 18,
+        ),
+        border: _fieldBorder(scheme.outline),
+        enabledBorder: _fieldBorder(scheme.outline),
+        focusedBorder: _fieldBorder(scheme.secondary, width: 1.5),
+        errorBorder: _fieldBorder(scheme.error),
+        focusedErrorBorder: _fieldBorder(scheme.error, width: 1.5),
+        hintStyle: TextStyle(color: scheme.onSurfaceVariant),
+      ),
+      // The single honey primary action — 60px tall at the 16px button radius,
+      // Archivo 700/18. PrimaryActionButton still overrides its own size, but
+      // any ad-hoc FilledButton now inherits the brand shape.
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(BrandDimens.heightPrimaryButton),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BrandDimens.borderCard,
+          ),
+          textStyle: textTheme.titleMedium?.copyWith(
+            fontFamily: bodyFontFamily,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
+        ),
+      ),
+      // Secondary / destructive — outlined, 56px, 1.5px border at the button
+      // radius.
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(BrandDimens.heightSecondaryButton),
+          side: BorderSide(color: scheme.outline, width: 1.5),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BrandDimens.borderCard,
+          ),
+          textStyle: textTheme.titleMedium?.copyWith(
+            fontFamily: bodyFontFamily,
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
+        ),
+      ),
+      // Type / period / sort chips render as 44px pills.
+      chipTheme: base.chipTheme.copyWith(
+        shape: const StadiumBorder(),
+        side: BorderSide(color: scheme.outline, width: 1.5),
+        labelStyle: textTheme.labelLarge?.copyWith(
+          fontFamily: bodyFontFamily,
+          fontWeight: FontWeight.w600,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+      ),
+      // Bottom nav on the plum ground with a honey selection (prototype
+      // bottom-nav = plum 800, honey selected pill/icon).
+      navigationBarTheme: base.navigationBarTheme.copyWith(
+        backgroundColor: BrandTokens.plum800,
+        indicatorColor: BrandTokens.honey.withValues(alpha: 0.22),
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? const IconThemeData(color: BrandTokens.honey)
+              : const IconThemeData(color: BrandTokens.darkOnSurfaceVariant),
+        ),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => textTheme.labelMedium!.copyWith(
+            fontFamily: bodyFontFamily,
+            fontWeight: FontWeight.w600,
+            color: states.contains(WidgetState.selected)
+                ? BrandTokens.honey
+                : BrandTokens.darkOnSurfaceVariant,
+          ),
+        ),
+      ),
+      // Contextual honey FAB pill, shared with PrimaryActionButton's honey.
+      floatingActionButtonTheme: base.floatingActionButtonTheme.copyWith(
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
+        extendedTextStyle: textTheme.titleMedium?.copyWith(
+          fontFamily: bodyFontFamily,
+          fontWeight: FontWeight.w700,
+          fontSize: 16,
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: brand.cardBorder,
+        thickness: 1,
+        space: 1,
+      ),
+    );
+  }
+
+  /// A rounded 1.5px input border at the field radius, in [color].
+  static OutlineInputBorder _fieldBorder(Color color, {double width = 1.5}) {
+    return OutlineInputBorder(
+      borderRadius: BrandDimens.borderField,
+      borderSide: BorderSide(color: color, width: width),
     );
   }
 }

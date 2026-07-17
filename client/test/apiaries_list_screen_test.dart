@@ -2,6 +2,7 @@ import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_list_screen.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -229,12 +230,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tiles = tester
-            .widgetList<ListTile>(find.byType(ListTile))
+        final cards = tester
+            .widgetList<BrandRowCard>(find.byType(BrandRowCard))
             .toList();
-        final titles = tiles
-            .map((t) => (t.title as Text).data)
-            .toList(growable: false);
+        final titles = cards.map((c) => c.title).toList(growable: false);
         expect(titles, ['Near', 'Far']);
       },
     );
@@ -250,12 +249,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tiles = tester
-            .widgetList<ListTile>(find.byType(ListTile))
+        final cards = tester
+            .widgetList<BrandRowCard>(find.byType(BrandRowCard))
             .toList();
-        final titles = tiles
-            .map((t) => (t.title as Text).data)
-            .toList(growable: false);
+        final titles = cards.map((c) => c.title).toList(growable: false);
         expect(titles, ['Alpha', 'Zulu']);
 
         expect(
@@ -322,12 +319,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tiles = tester
-            .widgetList<ListTile>(find.byType(ListTile))
+        final cards = tester
+            .widgetList<BrandRowCard>(find.byType(BrandRowCard))
             .toList();
-        final titles = tiles
-            .map((t) => (t.title as Text).data)
-            .toList(growable: false);
+        final titles = cards.map((c) => c.title).toList(growable: false);
         expect(titles, ['Near', 'No Location']);
       },
     );
@@ -346,8 +341,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tile = tester.widget<ListTile>(find.byType(ListTile));
-        final subtitle = (tile.subtitle as Text).data!;
+        final card = tester.widget<BrandRowCard>(find.byType(BrandRowCard));
+        final subtitle = card.subtitle!;
         expect(subtitle, contains('km away'));
         // Also still shows the hive count (distance is appended, not
         // replacing the existing subtitle content, #253 AC).
@@ -366,8 +361,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tile = tester.widget<ListTile>(find.byType(ListTile));
-        final subtitle = (tile.subtitle as Text).data!;
+        final card = tester.widget<BrandRowCard>(find.byType(BrandRowCard));
+        final subtitle = card.subtitle!;
         expect(subtitle, isNot(contains('km away')));
       },
     );
@@ -383,8 +378,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tile = tester.widget<ListTile>(find.byType(ListTile));
-        final subtitle = (tile.subtitle as Text).data!;
+        final card = tester.widget<BrandRowCard>(find.byType(BrandRowCard));
+        final subtitle = card.subtitle!;
         expect(subtitle, isNot(contains('km away')));
       },
     );

@@ -152,7 +152,10 @@ void main() {
         expect(find.byKey(const Key('activity-detail-header')), findsOneWidget);
         expect(find.text('Honey harvest'), findsWidgets);
         expect(find.textContaining('Date'), findsWidgets);
-        expect(find.byKey(const Key('activity-detail-attributes')), findsOneWidget);
+        expect(
+          find.byKey(const Key('activity-detail-attributes')),
+          findsOneWidget,
+        );
         expect(find.text('Honey supers harvested'), findsOneWidget);
         expect(find.text('4'), findsOneWidget);
         expect(find.text('Great flow this year.'), findsOneWidget);
@@ -183,11 +186,15 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('apiary-detail-header')), findsOneWidget);
 
+        await tester.ensureVisible(find.byKey(const Key('activity-act1')));
         await tester.tap(find.byKey(const Key('activity-act1')));
         await tester.pumpAndSettle();
 
         expect(find.byKey(const Key('activity-detail-header')), findsOneWidget);
-        expect(find.byKey(const Key('activity-detail-attributes')), findsOneWidget);
+        expect(
+          find.byKey(const Key('activity-detail-attributes')),
+          findsOneWidget,
+        );
       },
     );
 
@@ -218,7 +225,10 @@ void main() {
       expect(find.text('Edit activity'), findsWidgets);
       expect(find.byKey(const Key('shell-back-button')), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsWidgets);
-      expect(find.byKey(const Key('activity-detail-edit-button')), findsNothing);
+      expect(
+        find.byKey(const Key('activity-detail-edit-button')),
+        findsNothing,
+      );
     });
 
     testWidgets(
@@ -233,20 +243,28 @@ void main() {
         await tester.pumpAndSettle();
 
         // Cancel first: the existing confirmation step must gate the delete.
-        await tester.tap(find.byKey(const Key('activity-detail-delete-button')));
+        await tester.tap(
+          find.byKey(const Key('activity-detail-delete-button')),
+        );
         await tester.pumpAndSettle();
         expect(
           find.byKey(const Key('activity-delete-confirm-dialog')),
           findsOneWidget,
         );
-        await tester.tap(find.byKey(const Key('activity-delete-confirm-cancel')));
+        await tester.tap(
+          find.byKey(const Key('activity-delete-confirm-cancel')),
+        );
         await tester.pumpAndSettle();
         expect(repo.deleted, isEmpty);
 
         // Confirming actually deletes the activity via the repository.
-        await tester.tap(find.byKey(const Key('activity-detail-delete-button')));
+        await tester.tap(
+          find.byKey(const Key('activity-detail-delete-button')),
+        );
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('activity-delete-confirm-delete')));
+        await tester.tap(
+          find.byKey(const Key('activity-delete-confirm-delete')),
+        );
         await tester.pumpAndSettle();
 
         expect(repo.deleted, ['act1']);
@@ -273,9 +291,13 @@ void main() {
         );
 
         // Start the delete; it stays pending on the completer.
-        await tester.tap(find.byKey(const Key('activity-detail-delete-button')));
+        await tester.tap(
+          find.byKey(const Key('activity-detail-delete-button')),
+        );
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('activity-delete-confirm-delete')));
+        await tester.tap(
+          find.byKey(const Key('activity-delete-confirm-delete')),
+        );
         await tester.pump(); // let setState(_busy = true) rebuild
 
         // The Edit FAB is now disabled — it can't open the edit form for the

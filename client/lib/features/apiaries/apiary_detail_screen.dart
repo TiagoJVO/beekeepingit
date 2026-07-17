@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
 import 'apiaries_repository.dart';
@@ -95,7 +98,6 @@ class _ApiaryDetailBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
 
     return Center(
       child: ConstrainedBox(
@@ -105,21 +107,18 @@ class _ApiaryDetailBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
+              HeroCard(
                 key: const Key('apiary-detail-header'),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       apiary.name,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.bold,
+                      style: TextStyle(
+                        fontFamily: AppTheme.displayFontFamily,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 26,
+                        color: context.brand.onHeroSurface,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -131,33 +130,11 @@ class _ApiaryDetailBody extends StatelessWidget {
               ),
               if (apiary.notes != null && apiary.notes!.trim().isNotEmpty) ...[
                 const SizedBox(height: 14),
-                Container(
-                  key: const Key('apiary-detail-notes'),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.sticky_note_2_outlined,
-                        size: 20,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Semantics(
-                          label: l10n.apiaryNotesLabel,
-                          child: Text(
-                            apiary.notes!,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                      ),
-                    ],
+                Semantics(
+                  label: l10n.apiaryNotesLabel,
+                  child: NotesCard(
+                    key: const Key('apiary-detail-notes'),
+                    text: apiary.notes!,
                   ),
                 ),
               ],
@@ -200,7 +177,6 @@ class _ApiaryActivitiesSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
     final type = ref.watch(activityTypeFilterProvider(apiaryId));
     final dateRange = ref.watch(activityDateRangeFilterProvider(apiaryId));
     final viewModel = ref.watch(
@@ -210,19 +186,16 @@ class _ApiaryActivitiesSection extends ConsumerWidget {
     return Container(
       key: const Key('apiary-detail-activities-section'),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
+        color: context.brand.cardColor,
+        border: Border.all(color: context.brand.cardBorder),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
+          SectionHeader(
+            l10n.activitiesTitle,
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Text(
-              l10n.activitiesTitle,
-              style: theme.textTheme.titleMedium,
-            ),
           ),
           ActivityFilterBar(
             type: type,
@@ -261,7 +234,7 @@ class _LocationRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final color = theme.colorScheme.onPrimaryContainer;
+    final color = context.brand.onHeroSurfaceMuted;
     // Location (#252): the repository's Apiary model now carries
     // locationLon/locationLat (threaded through the local schema/repository
     // the same way notes was threaded here by #196) — render the formatted
@@ -377,18 +350,20 @@ class _CounterBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final brand = context.brand;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: brand.onHeroSurface.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Text(
         label,
-        style: theme.textTheme.titleMedium?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.bold,
+        style: TextStyle(
+          fontFamily: AppTheme.bodyFontFamily,
+          fontWeight: FontWeight.w700,
+          fontSize: 16,
+          color: brand.onHeroSurface,
         ),
       ),
     );

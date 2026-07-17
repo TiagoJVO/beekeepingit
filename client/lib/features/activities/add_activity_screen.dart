@@ -32,11 +32,7 @@ import 'activity_types.dart';
 /// from the caller's token once the queued write reconciles, not from
 /// anything this screen sends.
 class AddActivityScreen extends ConsumerStatefulWidget {
-  const AddActivityScreen({
-    required this.apiaryId,
-    this.activityId,
-    super.key,
-  });
+  const AddActivityScreen({required this.apiaryId, this.activityId, super.key});
 
   final String apiaryId;
 
@@ -145,7 +141,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
   String _numText(dynamic value) {
     if (value == null) return '';
     if (value is num) {
-      return value == value.truncate() ? value.truncate().toString() : value.toString();
+      return value == value.truncate()
+          ? value.truncate().toString()
+          : value.toString();
     }
     return '$value';
   }
@@ -298,11 +296,15 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       await repo.delete(widget.activityId!);
       if (!mounted) return;
       context.go('/apiaries/${widget.apiaryId}');
-      messenger.showSnackBar(SnackBar(content: Text(l10n.activityDeleteSuccess)));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.activityDeleteSuccess)),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text(l10n.activityDeleteError('$e'))));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.activityDeleteError('$e'))),
+      );
     }
   }
 
@@ -337,7 +339,6 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
                         isExpanded: true,
                         decoration: InputDecoration(
                           labelText: l10n.activityTypeFieldLabel,
-                          border: const OutlineInputBorder(),
                         ),
                         items: [
                           for (final type in knownActivityTypes)
@@ -361,7 +362,6 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
                         child: InputDecorator(
                           decoration: InputDecoration(
                             labelText: l10n.activityOccurredAtLabel,
-                            border: const OutlineInputBorder(),
                           ),
                           child: Text(
                             LocaleFormatting.of(context).date(_occurredAt),
@@ -437,10 +437,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
             autovalidateMode: AutovalidateMode.onUserInteraction,
             validator: (_) => _attrError(l10n, 'lot_batch'),
             onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              labelText: l10n.activityLotBatchLabel,
-              border: const OutlineInputBorder(),
-            ),
+            decoration: InputDecoration(labelText: l10n.activityLotBatchLabel),
           ),
           const SizedBox(height: 16),
           _notesField(l10n),
@@ -484,7 +481,8 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
         // — treatment_type is optional exactly when the context is
         // detection-only (mirrors the requiredIf in activity_attributes.dart
         // / api/types.go).
-        final isDetectionOnly = _treatmentContext == treatmentContextDetectionOnly;
+        final isDetectionOnly =
+            _treatmentContext == treatmentContextDetectionOnly;
         return [
           _dropdownField(
             l10n: l10n,
@@ -504,7 +502,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
             value: _treatmentType,
             options: treatmentTypes,
             attrKey: 'treatment_type',
-            helperText: isDetectionOnly ? l10n.activityTreatmentTypeOptionalForDetectionHint : null,
+            helperText: isDetectionOnly
+                ? l10n.activityTreatmentTypeOptionalForDetectionHint
+                : null,
             onChanged: (v) => setState(() => _treatmentType = v),
           ),
           if (requiresDisease) ...[
@@ -561,7 +561,6 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     validator: (_) => _attrError(l10n, 'notes'),
     decoration: InputDecoration(
       labelText: l10n.activityNotesLabel,
-      border: const OutlineInputBorder(),
       alignLabelWithHint: true,
     ),
   );
@@ -586,10 +585,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       // attribute is missing/invalid (HIGH review fix).
       autovalidateMode: AutovalidateMode.onUserInteraction,
       validator: (_) => _attrError(l10n, attrKey),
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: InputDecoration(labelText: label),
       onChanged: (_) => setState(() {}),
     );
   }
@@ -615,11 +611,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       // treatment_type for a detection-only report, #291 AC).
       autovalidateMode: AutovalidateMode.onUserInteraction,
       validator: (_) => _attrError(l10n, attrKey),
-      decoration: InputDecoration(
-        labelText: label,
-        helperText: helperText,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: InputDecoration(labelText: label, helperText: helperText),
       items: [
         for (final option in options)
           DropdownMenuItem(
