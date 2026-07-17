@@ -639,6 +639,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'No activities logged for this apiary yet.';
 
   @override
+  String apiaryActivitiesViewAll(int count) {
+    return 'View all $count activities';
+  }
+
+  @override
   String get activitiesEmpty => 'No activities yet.';
 
   @override
