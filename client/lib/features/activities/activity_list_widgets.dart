@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
@@ -193,22 +194,32 @@ class ActivityListView extends ConsumerWidget {
             ),
           );
         }
-        return ListView.separated(
-          key: const Key('activity-list'),
-          shrinkWrap: shrinkWrap,
-          physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-          itemCount: vm.filtered.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, i) {
-            final activity = vm.filtered[i];
-            return _ActivityTile(
-              activity: activity,
-              currentUserId: currentUserId,
-              apiaryName: showApiary
-                  ? apiaryNameOf?.call(activity.apiaryId)
-                  : null,
-            );
-          },
+        // Transparent Material ancestor so each now-tappable [_ActivityTile]
+        // (#310) paints its ink splash on a Material nearer than any colored
+        // container it's embedded in — the apiary detail's per-apiary section
+        // wraps this list in a surface-tinted Container (apiary_detail_screen.
+        // dart), which would otherwise hide the tap ink (and trips a debug
+        // assertion). No visual change: MaterialType.transparency paints
+        // nothing itself.
+        return Material(
+          type: MaterialType.transparency,
+          child: ListView.separated(
+            key: const Key('activity-list'),
+            shrinkWrap: shrinkWrap,
+            physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+            itemCount: vm.filtered.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final activity = vm.filtered[i];
+              return _ActivityTile(
+                activity: activity,
+                currentUserId: currentUserId,
+                apiaryName: showApiary
+                    ? apiaryNameOf?.call(activity.apiaryId)
+                    : null,
+              );
+            },
+          ),
         );
       },
     );
@@ -238,6 +249,16 @@ class _ActivityTile extends StatelessWidget {
     return ListTile(
       key: Key('activity-${activity.id}'),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      // Tapping a row opens the activity detail (#310, FR-AC-3/5/6). Both the
+      // per-apiary section (apiary detail) and the main all-apiaries tab use
+      // this shared tile, so this single onTap wires both list surfaces. The
+      // detail route lives under the apiaries branch (app_router.dart) — where
+      // every activity view/edit/delete surface lives — so a tap from the
+      // Activities tab crosses into that branch's stack (Back returns to the
+      // apiary context), consistent with where edit/delete already live.
+      onTap: () => context.go(
+        '/apiaries/${activity.apiaryId}/activities/${activity.id}',
+      ),
       leading: Icon(_iconFor(activity.type)),
       title: Text(title),
       subtitle: Text(subtitle),

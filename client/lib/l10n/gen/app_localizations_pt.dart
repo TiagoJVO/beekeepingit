@@ -439,6 +439,21 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiaryDetailTitle => 'Apiário';
 
   @override
+  String get activityDetailTitle => 'Atividade';
+
+  @override
+  String get activityDetailAttributesHeader => 'Detalhes';
+
+  @override
+  String get activityPerformedByLabel => 'Realizada por';
+
+  @override
+  String get editActivityAction => 'Editar atividade';
+
+  @override
+  String get editActivityTitle => 'Editar atividade';
+
+  @override
   String apiaryLocationValue(String lat, String lon) {
     return '$lat, $lon';
   }

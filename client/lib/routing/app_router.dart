@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../core/auth/auth_controller.dart';
 import '../features/account/account_screen.dart';
 import '../features/activities/activities_list_screen.dart';
+import '../features/activities/activity_detail_screen.dart';
 import '../features/activities/add_activity_screen.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
@@ -170,21 +171,32 @@ final routerProvider = Provider<GoRouter>((ref) {
                           apiaryId: state.pathParameters['id']!,
                         ),
                       ),
-                      // Edit/delete entry point (#40/#41, FR-AC-3/FR-AC-4):
-                      // the surface exists and is fully reachable by direct
-                      // navigation/deep link now; a tappable list ROW linking
-                      // here (either per-apiary or the main Activities tab,
-                      // still a ComingSoonScreen below) is #42/#43's scope,
-                      // not this one's — following #39's own precedent of
-                      // shipping the write surface before the list exists
-                      // to browse it from.
+                      // Activity detail (#310, FR-AC-3/5/6, FR-TEN-2): the
+                      // read-only view a tappable list row (per-apiary section
+                      // or the main Activities tab) now opens, from which
+                      // Edit/Delete are reached. Edit/delete themselves shipped
+                      // earlier (#40/#41) reachable by direct route only; the
+                      // edit form stays nested UNDER this detail route so its
+                      // full path (`.../activities/:activityId/edit`) and
+                      // `activityEdit` name are unchanged — no existing deep
+                      // link breaks.
                       GoRoute(
-                        path: 'activities/:activityId/edit',
-                        name: 'activityEdit',
-                        builder: (context, state) => AddActivityScreen(
+                        path: 'activities/:activityId',
+                        name: 'activityDetail',
+                        builder: (context, state) => ActivityDetailScreen(
                           apiaryId: state.pathParameters['id']!,
                           activityId: state.pathParameters['activityId']!,
                         ),
+                        routes: [
+                          GoRoute(
+                            path: 'edit',
+                            name: 'activityEdit',
+                            builder: (context, state) => AddActivityScreen(
+                              apiaryId: state.pathParameters['id']!,
+                              activityId: state.pathParameters['activityId']!,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
