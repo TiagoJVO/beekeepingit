@@ -1673,7 +1673,7 @@ func TestActivitiesRest_History_GetReturnsCombinedTimelineChronologically(t *tes
 	if len(got.Data) != 3 {
 		t.Fatalf("history entries = %d, want 3 (create, update, delete): %+v", len(got.Data), got.Data)
 	}
-	wantKinds := []string{"create", "update", "delete"}
+	wantKinds := []string{history.ChangeCreate, history.ChangeUpdate, history.ChangeDelete}
 	for i, want := range wantKinds {
 		e := got.Data[i]
 		if e.EventKind != want {

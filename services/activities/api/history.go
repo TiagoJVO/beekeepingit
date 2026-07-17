@@ -49,14 +49,24 @@ type historyListDTO struct {
 
 // getActivityHistory serves GET /v1/activities/{activityId}/history:
 // org-scoped via requireOrg (never a client-supplied organization_id), 404 if
-// the activity doesn't exist, is soft-deleted, or belongs to another org —
-// reusing GetActivity's own existence+tenancy check, the same org-scoped
-// lookup every other activities route already uses, so this endpoint can't
-// be used to probe for a cross-org activity id's existence. This closes the
-// same CRITICAL cross-org IDOR class this service's edit/delete paths were
+// the activity doesn't exist or belongs to another org. Existence+tenancy is
+// checked via GetActivityForUpdate rather than GetActivity: GetActivity
+// filters deleted_at IS NULL, which would 404 this route for a soft-deleted
+// activity even though its audit trail (including the delete event itself)
+// still exists — the whole point of this endpoint is to expose that trail,
+// so a deleted activity's history must stay reachable (FR-HIS-1). Reusing
+// GetActivityForUpdate (already used by updateActivity/deleteActivity for
+// the same deleted_at-agnostic existence check) keeps the org-scoped lookup
+// identical to every other activities route, so this endpoint still can't be
+// used to probe for a cross-org activity id's existence — closing the same
+// CRITICAL cross-org IDOR class this service's edit/delete paths were
 // already carrying (#284/#39, and this task's own explicit "do not regress"
 // note) — for a brand-new route, the guard is built in from the start rather
-// than added as a follow-up fix.
+// than added as a follow-up fix. The FOR UPDATE row lock this query carries
+// is a no-op for this handler's purposes (no explicit transaction wraps this
+// single query, so pgx runs it and releases the lock in one round trip) —
+// reusing the existing query avoids adding a third, near-duplicate
+// existence-check query for one read route.
 func getActivityHistory(q *sqlcgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, _, ok := requireOrg(w, r)
@@ -70,7 +80,7 @@ func getActivityHistory(q *sqlcgen.Queries) http.HandlerFunc {
 		}
 		pgID := pgtype.UUID{Bytes: id, Valid: true}
 
-		if _, err := q.GetActivity(r.Context(), sqlcgen.GetActivityParams{OrganizationID: org, ID: pgID}); err != nil {
+		if _, err := q.GetActivityForUpdate(r.Context(), sqlcgen.GetActivityForUpdateParams{OrganizationID: org, ID: pgID}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				problem.Write(w, r, problem.NotFound("activity not found"))
 				return

@@ -66,12 +66,22 @@ type historyListDTO struct {
 
 // getApiaryHistory serves GET /v1/apiaries/{apiaryId}/history: org-scoped via
 // requireOrg (never a client-supplied organization_id), 404 if the apiary
-// doesn't exist, is soft-deleted, or belongs to another org — reusing
-// GetApiary's own existence+tenancy check (the exact same query getApiary
-// itself calls) so this endpoint enforces identical scope-hiding (ADR-0002)
-// and can't be used to probe for a cross-org apiary id's existence, mirroring
-// the CRITICAL cross-org carry-over fix activities closed for its own
-// REST surface (#284/#39).
+// doesn't exist or belongs to another org. Existence+tenancy is checked via
+// GetApiaryForUpdate rather than GetApiary: GetApiary filters deleted_at IS
+// NULL, which would 404 this route for a soft-deleted apiary even though its
+// audit trail (including the delete event itself) still exists — the whole
+// point of this endpoint is to expose that trail, so a deleted apiary's
+// history must stay reachable (FR-HIS-1). Reusing GetApiaryForUpdate
+// (already used by updateApiary/deleteApiary for the same deleted_at-agnostic
+// existence check) keeps the org-scoped lookup identical to every other
+// apiaries route, so this endpoint still enforces the same scope-hiding
+// (ADR-0002) and can't be used to probe for a cross-org apiary id's
+// existence, mirroring the CRITICAL cross-org carry-over fix activities
+// closed for its own REST surface (#284/#39). The FOR UPDATE row lock this
+// query carries is a no-op for this handler's purposes (no explicit
+// transaction wraps this single query, so pgx runs it and releases the lock
+// in one round trip) — reusing the existing query avoids adding a third,
+// near-duplicate existence-check query for one read route.
 func getApiaryHistory(q *sqlcgen.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, _, ok := requireOrg(w, r)
@@ -85,7 +95,7 @@ func getApiaryHistory(q *sqlcgen.Queries) http.HandlerFunc {
 		}
 		pgID := pgtype.UUID{Bytes: id, Valid: true}
 
-		if _, err := q.GetApiary(r.Context(), sqlcgen.GetApiaryParams{OrganizationID: org, ID: pgID}); err != nil {
+		if _, err := q.GetApiaryForUpdate(r.Context(), sqlcgen.GetApiaryForUpdateParams{OrganizationID: org, ID: pgID}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				problem.Write(w, r, problem.NotFound("apiary not found"))
 				return
