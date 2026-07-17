@@ -3,6 +3,19 @@ SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
 WHERE oidc_sub = $1;
 
+-- name: GetUsersByNames :many
+-- Batch resolve app user_ids -> display name, backing the internal
+-- GET /internal/users/names endpoint the organizations service composes to
+-- turn a member roster (user_ids) into display names (#44 follow-up to
+-- per-user attribution, FR-TEN-2). Only rows that exist are returned; a
+-- caller treats a missing id as "no name" (a removed or never-provisioned
+-- user) and falls back to a short id fragment. Returns name only — never the
+-- IdP-verified email: names are org-shareable app data (FR-TEN-2), the email
+-- is not.
+SELECT id, name
+FROM identity.users
+WHERE id = ANY(@ids::uuid[]);
+
 -- name: UpsertUserOnFirstSeen :one
 -- Get-or-create on first authenticated profile read (#25, FR-ONB-1): if no row
 -- exists yet for oidc_sub, insert one with empty name/email so the client

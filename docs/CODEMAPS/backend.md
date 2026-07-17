@@ -24,7 +24,8 @@ Domain routes mounted behind:  authnMW(JWT) → orgMW(org-resolver) → roleMW(R
 ```text
 GET   /v1/profile              → getProfile      api/profile.go
 PATCH /v1/profile              → updateProfile   api/profile.go
-GET   /internal/users/by-sub/{sub} → getUserBySub api/users.go
+GET   /internal/users/by-sub/{sub} → getUserBySub   api/users.go
+GET   /internal/users/names        → getUsersByNames api/users.go (batch user_id→name, #44)
 ```
 
 ### organizations (main.go; authnMW; resolver→identity)
@@ -33,7 +34,8 @@ GET   /internal/users/by-sub/{sub} → getUserBySub api/users.go
 POST   /v1/organizations                         → createOrganization  api/organizations.go
 GET    /v1/organizations/me                       → getMyOrganization   api/organizations.go
 GET    /v1/organizations/{orgId}                  → getOrganization     api/organizations.go
-GET    /v1/organizations/{orgId}/members          → listMembers         api/invitations.go
+GET    /v1/organizations/{orgId}/members          → listMembers         api/invitations.go (admin)
+GET    /v1/organizations/{orgId}/members/names    → listMemberNames     api/invitations.go (any member, #44)
 GET    /v1/organizations/{orgId}/invitations      → listInvitations     api/invitations.go
 POST   /v1/organizations/{orgId}/invitations      → createInvitation    api/invitations.go (admin)
 DELETE /v1/organizations/{orgId}/invitations/{id} → revokeInvitation    api/invitations.go (admin)

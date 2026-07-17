@@ -2,6 +2,7 @@ import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:flutter/material.dart';
@@ -94,6 +95,10 @@ Widget _buildApp({
         (ref, apiaryId) => Stream.value(const <Activity>[]),
       ),
       profileProvider.overrideWith(_CompleteProfileController.new),
+      // Keep the member-name roster hermetic (#44): the activity list watches
+      // memberNamesProvider, which would otherwise attempt a real fetch —
+      // attribution falls back to short ids here, which these tests assert.
+      memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
     child: const BeekeepingitApp(),
@@ -366,6 +371,9 @@ void main() {
               (ref, apiaryId) => Stream.value(const <Activity>[]),
             ),
             profileProvider.overrideWith(_CompleteProfileController.new),
+            memberNamesProvider.overrideWith(
+              (ref) async => const <String, String>{},
+            ),
             organizationProvider.overrideWith(
               _ExistingOrganizationController.new,
             ),

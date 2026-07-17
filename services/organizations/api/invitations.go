@@ -74,6 +74,21 @@ type memberListResponse struct {
 	Page pageResponse     `json:"page"`
 }
 
+// MemberNameResponse is the least-privilege member-name shape
+// (contracts/openapi/organizations.openapi.yaml's MemberName schema, #44
+// follow-up): user_id -> display name ONLY, no role/status/email. Any active
+// member may read it (unlike the admin-only MemberResponse), so per-user
+// attribution (FR-TEN-2) can show a real name instead of a short id fragment.
+type MemberNameResponse struct {
+	UserID string `json:"user_id"`
+	Name   string `json:"name"`
+}
+
+type memberNameListResponse struct {
+	Data []MemberNameResponse `json:"data"`
+	Page pageResponse         `json:"page"`
+}
+
 // InvitationResponse is the client-facing invitation shape
 // (contracts/openapi/organizations.openapi.yaml's Invitation schema).
 type InvitationResponse struct {
@@ -112,17 +127,19 @@ type invitationCreateRequest struct {
 // (history.md section 4) -- see createInvitationHandler/revokeInvitationHandler.
 func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) {
 	r.Get("/organizations/{orgId}/members", listMembersHandler(q, resolver))
+	r.Get("/organizations/{orgId}/members/names", listMemberNamesHandler(q, resolver))
 	r.Get("/organizations/{orgId}/invitations", listInvitationsHandler(q, resolver))
 	r.Post("/organizations/{orgId}/invitations", createInvitationHandler(pool, q, resolver))
 	r.Delete("/organizations/{orgId}/invitations/{invitationId}", revokeInvitationHandler(pool, q, resolver))
 }
 
-// requireOrgAdmin resolves the caller's active membership, asserts {orgId}
-// matches it (404 otherwise, ADR-0002), and asserts the caller is an org
-// admin (403 otherwise, auth.md section 5.3). Every member/invitation route needs
-// exactly this sequence, so it's centralized rather than repeated per
-// handler.
-func requireOrgAdmin(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, resolver UserResolver) (callerMembership, bool) {
+// requireOrgMember resolves the caller's active membership and asserts {orgId}
+// matches it (404 otherwise, ADR-0002 -- the path never widens scope; a
+// caller from a different org gets 404, not 403, since there's nothing to
+// reveal about another org). It applies NO role check -- it's the guard for
+// member-readable routes any active member may call (e.g. the member-names
+// roster, #44). requireOrgAdmin layers the admin check on top.
+func requireOrgMember(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, resolver UserResolver) (callerMembership, bool) {
 	member, ok := resolveActiveMembership(w, r, q, resolver)
 	if !ok {
 		return callerMembership{}, false
@@ -130,6 +147,18 @@ func requireOrgAdmin(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries,
 	requested, err := uuid.Parse(chi.URLParam(r, "orgId"))
 	if err != nil || requested != uuid.UUID(member.OrgID.Bytes) {
 		problem.Write(w, r, problem.NotFound("organization not found"))
+		return callerMembership{}, false
+	}
+	return member, true
+}
+
+// requireOrgAdmin is requireOrgMember plus an admin-role assertion (403
+// otherwise, auth.md section 5.3). Every write-side member/invitation route
+// needs exactly this sequence, so it's centralized rather than repeated per
+// handler.
+func requireOrgAdmin(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, resolver UserResolver) (callerMembership, bool) {
+	member, ok := requireOrgMember(w, r, q, resolver)
+	if !ok {
 		return callerMembership{}, false
 	}
 	if member.Role != "admin" {
@@ -176,6 +205,71 @@ func listMembersHandler(q *sqlcgen.Queries, resolver UserResolver) http.HandlerF
 			})
 		}
 		writeJSON(w, r, http.StatusOK, memberListResponse{Data: data, Page: page})
+	}
+}
+
+// listMemberNamesHandler returns one page of {user_id, name} for the caller's
+// org -- readable by ANY active member (requireOrgMember, not requireOrgAdmin),
+// the non-admin-safe roster the client needs to resolve activity attribution
+// to a real name (#44 follow-up, FR-TEN-2: org data is shared across all
+// members). It returns names only -- never role/status/email -- so broadening
+// read access beyond admins exposes the minimum: a display name of someone
+// the caller already knows shares their org. The roster's user_ids come from
+// organizations' own memberships; the names come from identity via the
+// injected resolver (service-decomposition.md §4 rule 3 -- cross-context
+// composition by id, no cross-schema join). An id identity has no name for
+// (or an incomplete profile) yields an empty name, which the client renders
+// as a short id fragment. Paginated identically to listMembersHandler.
+func listMemberNamesHandler(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		member, ok := requireOrgMember(w, r, q, resolver)
+		if !ok {
+			return
+		}
+
+		limit, cursor, ok := parsePage(w, r)
+		if !ok {
+			return
+		}
+		rows, err := q.ListMembers(r.Context(), sqlcgen.ListMembersParams{
+			OrganizationID: member.OrgID,
+			Limit:          int32(limit + 1), //nolint:gosec // limit is clamped to [1,maxPageLimit=200]
+			Cursor:         cursor,
+		})
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list member names failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		page := pageResponse{Limit: limit}
+		if len(rows) > limit {
+			next := uuidString(rows[limit-1].ID)
+			page.NextCursor = &next
+			rows = rows[:limit]
+		}
+
+		userIDs := make([]string, 0, len(rows))
+		for _, row := range rows {
+			userIDs = append(userIDs, uuidString(row.UserID))
+		}
+		names, err := resolver.ResolveNames(r.Context(), r.Header.Get("Authorization"), userIDs)
+		if err != nil {
+			// A resolver transport/5xx failure is an upstream fault (identity
+			// unreachable), not a client error -- surfaced as 502 and logged,
+			// mirroring resolveCaller's own identityUnavailable branch, rather
+			// than silently returning every member with an empty name.
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "resolve member names failed", slog.Any("error", err))
+			problem.Write(w, r, identityUnavailable("identity service is unavailable"))
+			return
+		}
+
+		data := make([]MemberNameResponse, 0, len(rows))
+		for _, row := range rows {
+			id := uuidString(row.UserID)
+			data = append(data, MemberNameResponse{UserID: id, Name: names[id]})
+		}
+		writeJSON(w, r, http.StatusOK, memberNameListResponse{Data: data, Page: page})
 	}
 }
 
