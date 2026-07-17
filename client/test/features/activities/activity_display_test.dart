@@ -40,6 +40,25 @@ void main() {
       expect(line, isNot(contains('Honey harvested (kg)')));
     });
 
+    test('harvest: includes the optional lot_batch identifier when present (#292)', () {
+      final line = activitySummaryLine(
+        _l10n,
+        _activity(
+          type: 'harvest',
+          attributes: {'honey_supers': 4, 'lot_batch': '2026-07-A1'},
+        ),
+      );
+      expect(line, contains('Lot / batch identifier: 2026-07-A1'));
+    });
+
+    test('harvest: an absent lot_batch is simply not included', () {
+      final line = activitySummaryLine(
+        _l10n,
+        _activity(type: 'harvest', attributes: {'honey_supers': 4}),
+      );
+      expect(line, isNot(contains('Lot / batch identifier')));
+    });
+
     test('feeding: includes feed type and amount', () {
       final line = activitySummaryLine(
         _l10n,
@@ -66,6 +85,26 @@ void main() {
       expect(line, contains('Apivar/amitraz'));
       expect(line, contains('General / preventive'));
     });
+
+    test(
+      'treatment: a detection-only report with no treatment_type still summarizes '
+      'cleanly (#291 AC: detection can be logged with no treatment applied yet)',
+      () {
+        final line = activitySummaryLine(
+          _l10n,
+          _activity(
+            type: 'treatment',
+            attributes: {
+              'treatment_context': 'detection_only',
+              'disease': 'Varroose',
+            },
+          ),
+        );
+        expect(line, contains('Detection only (no treatment yet)'));
+        expect(line, contains('Disease / condition: Varroose'));
+        expect(line, isNot(contains('null')));
+      },
+    );
 
     test('generic with no attributes falls back to the "no details" text', () {
       final line = activitySummaryLine(_l10n, _activity(type: 'generic'));

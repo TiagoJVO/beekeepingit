@@ -807,6 +807,14 @@
   "@activityDiseaseLabel": {
     "description": "Field label for the treatment activity's conditionally-required disease attribute (#38/#39, FR-AC-1, D-19)"
   },
+  "activityTreatmentTypeOptionalForDetectionHint": "Optional for a detection-only report",
+  "@activityTreatmentTypeOptionalForDetectionHint": {
+    "description": "Helper text shown under the treatment_type field once the detection-only context is selected, clarifying it isn't required (#291 AC: a detection can be logged with no treatment applied yet)"
+  },
+  "activityLotBatchLabel": "Lot / batch identifier",
+  "@activityLotBatchLabel": {
+    "description": "Field label for the harvest activity's optional lot_batch attribute (#292, FR-AC-1, D-19)"
+  },
   "activityNotesLabel": "Notes",
   "@activityNotesLabel": {
     "description": "Field label for an activity's free-text notes attribute, shared by every type (#38/#39, FR-AC-1)"

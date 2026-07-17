@@ -53,6 +53,22 @@ void main() {
       final errors = validateActivityAttributes(activityTypeHarvest, {'honey_supers': 1, 'colour': 'amber'});
       expect(hasFieldCode(errors, 'attributes.colour', 'invalid'), isTrue);
     });
+
+    test('valid with an optional lot_batch identifier (#292, D-19)', () {
+      final errors = validateActivityAttributes(activityTypeHarvest, {
+        'honey_supers': 4,
+        'lot_batch': '2026-07-A1',
+      });
+      expect(errors, isEmpty);
+    });
+
+    test('lot_batch over the length limit is rejected (#292)', () {
+      final errors = validateActivityAttributes(activityTypeHarvest, {
+        'honey_supers': 1,
+        'lot_batch': 'x' * 101,
+      });
+      expect(hasFieldCode(errors, 'attributes.lot_batch', 'too_long'), isTrue);
+    });
   });
 
   group('validateActivityAttributes: feeding', () {
@@ -118,6 +134,39 @@ void main() {
         'treatment_type': 'Timol',
       });
       expect(hasFieldCode(errors, 'attributes.treatment_context', 'invalid'), isTrue);
+    });
+
+    test(
+      'valid: detection_only with disease and NO treatment_type at all '
+      '(#291 AC: a detection can be logged with no treatment applied yet)',
+      () {
+        final errors = validateActivityAttributes(activityTypeTreatment, {
+          'treatment_context': treatmentContextDetectionOnly,
+          'disease': 'Varroose',
+        });
+        expect(errors, isEmpty);
+      },
+    );
+
+    test(
+      'missing treatment_type when disease_specific is still rejected '
+      '(only detection_only makes treatment_type optional)',
+      () {
+        final errors = validateActivityAttributes(activityTypeTreatment, {
+          'treatment_context': treatmentContextDiseaseSpecific,
+          'disease': 'Varroose',
+        });
+        expect(hasFieldCode(errors, 'attributes.treatment_type', 'required'), isTrue);
+      },
+    );
+
+    test('disease outside the DGAV-DDO-informed candidate vocabulary is rejected (#291)', () {
+      final errors = validateActivityAttributes(activityTypeTreatment, {
+        'treatment_context': treatmentContextDiseaseSpecific,
+        'treatment_type': 'Timol',
+        'disease': 'Made-up disease',
+      });
+      expect(hasFieldCode(errors, 'attributes.disease', 'invalid'), isTrue);
     });
   });
 

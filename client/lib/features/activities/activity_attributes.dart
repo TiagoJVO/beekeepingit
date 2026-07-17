@@ -34,6 +34,9 @@ class ActivityAttributeError {
 
 const _maxNotesLength = 10000;
 
+/// Mirrors services/activities/api/types.go's maxLotBatchLength (#292).
+const _maxLotBatchLength = 100;
+
 enum _Kind { string, number, integer }
 
 class _AttrSpec {
@@ -68,6 +71,11 @@ final Map<String, List<_AttrSpec>> _typeSchemas = {
     const _AttrSpec('honey_supers', required: true, kind: _Kind.integer, min: 0),
     const _AttrSpec('honey_kg', kind: _Kind.number, min: 0),
     const _AttrSpec('hives_involved', kind: _Kind.integer, min: 0),
+    // lot_batch (#292, FR-AC-1, D-19): optional free-text lot/batch
+    // identifier captured at harvest time, for future traceability.
+    // Capture-side only — export coverage is a separate story
+    // (EPIC-09-NEW-C).
+    const _AttrSpec('lot_batch', maxLen: _maxLotBatchLength),
     const _AttrSpec('notes', maxLen: _maxNotesLength),
   ],
   activityTypeFeeding: [
@@ -78,10 +86,17 @@ final Map<String, List<_AttrSpec>> _typeSchemas = {
   ],
   activityTypeTreatment: [
     const _AttrSpec('treatment_context', required: true, vocab: treatmentContexts),
-    const _AttrSpec('treatment_type', required: true, vocab: treatmentTypes),
+    // treatment_type is required UNLESS this is a detection-only report
+    // (#291 AC: "a detection can be logged with no treatment attached
+    // yet").
+    _AttrSpec(
+      'treatment_type',
+      vocab: treatmentTypes,
+      requiredIf: (attrs) => attrs['treatment_context'] != treatmentContextDetectionOnly,
+    ),
     _AttrSpec(
       'disease',
-      maxLen: 200,
+      vocab: diseaseConditions,
       requiredIf: (attrs) {
         final ctx = attrs['treatment_context'];
         return ctx == treatmentContextDiseaseSpecific || ctx == treatmentContextDetectionOnly;

@@ -214,6 +214,8 @@
   "activityTreatmentContextFieldLabel": "Contexto do tratamento",
   "activityTreatmentTypeLabel": "Produto de tratamento",
   "activityDiseaseLabel": "Doença / condição",
+  "activityTreatmentTypeOptionalForDetectionHint": "Opcional para um registo de deteção apenas",
+  "activityLotBatchLabel": "Identificador de lote",
   "activityNotesLabel": "Notas",
   "activityFieldRequired": "Este campo é obrigatório",
   "activityFieldInvalid": "Este valor não é válido",

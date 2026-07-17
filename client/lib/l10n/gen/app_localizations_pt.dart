@@ -615,6 +615,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get activityDiseaseLabel => 'Doença / condição';
 
   @override
+  String get activityTreatmentTypeOptionalForDetectionHint =>
+      'Opcional para um registo de deteção apenas';
+
+  @override
+  String get activityLotBatchLabel => 'Identificador de lote';
+
+  @override
   String get activityNotesLabel => 'Notas';
 
   @override

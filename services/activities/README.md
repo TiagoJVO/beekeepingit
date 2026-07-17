@@ -56,22 +56,31 @@ nothing to add).
 ### Type registry (`api/types.go`)
 
 The four initial types and their attribute schemas (FR-AC-1, confirmed
-2026-07-16 as committed v1 scope):
+2026-07-16 as committed v1 scope; treatment's conditional `treatment_type`
+and the `disease` vocabulary, and harvest's `lot_batch`, added by #291/#292):
 
-| Type        | Required attributes                                   | Optional attributes                                                                                     |
-| ----------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `harvest`   | `honey_supers` (int ≥ 0 — the primary yield metric)   | `honey_kg`, `hives_involved`, `notes`                                                                   |
-| `feeding`   | `feed_type` (vocab), `feed_amount`                    | `hives_involved`, `notes`                                                                               |
-| `treatment` | `treatment_context` (vocab), `treatment_type` (vocab) | `disease` (**required** when context is `disease_specific`/`detection_only`), `hives_involved`, `notes` |
-| `generic`   | —                                                     | `notes`                                                                                                 |
+| Type        | Required attributes                                                                                          | Optional attributes                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `harvest`   | `honey_supers` (int ≥ 0 — the primary yield metric)                                                          | `honey_kg`, `hives_involved`, `lot_batch` (#292, capture-only — export is EPIC-09-NEW-C), `notes`              |
+| `feeding`   | `feed_type` (vocab), `feed_amount`                                                                           | `hives_involved`, `notes`                                                                                      |
+| `treatment` | `treatment_context` (vocab); `treatment_type` (vocab, **required unless** context is `detection_only`, #291) | `disease` (vocab; **required** when context is `disease_specific`/`detection_only`), `hives_involved`, `notes` |
+| `generic`   | —                                                                                                            | `notes`                                                                                                        |
 
 Controlled candidate vocabularies (extensible, **not** a closed DB enum —
-validated in Go against `FeedTypes`/`TreatmentTypes`/`TreatmentContexts`):
+validated in Go against `FeedTypes`/`TreatmentTypes`/`TreatmentContexts`/`DiseaseConditions`):
 
 - **Feed type:** Xarope 1:1, Xarope 2:1, Candi, Pólen.
 - **Treatment type:** Apivar/amitraz, Ácido oxálico, Timol, Outro.
 - **Treatment context:** general/preventive, disease-specific, detection-only
   (D-19's "future-relevant data point", confirmed into v1 scope 2026-07-16).
+  A `detection_only` treatment does **not** require `treatment_type` (#291
+  AC: "a detection can be logged with no treatment applied yet").
+- **Disease/condition** (#291, D-19): Varroose, Loque americana, Loque
+  europeia, Nosemose, Acariose, Aethina tumida (pequeno besouro da colmeia),
+  Tropilaelaps spp., Outro — sourced from DGAV's mandatory-notification bee
+  disease list (DDO) per `docs/research/regulatory-pt-eu-beekeeping.md` §B.6.
+  The initial set is sourced directly from that research note and has not
+  been separately confirmed by product.
 
 **Extensibility (FR-AC-1 AC):** a new activity type, or a new attribute on an
 existing type, is a **code-only** change — append to `typeSchemas` in

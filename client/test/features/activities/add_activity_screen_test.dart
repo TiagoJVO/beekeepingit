@@ -300,6 +300,43 @@ void main() {
           );
         },
       );
+
+      testWidgets(
+        'the disease field is a dropdown populated from the DGAV-DDO-informed '
+        'candidate vocabulary, not free text (#291)',
+        (tester) async {
+          await _openAddActivityForm(tester);
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Treatment').last);
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('activity-treatment-context-field')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Specific disease/condition').last);
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.byKey(const Key('activity-disease-field')));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Varroose').last, findsOneWidget);
+          expect(find.text('Loque americana').last, findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'harvest shows an optional lot/batch identifier field (#292)',
+        (tester) async {
+          await _openAddActivityForm(tester);
+
+          expect(
+            find.byKey(const Key('activity-lot-batch-field')),
+            findsOneWidget,
+          );
+        },
+      );
     },
   );
 
@@ -459,6 +496,139 @@ void main() {
           find.textContaining("Couldn't save the activity"),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'a detection-only treatment saves successfully with NO treatment_type '
+      'selected (#291 AC: a detection can be logged with no treatment applied yet)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('activity-type-field')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Treatment').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('activity-treatment-context-field')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Detection only (no treatment yet)').last);
+        await tester.pumpAndSettle();
+
+        // treatment_type is deliberately left unselected — only the disease
+        // is chosen, proving detection-only doesn't require a treatment.
+        await tester.tap(find.byKey(const Key('activity-disease-field')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Varroose').last);
+        await tester.pumpAndSettle();
+
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.type, 'treatment');
+        expect(
+          repo.created.single.attributes['treatment_context'],
+          'detection_only',
+        );
+        expect(repo.created.single.attributes['disease'], 'Varroose');
+        expect(repo.created.single.attributes.containsKey('treatment_type'), isFalse);
+        // Navigated away (i.e. genuinely saved, not blocked by validation).
+        expect(find.byKey(const Key('activity-save-button')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a harvest with an optional lot_batch identifier saves it (#292)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        await tester.enterText(
+          find.byKey(const Key('activity-lot-batch-field')),
+          '2026-07-A1',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.attributes['lot_batch'], '2026-07-A1');
+      },
+    );
+
+    testWidgets(
+      'a harvest with lot_batch left empty saves without it (optional, #292)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.attributes.containsKey('lot_batch'), isFalse);
       },
     );
   });

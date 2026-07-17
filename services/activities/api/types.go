@@ -58,6 +58,32 @@ var (
 		TreatmentContextDiseaseSpecific,
 		TreatmentContextDetectionOnly,
 	}
+
+	// DiseaseConditions is the known disease/condition candidate vocabulary
+	// for Treatment activities' "disease" attribute (#291, FR-AC-1, D-19),
+	// sourced from DGAV's mandatory-notification bee-disease list (DDO, DL
+	// 203/2005 Annex II) as enumerated in
+	// docs/research/regulatory-pt-eu-beekeeping.md §B.6: Acariose
+	// (Acarapisose), Tropilaelaps spp. infestation, Aethina tumida (small
+	// hive beetle) infestation, American foulbrood (loque americana),
+	// European foulbrood (loque europeia), nosemosis, and varroosis — the
+	// current national/EU DDO list, not the requirements folder (which only
+	// commits to "a DGAV-DDO-informed list", D-19). "Outro" is a catch-all
+	// so a diagnosis outside this list can still be recorded (with detail in
+	// the free-text notes field), mirroring TreatmentTypes' own "Outro"
+	// entry. Extensible in code, not a closed DB enum — see the package doc.
+	// This initial set is sourced directly from the research note and has
+	// not been separately confirmed by product; see this PR's description.
+	DiseaseConditions = []string{
+		"Varroose",
+		"Loque americana",
+		"Loque europeia",
+		"Nosemose",
+		"Acariose",
+		"Aethina tumida (pequeno besouro da colmeia)",
+		"Tropilaelaps spp.",
+		"Outro",
+	}
 )
 
 // TreatmentContext values (see TreatmentContexts above).
@@ -114,11 +140,17 @@ var typeSchemas = map[string][]attrSpec{
 	// occurred_at column, not here. honey_supers ("alças") is the primary
 	// yield metric and REQUIRED (FR-AC-1, confirmed 2026-07-16 as committed
 	// v1 scope, no longer provisional) — more reliably measured in the
-	// field than the kg amount, which stays optional.
+	// field than the kg amount, which stays optional. lot_batch (#292,
+	// FR-AC-1, D-19) is an OPTIONAL free-text lot/batch identifier captured
+	// at harvest time for future traceability (Reg (EC) 178/2002 Art. 18,
+	// Reg (EU) 931/2011, Dir 2011/91/EU, Dir 2001/110/EC as amended by Dir
+	// (EU) 2024/1438) — capture-side only here; surfacing it in exports is
+	// a separate story (EPIC-09-NEW-C) blocked by #292, not this schema.
 	TypeHarvest: {
 		{key: "honey_supers", required: true, kind: kindInteger, min: floatPtr(0)},
 		{key: "honey_kg", kind: kindNumber, min: floatPtr(0)},
 		{key: "hives_involved", kind: kindInteger, min: floatPtr(0)},
+		{key: "lot_batch", kind: kindString, maxLen: maxLotBatchLength},
 		{key: "notes", kind: kindString, maxLen: maxNotesLength},
 	},
 	// Feeding (Alimentação, prototype.md): feed_type + feed_amount are both
@@ -131,20 +163,27 @@ var typeSchemas = map[string][]attrSpec{
 		{key: "hives_involved", kind: kindInteger, min: floatPtr(0)},
 		{key: "notes", kind: kindString, maxLen: maxNotesLength},
 	},
-	// Treatment (Tratamento, prototype.md): treatment_context + treatment_type
-	// are both required. "disease" is conditionally required — only when
-	// treatment_context ties the treatment to a specific disease/condition or
-	// is a detection-only report (FR-AC-1) — and is otherwise optional free
-	// text: the DGAV-DDO mandatory-notification disease list (D-19,
-	// docs/research/regulatory-pt-eu-beekeeping.md §B.6) is flagged as a
-	// future candidate vocabulary but not yet enumerated in requirements/, so
-	// this field is validated for presence + length only, not against a
-	// closed list (see this PR's assumptions).
+	// Treatment (Tratamento, prototype.md): treatment_context is always
+	// required. "treatment_type" is required UNLESS treatment_context is
+	// detection_only (#291 AC: "a detection can be logged with no treatment
+	// attached yet" — the disease field is not contingent on a treatment
+	// being applied in the same activity). "disease" is conditionally
+	// required — only when treatment_context ties the treatment to a
+	// specific disease/condition or is a detection-only report (FR-AC-1) —
+	// and is validated against DiseaseConditions, the DGAV-DDO-informed
+	// candidate vocabulary (D-19, docs/research/regulatory-pt-eu-beekeeping.md
+	// §B.6).
 	TypeTreatment: {
 		{key: "treatment_context", required: true, kind: kindString, vocab: TreatmentContexts},
-		{key: "treatment_type", required: true, kind: kindString, vocab: TreatmentTypes},
 		{
-			key: "disease", kind: kindString, maxLen: 200,
+			key: "treatment_type", kind: kindString, vocab: TreatmentTypes,
+			requiredIf: func(attrs map[string]any) bool {
+				ctx, _ := attrs["treatment_context"].(string)
+				return ctx != TreatmentContextDetectionOnly
+			},
+		},
+		{
+			key: "disease", kind: kindString, vocab: DiseaseConditions,
 			requiredIf: func(attrs map[string]any) bool {
 				ctx, _ := attrs["treatment_context"].(string)
 				return ctx == TreatmentContextDiseaseSpecific || ctx == TreatmentContextDetectionOnly
@@ -160,6 +199,12 @@ var typeSchemas = map[string][]attrSpec{
 }
 
 const maxNotesLength = 10000
+
+// maxLotBatchLength bounds Honey harvest's optional lot_batch identifier
+// (#292, FR-AC-1, D-19) — generous for a lot/batch code (e.g. a
+// date-and-location scheme like "2026-07-Melargil-A1") without allowing it
+// to become a second notes field.
+const maxLotBatchLength = 100
 
 // KnownActivityTypes returns the currently-registered activity types, sorted
 // for deterministic output (used by tests and by the 400/422 error detail
