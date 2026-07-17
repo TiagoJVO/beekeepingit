@@ -16,12 +16,14 @@ const apiaryEntityType = 'apiary';
 const apiaryCountersTable = 'apiary_counters';
 const apiaryCounterEntityType = 'apiary_counter';
 
-/// Local table + entity type for `activities.activities` (#38, FR-AC-1,
-/// FR-TEN-2). Read-only groundwork for now: this table is declared so the
-/// Sync Rules stream can (once configured server-side, #39+) replicate the
-/// org's activities down to the device, but nothing writes to it yet — the
-/// add/edit UI and the local write path are #39 and later EPIC-03 stories,
-/// per that issue's scope split from #38 (data model only).
+/// Local table + entity type for `activities.activities` (#38/#39, FR-AC-1,
+/// FR-TEN-2). #39 wires the local WRITE path (features/activities/
+/// activities_repository.dart's create, queued through the connector like
+/// every other table here) and the offline→sync reconciliation
+/// (powersync_connector.dart's entityTypeForTable routes this table's ops to
+/// the ACTIVITIES owning service, not apiaries — see
+/// services/sync/api/coordinator.go's groupOpsByOwner). Edit/delete/list are
+/// later EPIC-03 stories.
 const activitiesTable = 'activities';
 const activityEntityType = 'activity';
 

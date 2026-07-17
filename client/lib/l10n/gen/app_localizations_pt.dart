@@ -577,4 +577,57 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get treatmentContextDetectionOnlyLabel =>
       'Deteção apenas (sem tratamento ainda)';
+
+  @override
+  String get newActivityTitle => 'Adicionar atividade';
+
+  @override
+  String get addActivityAction => 'Adicionar atividade';
+
+  @override
+  String get activityTypeFieldLabel => 'Tipo de atividade';
+
+  @override
+  String get activityOccurredAtLabel => 'Data';
+
+  @override
+  String get activityHoneySupersLabel => 'Alças de mel colhidas';
+
+  @override
+  String get activityHoneyKgLabel => 'Mel colhido (kg)';
+
+  @override
+  String get activityHivesInvolvedLabel => 'Colmeias envolvidas';
+
+  @override
+  String get activityFeedTypeLabel => 'Tipo de alimento';
+
+  @override
+  String get activityFeedAmountLabel => 'Quantidade de alimento';
+
+  @override
+  String get activityTreatmentContextFieldLabel => 'Contexto do tratamento';
+
+  @override
+  String get activityTreatmentTypeLabel => 'Produto de tratamento';
+
+  @override
+  String get activityDiseaseLabel => 'Doença / condição';
+
+  @override
+  String get activityNotesLabel => 'Notas';
+
+  @override
+  String get activityFieldRequired => 'Este campo é obrigatório';
+
+  @override
+  String get activityFieldInvalid => 'Este valor não é válido';
+
+  @override
+  String get activitySaveSuccess => 'Atividade guardada';
+
+  @override
+  String activitySaveError(String error) {
+    return 'Não foi possível guardar a atividade: $error';
+  }
 }

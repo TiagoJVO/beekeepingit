@@ -201,5 +201,29 @@
   "activityTypeGenericLabel": "Genérica",
   "treatmentContextGeneralLabel": "Geral / preventivo",
   "treatmentContextDiseaseSpecificLabel": "Doença/condição específica",
-  "treatmentContextDetectionOnlyLabel": "Deteção apenas (sem tratamento ainda)"
+  "treatmentContextDetectionOnlyLabel": "Deteção apenas (sem tratamento ainda)",
+  "newActivityTitle": "Adicionar atividade",
+  "addActivityAction": "Adicionar atividade",
+  "activityTypeFieldLabel": "Tipo de atividade",
+  "activityOccurredAtLabel": "Data",
+  "activityHoneySupersLabel": "Alças de mel colhidas",
+  "activityHoneyKgLabel": "Mel colhido (kg)",
+  "activityHivesInvolvedLabel": "Colmeias envolvidas",
+  "activityFeedTypeLabel": "Tipo de alimento",
+  "activityFeedAmountLabel": "Quantidade de alimento",
+  "activityTreatmentContextFieldLabel": "Contexto do tratamento",
+  "activityTreatmentTypeLabel": "Produto de tratamento",
+  "activityDiseaseLabel": "Doença / condição",
+  "activityNotesLabel": "Notas",
+  "activityFieldRequired": "Este campo é obrigatório",
+  "activityFieldInvalid": "Este valor não é válido",
+  "activitySaveSuccess": "Atividade guardada",
+  "activitySaveError": "Não foi possível guardar a atividade: {error}",
+  "@activitySaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

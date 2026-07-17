@@ -25,9 +25,16 @@ schemas:
 # (walking-skeleton.md §5.3, sync.md §3.2). Deliberately a SUBSET of `schemas`
 # — non-synced schemas (identity, ai, …) stay out of PowerSync's replication so
 # its bucket storage never shadows them. Grows as syncable services land.
+# activities (#39): the client declares a local `activities` table and expects
+# to sync it down (client/lib/core/sync/powersync_schema.dart), so its rows
+# must replicate — otherwise an offline-created activity never reconciles to
+# other devices, breaking #39's offline AC (FR-OF-1). Adding it here puts the
+# activities schema in the `powersync` publication and makes the powersync
+# role a member of activities_svc (cluster.yaml managed.roles inRoles).
 syncedSchemas:
   - apiaries
   - organizations
+  - activities
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.

@@ -758,5 +758,78 @@
   "treatmentContextDetectionOnlyLabel": "Detection only (no treatment yet)",
   "@treatmentContextDetectionOnlyLabel": {
     "description": "Display label for a disease-detection report with no treatment applied yet (#38, FR-AC-1, D-19)"
+  },
+  "newActivityTitle": "Add activity",
+  "@newActivityTitle": {
+    "description": "Screen header title for the add-activity form (#39, FR-AC-2)"
+  },
+  "addActivityAction": "Add activity",
+  "@addActivityAction": {
+    "description": "Button on the apiary detail page that opens the add-activity form (#39, FR-AC-2)"
+  },
+  "activityTypeFieldLabel": "Activity type",
+  "@activityTypeFieldLabel": {
+    "description": "Field label for the activity-type selector on the add-activity form (#39, FR-AC-2)"
+  },
+  "activityOccurredAtLabel": "Date",
+  "@activityOccurredAtLabel": {
+    "description": "Field label for an activity's date on the add-activity form (#39, FR-AC-2)"
+  },
+  "activityHoneySupersLabel": "Honey supers harvested",
+  "@activityHoneySupersLabel": {
+    "description": "Field label for the harvest activity's honey_supers attribute — the primary yield metric (#38/#39, FR-AC-1)"
+  },
+  "activityHoneyKgLabel": "Honey harvested (kg)",
+  "@activityHoneyKgLabel": {
+    "description": "Field label for the harvest activity's optional honey_kg attribute (#38/#39, FR-AC-1)"
+  },
+  "activityHivesInvolvedLabel": "Hives involved",
+  "@activityHivesInvolvedLabel": {
+    "description": "Field label for the optional hives_involved attribute shared by harvest/feeding/treatment (#38/#39, FR-AC-1, D-2)"
+  },
+  "activityFeedTypeLabel": "Feed type",
+  "@activityFeedTypeLabel": {
+    "description": "Field label for the feeding activity's feed_type attribute (#38/#39, FR-AC-1)"
+  },
+  "activityFeedAmountLabel": "Feed amount",
+  "@activityFeedAmountLabel": {
+    "description": "Field label for the feeding activity's feed_amount attribute (#38/#39, FR-AC-1)"
+  },
+  "activityTreatmentContextFieldLabel": "Treatment context",
+  "@activityTreatmentContextFieldLabel": {
+    "description": "Field label for the treatment activity's treatment_context selector (#38/#39, FR-AC-1, D-19)"
+  },
+  "activityTreatmentTypeLabel": "Treatment product",
+  "@activityTreatmentTypeLabel": {
+    "description": "Field label for the treatment activity's treatment_type attribute (#38/#39, FR-AC-1)"
+  },
+  "activityDiseaseLabel": "Disease / condition",
+  "@activityDiseaseLabel": {
+    "description": "Field label for the treatment activity's conditionally-required disease attribute (#38/#39, FR-AC-1, D-19)"
+  },
+  "activityNotesLabel": "Notes",
+  "@activityNotesLabel": {
+    "description": "Field label for an activity's free-text notes attribute, shared by every type (#38/#39, FR-AC-1)"
+  },
+  "activityFieldRequired": "This field is required",
+  "@activityFieldRequired": {
+    "description": "Validation message for a required activity attribute left empty (#39, FR-AC-2 AC: required attributes are validated before save)"
+  },
+  "activityFieldInvalid": "This value isn't valid",
+  "@activityFieldInvalid": {
+    "description": "Generic validation message for an activity attribute the client-side mirror (activity_attributes.dart) rejects for a reason other than being required (#39)"
+  },
+  "activitySaveSuccess": "Activity saved",
+  "@activitySaveSuccess": {
+    "description": "Confirmation toast after successfully saving a new activity, offline or online (#39, FR-OF-1)"
+  },
+  "activitySaveError": "Couldn't save the activity: {error}",
+  "@activitySaveError": {
+    "description": "Error toast when saving a new activity throws (#39)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   }
 }

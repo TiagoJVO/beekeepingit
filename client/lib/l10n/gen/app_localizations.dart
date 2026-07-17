@@ -1045,6 +1045,108 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Detection only (no treatment yet)'**
   String get treatmentContextDetectionOnlyLabel;
+
+  /// Screen header title for the add-activity form (#39, FR-AC-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Add activity'**
+  String get newActivityTitle;
+
+  /// Button on the apiary detail page that opens the add-activity form (#39, FR-AC-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Add activity'**
+  String get addActivityAction;
+
+  /// Field label for the activity-type selector on the add-activity form (#39, FR-AC-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity type'**
+  String get activityTypeFieldLabel;
+
+  /// Field label for an activity's date on the add-activity form (#39, FR-AC-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get activityOccurredAtLabel;
+
+  /// Field label for the harvest activity's honey_supers attribute — the primary yield metric (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Honey supers harvested'**
+  String get activityHoneySupersLabel;
+
+  /// Field label for the harvest activity's optional honey_kg attribute (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Honey harvested (kg)'**
+  String get activityHoneyKgLabel;
+
+  /// Field label for the optional hives_involved attribute shared by harvest/feeding/treatment (#38/#39, FR-AC-1, D-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Hives involved'**
+  String get activityHivesInvolvedLabel;
+
+  /// Field label for the feeding activity's feed_type attribute (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Feed type'**
+  String get activityFeedTypeLabel;
+
+  /// Field label for the feeding activity's feed_amount attribute (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Feed amount'**
+  String get activityFeedAmountLabel;
+
+  /// Field label for the treatment activity's treatment_context selector (#38/#39, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Treatment context'**
+  String get activityTreatmentContextFieldLabel;
+
+  /// Field label for the treatment activity's treatment_type attribute (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Treatment product'**
+  String get activityTreatmentTypeLabel;
+
+  /// Field label for the treatment activity's conditionally-required disease attribute (#38/#39, FR-AC-1, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Disease / condition'**
+  String get activityDiseaseLabel;
+
+  /// Field label for an activity's free-text notes attribute, shared by every type (#38/#39, FR-AC-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get activityNotesLabel;
+
+  /// Validation message for a required activity attribute left empty (#39, FR-AC-2 AC: required attributes are validated before save)
+  ///
+  /// In en, this message translates to:
+  /// **'This field is required'**
+  String get activityFieldRequired;
+
+  /// Generic validation message for an activity attribute the client-side mirror (activity_attributes.dart) rejects for a reason other than being required (#39)
+  ///
+  /// In en, this message translates to:
+  /// **'This value isn\'t valid'**
+  String get activityFieldInvalid;
+
+  /// Confirmation toast after successfully saving a new activity, offline or online (#39, FR-OF-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity saved'**
+  String get activitySaveSuccess;
+
+  /// Error toast when saving a new activity throws (#39)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the activity: {error}'**
+  String activitySaveError(String error);
 }
 
 class _AppLocalizationsDelegate

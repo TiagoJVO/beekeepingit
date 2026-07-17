@@ -58,13 +58,20 @@ REST writes serve online-only/direct callers (Admin App, scripts); the PWA uses 
 ### activities (main.go; authnMW→orgMW→RequireRole(admin,user))
 
 ```text
-POST  /internal/activities/validate → validateHandler  api/validate.go
+POST  /internal/activities/validate → validateHandler  api/validate.go (stateless, #38)
+POST  /v1/activities                → createActivity   api/write.go (#39; online-only/direct callers)
+POST  /internal/sync/validate       → validateActivityBatch api/sync.go (#39)
+POST  /internal/sync/apply          → applyActivityBatch    api/sync.go (#39)
 ```
 
-#38's scope is the data model (`api/types.go`'s type registry + JSONB
-attribute validation) + tenancy, not the CRUD API — the validate-only route
-above proves the wiring; create/edit/delete/list REST + sync validate/apply
-are #39+.
+#38's scope was the data model (`api/types.go`'s type registry + JSONB
+attribute validation) + tenancy — the validate-only route proved the wiring.
+#39 adds the real create write path: both `api/write.go` and `api/sync.go`
+verify a client-supplied `apiary_id` belongs to the caller's org via
+`api/apiaries_client.go`'s `ApiaryVerifier` (an HTTP call to apiaries' own
+`GET /v1/apiaries/{id}` — this service has no DB access to the apiaries
+schema) BEFORE writing anything; `performed_by` is derived server-side from
+claims, never the client (FR-TEN-2). Edit/delete/list are #40-#43.
 
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 
@@ -74,8 +81,12 @@ POST  /v1/sync/batch           → BatchHandler   api/handlers.go → Coordinato
 GET   /internal/sync/jwks.json → JWKSHandler    api/handlers.go (unauth; PowerSync validates)
 ```
 
-`Coordinator.handle` (api/coordinator.go): POST validate → if 200, POST apply → relay.
-422 relayed (nothing written); upstream error → 502 (batch stays queued, idempotent retry).
+`Coordinator.handle` (api/coordinator.go): groups ops by owning service via
+`entity_type` (`activity` → activities, #39; everything else → apiaries),
+validate-all → if every group 200s, apply-all → merge results. Single-group
+batches (the common case) use the byte-identical pre-#39 fast path. 422 from
+any group aborts the whole push (nothing written anywhere); upstream error →
+502 (batch stays queued, idempotent retry).
 
 ## Service → store mapping (per DB-backed service)
 

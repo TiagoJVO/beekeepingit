@@ -108,6 +108,18 @@ syncConfig:
         - SELECT * FROM organizations.organizations WHERE id = bucket.organization_id
         - SELECT * FROM apiaries.audit_log WHERE organization_id = bucket.organization_id
         - SELECT * FROM apiaries.sync_conflict_log WHERE organization_id = bucket.organization_id
+        # activities.activities (#39, FR-OF-1): stream the org's activities to
+        # the device so an offline-created activity reconciles across devices.
+        # Explicit column list matching the client's local schema
+        # (client/lib/core/sync/powersync_schema.dart's activities Table —
+        # NOT recorded_at/deleted_at, which the client doesn't declare), same
+        # additive-safety rationale as the apiaries.apiaries entry above.
+        # deleted_at IS NULL so a server-side tombstone leaves the client's
+        # result set (#41's delete path). The activities schema is in the
+        # powersync publication (charts/postgres syncedSchemas).
+        - SELECT id, organization_id, apiary_id, performed_by, journey_id, type,
+          occurred_at, attributes, created_at, updated_at
+          FROM activities.activities WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.

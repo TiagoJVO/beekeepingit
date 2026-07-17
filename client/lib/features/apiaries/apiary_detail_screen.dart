@@ -57,11 +57,29 @@ class ApiaryDetailScreen extends ConsumerWidget {
           return _ApiaryDetailBody(apiary: apiary);
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('apiary-detail-edit-button'),
-        onPressed: () => context.go('/apiaries/$apiaryId/edit'),
-        icon: const Icon(Icons.edit_outlined),
-        label: Text(l10n.editApiaryAction),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Add-activity entry point (#39, FR-AC-2): the natural place to
+          // log an activity is right where the apiary itself already is.
+          // Only the add flow — the activities LIST is #42/#43's scope.
+          FloatingActionButton.extended(
+            key: const Key('apiary-detail-add-activity-button'),
+            heroTag: 'apiary-detail-add-activity-button',
+            onPressed: () => context.go('/apiaries/$apiaryId/activities/new'),
+            icon: const Icon(Icons.event_note_outlined),
+            label: Text(l10n.addActivityAction),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            key: const Key('apiary-detail-edit-button'),
+            heroTag: 'apiary-detail-edit-button',
+            onPressed: () => context.go('/apiaries/$apiaryId/edit'),
+            icon: const Icon(Icons.edit_outlined),
+            label: Text(l10n.editApiaryAction),
+          ),
+        ],
       ),
     );
   }

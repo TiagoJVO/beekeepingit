@@ -20,11 +20,19 @@ Go module, linked through the repo-root `go.work`.
 | `GET /internal/sync/jwks.json` | none (public key set) | JWKS PowerSync validates sync tokens against. **Internal** — never via the gateway.                |
 | `GET /healthz`, `GET /readyz`  | none                  | Liveness / readiness.                                                                              |
 
-The coordinator fans out to exactly one owning service today (`apiaries`), but
-implements the two-phase validate-then-apply contract as specified, so adding a
-second owning service later changes nothing here (sync.md §6.3). A validation
-reject relays the owning service's `422` (nothing written); a post-validation
-failure returns `502` and heals on PowerSync's idempotent forward-retry.
+The coordinator groups a client transaction's ops by owning service — every
+op's `entity_type` (`apiary`/`apiary_counter` default to `apiaries`;
+`activity` routes to `activities`, #39, sync.md §6.1/§6.3's "adding a second
+service later changes nothing here" made real for the first actual second
+service) — then runs validate-all-then-apply-all across every INVOLVED
+service (`api/coordinator.go`'s `groupOpsByOwner`/`handleMulti`). A single
+apiary-only or activity-only push (the overwhelming majority, sync.md §1)
+takes the byte-identical single-group fast path (`handleSingle`), unchanged
+from before #39. A validation reject from ANY involved service relays that
+`422` and aborts the whole push before anything is applied ANYWHERE — the
+atomicity guarantee holds across services, not just within one (sync.md
+§6.3); a post-validation failure returns `502` and heals on PowerSync's
+idempotent forward-retry.
 
 ## Configuration (env vars)
 
@@ -39,6 +47,7 @@ failure returns `502` and heals on PowerSync's idempotent forward-retry.
 | `INTERNAL_IDENTITY_URL`       | yes      | —                | Identity service base URL (org resolver).                                                       |
 | `INTERNAL_ORGANIZATIONS_URL`  | yes      | —                | Organizations service base URL (org resolver).                                                  |
 | `INTERNAL_APIARIES_URL`       | yes      | —                | Apiaries service base URL (coordinator target).                                                 |
+| `INTERNAL_ACTIVITIES_URL`     | yes      | —                | Activities service base URL (coordinator target, #39).                                          |
 | `SYNC_TOKEN_ISSUER`           | yes      | —                | `iss` stamped into minted sync tokens.                                                          |
 | `SYNC_TOKEN_AUDIENCE`         | yes      | —                | `aud` PowerSync expects on the sync token.                                                      |
 | `SYNC_TOKEN_TTL`              | no       | `5m`             | Sync-token lifetime (Go duration).                                                              |
