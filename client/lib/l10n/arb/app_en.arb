@@ -831,5 +831,88 @@
         "type": "String"
       }
     }
+  },
+  "apiaryActivitiesEmpty": "No activities logged for this apiary yet.",
+  "@apiaryActivitiesEmpty": {
+    "description": "Empty state on the apiary detail page's activities section when the apiary has no activities at all yet (#42, FR-AC-5)"
+  },
+  "activitiesEmpty": "No activities yet.",
+  "@activitiesEmpty": {
+    "description": "Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)"
+  },
+  "activitiesFilterNoResults": "No activities match your filters.",
+  "@activitiesFilterNoResults": {
+    "description": "Shown instead of the plain empty state when type/date-range filters are active but match nothing (#42/#43 AC: combined filters + empty/no-results state)"
+  },
+  "activitiesError": "Could not load activities: {error}",
+  "@activitiesError": {
+    "description": "Error state on an activities list (#42/#43)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterTypeLabel": "Type",
+  "@activityFilterTypeLabel": {
+    "description": "Field label for the activity-type filter dropdown (#42/#43, FR-AC-5/FR-AC-6)"
+  },
+  "activityFilterTypeAll": "All types",
+  "@activityFilterTypeAll": {
+    "description": "The activity-type filter's cleared/default option — no type filter applied (#42/#43)"
+  },
+  "activityFilterDateRangeLabel": "Date range",
+  "@activityFilterDateRangeLabel": {
+    "description": "Field label for the date-range filter control (#42/#43, FR-AC-5/FR-AC-6)"
+  },
+  "activityFilterDateRangeUnset": "Any date",
+  "@activityFilterDateRangeUnset": {
+    "description": "The date-range filter's cleared/default state — no date filter applied (#42/#43)"
+  },
+  "activityFilterDateRangeValue": "{start} – {end}",
+  "@activityFilterDateRangeValue": {
+    "description": "The selected date range, both bounds already locale-formatted by the caller (#42/#43)",
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterClearAction": "Clear filters",
+  "@activityFilterClearAction": {
+    "description": "Button that resets both the type and date-range filters at once (#42/#43)"
+  },
+  "activityPerformedByYou": "You",
+  "@activityPerformedByYou": {
+    "description": "Attribution shown on an activity performed by the current caller (#44, FR-TEN-2) — matches the map screen's own 'You' marker label (apiaryMapUserLocationLabel) for consistency"
+  },
+  "activityPerformedByMember": "Member {id}",
+  "@activityPerformedByMember": {
+    "description": "Attribution shown on an activity performed by another org member, identified by a short id fragment — there is no member-display-name lookup available anywhere in the app for a non-admin caller (#44, see activity_display.dart's doc comment)",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "activityPerformedByUnknown": "Unknown",
+  "@activityPerformedByUnknown": {
+    "description": "Fallback attribution for the brief local-only window before a freshly-created activity round-trips through sync and performed_by is populated server-side (#44)"
+  },
+  "activityPerformedBySemanticLabel": "Performed by: {who}",
+  "@activityPerformedBySemanticLabel": {
+    "description": "Screen-reader label wrapping an activity row's attribution chip (#44, WCAG 2.2 AA)",
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "activityNoAttributesSummary": "No additional details",
+  "@activityNoAttributesSummary": {
+    "description": "Fallback list-row summary for an activity with no type-specific attributes to show (e.g. a generic activity with no notes) (#42/#43)"
   }
 }

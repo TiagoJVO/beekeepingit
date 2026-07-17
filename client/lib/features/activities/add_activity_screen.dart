@@ -136,7 +136,10 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
   /// server would only reject at sync time (D-12: catch it on the client
   /// against the same rules the server applies).
   String? _attrError(AppLocalizations l10n, String key) {
-    for (final e in validateActivityAttributes(_selectedType, _buildAttributes())) {
+    for (final e in validateActivityAttributes(
+      _selectedType,
+      _buildAttributes(),
+    )) {
       if (e.field == 'attributes.$key') {
         return e.code == 'required'
             ? l10n.activityFieldRequired
@@ -165,7 +168,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text(l10n.activitySaveError('$e'))));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.activitySaveError('$e'))),
+      );
     }
   }
 
@@ -206,11 +211,15 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
                           for (final type in knownActivityTypes)
                             DropdownMenuItem(
                               value: type,
-                              child: Text(activityTypeLabel(l10n, type) ?? type),
+                              child: Text(
+                                activityTypeLabel(l10n, type) ?? type,
+                              ),
                             ),
                         ],
                         onChanged: (value) {
-                          if (value != null) setState(() => _selectedType = value);
+                          if (value != null) {
+                            setState(() => _selectedType = value);
+                          }
                         },
                       ),
                       const SizedBox(height: 16),
@@ -222,7 +231,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
                             labelText: l10n.activityOccurredAtLabel,
                             border: const OutlineInputBorder(),
                           ),
-                          child: Text(LocaleFormatting.of(context).date(_occurredAt)),
+                          child: Text(
+                            LocaleFormatting.of(context).date(_occurredAt),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),

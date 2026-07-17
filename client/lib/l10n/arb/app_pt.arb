@@ -225,5 +225,51 @@
         "type": "String"
       }
     }
-  }
+  },
+  "apiaryActivitiesEmpty": "Ainda não há atividades registadas para este apiário.",
+  "activitiesEmpty": "Ainda não há atividades.",
+  "activitiesFilterNoResults": "Nenhuma atividade corresponde aos filtros.",
+  "activitiesError": "Não foi possível carregar as atividades: {error}",
+  "@activitiesError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterTypeLabel": "Tipo",
+  "activityFilterTypeAll": "Todos os tipos",
+  "activityFilterDateRangeLabel": "Intervalo de datas",
+  "activityFilterDateRangeUnset": "Qualquer data",
+  "activityFilterDateRangeValue": "{start} – {end}",
+  "@activityFilterDateRangeValue": {
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterClearAction": "Limpar filtros",
+  "activityPerformedByYou": "Você",
+  "activityPerformedByMember": "Membro {id}",
+  "@activityPerformedByMember": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "activityPerformedByUnknown": "Desconhecido",
+  "activityPerformedBySemanticLabel": "Realizada por: {who}",
+  "@activityPerformedBySemanticLabel": {
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "activityNoAttributesSummary": "Sem detalhes adicionais"
 }
