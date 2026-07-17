@@ -180,8 +180,20 @@ class _ApiaryDetailBody extends StatelessWidget {
 /// apiary context already. [ActivityListView.shrinkWrap]s its list — the
 /// outer `SingleChildScrollView` above already owns the page's scrolling, so
 /// this section can't also be an unbounded scrollable.
+///
+/// Because a `shrinkWrap`ped list can't lazily virtualize (it builds every
+/// row up front), the embedded preview is capped at [_previewLimit]: over
+/// many seasons an apiary accumulates hundreds of activities, and rebuilding
+/// all of them on every filter change or sync write is wasteful. Beyond the
+/// cap the section links to the full, properly-virtualized per-apiary list
+/// (`/apiaries/:id/activities`, apiary_activities_screen.dart) — which still
+/// satisfies #42's "lists all activities for that apiary" AC.
 class _ApiaryActivitiesSection extends ConsumerWidget {
   const _ApiaryActivitiesSection({required this.apiaryId});
+
+  /// How many activities the embedded preview renders before deferring the
+  /// rest to the full per-apiary list.
+  static const _previewLimit = 5;
 
   final String apiaryId;
 
@@ -230,6 +242,8 @@ class _ApiaryActivitiesSection extends ConsumerWidget {
             viewModel: viewModel,
             emptyText: l10n.apiaryActivitiesEmpty,
             shrinkWrap: true,
+            maxItems: _previewLimit,
+            onViewAll: () => context.go('/apiaries/$apiaryId/activities'),
           ),
           const SizedBox(height: 8),
         ],

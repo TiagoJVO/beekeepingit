@@ -643,6 +643,11 @@ class AppLocalizationsPt extends AppLocalizations {
       'Ainda não há atividades registadas para este apiário.';
 
   @override
+  String apiaryActivitiesViewAll(int count) {
+    return 'Ver todas as $count atividades';
+  }
+
+  @override
   String get activitiesEmpty => 'Ainda não há atividades.';
 
   @override
