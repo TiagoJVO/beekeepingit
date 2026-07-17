@@ -56,8 +56,10 @@ audit_log          (… same shape as apiaries.audit_log)
 ```
 
 `type` + per-type `attributes` keys validated in Go (`api/types.go`'s type registry), not a
-DB enum/CHECK (extensible-enum convention). #38 ships the schema + validation only; no
-write path populates these tables yet (#39+).
+DB enum/CHECK (extensible-enum convention). #38 shipped the schema + validation only; #39
+added create, #40/#41 added edit/delete (delete via `deleted_at` tombstone, same convention
+as `apiaries.apiaries`) — both REST (`api/write.go`) and sync-apply (`api/sync.go`, LWW on
+`updated_at`).
 
 ## Relationships
 

@@ -9,20 +9,31 @@ owns the `activities.activities`, `activities.sync_conflict_log` and
 
 **#38's scope was the data model, not the CRUD API** — it exposed only a
 thin internal validate-only endpoint. [#39](https://github.com/TiagoJVO/beekeepingit/issues/39)
-(FR-AC-2, FR-TEN-2, FR-HIS-1) adds the real **create** write path on top of
-that same wiring: the client-facing `POST /v1/activities` REST route
+(FR-AC-2, FR-TEN-2, FR-HIS-1) added the **create** write path on top of that
+same wiring: the client-facing `POST /v1/activities` REST route
 (online-only/direct callers) and the internal `/internal/sync/validate` +
 `/internal/sync/apply` endpoints the write-back coordinator
 (`services/sync`) calls so an activity created offline (queued via
-PowerSync) reconciles on sync (FR-OF-1). Both write paths verify a
-client-supplied `apiary_id` belongs to the caller's organization via the
+PowerSync) reconciles on sync (FR-OF-1).
+[#40](https://github.com/TiagoJVO/beekeepingit/issues/40)/[#41](https://github.com/TiagoJVO/beekeepingit/issues/41)
+(FR-AC-3/FR-AC-4) extend the same REST + sync surface with **edit**
+(`PATCH /v1/activities/{id}`, sync `patch`) and **delete**
+(`DELETE /v1/activities/{id}`, sync `delete` — a **tombstone**, `deleted_at`,
+never a hard delete, so the PowerSync Sync Rules'
+`deleted_at IS NULL` filter propagates it to every device) — both LWW-compared
+against the stored row's `updated_at` on the sync-apply path
+(`api/sync.go`'s `applyActivityOp`/`mergeActivityOp`, mirroring apiaries'
+own `applyOp`/`mergeOp`). Every write path that touches (or re-points)
+`apiary_id` verifies it belongs to the caller's organization via the
 **apiaries service itself** (`api/apiaries_client.go`'s `ApiaryVerifier`,
 calling apiaries' own org-scoped `GET /v1/apiaries/{id}`) before writing
 anything — this service has no database access to the apiaries schema
 (ownership rule 1), so that check can only be an HTTP call, not a query;
 this is the direct carry-over of #38's review finding, closed here the same
-way apiaries closed its own cross-tenant IDOR on counter sync (#284).
-Edit/delete/list are later EPIC-03 stories (#40-#43).
+way apiaries closed its own cross-tenant IDOR on counter sync (#284). An
+edit that doesn't touch `apiary_id` (the common case — the client's edit UI
+never exposes moving an activity to a different apiary) makes no
+cross-service call at all. List is a later EPIC-03 story (#42/#43).
 
 Stamped from [`services/servicetemplate`](../servicetemplate/README.md); DB
 access via [`services/shared/dbaccess`](../shared/README.md). Its own Go
@@ -71,13 +82,15 @@ existing type, is a **code-only** change — append to `typeSchemas` in
 
 ## Surface
 
-| Route                                | Auth                 | Purpose                                                                                                                                                                                                                                                                                      |
-| ------------------------------------ | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /internal/activities/validate` | OIDC JWT + org scope | Stateless attribute-schema validation of `{type, occurred_at, attributes}`; never persists (#38). 200 `{"valid":true}` or 422 RFC 9457 with field detail.                                                                                                                                    |
-| `POST /v1/activities`                | OIDC JWT + org scope | Create an activity (#39, online-only/direct callers -- the field PWA creates through sync instead). Verifies `apiary_id` ownership, derives `performed_by` from claims (FR-TEN-2), records history (FR-HIS-1). 201 with the created activity, or 422/409 on validation/idempotency conflict. |
-| `POST /internal/sync/validate`       | OIDC JWT + org scope | Dry-runs a batch of `entity_type: "activity"` sync ops (create-only in this version) -- the counterpart of `services/apiaries/api/sync.go`'s own route, called by `services/sync`'s coordinator.                                                                                             |
-| `POST /internal/sync/apply`          | OIDC JWT + org scope | Applies a batch of `entity_type: "activity"` ops in one local transaction -- idempotent on the client-generated id, records history, logs a content conflict on a differing resend.                                                                                                          |
-| `GET /healthz`, `GET /readyz`        | none                 | Liveness / readiness.                                                                                                                                                                                                                                                                        |
+| Route                                | Auth                 | Purpose                                                                                                                                                                                                                                                                                        |
+| ------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /internal/activities/validate` | OIDC JWT + org scope | Stateless attribute-schema validation of `{type, occurred_at, attributes}`; never persists (#38). 200 `{"valid":true}` or 422 RFC 9457 with field detail.                                                                                                                                      |
+| `POST /v1/activities`                | OIDC JWT + org scope | Create an activity (#39, online-only/direct callers -- the field PWA creates through sync instead). Verifies `apiary_id` ownership, derives `performed_by` from claims (FR-TEN-2), records history (FR-HIS-1). 201 with the created activity, or 422/409 on validation/idempotency conflict.   |
+| `PATCH /v1/activities/{id}`          | OIDC JWT + org scope | Edit an activity (#40, FR-AC-3, online-only/direct callers). Re-validates type/occurred_at/attributes, re-verifies `apiary_id` ownership only when the request carries one, records history. 200 with the updated activity, or 404/422.                                                        |
+| `DELETE /v1/activities/{id}`         | OIDC JWT + org scope | Delete an activity (#41, FR-AC-4, online-only/direct callers) -- a **tombstone** (`deleted_at`), not a hard delete. Records history. 204, or 404 if already gone.                                                                                                                              |
+| `POST /internal/sync/validate`       | OIDC JWT + org scope | Dry-runs a batch of `entity_type: "activity"` sync ops (`put`/`patch`/`delete`, #40/#41) -- the counterpart of `services/apiaries/api/sync.go`'s own route, called by `services/sync`'s coordinator.                                                                                           |
+| `POST /internal/sync/apply`          | OIDC JWT + org scope | Applies a batch of `entity_type: "activity"` ops in one local transaction -- idempotent on the client-generated id, LWW-compared against the stored row's `updated_at` for edit/delete (#40/#41), records history, logs a conflict (server wins) on an LWW-losing or differing-content resend. |
+| `GET /healthz`, `GET /readyz`        | none                 | Liveness / readiness.                                                                                                                                                                                                                                                                          |
 
 ## Configuration
 
@@ -101,10 +114,11 @@ go test ./...   # api/... is fast, pure-Go unit tests (type-registry validation,
                  # ApiaryVerifier's HTTP behavior against an httptest fake — no real DB);
                  # the top-level package needs testcontainers/Postgres (postgres:16-alpine —
                  # no PostGIS columns here, unlike apiaries): schema tenancy check, the
-                 # validate endpoint, the POST /v1/activities create path (including the
-                 # cross-org apiary_id rejection, #39's carry-over from #38's review), the
-                 # sync validate/apply endpoints, and store-layer insert/read + cross-org
-                 # isolation.
+                 # validate endpoint, the create/edit/delete REST paths (including the
+                 # cross-org apiary_id rejection, #39's carry-over from #38's review, and
+                 # #40's own re-verification on edit), the sync validate/apply endpoints
+                 # (create/edit/delete, LWW, tombstone-exclusion-from-list, offline op
+                 # idempotency), and store-layer insert/read + cross-org isolation.
 ```
 
 ## Tenancy (FR-TEN-2)
@@ -120,16 +134,40 @@ sqlc queries in `main_test.go`.
 
 **Cross-service apiary ownership (#39, CRITICAL carry-over from #38's
 review):** `apiary_id` is a cross-service reference this service has no
-database access to verify directly (ownership rule 1) — both write paths
-(`api/write.go`'s `createActivity`, `api/sync.go`'s `applyActivityOp`) call
-`api/apiaries_client.go`'s `ApiaryVerifier.BelongsToOrg` (apiaries' own
-org-scoped `GET /v1/apiaries/{id}`, forwarding the caller's own bearer —
-zero-trust) BEFORE any row is written, exactly mirroring how apiaries closed
-its own cross-tenant IDOR on counter sync (#284). Covered by
+database access to verify directly (ownership rule 1) — every write path
+that touches it (`api/write.go`'s `createActivity`/`updateActivity`,
+`api/sync.go`'s `applyActivityOp`) calls `api/apiaries_client.go`'s
+`ApiaryVerifier.BelongsToOrg` (apiaries' own org-scoped
+`GET /v1/apiaries/{id}`, forwarding the caller's own bearer — zero-trust)
+BEFORE any row is written, exactly mirroring how apiaries closed its own
+cross-tenant IDOR on counter sync (#284). An edit (#40) that doesn't carry
+`apiary_id` at all — the common case, since the client's edit UI never
+exposes moving an activity to a different apiary — makes no ownership call:
+the row's own `organization_id`, already enforced by every lookup, is what
+matters when `apiary_id` itself isn't changing. Covered by
 `TestActivitiesRest_Create_CrossOrgApiaryIdIsRejected`,
-`TestActivitiesSync_Validate_RejectsCrossOrgApiaryId` and
-`TestActivitiesSync_Apply_CrossOrgApiaryIdIsNoOp` (`main_test.go`), plus
-`api/apiaries_client_test.go`'s pure-unit coverage of the verifier itself.
+`TestActivitiesRest_Update_CrossOrgApiaryIdIsRejected`,
+`TestActivitiesSync_Validate_RejectsCrossOrgApiaryId`,
+`TestActivitiesSync_Apply_CrossOrgApiaryIdIsNoOp` and
+`TestActivitiesSync_Apply_Patch_CrossOrgApiaryIdIsNoOp` (`main_test.go`),
+plus `api/apiaries_client_test.go`'s pure-unit coverage of the verifier
+itself.
+
+**Tombstones (#41, FR-AC-4, FR-OF-1):** delete is a soft-delete
+(`deleted_at`), never a hard `DELETE`, on both the REST (`deleteActivity`)
+and sync-apply (`applyActivityOp`'s `delete` op) paths — every read query
+(`GetActivity`/`ListActivitiesByApiary`/`ListActivitiesByOrg`) filters
+`deleted_at IS NULL`, and the PowerSync Sync Rules
+(`infra/helm/beekeepingit/charts/powersync/values.yaml`) apply the identical
+filter so a delete propagates to every device on their next sync. A
+tombstoned row still physically exists (`GetActivityForUpdate` carries no
+`deleted_at` filter) so a strictly-newer offline `put`/`patch` can
+legitimately "undelete" it under LWW, and a stale offline `delete` loses to
+a newer edit/create the same way any other op does. Covered by
+`TestActivitiesRest_Delete_TombstoneRowExcludedFromListQuery`,
+`TestActivitiesSync_Apply_Delete_TombstonesRow`,
+`TestActivitiesSync_Apply_Delete_IdempotentReplay` and
+`TestActivitiesSync_Apply_Delete_OlderThanLastEditIsSuperseded`.
 
 **Attribution (FR-TEN-2):** `performed_by` is derived server-side from the
 authenticated caller's resolved claims (`requireOrg`), never from a

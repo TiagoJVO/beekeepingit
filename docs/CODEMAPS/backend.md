@@ -58,20 +58,24 @@ REST writes serve online-only/direct callers (Admin App, scripts); the PWA uses 
 ### activities (main.go; authnMW→orgMW→RequireRole(admin,user))
 
 ```text
-POST  /internal/activities/validate → validateHandler  api/validate.go (stateless, #38)
-POST  /v1/activities                → createActivity   api/write.go (#39; online-only/direct callers)
-POST  /internal/sync/validate       → validateActivityBatch api/sync.go (#39)
-POST  /internal/sync/apply          → applyActivityBatch    api/sync.go (#39)
+POST   /internal/activities/validate → validateHandler  api/validate.go (stateless, #38)
+POST   /v1/activities                → createActivity   api/write.go (#39; online-only/direct callers)
+PATCH  /v1/activities/{id}           → updateActivity   api/write.go (#40; ownership re-verified only if apiary_id sent)
+DELETE /v1/activities/{id}           → deleteActivity   api/write.go (#41; soft-delete/tombstone)
+POST   /internal/sync/validate       → validateActivityBatch api/sync.go (#39/#40/#41; put/patch/delete)
+POST   /internal/sync/apply          → applyActivityBatch    api/sync.go (#39/#40/#41; LWW + tombstone)
 ```
 
 #38's scope was the data model (`api/types.go`'s type registry + JSONB
 attribute validation) + tenancy — the validate-only route proved the wiring.
-#39 adds the real create write path: both `api/write.go` and `api/sync.go`
-verify a client-supplied `apiary_id` belongs to the caller's org via
+#39 added the create write path; #40/#41 extend the same REST + sync-apply
+surface with edit and delete (a tombstone, never a hard delete — the
+PowerSync Sync Rules filter `deleted_at IS NULL`). Every write path that
+touches `apiary_id` verifies it belongs to the caller's org via
 `api/apiaries_client.go`'s `ApiaryVerifier` (an HTTP call to apiaries' own
 `GET /v1/apiaries/{id}` — this service has no DB access to the apiaries
 schema) BEFORE writing anything; `performed_by` is derived server-side from
-claims, never the client (FR-TEN-2). Edit/delete/list are #40-#43.
+claims, never the client (FR-TEN-2). List is #42/#43.
 
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 

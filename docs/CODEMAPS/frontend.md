@@ -21,10 +21,12 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ only live tab (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
-  │       ├ edit           ApiaryFormScreen
-  │       ├ activities/new AddActivityScreen  features/activities (#39, add path)
-  │       └ (embedded)     _ApiaryActivitiesSection on ApiaryDetailScreen (#42; per-apiary
-  │                        activity list, type/date-range filters, attribution — #44)
+  │       ├ edit                        ApiaryFormScreen
+  │       ├ activities/new              AddActivityScreen  features/activities (#39; add path)
+  │       ├ activities/:activityId/edit AddActivityScreen (#40/#41; edit + delete, isEdit)
+  │       └ (embedded)                  _ApiaryActivitiesSection on ApiaryDetailScreen (#42;
+  │                                     per-apiary activity list, type/date-range filters,
+  │                                     attribution — #44)
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
   │                        activity list, same filters + apiary label per row)
   ├ /journeys     ─┐

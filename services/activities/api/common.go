@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -86,6 +87,18 @@ func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(*sqlcgen.Queries) e
 }
 
 func uuidString(u pgtype.UUID) string { return uuid.UUID(u.Bytes).String() }
+
+// timePtr reads a nullable pgtype.Timestamptz column back as a *time.Time
+// (nil when unset) — used by sync.go's logActivityConflict to include a
+// tombstoned row's deleted_at in its winning-payload snapshot. Mirrors
+// apiaries/api/sync.go's helper of the same name/purpose.
+func timePtr(ts pgtype.Timestamptz) *time.Time {
+	if !ts.Valid {
+		return nil
+	}
+	t := ts.Time
+	return &t
+}
 
 // isUniqueViolation reports whether err is a Postgres unique_violation
 // (SQLSTATE 23505) — the client-generated id already exists. Mirrors

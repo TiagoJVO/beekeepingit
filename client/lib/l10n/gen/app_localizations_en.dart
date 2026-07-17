@@ -680,4 +680,33 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityNoAttributesSummary => 'No additional details';
+
+  @override
+  String activityLoadError(String error) {
+    return 'Couldn\'t load the activity: $error';
+  }
+
+  @override
+  String get deleteActivity => 'Delete activity';
+
+  @override
+  String get activityDeleteSuccess => 'Activity deleted';
+
+  @override
+  String activityDeleteError(String error) {
+    return 'Couldn\'t delete the activity: $error';
+  }
+
+  @override
+  String get deleteActivityConfirmTitle => 'Delete activity?';
+
+  @override
+  String get deleteActivityConfirmMessage =>
+      'This permanently deletes this activity. This cannot be undone.';
+
+  @override
+  String get deleteActivityConfirmAction => 'Delete';
+
+  @override
+  String get deleteActivityCancelAction => 'Cancel';
 }
