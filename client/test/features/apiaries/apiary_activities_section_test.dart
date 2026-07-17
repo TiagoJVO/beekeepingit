@@ -116,6 +116,88 @@ void main() {
       },
     );
 
+    group('embedded preview cap (perf: shrink-wrapped list, PR #305 review)', () {
+      testWidgets(
+        'renders every activity inline when at or below the 5-item cap',
+        (tester) async {
+          await _openDetail(
+            tester,
+            activities: [
+              for (var i = 1; i <= 5; i++) _activity('$i', date: '2026-06-0$i'),
+            ],
+          );
+
+          for (var i = 1; i <= 5; i++) {
+            expect(find.byKey(Key('activity-$i')), findsOneWidget);
+          }
+          // No "view all" row when nothing is hidden.
+          expect(find.byKey(const Key('activity-list-view-all')), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'caps at 5 rows and offers "view all" when the apiary has more',
+        (tester) async {
+          await _openDetail(
+            tester,
+            activities: [
+              for (var i = 1; i <= 8; i++)
+                _activity(
+                  'a$i',
+                  // Newest-first: descending dates so a1..a5 are the newest.
+                  date: '2026-06-${(20 - i).toString().padLeft(2, '0')}',
+                ),
+            ],
+          );
+
+          // Only the newest 5 render inline; the surplus 3 are deferred.
+          for (var i = 1; i <= 5; i++) {
+            expect(find.byKey(Key('activity-a$i')), findsOneWidget);
+          }
+          for (var i = 6; i <= 8; i++) {
+            expect(find.byKey(Key('activity-a$i')), findsNothing);
+          }
+          expect(
+            find.byKey(const Key('activity-list-view-all')),
+            findsOneWidget,
+          );
+          // The label reports the full filtered count, not the capped 5.
+          expect(find.text('View all 8 activities'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        '"view all" opens the full per-apiary activities screen listing all rows',
+        (tester) async {
+          await _openDetail(
+            tester,
+            activities: [
+              for (var i = 1; i <= 8; i++)
+                _activity(
+                  'a$i',
+                  date: '2026-06-${(20 - i).toString().padLeft(2, '0')}',
+                ),
+            ],
+          );
+
+          final viewAll = find.byKey(const Key('activity-list-view-all'));
+          await tester.ensureVisible(viewAll);
+          await tester.pumpAndSettle();
+          await tester.tap(viewAll);
+          await tester.pumpAndSettle();
+
+          // The full screen carries an AppBar titled with the apiary name and,
+          // being non-shrink-wrapped, renders rows beyond the preview cap.
+          expect(find.widgetWithText(AppBar, 'Serra Norte'), findsOneWidget);
+          expect(find.byKey(const Key('activity-list-view-all')), findsNothing);
+          // A previously-hidden row is now visible (scroll it into view).
+          final hidden = find.byKey(const Key('activity-a8'));
+          await tester.scrollUntilVisible(hidden, 200);
+          expect(hidden, findsOneWidget);
+        },
+      );
+    });
+
     group('type filter', () {
       testWidgets('selecting a type shows only matching activities', (
         tester,

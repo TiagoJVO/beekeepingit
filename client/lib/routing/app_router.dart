@@ -8,6 +8,7 @@ import '../features/activities/activities_list_screen.dart';
 import '../features/activities/activity_detail_screen.dart';
 import '../features/activities/add_activity_screen.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
+import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
@@ -160,6 +161,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                         name: 'apiaryEdit',
                         builder: (context, state) => ApiaryFormScreen(
                           apiaryId: state.pathParameters['id'],
+                        ),
+                      ),
+                      // Full per-apiary activities list (#42, FR-AC-5):
+                      // reached from the detail page's embedded preview once
+                      // it caps. A properly-virtualized full-height list, so
+                      // it scales to however many activities an apiary has —
+                      // unlike the shrink-wrapped preview it links out from.
+                      GoRoute(
+                        path: 'activities',
+                        name: 'apiaryActivities',
+                        builder: (context, state) => ApiaryActivitiesScreen(
+                          apiaryId: state.pathParameters['id']!,
                         ),
                       ),
                       // Add-activity entry point (#39, FR-AC-2): reachable

@@ -864,6 +864,15 @@
   "@apiaryActivitiesEmpty": {
     "description": "Empty state on the apiary detail page's activities section when the apiary has no activities at all yet (#42, FR-AC-5)"
   },
+  "apiaryActivitiesViewAll": "View all {count} activities",
+  "@apiaryActivitiesViewAll": {
+    "description": "Action at the foot of the apiary detail page's activities preview when it is capped — opens the full per-apiary activities list (#42, FR-AC-5). {count} is the total number of activities matching the current filters.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "activitiesEmpty": "No activities yet.",
   "@activitiesEmpty": {
     "description": "Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)"

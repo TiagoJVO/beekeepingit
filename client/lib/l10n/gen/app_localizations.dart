@@ -1196,6 +1196,12 @@ abstract class AppLocalizations {
   /// **'No activities logged for this apiary yet.'**
   String get apiaryActivitiesEmpty;
 
+  /// Action at the foot of the apiary detail page's activities preview when it is capped — opens the full per-apiary activities list (#42, FR-AC-5). {count} is the total number of activities matching the current filters.
+  ///
+  /// In en, this message translates to:
+  /// **'View all {count} activities'**
+  String apiaryActivitiesViewAll(int count);
+
   /// Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)
   ///
   /// In en, this message translates to:

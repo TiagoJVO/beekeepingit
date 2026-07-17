@@ -234,6 +234,7 @@
     }
   },
   "apiaryActivitiesEmpty": "Ainda não há atividades registadas para este apiário.",
+  "apiaryActivitiesViewAll": "Ver todas as {count} atividades",
   "activitiesEmpty": "Ainda não há atividades.",
   "activitiesFilterNoResults": "Nenhuma atividade corresponde aos filtros.",
   "activitiesError": "Não foi possível carregar as atividades: {error}",
