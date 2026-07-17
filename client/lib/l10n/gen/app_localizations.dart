@@ -1148,6 +1148,96 @@ abstract class AppLocalizations {
   /// **'Couldn\'t save the activity: {error}'**
   String activitySaveError(String error);
 
+  /// Empty state on the apiary detail page's activities section when the apiary has no activities at all yet (#42, FR-AC-5)
+  ///
+  /// In en, this message translates to:
+  /// **'No activities logged for this apiary yet.'**
+  String get apiaryActivitiesEmpty;
+
+  /// Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)
+  ///
+  /// In en, this message translates to:
+  /// **'No activities yet.'**
+  String get activitiesEmpty;
+
+  /// Shown instead of the plain empty state when type/date-range filters are active but match nothing (#42/#43 AC: combined filters + empty/no-results state)
+  ///
+  /// In en, this message translates to:
+  /// **'No activities match your filters.'**
+  String get activitiesFilterNoResults;
+
+  /// Error state on an activities list (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load activities: {error}'**
+  String activitiesError(String error);
+
+  /// Field label for the activity-type filter dropdown (#42/#43, FR-AC-5/FR-AC-6)
+  ///
+  /// In en, this message translates to:
+  /// **'Type'**
+  String get activityFilterTypeLabel;
+
+  /// The activity-type filter's cleared/default option — no type filter applied (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'All types'**
+  String get activityFilterTypeAll;
+
+  /// Field label for the date-range filter control (#42/#43, FR-AC-5/FR-AC-6)
+  ///
+  /// In en, this message translates to:
+  /// **'Date range'**
+  String get activityFilterDateRangeLabel;
+
+  /// The date-range filter's cleared/default state — no date filter applied (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'Any date'**
+  String get activityFilterDateRangeUnset;
+
+  /// The selected date range, both bounds already locale-formatted by the caller (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'{start} – {end}'**
+  String activityFilterDateRangeValue(String start, String end);
+
+  /// Button that resets both the type and date-range filters at once (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get activityFilterClearAction;
+
+  /// Attribution shown on an activity performed by the current caller (#44, FR-TEN-2) — matches the map screen's own 'You' marker label (apiaryMapUserLocationLabel) for consistency
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get activityPerformedByYou;
+
+  /// Attribution shown on an activity performed by another org member, identified by a short id fragment — there is no member-display-name lookup available anywhere in the app for a non-admin caller (#44, see activity_display.dart's doc comment)
+  ///
+  /// In en, this message translates to:
+  /// **'Member {id}'**
+  String activityPerformedByMember(String id);
+
+  /// Fallback attribution for the brief local-only window before a freshly-created activity round-trips through sync and performed_by is populated server-side (#44)
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get activityPerformedByUnknown;
+
+  /// Screen-reader label wrapping an activity row's attribution chip (#44, WCAG 2.2 AA)
+  ///
+  /// In en, this message translates to:
+  /// **'Performed by: {who}'**
+  String activityPerformedBySemanticLabel(String who);
+
+  /// Fallback list-row summary for an activity with no type-specific attributes to show (e.g. a generic activity with no notes) (#42/#43)
+  ///
+  /// In en, this message translates to:
+  /// **'No additional details'**
+  String get activityNoAttributesSummary;
+
   /// Error toast when loading an existing activity for editing throws (#40)
   ///
   /// In en, this message translates to:

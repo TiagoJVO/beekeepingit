@@ -632,6 +632,61 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get apiaryActivitiesEmpty =>
+      'Ainda não há atividades registadas para este apiário.';
+
+  @override
+  String get activitiesEmpty => 'Ainda não há atividades.';
+
+  @override
+  String get activitiesFilterNoResults =>
+      'Nenhuma atividade corresponde aos filtros.';
+
+  @override
+  String activitiesError(String error) {
+    return 'Não foi possível carregar as atividades: $error';
+  }
+
+  @override
+  String get activityFilterTypeLabel => 'Tipo';
+
+  @override
+  String get activityFilterTypeAll => 'Todos os tipos';
+
+  @override
+  String get activityFilterDateRangeLabel => 'Intervalo de datas';
+
+  @override
+  String get activityFilterDateRangeUnset => 'Qualquer data';
+
+  @override
+  String activityFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get activityFilterClearAction => 'Limpar filtros';
+
+  @override
+  String get activityPerformedByYou => 'Você';
+
+  @override
+  String activityPerformedByMember(String id) {
+    return 'Membro $id';
+  }
+
+  @override
+  String get activityPerformedByUnknown => 'Desconhecido';
+
+  @override
+  String activityPerformedBySemanticLabel(String who) {
+    return 'Realizada por: $who';
+  }
+
+  @override
+  String get activityNoAttributesSummary => 'Sem detalhes adicionais';
+
+  @override
   String activityLoadError(String error) {
     return 'Não foi possível carregar a atividade: $error';
   }

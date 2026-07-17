@@ -144,6 +144,13 @@ Widget _buildApp({required _FakeActivitiesRepository repo}) {
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value([_apiary])),
       apiaryByIdProvider.overrideWith((ref, id) => Stream.value(_apiary)),
+      // The detail screen's activities section (#42) — overridden with an
+      // empty stream so navigating there doesn't hang on the real
+      // (never-resolving here) activitiesRepositoryProvider chain and its
+      // ActivityListView loading spinner.
+      activitiesByApiaryProvider.overrideWith(
+        (ref, id) => Stream.value(const <Activity>[]),
+      ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
       activitiesRepositoryProvider.overrideWith((ref) async => repo),
@@ -175,7 +182,9 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.byKey(const Key('apiary-detail-add-activity-button')));
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
@@ -183,75 +192,116 @@ void main() {
     },
   );
 
-  group('adaptive attribute form (#39 AC: the form adapts to the selected type)', () {
-    testWidgets('harvest shows its own fields, not feeding/treatment ones', (
-      tester,
-    ) async {
-      await _openAddActivityForm(tester);
+  group(
+    'adaptive attribute form (#39 AC: the form adapts to the selected type)',
+    () {
+      testWidgets('harvest shows its own fields, not feeding/treatment ones', (
+        tester,
+      ) async {
+        await _openAddActivityForm(tester);
 
-      // Harvest is the default selection — its fields render immediately.
-      expect(find.byKey(const Key('activity-honey-supers-field')), findsOneWidget);
-      expect(find.byKey(const Key('activity-honey-kg-field')), findsOneWidget);
-      expect(find.byKey(const Key('activity-hives-involved-field')), findsOneWidget);
-      expect(find.byKey(const Key('activity-notes-field')), findsOneWidget);
-      // Feeding/treatment-only fields must NOT show.
-      expect(find.byKey(const Key('activity-feed-type-field')), findsNothing);
-      expect(find.byKey(const Key('activity-treatment-context-field')), findsNothing);
-    });
+        // Harvest is the default selection — its fields render immediately.
+        expect(
+          find.byKey(const Key('activity-honey-supers-field')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('activity-honey-kg-field')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('activity-hives-involved-field')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('activity-notes-field')), findsOneWidget);
+        // Feeding/treatment-only fields must NOT show.
+        expect(find.byKey(const Key('activity-feed-type-field')), findsNothing);
+        expect(
+          find.byKey(const Key('activity-treatment-context-field')),
+          findsNothing,
+        );
+      });
 
-    testWidgets('switching to feeding swaps in feed_type/feed_amount, drops harvest fields', (
-      tester,
-    ) async {
-      await _openAddActivityForm(tester);
+      testWidgets(
+        'switching to feeding swaps in feed_type/feed_amount, drops harvest fields',
+        (tester) async {
+          await _openAddActivityForm(tester);
 
-      await tester.tap(find.byKey(const Key('activity-type-field')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Feeding').last);
-      await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Feeding').last);
+          await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('activity-feed-type-field')), findsOneWidget);
-      expect(find.byKey(const Key('activity-feed-amount-field')), findsOneWidget);
-      expect(find.byKey(const Key('activity-honey-supers-field')), findsNothing);
-      // notes and hives_involved are shared across types.
-      expect(find.byKey(const Key('activity-notes-field')), findsOneWidget);
-      expect(find.byKey(const Key('activity-hives-involved-field')), findsOneWidget);
-    });
+          expect(
+            find.byKey(const Key('activity-feed-type-field')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('activity-feed-amount-field')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('activity-honey-supers-field')),
+            findsNothing,
+          );
+          // notes and hives_involved are shared across types.
+          expect(find.byKey(const Key('activity-notes-field')), findsOneWidget);
+          expect(
+            find.byKey(const Key('activity-hives-involved-field')),
+            findsOneWidget,
+          );
+        },
+      );
 
-    testWidgets('switching to generic shows only the notes field', (tester) async {
-      await _openAddActivityForm(tester);
-
-      await tester.tap(find.byKey(const Key('activity-type-field')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Generic').last);
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('activity-notes-field')), findsOneWidget);
-      expect(find.byKey(const Key('activity-honey-supers-field')), findsNothing);
-      expect(find.byKey(const Key('activity-hives-involved-field')), findsNothing);
-    });
-
-    testWidgets(
-      'treatment only shows the disease field once a disease-tied context is chosen '
-      '(conditional requirement, D-19)',
-      (tester) async {
+      testWidgets('switching to generic shows only the notes field', (
+        tester,
+      ) async {
         await _openAddActivityForm(tester);
 
         await tester.tap(find.byKey(const Key('activity-type-field')));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Treatment').last);
+        await tester.tap(find.text('Generic').last);
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('activity-disease-field')), findsNothing);
+        expect(find.byKey(const Key('activity-notes-field')), findsOneWidget);
+        expect(
+          find.byKey(const Key('activity-honey-supers-field')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const Key('activity-hives-involved-field')),
+          findsNothing,
+        );
+      });
 
-        await tester.tap(find.byKey(const Key('activity-treatment-context-field')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Specific disease/condition').last);
-        await tester.pumpAndSettle();
+      testWidgets(
+        'treatment only shows the disease field once a disease-tied context is chosen '
+        '(conditional requirement, D-19)',
+        (tester) async {
+          await _openAddActivityForm(tester);
 
-        expect(find.byKey(const Key('activity-disease-field')), findsOneWidget);
-      },
-    );
-  });
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Treatment').last);
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('activity-disease-field')), findsNothing);
+
+          await tester.tap(
+            find.byKey(const Key('activity-treatment-context-field')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Specific disease/condition').last);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-disease-field')),
+            findsOneWidget,
+          );
+        },
+      );
+    },
+  );
 
   group('required-field validation before save (#39 AC)', () {
     testWidgets(
