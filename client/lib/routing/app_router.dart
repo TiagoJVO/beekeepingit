@@ -161,15 +161,28 @@ final routerProvider = Provider<GoRouter>((ref) {
                         ),
                       ),
                       // Add-activity entry point (#39, FR-AC-2): reachable
-                      // from the apiary detail page. Only the add flow —
-                      // the activities LIST (either per-apiary or the main
-                      // Activities tab, still a ComingSoonScreen below) is
-                      // #42/#43's scope, not this one's.
+                      // from the apiary detail page.
                       GoRoute(
                         path: 'activities/new',
                         name: 'activityNew',
                         builder: (context, state) => AddActivityScreen(
                           apiaryId: state.pathParameters['id']!,
+                        ),
+                      ),
+                      // Edit/delete entry point (#40/#41, FR-AC-3/FR-AC-4):
+                      // the surface exists and is fully reachable by direct
+                      // navigation/deep link now; a tappable list ROW linking
+                      // here (either per-apiary or the main Activities tab,
+                      // still a ComingSoonScreen below) is #42/#43's scope,
+                      // not this one's — following #39's own precedent of
+                      // shipping the write surface before the list exists
+                      // to browse it from.
+                      GoRoute(
+                        path: 'activities/:activityId/edit',
+                        name: 'activityEdit',
+                        builder: (context, state) => AddActivityScreen(
+                          apiaryId: state.pathParameters['id']!,
+                          activityId: state.pathParameters['activityId']!,
                         ),
                       ),
                     ],

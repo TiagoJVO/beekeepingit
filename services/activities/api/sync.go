@@ -1,12 +1,12 @@
 // Package api (this file) — the internal sync validate/apply endpoints
-// (#39, FR-OF-1/Q-SYNC, sync.md §5.2/§6) the write-back coordinator
-// (services/sync) calls so creating an activity offline (queued locally via
-// PowerSync) reconciles on sync, exactly like apiaries' own sync.go. Scope
-// is CREATE only, matching #39's AC ("add activity") — edit/delete
-// (#40/#41) extend this file's Op/validateActivityOp/applyActivityOp the
-// same way apiaries' sync.go grew from create-only to full CRUD, following
-// #38's scope-split precedent (main.go's doc comment) rather than building
-// unused surface now.
+// (#39/#40/#41, FR-OF-1/Q-SYNC, sync.md §5.2/§6) the write-back coordinator
+// (services/sync) calls so creating, editing, or deleting an activity
+// offline (queued locally via PowerSync) reconciles on sync, exactly like
+// apiaries' own sync.go. #39 shipped create-only (put); #40/#41 extend
+// validateActivityOp/applyActivityOp to also accept patch (edit) and
+// delete (tombstone), the same way apiaries' sync.go grew from create-only
+// to full CRUD, following #38's scope-split precedent (main.go's doc
+// comment).
 package api
 
 import (
@@ -42,7 +42,7 @@ const (
 // of the wire shape services/sync/api/coordinator.go fans out
 // (entity_type "activity"). Mirrors apiaries/api/sync.go's Op.
 type Op struct {
-	Op         string          `json:"op"`          // put (create-only, #39 scope)
+	Op         string          `json:"op"`          // put | patch | delete (#40/#41)
 	EntityType string          `json:"entity_type"` // activity
 	ID         string          `json:"id"`
 	Data       json.RawMessage `json:"data"`
@@ -200,12 +200,28 @@ func validateActivityBatch(verifier *ApiaryVerifier) http.HandlerFunc {
 // well-formed, the cross-org apiary_id ownership guard — consulting the
 // pre-resolved `owned` map (resolveApiaryOwnership already made the single
 // upstream call per distinct id) rather than making any HTTP call itself.
+//
+// put/patch/delete (#40/#41): a delete op carries no data at all (mirrors
+// apiaries' validateApiaryOp — the row is simply tombstoned by id). put and
+// patch are otherwise validated IDENTICALLY here: unlike apiaries' true
+// partial-PATCH semantics, activities' edit UI always resubmits the
+// COMPLETE current state (add_activity_screen.dart's doc comment) — the
+// client's local ActivitiesRepository.update() always sets type/
+// occurred_at/attributes together in one SQL UPDATE, so PowerSync's queued
+// patch opData always carries all three, same as a put. The one real
+// difference is apiary_id: REQUIRED on put (there is no existing row to
+// fall back to for a create), OPTIONAL on patch (an edit that doesn't touch
+// it — the common case, since the UI never exposes moving an activity to a
+// different apiary — simply keeps the stored value; applyActivityOp's
+// mergeActivityOp handles the fallback).
 func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldError {
 	prefix := fmt.Sprintf("ops[%d]", i)
 	var errs []problem.FieldError
 
-	if op.Op != "put" {
-		errs = append(errs, problem.FieldError{Field: prefix + ".op", Code: "invalid", Message: "op must be put (activities support create-only sync in this version)"})
+	switch op.Op {
+	case "put", "patch", "delete":
+	default:
+		errs = append(errs, problem.FieldError{Field: prefix + ".op", Code: "invalid", Message: "op must be put, patch or delete"})
 	}
 	if op.EntityType != entityTypeActivity {
 		errs = append(errs, problem.FieldError{Field: prefix + ".entity_type", Code: "invalid", Message: "entity_type must be activity"})
@@ -217,6 +233,10 @@ func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldErro
 		errs = append(errs, problem.FieldError{Field: prefix + ".updated_at", Code: "required", Message: "updated_at is required"})
 	}
 
+	if op.Op == "delete" {
+		return errs
+	}
+
 	var data activityData
 	if len(op.Data) > 0 {
 		if err := json.Unmarshal(op.Data, &data); err != nil {
@@ -226,12 +246,17 @@ func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldErro
 	}
 
 	apiaryID := ""
-	if data.ApiaryID == nil {
-		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "required", Message: "apiary_id is required"})
-	} else if _, err := uuid.Parse(*data.ApiaryID); err != nil {
-		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
-	} else {
-		apiaryID = *data.ApiaryID
+	switch data.ApiaryID {
+	case nil:
+		if op.Op == "put" {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "required", Message: "apiary_id is required"})
+		}
+	default:
+		if _, err := uuid.Parse(*data.ApiaryID); err != nil {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
+		} else {
+			apiaryID = *data.ApiaryID
+		}
 	}
 
 	if data.OccurredAt == nil || *data.OccurredAt == "" {
@@ -262,9 +287,11 @@ func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldErro
 	}
 
 	// Ownership: a pure map lookup against the pre-resolved result — only when
-	// the apiary_id was well-formed (a malformed/missing id has nothing to
-	// verify and is already reported above; resolveApiaryOwnership resolves
-	// every well-formed distinct id, so the key is always present here).
+	// the apiary_id was actually present and well-formed (resolveApiaryOwnership
+	// only resolves apiary_ids that appear in a batch op's data at all, so a
+	// patch that doesn't carry one has nothing to check here — the existing
+	// row's own organization_id, already enforced elsewhere, is what matters
+	// for an edit that doesn't move the activity).
 	if apiaryID != "" && !owned[apiaryID] {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary in this organization"})
 	}
@@ -328,74 +355,102 @@ func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handl
 	}
 }
 
-// applyActivityOp applies one create-only op (#39 scope): consults the
-// pre-resolved `owned` ownership map (resolveApiaryOwnership already made the
-// single up-front upstream call per distinct apiary_id — NO HTTP call happens
-// here, inside the transaction), then either inserts a brand-new row or, for
-// a retried id, compares content for an idempotent no-op vs a content
-// conflict (logged, server wins — there is no edit path yet for a genuinely
-// different resend to legitimately win via LWW).
+// applyActivityOp applies one put/patch/delete op (#39/#40/#41): consults
+// the pre-resolved `owned` ownership map (resolveApiaryOwnership already
+// made the single up-front upstream call per distinct apiary_id — NO HTTP
+// call happens here, inside the transaction), then either inserts a
+// brand-new row, applies an LWW-compared update/tombstone over an existing
+// one, or logs a losing offline edit as a conflict.
+//
+// GetActivityForUpdate (not GetActivity) is used here deliberately — it
+// carries NO `deleted_at IS NULL` filter, unlike the old create-only code's
+// GetActivity lookup. That distinction matters now that deletes exist: a
+// tombstoned row must be treated as EXISTING (so a re-arriving op runs the
+// LWW-compared UPDATE path below, potentially "undeleting" it on a
+// strictly-newer put), never as "missing" — treating it as missing would
+// attempt a fresh INSERT against a live primary key and fail outright.
 func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool, org pgtype.UUID, userID string, op Op) (OpResult, error) {
 	id, err := uuid.Parse(op.ID)
 	if err != nil {
 		return OpResult{}, err
 	}
 	pgID := pgtype.UUID{Bytes: id, Valid: true}
+	incomingTS := pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
 
 	var data activityData
-	if len(op.Data) > 0 {
+	if op.Op != "delete" && len(op.Data) > 0 {
 		if err := json.Unmarshal(op.Data, &data); err != nil {
 			return OpResult{}, err
 		}
 	}
-	// validateActivityOp already guarantees these are well-formed by the
-	// time apply runs (validate-first, sync.md §6.2).
-	apiaryID, err := uuid.Parse(*data.ApiaryID)
-	if err != nil {
-		return OpResult{}, err
-	}
 
 	// Tenancy guard (FR-TEN-2, CRITICAL) — a pure in-memory lookup against the
-	// up-front ownership resolution; an unknown/foreign apiary_id is a no-op
-	// (mirrors applyCounterOp's own "missing row ⇒ nothing to do" convention,
-	// ADR-0002 scope-hiding), never a distinguishable error.
-	if !owned[apiaryID.String()] {
-		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
-	}
-
-	attrs := map[string]any{}
-	if len(data.Attributes) > 0 {
-		_ = json.Unmarshal(data.Attributes, &attrs)
-	}
-	attrsJSON, err := json.Marshal(attrs)
-	if err != nil {
-		return OpResult{}, err
-	}
-	occurredAt, err := time.Parse(dateLayout, *data.OccurredAt)
-	if err != nil {
-		return OpResult{}, err
-	}
-	var journeyID *uuid.UUID
-	if data.JourneyID != nil {
-		jid, err := uuid.Parse(*data.JourneyID)
+	// up-front ownership resolution, only when this op's data actually
+	// carries an apiary_id: resolveApiaryOwnership only resolves ids that
+	// appear in a batch op's data at all (its own doc comment), so a patch
+	// that doesn't touch apiary_id (the common edit case) has nothing to
+	// check here — an unknown/foreign apiary_id, when one IS present, is a
+	// no-op (mirrors applyCounterOp's own "missing row ⇒ nothing to do"
+	// convention, ADR-0002 scope-hiding), never a distinguishable error.
+	if data.ApiaryID != nil {
+		apiaryID, err := uuid.Parse(*data.ApiaryID)
 		if err != nil {
 			return OpResult{}, err
 		}
-		journeyID = &jid
+		if !owned[apiaryID.String()] {
+			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+		}
 	}
-	performedBy, err := uuid.Parse(userID)
-	if err != nil {
-		return OpResult{}, err
-	}
-	incomingTS := pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
 
-	existing, err := q.GetActivity(ctx, sqlcgen.GetActivityParams{OrganizationID: org, ID: pgID})
+	existing, err := q.GetActivityForUpdate(ctx, sqlcgen.GetActivityForUpdateParams{OrganizationID: org, ID: pgID})
 	missing := errors.Is(err, pgx.ErrNoRows)
 	if err != nil && !missing {
 		return OpResult{}, err
 	}
 
 	if missing {
+		if op.Op == "delete" {
+			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil // nothing to tombstone
+		}
+		// put or patch against a row the server has never seen. Only a
+		// well-formed apiary_id can create it — validateActivityOp GUARANTEES
+		// one for "put"; a "patch" without one (an edit racing ahead of its
+		// own create, or a stray edit for an id the server never received)
+		// has nothing to attach a brand-new row to, so it is a no-op, the
+		// same "missing row ⇒ nothing to do" convention apiaries' applyOp
+		// uses for a non-put op against a missing row.
+		if data.ApiaryID == nil {
+			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+		}
+		apiaryID, err := uuid.Parse(*data.ApiaryID)
+		if err != nil {
+			return OpResult{}, err
+		}
+		attrs := map[string]any{}
+		if len(data.Attributes) > 0 {
+			_ = json.Unmarshal(data.Attributes, &attrs)
+		}
+		attrsJSON, err := json.Marshal(attrs)
+		if err != nil {
+			return OpResult{}, err
+		}
+		occurredAt, err := time.Parse(dateLayout, *data.OccurredAt)
+		if err != nil {
+			return OpResult{}, err
+		}
+		var journeyID *uuid.UUID
+		if data.JourneyID != nil {
+			jid, err := uuid.Parse(*data.JourneyID)
+			if err != nil {
+				return OpResult{}, err
+			}
+			journeyID = &jid
+		}
+		performedBy, err := uuid.Parse(userID)
+		if err != nil {
+			return OpResult{}, err
+		}
+
 		if _, err := q.InsertActivity(ctx, sqlcgen.InsertActivityParams{
 			ID: pgID, OrganizationID: org, ApiaryID: pgtype.UUID{Bytes: apiaryID, Valid: true},
 			PerformedBy: pgtype.UUID{Bytes: performedBy, Valid: true},
@@ -412,17 +467,57 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]b
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 	}
 
-	// Retried id: idempotent no-op on identical content (PowerSync's
-	// forward-retry, sync.md §6.2), else a genuine conflict — logged, server
-	// keeps its (first-write-wins) row, since #39 has no edit path yet for a
-	// differing resend to legitimately supersede it.
 	var existingAttrs map[string]any
 	_ = json.Unmarshal(existing.Attributes, &existingAttrs)
-	sameContent := uuidString(existing.ApiaryID) == apiaryID.String() &&
-		existing.Type == *data.Type &&
-		existing.OccurredAt.Time.Format(dateLayout) == *data.OccurredAt &&
-		attributesEqual(existingAttrs, attrs)
-	if sameContent {
+	current := activityRowState{
+		apiaryID: uuidString(existing.ApiaryID), typ: existing.Type,
+		occurredAt: existing.OccurredAt.Time.Format(dateLayout), attributes: existingAttrs,
+		deletedAt: existing.DeletedAt,
+	}
+	want, err := mergeActivityOp(current, op, data)
+	if err != nil {
+		return OpResult{}, err
+	}
+
+	// Strictly-newer incoming wins (sync.md §4.1).
+	if op.UpdatedAt.After(existing.UpdatedAt.Time) {
+		apiaryUUID, err := uuid.Parse(want.apiaryID)
+		if err != nil {
+			return OpResult{}, err
+		}
+		occurredAtParsed, err := time.Parse(dateLayout, want.occurredAt)
+		if err != nil {
+			return OpResult{}, err
+		}
+		wantAttrsJSON, err := json.Marshal(want.attributes)
+		if err != nil {
+			return OpResult{}, err
+		}
+		if err := q.UpdateActivitySync(ctx, sqlcgen.UpdateActivitySyncParams{
+			OrganizationID: org, ID: pgID,
+			ApiaryID:   pgtype.UUID{Bytes: apiaryUUID, Valid: true},
+			Type:       want.typ,
+			OccurredAt: pgtype.Date{Time: occurredAtParsed, Valid: true},
+			Attributes: wantAttrsJSON,
+			UpdatedAt:  incomingTS,
+			DeletedAt:  want.deletedAt,
+		}); err != nil {
+			return OpResult{}, err
+		}
+		changeType := history.ChangeUpdate
+		if op.Op == "delete" {
+			changeType = history.ChangeDelete
+		}
+		if err := writeActivityAuditLog(ctx, q, org, userID, op, changeType, current, want); err != nil {
+			return OpResult{}, err
+		}
+		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+	}
+
+	// Equal or older. If it changes nothing, it is an idempotent re-send
+	// (PowerSync's forward-retry, sync.md §6.2) — applied, no conflict.
+	// Otherwise the server value is kept and the loser is logged (§4.1/§4.2).
+	if want.sameAs(current) {
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 	}
 	if err := logActivityConflict(ctx, q, org, userID, op, existing); err != nil {
@@ -431,12 +526,63 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]b
 	return OpResult{ID: op.ID, Op: op.Op, Result: resultSuperseded}, nil
 }
 
+// mergeActivityOp computes the row an op would produce, given the current
+// stored state (#40/#41, mirrors apiaries' mergeOp). delete sets the
+// tombstone and otherwise leaves the row's content untouched (§4.5). put
+// and patch are both a FULL resubmit of type/occurred_at/attributes
+// (validateActivityOp's doc comment — activities' edit form always sends
+// the complete current state, unlike apiaries' true partial PATCH); the one
+// difference between them is apiary_id (falls back to current.apiaryID when
+// absent — an edit that doesn't touch it, the common case) and deletedAt:
+// put is a full replace and so implicitly UNDELETES (mirrors apiaries' own
+// "put" convention — a fresh create/resend represents the row's live
+// content), while patch preserves whatever current.deletedAt already was.
+func mergeActivityOp(current activityRowState, op Op, data activityData) (activityRowState, error) {
+	if op.Op == "delete" {
+		current.deletedAt = pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
+		return current, nil
+	}
+	attrs := map[string]any{}
+	if len(data.Attributes) > 0 {
+		if err := json.Unmarshal(data.Attributes, &attrs); err != nil {
+			return activityRowState{}, err
+		}
+	}
+	want := activityRowState{
+		apiaryID:   current.apiaryID,
+		typ:        current.typ,
+		occurredAt: current.occurredAt,
+		attributes: attrs,
+		deletedAt:  current.deletedAt,
+	}
+	if data.ApiaryID != nil {
+		want.apiaryID = *data.ApiaryID
+	}
+	if data.Type != nil {
+		want.typ = *data.Type
+	}
+	if data.OccurredAt != nil {
+		want.occurredAt = *data.OccurredAt
+	}
+	if op.Op == "put" {
+		want.deletedAt = pgtype.Timestamptz{}
+	}
+	return want, nil
+}
+
 func writeActivityAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, changeType string, before, after activityRowState) error {
 	var oldFields map[string]any
 	if changeType != history.ChangeCreate {
 		oldFields = before.fields()
 	}
-	changedFields, change, err := history.ComputeChange(changeType, oldFields, after.fields())
+	newFields := after.fields()
+	if changeType == history.ChangeDelete {
+		// #41: a tombstone's "after" is nil, not the row's still-live field
+		// values — mirrors write.go's writeActivityAuditLogTx (the REST-path
+		// counterpart) and apiaries/api/sync.go's own writeAuditLog.
+		newFields = nil
+	}
+	changedFields, change, err := history.ComputeChange(changeType, oldFields, newFields)
 	if err != nil {
 		return fmt.Errorf("compute activity change: %w", err)
 	}
@@ -471,6 +617,7 @@ func logActivityConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUI
 		"type":        stored.Type,
 		"occurred_at": stored.OccurredAt.Time.Format(dateLayout),
 		"updated_at":  stored.UpdatedAt.Time,
+		"deleted_at":  timePtr(stored.DeletedAt),
 	})
 	if err != nil {
 		return err

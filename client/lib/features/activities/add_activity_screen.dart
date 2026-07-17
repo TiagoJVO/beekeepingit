@@ -5,29 +5,45 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'activities_repository.dart';
 import 'activity_attributes.dart';
 import 'activity_types.dart';
 
-/// Add an activity to [apiaryId] (#39, FR-AC-2): select the activity type,
+/// Add an activity to [apiaryId] (#39, FR-AC-2), or — when [activityId] is
+/// given — edit an existing one (#40, FR-AC-3): select the activity type,
 /// fill in an attribute form that ADAPTS to the selected type (only that
 /// type's own fields, driven by activity_types.dart/activity_attributes.dart
 /// — the same registry the server's api/types.go mirrors), and save.
-/// Editing/deleting/listing activities are later EPIC-03 stories (#40-#43);
-/// this screen only adds.
+/// Mirrors apiary_form_screen.dart's own single-screen create/edit pattern
+/// ([isEdit]) rather than a separate edit widget, so the adaptive form/
+/// validation logic has exactly one implementation for both flows. Delete
+/// (#41, FR-AC-4) rides along here too, as a destructive action only shown
+/// in edit mode — mirroring [ApiaryFormScreen]'s own delete-button-on-the-
+/// edit-form placement, since there is no activities LIST screen yet
+/// (#42/#43) to host a swipe-to-delete affordance instead.
 ///
-/// Offline-first (FR-OF-1/Q-SYNC): the write goes straight to the local
-/// store via [ActivitiesRepository.create] — queued for the write-back seam
-/// like every other local-first write in this app (apiary_form_screen.dart's
-/// own doc comment) — never a direct REST call. Attribution
-/// (FR-TEN-2: "recorded against the user who performed it") is derived
-/// server-side from the caller's token once the queued write reconciles,
-/// not from anything this screen sends.
+/// Offline-first (FR-OF-1/Q-SYNC): every write goes straight to the local
+/// store via [ActivitiesRepository] — queued for the write-back seam like
+/// every other local-first write in this app (apiary_form_screen.dart's own
+/// doc comment) — never a direct REST call. Attribution (FR-TEN-2:
+/// "recorded against the user who performed it") is derived server-side
+/// from the caller's token once the queued write reconciles, not from
+/// anything this screen sends.
 class AddActivityScreen extends ConsumerStatefulWidget {
-  const AddActivityScreen({required this.apiaryId, super.key});
+  const AddActivityScreen({
+    required this.apiaryId,
+    this.activityId,
+    super.key,
+  });
 
   final String apiaryId;
+
+  /// Null for add (#39); the activity being edited/deleted for edit (#40/#41).
+  final String? activityId;
+
+  bool get isEdit => activityId != null;
 
   @override
   ConsumerState<AddActivityScreen> createState() => _AddActivityScreenState();
@@ -55,6 +71,12 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
   String? _treatmentType;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.isEdit) _loadExisting();
+  }
+
+  @override
   void dispose() {
     _honeySupersController.dispose();
     _honeyKgController.dispose();
@@ -63,6 +85,67 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     _diseaseController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  /// Loads the existing activity and pre-fills the form (#40 AC: "the edit
+  /// form reflects the activity's current type and attribute values") —
+  /// mirrors apiary_form_screen.dart's `_loadExisting`, including its error
+  /// handling (a thrown lookup failure must not leave `_busy` stuck true
+  /// forever with no way out) and its "l10n/messenger only read inside the
+  /// catch block" rule (looking one up during initState's synchronous
+  /// portion, before the first await, throws).
+  Future<void> _loadExisting() async {
+    setState(() => _busy = true);
+    try {
+      final repo = await ref.read(activitiesRepositoryProvider.future);
+      final existing = await repo.getById(widget.activityId!);
+      if (!mounted) return;
+      if (existing != null) {
+        _selectedType = existing.type;
+        _occurredAt = DateTime.tryParse(existing.occurredAt) ?? DateTime.now();
+        _populateFromAttributes(existing.type, existing.attributes);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.activityLoadError('$e'))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Reverses [_buildAttributes] for [type]/[attrs] into this form's
+  /// controllers/dropdown state — the pre-fill half of the edit flow.
+  /// Numeric fields render without a trailing `.0` for a whole-number
+  /// double (`honey_kg`/`feed_amount`) since the form's own input is
+  /// plain decimal text, not a formatted display value.
+  void _populateFromAttributes(String type, Map<String, dynamic> attrs) {
+    switch (type) {
+      case activityTypeHarvest:
+        _honeySupersController.text = _numText(attrs['honey_supers']);
+        _honeyKgController.text = _numText(attrs['honey_kg']);
+        _hivesInvolvedController.text = _numText(attrs['hives_involved']);
+      case activityTypeFeeding:
+        _feedType = attrs['feed_type'] as String?;
+        _feedAmountController.text = _numText(attrs['feed_amount']);
+        _hivesInvolvedController.text = _numText(attrs['hives_involved']);
+      case activityTypeTreatment:
+        _treatmentContext = attrs['treatment_context'] as String?;
+        _treatmentType = attrs['treatment_type'] as String?;
+        _diseaseController.text = (attrs['disease'] as String?) ?? '';
+        _hivesInvolvedController.text = _numText(attrs['hives_involved']);
+    }
+    _notesController.text = (attrs['notes'] as String?) ?? '';
+  }
+
+  String _numText(dynamic value) {
+    if (value == null) return '';
+    if (value is num) {
+      return value == value.truncate() ? value.truncate().toString() : value.toString();
+    }
+    return '$value';
   }
 
   Future<void> _pickDate() async {
@@ -146,6 +229,12 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     return null;
   }
 
+  /// Saves via [ActivitiesRepository.create] (add) or
+  /// [ActivitiesRepository.update] (#40, edit) depending on [isEdit] —
+  /// mirrors apiary_form_screen.dart's own `_save`, including reusing the
+  /// SAME success/error toast text for both flows (apiarySaveSuccess/Error's
+  /// own precedent: one "saved"/"couldn't save" message covers create and
+  /// update alike).
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final l10n = AppLocalizations.of(context);
@@ -153,12 +242,21 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     setState(() => _busy = true);
     try {
       final repo = await ref.read(activitiesRepositoryProvider.future);
-      await repo.create(
-        apiaryId: widget.apiaryId,
-        type: _selectedType,
-        occurredAt: _isoDate(_occurredAt),
-        attributes: _buildAttributes(),
-      );
+      if (widget.isEdit) {
+        await repo.update(
+          widget.activityId!,
+          type: _selectedType,
+          occurredAt: _isoDate(_occurredAt),
+          attributes: _buildAttributes(),
+        );
+      } else {
+        await repo.create(
+          apiaryId: widget.apiaryId,
+          type: _selectedType,
+          occurredAt: _isoDate(_occurredAt),
+          attributes: _buildAttributes(),
+        );
+      }
       if (!mounted) return;
       context.go('/apiaries/${widget.apiaryId}');
       messenger.showSnackBar(SnackBar(content: Text(l10n.activitySaveSuccess)));
@@ -166,6 +264,37 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       if (!mounted) return;
       setState(() => _busy = false);
       messenger.showSnackBar(SnackBar(content: Text(l10n.activitySaveError('$e'))));
+    }
+  }
+
+  /// Delete confirmation (#41 AC: "a confirmation step to prevent accidental
+  /// deletion") — mirrors apiary_form_screen.dart's `_confirmDelete`/
+  /// [DeleteApiaryConfirmDialog] exactly, including the post-await `mounted`
+  /// re-check (the screen could be disposed while the dialog was open).
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => const DeleteActivityConfirmDialog(),
+    );
+    if (!mounted) return;
+    if (confirmed != true) return;
+    await _delete();
+  }
+
+  Future<void> _delete() async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      final repo = await ref.read(activitiesRepositoryProvider.future);
+      await repo.delete(widget.activityId!);
+      if (!mounted) return;
+      context.go('/apiaries/${widget.apiaryId}');
+      messenger.showSnackBar(SnackBar(content: Text(l10n.activityDeleteSuccess)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      messenger.showSnackBar(SnackBar(content: Text(l10n.activityDeleteError('$e'))));
     }
   }
 
@@ -233,6 +362,16 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
                         label: l10n.saveButton,
                         onPressed: _save,
                       ),
+                      if (widget.isEdit) ...[
+                        const SizedBox(height: 12),
+                        SecondaryActionButton(
+                          key: const Key('activity-delete-button'),
+                          label: l10n.deleteActivity,
+                          icon: Icons.delete_outline,
+                          destructive: true,
+                          onPressed: _confirmDelete,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -438,6 +577,52 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
           ),
       ],
       onChanged: (v) => setState(() => onChanged(v)),
+    );
+  }
+}
+
+/// Confirmation dialog shown before deleting an activity (#41 AC: "a
+/// confirmation step to prevent accidental deletion") — mirrors
+/// apiary_form_screen.dart's [DeleteApiaryConfirmDialog] exactly (same
+/// field-first-checklist rationale: destructive/hard-to-undo actions
+/// reserve interruption, danger styling via the theme's error color, 44px+
+/// tap targets via [kMinTapTarget], cancel/dismiss is always a no-op). No
+/// name/label to interpolate (an activity has none, unlike an apiary) — the
+/// message names the action generically instead. Pulled out as its own
+/// public widget for the same testability reason
+/// [DeleteApiaryConfirmDialog] is: pumpable/testable without the full
+/// [AddActivityScreen] needing a real PowerSync-backed repository first.
+class DeleteActivityConfirmDialog extends StatelessWidget {
+  const DeleteActivityConfirmDialog({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return AlertDialog(
+      key: const Key('activity-delete-confirm-dialog'),
+      icon: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+      title: Text(l10n.deleteActivityConfirmTitle),
+      content: Text(l10n.deleteActivityConfirmMessage),
+      actions: [
+        TextButton(
+          key: const Key('activity-delete-confirm-cancel'),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+          ),
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(l10n.deleteActivityCancelAction),
+        ),
+        TextButton(
+          key: const Key('activity-delete-confirm-delete'),
+          style: TextButton.styleFrom(
+            foregroundColor: theme.colorScheme.error,
+            minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+          ),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text(l10n.deleteActivityConfirmAction),
+        ),
+      ],
     );
   }
 }

@@ -1147,6 +1147,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t save the activity: {error}'**
   String activitySaveError(String error);
+
+  /// Error toast when loading an existing activity for editing throws (#40)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the activity: {error}'**
+  String activityLoadError(String error);
+
+  /// Destructive button on the edit-activity form that opens the delete confirmation dialog (#41, FR-AC-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete activity'**
+  String get deleteActivity;
+
+  /// Confirmation toast after successfully deleting an activity, offline or online (#41, FR-OF-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity deleted'**
+  String get activityDeleteSuccess;
+
+  /// Error toast when deleting an activity throws (#41)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the activity: {error}'**
+  String activityDeleteError(String error);
+
+  /// Title of the confirmation dialog shown before deleting an activity (#41 AC: a confirmation step to prevent accidental deletion)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete activity?'**
+  String get deleteActivityConfirmTitle;
+
+  /// Body of the confirmation dialog shown before deleting an activity (#41)
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently deletes this activity. This cannot be undone.'**
+  String get deleteActivityConfirmMessage;
+
+  /// Confirm action in the delete-activity confirmation dialog (#41)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteActivityConfirmAction;
+
+  /// Cancel action in the delete-activity confirmation dialog (#41 AC: cancel is a no-op)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get deleteActivityCancelAction;
 }
 
 class _AppLocalizationsDelegate

@@ -831,5 +831,47 @@
         "type": "String"
       }
     }
+  },
+  "activityLoadError": "Couldn't load the activity: {error}",
+  "@activityLoadError": {
+    "description": "Error toast when loading an existing activity for editing throws (#40)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteActivity": "Delete activity",
+  "@deleteActivity": {
+    "description": "Destructive button on the edit-activity form that opens the delete confirmation dialog (#41, FR-AC-4)"
+  },
+  "activityDeleteSuccess": "Activity deleted",
+  "@activityDeleteSuccess": {
+    "description": "Confirmation toast after successfully deleting an activity, offline or online (#41, FR-OF-1)"
+  },
+  "activityDeleteError": "Couldn't delete the activity: {error}",
+  "@activityDeleteError": {
+    "description": "Error toast when deleting an activity throws (#41)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteActivityConfirmTitle": "Delete activity?",
+  "@deleteActivityConfirmTitle": {
+    "description": "Title of the confirmation dialog shown before deleting an activity (#41 AC: a confirmation step to prevent accidental deletion)"
+  },
+  "deleteActivityConfirmMessage": "This permanently deletes this activity. This cannot be undone.",
+  "@deleteActivityConfirmMessage": {
+    "description": "Body of the confirmation dialog shown before deleting an activity (#41)"
+  },
+  "deleteActivityConfirmAction": "Delete",
+  "@deleteActivityConfirmAction": {
+    "description": "Confirm action in the delete-activity confirmation dialog (#41)"
+  },
+  "deleteActivityCancelAction": "Cancel",
+  "@deleteActivityCancelAction": {
+    "description": "Cancel action in the delete-activity confirmation dialog (#41 AC: cancel is a no-op)"
   }
 }

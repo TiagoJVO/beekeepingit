@@ -219,7 +219,29 @@
   "activityFieldInvalid": "Este valor não é válido",
   "activitySaveSuccess": "Atividade guardada",
   "activitySaveError": "Não foi possível guardar a atividade: {error}",
+  "activityLoadError": "Não foi possível carregar a atividade: {error}",
+  "deleteActivity": "Eliminar atividade",
+  "activityDeleteSuccess": "Atividade eliminada",
+  "activityDeleteError": "Não foi possível eliminar a atividade: {error}",
+  "deleteActivityConfirmTitle": "Eliminar atividade?",
+  "deleteActivityConfirmMessage": "Isto elimina permanentemente esta atividade. Esta ação não pode ser desfeita.",
+  "deleteActivityConfirmAction": "Eliminar",
+  "deleteActivityCancelAction": "Cancelar",
   "@activitySaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@activityLoadError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@activityDeleteError": {
     "placeholders": {
       "error": {
         "type": "String"

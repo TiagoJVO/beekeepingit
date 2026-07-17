@@ -920,3 +920,560 @@ func TestActivitiesSync_Validate_DedupesApiaryOwnershipCalls(t *testing.T) {
 		t.Fatalf("total apiaries ownership calls = %d, want exactly 1", got)
 	}
 }
+
+// --- PATCH /v1/activities/{id} (#40, FR-AC-3) ---
+
+func TestActivitiesRest_Update_Success(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type":        api.TypeHarvest,
+		"occurred_at": "2026-07-17",
+		"attributes":  map[string]any{"honey_supers": 9, "honey_kg": 20},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		OccurredAt string         `json:"occurred_at"`
+		Attributes map[string]any `json:"attributes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.OccurredAt != "2026-07-17" || got.Attributes["honey_supers"] != float64(9) {
+		t.Fatalf("updated activity = %+v, want occurred_at=2026-07-17, honey_supers=9", got)
+	}
+}
+
+// TestActivitiesRest_Update_ValidationRejectsBadInput proves updateActivity
+// re-runs ValidateActivity server-side (#40 AC: "edited attributes are
+// validated against the type's schema before saving") — a required
+// attribute (harvest's honey_supers) dropped on edit must be rejected
+// exactly like it would be on create.
+func TestActivitiesRest_Update_ValidationRejectsBadInput(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type":        api.TypeHarvest,
+		"occurred_at": "2026-07-17",
+		"attributes":  map[string]any{"honey_kg": 20},
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (missing required honey_supers on edit), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "attributes.honey_supers", "required") {
+		t.Fatalf("problem errors = %+v, want attributes.honey_supers/required", p.Errors)
+	}
+}
+
+// TestActivitiesRest_Update_CrossOrgApiaryIdIsRejected is #40's carry-over of
+// the CRITICAL cross-tenant guard (mirrors
+// TestActivitiesRest_Create_CrossOrgApiaryIdIsRejected): re-pointing an
+// activity at an apiary_id that doesn't belong to the caller's org must be
+// rejected, and the stored row must be left completely unchanged.
+func TestActivitiesRest_Update_CrossOrgApiaryIdIsRejected(t *testing.T) {
+	apiaryID := uuid.NewString()
+	foreignApiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID) // foreignApiaryID deliberately NOT known
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"apiary_id":   foreignApiaryID,
+		"type":        api.TypeHarvest,
+		"occurred_at": "2026-07-17",
+		"attributes":  map[string]any{"honey_supers": 9},
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (cross-org apiary_id on edit must be rejected), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "apiary_id", "not_found") {
+		t.Fatalf("problem errors = %+v, want apiary_id/not_found", p.Errors)
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if uuidString(row.ApiaryID) != apiaryID || row.OccurredAt.Time.Format("2006-01-02") != "2026-07-16" {
+		t.Fatalf("stored activity = %+v, want unchanged (apiary_id=%s, occurred_at=2026-07-16)", row, apiaryID)
+	}
+}
+
+func TestActivitiesRest_Update_UnknownIdIsNotFound(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	rec := f.do(t, http.MethodPatch, "/v1/activities/"+uuid.NewString(), map[string]any{
+		"type": api.TypeGeneric, "occurred_at": "2026-07-16", "attributes": map[string]any{},
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for an unknown activity id, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestActivitiesRest_History_UpdateProducesAuditRow(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type": api.TypeHarvest, "occurred_at": "2026-07-17", "attributes": map[string]any{"honey_supers": 9},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListAuditLog(context.Background(), sqlcgen.ListAuditLogParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		EntityType:     "activity",
+		EntityID:       pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLog: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("audit rows = %d, want 2 (create + update, FR-HIS-1)", len(rows))
+	}
+	if rows[1].ChangeType != "update" {
+		t.Fatalf("second audit row change_type = %q, want update", rows[1].ChangeType)
+	}
+	if uuidString(rows[1].ActorUserID) != devseed.UserID {
+		t.Fatalf("audit actor_user_id = %q, want the editing user %q (FR-HIS-1: actor + timestamp)", uuidString(rows[1].ActorUserID), devseed.UserID)
+	}
+}
+
+// --- DELETE /v1/activities/{id} (#41, FR-AC-4) ---
+
+func TestActivitiesRest_Delete_Success(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	if _, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	}); err == nil {
+		t.Fatalf("GetActivity found the deleted activity — deleted_at IS NULL filter must exclude it")
+	}
+}
+
+// TestActivitiesRest_Delete_TombstoneRowExcludedFromListQuery is #41's core
+// AC ("the deleted activity no longer appears in apiary or all-apiaries
+// lists"): the row must be SOFT-deleted (deleted_at set, still physically
+// present) AND excluded from ListActivitiesByOrg/ListActivitiesByApiary —
+// the same tombstone convention the PowerSync sync rule's own
+// `deleted_at IS NULL` filter relies on to propagate the delete to devices.
+func TestActivitiesRest_Delete_TombstoneRowExcludedFromListQuery(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	keepID := uuid.NewString()
+	deleteID := uuid.NewString()
+	for _, id := range []string{keepID, deleteID} {
+		if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+			t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	if rec := f.do(t, http.MethodDelete, "/v1/activities/"+deleteID, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	org := pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true}
+
+	// Soft-deleted, not hard-deleted: the row is still physically there —
+	// GetActivityForUpdate carries no deleted_at filter (sync.go's LWW
+	// lookup), so it must still find it, with deleted_at now set.
+	row, err := q.GetActivityForUpdate(context.Background(), sqlcgen.GetActivityForUpdateParams{OrganizationID: org, ID: pgtype.UUID{Bytes: uuid.MustParse(deleteID), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetActivityForUpdate: %v (the tombstoned row must still physically exist)", err)
+	}
+	if !row.DeletedAt.Valid {
+		t.Fatalf("deleted_at is not set on the tombstoned row — expected a soft-delete, not a no-op")
+	}
+
+	// Excluded from both list queries (FR-AC-4 AC).
+	byOrg, err := q.ListActivitiesByOrg(context.Background(), sqlcgen.ListActivitiesByOrgParams{OrganizationID: org, Limit: 50})
+	if err != nil {
+		t.Fatalf("ListActivitiesByOrg: %v", err)
+	}
+	if len(byOrg) != 1 || uuidString(byOrg[0].ID) != keepID {
+		t.Fatalf("ListActivitiesByOrg = %d rows, want exactly the surviving activity (%s)", len(byOrg), keepID)
+	}
+	byApiary, err := q.ListActivitiesByApiary(context.Background(), sqlcgen.ListActivitiesByApiaryParams{
+		OrganizationID: org, ApiaryID: pgtype.UUID{Bytes: uuid.MustParse(apiaryID), Valid: true}, Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("ListActivitiesByApiary: %v", err)
+	}
+	if len(byApiary) != 1 || uuidString(byApiary[0].ID) != keepID {
+		t.Fatalf("ListActivitiesByApiary = %d rows, want exactly the surviving activity (%s)", len(byApiary), keepID)
+	}
+}
+
+func TestActivitiesRest_Delete_UnknownIdIsNotFound(t *testing.T) {
+	f := newActivitiesFixture(t)
+	rec := f.do(t, http.MethodDelete, "/v1/activities/"+uuid.NewString(), nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for an unknown activity id, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestActivitiesRest_Delete_AlreadyDeletedIsNotFound(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("first delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+	rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("second delete status = %d, want 404 (already gone), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestActivitiesRest_History_DeleteProducesAuditRow(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListAuditLog(context.Background(), sqlcgen.ListAuditLogParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		EntityType:     "activity",
+		EntityID:       pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLog: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("audit rows = %d, want 2 (create + delete, FR-HIS-1)", len(rows))
+	}
+	if rows[1].ChangeType != "delete" {
+		t.Fatalf("second audit row change_type = %q, want delete", rows[1].ChangeType)
+	}
+	if uuidString(rows[1].ActorUserID) != devseed.UserID {
+		t.Fatalf("audit actor_user_id = %q, want the deleting user %q (FR-HIS-1: actor + timestamp)", uuidString(rows[1].ActorUserID), devseed.UserID)
+	}
+}
+
+// --- /internal/sync validate/apply — edit (#40) ---
+
+func TestActivitiesSync_Apply_Patch_UpdatesActivity(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	createBatch := map[string]any{"ops": []any{syncOp(id, apiaryID)}}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", createBatch); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z", // strictly newer than the create's 10:00:00Z
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-17",
+			"attributes": map[string]any{"notes": "edited offline"},
+		},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Results []struct {
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Results) != 1 || got.Results[0].Result != "applied" {
+		t.Fatalf("patch results = %+v, want one applied op", got.Results)
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if row.Type != api.TypeGeneric || row.OccurredAt.Time.Format(dateLayoutForTest) != "2026-07-17" {
+		t.Fatalf("row after patch = %+v, want type=generic occurred_at=2026-07-17", row)
+	}
+	// apiary_id must be unchanged — the patch op deliberately doesn't carry
+	// one (#40's optional-apiary_id convention: an edit that doesn't touch it
+	// leaves the stored value alone).
+	if uuidString(row.ApiaryID) != apiaryID {
+		t.Fatalf("apiary_id after patch = %q, want unchanged %q", uuidString(row.ApiaryID), apiaryID)
+	}
+}
+
+// TestActivitiesSync_Apply_Patch_CrossOrgApiaryIdIsNoOp proves the ownership
+// guard still fires on an EDIT that DOES carry an apiary_id (#40's own
+// review note: "re-verify apiary ownership"), even though the common edit
+// case never sends one at all.
+func TestActivitiesSync_Apply_Patch_CrossOrgApiaryIdIsNoOp(t *testing.T) {
+	apiaryID := uuid.NewString()
+	foreignApiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID) // foreignApiaryID deliberately not known
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOp(id, apiaryID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data": map[string]any{
+			"apiary_id": foreignApiaryID, "type": api.TypeGeneric, "occurred_at": "2026-07-17",
+			"attributes": map[string]any{},
+		},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200 (cross-org apiary_id on patch is a no-op, not an error), body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if row.Type != api.TypeGeneric {
+		t.Fatalf("row was mutated despite the rejected cross-org apiary_id — the patch must have been a full no-op")
+	}
+	if uuidString(row.ApiaryID) != apiaryID {
+		t.Fatalf("apiary_id = %q, want unchanged %q (cross-org apiary_id must never be written)", uuidString(row.ApiaryID), apiaryID)
+	}
+}
+
+func TestActivitiesSync_Validate_Patch_RejectsInvalidAttributes(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeHarvest, "occurred_at": "2026-07-17",
+			"attributes": map[string]any{"honey_kg": 5}, // missing required honey_supers
+		},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{patchOp}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (missing required honey_supers), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "ops[0].data.attributes.honey_supers", "required") {
+		t.Fatalf("problem errors = %+v, want ops[0].data.attributes.honey_supers/required", p.Errors)
+	}
+}
+
+// --- /internal/sync validate/apply — delete/tombstone (#41) ---
+
+func TestActivitiesSync_Apply_Delete_TombstonesRow(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOp(id, apiaryID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	deleteOp := map[string]any{
+		"op": "delete", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{deleteOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	org := pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true}
+	if _, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{OrganizationID: org, ID: pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true}}); err == nil {
+		t.Fatalf("GetActivity found the tombstoned row — deleted_at IS NULL filter must exclude it")
+	}
+	row, err := q.GetActivityForUpdate(context.Background(), sqlcgen.GetActivityForUpdateParams{OrganizationID: org, ID: pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetActivityForUpdate: %v (soft-deleted row must still physically exist)", err)
+	}
+	if !row.DeletedAt.Valid {
+		t.Fatalf("deleted_at not set — expected a tombstone, not a hard delete")
+	}
+	rows, err := q.ListActivitiesByOrg(context.Background(), sqlcgen.ListActivitiesByOrgParams{OrganizationID: org, Limit: 50})
+	if err != nil {
+		t.Fatalf("ListActivitiesByOrg: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("ListActivitiesByOrg = %d rows, want 0 (the tombstoned row must not appear)", len(rows))
+	}
+}
+
+func TestActivitiesSync_Apply_Delete_MissingRowIsNoOp(t *testing.T) {
+	f := newActivitiesFixture(t)
+	deleteOp := map[string]any{
+		"op": "delete", "entity_type": "activity", "id": uuid.NewString(),
+		"updated_at": "2026-07-16T11:00:00Z",
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{deleteOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (deleting an id the server never had is a no-op), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestActivitiesSync_Apply_Delete_IdempotentReplay is the offline op
+// idempotency test: PowerSync's own forward-retry (sync.md §6.2) can resend
+// the SAME queued delete op more than once (e.g. the client never saw the
+// first 200 due to a dropped response) — the second application must be a
+// pure no-op (still applied, no duplicate audit row, no conflict logged),
+// never an error and never a second tombstone attempt.
+func TestActivitiesSync_Apply_Delete_IdempotentReplay(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOp(id, apiaryID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	deleteOp := map[string]any{
+		"op": "delete", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+	}
+	batch := map[string]any{"ops": []any{deleteOp}}
+
+	first := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first delete apply status = %d, want 200, body = %s", first.Code, first.Body.String())
+	}
+	second := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if second.Code != http.StatusOK {
+		t.Fatalf("replayed delete apply status = %d, want 200, body = %s", second.Code, second.Body.String())
+	}
+	var got struct {
+		Results []struct {
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Results) != 1 || got.Results[0].Result != "applied" {
+		t.Fatalf("replayed delete result = %+v, want one applied op (idempotent, not superseded)", got.Results)
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListAuditLog(context.Background(), sqlcgen.ListAuditLogParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		EntityType:     "activity",
+		EntityID:       pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLog: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("audit rows = %d, want 2 (create + ONE delete — the replay must not add a second delete row)", len(rows))
+	}
+}
+
+// TestActivitiesSync_Apply_Delete_OlderThanLastEditIsSuperseded is the LWW
+// safety-net test for a delete that loses: a delete queued from a device
+// that was offline before a newer edit landed must not clobber that newer
+// edit (sync.md §4.1/§4.2 — the delete is logged as a conflict, not
+// silently dropped, and the row survives).
+func TestActivitiesSync_Apply_Delete_OlderThanLastEditIsSuperseded(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOp(id, apiaryID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	// A newer edit lands first (11:00), THEN an older queued delete (10:30,
+	// between the create's 10:00 and the edit's 11:00) arrives.
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{}},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	deleteOp := map[string]any{
+		"op": "delete", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T10:30:00Z",
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{deleteOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Results []struct {
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Results) != 1 || got.Results[0].Result != "superseded" {
+		t.Fatalf("stale delete result = %+v, want one superseded op (LWW: the newer edit must win)", got.Results)
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v (the row must have survived — the delete lost the LWW compare)", err)
+	}
+	if row.Type != api.TypeGeneric {
+		t.Fatalf("surviving row type = %q, want %q (the newer edit's content, not clobbered by the stale delete)", row.Type, api.TypeGeneric)
+	}
+}
+
+const dateLayoutForTest = "2006-01-02"

@@ -630,4 +630,33 @@ class AppLocalizationsPt extends AppLocalizations {
   String activitySaveError(String error) {
     return 'Não foi possível guardar a atividade: $error';
   }
+
+  @override
+  String activityLoadError(String error) {
+    return 'Não foi possível carregar a atividade: $error';
+  }
+
+  @override
+  String get deleteActivity => 'Eliminar atividade';
+
+  @override
+  String get activityDeleteSuccess => 'Atividade eliminada';
+
+  @override
+  String activityDeleteError(String error) {
+    return 'Não foi possível eliminar a atividade: $error';
+  }
+
+  @override
+  String get deleteActivityConfirmTitle => 'Eliminar atividade?';
+
+  @override
+  String get deleteActivityConfirmMessage =>
+      'Isto elimina permanentemente esta atividade. Esta ação não pode ser desfeita.';
+
+  @override
+  String get deleteActivityConfirmAction => 'Eliminar';
+
+  @override
+  String get deleteActivityCancelAction => 'Cancelar';
 }

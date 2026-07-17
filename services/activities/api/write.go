@@ -56,6 +56,27 @@ type activityCreateRequest struct {
 	JourneyID  *string         `json:"journey_id"`
 }
 
+// activityUpdateRequest is the PATCH /v1/activities/{id} request body
+// (#40/FR-AC-3). Unlike apiaries' apiaryUpdateRequest (a true partial
+// PATCH with per-field presence tracking), activities' edit form always
+// resubmits the COMPLETE current state (add_activity_screen.dart reuses
+// the exact same adaptive form for edit, pre-filled — every save rebuilds
+// the whole attributes map from the form's current controls, never a
+// sparse diff) — so type/occurred_at/attributes are all REQUIRED here,
+// mirroring activityCreateRequest's own shape minus id. apiary_id is the
+// one genuinely optional field: the edit UI never changes it, but the
+// wire contract supports re-pointing an activity at a different apiary of
+// the SAME organization — when present, it is re-verified via the same
+// cross-service ownership check createActivity uses (FR-TEN-2 carry-over,
+// #40's own review note); when absent, the activity's current apiary_id is
+// left untouched and no ownership call is made at all.
+type activityUpdateRequest struct {
+	ApiaryID   *string         `json:"apiary_id"`
+	Type       string          `json:"type"`
+	OccurredAt string          `json:"occurred_at"`
+	Attributes json.RawMessage `json:"attributes"`
+}
+
 // activityDTO is the client-facing activity shape.
 type activityDTO struct {
 	ID             string         `json:"id"`
@@ -70,12 +91,15 @@ type activityDTO struct {
 	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
-// Router returns the client-facing /v1/activities surface: today just the
-// REST create route (#39/FR-AC-2) — edit/delete/list are later EPIC-03
-// stories (#40/#41/#42/#43), following #38's own scope-split precedent.
+// Router returns the client-facing /v1/activities surface: the REST create
+// route (#39/FR-AC-2) plus edit (#40/FR-AC-3) and delete (#41/FR-AC-4).
+// List is a later EPIC-03 story (#42/#43), following #38's own
+// scope-split precedent.
 func Router(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handler {
 	r := chi.NewRouter()
 	r.Post("/", createActivity(pool, verifier))
+	r.Patch("/{activityId}", updateActivity(pool, verifier))
+	r.Delete("/{activityId}", deleteActivity(pool))
 	return r
 }
 
@@ -179,6 +203,228 @@ func createActivity(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFu
 
 		w.Header().Set("Location", "/v1/activities/"+uuidString(row.ID))
 		writeJSON(w, r, http.StatusCreated, toActivityDTO(row))
+	}
+}
+
+// updateActivity handles PATCH /v1/activities/{id} (#40/FR-AC-3): re-runs
+// ValidateActivity server-side (same rules a create must pass), re-verifies
+// apiary ownership via the same cross-service ApiaryVerifier createActivity
+// uses — but ONLY when the request actually carries a new apiary_id
+// (activityUpdateRequest's doc comment) — records the edit in audit_log
+// (FR-HIS-1), and never touches performed_by/journey_id.
+func updateActivity(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		org, userID, ok := requireOrg(w, r)
+		if !ok {
+			return
+		}
+		id, err := uuid.Parse(chi.URLParam(r, "activityId"))
+		if err != nil {
+			problem.Write(w, r, problem.NotFound("activity not found"))
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, maxCreateBodyBytes)
+		var body activityUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			problem.Write(w, r, problem.ValidationFailed("request body must be valid JSON"))
+			return
+		}
+
+		newApiaryID, attrs, fieldErrs := validateActivityUpdate(body)
+		if len(fieldErrs) > 0 {
+			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
+			return
+		}
+
+		// Ownership re-verify (CRITICAL, FR-TEN-2 carry-over from createActivity):
+		// only when the request actually carries a apiary_id — the common case
+		// (the edit form never changes it) makes no cross-service call at all,
+		// exactly like sync.go's resolveApiaryOwnership only resolves apiary_ids
+		// that are actually present in a batch op's data.
+		if newApiaryID != nil {
+			belongs, err := verifier.BelongsToOrg(r.Context(), r.Header.Get("Authorization"), newApiaryID.String())
+			if err != nil {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "verify apiary ownership failed", slog.Any("error", err))
+				problem.Write(w, r, problem.Internal())
+				return
+			}
+			if !belongs {
+				problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid",
+					problem.FieldError{Field: "apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary in this organization"}))
+				return
+			}
+		}
+
+		pgID := pgtype.UUID{Bytes: id, Valid: true}
+		attrsJSON, err := json.Marshal(attrs)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "marshal activity attributes failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		occurredAt, _ := time.Parse(dateLayout, body.OccurredAt) // format already validated
+
+		var (
+			updated sqlcgen.ActivitiesActivity
+			want    activityRowState
+		)
+		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+			current, err := q.GetActivityForUpdate(r.Context(), sqlcgen.GetActivityForUpdateParams{OrganizationID: org, ID: pgID})
+			if err != nil || current.DeletedAt.Valid {
+				problem.Write(w, r, problem.NotFound("activity not found"))
+				return errResponseWritten
+			}
+
+			var currentAttrs map[string]any
+			_ = json.Unmarshal(current.Attributes, &currentAttrs)
+			before := activityRowState{apiaryID: uuidString(current.ApiaryID), typ: current.Type, occurredAt: current.OccurredAt.Time.Format(dateLayout), attributes: currentAttrs}
+
+			apiaryIDParam := current.ApiaryID
+			want = before
+			want.typ = body.Type
+			want.occurredAt = body.OccurredAt
+			want.attributes = attrs
+			if newApiaryID != nil {
+				apiaryIDParam = pgtype.UUID{Bytes: *newApiaryID, Valid: true}
+				want.apiaryID = newApiaryID.String()
+			}
+
+			now := time.Now().UTC()
+			var updateErr error
+			updated, updateErr = q.UpdateActivity(r.Context(), sqlcgen.UpdateActivityParams{
+				OrganizationID: org, ID: pgID,
+				ApiaryID:   apiaryIDParam,
+				Type:       body.Type,
+				OccurredAt: pgtype.Date{Time: occurredAt, Valid: true},
+				Attributes: attrsJSON,
+				UpdatedAt:  pgtype.Timestamptz{Time: now, Valid: true},
+			})
+			if updateErr != nil {
+				return fmt.Errorf("update activity: %w", updateErr)
+			}
+
+			if err := writeActivityAuditLogTx(r.Context(), q, org, userID, id, history.ChangeUpdate, now, before, want); err != nil {
+				return fmt.Errorf("write audit log: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			if !errors.Is(err, errResponseWritten) {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "update activity failed", slog.Any("error", err))
+				problem.Write(w, r, problem.Internal())
+			}
+			return
+		}
+
+		writeJSON(w, r, http.StatusOK, toActivityDTO(updated))
+	}
+}
+
+// validateActivityUpdate validates an activityUpdateRequest the same way
+// validateActivityCreate validates a create — occurred_at format, and (via
+// ValidateActivity) the selected type's own attribute schema — minus the
+// id check (the id comes from the URL, not the body) and with apiary_id
+// OPTIONAL (activityUpdateRequest's doc comment) rather than required.
+func validateActivityUpdate(body activityUpdateRequest) (apiaryID *uuid.UUID, attrs map[string]any, errs []problem.FieldError) {
+	if body.ApiaryID != nil {
+		parsed, err := uuid.Parse(*body.ApiaryID)
+		if err != nil {
+			errs = append(errs, problem.FieldError{Field: "apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
+		} else {
+			apiaryID = &parsed
+		}
+	}
+
+	switch {
+	case strings.TrimSpace(body.OccurredAt) == "":
+		errs = append(errs, problem.FieldError{Field: "occurred_at", Code: "required", Message: "occurred_at is required"})
+	default:
+		if _, err := time.Parse(dateLayout, body.OccurredAt); err != nil {
+			errs = append(errs, problem.FieldError{Field: "occurred_at", Code: "invalid", Message: "occurred_at must be a YYYY-MM-DD date"})
+		}
+	}
+
+	attrs = map[string]any{}
+	attrsOK := true
+	if len(body.Attributes) > 0 {
+		if err := json.Unmarshal(body.Attributes, &attrs); err != nil || attrs == nil {
+			errs = append(errs, problem.FieldError{Field: "attributes", Code: "invalid", Message: "attributes must be a JSON object"})
+			attrsOK = false
+		}
+	}
+
+	switch {
+	case strings.TrimSpace(body.Type) == "":
+		errs = append(errs, problem.FieldError{Field: "type", Code: "required", Message: "type is required"})
+	case attrsOK:
+		errs = append(errs, ValidateActivity(body.Type, attrs)...)
+	}
+
+	return apiaryID, attrs, errs
+}
+
+// deleteActivity handles DELETE /v1/activities/{id} (#41/FR-AC-4):
+// tombstones the row (deleted_at, mirroring apiaries' deleteApiary) rather
+// than a hard delete, so the PowerSync sync rule's `deleted_at IS NULL`
+// filter (infra/helm/beekeepingit/charts/powersync/values.yaml) propagates
+// the delete to every device on their next sync — the client's local
+// [rejectedOpsTable]/schema carries no deleted_at column of its own; the
+// row simply leaves each device's result set. Records the delete in
+// audit_log (FR-HIS-1). Unlike updateActivity, delete never needs the
+// ApiaryVerifier — it doesn't touch apiary_id, so there is no ownership
+// question to re-check (the row's own organization_id, already enforced by
+// GetActivityForUpdate's WHERE clause, is the only tenancy fact that
+// matters for removing an existing row).
+func deleteActivity(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		org, userID, ok := requireOrg(w, r)
+		if !ok {
+			return
+		}
+		id, err := uuid.Parse(chi.URLParam(r, "activityId"))
+		if err != nil {
+			problem.Write(w, r, problem.NotFound("activity not found"))
+			return
+		}
+		pgID := pgtype.UUID{Bytes: id, Valid: true}
+
+		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+			current, err := q.GetActivityForUpdate(r.Context(), sqlcgen.GetActivityForUpdateParams{OrganizationID: org, ID: pgID})
+			if err != nil || current.DeletedAt.Valid {
+				problem.Write(w, r, problem.NotFound("activity not found"))
+				return errResponseWritten
+			}
+
+			now := time.Now().UTC()
+			rowsAffected, err := q.SoftDeleteActivity(r.Context(), sqlcgen.SoftDeleteActivityParams{
+				OrganizationID: org, ID: pgID, DeletedAt: pgtype.Timestamptz{Time: now, Valid: true},
+			})
+			if err != nil {
+				return fmt.Errorf("soft delete activity: %w", err)
+			}
+			if rowsAffected == 0 {
+				problem.Write(w, r, problem.NotFound("activity not found"))
+				return errResponseWritten
+			}
+
+			var currentAttrs map[string]any
+			_ = json.Unmarshal(current.Attributes, &currentAttrs)
+			before := activityRowState{apiaryID: uuidString(current.ApiaryID), typ: current.Type, occurredAt: current.OccurredAt.Time.Format(dateLayout), attributes: currentAttrs}
+			if err := writeActivityAuditLogTx(r.Context(), q, org, userID, id, history.ChangeDelete, now, before, activityRowState{}); err != nil {
+				return fmt.Errorf("write audit log: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			if !errors.Is(err, errResponseWritten) {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "delete activity failed", slog.Any("error", err))
+				problem.Write(w, r, problem.Internal())
+			}
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -307,14 +553,26 @@ func attributesEqual(a, b map[string]any) bool {
 }
 
 // activityRowState is the mutable projection of an activity for history
-// diffing — mirrors apiaries' restRowState/rowState shape.
+// diffing AND (via deletedAt/sameAs, #40/#41) the sync-apply LWW
+// idempotent-resend/conflict compare — mirrors apiaries' restRowState/
+// rowState shape (there, split into two types because of apiaries'
+// location/hive-counter complexity; activities has neither, so one shared
+// type serves both write.go's REST handlers and sync.go's applyActivityOp,
+// same as it already did for #39's create-only scope).
 type activityRowState struct {
 	apiaryID   string
 	typ        string
 	occurredAt string
 	attributes map[string]any
+	deletedAt  pgtype.Timestamptz
 }
 
+// fields projects the content columns history.ComputeChange diffs —
+// deliberately EXCLUDES deletedAt (mirrors apiaries' rowState.fields()):
+// writeActivityAuditLogTx/writeActivityAuditLog already special-case
+// history.ChangeDelete by nulling the "after" field map entirely, so a
+// tombstone's own delta never leaks a raw deleted_at timestamp into the
+// audit_log.change payload.
 func (a activityRowState) fields() map[string]any {
 	return map[string]any{
 		"apiary_id":   a.apiaryID,
@@ -322,6 +580,16 @@ func (a activityRowState) fields() map[string]any {
 		"occurred_at": a.occurredAt,
 		"attributes":  a.attributes,
 	}
+}
+
+// sameAs reports whether a and b represent the identical row content,
+// INCLUDING tombstone state — sync.go's applyActivityOp LWW compare (#40/
+// #41, mirrors apiaries' rowState.sameAs) uses this to distinguish an
+// idempotent re-send (no domain change, no conflict log entry) from a
+// genuine LWW loss.
+func (a activityRowState) sameAs(b activityRowState) bool {
+	return a.apiaryID == b.apiaryID && a.typ == b.typ && a.occurredAt == b.occurredAt &&
+		attributesEqual(a.attributes, b.attributes) && a.deletedAt.Valid == b.deletedAt.Valid
 }
 
 // writeActivityAuditLogTx appends one history.md §3 row for a REST create,

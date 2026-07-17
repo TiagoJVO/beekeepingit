@@ -45,6 +45,47 @@ func (q *Queries) GetActivity(ctx context.Context, arg GetActivityParams) (Activ
 	return i, err
 }
 
+const getActivityForUpdate = `-- name: GetActivityForUpdate :one
+SELECT id, organization_id, apiary_id, performed_by, journey_id, type, occurred_at, attributes,
+       created_at, updated_at, recorded_at, deleted_at
+FROM activities.activities
+WHERE organization_id = $1 AND id = $2
+FOR UPDATE
+`
+
+type GetActivityForUpdateParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	ID             pgtype.UUID `json:"id"`
+}
+
+// Locks the row (or reports its absence, including a soft-deleted one) for
+// the REST update/delete transaction and the sync-apply LWW compare
+// (#40/#41, mirrors apiaries' GetApiaryForUpdate). No deleted_at filter —
+// callers explicitly check the returned row's deleted_at: REST 404s a
+// tombstoned row (updateActivity/deleteActivity), while sync-apply's LWW
+// still applies OVER a tombstone (a strictly-newer offline edit can
+// legitimately "undelete" the row) — symmetric with apiaries' own sync.go
+// convention.
+func (q *Queries) GetActivityForUpdate(ctx context.Context, arg GetActivityForUpdateParams) (ActivitiesActivity, error) {
+	row := q.db.QueryRow(ctx, getActivityForUpdate, arg.OrganizationID, arg.ID)
+	var i ActivitiesActivity
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ApiaryID,
+		&i.PerformedBy,
+		&i.JourneyID,
+		&i.Type,
+		&i.OccurredAt,
+		&i.Attributes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RecordedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const insertActivity = `-- name: InsertActivity :one
 INSERT INTO activities.activities
     (id, organization_id, apiary_id, performed_by, journey_id, type, occurred_at, attributes, updated_at)
@@ -301,6 +342,124 @@ func (q *Queries) ListActivitiesByOrg(ctx context.Context, arg ListActivitiesByO
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeleteActivity = `-- name: SoftDeleteActivity :execrows
+UPDATE activities.activities
+SET deleted_at = $3, updated_at = $3, recorded_at = now()
+WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
+`
+
+type SoftDeleteActivityParams struct {
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ID             pgtype.UUID        `json:"id"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// REST delete (DELETE /v1/activities/{id}, #41/FR-AC-4): tombstone,
+// matching the sync path's deleted_at convention so the delete propagates
+// to devices (FR-OF-1) — the PowerSync Sync Rules already filter
+// deleted_at IS NULL (infra/helm/beekeepingit/charts/powersync/values.yaml).
+// :execrows so the caller can distinguish "already gone" (0 rows) from
+// success without a separate SELECT, mirroring apiaries' SoftDeleteApiary.
+func (q *Queries) SoftDeleteActivity(ctx context.Context, arg SoftDeleteActivityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteActivity, arg.OrganizationID, arg.ID, arg.DeletedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateActivity = `-- name: UpdateActivity :one
+UPDATE activities.activities
+SET apiary_id = $3, type = $4, occurred_at = $5, attributes = $6, updated_at = $7, recorded_at = now()
+WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
+RETURNING id, organization_id, apiary_id, performed_by, journey_id, type, occurred_at, attributes,
+          created_at, updated_at, recorded_at, deleted_at
+`
+
+type UpdateActivityParams struct {
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ID             pgtype.UUID        `json:"id"`
+	ApiaryID       pgtype.UUID        `json:"apiary_id"`
+	Type           string             `json:"type"`
+	OccurredAt     pgtype.Date        `json:"occurred_at"`
+	Attributes     []byte             `json:"attributes"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+// REST update (PATCH /v1/activities/{id}, #40/FR-AC-3): the caller computes
+// the full desired row first (matching sync.go's mergeActivityOp pattern),
+// so this always sets every mutable column. performed_by is NEVER written
+// here — FR-TEN-2 attribution is set once at create and immutable on edit,
+// matching InsertActivity's own performed_by convention; journey_id is
+// similarly untouched (D-21/#46 owns journey re-attribution, out of this
+// issue's scope). WHERE deleted_at IS NULL is defense-in-depth — the
+// handler already 404s a tombstoned row via its own GetActivityForUpdate
+// check before reaching here.
+func (q *Queries) UpdateActivity(ctx context.Context, arg UpdateActivityParams) (ActivitiesActivity, error) {
+	row := q.db.QueryRow(ctx, updateActivity,
+		arg.OrganizationID,
+		arg.ID,
+		arg.ApiaryID,
+		arg.Type,
+		arg.OccurredAt,
+		arg.Attributes,
+		arg.UpdatedAt,
+	)
+	var i ActivitiesActivity
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ApiaryID,
+		&i.PerformedBy,
+		&i.JourneyID,
+		&i.Type,
+		&i.OccurredAt,
+		&i.Attributes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RecordedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateActivitySync = `-- name: UpdateActivitySync :exec
+UPDATE activities.activities
+SET apiary_id = $3, type = $4, occurred_at = $5, attributes = $6, updated_at = $7, deleted_at = $8, recorded_at = now()
+WHERE organization_id = $1 AND id = $2
+`
+
+type UpdateActivitySyncParams struct {
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ID             pgtype.UUID        `json:"id"`
+	ApiaryID       pgtype.UUID        `json:"apiary_id"`
+	Type           string             `json:"type"`
+	OccurredAt     pgtype.Date        `json:"occurred_at"`
+	Attributes     []byte             `json:"attributes"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// Sync-apply put/patch/delete (#40/#41, mirrors apiaries' UpdateApiary):
+// sets every mutable column, INCLUDING deleted_at (a tombstone is just
+// another LWW-compared field, sync.md §4.5) — the caller
+// (applyActivityOp's mergeActivityOp) computes the full desired row first.
+// performed_by/journey_id are never written here, same rationale as
+// UpdateActivity above.
+func (q *Queries) UpdateActivitySync(ctx context.Context, arg UpdateActivitySyncParams) error {
+	_, err := q.db.Exec(ctx, updateActivitySync,
+		arg.OrganizationID,
+		arg.ID,
+		arg.ApiaryID,
+		arg.Type,
+		arg.OccurredAt,
+		arg.Attributes,
+		arg.UpdatedAt,
+		arg.DeletedAt,
+	)
+	return err
 }
 
 const listAuditLog = `-- name: ListAuditLog :many

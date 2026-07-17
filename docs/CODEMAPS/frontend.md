@@ -21,8 +21,9 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ only live tab (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
-  │       ├ edit           ApiaryFormScreen
-  │       └ activities/new AddActivityScreen  features/activities (#39; add-only, no list yet)
+  │       ├ edit                     ApiaryFormScreen
+  │       ├ activities/new           AddActivityScreen  features/activities (#39; add)
+  │       └ activities/:activityId/edit AddActivityScreen (#40/#41; edit+delete, isEdit — no list/tappable row yet)
   ├ /activities  ─┐
   ├ /journeys     ├ ComingSoonScreen (placeholders, M3–M8 — /activities tab itself is still
   ├ /todos        │  a placeholder; the activities LIST is #42/#43)

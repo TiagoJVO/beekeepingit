@@ -20,6 +20,21 @@ SELECT id, organization_id, apiary_id, performed_by, journey_id, type, occurred_
 FROM activities.activities
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 
+-- name: GetActivityForUpdate :one
+-- Locks the row (or reports its absence, including a soft-deleted one) for
+-- the REST update/delete transaction and the sync-apply LWW compare
+-- (#40/#41, mirrors apiaries' GetApiaryForUpdate). No deleted_at filter —
+-- callers explicitly check the returned row's deleted_at: REST 404s a
+-- tombstoned row (updateActivity/deleteActivity), while sync-apply's LWW
+-- still applies OVER a tombstone (a strictly-newer offline edit can
+-- legitimately "undelete" the row) — symmetric with apiaries' own sync.go
+-- convention.
+SELECT id, organization_id, apiary_id, performed_by, journey_id, type, occurred_at, attributes,
+       created_at, updated_at, recorded_at, deleted_at
+FROM activities.activities
+WHERE organization_id = $1 AND id = $2
+FOR UPDATE;
+
 -- name: ListActivitiesByApiary :many
 -- Org- and apiary-scoped, live rows, newest first (FR-AC-5: apiary detail
 -- page's activity list) — keyset-paginated on (occurred_at, id) since
@@ -62,6 +77,44 @@ LIMIT $2;
 INSERT INTO activities.sync_conflict_log
     (id, organization_id, entity_type, entity_id, winning_payload, losing_payload, winner, actor_user_id, occurred_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+
+-- name: UpdateActivity :one
+-- REST update (PATCH /v1/activities/{id}, #40/FR-AC-3): the caller computes
+-- the full desired row first (matching sync.go's mergeActivityOp pattern),
+-- so this always sets every mutable column. performed_by is NEVER written
+-- here — FR-TEN-2 attribution is set once at create and immutable on edit,
+-- matching InsertActivity's own performed_by convention; journey_id is
+-- similarly untouched (D-21/#46 owns journey re-attribution, out of this
+-- issue's scope). WHERE deleted_at IS NULL is defense-in-depth — the
+-- handler already 404s a tombstoned row via its own GetActivityForUpdate
+-- check before reaching here.
+UPDATE activities.activities
+SET apiary_id = $3, type = $4, occurred_at = $5, attributes = $6, updated_at = $7, recorded_at = now()
+WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
+RETURNING id, organization_id, apiary_id, performed_by, journey_id, type, occurred_at, attributes,
+          created_at, updated_at, recorded_at, deleted_at;
+
+-- name: UpdateActivitySync :exec
+-- Sync-apply put/patch/delete (#40/#41, mirrors apiaries' UpdateApiary):
+-- sets every mutable column, INCLUDING deleted_at (a tombstone is just
+-- another LWW-compared field, sync.md §4.5) — the caller
+-- (applyActivityOp's mergeActivityOp) computes the full desired row first.
+-- performed_by/journey_id are never written here, same rationale as
+-- UpdateActivity above.
+UPDATE activities.activities
+SET apiary_id = $3, type = $4, occurred_at = $5, attributes = $6, updated_at = $7, deleted_at = $8, recorded_at = now()
+WHERE organization_id = $1 AND id = $2;
+
+-- name: SoftDeleteActivity :execrows
+-- REST delete (DELETE /v1/activities/{id}, #41/FR-AC-4): tombstone,
+-- matching the sync path's deleted_at convention so the delete propagates
+-- to devices (FR-OF-1) — the PowerSync Sync Rules already filter
+-- deleted_at IS NULL (infra/helm/beekeepingit/charts/powersync/values.yaml).
+-- :execrows so the caller can distinguish "already gone" (0 rows) from
+-- success without a separate SELECT, mirroring apiaries' SoftDeleteApiary.
+UPDATE activities.activities
+SET deleted_at = $3, updated_at = $3, recorded_at = now()
+WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 
 -- name: InsertAuditLog :exec
 -- Append-only history row (history.md §3-§4, FR-HIS-1) — kept as typed
