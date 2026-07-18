@@ -16,7 +16,7 @@ UPDATE todos.todos
 SET status = 'done', completed_at = $3, updated_at = $3, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING id, organization_id, title, description, due_date, priority, status, completed_at,
-          assignee_id, created_at, updated_at, recorded_at, deleted_at
+          assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at
 `
 
 type CompleteTodoParams struct {
@@ -43,6 +43,7 @@ func (q *Queries) CompleteTodo(ctx context.Context, arg CompleteTodoParams) (Tod
 		&i.Status,
 		&i.CompletedAt,
 		&i.AssigneeID,
+		&i.ApiaryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -53,7 +54,7 @@ func (q *Queries) CompleteTodo(ctx context.Context, arg CompleteTodoParams) (Tod
 
 const getTodo = `-- name: GetTodo :one
 SELECT id, organization_id, title, description, due_date, priority, status, completed_at,
-       assignee_id, created_at, updated_at, recorded_at, deleted_at
+       assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at
 FROM todos.todos
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 `
@@ -78,6 +79,7 @@ func (q *Queries) GetTodo(ctx context.Context, arg GetTodoParams) (TodosTodo, er
 		&i.Status,
 		&i.CompletedAt,
 		&i.AssigneeID,
+		&i.ApiaryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -88,7 +90,7 @@ func (q *Queries) GetTodo(ctx context.Context, arg GetTodoParams) (TodosTodo, er
 
 const getTodoForUpdate = `-- name: GetTodoForUpdate :one
 SELECT id, organization_id, title, description, due_date, priority, status, completed_at,
-       assignee_id, created_at, updated_at, recorded_at, deleted_at
+       assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at
 FROM todos.todos
 WHERE organization_id = $1 AND id = $2
 FOR UPDATE
@@ -118,6 +120,7 @@ func (q *Queries) GetTodoForUpdate(ctx context.Context, arg GetTodoForUpdatePara
 		&i.Status,
 		&i.CompletedAt,
 		&i.AssigneeID,
+		&i.ApiaryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -199,10 +202,10 @@ func (q *Queries) InsertConflict(ctx context.Context, arg InsertConflictParams) 
 
 const insertTodo = `-- name: InsertTodo :one
 INSERT INTO todos.todos
-    (id, organization_id, title, description, due_date, priority, status, assignee_id, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    (id, organization_id, title, description, due_date, priority, status, assignee_id, apiary_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, organization_id, title, description, due_date, priority, status, completed_at,
-          assignee_id, created_at, updated_at, recorded_at, deleted_at
+          assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at
 `
 
 type InsertTodoParams struct {
@@ -214,6 +217,7 @@ type InsertTodoParams struct {
 	Priority       string             `json:"priority"`
 	Status         string             `json:"status"`
 	AssigneeID     pgtype.UUID        `json:"assignee_id"`
+	ApiaryID       pgtype.UUID        `json:"apiary_id"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
@@ -223,7 +227,9 @@ type InsertTodoParams struct {
 // them, matching the activities convention that the DB layer trusts the API
 // layer's validation pass. `assignee_id` (D-23) must already have been
 // ownership-verified against the organizations service (api/members_client.go)
-// before this runs.
+// before this runs; `apiary_id` (#51) must already have been
+// ownership-verified against the apiaries service (api/apiaries_client.go)
+// the same way.
 func (q *Queries) InsertTodo(ctx context.Context, arg InsertTodoParams) (TodosTodo, error) {
 	row := q.db.QueryRow(ctx, insertTodo,
 		arg.ID,
@@ -234,6 +240,7 @@ func (q *Queries) InsertTodo(ctx context.Context, arg InsertTodoParams) (TodosTo
 		arg.Priority,
 		arg.Status,
 		arg.AssigneeID,
+		arg.ApiaryID,
 		arg.UpdatedAt,
 	)
 	var i TodosTodo
@@ -247,6 +254,7 @@ func (q *Queries) InsertTodo(ctx context.Context, arg InsertTodoParams) (TodosTo
 		&i.Status,
 		&i.CompletedAt,
 		&i.AssigneeID,
+		&i.ApiaryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -307,7 +315,7 @@ UPDATE todos.todos
 SET status = 'open', completed_at = NULL, updated_at = $3, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING id, organization_id, title, description, due_date, priority, status, completed_at,
-          assignee_id, created_at, updated_at, recorded_at, deleted_at
+          assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at
 `
 
 type ReopenTodoParams struct {
@@ -330,6 +338,7 @@ func (q *Queries) ReopenTodo(ctx context.Context, arg ReopenTodoParams) (TodosTo
 		&i.Status,
 		&i.CompletedAt,
 		&i.AssigneeID,
+		&i.ApiaryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -366,10 +375,10 @@ func (q *Queries) SoftDeleteTodo(ctx context.Context, arg SoftDeleteTodoParams) 
 
 const updateTodo = `-- name: UpdateTodo :one
 UPDATE todos.todos
-SET title = $3, description = $4, due_date = $5, priority = $6, assignee_id = $7, updated_at = $8, recorded_at = now()
+SET title = $3, description = $4, due_date = $5, priority = $6, assignee_id = $7, apiary_id = $8, updated_at = $9, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING id, organization_id, title, description, due_date, priority, status, completed_at,
-          assignee_id, created_at, updated_at, recorded_at, deleted_at
+          assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at
 `
 
 type UpdateTodoParams struct {
@@ -380,16 +389,18 @@ type UpdateTodoParams struct {
 	DueDate        pgtype.Date        `json:"due_date"`
 	Priority       string             `json:"priority"`
 	AssigneeID     pgtype.UUID        `json:"assignee_id"`
+	ApiaryID       pgtype.UUID        `json:"apiary_id"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 // REST update (PATCH /v1/todos/{id}, FR-TD-1): a FULL resubmit of
-// title/description/due_date/priority/assignee_id — the caller computes the
-// full desired row first, so this always sets every one of those columns.
-// status/completed_at are NEVER written here — the complete/reopen routes
-// own that transition exclusively (CompleteTodo/ReopenTodo below). WHERE
-// deleted_at IS NULL is defense-in-depth — the handler already 404s a
-// tombstoned row via its own GetTodoForUpdate check before reaching here.
+// title/description/due_date/priority/assignee_id/apiary_id — the caller
+// computes the full desired row first, so this always sets every one of
+// those columns. status/completed_at are NEVER written here — the
+// complete/reopen routes own that transition exclusively (CompleteTodo/
+// ReopenTodo below). WHERE deleted_at IS NULL is defense-in-depth — the
+// handler already 404s a tombstoned row via its own GetTodoForUpdate check
+// before reaching here.
 func (q *Queries) UpdateTodo(ctx context.Context, arg UpdateTodoParams) (TodosTodo, error) {
 	row := q.db.QueryRow(ctx, updateTodo,
 		arg.OrganizationID,
@@ -399,6 +410,7 @@ func (q *Queries) UpdateTodo(ctx context.Context, arg UpdateTodoParams) (TodosTo
 		arg.DueDate,
 		arg.Priority,
 		arg.AssigneeID,
+		arg.ApiaryID,
 		arg.UpdatedAt,
 	)
 	var i TodosTodo
@@ -412,6 +424,7 @@ func (q *Queries) UpdateTodo(ctx context.Context, arg UpdateTodoParams) (TodosTo
 		&i.Status,
 		&i.CompletedAt,
 		&i.AssigneeID,
+		&i.ApiaryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -423,7 +436,7 @@ func (q *Queries) UpdateTodo(ctx context.Context, arg UpdateTodoParams) (TodosTo
 const updateTodoSync = `-- name: UpdateTodoSync :exec
 UPDATE todos.todos
 SET title = $3, description = $4, due_date = $5, priority = $6, status = $7, completed_at = $8,
-    assignee_id = $9, updated_at = $10, deleted_at = $11, recorded_at = now()
+    assignee_id = $9, apiary_id = $10, updated_at = $11, deleted_at = $12, recorded_at = now()
 WHERE organization_id = $1 AND id = $2
 `
 
@@ -437,6 +450,7 @@ type UpdateTodoSyncParams struct {
 	Status         string             `json:"status"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	AssigneeID     pgtype.UUID        `json:"assignee_id"`
+	ApiaryID       pgtype.UUID        `json:"apiary_id"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
@@ -456,6 +470,7 @@ func (q *Queries) UpdateTodoSync(ctx context.Context, arg UpdateTodoSyncParams) 
 		arg.Status,
 		arg.CompletedAt,
 		arg.AssigneeID,
+		arg.ApiaryID,
 		arg.UpdatedAt,
 		arg.DeletedAt,
 	)

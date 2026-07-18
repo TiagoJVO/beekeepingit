@@ -63,13 +63,14 @@ type Batch struct {
 // own doc comment there): the client's local TodosRepository issues TWO
 // distinct SQL UPDATEs depending on the action —
 //   - update() (a genuine edit): SETs title/description/due_date/priority/
-//     assignee_id together (status/completed_at absent from that op's data).
+//     assignee_id/apiary_id together (status/completed_at absent from that
+//     op's data).
 //   - complete()/reopen(): SETs ONLY status/completed_at (every other field
 //     absent from that op's data).
 //
 // A field that IS present but explicitly cleared (e.g. an edit that clears
-// description/assignee_id) is carried as a non-nil pointer to the EMPTY
-// string, not JSON null — matching common.go's textOf/dateOf/uuidOf ""
+// description/assignee_id/apiary_id) is carried as a non-nil pointer to the
+// EMPTY string, not JSON null — matching common.go's textOf/dateOf/uuidOf ""
 // sentinel convention throughout this service, so "absent" (leave untouched)
 // and "present-but-empty" (explicitly cleared) are never conflated even
 // though both would otherwise decode to a nil Go pointer for a bare
@@ -82,6 +83,7 @@ type todoData struct {
 	Status      *string `json:"status"`
 	CompletedAt *string `json:"completed_at"`
 	AssigneeID  *string `json:"assignee_id"`
+	ApiaryID    *string `json:"apiary_id"`
 }
 
 // Per-op apply outcomes (sync.md §5.2), mirroring activities.
@@ -107,10 +109,10 @@ type ApplyResponse struct {
 // Coordinator already expects for every owning service
 // ("{serviceURL}/internal/sync/validate"/"/apply"). Mount under
 // "/internal/sync" behind the OIDC authn + org-resolver middleware.
-func InternalSyncRouter(pool *pgxpool.Pool, verifier *MemberVerifier) http.Handler {
+func InternalSyncRouter(pool *pgxpool.Pool, verifier *MemberVerifier, apiaryVerifier *ApiaryVerifier) http.Handler {
 	r := chi.NewRouter()
-	r.Post("/validate", validateTodoBatch(verifier))
-	r.Post("/apply", applyTodoBatch(pool, verifier))
+	r.Post("/validate", validateTodoBatch(verifier, apiaryVerifier))
+	r.Post("/apply", applyTodoBatch(pool, verifier, apiaryVerifier))
 	return r
 }
 
@@ -170,12 +172,56 @@ func resolveAssigneeOwnership(ctx context.Context, verifier *MemberVerifier, bea
 	return owned, nil
 }
 
+// resolveApiaryOwnership is resolveAssigneeOwnership's #51 counterpart:
+// verifies every DISTINCT, well-formed, non-empty apiary_id in the batch up
+// front — de-duplicated (one upstream call per distinct apiary, not one per
+// op) and before any DB transaction is opened (same HIGH-severity discipline
+// resolveAssigneeOwnership documents: never hold a pooled Postgres
+// connection open across a blocking cross-service HTTP call), mirroring
+// activities' own resolveApiaryOwnership. It returns a per-request
+// `apiary_id string → belongs to callerOrgID?` map both the apply and
+// validate paths then consult purely in-memory.
+//
+// Fail-closed: a transport/5xx error verifying ANY distinct id aborts the
+// WHOLE batch (returned error → the caller writes a 500, the batch stays
+// queued and heals on retry). A 404/cross-org id is NOT an error — it lands
+// in the map as `false`. Ops whose apiary_id is missing, empty, or malformed
+// are skipped here (structural validation rejects a malformed one
+// independently, and there is nothing to look up for an empty/absent one).
+func resolveApiaryOwnership(ctx context.Context, verifier *ApiaryVerifier, bearer string, batch Batch) (map[string]bool, error) {
+	owned := map[string]bool{}
+	for _, op := range batch.Ops {
+		var data todoData
+		if len(op.Data) > 0 {
+			if err := json.Unmarshal(op.Data, &data); err != nil {
+				continue // malformed data — structural validation handles it
+			}
+		}
+		if data.ApiaryID == nil || *data.ApiaryID == "" {
+			continue
+		}
+		apiaryID := *data.ApiaryID
+		if _, err := uuid.Parse(apiaryID); err != nil {
+			continue // malformed id — structural validation handles it
+		}
+		if _, done := owned[apiaryID]; done {
+			continue // already resolved this distinct id — the de-dup
+		}
+		belongs, err := verifier.BelongsToOrg(ctx, bearer, apiaryID)
+		if err != nil {
+			return nil, err // fail closed: whole batch aborts
+		}
+		owned[apiaryID] = belongs
+	}
+	return owned, nil
+}
+
 // validateTodoBatch dry-runs every op against the same rules applyTodoOp
-// enforces, INCLUDING the cross-org assignee_id ownership check. The
-// ownership HTTP calls are made ONCE per distinct assignee_id, up front
-// (resolveAssigneeOwnership); the per-op check below is then a pure
-// in-memory map lookup.
-func validateTodoBatch(verifier *MemberVerifier) http.HandlerFunc {
+// enforces, INCLUDING the cross-org assignee_id/apiary_id ownership checks.
+// The ownership HTTP calls are made ONCE per distinct assignee_id/apiary_id,
+// up front (resolveAssigneeOwnership/resolveApiaryOwnership); the per-op
+// check below is then a pure in-memory map lookup.
+func validateTodoBatch(verifier *MemberVerifier, apiaryVerifier *ApiaryVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, _, ok := requireOrg(w, r)
 		if !ok {
@@ -198,10 +244,16 @@ func validateTodoBatch(verifier *MemberVerifier) http.HandlerFunc {
 			problem.Write(w, r, problem.Internal())
 			return
 		}
+		ownedApiaries, err := resolveApiaryOwnership(r.Context(), apiaryVerifier, bearer, batch)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "validate todo batch: verify apiary ownership failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
 
 		var fieldErrs []problem.FieldError
 		for i, op := range batch.Ops {
-			fieldErrs = append(fieldErrs, validateTodoOp(i, op, owned)...)
+			fieldErrs = append(fieldErrs, validateTodoOp(i, op, owned, ownedApiaries)...)
 		}
 		if len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more ops are invalid", fieldErrs...))
@@ -212,16 +264,17 @@ func validateTodoBatch(verifier *MemberVerifier) http.HandlerFunc {
 }
 
 // validateTodoOp validates one op's shape and, when well-formed, the
-// cross-org assignee_id ownership guard — consulting the pre-resolved
-// `owned` map (resolveAssigneeOwnership already made the single upstream
-// call per distinct id) rather than making any HTTP call itself.
+// cross-org assignee_id/apiary_id ownership guards — consulting the
+// pre-resolved `owned`/`ownedApiaries` maps (resolveAssigneeOwnership/
+// resolveApiaryOwnership already made the single upstream call per distinct
+// id) rather than making any HTTP call itself.
 //
 // put/patch/delete: a delete op carries no data at all (mirrors activities'
 // validateActivityOp — the row is simply tombstoned by id). title/priority
 // are REQUIRED on "put" (there is no existing row to fall back to for a
 // create) but OPTIONAL on "patch" — a status-only complete/reopen patch
 // (this file's package doc) carries neither.
-func validateTodoOp(i int, op Op, owned map[string]bool) []problem.FieldError {
+func validateTodoOp(i int, op Op, owned, ownedApiaries map[string]bool) []problem.FieldError {
 	prefix := fmt.Sprintf("ops[%d]", i)
 	var errs []problem.FieldError
 
@@ -299,16 +352,34 @@ func validateTodoOp(i int, op Op, owned map[string]bool) []problem.FieldError {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.assignee_id", Code: "not_found", Message: "assignee_id does not refer to a member of this organization"})
 	}
 
+	apiaryID := ""
+	if data.ApiaryID != nil && *data.ApiaryID != "" {
+		if _, err := uuid.Parse(*data.ApiaryID); err != nil {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
+		} else {
+			apiaryID = *data.ApiaryID
+		}
+	}
+
+	// Ownership (#51): a pure map lookup against the pre-resolved result —
+	// only when apiary_id was actually present, non-empty and well-formed
+	// (resolveApiaryOwnership only resolves ids that appear in a batch op's
+	// data at all), mirroring the assignee_id check above.
+	if apiaryID != "" && !ownedApiaries[apiaryID] {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary of this organization"})
+	}
+
 	return errs
 }
 
 // applyTodoBatch applies the batch in one local transaction (sync.md
-// §5.2/§6.2 "apply" phase). The cross-org assignee_id ownership guard is
-// resolved UP FRONT, OUTSIDE the transaction (resolveAssigneeOwnership — no
-// blocking cross-service HTTP call ever runs while a pooled Postgres
-// connection is held), de-duplicated to one upstream call per distinct
-// assignee_id; applyTodoOp then consults that map in-memory.
-func applyTodoBatch(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
+// §5.2/§6.2 "apply" phase). The cross-org assignee_id/apiary_id ownership
+// guards are resolved UP FRONT, OUTSIDE the transaction
+// (resolveAssigneeOwnership/resolveApiaryOwnership — no blocking
+// cross-service HTTP call ever runs while a pooled Postgres connection is
+// held), de-duplicated to one upstream call per distinct assignee_id/
+// apiary_id; applyTodoOp then consults those maps in-memory.
+func applyTodoBatch(pool *pgxpool.Pool, verifier *MemberVerifier, apiaryVerifier *ApiaryVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, userID, ok := requireOrg(w, r)
 		if !ok {
@@ -331,12 +402,18 @@ func applyTodoBatch(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFu
 			problem.Write(w, r, problem.Internal())
 			return
 		}
+		ownedApiaries, err := resolveApiaryOwnership(r.Context(), apiaryVerifier, bearer, batch)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "apply todo sync batch: verify apiary ownership failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
 
 		var results []OpResult
 		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
 			results = make([]OpResult, 0, len(batch.Ops))
 			for _, op := range batch.Ops {
-				res, err := applyTodoOp(r.Context(), q, owned, org, userID, op)
+				res, err := applyTodoOp(r.Context(), q, owned, ownedApiaries, org, userID, op)
 				if err != nil {
 					return err
 				}
@@ -354,12 +431,13 @@ func applyTodoBatch(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFu
 }
 
 // applyTodoOp applies one put/patch/delete op: consults the pre-resolved
-// `owned` ownership map (resolveAssigneeOwnership already made the single
-// up-front upstream call per distinct assignee_id — NO HTTP call happens
-// here, inside the transaction), then either inserts a brand-new row,
-// applies an LWW-compared update/tombstone over an existing one, or logs a
-// losing offline edit as a conflict. Mirrors activities' applyActivityOp.
-func applyTodoOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool, org pgtype.UUID, userID string, op Op) (OpResult, error) {
+// `owned`/`ownedApiaries` ownership maps (resolveAssigneeOwnership/
+// resolveApiaryOwnership already made the single up-front upstream call per
+// distinct assignee_id/apiary_id — NO HTTP call happens here, inside the
+// transaction), then either inserts a brand-new row, applies an
+// LWW-compared update/tombstone over an existing one, or logs a losing
+// offline edit as a conflict. Mirrors activities' applyActivityOp.
+func applyTodoOp(ctx context.Context, q *sqlcgen.Queries, owned, ownedApiaries map[string]bool, org pgtype.UUID, userID string, op Op) (OpResult, error) {
 	id, err := uuid.Parse(op.ID)
 	if err != nil {
 		return OpResult{}, err
@@ -381,6 +459,13 @@ func applyTodoOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool,
 	// "missing row ⇒ nothing to do" convention, ADR-0002 scope-hiding),
 	// never a distinguishable error.
 	if data.AssigneeID != nil && *data.AssigneeID != "" && !owned[*data.AssigneeID] {
+		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+	}
+
+	// Tenancy guard (#51, CRITICAL) — the apiary_id counterpart of the
+	// assignee_id guard directly above: an unknown/foreign apiary_id, when
+	// one IS present, is a no-op, never a distinguishable error.
+	if data.ApiaryID != nil && *data.ApiaryID != "" && !ownedApiaries[*data.ApiaryID] {
 		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 	}
 
@@ -416,12 +501,16 @@ func applyTodoOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool,
 		if err != nil {
 			return OpResult{}, err
 		}
+		apiaryParam, err := uuidParam(want.apiaryID)
+		if err != nil {
+			return OpResult{}, err
+		}
 
 		if _, err := q.InsertTodo(ctx, sqlcgen.InsertTodoParams{
 			ID: pgID, OrganizationID: org, Title: want.title,
 			Description: textParam(want.description), DueDate: dueDateParam,
 			Priority: want.priority, Status: want.status, AssigneeID: assigneeParam,
-			UpdatedAt: incomingTS,
+			ApiaryID: apiaryParam, UpdatedAt: incomingTS,
 		}); err != nil {
 			return OpResult{}, err
 		}
@@ -444,6 +533,10 @@ func applyTodoOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool,
 		if err != nil {
 			return OpResult{}, err
 		}
+		apiaryParam, err := uuidParam(want.apiaryID)
+		if err != nil {
+			return OpResult{}, err
+		}
 		completedAtParam, err := timestampParam(want.completedAt)
 		if err != nil {
 			return OpResult{}, err
@@ -452,7 +545,7 @@ func applyTodoOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool,
 			OrganizationID: org, ID: pgID,
 			Title: want.title, Description: textParam(want.description), DueDate: dueDateParam,
 			Priority: want.priority, Status: want.status, CompletedAt: completedAtParam,
-			AssigneeID: assigneeParam, UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
+			AssigneeID: assigneeParam, ApiaryID: apiaryParam, UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
 		}); err != nil {
 			return OpResult{}, err
 		}
@@ -484,12 +577,12 @@ func applyTodoOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool,
 // both overlay only the fields actually PRESENT in data (todoData's own doc
 // comment: nil means "this op didn't touch this column") — a status-only
 // complete/reopen patch therefore leaves title/description/due_date/
-// priority/assignee_id exactly as they were, while a genuine edit patch
-// (which always carries title/description/due_date/priority/assignee_id
-// together, per the client repository's own single-UPDATE-statement
-// convention) leaves status/completed_at untouched. put additionally
-// UNDELETES (mirrors activities' own "put" convention — a fresh
-// create/resend represents the row's live content); patch preserves
+// priority/assignee_id/apiary_id exactly as they were, while a genuine edit
+// patch (which always carries title/description/due_date/priority/
+// assignee_id/apiary_id together, per the client repository's own
+// single-UPDATE-statement convention) leaves status/completed_at untouched.
+// put additionally UNDELETES (mirrors activities' own "put" convention — a
+// fresh create/resend represents the row's live content); patch preserves
 // whatever current.deletedAt already was.
 func mergeTodoOp(current todoRowState, op Op, data todoData) todoRowState {
 	if op.Op == "delete" {
@@ -517,6 +610,9 @@ func mergeTodoOp(current todoRowState, op Op, data todoData) todoRowState {
 	}
 	if data.AssigneeID != nil {
 		want.assigneeID = *data.AssigneeID
+	}
+	if data.ApiaryID != nil {
+		want.apiaryID = *data.ApiaryID
 	}
 	if op.Op == "put" {
 		want.deletedAt = pgtype.Timestamptz{}
@@ -582,6 +678,7 @@ func logTodoConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, u
 		"status":       stored.Status,
 		"completed_at": timestampOf(stored.CompletedAt),
 		"assignee_id":  uuidOf(stored.AssigneeID),
+		"apiary_id":    uuidOf(stored.ApiaryID),
 		"updated_at":   stored.UpdatedAt.Time,
 		"deleted_at":   timePtr(stored.DeletedAt),
 	})

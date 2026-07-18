@@ -187,8 +187,7 @@ edges:
   # org by dialing organizations' own GET /internal/memberships/active
   # (api/members_client.go) — the D-23 cross-service ownership guard. sync's
   # write-back coordinator calls todos' /internal/sync/validate+apply
-  # (coordinator.go groupOpsByOwner). No todos-to-apiaries edge yet: apiary
-  # association (#51) hasn't landed.
+  # (coordinator.go groupOpsByOwner).
   - name: todos-to-identity
     from: { app.kubernetes.io/name: todos }
     to: { app.kubernetes.io/name: identity }
@@ -196,6 +195,17 @@ edges:
   - name: todos-to-organizations
     from: { app.kubernetes.io/name: todos }
     to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  # #51: todos verifies a client-supplied apiary_id belongs to the caller's
+  # org by dialing apiaries' own GET /v1/apiaries/{id} (api/apiaries_client.go)
+  # — a todo may be associated with a specific apiary, or left as a general,
+  # org-level todo (FR-TD-1). Same rationale as activities-to-apiaries and
+  # journeys-to-apiaries above; get this edge right in the SAME PR that adds
+  # the dependency, learning from #50's own precedent of shipping a
+  # NetworkPolicy edge separately after a red CI run.
+  - name: todos-to-apiaries
+    from: { app.kubernetes.io/name: todos }
+    to: { app.kubernetes.io/name: apiaries }
     port: 8080
   - name: sync-to-todos
     from: { app.kubernetes.io/name: sync }

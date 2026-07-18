@@ -112,8 +112,9 @@ SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reco
 `journeys` (name, main_activity_type, status, org_id, timestamps) ·
 `journey_plan_items` (journey_id, apiary_id, org_id, created_at) — #45, two tables/entity
 types mirroring apiaries/apiary_counters' own parent+child split ·
-`todos` (title, description, due_date, priority, status, completed_at, assignee_id, org_id,
-timestamps — #50, plain scalar columns, no JSON-encoded column needed unlike `activities`) ·
+`todos` (title, description, due_date, priority, status, completed_at, assignee_id, apiary_id,
+org_id, timestamps — #50, plain scalar columns, no JSON-encoded column needed unlike
+`activities`; apiary_id added by #51, optional apiary association FR-TD-1) ·
 `sync_rejected_ops` (**local-only** dead-letter).
 `deleted_at` is not a local column (Sync Rules exclude tombstones). See [data.md](data.md).
 

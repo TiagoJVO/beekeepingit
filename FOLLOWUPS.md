@@ -9,24 +9,21 @@
 
 ---
 
-## `feat/EPIC-05-todo-model-lifecycle` (#50)
+## `feat/EPIC-05-todo-apiary-association` (#51)
 
-- **What**: `infra/helm/beekeepingit/charts/postgres/values.yaml`'s
-  `syncedSchemas` now includes `todos`, but the `powersync` publication is
-  created ONCE, at cluster bootstrap, by `postInitApplicationSQL`'s
-  `CREATE PUBLICATION ... FOR TABLES IN SCHEMA` (`cluster.yaml`) — adding a
-  schema to the values file only takes effect on a FRESH bootstrap.
-- **Why**: an already-running cluster's `powersync` publication needs a
-  one-time `ALTER PUBLICATION powersync ADD TABLES IN SCHEMA todos;` run by
-  hand before todo rows will actually replicate to devices (the `powersync`
-  role's membership in `todos_svc`, by contrast, IS continuously reconciled
-  by CNPG's `managed.roles` and self-heals).
-- **Where**: `infra/helm/beekeepingit/charts/postgres/values.yaml` (comment
-  left in place), `infra/helm/beekeepingit/charts/postgres/templates/cluster.yaml`.
-- **Status**: not blocking for CI/merge (helm lint/template only); the dev
-  cluster is currently torn down/rebuilt from scratch via `infra/cluster`
-  scripts, which re-bootstraps and picks this up automatically. Only
-  relevant the first time this reaches a cluster that is bootstrapped and
-  kept running rather than rebuilt — run the `ALTER PUBLICATION` manually
-  then, or fold it into a migration/bootstrap job if that becomes routine
-  (`EPIC-13`/infra follow-up).
+- **What**: `services/todos/store/sqlc/gen/{models.go,todos.sql.go}` were
+  hand-edited to add the `apiary_id` column/param (matching the updated
+  `store/sqlc/queries/todos.sql`/`schema.sql`) because `sqlc` isn't
+  available in this sandbox to actually run `sqlc generate`.
+- **Why**: the generated-code shape (struct fields, positional `$N`
+  placeholders, `Scan`/exec argument order) must match sqlc v1.31.1's own
+  output byte-for-byte, or a real Postgres run would fail/mis-bind at
+  runtime despite compiling.
+- **Where**: `services/todos/store/sqlc/gen/models.go`,
+  `services/todos/store/sqlc/gen/todos.sql.go`.
+- **Status**: before merge, run `sqlc generate -f store/sqlc/sqlc.yaml`
+  (from `services/todos`) in an environment with the `sqlc` CLI and confirm
+  the diff against this PR's hand-written version is empty (or apply
+  whatever the real generator produces) — CI's `go build`/`go test` will
+  also catch any mismatch that fails to compile, but a silent
+  argument-order mismatch that still compiles would not be.

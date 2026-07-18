@@ -44,6 +44,7 @@ type TodosTodo struct {
 	Status         string             `json:"status"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	AssigneeID     pgtype.UUID        `json:"assignee_id"`
+	ApiaryID       pgtype.UUID        `json:"apiary_id"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`

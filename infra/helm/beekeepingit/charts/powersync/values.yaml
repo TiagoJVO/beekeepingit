@@ -146,9 +146,15 @@ syncConfig:
         # audit_log/sync_conflict_log (unlike apiaries', which are included
         # read-only above for #61's combined history timeline; todos has no
         # such read surface yet). The todos schema is in the powersync
-        # publication (charts/postgres syncedSchemas).
+        # publication (charts/postgres syncedSchemas). apiary_id (#51,
+        # FR-TD-1: "may be associated with a specific apiary, or left as a
+        # general, org-level todo") is included so the association survives
+        # offline creation and sync end to end — omitting it here would
+        # silently leave every device's local apiary_id NULL regardless of
+        # what the server actually stored (the #196/#33 incident this file's
+        # own header comment documents).
         - SELECT id, organization_id, title, description, due_date, priority,
-          status, completed_at, assignee_id, created_at, updated_at
+          status, completed_at, assignee_id, apiary_id, created_at, updated_at
           FROM todos.todos WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
 
 # Placeholder for standalone rendering only — the umbrella always injects the

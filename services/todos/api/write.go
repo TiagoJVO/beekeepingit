@@ -7,6 +7,14 @@
 // apiary_id guard. Both this REST path and the internal sync path (sync.go)
 // write the same todos.todos table and must apply the same validation,
 // tenancy and history-recording rules.
+//
+// #51 (FR-TD-1) adds the optional apiary_id field — a todo may be associated
+// with a specific apiary, or left as a general, org-level todo. It follows
+// the EXACT SAME full-resubmit convention as assignee_id above (an
+// omitted/null apiary_id means "clear/unset", never "leave unchanged") and
+// is verified against the apiaries service itself (apiaries_client.go's
+// ApiaryVerifier) before every write that sets it, ONLY when the resubmitted
+// value is non-empty — clearing it makes no upstream call at all.
 package api
 
 import (
@@ -49,9 +57,12 @@ const maxTitleLength = 500
 // assignee_id (D-23) is a CROSS-SERVICE reference (members_client.go's doc
 // comment) — verified against the caller's org before anything is written,
 // ONLY when present and non-empty; omitted/empty means "unassigned" (D-23's
-// default), no verification call made. status is deliberately NOT a request
-// field — every new todo starts StatusOpen (FR-TD-1); complete/reopen own
-// the status transition exclusively.
+// default), no verification call made. apiary_id (#51, FR-TD-1) is likewise a
+// CROSS-SERVICE reference (apiaries_client.go's doc comment), verified the
+// same way, ONLY when present and non-empty; omitted/empty means "a general,
+// org-level todo", no verification call made. status is deliberately NOT a
+// request field — every new todo starts StatusOpen (FR-TD-1); complete/reopen
+// own the status transition exclusively.
 type todoCreateRequest struct {
 	ID          string  `json:"id"`
 	Title       string  `json:"title"`
@@ -59,13 +70,15 @@ type todoCreateRequest struct {
 	DueDate     *string `json:"due_date"`
 	Priority    string  `json:"priority"`
 	AssigneeID  *string `json:"assignee_id"`
+	ApiaryID    *string `json:"apiary_id"`
 }
 
 // todoUpdateRequest is the PATCH /v1/todos/{id} request body — a FULL
-// resubmit of title/description/due_date/priority/assignee_id (unlike
-// activities' apiary_id, which is optional-and-falls-back on edit, D-23's
-// assignee_id is always part of the resubmitted state here: an omitted or
-// null assignee_id means "clear the assignee", not "leave unchanged" — see
+// resubmit of title/description/due_date/priority/assignee_id/apiary_id
+// (unlike activities' apiary_id, which is optional-and-falls-back on edit,
+// D-23's assignee_id — and #51's apiary_id, following the exact same
+// convention — are always part of the resubmitted state here: an omitted or
+// null assignee_id/apiary_id means "clear it", not "leave unchanged" — see
 // updateTodo's own doc comment). status/completed_at are never touched by
 // this route; complete()/reopen() below own that transition exclusively.
 type todoUpdateRequest struct {
@@ -74,6 +87,7 @@ type todoUpdateRequest struct {
 	DueDate     *string `json:"due_date"`
 	Priority    string  `json:"priority"`
 	AssigneeID  *string `json:"assignee_id"`
+	ApiaryID    *string `json:"apiary_id"`
 }
 
 // todoDTO is the client-facing todo shape.
@@ -87,26 +101,27 @@ type todoDTO struct {
 	Status         string     `json:"status"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 	AssigneeID     *string    `json:"assignee_id,omitempty"`
+	ApiaryID       *string    `json:"apiary_id,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // Router returns the client-facing /v1/todos surface: create, edit,
-// complete, reopen and delete (#50/FR-TD-1). Apiary association (#51) and
-// list/filter (#53) are explicitly out of scope — no GET/list route exists
+// complete, reopen and delete (#50/FR-TD-1), plus apiary association (#51).
+// List/filter (#53) is explicitly out of scope — no GET/list route exists
 // yet, mirroring activities' own #38/#39 scope-split precedent (this
 // package's earlier stories shipped writes before reads too).
-func Router(pool *pgxpool.Pool, verifier *MemberVerifier) http.Handler {
+func Router(pool *pgxpool.Pool, verifier *MemberVerifier, apiaryVerifier *ApiaryVerifier) http.Handler {
 	r := chi.NewRouter()
-	r.Post("/", createTodo(pool, verifier))
-	r.Patch("/{todoId}", updateTodo(pool, verifier))
+	r.Post("/", createTodo(pool, verifier, apiaryVerifier))
+	r.Patch("/{todoId}", updateTodo(pool, verifier, apiaryVerifier))
 	r.Post("/{todoId}/complete", completeTodo(pool))
 	r.Post("/{todoId}/reopen", reopenTodo(pool))
 	r.Delete("/{todoId}", deleteTodo(pool))
 	return r
 }
 
-func createTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
+func createTodo(pool *pgxpool.Pool, verifier *MemberVerifier, apiaryVerifier *ApiaryVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, userID, ok := requireOrg(w, r)
 		if !ok {
@@ -120,7 +135,7 @@ func createTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 			return
 		}
 
-		id, title, description, dueDate, priority, assigneeID, fieldErrs := validateTodoCreate(body)
+		id, title, description, dueDate, priority, assigneeID, apiaryID, fieldErrs := validateTodoCreate(body)
 		if len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
 			return
@@ -148,6 +163,28 @@ func createTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 			}
 		}
 
+		// CRITICAL tenancy guard (#51, mirroring assignee_id above and
+		// activities' own apiary_id guard): apiary_id must belong to the
+		// CALLER'S organization, verified via the owning service
+		// (apiaries_client.go), BEFORE any row is inserted — ONLY when the
+		// request actually carries one (the common case is a general,
+		// org-level todo).
+		if apiaryID != "" {
+			belongs, err := apiaryVerifier.BelongsToOrg(r.Context(), r.Header.Get("Authorization"), apiaryID)
+			if err != nil {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "verify apiary ownership failed", slog.Any("error", err))
+				problem.Write(w, r, problem.Internal())
+				return
+			}
+			if !belongs {
+				// Unknown/foreign apiary_id — 422, indistinguishable from a
+				// truly-unknown apiary (ADR-0002 scope-hiding).
+				problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid",
+					problem.FieldError{Field: "apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary of this organization"}))
+				return
+			}
+		}
+
 		dueDateParam, err := dateParam(dueDate) // format already validated
 		if err != nil {
 			logging.FromContext(r.Context()).ErrorContext(r.Context(), "parse due_date failed after validation", slog.Any("error", err))
@@ -157,6 +194,12 @@ func createTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 		assigneeParam, err := uuidParam(assigneeID) // format already validated
 		if err != nil {
 			logging.FromContext(r.Context()).ErrorContext(r.Context(), "parse assignee_id failed after validation", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		apiaryParam, err := uuidParam(apiaryID) // format already validated
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "parse apiary_id failed after validation", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -176,6 +219,7 @@ func createTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 				Priority:       priority,
 				Status:         StatusOpen,
 				AssigneeID:     assigneeParam,
+				ApiaryID:       apiaryParam,
 				UpdatedAt:      pgtype.Timestamptz{Time: now, Valid: true},
 			})
 			if isUniqueViolation(err) {
@@ -184,14 +228,14 @@ func createTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 				// with the same id and the same content returns the
 				// original result unchanged; a genuinely different payload
 				// reusing the same id is a real conflict.
-				respondIdempotentCreateOrConflict(r.Context(), w, r, sqlcgen.New(pool), org, id, title, description, dueDate, priority, assigneeID)
+				respondIdempotentCreateOrConflict(r.Context(), w, r, sqlcgen.New(pool), org, id, title, description, dueDate, priority, assigneeID, apiaryID)
 				return errResponseWritten
 			}
 			if err != nil {
 				return fmt.Errorf("insert todo: %w", err)
 			}
 
-			want := todoRowState{title: title, description: description, dueDate: dueDate, priority: priority, status: StatusOpen, assigneeID: assigneeID}
+			want := todoRowState{title: title, description: description, dueDate: dueDate, priority: priority, status: StatusOpen, assigneeID: assigneeID, apiaryID: apiaryID}
 			if err := writeTodoAuditLogTx(r.Context(), q, org, userID, id, history.ChangeCreate, now, todoRowState{}, want); err != nil {
 				return fmt.Errorf("write audit log: %w", err)
 			}
@@ -211,14 +255,14 @@ func createTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 }
 
 // updateTodo handles PATCH /v1/todos/{id} (FR-TD-1): a FULL resubmit of
-// title/description/due_date/priority/assignee_id. Re-verifies assignee_id
-// via the same cross-service ownership check createTodo uses, but ONLY when
-// the resubmitted value is non-empty (todoUpdateRequest's doc comment) —
-// clearing the assignee (omitted/null in the request) writes NULL with no
-// upstream call at all. Never touches status/completed_at (complete/reopen
-// below own that transition exclusively). Records the edit in audit_log
-// (FR-HIS-1).
-func updateTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
+// title/description/due_date/priority/assignee_id/apiary_id. Re-verifies
+// assignee_id/apiary_id via the same cross-service ownership checks
+// createTodo uses, but ONLY when the resubmitted value is non-empty
+// (todoUpdateRequest's doc comment) — clearing either (omitted/null in the
+// request) writes NULL with no upstream call at all. Never touches
+// status/completed_at (complete/reopen below own that transition
+// exclusively). Records the edit in audit_log (FR-HIS-1).
+func updateTodo(pool *pgxpool.Pool, verifier *MemberVerifier, apiaryVerifier *ApiaryVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, userID, ok := requireOrg(w, r)
 		if !ok {
@@ -237,7 +281,7 @@ func updateTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 			return
 		}
 
-		title, description, dueDate, priority, assigneeID, fieldErrs := validateTodoUpdate(body)
+		title, description, dueDate, priority, assigneeID, apiaryID, fieldErrs := validateTodoUpdate(body)
 		if len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
 			return
@@ -262,6 +306,24 @@ func updateTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 			}
 		}
 
+		// Ownership re-verify (CRITICAL, #51 carry-over from createTodo):
+		// only when the resubmitted apiary_id is non-empty — clearing it (the
+		// common "unlink from apiary" action) makes no cross-service call at
+		// all, mirroring the assignee_id guard directly above.
+		if apiaryID != "" {
+			belongs, err := apiaryVerifier.BelongsToOrg(r.Context(), r.Header.Get("Authorization"), apiaryID)
+			if err != nil {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "verify apiary ownership failed", slog.Any("error", err))
+				problem.Write(w, r, problem.Internal())
+				return
+			}
+			if !belongs {
+				problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid",
+					problem.FieldError{Field: "apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary of this organization"}))
+				return
+			}
+		}
+
 		pgID := pgtype.UUID{Bytes: id, Valid: true}
 		dueDateParam, err := dateParam(dueDate)
 		if err != nil {
@@ -272,6 +334,12 @@ func updateTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 		assigneeParam, err := uuidParam(assigneeID)
 		if err != nil {
 			logging.FromContext(r.Context()).ErrorContext(r.Context(), "parse assignee_id failed after validation", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		apiaryParam, err := uuidParam(apiaryID)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "parse apiary_id failed after validation", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -290,7 +358,7 @@ func updateTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 			before = todoRowStateFromRow(current)
 			want = todoRowState{
 				title: title, description: description, dueDate: dueDate, priority: priority,
-				status: before.status, completedAt: before.completedAt, assigneeID: assigneeID,
+				status: before.status, completedAt: before.completedAt, assigneeID: assigneeID, apiaryID: apiaryID,
 			}
 
 			now := time.Now().UTC()
@@ -298,7 +366,7 @@ func updateTodo(pool *pgxpool.Pool, verifier *MemberVerifier) http.HandlerFunc {
 			updated, updateErr = q.UpdateTodo(r.Context(), sqlcgen.UpdateTodoParams{
 				OrganizationID: org, ID: pgID,
 				Title: title, Description: textParam(description), DueDate: dueDateParam,
-				Priority: priority, AssigneeID: assigneeParam,
+				Priority: priority, AssigneeID: assigneeParam, ApiaryID: apiaryParam,
 				UpdatedAt: pgtype.Timestamptz{Time: now, Valid: true},
 			})
 			if updateErr != nil {
@@ -503,14 +571,15 @@ func deleteTodo(pool *pgxpool.Pool) http.HandlerFunc {
 // existing (unchanged) row; different content, or the id belongs to a
 // different org (existing row simply not found under org scope) ⇒ 409.
 // Mirrors activities' write.go helper of the same name/shape.
-func respondIdempotentCreateOrConflict(ctx context.Context, w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, org pgtype.UUID, id uuid.UUID, title, description, dueDate, priority, assigneeID string) {
+func respondIdempotentCreateOrConflict(ctx context.Context, w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, org pgtype.UUID, id uuid.UUID, title, description, dueDate, priority, assigneeID, apiaryID string) {
 	existing, err := q.GetTodo(ctx, sqlcgen.GetTodoParams{OrganizationID: org, ID: pgtype.UUID{Bytes: id, Valid: true}})
 	if err != nil {
 		problem.Write(w, r, problem.Conflict("a todo with this id already exists"))
 		return
 	}
 	same := existing.Title == title && textOf(existing.Description) == description &&
-		dateOf(existing.DueDate) == dueDate && existing.Priority == priority && uuidOf(existing.AssigneeID) == assigneeID
+		dateOf(existing.DueDate) == dueDate && existing.Priority == priority &&
+		uuidOf(existing.AssigneeID) == assigneeID && uuidOf(existing.ApiaryID) == apiaryID
 	if !same {
 		problem.Write(w, r, problem.Conflict("a todo with this id already exists with different content"))
 		return
@@ -529,6 +598,7 @@ func toTodoDTO(row sqlcgen.TodosTodo) todoDTO {
 		Status:         row.Status,
 		CompletedAt:    timePtr(row.CompletedAt),
 		AssigneeID:     optStr(uuidOf(row.AssigneeID)),
+		ApiaryID:       optStr(uuidOf(row.ApiaryID)),
 		CreatedAt:      row.CreatedAt.Time,
 		UpdatedAt:      row.UpdatedAt.Time,
 	}
@@ -547,10 +617,10 @@ func optStr(s string) *string {
 
 // validateTodoCreate validates a todoCreateRequest's shape (id UUID,
 // non-empty title within length, due_date format, known priority,
-// assignee_id UUID format if present). Field-shape checks run first so a
-// malformed id/assignee_id never falls through to the (unrelated)
-// membership check.
-func validateTodoCreate(body todoCreateRequest) (id uuid.UUID, title, description, dueDate, priority, assigneeID string, errs []problem.FieldError) {
+// assignee_id/apiary_id UUID format if present). Field-shape checks run
+// first so a malformed id/assignee_id/apiary_id never falls through to the
+// (unrelated) ownership checks.
+func validateTodoCreate(body todoCreateRequest) (id uuid.UUID, title, description, dueDate, priority, assigneeID, apiaryID string, errs []problem.FieldError) {
 	id, err := uuid.Parse(body.ID)
 	if err != nil {
 		errs = append(errs, problem.FieldError{Field: "id", Code: "invalid", Message: "id must be a UUID"})
@@ -558,7 +628,7 @@ func validateTodoCreate(body todoCreateRequest) (id uuid.UUID, title, descriptio
 	title, titleErrs := validateTitle(body.Title)
 	errs = append(errs, titleErrs...)
 
-	description, dueDate, assigneeID, moreErrs := validateOptionalTodoFields(body.Description, body.DueDate, body.AssigneeID)
+	description, dueDate, assigneeID, apiaryID, moreErrs := validateOptionalTodoFields(body.Description, body.DueDate, body.AssigneeID, body.ApiaryID)
 	errs = append(errs, moreErrs...)
 
 	priority = body.Priority
@@ -566,17 +636,17 @@ func validateTodoCreate(body todoCreateRequest) (id uuid.UUID, title, descriptio
 		errs = append(errs, problem.FieldError{Field: "priority", Code: "invalid", Message: fmt.Sprintf("priority must be one of %v", KnownPriorities())})
 	}
 
-	return id, title, description, dueDate, priority, assigneeID, errs
+	return id, title, description, dueDate, priority, assigneeID, apiaryID, errs
 }
 
 // validateTodoUpdate validates a todoUpdateRequest the same way
 // validateTodoCreate validates a create, minus the id check (the id comes
 // from the URL, not the body).
-func validateTodoUpdate(body todoUpdateRequest) (title, description, dueDate, priority, assigneeID string, errs []problem.FieldError) {
+func validateTodoUpdate(body todoUpdateRequest) (title, description, dueDate, priority, assigneeID, apiaryID string, errs []problem.FieldError) {
 	title, titleErrs := validateTitle(body.Title)
 	errs = append(errs, titleErrs...)
 
-	description, dueDate, assigneeID, moreErrs := validateOptionalTodoFields(body.Description, body.DueDate, body.AssigneeID)
+	description, dueDate, assigneeID, apiaryID, moreErrs := validateOptionalTodoFields(body.Description, body.DueDate, body.AssigneeID, body.ApiaryID)
 	errs = append(errs, moreErrs...)
 
 	priority = body.Priority
@@ -584,7 +654,7 @@ func validateTodoUpdate(body todoUpdateRequest) (title, description, dueDate, pr
 		errs = append(errs, problem.FieldError{Field: "priority", Code: "invalid", Message: fmt.Sprintf("priority must be one of %v", KnownPriorities())})
 	}
 
-	return title, description, dueDate, priority, assigneeID, errs
+	return title, description, dueDate, priority, assigneeID, apiaryID, errs
 }
 
 func validateTitle(raw string) (string, []problem.FieldError) {
@@ -597,13 +667,14 @@ func validateTitle(raw string) (string, []problem.FieldError) {
 	return raw, nil
 }
 
-// validateOptionalTodoFields validates the three optional fields shared by
+// validateOptionalTodoFields validates the four optional fields shared by
 // create and update: description (length), due_date (YYYY-MM-DD format),
-// assignee_id (UUID format). A nil pointer or an explicit empty string both
-// mean "no value" (common.go's textOf/dateOf/uuidOf "" sentinel
-// convention) — the caller (createTodo/updateTodo) treats an empty
-// assigneeID as "skip the ownership check, write NULL".
-func validateOptionalTodoFields(description, dueDate, assigneeID *string) (descOut, dueDateOut, assigneeOut string, errs []problem.FieldError) {
+// assignee_id (UUID format), apiary_id (UUID format, #51). A nil pointer or
+// an explicit empty string both mean "no value" (common.go's
+// textOf/dateOf/uuidOf "" sentinel convention) — the caller
+// (createTodo/updateTodo) treats an empty assigneeID/apiaryID as "skip the
+// ownership check, write NULL".
+func validateOptionalTodoFields(description, dueDate, assigneeID, apiaryID *string) (descOut, dueDateOut, assigneeOut, apiaryOut string, errs []problem.FieldError) {
 	if description != nil {
 		descOut = *description
 		if len(descOut) > maxDescriptionLength {
@@ -627,7 +698,16 @@ func validateOptionalTodoFields(description, dueDate, assigneeID *string) (descO
 			}
 		}
 	}
-	return descOut, dueDateOut, assigneeOut, errs
+	if apiaryID != nil {
+		apiaryOut = *apiaryID
+		if apiaryOut != "" {
+			if _, err := uuid.Parse(apiaryOut); err != nil {
+				errs = append(errs, problem.FieldError{Field: "apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
+				apiaryOut = "" // malformed: nothing to look up or write
+			}
+		}
+	}
+	return descOut, dueDateOut, assigneeOut, apiaryOut, errs
 }
 
 // todoRowState is the mutable projection of a todo for history diffing AND
@@ -643,6 +723,7 @@ type todoRowState struct {
 	status      string
 	completedAt string // "" means none; else RFC3339Nano
 	assigneeID  string // "" means unassigned; else UUID string
+	apiaryID    string // "" means a general, org-level todo (#51); else UUID string
 	deletedAt   pgtype.Timestamptz
 }
 
@@ -657,6 +738,7 @@ func todoRowStateFromRow(row sqlcgen.TodosTodo) todoRowState {
 		status:      row.Status,
 		completedAt: timestampOf(row.CompletedAt),
 		assigneeID:  uuidOf(row.AssigneeID),
+		apiaryID:    uuidOf(row.ApiaryID),
 		deletedAt:   row.DeletedAt,
 	}
 }
@@ -687,6 +769,9 @@ func (t todoRowState) fields() map[string]any {
 	if t.assigneeID != "" {
 		m["assignee_id"] = t.assigneeID
 	}
+	if t.apiaryID != "" {
+		m["apiary_id"] = t.apiaryID
+	}
 	return m
 }
 
@@ -697,7 +782,7 @@ func (t todoRowState) fields() map[string]any {
 func (t todoRowState) sameAs(o todoRowState) bool {
 	return t.title == o.title && t.description == o.description && t.dueDate == o.dueDate &&
 		t.priority == o.priority && t.status == o.status && t.completedAt == o.completedAt &&
-		t.assigneeID == o.assigneeID && t.deletedAt.Valid == o.deletedAt.Valid
+		t.assigneeID == o.assigneeID && t.apiaryID == o.apiaryID && t.deletedAt.Valid == o.deletedAt.Valid
 }
 
 // writeTodoAuditLogTx appends one history.md §3 row for a REST

@@ -70,6 +70,7 @@ type todosFixture struct {
 	srv           *servicetemplate.Server
 	pool          *pgxpool.Pool
 	organizations *fakeOrganizations
+	apiaries      *fakeApiaries
 }
 
 // fakeOrganizations stands in for the real organizations service's
@@ -112,12 +113,88 @@ func newFakeOrganizations(t *testing.T, memberships map[string]string) *fakeOrga
 	return f
 }
 
+// fakeApiaries stands in for the real apiaries service's GET
+// /v1/apiaries/{id} (api/apiaries_client.go's ApiaryVerifier target): 200 for
+// any id in `known`, 404 otherwise — enough to exercise the CRITICAL
+// cross-org apiary_id tenancy guard (#51's carry-over from activities' own
+// apiary_id guard) without standing up a second real service + database in
+// this test binary. It also counts per-id hits so a test can prove the batch
+// write path de-duplicates its ownership calls (one upstream call per
+// distinct apiary, not one per op) — mirrors fakeOrganizations above and
+// activities/main_test.go's own fakeApiaries.
+type fakeApiaries struct {
+	server *httptest.Server
+	mu     sync.Mutex
+	hits   map[string]int
+	known  map[string]bool
+}
+
+func (f *fakeApiaries) hitCount(apiaryID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hits[apiaryID]
+}
+
+func (f *fakeApiaries) totalHits() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.hits {
+		n += c
+	}
+	return n
+}
+
+// forget simulates the target apiary being (soft-)deleted: subsequent
+// GET /v1/apiaries/{id} calls 404 for it, exactly like the real apiaries
+// service's own scope-hiding 404 for a tombstoned row (ADR-0002) — used by
+// the apiary-deletion "well-defined state, not silently lost" regression
+// test (main_test.go's own doc there) to prove there is NO active
+// reconciliation that reaches back into todos.todos.
+func (f *fakeApiaries) forget(apiaryID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.known, apiaryID)
+}
+
+func newFakeApiaries(t *testing.T, known map[string]bool) *fakeApiaries {
+	t.Helper()
+	f := &fakeApiaries{hits: map[string]int{}, known: known}
+	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/v1/apiaries/")
+		f.mu.Lock()
+		f.hits[id]++
+		isKnown := f.known[id]
+		f.mu.Unlock()
+		if isKnown {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(f.server.Close)
+	return f
+}
+
 // newTodosFixture builds the test fixture. memberships (nil is fine — most
 // tests below never touch assignee_id) maps an assignee user_id to the
 // organization it has an active membership in — a REST-create/sync-apply
 // test that expects a SUCCESSFUL assignment must map its assignee to
-// devseed.OrganizationID; a cross-org test maps it to a DIFFERENT org id.
+// devseed.OrganizationID; a cross-org test maps it to a DIFFERENT org id. No
+// apiary_id is ever known by this variant — tests exercising apiary_id
+// ownership use newTodosFixtureWithApiaries instead.
 func newTodosFixture(t *testing.T, memberships map[string]string) *todosFixture {
+	t.Helper()
+	return newTodosFixtureWithApiaries(t, memberships, nil)
+}
+
+// newTodosFixtureWithApiaries is newTodosFixture plus a fake apiaries
+// service (#51) seeded with knownApiaryIDs — the ApiaryVerifier counterpart
+// of memberships: a REST-create/sync-apply test that expects a SUCCESSFUL
+// write carrying an apiary_id must pass it here, otherwise the (correct)
+// tenancy guard rejects it, exactly as it must for a real foreign org's
+// apiary.
+func newTodosFixtureWithApiaries(t *testing.T, memberships map[string]string, knownApiaryIDs []string) *todosFixture {
 	t.Helper()
 	ctx := context.Background()
 
@@ -128,6 +205,15 @@ func newTodosFixture(t *testing.T, memberships map[string]string) *todosFixture 
 	verifier, err := api.NewMemberVerifier(fakeOrgs.server.URL, fakeOrgs.server.Client())
 	if err != nil {
 		t.Fatalf("NewMemberVerifier: %v", err)
+	}
+	knownApiaries := make(map[string]bool, len(knownApiaryIDs))
+	for _, id := range knownApiaryIDs {
+		knownApiaries[id] = true
+	}
+	fakeApiariesSrv := newFakeApiaries(t, knownApiaries)
+	apiaryVerifier, err := api.NewApiaryVerifier(fakeApiariesSrv.server.URL, fakeApiariesSrv.server.Client())
+	if err != nil {
+		t.Fatalf("NewApiaryVerifier: %v", err)
 	}
 	const (
 		dbUser = "beekeepingit_test"
@@ -179,10 +265,10 @@ func newTodosFixture(t *testing.T, memberships map[string]string) *todosFixture 
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	srv.Mount("/v1/todos", injectClaims(api.Router(pool, verifier)))
-	srv.Mount("/internal/sync", injectClaims(api.InternalSyncRouter(pool, verifier)))
+	srv.Mount("/v1/todos", injectClaims(api.Router(pool, verifier, apiaryVerifier)))
+	srv.Mount("/internal/sync", injectClaims(api.InternalSyncRouter(pool, verifier, apiaryVerifier)))
 
-	return &todosFixture{srv: srv, pool: pool, organizations: fakeOrgs}
+	return &todosFixture{srv: srv, pool: pool, organizations: fakeOrgs, apiaries: fakeApiariesSrv}
 }
 
 func (f *todosFixture) do(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
@@ -359,6 +445,54 @@ func TestTodosStore_InsertThenGet(t *testing.T) {
 	}
 }
 
+// TestTodosStore_InsertThenGet_RoundTripsApiaryID is the store-layer
+// counterpart of #51's own AC: apiary_id (nullable, no FK) must round-trip
+// through InsertTodo/GetTodo unchanged, and stay NULL when never set —
+// mirrors TestTodosStore_InsertThenGet's own shape for assignee_id.
+func TestTodosStore_InsertThenGet_RoundTripsApiaryID(t *testing.T) {
+	f := newTodosFixture(t, nil)
+	ctx := context.Background()
+	q := sqlcgen.New(f.pool)
+
+	org := newUUID(t)
+	apiary := newUUID(t)
+	id := newUUID(t)
+	row, err := q.InsertTodo(ctx, sqlcgen.InsertTodoParams{
+		ID: id, OrganizationID: org, Title: "Check hive near the orchard",
+		Priority: api.PriorityLow, Status: api.StatusOpen, ApiaryID: apiary,
+		UpdatedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("InsertTodo: %v", err)
+	}
+	if uuidString(row.ApiaryID) != uuidString(apiary) {
+		t.Fatalf("inserted row.ApiaryID = %v, want %v", row.ApiaryID, apiary)
+	}
+
+	got, err := q.GetTodo(ctx, sqlcgen.GetTodoParams{OrganizationID: org, ID: id})
+	if err != nil {
+		t.Fatalf("GetTodo: %v", err)
+	}
+	if uuidString(got.ApiaryID) != uuidString(apiary) {
+		t.Fatalf("GetTodo.ApiaryID = %v, want %v", got.ApiaryID, apiary)
+	}
+
+	// A general, org-level todo (FR-TD-1: "or left as a general, org-level
+	// todo") leaves apiary_id NULL, not a zero UUID.
+	generalID := newUUID(t)
+	generalRow, err := q.InsertTodo(ctx, sqlcgen.InsertTodoParams{
+		ID: generalID, OrganizationID: org, Title: "General org todo",
+		Priority: api.PriorityLow, Status: api.StatusOpen,
+		UpdatedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("InsertTodo (no apiary_id): %v", err)
+	}
+	if generalRow.ApiaryID.Valid {
+		t.Fatalf("general todo's ApiaryID = %+v, want NULL (unset)", generalRow.ApiaryID)
+	}
+}
+
 func TestTodosStore_CrossOrgIsolation(t *testing.T) {
 	f := newTodosFixture(t, nil)
 	ctx := context.Background()
@@ -516,6 +650,86 @@ func TestTodosRest_Create_CrossOrgAssigneeIsRejected(t *testing.T) {
 	}
 }
 
+// TestTodosRest_Create_WithApiary_Verified is #51's own AC ("a todo can be
+// associated with a specific apiary"): a well-formed apiary_id known to
+// belong to the caller's org is accepted and stored.
+func TestTodosRest_Create_WithApiary_Verified(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryID})
+	id := uuid.NewString()
+	body := validTodoBody(id)
+	body["apiary_id"] = apiaryID
+
+	rec := f.do(t, http.MethodPost, "/v1/todos", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		ApiaryID *string `json:"apiary_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ApiaryID == nil || *got.ApiaryID != apiaryID {
+		t.Fatalf("apiary_id = %v, want %q", got.ApiaryID, apiaryID)
+	}
+}
+
+// TestTodosRest_Create_NoApiary_IsGeneralOrgLevelTodo is #51's own AC ("a
+// todo may also exist with no apiary association"): omitting apiary_id makes
+// no upstream ownership call at all and stores NULL.
+func TestTodosRest_Create_NoApiary_IsGeneralOrgLevelTodo(t *testing.T) {
+	f := newTodosFixture(t, nil)
+	id := uuid.NewString()
+
+	rec := f.do(t, http.MethodPost, "/v1/todos", validTodoBody(id))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		ApiaryID *string `json:"apiary_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ApiaryID != nil {
+		t.Fatalf("apiary_id = %q, want nil (FR-TD-1: general, org-level todo)", *got.ApiaryID)
+	}
+	if got := f.apiaries.totalHits(); got != 0 {
+		t.Fatalf("apiaries ownership calls with no apiary_id = %d, want 0 (no upstream call made)", got)
+	}
+}
+
+// TestTodosRest_Create_CrossOrgApiaryIsRejected is the CRITICAL IDOR test
+// this PR exists to add (#51's carry-over from activities' own apiary_id
+// guard, itself a carry-over of #284's cross-tenant IDOR fix): an apiary_id
+// belonging to a DIFFERENT organization than the caller's must never be
+// accepted.
+func TestTodosRest_Create_CrossOrgApiaryIsRejected(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, nil) // apiaryID deliberately NOT known
+	id := uuid.NewString()
+	body := validTodoBody(id)
+	body["apiary_id"] = apiaryID
+
+	rec := f.do(t, http.MethodPost, "/v1/todos", body)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (cross-org apiary_id must be rejected), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "apiary_id", "not_found") {
+		t.Fatalf("problem errors = %+v, want apiary_id/not_found", p.Errors)
+	}
+
+	q := sqlcgen.New(f.pool)
+	if _, err := q.GetTodo(context.Background(), sqlcgen.GetTodoParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	}); err == nil {
+		t.Fatalf("GetTodo found a row after a rejected cross-org create — the write must not have happened")
+	}
+}
+
 func TestTodosRest_Create_IdempotentReplayDoesNotDuplicate(t *testing.T) {
 	f := newTodosFixture(t, nil)
 	id := uuid.NewString()
@@ -658,6 +872,122 @@ func TestTodosRest_Update_ClearAssignee_NoVerificationCall(t *testing.T) {
 	}
 	if got := f.organizations.hitCount(assignee); got != 1 {
 		t.Fatalf("membership calls after clearing assignee = %d, want still 1 (no verification call on clear)", got)
+	}
+}
+
+// TestTodosRest_Update_SetApiary_Verified proves #51's own AC ("the
+// association can be set ... "): a todo created with no apiary can be
+// PATCHed to associate it with a known apiary.
+func TestTodosRest_Update_SetApiary_Verified(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryID})
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/todos", validTodoBody(id)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/todos/"+id, map[string]any{
+		"title": "x", "priority": api.PriorityMedium, "apiary_id": apiaryID,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		ApiaryID *string `json:"apiary_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ApiaryID == nil || *got.ApiaryID != apiaryID {
+		t.Fatalf("apiary_id = %v, want %q", got.ApiaryID, apiaryID)
+	}
+}
+
+// TestTodosRest_Update_ChangeApiary_Verified proves #51's own AC ("...
+// changed ..."): a todo already associated with apiary A can be PATCHed to
+// point at a different, also-known apiary B.
+func TestTodosRest_Update_ChangeApiary_Verified(t *testing.T) {
+	apiaryA := uuid.NewString()
+	apiaryB := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryA, apiaryB})
+	id := uuid.NewString()
+	body := validTodoBody(id)
+	body["apiary_id"] = apiaryA
+	if rec := f.do(t, http.MethodPost, "/v1/todos", body); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/todos/"+id, map[string]any{
+		"title": "x", "priority": api.PriorityMedium, "apiary_id": apiaryB,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		ApiaryID *string `json:"apiary_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ApiaryID == nil || *got.ApiaryID != apiaryB {
+		t.Fatalf("apiary_id = %v, want %q (changed from %q)", got.ApiaryID, apiaryB, apiaryA)
+	}
+}
+
+func TestTodosRest_Update_CrossOrgApiaryIsRejected(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, nil) // apiaryID deliberately NOT known
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/todos", validTodoBody(id)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/todos/"+id, map[string]any{
+		"title": "x", "priority": api.PriorityMedium, "apiary_id": apiaryID,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (cross-org apiary_id on edit must be rejected), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "apiary_id", "not_found") {
+		t.Fatalf("problem errors = %+v, want apiary_id/not_found", p.Errors)
+	}
+}
+
+// TestTodosRest_Update_ClearApiary_NoVerificationCall proves #51's own AC
+// ("the association can be ... cleared"): omitting apiary_id from a
+// resubmit writes NULL with NO new upstream apiaries call — mirrors
+// TestTodosRest_Update_ClearAssignee_NoVerificationCall.
+func TestTodosRest_Update_ClearApiary_NoVerificationCall(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryID})
+	id := uuid.NewString()
+	body := validTodoBody(id)
+	body["apiary_id"] = apiaryID
+	if rec := f.do(t, http.MethodPost, "/v1/todos", body); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := f.apiaries.hitCount(apiaryID); got != 1 {
+		t.Fatalf("apiaries ownership calls after create = %d, want 1", got)
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/todos/"+id, map[string]any{
+		"title": "x", "priority": api.PriorityMedium, // apiary_id omitted → clear
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		ApiaryID *string `json:"apiary_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ApiaryID != nil {
+		t.Fatalf("apiary_id = %q, want nil after clearing", *got.ApiaryID)
+	}
+	if got := f.apiaries.hitCount(apiaryID); got != 1 {
+		t.Fatalf("apiaries ownership calls after clearing apiary_id = %d, want still 1 (no verification call on clear)", got)
 	}
 }
 
@@ -928,6 +1258,85 @@ func TestTodosHistory_CreateEditCompleteReopenDelete_EachRecordsRow(t *testing.T
 	}
 }
 
+// TestTodosHistory_ApiaryIDChangeIsRecorded is #51's own FR-HIS-1 AC ("...
+// records the change in history"): setting apiary_id on an edit shows up in
+// the update row's changed_fields/change delta.
+func TestTodosHistory_ApiaryIDChangeIsRecorded(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryID})
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/todos", validTodoBody(id)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPatch, "/v1/todos/"+id, map[string]any{
+		"title": "x", "priority": api.PriorityMedium, "apiary_id": apiaryID,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListAuditLog(context.Background(), sqlcgen.ListAuditLogParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		EntityType:     "todo", EntityID: pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLog: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("audit rows = %d, want 2 (create + update)", len(rows))
+	}
+	found := false
+	for _, cf := range rows[1].ChangedFields {
+		if cf == "apiary_id" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("changed_fields = %v, want to include apiary_id (FR-HIS-1)", rows[1].ChangedFields)
+	}
+}
+
+// TestTodosApiaryDeletion_TodoApiaryIDSurvivesUntouched documents #51's own
+// DECIDED apiary-deletion handling (services/todos/README.md's "apiary
+// association" section): apiaries never hard-deletes (tombstone via
+// deleted_at) and there is NO active reconciliation here that reaches back
+// into todos.todos when an apiary is later deleted — mirroring activities'
+// own long-standing apiary_id precedent (live since #38, no clear-on-delete
+// mechanism there either). A todo's apiary_id simply keeps pointing at the
+// (now soft-deleted, 404-on-read) apiary id; "well-defined state, not
+// silently lost" is satisfied by client-side read-time tolerance (out of
+// this service's scope — no GET/list route exists yet) plus the fact that
+// the apiary's own deletion is already recorded in apiaries.audit_log, so no
+// history is missing. This test proves the negative: forgetting the apiary
+// from the (fake) apiaries service — simulating its deletion — does NOT
+// change the stored todo row at all.
+func TestTodosApiaryDeletion_TodoApiaryIDSurvivesUntouched(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryID})
+	id := uuid.NewString()
+	body := validTodoBody(id)
+	body["apiary_id"] = apiaryID
+	if rec := f.do(t, http.MethodPost, "/v1/todos", body); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// Simulate the apiary being deleted: it now 404s on the same endpoint
+	// createTodo/updateTodo would call to (re-)verify it.
+	f.apiaries.forget(apiaryID)
+
+	q := sqlcgen.New(f.pool)
+	org := pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true}
+	row, err := q.GetTodo(context.Background(), sqlcgen.GetTodoParams{OrganizationID: org, ID: pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetTodo: %v (the todo row itself must be completely unaffected by the apiary's deletion)", err)
+	}
+	if uuidOf := row.ApiaryID; !uuidOf.Valid || uuid.UUID(uuidOf.Bytes).String() != apiaryID {
+		t.Fatalf("row.ApiaryID = %+v, want unchanged %q — no active reconciliation may clear it", row.ApiaryID, apiaryID)
+	}
+}
+
 // --- /internal/sync validate/apply (FR-OF-1/Q-SYNC — offline lifecycle) ---
 
 // todoSyncOp builds one sync-batch op. data may be nil (a delete op carries
@@ -1015,6 +1424,123 @@ func TestTodosSync_Apply_CrossOrgAssigneeIsNoOp(t *testing.T) {
 		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
 	}); err == nil {
 		t.Fatalf("GetTodo found a row for a cross-org assignee_id op — it must have been a no-op")
+	}
+}
+
+// TestTodosSync_ValidateThenApply_Create_WithApiary_Success proves #51's own
+// AC ("survives offline creation and sync"): an offline-created todo
+// carrying a known apiary_id validates and applies successfully, storing
+// apiary_id.
+func TestTodosSync_ValidateThenApply_Create_WithApiary_Success(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryID})
+	id := uuid.NewString()
+	op := todoSyncOp("put", id, "2026-07-16T10:00:00Z", map[string]any{
+		"title": "Queued offline todo", "priority": api.PriorityMedium, "apiary_id": apiaryID,
+	})
+	batch := map[string]any{"ops": []any{op}}
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch); rec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetTodo(context.Background(), sqlcgen.GetTodoParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetTodo: %v", err)
+	}
+	if !row.ApiaryID.Valid || uuid.UUID(row.ApiaryID.Bytes).String() != apiaryID {
+		t.Fatalf("row.ApiaryID = %+v, want %q", row.ApiaryID, apiaryID)
+	}
+}
+
+func TestTodosSync_Validate_RejectsCrossOrgApiary(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, nil) // apiaryID deliberately NOT known
+	id := uuid.NewString()
+	op := todoSyncOp("put", id, "2026-07-16T10:00:00Z", map[string]any{
+		"title": "x", "priority": api.PriorityMedium, "apiary_id": apiaryID,
+	})
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{op}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (cross-org apiary_id), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "ops[0].data.apiary_id", "not_found") {
+		t.Fatalf("problem errors = %+v, want ops[0].data.apiary_id/not_found", p.Errors)
+	}
+}
+
+func TestTodosSync_Apply_CrossOrgApiaryIsNoOp(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, nil) // apiaryID deliberately NOT known
+	id := uuid.NewString()
+	op := todoSyncOp("put", id, "2026-07-16T10:00:00Z", map[string]any{
+		"title": "x", "priority": api.PriorityMedium, "apiary_id": apiaryID,
+	})
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{op}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200 (cross-org apiary_id is a no-op, not an error), body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	if _, err := q.GetTodo(context.Background(), sqlcgen.GetTodoParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	}); err == nil {
+		t.Fatalf("GetTodo found a row for a cross-org apiary_id op — it must have been a no-op")
+	}
+}
+
+// TestTodosSync_Apply_ClearApiaryViaPatch proves #51's own AC ("the
+// association can be ... cleared ... and survives offline creation and
+// sync"): a patch that resubmits an empty apiary_id clears a previously-set
+// one — matching the client repository's full-resubmit convention.
+func TestTodosSync_Apply_ClearApiaryViaPatch(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryID})
+	id := uuid.NewString()
+	createOp := todoSyncOp("put", id, "2026-07-16T10:00:00Z", map[string]any{
+		"title": "x", "priority": api.PriorityMedium, "apiary_id": apiaryID,
+	})
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{createOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := f.apiaries.hitCount(apiaryID); got != 1 {
+		t.Fatalf("apiaries ownership calls after create apply = %d, want 1", got)
+	}
+
+	clearOp := todoSyncOp("patch", id, "2026-07-16T11:00:00Z", map[string]any{
+		"title": "x", "priority": api.PriorityMedium, "apiary_id": "",
+	})
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{clearOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetTodo(context.Background(), sqlcgen.GetTodoParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetTodo: %v", err)
+	}
+	if row.ApiaryID.Valid {
+		t.Fatalf("row.ApiaryID = %+v, want NULL after clearing", row.ApiaryID)
+	}
+	// Clearing (an empty apiary_id) makes no upstream call at all
+	// (resolveApiaryOwnership only resolves non-empty ids) — the hit count
+	// must still be exactly 1, from the earlier create.
+	if got := f.apiaries.hitCount(apiaryID); got != 1 {
+		t.Fatalf("apiaries ownership calls after clearing apiary_id = %d, want still 1 (no verification call on clear)", got)
 	}
 }
 
@@ -1276,5 +1802,61 @@ func TestTodosSync_Apply_DedupesAssigneeOwnershipCalls(t *testing.T) {
 	}
 	if got := f.organizations.hitCount(assignee); got != 1 {
 		t.Fatalf("organizations ownership calls for assignee %s = %d, want exactly 1 (batch must de-dup ownership checks, one call per distinct assignee, not per op)", assignee, got)
+	}
+}
+
+// TestTodosSync_Apply_DedupesApiaryOwnershipCalls is
+// TestTodosSync_Apply_DedupesAssigneeOwnershipCalls' #51 counterpart: the
+// per-op cross-service apiary_id ownership call must be resolved ONCE per
+// distinct apiary_id, up front, NOT once per op inside the DB transaction.
+func TestTodosSync_Apply_DedupesApiaryOwnershipCalls(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newTodosFixtureWithApiaries(t, nil, []string{apiaryID})
+	batch := map[string]any{"ops": []any{
+		todoSyncOp("put", uuid.NewString(), "2026-07-16T10:00:00Z", map[string]any{"title": "a", "priority": api.PriorityLow, "apiary_id": apiaryID}),
+		todoSyncOp("put", uuid.NewString(), "2026-07-16T10:00:00Z", map[string]any{"title": "b", "priority": api.PriorityLow, "apiary_id": apiaryID}),
+		todoSyncOp("put", uuid.NewString(), "2026-07-16T10:00:00Z", map[string]any{"title": "c", "priority": api.PriorityLow, "apiary_id": apiaryID}),
+	}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := f.apiaries.hitCount(apiaryID); got != 1 {
+		t.Fatalf("apiaries ownership calls for apiary %s = %d, want exactly 1 (batch must de-dup ownership checks, one call per distinct apiary, not per op)", apiaryID, got)
+	}
+}
+
+// TestTodosSync_Apply_ApiaryVerifierUnavailable_FailsClosed proves the
+// fail-closed contract resolveApiaryOwnership documents: a transport/5xx
+// error verifying apiary_id aborts the WHOLE apply batch (500), leaving the
+// op queued to heal on retry — never silently accepted.
+func TestTodosSync_Apply_ApiaryVerifierUnavailable_FailsClosed(t *testing.T) {
+	f := newTodosFixture(t, nil)
+	// A verifier pointed at an unreachable host — every BelongsToOrg call
+	// transport-fails, mirroring TestApiaryVerifier_BelongsToOrg_TransportFailureIsUnavailableError.
+	unavailable, err := api.NewApiaryVerifier("http://127.0.0.1:0", nil)
+	if err != nil {
+		t.Fatalf("NewApiaryVerifier: %v", err)
+	}
+	memberVerifier, err := api.NewMemberVerifier(f.organizations.server.URL, f.organizations.server.Client())
+	if err != nil {
+		t.Fatalf("NewMemberVerifier: %v", err)
+	}
+	unavailableRouter := injectClaims(api.InternalSyncRouter(f.pool, memberVerifier, unavailable))
+
+	apiaryID := uuid.NewString()
+	op := todoSyncOp("put", uuid.NewString(), "2026-07-16T10:00:00Z", map[string]any{
+		"title": "x", "priority": api.PriorityLow, "apiary_id": apiaryID,
+	})
+	body, err := json.Marshal(map[string]any{"ops": []any{op}})
+	if err != nil {
+		t.Fatalf("marshal batch: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/apply", bytes.NewReader(body))
+	unavailableRouter.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("apply status = %d, want 500 (apiaries unavailable must fail closed, not silently accept), body = %s", rec.Code, rec.Body.String())
 	}
 }
