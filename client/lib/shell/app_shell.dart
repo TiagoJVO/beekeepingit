@@ -22,19 +22,25 @@ class _FabConfig {
 
 const _fabConfigByTab = <String, _FabConfig>{
   'apiaries': _FabConfig(label: _apiaryFabLabel, destination: '/apiaries/new'),
+  // Journeys (#45): unlike Activities (whose create entry point lives on the
+  // apiary detail page, since an activity always needs an apiary context
+  // first), a journey isn't tied to a single apiary — so its own tab root is
+  // a sensible "New journey" entry point, mirroring the Apiaries tab's FAB.
+  'journeys': _FabConfig(label: _journeyFabLabel, destination: '/journeys/new'),
 };
 
 String _apiaryFabLabel(AppLocalizations l10n) => l10n.addApiary;
+String _journeyFabLabel(AppLocalizations l10n) => l10n.addJourney;
 
 /// The persistent app shell (FR-UX-2, #197): a 5-tab bottom nav wrapping a
 /// [StatefulShellRoute] (one navigation stack per tab, per go_router's
 /// idiomatic pattern), a header (contextual back, brand + screen title,
 /// sync-status pill, account), an offline banner, and a contextual honey FAB.
 ///
-/// Only the Apiaries tab has real screens this milestone; the other four show
-/// [ComingSoonScreen] placeholders (see coming_soon_screen.dart) — this shell
-/// itself doesn't know or care which, it just renders whatever the active
-/// branch's navigator holds.
+/// Apiaries, Activities and Journeys now have real screens (M2/M3/M4); Todos
+/// and Assistant still show [ComingSoonScreen] placeholders (see
+/// coming_soon_screen.dart, M5/M8) — this shell itself doesn't know or care
+/// which, it just renders whatever the active branch's navigator holds.
 class AppShell extends ConsumerWidget {
   const AppShell({required this.navigationShell, super.key});
 
@@ -230,6 +236,8 @@ class AppShell extends ConsumerWidget {
       'activityNew' => l10n.newActivityTitle,
       'activityDetail' => l10n.activityDetailTitle,
       'activityEdit' => l10n.editActivityTitle,
+      'journeyNew' => l10n.newJourneyTitle,
+      'journeyEdit' => l10n.editJourneyTitle,
       _ => activeTab.label(l10n),
     };
   }

@@ -4,6 +4,7 @@ use (
 	./services/activities
 	./services/apiaries
 	./services/identity
+	./services/journeys
 	./services/organizations
 	./services/servicetemplate
 	./services/shared

@@ -4,6 +4,8 @@ import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/activities/add_activity_screen.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/journeys/journey_status.dart';
+import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
@@ -29,17 +31,29 @@ class _NoopLocalStore implements LocalStoreEngine {
     List<Object?> args = const [],
   ]) async => null;
   @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
+  @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {}
   @override
   Future<void> clear() async {}
 }
 
 class _CreatedActivity {
-  _CreatedActivity(this.apiaryId, this.type, this.occurredAt, this.attributes);
+  _CreatedActivity(
+    this.apiaryId,
+    this.type,
+    this.occurredAt,
+    this.attributes, [
+    this.journeyId,
+  ]);
   final String apiaryId;
   final String type;
   final String occurredAt;
   final Map<String, dynamic> attributes;
+  final String? journeyId;
 }
 
 class _UpdatedActivity {
@@ -87,9 +101,12 @@ class _FakeActivitiesRepository extends ActivitiesRepository {
     required String type,
     required String occurredAt,
     required Map<String, dynamic> attributes,
+    String? journeyId,
   }) async {
     if (throwOnCreate) throw Exception('boom-create');
-    created.add(_CreatedActivity(apiaryId, type, occurredAt, attributes));
+    created.add(
+      _CreatedActivity(apiaryId, type, occurredAt, attributes, journeyId),
+    );
     return 'fake-${created.length - 1}';
   }
 
@@ -108,6 +125,60 @@ class _FakeActivitiesRepository extends ActivitiesRepository {
   Future<void> delete(String id) async {
     if (throwOnDelete) throw Exception('boom-delete');
     deleteCalled = true;
+  }
+}
+
+class _CreatedJourney {
+  _CreatedJourney(this.name, this.mainActivityType, this.apiaryIds);
+  final String name;
+  final String mainActivityType;
+  final List<String> apiaryIds;
+}
+
+/// A [JourneysRepository] fake for the #46 journey-picker section on the
+/// add-activity form — mirrors `_FakeActivitiesRepository`'s own
+/// record-and-return convention. [matches] is the CANNED candidate set
+/// [watchMatching] returns regardless of the apiaryId/activityType/
+/// organizationId it's called with — the real SQL-level apiary+type
+/// filtering is covered by journeys_repository_test.dart's own
+/// `watchMatching` tests; this fake only needs to drive the picker's
+/// behavior (auto-select/deselect/switch/closed-confirm) given a fixed
+/// candidate list, same as journey_form_screen_test.dart's
+/// `_FakeJourneysRepository` fakes create/update/close/delete without
+/// re-deriving any real persistence.
+class _FakeJourneysRepository extends JourneysRepository {
+  _FakeJourneysRepository({
+    this.matches = const [],
+    this.throwOnCreate = false,
+    Map<String, Journey>? journeysById,
+  }) : journeysById = journeysById ?? {for (final j in matches) j.id: j},
+       super(_NoopLocalStore());
+
+  final List<Journey> matches;
+  final bool throwOnCreate;
+  final Map<String, Journey> journeysById;
+
+  final List<_CreatedJourney> created = [];
+
+  @override
+  Stream<List<Journey>> watchMatching({
+    required String apiaryId,
+    required String activityType,
+    required String? organizationId,
+  }) => Stream.value(matches);
+
+  @override
+  Future<Journey?> getById(String id) async => journeysById[id];
+
+  @override
+  Future<String> create({
+    required String name,
+    required String mainActivityType,
+    required List<String> apiaryIds,
+  }) async {
+    if (throwOnCreate) throw Exception('boom-journey-create');
+    created.add(_CreatedJourney(name, mainActivityType, apiaryIds));
+    return 'new-journey-${created.length - 1}';
   }
 }
 
@@ -139,7 +210,10 @@ class _ExistingOrganizationController extends OrganizationController {
 
 const _apiary = Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4);
 
-Widget _buildApp({required _FakeActivitiesRepository repo}) {
+Widget _buildApp({
+  required _FakeActivitiesRepository repo,
+  _FakeJourneysRepository? journeysRepo,
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
@@ -157,13 +231,25 @@ Widget _buildApp({required _FakeActivitiesRepository repo}) {
       memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
       activitiesRepositoryProvider.overrideWith((ref) async => repo),
+      // #46: the journey-picker section's journeyMatchesProvider chain —
+      // overridden (default: no candidates) so it never hangs on the real,
+      // never-resolving _NoopLocalStore-backed watchMatching() a bare
+      // JourneysRepository would produce.
+      journeysRepositoryProvider.overrideWith(
+        (ref) async => journeysRepo ?? _FakeJourneysRepository(),
+      ),
     ],
     child: const BeekeepingitApp(),
   );
 }
 
-Future<void> _openAddActivityForm(WidgetTester tester) async {
-  await tester.pumpWidget(_buildApp(repo: _FakeActivitiesRepository()));
+Future<void> _openAddActivityForm(
+  WidgetTester tester, {
+  _FakeJourneysRepository? journeysRepo,
+}) async {
+  await tester.pumpWidget(
+    _buildApp(repo: _FakeActivitiesRepository(), journeysRepo: journeysRepo),
+  );
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiary-a1')));
   await tester.pumpAndSettle();
@@ -308,6 +394,16 @@ void main() {
         'the disease field is a dropdown populated from the DGAV-DDO-informed '
         'candidate vocabulary, not free text (#291)',
         (tester) async {
+          // Tall viewport: the #46 journey-attachment section pushes the
+          // treatment fields further down than the default 800x600 test
+          // viewport shows, so tapping the disease field directly (without
+          // ensureVisible) needs the same fix the save-button tests already
+          // apply elsewhere in this file.
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
           await _openAddActivityForm(tester);
 
           await tester.tap(find.byKey(const Key('activity-type-field')));
@@ -321,7 +417,10 @@ void main() {
           await tester.tap(find.text('Specific disease/condition').last);
           await tester.pumpAndSettle();
 
-          await tester.tap(find.byKey(const Key('activity-disease-field')));
+          final diseaseField = find.byKey(const Key('activity-disease-field'));
+          await tester.ensureVisible(diseaseField);
+          await tester.pumpAndSettle();
+          await tester.tap(diseaseField);
           await tester.pumpAndSettle();
 
           expect(find.text('Varroose').last, findsOneWidget);
@@ -555,7 +654,10 @@ void main() {
           'detection_only',
         );
         expect(repo.created.single.attributes['disease'], 'Varroose');
-        expect(repo.created.single.attributes.containsKey('treatment_type'), isFalse);
+        expect(
+          repo.created.single.attributes.containsKey('treatment_type'),
+          isFalse,
+        );
         // Navigated away (i.e. genuinely saved, not blocked by validation).
         expect(find.byKey(const Key('activity-save-button')), findsNothing);
       },
@@ -631,7 +733,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
 
         expect(repo.created, hasLength(1));
-        expect(repo.created.single.attributes.containsKey('lot_batch'), isFalse);
+        expect(
+          repo.created.single.attributes.containsKey('lot_batch'),
+          isFalse,
+        );
       },
     );
   });
@@ -660,6 +765,573 @@ void main() {
     router.go('/apiaries/a1/activities/act1/edit');
     await tester.pumpAndSettle();
   }
+
+  // --- Journey picker (#46, FR-JO-1, D-21) ---
+
+  const openJourney = Journey(
+    id: 'j1',
+    name: 'Spring Harvest Round',
+    mainActivityType: 'harvest',
+    status: journeyStatusOpen,
+  );
+  const otherOpenJourney = Journey(
+    id: 'j2',
+    name: 'Second Harvest Round',
+    mainActivityType: 'harvest',
+    status: journeyStatusOpen,
+  );
+  const closedJourney = Journey(
+    id: 'j3',
+    name: 'Last Season',
+    mainActivityType: 'harvest',
+    status: journeyStatusClosed,
+  );
+
+  group('journey picker (#46, FR-JO-1, D-21)', () {
+    testWidgets(
+      'auto-match HIT: a matching open journey is pre-filled and saved '
+      'as journey_id',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(matches: [openJourney]);
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('activity-journey-attachment-name')),
+          findsOneWidget,
+        );
+        expect(find.text('Spring Harvest Round'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.journeyId, 'j1');
+      },
+    );
+
+    testWidgets('auto-match MISS: no matching journey -> no journey attached, '
+        'journey_id is null on save', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('activity-journey-attachment-name')),
+        findsOneWidget,
+      );
+      // The default fixture (no journeysRepo override) has no candidates.
+      expect(
+        find.byKey(const Key('activity-journey-remove-button')),
+        findsNothing,
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.journeyId, isNull);
+    });
+
+    testWidgets(
+      'deselect: removing the auto-selected journey saves journey_id as null',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(matches: [openJourney]);
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-remove-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('No journey attached'), findsOneWidget);
+        expect(
+          find.byKey(const Key('activity-journey-remove-button')),
+          findsNothing,
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.journeyId, isNull);
+      },
+    );
+
+    testWidgets(
+      'switch: picking a different matching open journey from the picker '
+      'replaces the auto-selected one',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(
+          matches: [openJourney, otherOpenJourney],
+        );
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Initially auto-selected to the first match.
+        expect(find.text('Spring Harvest Round'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('journey-picker-option-j1')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('journey-picker-option-j2')),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Second Harvest Round'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.journeyId, 'j2');
+      },
+    );
+
+    testWidgets(
+      'closed journeys are hidden by default in the picker, revealed by '
+      'the "show hidden journeys" toggle',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
+        await tester.pumpWidget(
+          _buildApp(
+            repo: _FakeActivitiesRepository(),
+            journeysRepo: journeysRepo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // No open matches -> auto-match miss even though a closed one exists.
+        expect(find.text('No journey attached'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('journey-picker-option-j3')), findsNothing);
+        expect(
+          find.byKey(const Key('journey-picker-show-hidden-toggle')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('journey-picker-show-hidden-toggle')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('journey-picker-option-j3')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'closed-journey confirm: saving against a selected closed journey '
+      'shows a confirm dialog; cancel aborts the save',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-show-hidden-toggle')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-picker-option-j3')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Last Season'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('activity-closed-journey-confirm-dialog')),
+          findsOneWidget,
+        );
+        expect(repo.created, isEmpty);
+
+        await tester.tap(
+          find.byKey(const Key('activity-closed-journey-confirm-cancel')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('activity-closed-journey-confirm-dialog')),
+          findsNothing,
+        );
+        expect(repo.created, isEmpty);
+        // Canceling stays on the form, nothing saved.
+        expect(find.byKey(const Key('activity-save-button')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'closed-journey confirm: confirming "add anyway" saves the activity '
+      'with the closed journey_id',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(matches: [closedJourney]);
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-show-hidden-toggle')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-picker-option-j3')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('activity-closed-journey-confirm-add')),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.journeyId, 'j3');
+      },
+    );
+
+    testWidgets(
+      'inline create: creating a new journey from the picker attaches it '
+      'to the activity being saved',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository();
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-create-new-option')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('journey-quick-create-name-field')),
+          findsOneWidget,
+        );
+        await tester.enterText(
+          find.byKey(const Key('journey-quick-create-name-field')),
+          'Brand New Journey',
+        );
+        await tester.tap(
+          find.byKey(const Key('journey-quick-create-save-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Quick-create sheet closed, back on the activity form, showing the
+        // just-created journey attached (name known immediately, before the
+        // (fake, static) matches list would ever reflect it).
+        expect(find.text('Brand New Journey'), findsOneWidget);
+        expect(journeysRepo.created, hasLength(1));
+        expect(journeysRepo.created.single.name, 'Brand New Journey');
+        expect(journeysRepo.created.single.apiaryIds, ['a1']);
+        expect(journeysRepo.created.single.mainActivityType, 'harvest');
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.journeyId, 'new-journey-0');
+      },
+    );
+
+    testWidgets('inline create: canceling the quick-create sheet leaves the '
+        'attachment unchanged', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final journeysRepo = _FakeJourneysRepository();
+      await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+      await tester.tap(find.byKey(const Key('activity-journey-change-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('journey-picker-create-new-option')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('journey-quick-create-cancel-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('No journey attached'), findsOneWidget);
+      expect(journeysRepo.created, isEmpty);
+    });
+
+    testWidgets(
+      'inline create: a failing create() keeps the quick-create sheet open '
+      'and shows an error, not an indefinite spinner',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(throwOnCreate: true);
+        await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-create-new-option')),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('journey-quick-create-name-field')),
+          'Doomed Journey',
+        );
+        await tester.tap(
+          find.byKey(const Key('journey-quick-create-save-button')),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(journeysRepo.created, isEmpty);
+        expect(
+          find.byKey(const Key('journey-quick-create-save-button')),
+          findsOneWidget,
+        );
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(
+          find.textContaining("Couldn't save the journey"),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'switching activity type resets an explicit manual selection back to '
+      'auto-select (a journey\'s main_activity_type must match, #46 AC)',
+      (tester) async {
+        // The fake's watchMatching ignores the activityType it's called
+        // with (its own doc comment) and always returns the same canned
+        // list — this test still meaningfully distinguishes "reset
+        // happened" from "reset didn't happen": if the type-change reset
+        // were missing, the manually-switched selection (otherOpenJourney)
+        // would persist; with the reset, the attachment re-derives via
+        // auto-select and lands back on the FIRST match (openJourney).
+        final journeysRepo = _FakeJourneysRepository(
+          matches: [openJourney, otherOpenJourney],
+        );
+        await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+        expect(find.text('Spring Harvest Round'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+        await tester.pumpAndSettle();
+        expect(find.text('Second Harvest Round'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('activity-type-field')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Generic').last);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Second Harvest Round'), findsNothing);
+        expect(find.text('Spring Harvest Round'), findsOneWidget);
+      },
+    );
+  });
 
   group('edit mode (#40, FR-AC-3)', () {
     testWidgets(
@@ -746,36 +1418,37 @@ void main() {
       },
     );
 
-    testWidgets('a valid edit calls update(), not create(), with the new values', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(1200, 2400);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets(
+      'a valid edit calls update(), not create(), with the new values',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
 
-      final repo = _FakeActivitiesRepository(existing: existingHarvest);
-      await goToEditForm(tester, repo);
+        final repo = _FakeActivitiesRepository(existing: existingHarvest);
+        await goToEditForm(tester, repo);
 
-      await tester.enterText(
-        find.byKey(const Key('activity-honey-supers-field')),
-        '9',
-      );
-      final saveButton = find.byKey(const Key('activity-save-button'));
-      await tester.ensureVisible(saveButton);
-      await tester.pumpAndSettle();
-      await tester.tap(saveButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-      await tester.pump(const Duration(milliseconds: 100));
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '9',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
 
-      expect(repo.created, isEmpty);
-      expect(repo.updated, hasLength(1));
-      expect(repo.updated.single.id, 'act1');
-      expect(repo.updated.single.attributes['honey_supers'], 9);
-      // Navigated away.
-      expect(find.byKey(const Key('activity-save-button')), findsNothing);
-    });
+        expect(repo.created, isEmpty);
+        expect(repo.updated, hasLength(1));
+        expect(repo.updated.single.id, 'act1');
+        expect(repo.updated.single.attributes['honey_supers'], 9);
+        // Navigated away.
+        expect(find.byKey(const Key('activity-save-button')), findsNothing);
+      },
+    );
 
     testWidgets(
       'a failing load resets busy and shows an error, not an indefinite spinner',
@@ -849,7 +1522,9 @@ void main() {
         );
         expect(find.text('Delete activity?'), findsOneWidget);
 
-        await tester.tap(find.byKey(const Key('activity-delete-confirm-cancel')));
+        await tester.tap(
+          find.byKey(const Key('activity-delete-confirm-cancel')),
+        );
         await tester.pumpAndSettle();
 
         expect(
@@ -906,7 +1581,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(deleteButton);
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('activity-delete-confirm-delete')));
+        await tester.tap(
+          find.byKey(const Key('activity-delete-confirm-delete')),
+        );
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
         await tester.pump(const Duration(milliseconds: 100));
@@ -971,7 +1648,9 @@ void main() {
         await tester.tap(find.text('open'));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('activity-delete-confirm-cancel')));
+        await tester.tap(
+          find.byKey(const Key('activity-delete-confirm-cancel')),
+        );
         await tester.pumpAndSettle();
 
         expect(

@@ -22,53 +22,82 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
-// activityEntityType/todoEntityType are the sync wire entity_types
-// activities'/todos' own api/sync.go Op carries (client mirror:
-// powersync_schema.dart's activityEntityType/todoEntityType) — the routing
-// keys groupOpsByOwner uses to tell an activities/todos op apart from every
-// other (apiary/apiary_counter) op, which all default to apiariesURL.
+// activityEntityType is the sync wire entity_type activities' own
+// api/sync.go Op carries (client mirror: powersync_schema.dart's
+// activityEntityType) — one of the routing keys groupOpsByOwner's `routes`
+// map uses to tell an activities op apart from every other op, which all
+// default to apiariesURL.
 const activityEntityType = "activity"
+
+// todoEntityType is the sync wire entity_type todos' own api/sync.go Op
+// carries (client mirror: powersync_schema.dart's todoEntityType) — routes
+// to todosURL the same way activityEntityType routes to activitiesURL.
 const todoEntityType = "todo"
+
+// journeyEntityType/journeyPlanItemEntityType are the two sync wire entity
+// types the journeys service owns (services/journeys/api/sync.go, #45,
+// mirroring how apiaries itself owns both "apiary" and "apiary_counter") —
+// both route to the SAME journeysURL.
+const (
+	journeyEntityType         = "journey"
+	journeyPlanItemEntityType = "journey_plan_item"
+)
 
 // Coordinator fans a client transaction out to owning services, grouped by
 // each op's entity_type (sync.md §6.1/§6.3: "groups ops by owning
-// service"). #39 was the first op kind that isn't owned by apiaries
-// (activities) — the two-phase validate-all-then-apply contract already
-// anticipated a second service; #50 (todos) is the same extension applied a
-// second time, not a redesign. Most pushes are still single-service
-// (sync.md §1's overwhelming-majority case) and take the byte-identical
-// single-group fast path (handleSingle); only a push that genuinely mixes
-// ops across owning services (e.g. an apiary created and a todo logged in
-// the same offline session) exercises the multi-group merge (handleMulti).
+// service"). Most pushes are still single-service (sync.md §1's
+// overwhelming-majority case) and take the byte-identical single-group fast
+// path (handleSingle); only a push that genuinely mixes ops owned by
+// different services (e.g. an apiary created and an activity logged against
+// it, or a journey and its plan-item apiaries, or a todo, in the same
+// offline session) exercises the multi-group merge (handleMulti).
+//
+// routes maps a KNOWN non-default entity_type to its owning service's URL;
+// apiariesURL is the fallback for every entity_type NOT in routes
+// (apiary/apiary_counter, and any op the coordinator doesn't recognize at
+// all — sync.md §6.3's "adding a second service later changes nothing here"
+// promise). This is a routing TABLE, not a growing if/else chain: adding a
+// FIFTH owning service is one more routes[...] entry in NewCoordinator, not
+// another branch in groupOpsByOwner.
 type Coordinator struct {
-	apiariesURL   string
-	activitiesURL string
-	todosURL      string
-	client        *http.Client
+	apiariesURL string
+	routes      map[string]string
+	client      *http.Client
 }
 
-// NewCoordinator builds a Coordinator targeting the apiaries, activities and
-// todos services — every op not recognized as an activity or todo op
-// defaults to apiariesURL, so this stays additive as further owning
-// services are wired in (sync.md §6.3's "adding a second service later
-// changes nothing here" promise).
-func NewCoordinator(apiariesURL, activitiesURL, todosURL string) (*Coordinator, error) {
+// NewCoordinator builds a Coordinator targeting the apiaries, activities,
+// journeys and todos services — every op whose entity_type isn't in
+// `routes` defaults to apiariesURL, so this stays additive as further
+// owning services are wired in (sync.md §6.3's "adding a second service
+// later changes nothing here" promise).
+func NewCoordinator(apiariesURL, activitiesURL, journeysURL, todosURL string) (*Coordinator, error) {
 	if apiariesURL == "" {
 		return nil, fmt.Errorf("sync: NewCoordinator requires apiariesURL")
 	}
 	if activitiesURL == "" {
 		return nil, fmt.Errorf("sync: NewCoordinator requires activitiesURL")
 	}
+	if journeysURL == "" {
+		return nil, fmt.Errorf("sync: NewCoordinator requires journeysURL")
+	}
 	if todosURL == "" {
 		return nil, fmt.Errorf("sync: NewCoordinator requires todosURL")
 	}
+	// Trim a trailing slash so an operator-supplied URL (env var, config)
+	// never produces a double slash when concatenated with the internal
+	// endpoint paths below.
+	apiariesURL = strings.TrimRight(apiariesURL, "/")
+	activitiesURL = strings.TrimRight(activitiesURL, "/")
+	journeysURL = strings.TrimRight(journeysURL, "/")
+	todosURL = strings.TrimRight(todosURL, "/")
 	return &Coordinator{
-		// Trim a trailing slash so an operator-supplied URL (env var, config)
-		// never produces a double slash when concatenated with the internal
-		// endpoint paths below.
-		apiariesURL:   strings.TrimRight(apiariesURL, "/"),
-		activitiesURL: strings.TrimRight(activitiesURL, "/"),
-		todosURL:      strings.TrimRight(todosURL, "/"),
+		apiariesURL: apiariesURL,
+		routes: map[string]string{
+			activityEntityType:        activitiesURL,
+			journeyEntityType:         journeysURL,
+			journeyPlanItemEntityType: journeysURL,
+			todoEntityType:            todosURL,
+		},
 		client: &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
@@ -97,7 +126,7 @@ type upstreamResponse struct {
 // rejected by an owning service's own JSON decode with its usual "malformed
 // sync batch" message, not a bespoke error from this layer.
 func (c *Coordinator) handle(ctx context.Context, bearer string, body []byte) upstreamResponse {
-	groups, order := groupOpsByOwner(body, c.apiariesURL, c.activitiesURL, c.todosURL)
+	groups, order := groupOpsByOwner(body, c.apiariesURL, c.routes)
 	switch len(groups) {
 	case 0:
 		return c.handleSingle(ctx, bearer, c.apiariesURL, body)
@@ -203,14 +232,14 @@ type rawBatchOp struct {
 }
 
 // groupOpsByOwner splits body's `{"ops":[...]}` array by each op's
-// entity_type into one sub-batch per owning service (activityEntityType →
-// activitiesURL; todoEntityType → todosURL; everything else, including a
-// malformed/unrecognized op → apiariesURL, its long-standing default
-// owner). A body that isn't a valid `{"ops":[...]}` object, or whose ops
-// array is empty, returns (nil, nil) — the caller (handle) falls back to
-// the whole-body passthrough. order lists each group's URL exactly once, in
-// first-seen order, so callers can walk the map deterministically.
-func groupOpsByOwner(body []byte, apiariesURL, activitiesURL, todosURL string) (map[string][]byte, []string) {
+// entity_type into one sub-batch per owning service — `routes[entity_type]`
+// when known, else apiariesURL (its long-standing default owner, including
+// for a malformed/unrecognized op). A body that isn't a valid
+// `{"ops":[...]}` object, or whose ops array is empty, returns (nil, nil) —
+// the caller (handle) falls back to the whole-body passthrough. order lists
+// each group's URL exactly once, in first-seen order, so callers can walk
+// the map deterministically.
+func groupOpsByOwner(body []byte, apiariesURL string, routes map[string]string) (map[string][]byte, []string) {
 	var rb struct {
 		Ops []json.RawMessage `json:"ops"`
 	}
@@ -223,12 +252,9 @@ func groupOpsByOwner(body []byte, apiariesURL, activitiesURL, todosURL string) (
 	for _, raw := range rb.Ops {
 		var meta rawBatchOp
 		_ = json.Unmarshal(raw, &meta) // malformed op ⇒ falls through to apiariesURL; that service's own validate rejects it with field-level detail
-		ownerURL := apiariesURL
-		switch meta.EntityType {
-		case activityEntityType:
-			ownerURL = activitiesURL
-		case todoEntityType:
-			ownerURL = todosURL
+		ownerURL, ok := routes[meta.EntityType]
+		if !ok {
+			ownerURL = apiariesURL
 		}
 		if _, ok := grouped[ownerURL]; !ok {
 			order = append(order, ownerURL)

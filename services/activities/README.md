@@ -35,6 +35,17 @@ edit that doesn't touch `apiary_id` (the common case — the client's edit UI
 never exposes moving an activity to a different apiary) makes no
 cross-service call at all. List is a later EPIC-03 story (#42/#43).
 
+[#46](https://github.com/TiagoJVO/beekeepingit/issues/46) (EPIC-04 M4, D-21)
+wires the optional `journey_id` field the same way: `POST /v1/activities`
+and the sync validate/apply paths now verify a client-supplied `journey_id`
+belongs to the caller's org via the **journeys service itself**
+(`api/journeys_client.go`'s `JourneyVerifier`, calling journeys' own
+org-scoped `GET /v1/journeys/{id}`) before writing anything — closing a
+real cross-org IDOR gap where `journey_id` was previously accepted with no
+ownership check at all. `journey_id` is set once at creation and never
+changed by edit (mirrors `performed_by`'s own immutability), so only the
+create/sync-`put` path ever calls the verifier.
+
 Stamped from [`services/servicetemplate`](../servicetemplate/README.md); DB
 access via [`services/shared/dbaccess`](../shared/README.md). Its own Go
 module, linked through the repo-root `go.work`.
@@ -44,8 +55,10 @@ module, linked through the repo-root `go.work`.
 `activities.activities`: `id`, `organization_id` (NOT NULL, tenancy),
 `apiary_id` / `performed_by` / `journey_id` (cross-service **soft
 references** — no FK, per the data-ownership rule "cross-context references
-are by ID, not FK"; `journey_id` is nullable and unused until M4/#46, but
-D-21 calls out that this column belongs to #38's schema), `type` (extensible,
+are by ID, not FK"; `journey_id` is nullable, D-21 calls out that this
+column belongs to #38's schema, and [#46](https://github.com/TiagoJVO/beekeepingit/issues/46)
+wires it end-to-end via the activity-form picker — see this file's own
+"Cross-service journey ownership" section below), `type` (extensible,
 validated in Go — not a DB enum/CHECK), `occurred_at` (a real `DATE` column,
 not part of the JSONB bag, so FR-AC-5/FR-AC-6 date-range filtering doesn't
 need to unpack JSON), `attributes` (the per-type JSONB bag), and the usual
@@ -105,13 +118,15 @@ existing type, is a **code-only** change — append to `typeSchemas` in
 
 Inherits the template's env vars, plus the org-resolver's in-cluster URLs
 (same as apiaries) and, since #39, apiaries' own URL for the cross-service
-apiary-ownership check:
+apiary-ownership check — plus, since #46, journeys' own URL for the
+equivalent journey-ownership check:
 
 | Variable                     | Notes                             |
 | ---------------------------- | --------------------------------- |
 | `INTERNAL_IDENTITY_URL`      | e.g. `http://identity:8080`       |
 | `INTERNAL_ORGANIZATIONS_URL` | e.g. `http://organizations:8080`  |
 | `INTERNAL_APIARIES_URL`      | e.g. `http://apiaries:8080` (#39) |
+| `INTERNAL_JOURNEYS_URL`      | e.g. `http://journeys:8080` (#46) |
 
 ## Development
 
@@ -120,14 +135,16 @@ cd services/activities
 sqlc generate -f store/sqlc/sqlc.yaml
 go build ./...
 go test ./...   # api/... is fast, pure-Go unit tests (type-registry validation, the
-                 # ApiaryVerifier's HTTP behavior against an httptest fake — no real DB);
-                 # the top-level package needs testcontainers/Postgres (postgres:16-alpine —
-                 # no PostGIS columns here, unlike apiaries): schema tenancy check, the
-                 # validate endpoint, the create/edit/delete REST paths (including the
-                 # cross-org apiary_id rejection, #39's carry-over from #38's review, and
-                 # #40's own re-verification on edit), the sync validate/apply endpoints
-                 # (create/edit/delete, LWW, tombstone-exclusion-from-list, offline op
-                 # idempotency), and store-layer insert/read + cross-org isolation.
+                 # ApiaryVerifier's/JourneyVerifier's HTTP behavior against an httptest
+                 # fake — no real DB); the top-level package needs testcontainers/Postgres
+                 # (postgres:16-alpine — no PostGIS columns here, unlike apiaries): schema
+                 # tenancy check, the validate endpoint, the create/edit/delete REST paths
+                 # (including the cross-org apiary_id/journey_id rejection, #39's carry-over
+                 # from #38's review, #40's own re-verification on edit, and #46's journey_id
+                 # IDOR closure), the sync validate/apply endpoints (create/edit/delete, LWW,
+                 # tombstone-exclusion-from-list, offline op idempotency, ownership-call
+                 # de-duplication for both apiary_id and journey_id), and store-layer
+                 # insert/read + cross-org isolation.
 ```
 
 ## Tenancy (FR-TEN-2)
@@ -160,6 +177,32 @@ matters when `apiary_id` itself isn't changing. Covered by
 `TestActivitiesSync_Apply_CrossOrgApiaryIdIsNoOp` and
 `TestActivitiesSync_Apply_Patch_CrossOrgApiaryIdIsNoOp` (`main_test.go`),
 plus `api/apiaries_client_test.go`'s pure-unit coverage of the verifier
+itself.
+
+**Cross-service journey ownership (#46, EPIC-04 M4, D-21, CRITICAL —
+closes a real IDOR):** `journey_id` is a cross-service reference the exact
+same way `apiary_id` is (ownership rule 1) — before this story, it was
+accepted on `POST /v1/activities` and the sync paths with **zero**
+ownership verification, so any caller could attach an activity to (and
+thereby confirm the existence of) any organization's journey by
+guessing/enumerating UUIDs. `createActivity` and the sync validate/apply
+paths (`resolveJourneyOwnership`, mirroring `resolveApiaryOwnership`'s own
+de-duplicated, pre-transaction resolution) now call
+`api/journeys_client.go`'s `JourneyVerifier.BelongsToOrg` (journeys' own
+org-scoped `GET /v1/journeys/{id}`, forwarding the caller's own bearer)
+BEFORE any row is written — an unowned/foreign `journey_id` rejects the
+create outright (REST) or no-ops the whole op (sync-apply), mirroring the
+`apiary_id` convention exactly rather than silently dropping just the bad
+reference. `journey_id` is immutable after creation (this file's own data
+model section), so only create/`put` ever calls the verifier — edit/`patch`
+never touches it. Covered by
+`TestActivitiesRest_Create_JourneyIdIsStoredWhenOwned`,
+`TestActivitiesRest_Create_CrossOrgJourneyIdIsRejected`,
+`TestActivitiesSync_ValidateThenApply_JourneyIdIsStoredWhenOwned`,
+`TestActivitiesSync_Validate_RejectsCrossOrgJourneyId`,
+`TestActivitiesSync_Apply_CrossOrgJourneyIdIsNoOp` and
+`TestActivitiesSync_Apply_DedupesJourneyOwnershipCalls` (`main_test.go`),
+plus `api/journeys_client_test.go`'s pure-unit coverage of the verifier
 itself.
 
 **Tombstones (#41, FR-AC-4, FR-OF-1):** delete is a soft-delete

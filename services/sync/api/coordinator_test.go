@@ -105,7 +105,7 @@ func TestCoordinator_Handle(t *testing.T) {
 			var stub *stubApiaries
 			if tc.useUnreachableURL {
 				var err error
-				c, err = NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1")
+				c, err = NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1")
 				if err != nil {
 					t.Fatalf("NewCoordinator: %v", err)
 				}
@@ -114,7 +114,7 @@ func TestCoordinator_Handle(t *testing.T) {
 				stub.validateStatus = tc.validateStatus
 				stub.applyStatus = tc.applyStatus
 				var err error
-				c, err = NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL)
+				c, err = NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL, stub.server.URL)
 				if err != nil {
 					t.Fatalf("NewCoordinator: %v", err)
 				}
@@ -142,7 +142,7 @@ func TestCoordinator_Handle(t *testing.T) {
 func TestCoordinator_Success_ForwardsBearerAndRelaysApplyBody(t *testing.T) {
 	stub := newStubApiaries(t)
 	stub.applyBody = `{"results":[{"id":"x","op":"put","result":"applied"}]}`
-	c, err := NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL)
+	c, err := NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL, stub.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestCoordinator_Success_ForwardsBearerAndRelaysApplyBody(t *testing.T) {
 // still mapping to a 502 for the caller.
 func TestCoordinator_ValidateTransportFailure_LogsAndReturns502(t *testing.T) {
 	buf := captureDefaultLogger(t)
-	c, err := NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1")
+	c, err := NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1")
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestCoordinator_ApplyTransportFailure_LogsAndReturns502(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	c, err := NewCoordinator(server.URL, server.URL, server.URL)
+	c, err := NewCoordinator(server.URL, server.URL, server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestCoordinator_UpstreamResponseBody_IsSizeCapped(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	c, err := NewCoordinator(server.URL, server.URL, server.URL)
+	c, err := NewCoordinator(server.URL, server.URL, server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -280,33 +280,42 @@ func TestBadGateway_BuildsRFC9457ProblemJSON(t *testing.T) {
 }
 
 // TestNewCoordinator_TrimsTrailingSlash is MEDIUM #3: an operator-supplied
-// INTERNAL_APIARIES_URL/INTERNAL_ACTIVITIES_URL/INTERNAL_TODOS_URL with a
-// trailing slash must not produce a double-slash path when concatenated
-// with "/internal/sync/...".
+// INTERNAL_APIARIES_URL/INTERNAL_ACTIVITIES_URL/INTERNAL_JOURNEYS_URL/
+// INTERNAL_TODOS_URL with a trailing slash must not produce a double-slash
+// path when concatenated with "/internal/sync/...".
 func TestNewCoordinator_TrimsTrailingSlash(t *testing.T) {
-	c, err := NewCoordinator("http://apiaries.internal.svc/", "http://activities.internal.svc/", "http://todos.internal.svc/")
+	c, err := NewCoordinator("http://apiaries.internal.svc/", "http://activities.internal.svc/", "http://journeys.internal.svc/", "http://todos.internal.svc/")
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
 	if c.apiariesURL != "http://apiaries.internal.svc" {
 		t.Errorf("apiariesURL = %q, want %q (trailing slash trimmed)", c.apiariesURL, "http://apiaries.internal.svc")
 	}
-	if c.activitiesURL != "http://activities.internal.svc" {
-		t.Errorf("activitiesURL = %q, want %q (trailing slash trimmed)", c.activitiesURL, "http://activities.internal.svc")
+	if c.routes[activityEntityType] != "http://activities.internal.svc" {
+		t.Errorf("routes[activity] = %q, want %q (trailing slash trimmed)", c.routes[activityEntityType], "http://activities.internal.svc")
 	}
-	if c.todosURL != "http://todos.internal.svc" {
-		t.Errorf("todosURL = %q, want %q (trailing slash trimmed)", c.todosURL, "http://todos.internal.svc")
+	if c.routes[journeyEntityType] != "http://journeys.internal.svc" || c.routes[journeyPlanItemEntityType] != "http://journeys.internal.svc" {
+		t.Errorf("routes = %+v, want journey and journey_plan_item both routed to the trimmed journeysURL", c.routes)
+	}
+	if c.routes[todoEntityType] != "http://todos.internal.svc" {
+		t.Errorf("routes[todo] = %q, want %q (trailing slash trimmed)", c.routes[todoEntityType], "http://todos.internal.svc")
 	}
 }
 
 func TestNewCoordinator_RequiresActivitiesURL(t *testing.T) {
-	if _, err := NewCoordinator("http://apiaries.internal.svc", "", "http://todos.internal.svc"); err == nil {
+	if _, err := NewCoordinator("http://apiaries.internal.svc", "", "http://journeys.internal.svc", "http://todos.internal.svc"); err == nil {
 		t.Fatalf("NewCoordinator with an empty activitiesURL succeeded, want an error")
 	}
 }
 
+func TestNewCoordinator_RequiresJourneysURL(t *testing.T) {
+	if _, err := NewCoordinator("http://apiaries.internal.svc", "http://activities.internal.svc", "", "http://todos.internal.svc"); err == nil {
+		t.Fatalf("NewCoordinator with an empty journeysURL succeeded, want an error")
+	}
+}
+
 func TestNewCoordinator_RequiresTodosURL(t *testing.T) {
-	if _, err := NewCoordinator("http://apiaries.internal.svc", "http://activities.internal.svc", ""); err == nil {
+	if _, err := NewCoordinator("http://apiaries.internal.svc", "http://activities.internal.svc", "http://journeys.internal.svc", ""); err == nil {
 		t.Fatalf("NewCoordinator with an empty todosURL succeeded, want an error")
 	}
 }
@@ -424,7 +433,7 @@ type Op struct {
 func TestCoordinator_Handle_RoutesByEntityType(t *testing.T) {
 	apiaries := newStubOwner(t)
 	activities := newStubOwner(t)
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -452,6 +461,49 @@ func TestCoordinator_Handle_RoutesByEntityType(t *testing.T) {
 	}
 }
 
+// TestCoordinator_Handle_RoutesJourneyOpsToJourneysService is #45's routing
+// extension: BOTH "journey" and "journey_plan_item" ops must reach a THIRD
+// owning service (journeysURL), distinct from apiariesURL/activitiesURL —
+// proving the routing table generalizes past the original two-service
+// special case rather than defaulting unrecognized-but-real entity types to
+// apiariesURL.
+func TestCoordinator_Handle_RoutesJourneyOpsToJourneysService(t *testing.T) {
+	apiaries := newStubOwner(t)
+	activities := newStubOwner(t)
+	journeys := newStubOwner(t)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, journeys.server.URL, apiaries.server.URL)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+
+	body := []byte(`{"ops":[
+		{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
+		{"op":"put","entity_type":"journey","id":"journey-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
+		{"op":"put","entity_type":"journey_plan_item","id":"plan-item-1","updated_at":"2026-07-16T10:00:00Z","data":{}}
+	]}`)
+	resp := c.handle(context.Background(), "Bearer tok", body)
+	if resp.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", resp.status, resp.body)
+	}
+
+	if len(apiaries.validatedOps) != 1 || apiaries.validatedOps[0].ID != "apiary-1" {
+		t.Fatalf("apiaries validated ops = %+v, want exactly the apiary-1 op", apiaries.validatedOps)
+	}
+	if len(activities.validatedOps) != 0 {
+		t.Fatalf("activities validated ops = %+v, want none", activities.validatedOps)
+	}
+	gotIDs := map[string]bool{}
+	for _, op := range journeys.validatedOps {
+		gotIDs[op.ID] = true
+	}
+	if len(journeys.validatedOps) != 2 || !gotIDs["journey-1"] || !gotIDs["plan-item-1"] {
+		t.Fatalf("journeys validated ops = %+v, want exactly journey-1 and plan-item-1", journeys.validatedOps)
+	}
+	if !apiaries.applied("apiary-1") || !journeys.applied("journey-1") || !journeys.applied("plan-item-1") {
+		t.Fatalf("expected apiary-1, journey-1 and plan-item-1 all applied")
+	}
+}
+
 // TestCoordinator_Handle_MultiService_MergesApplyResults proves the merged
 // response actually carries BOTH services' per-op results back to the
 // client — a client watching for its own op's id in the response must see
@@ -461,7 +513,7 @@ func TestCoordinator_Handle_MultiService_MergesApplyResults(t *testing.T) {
 	apiaries.applyResults = `{"results":[{"id":"apiary-1","op":"put","result":"applied"}]}`
 	activities := newStubOwner(t)
 	activities.applyResults = `{"results":[{"id":"activity-1","op":"put","result":"applied"}]}`
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -500,7 +552,7 @@ func TestCoordinator_Handle_MultiService_OneRejectionAppliesNeither(t *testing.T
 	apiaries := newStubOwner(t)
 	activities := newStubOwner(t)
 	activities.validateStatus = http.StatusUnprocessableEntity
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -527,7 +579,7 @@ func TestCoordinator_Handle_MultiService_OneRejectionAppliesNeither(t *testing.T
 func TestCoordinator_Handle_SingleServiceBatch_NeverCallsTheOtherService(t *testing.T) {
 	apiaries := newStubOwner(t)
 	activities := newStubOwner(t)
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -555,7 +607,7 @@ func TestCoordinator_Handle_MultiService_PartialApplyFailureHealsOnRetry(t *test
 	activities := newStubOwner(t)
 	// Group B's apply fails transiently on the first attempt.
 	activities.setApplyStatus(http.StatusInternalServerError)
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -611,7 +663,10 @@ func TestGroupOpsByOwner_RoutesTodoEntityTypeToTodos(t *testing.T) {
 		{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
 		{"op":"put","entity_type":"todo","id":"todo-1","updated_at":"2026-07-16T10:00:00Z","data":{}}
 	]}`)
-	groups, order := groupOpsByOwner(body, "http://apiaries.internal.svc", "http://activities.internal.svc", "http://todos.internal.svc")
+	groups, order := groupOpsByOwner(body, "http://apiaries.internal.svc", map[string]string{
+		activityEntityType: "http://activities.internal.svc",
+		todoEntityType:     "http://todos.internal.svc",
+	})
 
 	if len(order) != 2 {
 		t.Fatalf("groups = %v, want exactly 2 (apiaries + todos)", order)
@@ -644,7 +699,7 @@ func TestCoordinator_MultiGroup_ApiaryPlusTodo(t *testing.T) {
 	apiaries.applyResults = `{"results":[{"id":"apiary-1","op":"put","result":"applied"}]}`
 	todos := newStubOwner(t)
 	todos.applyResults = `{"results":[{"id":"todo-1","op":"put","result":"applied"}]}`
-	c, err := NewCoordinator(apiaries.server.URL, apiaries.server.URL, todos.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, apiaries.server.URL, apiaries.server.URL, todos.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -696,7 +751,7 @@ func TestCoordinator_Handle_TodoOnlyBatch_NeverCallsActivities(t *testing.T) {
 	apiaries := newStubOwner(t)
 	activities := newStubOwner(t)
 	todos := newStubOwner(t)
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, todos.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, todos.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}

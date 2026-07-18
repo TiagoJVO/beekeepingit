@@ -27,6 +27,25 @@ const apiaryCounterEntityType = 'apiary_counter';
 const activitiesTable = 'activities';
 const activityEntityType = 'activity';
 
+/// Local table + entity type for `journeys.journeys` (#45, EPIC-04 M4,
+/// FR-JO-4, D-21). One row per journey: name, main activity type, and
+/// lifecycle status (open|closed, D-21's close action).
+const journeysTable = 'journeys';
+const journeyEntityType = 'journey';
+
+/// Local table + entity type for `journeys.journey_plan_items` (#45,
+/// FR-JO-4): the "apiaries to visit" plan, one row per (journey, apiary)
+/// pair — a separate synced table/entity type from [journeysTable], the
+/// same split [apiaryCountersTable]/[apiaryCounterEntityType] already
+/// establishes for a parent-row-plus-child-rows shape owned by one service.
+/// Unlike apiary_counters, a plan item's local row `id` IS its stable
+/// server identity too (mirrors [activitiesTable]'s convention) — so
+/// removing an apiary from a journey's plan is a plain local DELETE, no
+/// identity-enrichment needed before upload (powersync_connector.dart's
+/// `_toOp` doc comment).
+const journeyPlanItemsTable = 'journey_plan_items';
+const journeyPlanItemEntityType = 'journey_plan_item';
+
 /// Local table + entity type for `todos.todos` (#50, FR-TD-1, FR-TEN-2). The
 /// server-owning service is `services/todos`, routed independently of
 /// activities/apiaries by `services/sync/api/coordinator.go`'s
@@ -153,6 +172,28 @@ const appSchema = Schema([
     Column.text('attributes'),
     Column.text('created_at'),
     Column.text('updated_at'),
+  ]),
+  // journeys (#45, FR-JO-4, D-21): name + one main activity type + lifecycle
+  // status, matching the owning service's shape
+  // (services/journeys/store/migrations/00001_create_journeys.sql).
+  // `status` mirrors `type`'s extensible-string convention (open|closed
+  // known today).
+  Table(journeysTable, [
+    Column.text('organization_id'),
+    Column.text('name'),
+    Column.text('main_activity_type'),
+    Column.text('status'),
+    Column.text('created_at'),
+    Column.text('updated_at'),
+  ]),
+  // journey_plan_items (#45, FR-JO-4): the "apiaries to visit" plan, one row
+  // per (journey, apiary) pair — a separate table/entity type from
+  // [journeysTable] (this table's own doc comment above explains why).
+  Table(journeyPlanItemsTable, [
+    Column.text('organization_id'),
+    Column.text('journey_id'),
+    Column.text('apiary_id'),
+    Column.text('created_at'),
   ]),
   // todos (#50, FR-TD-1, FR-TEN-2): one row per todo, matching the owning
   // service's shape (services/todos/store/migrations/00001_create_todos.sql).

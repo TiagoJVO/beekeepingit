@@ -66,6 +66,44 @@ void main() {
       expect(out['type'], 'inspection');
     });
 
+    test(
+      'journey_id (#46, D-21) passes through untouched, alongside the '
+      'attributes decode — no special handling needed for the new column',
+      () {
+        final data = <String, dynamic>{
+          'apiary_id': 'apiary-1',
+          'journey_id': 'journey-1',
+          'type': 'harvest',
+          'occurred_at': '2026-07-14',
+          'attributes': jsonEncode({'honey_supers': 4}),
+          'updated_at': '2026-07-14T10:00:00Z',
+        };
+
+        final out = decodeActivityAttributes(activitiesTable, data)!;
+
+        expect(out['journey_id'], 'journey-1');
+        expect(out['attributes'], {'honey_supers': 4});
+      },
+    );
+
+    test(
+      'a null journey_id (no journey attached) also passes through untouched',
+      () {
+        final data = <String, dynamic>{
+          'apiary_id': 'apiary-1',
+          'journey_id': null,
+          'type': 'harvest',
+          'occurred_at': '2026-07-14',
+          'attributes': jsonEncode({'honey_supers': 4}),
+          'updated_at': '2026-07-14T10:00:00Z',
+        };
+
+        final out = decodeActivityAttributes(activitiesTable, data)!;
+
+        expect(out['journey_id'], isNull);
+      },
+    );
+
     test('a patch that changed attributes (opData carries only the changed '
         'columns) also decodes it', () {
       final data = <String, dynamic>{
@@ -547,6 +585,12 @@ class _FakeRejectedStore implements LocalStoreEngine {
     String sql, [
     List<Object?> args = const [],
   ]) async => null;
+
+  @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
 
   @override
   Stream<List<Map<String, Object?>>> watch(

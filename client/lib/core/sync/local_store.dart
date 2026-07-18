@@ -28,6 +28,19 @@ abstract interface class LocalStoreEngine {
     List<Object?> args = const [],
   ]);
 
+  /// A one-shot query returning every matching row (empty list if none) —
+  /// [getOptional]'s multi-row counterpart. Added for #45 (journeys):
+  /// reconciling a journey's plan-items diff on edit needs the CURRENT full
+  /// row set once, not a live subscription ([watch]) or a single row
+  /// ([getOptional]) — the same kind of genuine new need [clear]'s own doc
+  /// comment describes ("the abstraction should not need to grow a new
+  /// method the next time a caller wants X"), now realized for a one-shot
+  /// multi-row read.
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]);
+
   /// Executes a local write (INSERT/UPDATE/DELETE). Writes are optimistic —
   /// applied to the local store immediately and queued for upload by the
   /// engine's own sync lifecycle (sync.md §5.1); callers never talk to the

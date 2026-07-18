@@ -58,6 +58,14 @@ edges:
     from: { namespaceSelector: kube-system }
     to: { app.kubernetes.io/name: activities }
     port: 8080
+  # #45: the /v1/journeys REST route (charts/gateway/values.yaml `routes`),
+  # same rationale as gateway-to-activities above — the field PWA writes
+  # journeys via sync, not this route, but the route exists (write.go's
+  # online-only/direct-caller surface) so this ingress allow must too.
+  - name: gateway-to-journeys
+    from: { namespaceSelector: kube-system }
+    to: { app.kubernetes.io/name: journeys }
+    port: 8080
   - name: gateway-to-organizations
     from: { namespaceSelector: kube-system }
     to: { app.kubernetes.io/name: organizations }
@@ -131,9 +139,44 @@ edges:
     from: { app.kubernetes.io/name: activities }
     to: { app.kubernetes.io/name: apiaries }
     port: 8080
+  # #46: activities verifies a client-supplied journey_id belongs to the
+  # caller's org by dialing journeys' own GET /v1/journeys/{id}
+  # (api/journeys_client.go's JourneyVerifier) — same rationale as
+  # activities-to-apiaries above. Missing this edge is exactly the class of
+  # bug #45 already hit once (a service with a missing NetworkPolicy edge
+  # crash-loops/hangs in the real cluster even though everything looks fine
+  # on paper) — verified live on the local dev cluster, not just reviewed
+  # statically.
+  - name: activities-to-journeys
+    from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: journeys }
+    port: 8080
   - name: sync-to-activities
     from: { app.kubernetes.io/name: sync }
     to: { app.kubernetes.io/name: activities }
+    port: 8080
+  # --- journeys east-west (#45, services/values.yaml journeys.env
+  # INTERNAL_*_URL + sync.env INTERNAL_JOURNEYS_URL) --- same rationale as
+  # activities' own block above: journeys resolves the caller's org via
+  # identity+organizations (same org-resolver wiring), and verifies a
+  # client-supplied apiary_id belongs to the caller's org by dialing
+  # apiaries' own GET /v1/apiaries/{id} (api/apiaries_client.go). sync's
+  # write-back coordinator calls journeys' /internal/sync/validate+apply.
+  - name: journeys-to-identity
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: journeys-to-organizations
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  - name: journeys-to-apiaries
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: apiaries }
+    port: 8080
+  - name: sync-to-journeys
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: journeys }
     port: 8080
 
   # --- todos east-west (#50, services/values.yaml todos.env INTERNAL_*_URL +
@@ -206,6 +249,13 @@ edges:
     to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
+  # #45: journeys' authn.NewMiddleware fetches OIDC discovery at startup,
+  # same as every other domain service.
+  - name: journeys-to-authentik-server
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
   # #50: todos' authn.NewMiddleware fetches OIDC discovery at startup, same
   # as every other domain service.
   - name: todos-to-authentik-server
@@ -256,6 +306,17 @@ edges:
   # never added to this allowlist. Mirrors apiaries-to-postgres above.
   - name: activities-to-postgres
     from: { app.kubernetes.io/name: activities }
+    to: { cnpgCluster: true }
+    port: 5432
+  # #45 (mirrors activities-to-postgres's THE CRASH FIX above): journeys'
+  # dbaccess.Migrate + runtime pool connect to postgres-rw:5432. Without this
+  # edge the default-deny baseline blocks journeys' egress to postgres, so
+  # its startup migration `dial` is refused and the pod CrashLoopBackOffs
+  # forever while postgres is healthy — exactly the incident documented
+  # above for activities' own first in-cluster deploy, repeated here for
+  # journeys' first in-cluster deploy (this PR shipped no image before now).
+  - name: journeys-to-postgres
+    from: { app.kubernetes.io/name: journeys }
     to: { cnpgCluster: true }
     port: 5432
   # #50 (THE CRASH FIX, again): todos' dbaccess.Migrate + runtime pool connect
@@ -339,6 +400,13 @@ edges:
   # other Go service (services/values.yaml otelEndpoint).
   - name: activities-to-otel-collector
     from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+  # #45: journeys exports traces/metrics/logs to the collector like every
+  # other Go service (services/values.yaml otelEndpoint).
+  - name: journeys-to-otel-collector
+    from: { app.kubernetes.io/name: journeys }
     to: { app.kubernetes.io/name: otel-collector }
     port: 4317
     egressOnly: true

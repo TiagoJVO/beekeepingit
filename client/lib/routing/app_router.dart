@@ -12,6 +12,8 @@ import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/journeys/journey_form_screen.dart';
+import '../features/journeys/journeys_list_screen.dart';
 import '../features/members/members_screen.dart';
 import '../features/organization/organization_repository.dart';
 import '../features/organization/organization_screen.dart';
@@ -234,13 +236,30 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             navigatorKey: _journeysBranchKey,
             routes: [
+              // The main Journeys tab (#45, FR-JO-4): every journey in the
+              // org, unfiltered (date-range/type filtering is #47). Replaces
+              // the M4 ComingSoonScreen placeholder.
               GoRoute(
                 path: '/journeys',
                 name: 'journeys',
-                builder: (context, state) => ComingSoonScreen(
-                  icon: Icons.route_outlined,
-                  title: AppLocalizations.of(context).journeysComingSoon,
-                ),
+                builder: (context, state) => const JourneysListScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'new',
+                    name: 'journeyNew',
+                    builder: (context, state) => const JourneyFormScreen(),
+                  ),
+                  // Tapping a list row opens the edit form directly (no
+                  // dedicated detail screen yet — that's #48), mirroring
+                  // add_activity_screen.dart's own pre-#310 precedent.
+                  GoRoute(
+                    path: ':id/edit',
+                    name: 'journeyEdit',
+                    builder: (context, state) => JourneyFormScreen(
+                      journeyId: state.pathParameters['id']!,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

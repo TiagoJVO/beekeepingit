@@ -1,4 +1,4 @@
-<!-- Generated: 2026-07-14 | Files scanned: 95 | Token estimate: ~950 -->
+<!-- Generated: 2026-07-18 | Files scanned: 95 | Token estimate: ~980 -->
 
 # Dependencies Codemap
 
@@ -21,7 +21,7 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 ## Inter-service dependency graph (internal HTTP)
 
 ```text
-client ──JWT──► identity, organizations, apiaries, todos, sync   (all via Traefik /v1/*)
+client ──JWT──► identity, organizations, apiaries, journeys, todos, sync   (all via Traefik /v1/*)
 organizations ─► identity            (INTERNAL_IDENTITY_URL, user resolve)
 apiaries       ─► identity, organizations   (org-resolver: sub→user, →membership)
 activities     ─► identity, organizations   (org-resolver, same wiring as apiaries)
@@ -29,6 +29,14 @@ activities     ─► apiaries            (INTERNAL_APIARIES_URL, #39: verify a 
                                         apiary_id belongs to the caller's org, GET /v1/apiaries/{id} —
                                         api/apiaries_client.go; activities has no DB access to
                                         apiaries' schema, ownership rule 1)
+activities     ─► journeys            (INTERNAL_JOURNEYS_URL, #46: verify a client-supplied
+                                        journey_id belongs to the caller's org, GET /v1/journeys/{id} —
+                                        api/journeys_client.go, same ApiaryVerifier pattern;
+                                        closes a cross-org IDOR, journey_id was previously
+                                        accepted with no ownership check)
+journeys       ─► identity, organizations   (org-resolver, same wiring as apiaries)
+journeys       ─► apiaries            (INTERNAL_APIARIES_URL, #45: same ApiaryVerifier pattern
+                                        as activities', for every apiary_id in a journey's plan)
 todos          ─► identity, organizations   (org-resolver, same wiring as apiaries)
 todos          ─► organizations       (INTERNAL_ORGANIZATIONS_URL, #50: verify a client-supplied
                                         assignee_id has an ACTIVE membership in the caller's org,
@@ -39,9 +47,11 @@ todos          ─► organizations       (INTERNAL_ORGANIZATIONS_URL, #50: veri
 sync           ─► identity, organizations   (org-resolver, on /v1)
 sync           ─► apiaries            (INTERNAL_APIARIES_URL: /internal/sync/validate+apply)
 sync           ─► activities          (INTERNAL_ACTIVITIES_URL, #39: /internal/sync/validate+apply,
-                                        routed by entity_type via Coordinator.groupOpsByOwner)
+                                        routed by entity_type via Coordinator's routes map)
+sync           ─► journeys            (INTERNAL_JOURNEYS_URL, #45: /internal/sync/validate+apply,
+                                        `journey`/`journey_plan_item` entity types)
 sync           ─► todos               (INTERNAL_TODOS_URL, #50: /internal/sync/validate+apply,
-                                        routed by entity_type via Coordinator.groupOpsByOwner)
+                                        routed by entity_type via Coordinator's routes map)
 PowerSync      ─► sync                (validates tokens against /internal/sync/jwks.json)
 ```
 

@@ -21,6 +21,7 @@ authHost: auth.beekeepingit.local
 routes:
   - { path: /v1/apiaries, service: apiaries, port: 8080 }
   - { path: /v1/activities, service: activities, port: 8080 }
+  - { path: /v1/journeys, service: journeys, port: 8080 }
   - { path: /v1/organizations, service: organizations, port: 8080 }
   - { path: /v1/profile, service: identity, port: 8080 }
   - { path: /v1/sync, service: sync, port: 8080 }

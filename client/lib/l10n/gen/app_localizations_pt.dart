@@ -741,4 +741,248 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteActivityCancelAction => 'Cancelar';
+
+  @override
+  String get addJourney => 'Nova jornada';
+
+  @override
+  String get newJourneyTitle => 'Nova jornada';
+
+  @override
+  String get editJourneyTitle => 'Editar jornada';
+
+  @override
+  String get journeysEmpty =>
+      'Ainda não há jornadas. Toque em “Nova jornada” para criar uma.';
+
+  @override
+  String journeysError(String error) {
+    return 'Não foi possível carregar as jornadas: $error';
+  }
+
+  @override
+  String get journeysFilterNoResults =>
+      'Nenhuma jornada corresponde aos filtros.';
+
+  @override
+  String get journeyFilterTypeLabel => 'Tipo';
+
+  @override
+  String get journeyFilterTypeAll => 'Todos os tipos';
+
+  @override
+  String get journeyFilterDateRangeLabel => 'Intervalo de datas';
+
+  @override
+  String get journeyFilterDateRangeUnset => 'Qualquer data';
+
+  @override
+  String journeyFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get journeyFilterClearAction => 'Limpar filtros';
+
+  @override
+  String journeyProgressBadge(int done, int planned) {
+    return '$done/$planned apiários visitados';
+  }
+
+  @override
+  String get journeyNameLabel => 'Nome';
+
+  @override
+  String get journeyNameRequired => 'O nome é obrigatório';
+
+  @override
+  String get journeyMainActivityTypeLabel => 'Atividade principal';
+
+  @override
+  String get journeyApiariesLabel => 'Apiários a visitar';
+
+  @override
+  String get journeyApiariesRequired => 'Selecione pelo menos um apiário';
+
+  @override
+  String get journeyApiariesNoneAvailable =>
+      'Ainda não há apiários — adicione um no separador Apiários primeiro.';
+
+  @override
+  String journeyApiariesSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiários selecionados',
+      one: '1 apiário selecionado',
+      zero: 'Nenhum apiário selecionado',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String journeyLoadError(String error) {
+    return 'Não foi possível carregar a jornada: $error';
+  }
+
+  @override
+  String get journeySaveSuccess => 'Jornada guardada';
+
+  @override
+  String journeySaveError(String error) {
+    return 'Não foi possível guardar a jornada: $error';
+  }
+
+  @override
+  String get closeJourneyAction => 'Fechar jornada';
+
+  @override
+  String get journeyCloseSuccess => 'Jornada fechada';
+
+  @override
+  String journeyCloseError(String error) {
+    return 'Não foi possível fechar a jornada: $error';
+  }
+
+  @override
+  String get journeyStatusOpenLabel => 'Aberta';
+
+  @override
+  String get journeyStatusClosedLabel => 'Fechada';
+
+  @override
+  String journeyStatusSemanticLabel(String label) {
+    return 'Estado: $label';
+  }
+
+  @override
+  String get deleteJourney => 'Eliminar jornada';
+
+  @override
+  String get journeyDeleteSuccess => 'Jornada eliminada';
+
+  @override
+  String journeyDeleteError(String error) {
+    return 'Não foi possível eliminar a jornada: $error';
+  }
+
+  @override
+  String get deleteJourneyConfirmTitle => 'Eliminar jornada?';
+
+  @override
+  String get deleteJourneyConfirmMessage =>
+      'Isto elimina permanentemente esta jornada. Esta ação não pode ser desfeita.';
+
+  @override
+  String get deleteJourneyConfirmAction => 'Eliminar';
+
+  @override
+  String get deleteJourneyCancelAction => 'Cancelar';
+
+  @override
+  String get journeyAttachmentLabel => 'Jornada';
+
+  @override
+  String get journeyAttachmentNone => 'Nenhuma jornada associada';
+
+  @override
+  String get journeyAttachmentAutoSelectedHint =>
+      'Selecionada automaticamente — corresponde a este apiário e tipo de atividade';
+
+  @override
+  String get journeyAttachmentChangeAction => 'Alterar';
+
+  @override
+  String get journeyAttachmentRemoveAction => 'Remover';
+
+  @override
+  String get journeyPickerTitle => 'Escolher uma jornada';
+
+  @override
+  String journeyPickerError(String error) {
+    return 'Não foi possível carregar as jornadas: $error';
+  }
+
+  @override
+  String get journeyPickerNoneOption => 'Nenhuma jornada';
+
+  @override
+  String get journeyPickerNoOpenMatches =>
+      'Ainda não há jornadas abertas correspondentes a este apiário e tipo de atividade.';
+
+  @override
+  String get journeyPickerShowHiddenToggle => 'Mostrar jornadas ocultas';
+
+  @override
+  String journeyPickerClosedOptionSemanticLabel(String name) {
+    return '$name, jornada fechada';
+  }
+
+  @override
+  String get journeyPickerCreateNewAction => 'Criar nova jornada';
+
+  @override
+  String get journeyQuickCreateTitle => 'Nova jornada';
+
+  @override
+  String get journeyQuickCreateCancelAction => 'Cancelar';
+
+  @override
+  String get closedJourneyConfirmTitle => 'Esta jornada está fechada';
+
+  @override
+  String closedJourneyConfirmMessage(String journeyName) {
+    return '\"$journeyName\" está fechada. Adicionar esta atividade mesmo assim?';
+  }
+
+  @override
+  String get closedJourneyConfirmCancelAction => 'Cancelar';
+
+  @override
+  String get closedJourneyConfirmAddAction => 'Adicionar mesmo assim';
+
+  @override
+  String get journeyStatsSectionTitle => 'Estatísticas da jornada';
+
+  @override
+  String journeyStatsError(String error) {
+    return 'Não foi possível carregar as estatísticas da jornada: $error';
+  }
+
+  @override
+  String get journeyStatsApiariesVisitedLabel => 'Apiários visitados';
+
+  @override
+  String journeyStatsApiariesVisitedValue(int done, int planned) {
+    return '$done/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesHarvestedLabel => 'Colmeias trabalhadas';
+
+  @override
+  String get journeyStatsHoneyCollectedLabel => 'Mel colhido';
+
+  @override
+  String journeyStatsHoneyCollectedValue(String kg) {
+    return '$kg kg';
+  }
+
+  @override
+  String get journeyStatsAverageSupersLabel => 'Média alças/colmeia';
+
+  @override
+  String get journeyStatsAverageSupersNoData => 'Ainda sem dados';
+
+  @override
+  String journeyStatsMissingLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Faltam $count apiários',
+      one: 'Falta 1 apiário',
+      zero: 'Todos os apiários planeados foram visitados',
+    );
+    return '$_temp0';
+  }
 }

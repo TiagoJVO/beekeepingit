@@ -1,4 +1,4 @@
-<!-- Generated: 2026-07-14 | Files scanned: 113 | Token estimate: ~1000 -->
+<!-- Generated: 2026-07-18 | Files scanned: 120 | Token estimate: ~1070 -->
 
 # Frontend Codemap
 
@@ -18,13 +18,16 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
 /account                   AccountScreen          features/account   (FR-AU-1)
 /sync-needs-fix            SyncNeedsFixScreen      features/sync      (D-12 dead-letter)
 StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
-  ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ only live tab (M2)
+  ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ live (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
   │       ├ edit                        ApiaryFormScreen
   │       ├ activities                  ApiaryActivitiesScreen features/apiaries (#42; full
   │       │                             per-apiary list — non-shrink-wrapped, virtualized)
-  │       ├ activities/new              AddActivityScreen  features/activities (#39; add path)
+  │       ├ activities/new              AddActivityScreen  features/activities (#39; add path;
+  │       │                             #46 adds the journey-attachment picker — auto-select/
+  │       │                             deselect/switch/inline-create, features/journeys/
+  │       │                             journey_picker.dart + journey_quick_create_sheet.dart)
   │       ├ activities/:activityId      ActivityDetailScreen features/activities (#310; read-only
   │       │   └ edit                    view — type/date/attrs/performer; Edit+Delete)
   │       │                             AddActivityScreen (#40/#41; edit + delete, isEdit)
@@ -34,9 +37,18 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │                                     the activities route above; a row → activity detail)
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
   │                        activity list, same filters + apiary label per row)
-  ├ /journeys     ─┐
-  ├ /todos         ├ ComingSoonScreen (placeholders, M4–M8)
-  └ /assistant    ─┘
+  ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45/#47; org-wide
+  │   │                    list — date-range/activity-type filters (combinable), plan-vs-done
+  │   │                    progress badge per row, tap row → edit; #49 adds full statistics,
+  │   │                    #48 adds a dedicated detail screen)
+  │   ├ new                JourneyFormScreen      features/journeys (#45; create)
+  │   └ :id/edit            JourneyFormScreen     features/journeys (#45; edit/close/delete,
+  │                        isEdit — no dedicated detail screen yet, that's #48; #49 adds
+  │                        JourneyStatsSection, features/journeys/journey_stats_section.dart —
+  │                        apiaries visited, hives harvested, honey collected, média
+  │                        alças/colmeia, still not routed on its own, embeddable by #48)
+  ├ /todos         ─┐
+  └ /assistant     ─┘ ComingSoonScreen (placeholders, M5/M8)
 ```
 
 ## Layer flow
@@ -54,23 +66,27 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 
 ## State management (Riverpod providers)
 
-| Provider                                   | Where                                | Yields                                                                                |
-| ------------------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `authControllerProvider`                   | core/auth/auth_controller            | auth state, access token (OIDC)                                                       |
-| `isAuthenticatedProvider`                  | core/auth                            | bool (gates router)                                                                   |
-| `profileProvider` / `organizationProvider` | features/profile, /organization      | onboarding gates                                                                      |
-| `powerSyncProvider`                        | core/sync/powersync_service          | `PowerSyncSession` (db+connector+gate)                                                |
-| `localStoreProvider`                       | core/sync/powersync_service          | `LocalStoreEngine`                                                                    |
-| `apiariesRepositoryProvider`               | features/apiaries                    | `ApiariesRepository`                                                                  |
-| `apiariesStreamProvider`                   | features/apiaries                    | live `List<Apiary>` from SQLite                                                       |
-| `apiaryCountersProvider` (family)          | features/apiaries                    | live counters per apiary (#256)                                                       |
-| `activitiesRepositoryProvider`             | features/activities                  | `ActivitiesRepository`                                                                |
-| `activitiesByApiaryProvider` (family)      | features/activities                  | live activities for one apiary (#42)                                                  |
-| `activitiesStreamProvider`                 | features/activities                  | live org-wide activities (#43, org-scoped incl. defense-in-depth filter)              |
-| `activitiesViewModelProvider` (family)     | features/activities/activity_filters | filtered list + empty-vs-no-results state (#42/#43)                                   |
-| `todosRepositoryProvider`                  | features/todos                       | `TodosRepository` (#50; no screen wired to it yet — /todos is still ComingSoonScreen) |
-| `todoByIdProvider` (family)                | features/todos                       | live single todo by id (#50)                                                          |
-| `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                                   |
+| Provider                                   | Where                                | Yields                                                                                                                                                                                               |
+| ------------------------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authControllerProvider`                   | core/auth/auth_controller            | auth state, access token (OIDC)                                                                                                                                                                      |
+| `isAuthenticatedProvider`                  | core/auth                            | bool (gates router)                                                                                                                                                                                  |
+| `profileProvider` / `organizationProvider` | features/profile, /organization      | onboarding gates                                                                                                                                                                                     |
+| `powerSyncProvider`                        | core/sync/powersync_service          | `PowerSyncSession` (db+connector+gate)                                                                                                                                                               |
+| `localStoreProvider`                       | core/sync/powersync_service          | `LocalStoreEngine`                                                                                                                                                                                   |
+| `apiariesRepositoryProvider`               | features/apiaries                    | `ApiariesRepository`                                                                                                                                                                                 |
+| `apiariesStreamProvider`                   | features/apiaries                    | live `List<Apiary>` from SQLite                                                                                                                                                                      |
+| `apiaryCountersProvider` (family)          | features/apiaries                    | live counters per apiary (#256)                                                                                                                                                                      |
+| `activitiesRepositoryProvider`             | features/activities                  | `ActivitiesRepository`                                                                                                                                                                               |
+| `activitiesByApiaryProvider` (family)      | features/activities                  | live activities for one apiary (#42)                                                                                                                                                                 |
+| `activitiesStreamProvider`                 | features/activities                  | live org-wide activities (#43, org-scoped incl. defense-in-depth filter)                                                                                                                             |
+| `activitiesViewModelProvider` (family)     | features/activities/activity_filters | filtered list + empty-vs-no-results state (#42/#43)                                                                                                                                                  |
+| `journeysRepositoryProvider`               | features/journeys                    | `JourneysRepository` (#45)                                                                                                                                                                           |
+| `journeysStreamProvider`                   | features/journeys                    | live org-wide journeys, unfiltered (#45)                                                                                                                                                             |
+| `journeyMatchesProvider` (family)          | features/journeys/journey_picker     | live journeys matching one (apiary, activity type) pair (#46, D-21)                                                                                                                                  |
+| `journeyStatsProvider` (family)            | features/journeys                    | live `JourneyStats` per journey id — apiaries visited/planned, hives harvested, honey collected, média alças/colmeia (#49, FR-JO-1, D-2, D-21, stored `journey_id` link only, never a live re-match) |
+| `todosRepositoryProvider`                  | features/todos                       | `TodosRepository` (#50; no screen wired to it yet — /todos is still ComingSoonScreen)                                                                                                                |
+| `todoByIdProvider` (family)                | features/todos                       | live single todo by id (#50)                                                                                                                                                                         |
+| `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                                                                                                                                                  |
 
 ## Sync flow (client) — core/sync/
 
@@ -89,6 +105,9 @@ SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reco
 
 `apiaries` (name, notes, place_label, location_lon/lat REAL, org_id, timestamps) ·
 `apiary_counters` (apiary_id, counter_type, value) ·
+`journeys` (name, main_activity_type, status, org_id, timestamps) ·
+`journey_plan_items` (journey_id, apiary_id, org_id, created_at) — #45, two tables/entity
+types mirroring apiaries/apiary_counters' own parent+child split ·
 `todos` (title, description, due_date, priority, status, completed_at, assignee_id, org_id,
 timestamps — #50, plain scalar columns, no JSON-encoded column needed unlike `activities`) ·
 `sync_rejected_ops` (**local-only** dead-letter).

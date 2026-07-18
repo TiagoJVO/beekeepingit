@@ -459,7 +459,7 @@ jobs:
           kubectl -n kube-system logs deploy/traefik --tail=150 || true
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
-          for d in identity organizations apiaries activities todos sync pwa beekeepingit-powersync; do
+          for d in identity organizations apiaries activities journeys todos sync pwa beekeepingit-powersync; do
             echo "=== previous logs: $d ==="
             kubectl -n beekeepingit-dev logs "deploy/$d" --previous --tail=30 || true
           done

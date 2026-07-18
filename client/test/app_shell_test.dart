@@ -5,6 +5,7 @@ import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
@@ -87,6 +88,12 @@ Widget _buildShellApp({
       // (never-resolving here) activitiesRepositoryProvider chain.
       activitiesStreamProvider.overrideWith(
         (ref) => Stream.value(const <Activity>[]),
+      ),
+      // The main Journeys tab (#45) similarly now renders real content in
+      // place of the old ComingSoonScreen placeholder — same rationale as
+      // the activities override above.
+      journeysStreamProvider.overrideWith(
+        (ref) => Stream.value(const <Journey>[]),
       ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
@@ -181,10 +188,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
 
-      // Switch away to another tab and back.
+      // Switch away to another tab and back. The Journeys tab (#45) now
+      // renders real content — with the overridden empty journeys stream
+      // (see _buildShellApp), that's its own empty state, not the old
+      // ComingSoonScreen placeholder text.
       await tester.tap(find.byKey(const Key('shell-tab-journeys')));
       await tester.pumpAndSettle();
-      expect(find.text('Journeys — coming soon'), findsOneWidget);
+      expect(
+        find.text('No journeys yet. Tap “New journey” to create one.'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
       await tester.pumpAndSettle();
@@ -234,12 +247,17 @@ void main() {
   );
 
   testWidgets(
-    'tabs without real content yet have no FAB (Activities/Journeys/Todos/Assistant)',
+    'tabs without their own quick-add action have no FAB (Activities/Todos/Assistant)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
-      for (final route in ['activities', 'journeys', 'todos', 'assistant']) {
+      // Activities has no FAB (its create entry point lives on the apiary
+      // detail page, since an activity always needs an apiary context
+      // first); Todos/Assistant have no real screens yet. Journeys (#45) DOES
+      // have its own "New journey" FAB — same rationale as Apiaries — so it's
+      // covered by its own test below, not this one.
+      for (final route in ['activities', 'todos', 'assistant']) {
         await tester.tap(find.byKey(Key('shell-tab-$route')));
         await tester.pumpAndSettle();
         expect(
@@ -250,6 +268,18 @@ void main() {
       }
     },
   );
+
+  testWidgets('the Journeys tab shows its own "New journey" FAB (#45)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildShellApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('shell-tab-journeys')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+  });
 
   testWidgets(
     'the header has no back button at each tab root, but shows one after pushing into a stack',
@@ -296,14 +326,13 @@ void main() {
     expect(find.byKey(const Key('account-name-field')), findsOneWidget);
   });
 
-  testWidgets('the remaining 3 placeholder tabs render without error '
-      '(Activities is real content since #43 — see the dedicated switching-tabs '
-      'test above)', (tester) async {
+  testWidgets('the remaining 2 placeholder tabs render without error '
+      '(Activities and Journeys are real content since #43/#45 — see the '
+      'dedicated switching-tabs test above)', (tester) async {
     await tester.pumpWidget(_buildShellApp());
     await tester.pumpAndSettle();
 
     const expected = {
-      'journeys': 'Journeys — coming soon',
       'todos': 'Todos — coming soon',
       'assistant': 'Assistant — coming soon',
     };

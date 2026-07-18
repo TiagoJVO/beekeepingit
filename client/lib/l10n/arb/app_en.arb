@@ -993,5 +993,350 @@
   "deleteActivityCancelAction": "Cancel",
   "@deleteActivityCancelAction": {
     "description": "Cancel action in the delete-activity confirmation dialog (#41 AC: cancel is a no-op)"
+  },
+  "addJourney": "New journey",
+  "@addJourney": {
+    "description": "Floating action button to create a journey (#45, FR-JO-4)"
+  },
+  "newJourneyTitle": "New journey",
+  "@newJourneyTitle": {
+    "description": "Create form app bar title (#45)"
+  },
+  "editJourneyTitle": "Edit journey",
+  "@editJourneyTitle": {
+    "description": "Edit form app bar title (#45)"
+  },
+  "journeysEmpty": "No journeys yet. Tap “New journey” to create one.",
+  "@journeysEmpty": {
+    "description": "Empty state on the main Journeys tab when the organization has no journeys at all yet (#45, FR-JO-4)"
+  },
+  "journeysError": "Could not load journeys: {error}",
+  "@journeysError": {
+    "description": "Error state on the Journeys tab (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeysFilterNoResults": "No journeys match your filters.",
+  "@journeysFilterNoResults": {
+    "description": "Shown instead of the plain empty state when date-range/activity-type filters are active but match nothing (#47 AC: combined filters + empty/no-results state)"
+  },
+  "journeyFilterTypeLabel": "Type",
+  "@journeyFilterTypeLabel": {
+    "description": "Field label for the Journeys tab's activity-type filter dropdown (#47, FR-JO-2)"
+  },
+  "journeyFilterTypeAll": "All types",
+  "@journeyFilterTypeAll": {
+    "description": "The Journeys tab's activity-type filter's cleared/default option — no type filter applied (#47)"
+  },
+  "journeyFilterDateRangeLabel": "Date range",
+  "@journeyFilterDateRangeLabel": {
+    "description": "Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)"
+  },
+  "journeyFilterDateRangeUnset": "Any date",
+  "@journeyFilterDateRangeUnset": {
+    "description": "The Journeys tab's date-range filter's cleared/default state — no date filter applied (#47)"
+  },
+  "journeyFilterDateRangeValue": "{start} – {end}",
+  "@journeyFilterDateRangeValue": {
+    "description": "The Journeys tab's selected date range, both bounds already locale-formatted by the caller (#47)",
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyFilterClearAction": "Clear filters",
+  "@journeyFilterClearAction": {
+    "description": "Button that resets both the Journeys tab's type and date-range filters at once (#47)"
+  },
+  "journeyProgressBadge": "{done}/{planned} apiaries visited",
+  "@journeyProgressBadge": {
+    "description": "Per-row plan-vs-done progress badge on the Journeys tab (#47, FR-JO-2 — 'feitos/planeados'): how many of the journey's planned apiaries already have a matching recorded activity, out of the total planned. Only shown when planned > 0.",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyNameLabel": "Name",
+  "@journeyNameLabel": {
+    "description": "Field label for a journey's name on the create/edit form (#45, FR-JO-4)"
+  },
+  "journeyNameRequired": "Name is required",
+  "@journeyNameRequired": {
+    "description": "Validation message when a journey's name is left empty (#45)"
+  },
+  "journeyMainActivityTypeLabel": "Main activity type",
+  "@journeyMainActivityTypeLabel": {
+    "description": "Field label for a journey's one main activity type on the create/edit form (#45, FR-JO-4, D-21)"
+  },
+  "journeyApiariesLabel": "Apiaries to visit",
+  "@journeyApiariesLabel": {
+    "description": "Section label above the apiary multi-select picker on the journey create/edit form (#45, FR-JO-4)"
+  },
+  "journeyApiariesRequired": "Select at least one apiary",
+  "@journeyApiariesRequired": {
+    "description": "Validation message when no apiary is selected for a journey's plan (#45)"
+  },
+  "journeyApiariesNoneAvailable": "No apiaries yet — add one from the Apiaries tab first.",
+  "@journeyApiariesNoneAvailable": {
+    "description": "Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)"
+  },
+  "journeyApiariesSelectedCount": "{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}",
+  "@journeyApiariesSelectedCount": {
+    "description": "Running count below the apiary multi-select picker (#45)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyLoadError": "Couldn't load the journey: {error}",
+  "@journeyLoadError": {
+    "description": "Error toast when loading an existing journey for editing throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeySaveSuccess": "Journey saved",
+  "@journeySaveSuccess": {
+    "description": "Success toast after creating or updating a journey (#45)"
+  },
+  "journeySaveError": "Couldn't save the journey: {error}",
+  "@journeySaveError": {
+    "description": "Error toast when saving a journey throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "closeJourneyAction": "Close journey",
+  "@closeJourneyAction": {
+    "description": "Button on the edit-journey form that closes an open journey (#45, D-21)"
+  },
+  "journeyCloseSuccess": "Journey closed",
+  "@journeyCloseSuccess": {
+    "description": "Success toast after closing a journey (#45, D-21)"
+  },
+  "journeyCloseError": "Couldn't close the journey: {error}",
+  "@journeyCloseError": {
+    "description": "Error toast when closing a journey throws (#45, D-21)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatusOpenLabel": "Open",
+  "@journeyStatusOpenLabel": {
+    "description": "Display label for a journey's open status (#45, D-21)"
+  },
+  "journeyStatusClosedLabel": "Closed",
+  "@journeyStatusClosedLabel": {
+    "description": "Display label for a journey's closed status (#45, D-21)"
+  },
+  "journeyStatusSemanticLabel": "Status: {label}",
+  "@journeyStatusSemanticLabel": {
+    "description": "Screen-reader label for the journey edit form's status chip (#45, D-21)",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteJourney": "Delete journey",
+  "@deleteJourney": {
+    "description": "Destructive button on the edit-journey form that opens the delete confirmation dialog (#45, FR-JO-4)"
+  },
+  "journeyDeleteSuccess": "Journey deleted",
+  "@journeyDeleteSuccess": {
+    "description": "Success toast after deleting a journey (#45)"
+  },
+  "journeyDeleteError": "Couldn't delete the journey: {error}",
+  "@journeyDeleteError": {
+    "description": "Error toast when deleting a journey throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteJourneyConfirmTitle": "Delete journey?",
+  "@deleteJourneyConfirmTitle": {
+    "description": "Title of the confirmation dialog shown before deleting a journey (#45, mirrors deleteActivityConfirmTitle)"
+  },
+  "deleteJourneyConfirmMessage": "This permanently deletes this journey. This cannot be undone.",
+  "@deleteJourneyConfirmMessage": {
+    "description": "Body of the confirmation dialog shown before deleting a journey (#45)"
+  },
+  "deleteJourneyConfirmAction": "Delete",
+  "@deleteJourneyConfirmAction": {
+    "description": "Confirm action in the delete-journey confirmation dialog (#45)"
+  },
+  "deleteJourneyCancelAction": "Cancel",
+  "@deleteJourneyCancelAction": {
+    "description": "Cancel action in the delete-journey confirmation dialog (#45 AC: cancel is a no-op)"
+  },
+  "journeyAttachmentLabel": "Journey",
+  "@journeyAttachmentLabel": {
+    "description": "Section label above the journey attachment summary on the add-activity form (#46, FR-JO-1, D-21)"
+  },
+  "journeyAttachmentNone": "No journey attached",
+  "@journeyAttachmentNone": {
+    "description": "Shown in the journey attachment summary when no journey is currently selected (either an auto-match miss, or the user explicitly deselected) (#46)"
+  },
+  "journeyAttachmentAutoSelectedHint": "Auto-selected — matches this apiary and activity type",
+  "@journeyAttachmentAutoSelectedHint": {
+    "description": "Small hint shown under the attached journey's name when it was auto-selected by the app (not explicitly chosen by the user) (#46, FR-JO-1, D-21)"
+  },
+  "journeyAttachmentChangeAction": "Change",
+  "@journeyAttachmentChangeAction": {
+    "description": "Button that opens the journey picker to switch/select a journey on the add-activity form (#46)"
+  },
+  "journeyAttachmentRemoveAction": "Remove",
+  "@journeyAttachmentRemoveAction": {
+    "description": "Button that deselects the currently-attached journey on the add-activity form (#46 AC: the user can deselect the pre-filled journey)"
+  },
+  "journeyPickerTitle": "Choose a journey",
+  "@journeyPickerTitle": {
+    "description": "Title of the journey picker bottom sheet (#46)"
+  },
+  "journeyPickerError": "Couldn't load journeys: {error}",
+  "@journeyPickerError": {
+    "description": "Error state inside the journey picker bottom sheet (#46)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyPickerNoneOption": "No journey",
+  "@journeyPickerNoneOption": {
+    "description": "The explicit \"no journey\" option, always the first row in the journey picker (#46 AC: the user can deselect the pre-filled journey)"
+  },
+  "journeyPickerNoOpenMatches": "No open journeys match this apiary and activity type yet.",
+  "@journeyPickerNoOpenMatches": {
+    "description": "Shown in the journey picker when there are no open matching journeys to list (auto-match miss) and \"show hidden journeys\" is off (#46)"
+  },
+  "journeyPickerShowHiddenToggle": "Show hidden journeys",
+  "@journeyPickerShowHiddenToggle": {
+    "description": "Toggle in the journey picker that reveals closed matching journeys, normally hidden by default (#46, D-21)"
+  },
+  "journeyPickerClosedOptionSemanticLabel": "{name}, closed journey",
+  "@journeyPickerClosedOptionSemanticLabel": {
+    "description": "Screen-reader label for a closed journey's row in the picker, once revealed via the show-hidden toggle (#46, D-21)",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyPickerCreateNewAction": "Create a new journey",
+  "@journeyPickerCreateNewAction": {
+    "description": "The inline create-new-journey shortcut row at the bottom of the journey picker (#46 AC)"
+  },
+  "journeyQuickCreateTitle": "New journey",
+  "@journeyQuickCreateTitle": {
+    "description": "Title of the inline quick-create-journey bottom sheet, opened from the journey picker (#46 AC)"
+  },
+  "journeyQuickCreateCancelAction": "Cancel",
+  "@journeyQuickCreateCancelAction": {
+    "description": "Cancel action on the inline quick-create-journey sheet — closes it without creating anything (#46)"
+  },
+  "closedJourneyConfirmTitle": "This journey is closed",
+  "@closedJourneyConfirmTitle": {
+    "description": "Title of the confirm-to-proceed dialog shown when saving an activity against a closed journey (#46 AC, D-21)"
+  },
+  "closedJourneyConfirmMessage": "\"{journeyName}\" is closed. Add this activity to it anyway?",
+  "@closedJourneyConfirmMessage": {
+    "description": "Body of the confirm-to-proceed dialog shown when saving an activity against a closed journey (#46 AC: \"this journey is closed — add anyway?\")",
+    "placeholders": {
+      "journeyName": {
+        "type": "String"
+      }
+    }
+  },
+  "closedJourneyConfirmCancelAction": "Cancel",
+  "@closedJourneyConfirmCancelAction": {
+    "description": "Cancel action in the closed-journey confirm dialog — stays on the form, nothing is saved (#46)"
+  },
+  "closedJourneyConfirmAddAction": "Add anyway",
+  "@closedJourneyConfirmAddAction": {
+    "description": "Confirm action in the closed-journey confirm dialog — proceeds with saving the activity against the closed journey (#46 AC)"
+  },
+  "journeyStatsSectionTitle": "Journey stats",
+  "@journeyStatsSectionTitle": {
+    "description": "Heading above the journey stats section (#49, FR-JO-1) — apiaries visited, hives harvested, honey collected, média alças/colmeia"
+  },
+  "journeyStatsError": "Couldn't load journey stats: {error}",
+  "@journeyStatsError": {
+    "description": "Error state when loading a journey's aggregated stats throws (#49)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsApiariesVisitedLabel": "Apiaries visited",
+  "@journeyStatsApiariesVisitedLabel": {
+    "description": "Stat card label for the apiaries-visited-vs-planned metric (#49, FR-JO-1), matching the Melargil prototype's \"apiários visitados\" card"
+  },
+  "journeyStatsApiariesVisitedValue": "{done}/{planned}",
+  "@journeyStatsApiariesVisitedValue": {
+    "description": "Value shown on the apiaries-visited stat card, e.g. \"3/5\" (#49, FR-JO-1)",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyStatsHivesHarvestedLabel": "Hives harvested",
+  "@journeyStatsHivesHarvestedLabel": {
+    "description": "Stat card label for Σ hives_involved across the journey's harvest activities (#49, D-2), matching the prototype's \"colmeias trabalhadas\" card"
+  },
+  "journeyStatsHoneyCollectedLabel": "Honey collected",
+  "@journeyStatsHoneyCollectedLabel": {
+    "description": "Stat card label for Σ honey_kg across the journey's harvest activities (#49), matching the prototype's \"mel colhido\" card"
+  },
+  "journeyStatsHoneyCollectedValue": "{kg} kg",
+  "@journeyStatsHoneyCollectedValue": {
+    "description": "Value shown on the honey-collected stat card, e.g. \"12.5 kg\" — kg is already locale-formatted by the caller (LocaleFormatting) (#49)",
+    "placeholders": {
+      "kg": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsAverageSupersLabel": "Média alças/colmeia",
+  "@journeyStatsAverageSupersLabel": {
+    "description": "Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49) — kept in Portuguese per the prototype/AC's own naming (docs/design/prototype.md's Q-JOUR answer, this issue's own AC wording), not translated to an English equivalent"
+  },
+  "journeyStatsAverageSupersNoData": "No data yet",
+  "@journeyStatsAverageSupersNoData": {
+    "description": "Shown instead of a number on the média alças/colmeia stat card when there is no hive-count denominator yet — zero harvest activities, or every one has a null/zero hives_involved (#49, NFR-TST-1's no-divide-by-zero case)"
+  },
+  "journeyStatsMissingLabel": "{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}",
+  "@journeyStatsMissingLabel": {
+    "description": "Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: \"how much is still missing, planned vs. done\")",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

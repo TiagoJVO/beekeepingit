@@ -94,16 +94,18 @@ type activityDTO struct {
 // Router returns the client-facing /v1/activities surface: the REST create
 // route (#39/FR-AC-2) plus edit (#40/FR-AC-3) and delete (#41/FR-AC-4).
 // List is a later EPIC-03 story (#42/#43), following #38's own
-// scope-split precedent.
-func Router(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handler {
+// scope-split precedent. journeyVerifier (#46) is only consulted by create —
+// journey_id is immutable after creation (updateActivity's own doc comment),
+// so edit/delete never need it.
+func Router(pool *pgxpool.Pool, verifier *ApiaryVerifier, journeyVerifier *JourneyVerifier) http.Handler {
 	r := chi.NewRouter()
-	r.Post("/", createActivity(pool, verifier))
+	r.Post("/", createActivity(pool, verifier, journeyVerifier))
 	r.Patch("/{activityId}", updateActivity(pool, verifier))
 	r.Delete("/{activityId}", deleteActivity(pool))
 	return r
 }
 
-func createActivity(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFunc {
+func createActivity(pool *pgxpool.Pool, verifier *ApiaryVerifier, journeyVerifier *JourneyVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, userID, ok := requireOrg(w, r)
 		if !ok {
@@ -141,6 +143,30 @@ func createActivity(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFu
 			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid",
 				problem.FieldError{Field: "apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary in this organization"}))
 			return
+		}
+
+		// CRITICAL tenancy guard (#46 review finding): journey_id, like
+		// apiary_id above, is a cross-service reference — verify it belongs
+		// to the CALLER'S organization via the owning service
+		// (journeys_client.go) BEFORE any row is inserted. Only runs when
+		// the request actually carries a journey_id (the common case, an
+		// activity logged with no journey attached, makes no upstream call
+		// at all).
+		if journeyID != nil {
+			journeyBelongs, err := journeyVerifier.BelongsToOrg(r.Context(), r.Header.Get("Authorization"), journeyID.String())
+			if err != nil {
+				logging.FromContext(r.Context()).ErrorContext(r.Context(), "verify journey ownership failed", slog.Any("error", err))
+				problem.Write(w, r, problem.Internal())
+				return
+			}
+			if !journeyBelongs {
+				// Unknown/foreign journey_id — 404, indistinguishable from a
+				// truly-nonexistent journey (ADR-0002 scope-hiding, same
+				// convention journeys' own getJourney uses).
+				problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid",
+					problem.FieldError{Field: "journey_id", Code: "not_found", Message: "journey_id does not refer to a journey in this organization"}))
+				return
+			}
 		}
 
 		performedBy, err := uuid.Parse(userID)
