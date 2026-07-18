@@ -35,6 +35,10 @@ spec:
       certManager:
         enabled: true
         clusterIssuer: letsencrypt-prod
+    # Image-automation ($imagepolicy setter markers, mirroring apps/dev/) is
+    # explicitly deferred (see the deployment plan's Phase 4) — staging starts
+    # on `latest`, same as dev does today, until the Flux Git-write credential
+    # is provisioned and per-service ImagePolicy objects exist for this env.
     services:
       oidc:
         # Chart defaults (charts/services/values.yaml) hardcode the dev `.local`
@@ -46,23 +50,15 @@ spec:
         issuerUrl: https://auth-staging.beekeepingit.example.com/application/o/beekeepingit/
         discoveryUrl: http://authentik-server/application/o/beekeepingit/
         audience: beekeepingit-pwa
-    # Image-automation ($imagepolicy setter markers, mirroring apps/dev/) is
-    # explicitly deferred (see the deployment plan's Phase 4) — staging starts
-    # on `latest`, same as dev does today, until the Flux Git-write credential
-    # is provisioned and per-service ImagePolicy objects exist for this env.
-    services:
+      # Only the 4 services the `services` subchart actually renders (per
+      # infra/helm/beekeepingit/values.yaml) — activities/journeys/todos/ai are
+      # reserved Postgres schemas for future services, not deployed workloads yet.
       services:
         identity:
           tag: latest
         organizations:
           tag: latest
         apiaries:
-          tag: latest
-        activities:
-          tag: latest
-        journeys:
-          tag: latest
-        todos:
           tag: latest
         sync:
           tag: latest
