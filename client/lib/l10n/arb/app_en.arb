@@ -1492,5 +1492,55 @@
         "type": "String"
       }
     }
+  },
+  "addTodo": "New todo",
+  "@addTodo": {
+    "description": "Floating action button label to quick-create a todo (#52, FR-TD-1) — shown on the Todos tab's own FAB, the Apiaries tab's secondary FAB, and the apiary detail page's add-todo action"
+  },
+  "todoQuickCreateTitle": "New todo",
+  "@todoQuickCreateTitle": {
+    "description": "Heading of the quick-create bottom sheet (#52, FR-TD-1, FR-UX-1)"
+  },
+  "todoTitleLabel": "Title",
+  "@todoTitleLabel": {
+    "description": "Field label for a todo's title on the quick-create sheet (#52, FR-TD-1)"
+  },
+  "todoTitleRequired": "Title is required",
+  "@todoTitleRequired": {
+    "description": "Validation message when a todo's title is left empty on the quick-create sheet (#52)"
+  },
+  "todoDueDateLabel": "Due date",
+  "@todoDueDateLabel": {
+    "description": "Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)"
+  },
+  "todoDueDateClearAction": "Clear due date",
+  "@todoDueDateClearAction": {
+    "description": "Icon button that clears a picked due date back to unset on the quick-create sheet (#52)"
+  },
+  "todoQuickCreateForApiary": "For {apiaryName}",
+  "@todoQuickCreateForApiary": {
+    "description": "Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.",
+    "placeholders": {
+      "apiaryName": {
+        "type": "String"
+      }
+    }
+  },
+  "todoQuickCreateCancelAction": "Cancel",
+  "@todoQuickCreateCancelAction": {
+    "description": "Cancel button on the quick-create sheet — discards the in-progress todo without creating it (#52)"
+  },
+  "todoCreatedConfirmation": "Todo created",
+  "@todoCreatedConfirmation": {
+    "description": "Success toast shown after a quick-created todo saves (#52)"
+  },
+  "todoSaveError": "Could not save todo: {error}",
+  "@todoSaveError": {
+    "description": "Error toast when the quick-create sheet's create() call throws (#52)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   }
 }

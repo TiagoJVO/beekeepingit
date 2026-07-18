@@ -5,32 +5,122 @@ import 'package:go_router/go_router.dart';
 import '../core/widgets/tap_target.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/sync/sync_rejected_repository.dart';
+import '../features/todos/todo_quick_create_sheet.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../theming/brand_tokens.dart';
 import 'sync_status.dart';
 
-/// Per-tab quick-add config for the contextual FAB (FR-UX-2). Tabs without a
-/// real feature screen yet (Activities/Journeys/Todos/Assistant — M3/M4/M5/M8)
-/// have no entry here, so [AppShell] omits the FAB rather than wiring it to a
-/// screen that doesn't exist.
-class _FabConfig {
-  const _FabConfig({required this.label, required this.destination});
+/// One FAB button's rendering + action (FR-UX-2) — [onPressed] takes the
+/// [BuildContext] rather than being a bare [VoidCallback] so an action can
+/// either navigate (`context.go(...)`) OR open a bottom sheet
+/// (`showTodoQuickCreateSheet(context)`, #52) from the same config shape,
+/// instead of the config carrying a route string that only navigation-based
+/// actions can use.
+class _FabAction {
+  const _FabAction({
+    required this.key,
+    required this.heroTag,
+    required this.label,
+    required this.onPressed,
+    this.icon = Icons.add,
+    this.tonal = false,
+  });
 
+  final Key key;
+
+  /// Every [FloatingActionButton] on a route with more than one visible at
+  /// once needs its own distinct hero tag (Flutter's own Hero mechanism
+  /// otherwise treats every un-tagged FAB as sharing a single default tag
+  /// and throws) — only ever one [_FabConfig] renders at a time (keyed by
+  /// the active tab), so reusing 'shell-fab' as a tag across different
+  /// configs' primaries is safe; [secondary] just needs its OWN, different
+  /// tag from its sibling primary.
+  final String heroTag;
   final String Function(AppLocalizations l10n) label;
-  final String destination;
+  final IconData icon;
+
+  /// Whether this uses the subordinate tonal (secondaryContainer) styling
+  /// rather than the primary honey styling — the "second, visually
+  /// subordinate stacked action" look (#52, mirrors
+  /// apiary_detail_screen.dart's own stacked `FloatingActionButton.extended`
+  /// widgets).
+  final bool tonal;
+  final void Function(BuildContext context) onPressed;
+}
+
+/// Per-tab quick-add config for the contextual FAB (FR-UX-2). Tabs without a
+/// real feature screen yet (Assistant — M8) have no entry here, so [AppShell]
+/// omits the FAB rather than wiring it to a screen that doesn't exist.
+/// [secondary] is optional — only the Apiaries tab has one (#52): a
+/// subordinate "New todo" action stacked above its own primary "New apiary"
+/// FAB, mirroring `apiary_detail_screen.dart`'s own multi-FAB `Column`.
+class _FabConfig {
+  const _FabConfig({required this.primary, this.secondary});
+
+  final _FabAction primary;
+  final _FabAction? secondary;
 }
 
 const _fabConfigByTab = <String, _FabConfig>{
-  'apiaries': _FabConfig(label: _apiaryFabLabel, destination: '/apiaries/new'),
+  'apiaries': _FabConfig(
+    primary: _FabAction(
+      key: Key('shell-fab'),
+      heroTag: 'shell-fab',
+      label: _apiaryFabLabel,
+      onPressed: _openNewApiary,
+    ),
+    // A secondary, contextual quick-add (#52, FR-UX-2) — no pre-filled
+    // apiary, since it's opened from the tab root, not a specific apiary.
+    secondary: _FabAction(
+      key: Key('shell-fab-secondary'),
+      heroTag: 'shell-fab-secondary',
+      label: _todoFabLabel,
+      icon: Icons.task_alt_outlined,
+      tonal: true,
+      onPressed: _openTodoQuickCreate,
+    ),
+  ),
   // Journeys (#45): unlike Activities (whose create entry point lives on the
   // apiary detail page, since an activity always needs an apiary context
   // first), a journey isn't tied to a single apiary — so its own tab root is
   // a sensible "New journey" entry point, mirroring the Apiaries tab's FAB.
-  'journeys': _FabConfig(label: _journeyFabLabel, destination: '/journeys/new'),
+  'journeys': _FabConfig(
+    primary: _FabAction(
+      key: Key('shell-fab'),
+      heroTag: 'shell-fab',
+      label: _journeyFabLabel,
+      onPressed: _openNewJourney,
+    ),
+  ),
+  // Todos (#52, FR-TD-1): "the main screen" quick-create entry point — this
+  // tab's own root IS "the main screen" FR-TD-1 refers to (distinct from
+  // "the apiaries list", named separately in the same AC).
+  'todos': _FabConfig(
+    primary: _FabAction(
+      key: Key('shell-fab'),
+      heroTag: 'shell-fab',
+      label: _todoFabLabel,
+      icon: Icons.task_alt_outlined,
+      onPressed: _openTodoQuickCreate,
+    ),
+  ),
 };
 
 String _apiaryFabLabel(AppLocalizations l10n) => l10n.addApiary;
 String _journeyFabLabel(AppLocalizations l10n) => l10n.addJourney;
+String _todoFabLabel(AppLocalizations l10n) => l10n.addTodo;
+
+void _openNewApiary(BuildContext context) => context.go('/apiaries/new');
+void _openNewJourney(BuildContext context) => context.go('/journeys/new');
+
+/// No `initialApiaryId` (#52) — both entry points wired to this (the
+/// Apiaries tab's secondary FAB, the Todos tab's own primary FAB) sit at a
+/// tab ROOT, not on a specific apiary, unlike the apiary detail page's own
+/// contextual "New todo" action (apiary_detail_screen.dart), which passes
+/// one.
+void _openTodoQuickCreate(BuildContext context) {
+  showTodoQuickCreateSheet(context);
+}
 
 /// The persistent app shell (FR-UX-2, #197): a 5-tab bottom nav wrapping a
 /// [StatefulShellRoute] (one navigation stack per tab, per go_router's
@@ -492,16 +582,49 @@ class _ShellFab extends ConsumerWidget {
 
     final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    // Honey FAB drawn from the theme primary/onPrimary (BrandTokens honey /
-    // onHoney) — the "one honey primary action" shared with
-    // PrimaryActionButton, not a second hardcoded honey (#243).
+
+    // Only the Apiaries tab has a [_FabConfig.secondary] (#52) — stacked
+    // ABOVE the primary in a `Column`, mirroring
+    // apiary_detail_screen.dart's own multi-FAB stacking convention (last
+    // child in the list sits at the actual bottom-right FAB position).
+    if (fab.secondary == null) {
+      return _fabButton(context, l10n, colorScheme, fab.primary);
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        _fabButton(context, l10n, colorScheme, fab.secondary!),
+        const SizedBox(height: 12),
+        _fabButton(context, l10n, colorScheme, fab.primary),
+      ],
+    );
+  }
+
+  // Honey FAB drawn from the theme primary/onPrimary (BrandTokens honey /
+  // onHoney) — the "one honey primary action" shared with
+  // PrimaryActionButton, not a second hardcoded honey (#243). A [tonal]
+  // action (#52's secondary) uses the theme's secondaryContainer pairing
+  // instead, so it reads as visually subordinate to the primary honey
+  // action it's stacked above.
+  Widget _fabButton(
+    BuildContext context,
+    AppLocalizations l10n,
+    ColorScheme colorScheme,
+    _FabAction action,
+  ) {
     return FloatingActionButton.extended(
-      key: const Key('shell-fab'),
-      backgroundColor: colorScheme.primary,
-      foregroundColor: colorScheme.onPrimary,
-      onPressed: () => context.go(fab.destination),
-      icon: const Icon(Icons.add),
-      label: Text(fab.label(l10n)),
+      key: action.key,
+      heroTag: action.heroTag,
+      backgroundColor: action.tonal
+          ? colorScheme.secondaryContainer
+          : colorScheme.primary,
+      foregroundColor: action.tonal
+          ? colorScheme.onSecondaryContainer
+          : colorScheme.onPrimary,
+      onPressed: () => action.onPressed(context),
+      icon: Icon(action.icon),
+      label: Text(action.label(l10n)),
     );
   }
 }

@@ -1098,4 +1098,38 @@ class AppLocalizationsPt extends AppLocalizations {
   String todoStatusSemanticLabel(String status) {
     return 'Estado: $status';
   }
+
+  @override
+  String get addTodo => 'Nova tarefa';
+
+  @override
+  String get todoQuickCreateTitle => 'Nova tarefa';
+
+  @override
+  String get todoTitleLabel => 'Título';
+
+  @override
+  String get todoTitleRequired => 'O título é obrigatório';
+
+  @override
+  String get todoDueDateLabel => 'Prazo';
+
+  @override
+  String get todoDueDateClearAction => 'Limpar prazo';
+
+  @override
+  String todoQuickCreateForApiary(String apiaryName) {
+    return 'Para $apiaryName';
+  }
+
+  @override
+  String get todoQuickCreateCancelAction => 'Cancelar';
+
+  @override
+  String get todoCreatedConfirmation => 'Tarefa criada';
+
+  @override
+  String todoSaveError(String error) {
+    return 'Não foi possível guardar a tarefa: $error';
+  }
 }

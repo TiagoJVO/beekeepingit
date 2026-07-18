@@ -1091,4 +1091,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String todoStatusSemanticLabel(String status) {
     return 'Status: $status';
   }
+
+  @override
+  String get addTodo => 'New todo';
+
+  @override
+  String get todoQuickCreateTitle => 'New todo';
+
+  @override
+  String get todoTitleLabel => 'Title';
+
+  @override
+  String get todoTitleRequired => 'Title is required';
+
+  @override
+  String get todoDueDateLabel => 'Due date';
+
+  @override
+  String get todoDueDateClearAction => 'Clear due date';
+
+  @override
+  String todoQuickCreateForApiary(String apiaryName) {
+    return 'For $apiaryName';
+  }
+
+  @override
+  String get todoQuickCreateCancelAction => 'Cancel';
+
+  @override
+  String get todoCreatedConfirmation => 'Todo created';
+
+  @override
+  String todoSaveError(String error) {
+    return 'Could not save todo: $error';
+  }
 }
