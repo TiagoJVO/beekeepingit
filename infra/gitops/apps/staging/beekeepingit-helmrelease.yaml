@@ -1,0 +1,71 @@
+# Deploys the umbrella chart (infra/helm/beekeepingit) onto the `staging`
+# cluster (Scaleway Kapsule, D-26) the same way apps/dev/beekeepingit-helmrelease.yaml
+# does for dev — see that file's comments for the releaseName/reconcileStrategy
+# rationale, which applies unchanged here.
+#
+# TODO before this is applied to a real cluster: replace the placeholder
+# app/auth hostnames below with the real domain from Phase 0 (see
+# infra/cluster/scaleway-up.sh's closing instructions).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: beekeepingit
+  namespace: flux-system
+spec:
+  interval: 5m
+  targetNamespace: beekeepingit-staging
+  releaseName: beekeepingit
+  install:
+    createNamespace: true
+  chart:
+    spec:
+      chart: ./infra/helm/beekeepingit
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: beekeepingit
+        namespace: flux-system
+  values:
+    global:
+      environment: staging
+      namespace: beekeepingit-staging
+    gateway:
+      appHost: staging.beekeepingit.example.com # TODO: replace with the real domain
+      authHost: auth-staging.beekeepingit.example.com # TODO: replace with the real domain
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+    services:
+      oidc:
+        # Chart defaults (charts/services/values.yaml) hardcode the dev `.local`
+        # host; staging needs its own, mirroring environments/dev.yaml's same
+        # split-issuer pattern (ADR-0016, oidc-integration.md §6) — the `iss` a
+        # browser token carries is the external HTTPS auth host, but services
+        # fetch discovery from the internal Authentik Service (unreachable
+        # externally in-cluster). TODO: keep in sync with gateway.authHost above.
+        issuerUrl: https://auth-staging.beekeepingit.example.com/application/o/beekeepingit/
+        discoveryUrl: http://authentik-server/application/o/beekeepingit/
+        audience: beekeepingit-pwa
+    # Image-automation ($imagepolicy setter markers, mirroring apps/dev/) is
+    # explicitly deferred (see the deployment plan's Phase 4) — staging starts
+    # on `latest`, same as dev does today, until the Flux Git-write credential
+    # is provisioned and per-service ImagePolicy objects exist for this env.
+    services:
+      services:
+        identity:
+          tag: latest
+        organizations:
+          tag: latest
+        apiaries:
+          tag: latest
+        activities:
+          tag: latest
+        journeys:
+          tag: latest
+        todos:
+          tag: latest
+        sync:
+          tag: latest
+    pwa:
+      image:
+        tag: latest
