@@ -25,6 +25,31 @@
 - **Observability stack (`infra/helm/observability/`) not deployed to staging** — deliberately
   deferred given `DEV1-M`'s tight memory budget; revisit once the core stack's actual footprint on
   the live cluster is known.
+- **PWA config is compile-time-baked, not runtime — no real multi-environment build exists yet.**
+  `client/lib/core/config/app_config.dart`'s `AppConfig.{oidcIssuer,gatewayBaseUrl,oidcAccountUrl,
+powerSyncUrl}` are Dart `String.fromEnvironment` compile-time constants, set via `--dart-define`
+  at `flutter build web` time — there's no way to override them after the image is built. CI
+  (`.github/workflows/build-publish.yml`) never passes any `--dart-define`s, so every published
+  image (`latest` included) is compiled with dev's `*.beekeepingit.local:8443` defaults baked in.
+  Login on staging failed with a generic "check your connection" error because of exactly this —
+  the PWA tried OIDC discovery against a `.local` host no real browser can resolve — found on the
+  first staging bring-up (D-26), worked around with a one-off manually-built+pushed image
+  (`ghcr.io/tiagojvo/beekeepingit/client:staging-manual`, referenced by
+  `apps/staging/beekeepingit-helmrelease.yaml`'s `pwa.image.tag`) rather than a real fix.
+  **The compile-time pattern itself isn't wrong** — it's a deliberate, documented, single-default
+  knob, a normal way to configure a static SPA build. But it makes the PWA the one component in
+  this system that can't do "build once, promote the same artifact across environments" — every
+  other component (the Go services, PowerSync) reads config from **runtime** env vars, so the same
+  image runs unmodified in dev/staging/prod. Two real options when this gets prioritized, not just
+  "teach CI to pass more `--dart-define`s per environment" (which would still mean a distinct image
+  per environment, unlike everything else here):
+  1. Keep compile-time config, but make CI build one image per environment (a real build-matrix
+     change to build-publish.yml) — smaller change, keeps the existing pattern.
+  2. Switch the PWA to **runtime** config: an nginx-entrypoint-templated `config.json`/`env.js`
+     served alongside `index.html`, generated from container env vars at startup — consistent with
+     how every other component here already works, and restores "build once" for the PWA too.
+     Bigger change (touches `client/Dockerfile`, `nginx.conf`, and how `AppConfig` reads its
+     values), but arguably the more consistent fix.
 - **`apps/dev/beekeepingit-helmrelease.yaml` likely has the same install-time deadlock** as staging
   had before `install.disableWait`/`upgrade.disableWait` were added here: Helm's default
   wait-for-ready gates every Deployment before the release is considered successful, but
