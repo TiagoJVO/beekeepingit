@@ -111,3 +111,10 @@ spec:
     pwa:
       image:
         tag: latest
+    networkpolicy:
+      # scaleway-up.sh installs Traefik into its own `traefik` namespace, not
+      # `kube-system` (charts/networkpolicy/values.yaml's default, correct
+      # for k3d/dev) — every gateway-to-backend NetworkPolicy edge silently
+      # blocked Traefik without this, including cert-manager's ACME solver
+      # pods (found via cert-manager's self-check timing out, D-26).
+      gatewayNamespace: traefik
