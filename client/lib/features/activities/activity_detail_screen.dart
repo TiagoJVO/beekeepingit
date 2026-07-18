@@ -156,11 +156,7 @@ class _ActivityDetailBody extends ConsumerWidget {
 
     final typeLabel = activityTypeLabel(l10n, activity.type) ?? activity.type;
     final dateText = LocaleFormatting.of(context).date(activity.occurredAtDate);
-    final attribution = activityAttributionText(
-      l10n,
-      activity,
-      currentUserId,
-    );
+    final attribution = activityAttributionText(l10n, activity, currentUserId);
     final rows = activityDetailRows(l10n, activity);
 
     return Center(

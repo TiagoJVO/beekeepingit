@@ -142,8 +142,7 @@ void main() {
 
   group('TodosRepository.create()', () {
     test('inserts a local row with the given fields, defaulting to open, '
-        'unassigned (D-23) and no apiary association (#51, FR-TD-1)',
-        () async {
+        'unassigned (D-23) and no apiary association (#51, FR-TD-1)', () async {
       final id = await repo.create(title: 'Inspect hive 3', priority: 'medium');
 
       expect(id, isNotEmpty);
@@ -159,23 +158,25 @@ void main() {
       expect(row['organization_id'], isNull);
     });
 
-    test('stores description/due_date/assignee_id/apiary_id when provided',
-        () async {
-      await repo.create(
-        title: 'Check varroa',
-        priority: 'high',
-        description: 'count mite drop',
-        dueDate: '2026-08-01',
-        assigneeId: 'user-1',
-        apiaryId: 'apiary-1',
-      );
+    test(
+      'stores description/due_date/assignee_id/apiary_id when provided',
+      () async {
+        await repo.create(
+          title: 'Check varroa',
+          priority: 'high',
+          description: 'count mite drop',
+          dueDate: '2026-08-01',
+          assigneeId: 'user-1',
+          apiaryId: 'apiary-1',
+        );
 
-      final row = store.rows.single;
-      expect(row['description'], 'count mite drop');
-      expect(row['due_date'], '2026-08-01');
-      expect(row['assignee_id'], 'user-1');
-      expect(row['apiary_id'], 'apiary-1');
-    });
+        final row = store.rows.single;
+        expect(row['description'], 'count mite drop');
+        expect(row['due_date'], '2026-08-01');
+        expect(row['assignee_id'], 'user-1');
+        expect(row['apiary_id'], 'apiary-1');
+      },
+    );
   });
 
   group('TodosRepository.getById()/watchById()', () {
@@ -217,8 +218,7 @@ void main() {
   });
 
   group('TodosRepository.update() — full resubmit', () {
-    test(
-        'changes title/description/due_date/priority/assignee_id/apiary_id '
+    test('changes title/description/due_date/priority/assignee_id/apiary_id '
         'together', () async {
       final id = await repo.create(title: 'old title', priority: 'low');
 
@@ -241,8 +241,7 @@ void main() {
       expect(todo.apiaryId, 'apiary-2');
     });
 
-    test(
-        'clears description/due_date/assignee_id/apiary_id when omitted '
+    test('clears description/due_date/assignee_id/apiary_id when omitted '
         '(both null and "" mean "no value")', () async {
       final id = await repo.create(
         title: 'x',
