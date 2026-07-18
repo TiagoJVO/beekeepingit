@@ -5,6 +5,7 @@ import '../../core/sync/local_store.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import '../organization/organization_repository.dart';
 
 /// A local todo row (#50, FR-TD-1, FR-TEN-2, D-20, D-23): the client mirror
 /// of one `todos.todos` row replicated down by the org-scoped PowerSync Sync
@@ -202,6 +203,45 @@ class TodosRepository {
   Future<void> delete(String id) =>
       _store.execute('DELETE FROM $todosTable WHERE id = ?', [id]);
 
+  /// Every todo across the caller's org (#53, FR-TD-1), newest-created-first
+  /// — the main Todos tab's data source. Tenancy (FR-TEN-2) is primarily
+  /// enforced by the org-scoped PowerSync Sync Rule (#50's `todos.todos`
+  /// bucket) that only ever replicates the caller's own org's rows to this
+  /// device — this repository has no other org's data to leak in the first
+  /// place.
+  ///
+  /// The `organization_id = ? OR organization_id IS NULL` clause is a
+  /// second, defense-in-depth layer — mirrors
+  /// [ActivitiesRepository.watchAll]'s own doc comment on this exact
+  /// convention: it must tolerate a just-created, not-yet-round-tripped
+  /// local row (whose `organization_id` is NULL until sync — [create] never
+  /// sets it, see the [Todo] class doc) while still excluding any row that
+  /// DOES carry a foreign `organization_id`, which the Sync Rule should
+  /// already guarantee never happens.
+  ///
+  /// [organizationId] is the caller's own org id (organization_repository.
+  /// dart's `organizationProvider`). A null value (no organization loaded
+  /// yet — the onboarding gate should make this unreachable in practice)
+  /// yields an empty stream rather than an unscoped query.
+  ///
+  /// Sorted newest-created-first as this method's own deterministic
+  /// baseline order — the Todos tab's own filter/sort UI (todo_filters.dart's
+  /// `sortTodos`) is what actually orders the rendered list by due date/
+  /// priority/status (#53 AC), so this ordering is never user-visible on its
+  /// own.
+  Stream<List<Todo>> watchAll({required String? organizationId}) {
+    if (organizationId == null) return Stream.value(const []);
+    return _store
+        .watch(
+          'SELECT id, organization_id, title, description, due_date, '
+          'priority, status, completed_at, assignee_id FROM $todosTable '
+          'WHERE organization_id = ? OR organization_id IS NULL '
+          'ORDER BY created_at DESC',
+          [organizationId],
+        )
+        .map((rows) => rows.map(_fromRow).toList());
+  }
+
   Todo _fromRow(Map<String, Object?> r) => Todo(
     id: r['id'] as String,
     organizationId: r['organization_id'] as String?,
@@ -235,4 +275,17 @@ final todoByIdProvider = StreamProvider.autoDispose.family<Todo?, String>((
 ) async* {
   final repo = await ref.watch(todosRepositoryProvider.future);
   yield* repo.watchById(todoId);
+});
+
+/// Every todo across the org (#53), live from local SQLite (offline-first)
+/// — depends on [organizationProvider] so it naturally re-scopes if the org
+/// context ever changes, and stays an empty list (never an error) while the
+/// org is still loading. Mirrors [activitiesStreamProvider]'s identical
+/// shape (activities_repository.dart).
+final todosStreamProvider = StreamProvider.autoDispose<List<Todo>>((
+  ref,
+) async* {
+  final repo = await ref.watch(todosRepositoryProvider.future);
+  final org = await ref.watch(organizationProvider.future);
+  yield* repo.watchAll(organizationId: org?.id);
 });

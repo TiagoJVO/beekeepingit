@@ -49,8 +49,11 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │       │                alças/colmeia; edit reachable via its own FAB)
   │       └ edit                        JourneyFormScreen features/journeys (#45; edit/close/
   │                                     delete, isEdit)
-  ├ /todos         ─┐
-  └ /assistant     ─┘ ComingSoonScreen (placeholders, M5/M8)
+  ├ /todos                 TodosListScreen        features/todos      ◄ live (#53; org-wide
+  │                        todo list — status/priority/due-date filters (combinable), sortable
+  │                        by due date/priority/status, distinguishes open/overdue/done; no
+  │                        create FAB yet — #52's own, separate story)
+  └ /assistant             ComingSoonScreen (placeholder, M8)
 ```
 
 ## Layer flow
@@ -88,8 +91,10 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 | `journeyByIdProvider` (family)             | features/journeys                    | live single `Journey` by id, no `apiaryIds` (#48; the detail screen's read path)                                                                                                                     |
 | `activitiesByJourneyProvider` (family)     | features/activities                  | live activities for one journey, by stored `journey_id` (#48, D-21)                                                                                                                                  |
 | `journeyStatsProvider` (family)            | features/journeys                    | live `JourneyStats` per journey id — apiaries visited/planned, hives harvested, honey collected, média alças/colmeia (#49, FR-JO-1, D-2, D-21, stored `journey_id` link only, never a live re-match) |
-| `todosRepositoryProvider`                  | features/todos                       | `TodosRepository` (#50; no screen wired to it yet — /todos is still ComingSoonScreen)                                                                                                                |
+| `todosRepositoryProvider`                  | features/todos                       | `TodosRepository` (#50)                                                                                                                                                                              |
 | `todoByIdProvider` (family)                | features/todos                       | live single todo by id (#50)                                                                                                                                                                         |
+| `todosStreamProvider`                      | features/todos                       | live org-wide todos, unfiltered (#53, org-scoped incl. defense-in-depth filter)                                                                                                                      |
+| `todosViewModelProvider`                   | features/todos/todo_filters          | filtered + sorted list, empty-vs-no-results state, `today` used for overdue (#53)                                                                                                                    |
 | `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                                                                                                                                                  |
 
 ## Sync flow (client) — core/sync/

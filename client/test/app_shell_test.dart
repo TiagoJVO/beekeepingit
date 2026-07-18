@@ -9,6 +9,7 @@ import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -95,6 +96,10 @@ Widget _buildShellApp({
       journeysStreamProvider.overrideWith(
         (ref) => Stream.value(const <Journey>[]),
       ),
+      // The main Todos tab (#53) similarly now renders real content in
+      // place of the old ComingSoonScreen placeholder — same rationale as
+      // the activities/journeys overrides above.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
       syncStatusProvider.overrideWithValue(
@@ -166,7 +171,10 @@ void main() {
     await tester.tap(find.byKey(const Key('shell-tab-todos')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Todos — coming soon'), findsOneWidget);
+    // The Todos tab (#53) now renders real content — with the overridden
+    // empty todos stream (see _buildShellApp), that's its own empty state,
+    // not the old ComingSoonScreen placeholder text.
+    expect(find.text('No todos yet.'), findsOneWidget);
     nav = tester.widget<NavigationBar>(
       find.byKey(const Key('shell-bottom-nav')),
     );
@@ -254,9 +262,11 @@ void main() {
 
       // Activities has no FAB (its create entry point lives on the apiary
       // detail page, since an activity always needs an apiary context
-      // first); Todos/Assistant have no real screens yet. Journeys (#45) DOES
-      // have its own "New journey" FAB — same rationale as Apiaries — so it's
-      // covered by its own test below, not this one.
+      // first); Todos (#53) has real content now but no create entry point
+      // yet either — that's #52's own, separate, additive story; Assistant
+      // has no real screen yet. Journeys (#45) DOES have its own "New
+      // journey" FAB — same rationale as Apiaries — so it's covered by its
+      // own test below, not this one.
       for (final route in ['activities', 'todos', 'assistant']) {
         await tester.tap(find.byKey(Key('shell-tab-$route')));
         await tester.pumpAndSettle();
@@ -326,16 +336,13 @@ void main() {
     expect(find.byKey(const Key('account-name-field')), findsOneWidget);
   });
 
-  testWidgets('the remaining 2 placeholder tabs render without error '
-      '(Activities and Journeys are real content since #43/#45 — see the '
-      'dedicated switching-tabs test above)', (tester) async {
+  testWidgets('the remaining 1 placeholder tab renders without error '
+      '(Activities, Journeys and Todos are real content since #43/#45/#53 — '
+      'see the dedicated switching-tabs test above)', (tester) async {
     await tester.pumpWidget(_buildShellApp());
     await tester.pumpAndSettle();
 
-    const expected = {
-      'todos': 'Todos — coming soon',
-      'assistant': 'Assistant — coming soon',
-    };
+    const expected = {'assistant': 'Assistant — coming soon'};
     for (final entry in expected.entries) {
       await tester.tap(find.byKey(Key('shell-tab-${entry.key}')));
       await tester.pumpAndSettle();

@@ -21,6 +21,7 @@ import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/sync/sync_needs_fix_screen.dart';
+import '../features/todos/todos_list_screen.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../shell/app_shell.dart';
 import '../shell/coming_soon_screen.dart';
@@ -284,10 +285,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/todos',
                 name: 'todos',
-                builder: (context, state) => ComingSoonScreen(
-                  icon: Icons.task_alt_outlined,
-                  title: AppLocalizations.of(context).todosComingSoon,
-                ),
+                builder: (context, state) => const TodosListScreen(),
               ),
             ],
           ),
