@@ -844,4 +844,66 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteJourneyCancelAction => 'Cancel';
+
+  @override
+  String get journeyAttachmentLabel => 'Journey';
+
+  @override
+  String get journeyAttachmentNone => 'No journey attached';
+
+  @override
+  String get journeyAttachmentAutoSelectedHint =>
+      'Auto-selected — matches this apiary and activity type';
+
+  @override
+  String get journeyAttachmentChangeAction => 'Change';
+
+  @override
+  String get journeyAttachmentRemoveAction => 'Remove';
+
+  @override
+  String get journeyPickerTitle => 'Choose a journey';
+
+  @override
+  String journeyPickerError(String error) {
+    return 'Couldn\'t load journeys: $error';
+  }
+
+  @override
+  String get journeyPickerNoneOption => 'No journey';
+
+  @override
+  String get journeyPickerNoOpenMatches =>
+      'No open journeys match this apiary and activity type yet.';
+
+  @override
+  String get journeyPickerShowHiddenToggle => 'Show hidden journeys';
+
+  @override
+  String journeyPickerClosedOptionSemanticLabel(String name) {
+    return '$name, closed journey';
+  }
+
+  @override
+  String get journeyPickerCreateNewAction => 'Create a new journey';
+
+  @override
+  String get journeyQuickCreateTitle => 'New journey';
+
+  @override
+  String get journeyQuickCreateCancelAction => 'Cancel';
+
+  @override
+  String get closedJourneyConfirmTitle => 'This journey is closed';
+
+  @override
+  String closedJourneyConfirmMessage(String journeyName) {
+    return '\"$journeyName\" is closed. Add this activity to it anyway?';
+  }
+
+  @override
+  String get closedJourneyConfirmCancelAction => 'Cancel';
+
+  @override
+  String get closedJourneyConfirmAddAction => 'Add anyway';
 }

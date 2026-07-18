@@ -102,6 +102,34 @@ class FakeLocalStore implements LocalStoreEngine {
 
   List<Map<String, Object?>> _select(String sql, List<Object?> args) {
     final normalized = sql.toUpperCase();
+    // watchMatching's join query (#46) mentions BOTH tables — check for the
+    // JOIN shape first so it doesn't fall into the plain
+    // journeyPlanItemsTable branch below (which would return raw plan-item
+    // rows, not journeys). Args order matches watchMatching's own:
+    // [organizationId, activityType, apiaryId].
+    if (normalized.contains('JOIN') &&
+        normalized.contains(journeyPlanItemsTable.toUpperCase())) {
+      final orgId = args[0];
+      final activityType = args[1];
+      final apiaryId = args[2];
+      final matchingJourneyIds = planRows
+          .where((p) => p['apiary_id'] == apiaryId)
+          .map((p) => p['journey_id'])
+          .toSet();
+      var results = rows
+          .where(
+            (r) =>
+                matchingJourneyIds.contains(r['id']) &&
+                r['main_activity_type'] == activityType &&
+                (r['organization_id'] == orgId || r['organization_id'] == null),
+          )
+          .toList();
+      results.sort(
+        (a, b) =>
+            (b['created_at'] as String).compareTo(a['created_at'] as String),
+      );
+      return results;
+    }
     if (normalized.contains(journeyPlanItemsTable.toUpperCase())) {
       var results = List<Map<String, Object?>>.from(planRows);
       if (normalized.contains('WHERE JOURNEY_ID = ?')) {
@@ -391,5 +419,150 @@ void main() {
       expect(journeys, hasLength(1));
       expect(journeys.single.organizationId, isNull);
     });
+  });
+
+  group('JourneysRepository.watchMatching() (#46, FR-JO-1, D-21)', () {
+    void seedJourney({
+      required String id,
+      required String mainActivityType,
+      String status = journeyStatusOpen,
+      String? organizationId = 'org-a',
+      String createdAt = '2026-06-01T00:00:00Z',
+    }) {
+      store.rows.add({
+        'id': id,
+        'organization_id': organizationId,
+        'name': 'Journey $id',
+        'main_activity_type': mainActivityType,
+        'status': status,
+        'created_at': createdAt,
+        'updated_at': createdAt,
+      });
+    }
+
+    void seedPlanItem(String journeyId, String apiaryId) {
+      store.planRows.add({
+        'id': 'plan-$journeyId-$apiaryId',
+        'journey_id': journeyId,
+        'apiary_id': apiaryId,
+        'created_at': '2026-06-01T00:00:00Z',
+      });
+    }
+
+    test('returns an empty stream when the organization id is null', () async {
+      final matches = await repo
+          .watchMatching(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: null,
+          )
+          .first;
+      expect(matches, isEmpty);
+    });
+
+    test(
+      'matches a journey whose plan includes the apiary AND whose main '
+      'activity type equals the requested one (D-21\'s entire matching rule)',
+      () async {
+        seedJourney(id: 'j1', mainActivityType: 'harvest');
+        seedPlanItem('j1', 'a1');
+
+        final matches = await repo
+            .watchMatching(
+              apiaryId: 'a1',
+              activityType: 'harvest',
+              organizationId: 'org-a',
+            )
+            .first;
+
+        expect(matches.map((j) => j.id), ['j1']);
+      },
+    );
+
+    test('excludes a journey on the SAME apiary but a DIFFERENT main activity '
+        'type (auto-match miss by type)', () async {
+      seedJourney(id: 'j1', mainActivityType: 'feeding');
+      seedPlanItem('j1', 'a1');
+
+      final matches = await repo
+          .watchMatching(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+
+    test(
+      'excludes a journey with the SAME activity type but a DIFFERENT apiary '
+      'in its plan (auto-match miss by apiary)',
+      () async {
+        seedJourney(id: 'j1', mainActivityType: 'harvest');
+        seedPlanItem('j1', 'a-other');
+
+        final matches = await repo
+            .watchMatching(
+              apiaryId: 'a1',
+              activityType: 'harvest',
+              organizationId: 'org-a',
+            )
+            .first;
+
+        expect(matches, isEmpty);
+      },
+    );
+
+    test(
+      'includes both open and closed matches (the picker itself splits/hides them)',
+      () async {
+        seedJourney(
+          id: 'open-1',
+          mainActivityType: 'harvest',
+          createdAt: '2026-06-01T00:00:00Z',
+        );
+        seedPlanItem('open-1', 'a1');
+        seedJourney(
+          id: 'closed-1',
+          mainActivityType: 'harvest',
+          status: journeyStatusClosed,
+          createdAt: '2026-06-02T00:00:00Z',
+        );
+        seedPlanItem('closed-1', 'a1');
+
+        final matches = await repo
+            .watchMatching(
+              apiaryId: 'a1',
+              activityType: 'harvest',
+              organizationId: 'org-a',
+            )
+            .first;
+
+        expect(matches.map((j) => j.id).toSet(), {'open-1', 'closed-1'});
+      },
+    );
+
+    test(
+      'excludes another organization\'s matching journey (FR-TEN-2)',
+      () async {
+        seedJourney(
+          id: 'foreign',
+          mainActivityType: 'harvest',
+          organizationId: 'org-b',
+        );
+        seedPlanItem('foreign', 'a1');
+
+        final matches = await repo
+            .watchMatching(
+              apiaryId: 'a1',
+              activityType: 'harvest',
+              organizationId: 'org-a',
+            )
+            .first;
+
+        expect(matches, isEmpty);
+      },
+    );
   });
 }

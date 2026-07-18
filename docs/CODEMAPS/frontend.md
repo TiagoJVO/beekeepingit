@@ -1,4 +1,4 @@
-<!-- Generated: 2026-07-14 | Files scanned: 113 | Token estimate: ~1000 -->
+<!-- Generated: 2026-07-18 | Files scanned: 116 | Token estimate: ~1050 -->
 
 # Frontend Codemap
 
@@ -24,7 +24,10 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │       ├ edit                        ApiaryFormScreen
   │       ├ activities                  ApiaryActivitiesScreen features/apiaries (#42; full
   │       │                             per-apiary list — non-shrink-wrapped, virtualized)
-  │       ├ activities/new              AddActivityScreen  features/activities (#39; add path)
+  │       ├ activities/new              AddActivityScreen  features/activities (#39; add path;
+  │       │                             #46 adds the journey-attachment picker — auto-select/
+  │       │                             deselect/switch/inline-create, features/journeys/
+  │       │                             journey_picker.dart + journey_quick_create_sheet.dart)
   │       ├ activities/:activityId      ActivityDetailScreen features/activities (#310; read-only
   │       │   └ edit                    view — type/date/attrs/performer; Edit+Delete)
   │       │                             AddActivityScreen (#40/#41; edit + delete, isEdit)
@@ -74,6 +77,7 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 | `activitiesViewModelProvider` (family)     | features/activities/activity_filters | filtered list + empty-vs-no-results state (#42/#43)                      |
 | `journeysRepositoryProvider`               | features/journeys                    | `JourneysRepository` (#45)                                               |
 | `journeysStreamProvider`                   | features/journeys                    | live org-wide journeys, unfiltered (#45)                                 |
+| `journeyMatchesProvider` (family)          | features/journeys/journey_picker     | live journeys matching one (apiary, activity type) pair (#46, D-21)      |
 | `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                      |
 
 ## Sync flow (client) — core/sync/

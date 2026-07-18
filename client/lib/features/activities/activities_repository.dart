@@ -60,8 +60,13 @@ class Activity {
 /// both are derived SERVER-SIDE from the authenticated caller's token on
 /// write-back (FR-TEN-2: "each activity is recorded against the user who
 /// performed it"), never from client-supplied data, so a spoofed attribution
-/// is not even representable on the wire. `journey_id` is similarly omitted
-/// (D-21/#46, unused until M4 — there is no journey to attach to yet).
+/// is not even representable on the wire. `journey_id` (D-21/#46) IS written
+/// by [create] (optionally — see its own doc) now that the activity-form
+/// picker exists; it is set once at creation and never changed by [update]
+/// (mirrors `services/activities/api/write.go`'s updateActivity, which
+/// likewise never touches it — the server enforces this too, so a client
+/// that somehow tried to change it on PATCH would have the field silently
+/// ignored server-side).
 ///
 /// `apiary_id` is likewise never written by [update] (#40): the edit UI
 /// never exposes moving an activity to a different apiary, so every local
@@ -84,19 +89,34 @@ class ActivitiesRepository {
   /// requirement. [occurredAt] is a plain `YYYY-MM-DD` string, matching the
   /// server's `DATE` column (services/activities/api/validate.go's
   /// `dateLayout`) — no time-of-day component.
+  ///
+  /// [journeyId] (D-21/#46) is the journey this activity attaches to, or
+  /// null for "no journey" — the activity-form picker's auto-select/
+  /// deselect/switch/create-new outcome (journey_picker.dart), set once here
+  /// and never changed afterward (this class's own doc comment).
   Future<String> create({
     required String apiaryId,
     required String type,
     required String occurredAt,
     required Map<String, dynamic> attributes,
+    String? journeyId,
   }) async {
     final id = _uuid.v4();
     final now = _nowIso();
     await _store.execute(
       'INSERT INTO $activitiesTable '
-      '(id, apiary_id, type, occurred_at, attributes, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, apiaryId, type, occurredAt, jsonEncode(attributes), now, now],
+      '(id, apiary_id, journey_id, type, occurred_at, attributes, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        apiaryId,
+        journeyId,
+        type,
+        occurredAt,
+        jsonEncode(attributes),
+        now,
+        now,
+      ],
     );
     return id;
   }
@@ -240,13 +260,11 @@ final activitiesRepositoryProvider = FutureProvider<ActivitiesRepository>((
 /// Live single activity by id (#40/#41) — the edit screen's read path,
 /// mirroring [apiaryByIdProvider]'s family + autoDispose pattern
 /// (apiaries_repository.dart).
-final activityByIdProvider = StreamProvider.autoDispose.family<Activity?, String>((
-  ref,
-  activityId,
-) async* {
-  final repo = await ref.watch(activitiesRepositoryProvider.future);
-  yield* repo.watchById(activityId);
-});
+final activityByIdProvider = StreamProvider.autoDispose
+    .family<Activity?, String>((ref, activityId) async* {
+      final repo = await ref.watch(activitiesRepositoryProvider.future);
+      yield* repo.watchById(activityId);
+    });
 
 /// One apiary's live activities (#42) — family-keyed + autoDispose, mirroring
 /// apiaries_repository.dart's apiaryCountersProvider/apiaryByIdProvider
