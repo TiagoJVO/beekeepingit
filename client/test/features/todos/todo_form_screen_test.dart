@@ -633,6 +633,28 @@ void main() {
         expect(find.textContaining('boom-complete'), findsOneWidget);
         expect(find.byKey(const Key('todo-title-field')), findsOneWidget);
       });
+
+      testWidgets(
+        'a failing reopen toggle shows an error and stays on the form',
+        (tester) async {
+          final repo = _FakeTodosRepository(
+            existing: existingTodo(
+              status: 'done',
+              completedAt: '2026-07-01T00:00:00Z',
+            ),
+            throwOnReopen: true,
+          );
+          await _goToEditForm(tester, repo: repo);
+
+          await tester.tap(
+            find.byKey(const Key('todo-complete-toggle-button')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.textContaining('boom-reopen'), findsOneWidget);
+          expect(find.byKey(const Key('todo-title-field')), findsOneWidget);
+        },
+      );
     });
 
     group('delete (#293, FR-TD-1)', () {

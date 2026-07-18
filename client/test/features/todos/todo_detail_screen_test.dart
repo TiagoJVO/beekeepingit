@@ -323,6 +323,25 @@ void main() {
         expect(find.textContaining('boom-complete'), findsOneWidget);
         expect(find.byKey(const Key('todo-detail-header')), findsOneWidget);
       });
+
+      testWidgets(
+        'a failing reopen toggle shows an error and stays in place',
+        (tester) async {
+          final repo = _FakeTodosRepository(
+            _todo(status: 'done', completedAt: '2026-07-01T10:00:00Z'),
+            throwOnReopen: true,
+          );
+          await _openDetail(tester, repo: repo);
+
+          await tester.tap(
+            find.byKey(const Key('todo-detail-complete-toggle-button')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.textContaining('boom-reopen'), findsOneWidget);
+          expect(find.byKey(const Key('todo-detail-header')), findsOneWidget);
+        },
+      );
     });
 
     testWidgets('the edit FAB navigates to the edit form', (tester) async {
