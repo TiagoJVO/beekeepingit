@@ -40,16 +40,19 @@ void main() {
       expect(line, isNot(contains('Honey harvested (kg)')));
     });
 
-    test('harvest: includes the optional lot_batch identifier when present (#292)', () {
-      final line = activitySummaryLine(
-        _l10n,
-        _activity(
-          type: 'harvest',
-          attributes: {'honey_supers': 4, 'lot_batch': '2026-07-A1'},
-        ),
-      );
-      expect(line, contains('Lot / batch identifier: 2026-07-A1'));
-    });
+    test(
+      'harvest: includes the optional lot_batch identifier when present (#292)',
+      () {
+        final line = activitySummaryLine(
+          _l10n,
+          _activity(
+            type: 'harvest',
+            attributes: {'honey_supers': 4, 'lot_batch': '2026-07-A1'},
+          ),
+        );
+        expect(line, contains('Lot / batch identifier: 2026-07-A1'));
+      },
+    );
 
     test('harvest: an absent lot_batch is simply not included', () {
       final line = activitySummaryLine(
@@ -148,35 +151,38 @@ void main() {
           },
         ),
       );
-      expect(
-        rowFor(rows, 'Honey supers harvested')?.value,
-        '4',
-      );
+      expect(rowFor(rows, 'Honey supers harvested')?.value, '4');
       expect(rowFor(rows, 'Honey harvested (kg)')?.value, '12.5');
       expect(rowFor(rows, 'Lot / batch identifier')?.value, '2026-07-A1');
       // Absent optional (hives_involved) yields no row at all.
       expect(rowFor(rows, 'Hives involved'), isNull);
     });
 
-    test('notes IS included on the detail (unlike the compact summary line)', () {
-      final rows = activityDetailRows(
-        _l10n,
-        _activity(
-          type: 'generic',
-          attributes: {'notes': 'Full field note visible on detail.'},
-        ),
-      );
-      expect(rows, hasLength(1));
-      expect(rows.single.value, 'Full field note visible on detail.');
-    });
+    test(
+      'notes IS included on the detail (unlike the compact summary line)',
+      () {
+        final rows = activityDetailRows(
+          _l10n,
+          _activity(
+            type: 'generic',
+            attributes: {'notes': 'Full field note visible on detail.'},
+          ),
+        );
+        expect(rows, hasLength(1));
+        expect(rows.single.value, 'Full field note visible on detail.');
+      },
+    );
 
-    test('a blank (whitespace-only) attribute is omitted, not an empty row', () {
-      final rows = activityDetailRows(
-        _l10n,
-        _activity(type: 'generic', attributes: {'notes': '   '}),
-      );
-      expect(rows, isEmpty);
-    });
+    test(
+      'a blank (whitespace-only) attribute is omitted, not an empty row',
+      () {
+        final rows = activityDetailRows(
+          _l10n,
+          _activity(type: 'generic', attributes: {'notes': '   '}),
+        );
+        expect(rows, isEmpty);
+      },
+    );
 
     test('generic with no attributes yields no rows', () {
       final rows = activityDetailRows(_l10n, _activity(type: 'generic'));
