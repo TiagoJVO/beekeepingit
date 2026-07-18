@@ -8,9 +8,16 @@
 // belongs to an ACTIVE member of the caller's organization via the
 // organizations service itself (api/members_client.go) before writing
 // anything — todos has no database access to the organizations schema
-// (ownership rule 1). Apiary association (#51) and list/filter UI (#53) are
-// explicitly out of scope. Wiring follows services/activities/main.go
-// (itself following services/servicetemplate/example/main.go).
+// (ownership rule 1). List/filter UI (#53) is explicitly out of scope.
+// Wiring follows services/activities/main.go (itself following
+// services/servicetemplate/example/main.go).
+//
+// #51 (FR-TD-1) adds the optional apiary_id field: a todo may be associated
+// with a specific apiary, or left as a general, org-level todo. Both write
+// paths verify a client-supplied apiary_id belongs to the caller's
+// organization via the apiaries service itself (api/apiaries_client.go)
+// before writing anything, mirroring the assignee_id guard above and
+// activities' own apiary_id guard.
 package main
 
 import (
@@ -46,12 +53,21 @@ func run(ctx context.Context) error {
 
 	identityURL := os.Getenv("INTERNAL_IDENTITY_URL")
 	organizationsURL := os.Getenv("INTERNAL_ORGANIZATIONS_URL")
-	if identityURL == "" || organizationsURL == "" {
-		return fmt.Errorf("config: INTERNAL_IDENTITY_URL and INTERNAL_ORGANIZATIONS_URL are required")
+	apiariesURL := os.Getenv("INTERNAL_APIARIES_URL")
+	if identityURL == "" || organizationsURL == "" || apiariesURL == "" {
+		return fmt.Errorf("config: INTERNAL_IDENTITY_URL, INTERNAL_ORGANIZATIONS_URL and INTERNAL_APIARIES_URL are required")
 	}
 	memberVerifier, err := api.NewMemberVerifier(organizationsURL, nil)
 	if err != nil {
 		return fmt.Errorf("build member verifier: %w", err)
+	}
+	// apiaryVerifier (#51) closes the "may be associated with a specific
+	// apiary" cross-org IDOR gap the same way memberVerifier already closes
+	// it for assignee_id — see api/apiaries_client.go's package doc for the
+	// full rationale.
+	apiaryVerifier, err := api.NewApiaryVerifier(apiariesURL, nil)
+	if err != nil {
+		return fmt.Errorf("build apiary verifier: %w", err)
 	}
 
 	providers, err := otelboot.Bootstrap(ctx, otelboot.Config{
@@ -105,8 +121,8 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}
-	srv.Mount("/v1/todos", scoped(api.Router(pool, memberVerifier)))
-	srv.Mount("/internal/sync", scoped(api.InternalSyncRouter(pool, memberVerifier)))
+	srv.Mount("/v1/todos", scoped(api.Router(pool, memberVerifier, apiaryVerifier)))
+	srv.Mount("/internal/sync", scoped(api.InternalSyncRouter(pool, memberVerifier, apiaryVerifier)))
 
 	return srv.Run(ctx)
 }

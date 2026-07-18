@@ -101,8 +101,10 @@ services:
   # #50: todo model + lifecycle (create/edit/complete/reopen/delete,
   # api/write.go + api/sync.go) — needs its own DB role/secret (todos schema,
   # matching activities'/apiaries' shape) plus organizations' URL for the
-  # cross-service assignee_id membership check (api/members_client.go). No
-  # apiaries URL is needed — todos has no apiary association yet (#51).
+  # cross-service assignee_id membership check (api/members_client.go).
+  # #51: also needs apiaries' URL for the cross-service apiary_id ownership
+  # check (api/apiaries_client.go) — a todo may be associated with a specific
+  # apiary, or left as a general, org-level todo (FR-TD-1).
   todos:
     component: services-todos
     port: 8080
@@ -110,6 +112,7 @@ services:
     env:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+      INTERNAL_APIARIES_URL: http://apiaries:8080
   sync:
     component: services-sync
     port: 8080

@@ -132,8 +132,14 @@ optional) is verified against organizations via `api/members_client.go`'s
 `actor_user_id` (audit) is derived server-side from claims, never the client
 (FR-TEN-2). Complete/reopen have no bespoke sync wire op — offline they queue
 as an ordinary patch touching only status/completed_at, applied by the same
-LWW path as any edit. Apiary association (#51) and list/filter (#53) are out
-of scope.
+LWW path as any edit. #51 adds the optional `apiary_id` field (FR-TD-1: "may
+be associated with a specific apiary, or left as a general, org-level
+todo") the same way: verified against apiaries via `api/apiaries_client.go`'s
+`ApiaryVerifier` (`GET /v1/apiaries/{id}`, mirroring activities' own
+apiary_id guard) BEFORE writing anything; deleting an apiary is NOT
+actively reconciled here (apiaries tombstones via `deleted_at`, mirroring
+activities' own no-clear-on-delete precedent) — a stale `apiary_id` is
+tolerated at client read time instead. List/filter (#53) is out of scope.
 
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 
