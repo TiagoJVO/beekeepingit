@@ -335,7 +335,7 @@ func applyJourneyBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handle
 		}
 
 		var results []OpResult
-		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+		err = withTx(r.Context(), pool, func(tx pgx.Tx, q *sqlcgen.Queries) error {
 			results = make([]OpResult, 0, len(batch.Ops))
 			for _, op := range batch.Ops {
 				var (
@@ -343,7 +343,7 @@ func applyJourneyBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handle
 					err error
 				)
 				if op.EntityType == entityTypeJourneyPlanItem {
-					res, err = applyJourneyPlanItemOp(r.Context(), q, org, userID, owned, op)
+					res, err = applyJourneyPlanItemOp(r.Context(), tx, q, org, userID, owned, op)
 				} else {
 					res, err = applyJourneyOp(r.Context(), q, org, userID, op)
 				}
@@ -499,7 +499,11 @@ func mergeJourneyOp(current journeyRowState, op Op, data journeyData) journeyRow
 // includes "apiary_ids") via writeJourneyPlanAuditLog, so a journey's
 // combined timeline stays coherent regardless of whether a change arrived
 // as a REST PATCH (write.go) or an independent sync op here.
-func applyJourneyPlanItemOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, owned map[string]bool, op Op) (OpResult, error) {
+//
+// Takes the raw enclosing pgx.Tx (in addition to q, which wraps it) purely
+// for the put path's SAVEPOINT around InsertJourneyPlanItem — see that
+// call's own comment for why.
+func applyJourneyPlanItemOp(ctx context.Context, tx pgx.Tx, q *sqlcgen.Queries, org pgtype.UUID, userID string, owned map[string]bool, op Op) (OpResult, error) {
 	id, err := uuid.Parse(op.ID)
 	if err != nil {
 		return OpResult{}, err
@@ -586,10 +590,36 @@ func applyJourneyPlanItemOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.
 		return OpResult{}, err
 	}
 	pgApiaryID := pgtype.UUID{Bytes: apiaryID, Valid: true}
-	_, insertErr := q.InsertJourneyPlanItem(ctx, sqlcgen.InsertJourneyPlanItemParams{
+
+	// This insert may hit either of journey_plan_items' two unique
+	// constraints (constraintName's doc comment: the PK on `id`, or the
+	// partial `(journey_id, apiary_id)` index) as an EXPECTED, benign race
+	// rather than a real error — but Postgres aborts the WHOLE enclosing
+	// transaction on any statement error, and this op runs inside
+	// applyJourneyBatch's single per-request transaction alongside every
+	// other op in the batch. Swallowing the error here and simply carrying
+	// on (as this function used to) left that transaction poisoned: every
+	// later statement — including the final commit — would fail with
+	// "current transaction is aborted", turning a benign no-op into a 500
+	// (caught by TestJourneysSync_Apply_DedupesApiaryOwnershipCalls and
+	// TestJourneysSync_Apply_PlanItemAlreadyOnPlanViaDifferentIdIsNoOp).
+	// Running the insert in its own SAVEPOINT (a pgx nested transaction) and
+	// rolling back to it on a caught, expected violation contains the damage
+	// to just this one statement, exactly like apiaries'/activities' own
+	// upsert-based equivalents avoid it via ON CONFLICT — plan items can't
+	// use a single ON CONFLICT clause here since either of TWO different
+	// constraints may legitimately fire, and each needs different handling.
+	spTx, err := tx.Begin(ctx)
+	if err != nil {
+		return OpResult{}, fmt.Errorf("begin plan item savepoint: %w", err)
+	}
+	_, insertErr := sqlcgen.New(spTx).InsertJourneyPlanItem(ctx, sqlcgen.InsertJourneyPlanItemParams{
 		ID: pgID, OrganizationID: org, JourneyID: pgJourneyID, ApiaryID: pgApiaryID,
 	})
 	if insertErr != nil {
+		if rbErr := spTx.Rollback(ctx); rbErr != nil {
+			return OpResult{}, fmt.Errorf("rollback plan item savepoint: %w", rbErr)
+		}
 		if !isUniqueViolation(insertErr) {
 			return OpResult{}, insertErr
 		}
@@ -603,7 +633,9 @@ func applyJourneyPlanItemOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.
 			// PK collision on the op's own id: idempotent replay if this exact
 			// row already exists with the same content, otherwise treated as a
 			// harmless no-op too — a plan item has no mutable content to
-			// meaningfully "conflict" over (this file's doc comment).
+			// meaningfully "conflict" over (this file's doc comment). The
+			// savepoint rollback above already restored the outer transaction
+			// (and so q, which wraps it) to a clean, usable state.
 			existing, getErr := q.GetJourneyPlanItem(ctx, sqlcgen.GetJourneyPlanItemParams{OrganizationID: org, ID: pgID})
 			if getErr == nil && existing.JourneyID == pgJourneyID && existing.ApiaryID == pgApiaryID {
 				return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
@@ -611,6 +643,9 @@ func applyJourneyPlanItemOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.
 			logging.FromContext(ctx).WarnContext(ctx, "journey_plan_item id collision with different content; treating as no-op", slog.String("id", op.ID))
 			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 		}
+	}
+	if err := spTx.Commit(ctx); err != nil {
+		return OpResult{}, fmt.Errorf("commit plan item savepoint: %w", err)
 	}
 
 	after, err := currentApiaryIDs(ctx, q, org, pgJourneyID)

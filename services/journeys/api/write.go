@@ -35,6 +35,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -153,7 +154,7 @@ func createJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 		apiaryIDStrings := uuidStrings(apiaryIDs)
 
 		var row sqlcgen.JourneysJourney
-		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+		err = withTx(r.Context(), pool, func(_ pgx.Tx, q *sqlcgen.Queries) error {
 			var insertErr error
 			row, insertErr = q.InsertJourney(r.Context(), sqlcgen.InsertJourneyParams{
 				ID: pgID, OrganizationID: org, Name: body.Name,
@@ -299,7 +300,7 @@ func updateJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 			want      journeyRowState
 			resultIDs []string
 		)
-		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+		err = withTx(r.Context(), pool, func(_ pgx.Tx, q *sqlcgen.Queries) error {
 			current, err := q.GetJourneyForUpdate(r.Context(), sqlcgen.GetJourneyForUpdateParams{OrganizationID: org, ID: pgID})
 			if err != nil || current.DeletedAt.Valid {
 				problem.Write(w, r, problem.NotFound("journey not found"))
@@ -399,7 +400,7 @@ func deleteJourney(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		pgID := pgtype.UUID{Bytes: id, Valid: true}
 
-		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
+		err = withTx(r.Context(), pool, func(_ pgx.Tx, q *sqlcgen.Queries) error {
 			current, err := q.GetJourneyForUpdate(r.Context(), sqlcgen.GetJourneyForUpdateParams{OrganizationID: org, ID: pgID})
 			if err != nil || current.DeletedAt.Valid {
 				problem.Write(w, r, problem.NotFound("journey not found"))

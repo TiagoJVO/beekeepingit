@@ -13,6 +13,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -74,14 +75,18 @@ var errResponseWritten = errors.New("journeys: response already written")
 
 // withTx runs fn inside one pool transaction: begins, always defers a
 // rollback (a no-op after a successful commit), and commits iff fn returns
-// nil. Mirrors services/activities/api/common.go's withTx.
-func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(*sqlcgen.Queries) error) error {
+// nil. Mirrors services/activities/api/common.go's withTx, extended to also
+// hand fn the raw pgx.Tx (not just the sqlc Queries wrapping it) — needed by
+// applyJourneyPlanItemOp (sync.go) to open a SAVEPOINT around one insert
+// that may hit an expected unique constraint, without poisoning the rest of
+// this batch's transaction (see its own doc comment for why).
+func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx, *sqlcgen.Queries) error) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after a successful Commit
-	if err := fn(sqlcgen.New(tx)); err != nil {
+	if err := fn(tx, sqlcgen.New(tx)); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
