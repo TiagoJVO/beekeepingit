@@ -37,8 +37,10 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │                                     the activities route above; a row → activity detail)
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
   │                        activity list, same filters + apiary label per row)
-  ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45; minimal —
-  │   │                    unfiltered name+status list, tap row → edit; filters are #47)
+  ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45/#47; org-wide
+  │   │                    list — date-range/activity-type filters (combinable), plan-vs-done
+  │   │                    progress badge per row, tap row → edit; #49 adds full statistics,
+  │   │                    #48 adds a dedicated detail screen)
   │   ├ new                JourneyFormScreen      features/journeys (#45; create)
   │   └ :id/edit            JourneyFormScreen     features/journeys (#45; edit/close/delete,
   │                        isEdit — no dedicated detail screen yet, that's #48; #49 adds

@@ -352,6 +352,38 @@ class JourneysRepository {
     );
   }
 
+  /// Every journey's planned apiary ids across the caller's org (#47,
+  /// FR-JO-2), keyed by journey id — the progress-badge input
+  /// (journey_filters.dart's `computeJourneyProgress`) that [watchAll]
+  /// deliberately leaves out of the list query itself ([Journey]'s own doc
+  /// comment above explains why). A journey with no plan items simply has no
+  /// entry in the returned map (callers treat a missing key as "nothing
+  /// planned yet", [JourneyProgress.zero] in journey_filters.dart).
+  ///
+  /// Live (`watch`, not a one-shot read) so the badge updates the moment a
+  /// plan item is added/removed — mirrors [watchAll]'s own live convention.
+  Stream<Map<String, List<String>>> watchPlanApiariesByJourney({
+    required String? organizationId,
+  }) {
+    if (organizationId == null) return Stream.value(const {});
+    return _store
+        .watch(
+          'SELECT p.journey_id AS journey_id, p.apiary_id AS apiary_id '
+          'FROM $journeyPlanItemsTable p '
+          'JOIN $journeysTable j ON j.id = p.journey_id '
+          'WHERE (j.organization_id = ? OR j.organization_id IS NULL)',
+          [organizationId],
+        )
+        .map((rows) {
+          final map = <String, List<String>>{};
+          for (final row in rows) {
+            final journeyId = row['journey_id'] as String;
+            (map[journeyId] ??= []).add(row['apiary_id'] as String);
+          }
+          return map;
+        });
+  }
+
   Journey _fromRow(Map<String, Object?> r, List<String> apiaryIds) => Journey(
     id: r['id'] as String,
     organizationId: r['organization_id'] as String?,
@@ -390,4 +422,15 @@ final journeyStatsProvider = StreamProvider.autoDispose
     .family<JourneyStats, String>((ref, journeyId) async* {
       final repo = await ref.watch(journeysRepositoryProvider.future);
       yield* repo.watchStats(journeyId);
+    });
+
+/// Every journey's planned apiary ids across the org (#47), live from local
+/// SQLite — the progress-badge input journeys_list_screen.dart needs
+/// alongside [journeysStreamProvider], mirroring that provider's own
+/// org-dependent, never-erroring shape.
+final journeyPlanApiariesByJourneyProvider =
+    StreamProvider.autoDispose<Map<String, List<String>>>((ref) async* {
+      final repo = await ref.watch(journeysRepositoryProvider.future);
+      final org = await ref.watch(organizationProvider.future);
+      yield* repo.watchPlanApiariesByJourney(organizationId: org?.id);
     });

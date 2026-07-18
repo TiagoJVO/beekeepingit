@@ -1019,6 +1019,54 @@
       }
     }
   },
+  "journeysFilterNoResults": "No journeys match your filters.",
+  "@journeysFilterNoResults": {
+    "description": "Shown instead of the plain empty state when date-range/activity-type filters are active but match nothing (#47 AC: combined filters + empty/no-results state)"
+  },
+  "journeyFilterTypeLabel": "Type",
+  "@journeyFilterTypeLabel": {
+    "description": "Field label for the Journeys tab's activity-type filter dropdown (#47, FR-JO-2)"
+  },
+  "journeyFilterTypeAll": "All types",
+  "@journeyFilterTypeAll": {
+    "description": "The Journeys tab's activity-type filter's cleared/default option — no type filter applied (#47)"
+  },
+  "journeyFilterDateRangeLabel": "Date range",
+  "@journeyFilterDateRangeLabel": {
+    "description": "Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)"
+  },
+  "journeyFilterDateRangeUnset": "Any date",
+  "@journeyFilterDateRangeUnset": {
+    "description": "The Journeys tab's date-range filter's cleared/default state — no date filter applied (#47)"
+  },
+  "journeyFilterDateRangeValue": "{start} – {end}",
+  "@journeyFilterDateRangeValue": {
+    "description": "The Journeys tab's selected date range, both bounds already locale-formatted by the caller (#47)",
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyFilterClearAction": "Clear filters",
+  "@journeyFilterClearAction": {
+    "description": "Button that resets both the Journeys tab's type and date-range filters at once (#47)"
+  },
+  "journeyProgressBadge": "{done}/{planned} apiaries visited",
+  "@journeyProgressBadge": {
+    "description": "Per-row plan-vs-done progress badge on the Journeys tab (#47, FR-JO-2 — 'feitos/planeados'): how many of the journey's planned apiaries already have a matching recorded activity, out of the total planned. Only shown when planned > 0.",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "int"
+      }
+    }
+  },
   "journeyNameLabel": "Name",
   "@journeyNameLabel": {
     "description": "Field label for a journey's name on the create/edit form (#45, FR-JO-4)"

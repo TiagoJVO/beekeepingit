@@ -102,6 +102,25 @@ class FakeLocalStore implements LocalStoreEngine {
 
   List<Map<String, Object?>> _select(String sql, List<Object?> args) {
     final normalized = sql.toUpperCase();
+    // watchPlanApiariesByJourney's own query (#47): distinguished from
+    // watchMatching's JOIN query below by its own distinctive SELECT list
+    // (p.journey_id/p.apiary_id, vs. watchMatching's j.id/j.organization_id/
+    // ...) — checked FIRST since both queries JOIN journey_plan_items and
+    // would otherwise both match the generic branch below.
+    if (normalized.contains('P.JOURNEY_ID AS JOURNEY_ID') &&
+        normalized.contains('P.APIARY_ID AS APIARY_ID')) {
+      final orgId = args[0];
+      final matchingJourneyIds = rows
+          .where(
+            (r) =>
+                r['organization_id'] == orgId || r['organization_id'] == null,
+          )
+          .map((r) => r['id'])
+          .toSet();
+      return planRows
+          .where((p) => matchingJourneyIds.contains(p['journey_id']))
+          .toList();
+    }
     // watchMatching's join query (#46) mentions BOTH tables — check for the
     // JOIN shape first so it doesn't fall into the plain
     // journeyPlanItemsTable branch below (which would return raw plan-item
@@ -564,5 +583,122 @@ void main() {
         expect(matches, isEmpty);
       },
     );
+  });
+
+  group('JourneysRepository.watchPlanApiariesByJourney() (#47, FR-JO-2)', () {
+    test('returns an empty map when the organization id is null', () async {
+      final result = await repo
+          .watchPlanApiariesByJourney(organizationId: null)
+          .first;
+      expect(result, isEmpty);
+    });
+
+    test('groups plan-item apiary ids by journey id', () async {
+      final j1 = await repo.create(
+        name: 'Journey 1',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1', 'a2'],
+      );
+      final j2 = await repo.create(
+        name: 'Journey 2',
+        mainActivityType: 'feeding',
+        apiaryIds: const ['a3'],
+      );
+
+      final result = await repo
+          .watchPlanApiariesByJourney(organizationId: 'org-a')
+          .first;
+
+      expect(result[j1]!.toSet(), {'a1', 'a2'});
+      expect(result[j2], ['a3']);
+    });
+
+    test(
+      'omits a journey with no plan items — no entry, not an empty list',
+      () async {
+        final id = await repo.create(
+          name: 'Empty plan journey',
+          mainActivityType: 'generic',
+          apiaryIds: const [],
+        );
+
+        final result = await repo
+            .watchPlanApiariesByJourney(organizationId: 'org-a')
+            .first;
+
+        expect(result.containsKey(id), isFalse);
+      },
+    );
+
+    test('excludes another organization\'s plan items (FR-TEN-2)', () async {
+      store.rows.addAll([
+        {
+          'id': 'own-1',
+          'organization_id': 'org-a',
+          'name': 'Own journey',
+          'main_activity_type': 'harvest',
+          'status': journeyStatusOpen,
+          'created_at': '2026-06-01T00:00:00Z',
+          'updated_at': '2026-06-01T00:00:00Z',
+        },
+        {
+          'id': 'foreign-1',
+          'organization_id': 'org-b',
+          'name': 'Foreign journey',
+          'main_activity_type': 'harvest',
+          'status': journeyStatusOpen,
+          'created_at': '2026-06-02T00:00:00Z',
+          'updated_at': '2026-06-02T00:00:00Z',
+        },
+      ]);
+      store.planRows.addAll([
+        {
+          'id': 'plan-own',
+          'journey_id': 'own-1',
+          'apiary_id': 'a1',
+          'created_at': '2026-06-01T00:00:00Z',
+        },
+        {
+          'id': 'plan-foreign',
+          'journey_id': 'foreign-1',
+          'apiary_id': 'a9',
+          'created_at': '2026-06-02T00:00:00Z',
+        },
+      ]);
+
+      final result = await repo
+          .watchPlanApiariesByJourney(organizationId: 'org-a')
+          .first;
+
+      expect(result.keys.toSet(), {'own-1'});
+    });
+
+    test('re-emits after a plan item is added', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+
+      final emissions = <int>[];
+      final sub = repo
+          .watchPlanApiariesByJourney(organizationId: 'org-a')
+          .listen((m) => emissions.add(m[id]?.length ?? 0));
+      addTearDown(sub.cancel);
+
+      await pumpEventQueue();
+      expect(emissions, [1]);
+
+      await repo.update(
+        id,
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+        apiaryIds: const ['a1', 'a2'],
+      );
+      await pumpEventQueue();
+
+      expect(emissions.last, 2);
+    });
   });
 }

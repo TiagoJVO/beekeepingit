@@ -761,6 +761,35 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get journeysFilterNoResults =>
+      'Nenhuma jornada corresponde aos filtros.';
+
+  @override
+  String get journeyFilterTypeLabel => 'Tipo';
+
+  @override
+  String get journeyFilterTypeAll => 'Todos os tipos';
+
+  @override
+  String get journeyFilterDateRangeLabel => 'Intervalo de datas';
+
+  @override
+  String get journeyFilterDateRangeUnset => 'Qualquer data';
+
+  @override
+  String journeyFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get journeyFilterClearAction => 'Limpar filtros';
+
+  @override
+  String journeyProgressBadge(int done, int planned) {
+    return '$done/$planned apiários visitados';
+  }
+
+  @override
   String get journeyNameLabel => 'Nome';
 
   @override
