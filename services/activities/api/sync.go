@@ -144,10 +144,16 @@ func resolveApiaryOwnership(ctx context.Context, verifier *ApiaryVerifier, beare
 		if data.ApiaryID == nil {
 			continue
 		}
-		apiaryID := *data.ApiaryID
-		if _, err := uuid.Parse(apiaryID); err != nil {
+		parsed, err := uuid.Parse(*data.ApiaryID)
+		if err != nil {
 			continue // malformed id — structural validation handles it
 		}
+		// Keyed by the canonical form (not the raw client string) so a
+		// non-canonically-cased but valid UUID still matches the lookups in
+		// validateActivityOp/applyActivityOp, which both normalize via
+		// uuid.Parse(...).String() — a mismatched key here silently no-ops
+		// an op that WAS actually verified as owned.
+		apiaryID := parsed.String()
 		if _, done := owned[apiaryID]; done {
 			continue // already resolved this distinct id — the de-dup
 		}
@@ -180,10 +186,12 @@ func resolveJourneyOwnership(ctx context.Context, verifier *JourneyVerifier, bea
 		if data.JourneyID == nil {
 			continue
 		}
-		journeyID := *data.JourneyID
-		if _, err := uuid.Parse(journeyID); err != nil {
+		parsed, err := uuid.Parse(*data.JourneyID)
+		if err != nil {
 			continue // malformed id — structural validation handles it
 		}
+		// Canonical form, same rationale as resolveApiaryOwnership above.
+		journeyID := parsed.String()
 		if _, done := owned[journeyID]; done {
 			continue // already resolved this distinct id — the de-dup
 		}
@@ -298,10 +306,10 @@ func validateActivityOp(i int, op Op, owned, ownedJourneys map[string]bool) []pr
 			errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "required", Message: "apiary_id is required"})
 		}
 	default:
-		if _, err := uuid.Parse(*data.ApiaryID); err != nil {
+		if parsed, err := uuid.Parse(*data.ApiaryID); err != nil {
 			errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
 		} else {
-			apiaryID = *data.ApiaryID
+			apiaryID = parsed.String() // canonical form — matches owned's key
 		}
 	}
 
@@ -328,10 +336,10 @@ func validateActivityOp(i int, op Op, owned, ownedJourneys map[string]bool) []pr
 	}
 	journeyID := ""
 	if data.JourneyID != nil {
-		if _, err := uuid.Parse(*data.JourneyID); err != nil {
+		if parsed, err := uuid.Parse(*data.JourneyID); err != nil {
 			errs = append(errs, problem.FieldError{Field: prefix + ".data.journey_id", Code: "invalid", Message: "journey_id must be a UUID"})
 		} else {
-			journeyID = *data.JourneyID
+			journeyID = parsed.String() // canonical form — matches ownedJourneys's key
 		}
 	}
 

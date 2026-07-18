@@ -294,10 +294,10 @@ func validateJourneyPlanItemOp(i int, op Op, owned map[string]bool) []problem.Fi
 	apiaryID := ""
 	if data.ApiaryID == nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "required", Message: "apiary_id is required"})
-	} else if _, err := uuid.Parse(*data.ApiaryID); err != nil {
+	} else if parsed, err := uuid.Parse(*data.ApiaryID); err != nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
 	} else {
-		apiaryID = *data.ApiaryID
+		apiaryID = parsed.String() // canonical form — matches owned's key (resolveApiaryOwnership/verifyApiaryIDs)
 	}
 	if apiaryID != "" && !owned[apiaryID] {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary in this organization"})
