@@ -388,6 +388,16 @@
   "todoDueDateUnset": "Sem prazo",
   "todoOverdueBadge": "Atrasada",
   "todoStatusSemanticLabel": "Estado: {status}",
+  "addTodo": "Nova tarefa",
+  "todoQuickCreateTitle": "Nova tarefa",
+  "todoTitleLabel": "Título",
+  "todoTitleRequired": "O título é obrigatório",
+  "todoDueDateLabel": "Prazo",
+  "todoDueDateClearAction": "Limpar prazo",
+  "todoQuickCreateForApiary": "Para {apiaryName}",
+  "todoQuickCreateCancelAction": "Cancelar",
+  "todoCreatedConfirmation": "Tarefa criada",
+  "todoSaveError": "Não foi possível guardar a tarefa: {error}",
   "@activityLoadError": {
     "placeholders": {
       "error": {
