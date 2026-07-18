@@ -113,6 +113,12 @@ func newFakeApiaries(t *testing.T, known map[string]bool) *fakeApiaries {
 	f := &fakeApiaries{hits: map[string]int{}}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/v1/apiaries/")
+		// Mirrors the real handler's uuid.Parse(chi.URLParam(...)) (apiaries/
+		// api/write.go) — case-insensitive, so this double doesn't fail a
+		// non-canonically-cased id the real service would accept.
+		if parsed, err := uuid.Parse(id); err == nil {
+			id = parsed.String()
+		}
 		f.mu.Lock()
 		f.hits[id]++
 		f.mu.Unlock()
@@ -150,6 +156,11 @@ func newFakeJourneys(t *testing.T, known map[string]bool) *fakeJourneys {
 	f := &fakeJourneys{hits: map[string]int{}}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/v1/journeys/")
+		// Mirrors the real handler's uuid.Parse(chi.URLParam(...)), same
+		// rationale as newFakeApiaries above.
+		if parsed, err := uuid.Parse(id); err == nil {
+			id = parsed.String()
+		}
 		f.mu.Lock()
 		f.hits[id]++
 		f.mu.Unlock()
@@ -959,6 +970,73 @@ func TestActivitiesSync_ValidateThenApply_CreateActivity_Success(t *testing.T) {
 	// (which carries no performed_by field at all).
 	if uuidString(row.PerformedBy) != devseed.UserID {
 		t.Fatalf("performed_by after sync apply = %q, want %q", uuidString(row.PerformedBy), devseed.UserID)
+	}
+}
+
+// TestActivitiesSync_Apply_NonCanonicalCaseApiaryIdStillApplies is the
+// regression guard for the review finding that resolveApiaryOwnership keyed
+// `owned` by the RAW, unnormalized client string, while applyActivityOp
+// looked it up via the CANONICAL uuid.Parse(...).String() form — so an
+// apiary_id sent in a non-canonical case (e.g. uppercase hex, still a
+// perfectly valid, owned UUID) would silently no-op the whole op (result
+// "applied" but nothing actually written) even though the up-front
+// ownership check HAD confirmed it belongs to the caller's org. The row
+// must actually be created, not just report "applied".
+func TestActivitiesSync_Apply_NonCanonicalCaseApiaryIdStillApplies(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID) // fake apiaries server knows the canonical (lowercase) form
+	id := uuid.NewString()
+	batch := map[string]any{"ops": []any{syncOp(id, strings.ToUpper(apiaryID))}}
+
+	validateRec := f.do(t, http.MethodPost, "/internal/sync/validate", batch)
+	if validateRec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200, body = %s", validateRec.Code, validateRec.Body.String())
+	}
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	if _, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	}); err != nil {
+		t.Fatalf("GetActivity: %v — the op must have actually created the row, not silently no-op'd it", err)
+	}
+}
+
+// TestActivitiesSync_Apply_NonCanonicalCaseJourneyIdStillApplies is the
+// journey_id-side counterpart of the apiary_id regression above:
+// resolveJourneyOwnership had the identical raw-key/normalized-lookup
+// mismatch.
+func TestActivitiesSync_Apply_NonCanonicalCaseJourneyIdStillApplies(t *testing.T) {
+	apiaryID, journeyID := uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyID})
+	id := uuid.NewString()
+	op := syncOp(id, apiaryID)
+	op["data"].(map[string]any)["journey_id"] = strings.ToUpper(journeyID)
+	batch := map[string]any{"ops": []any{op}}
+
+	validateRec := f.do(t, http.MethodPost, "/internal/sync/validate", batch)
+	if validateRec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200, body = %s", validateRec.Code, validateRec.Body.String())
+	}
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v — the op must have actually created the row, not silently no-op'd it", err)
+	}
+	if !row.JourneyID.Valid || uuidString(row.JourneyID) != journeyID {
+		t.Fatalf("stored journey_id = %+v, want %q", row.JourneyID, journeyID)
 	}
 }
 
