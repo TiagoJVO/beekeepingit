@@ -61,6 +61,28 @@ added create, #40/#41 added edit/delete (delete via `deleted_at` tombstone, same
 as `apiaries.apiaries`) — both REST (`api/write.go`) and sync-apply (`api/sync.go`, LWW on
 `updated_at`).
 
+### `todos`
+
+```text
+todos             (id PK, organization_id, title, description NULL, due_date DATE NULL,
+                   priority[low|medium|high], status[open|done] DEFAULT 'open',
+                   completed_at NULL, assignee_id NULL-FK(soft, org member),
+                   created_at, updated_at, recorded_at, deleted_at)
+sync_conflict_log  (… same shape as apiaries.sync_conflict_log)
+audit_log          (… same shape as apiaries.audit_log)
+```
+
+`priority`/`status` validated in Go (`api/types.go`, D-20), not a DB enum/CHECK
+(extensible-enum convention). No JSONB attributes bag — every FR-TD-1 field is a plain typed
+column, unlike `activities.activities`. `assignee_id` (D-23, optional) is a cross-service soft
+reference verified against `organizations.memberships` via `api/members_client.go` (an HTTP
+call — todos has no DB access to the organizations schema). #50 shipped the full model +
+lifecycle in one story: create/edit (REST full resubmit) + complete/reopen (narrow
+status/completed_at update) + delete (`deleted_at` tombstone) — both REST (`api/write.go`)
+and sync-apply (`api/sync.go`, LWW on `updated_at`; complete/reopen apply as an ordinary
+patch, no bespoke wire op). Apiary association (#51) and list/filter (#53) are out of scope —
+no `apiary_id` column yet.
+
 ## Relationships
 
 ```text
@@ -84,6 +106,9 @@ sync_rejected_ops (LOCAL-ONLY dead-letter: dedup_key, fix_apiary_id, op, payload
 activities        (id, organization_id, apiary_id, performed_by, journey_id, type,
                    occurred_at, attributes TEXT(JSON-encoded), created_at, updated_at)
                    -- #38: schema declared for future Sync Rules; no read/write path yet
+todos             (id, organization_id, title, description, due_date, priority, status,
+                   completed_at, assignee_id, created_at, updated_at)
+                   -- #50: plain typed columns, no JSON-encoded attributes column needed
 ```
 
 Projection: server `location geography` → client `location_lon/lat` via `ST_X`/`ST_Y`
@@ -98,6 +123,7 @@ organizations:  00001 create_organizations · 00002 create_invitations · 00003 
 apiaries:       00001 create_apiaries · 00002 audit_log · 00003 add_location(PostGIS)
                 00004 add_notes · 00005 create_apiary_counters · 00006 add_place_label
 activities:     00001 create_activities(+sync_conflict_log) · 00002 audit_log
+todos:          00001 create_todos(+sync_conflict_log) · 00002 audit_log
 shared/dbaccess:00001 create_example_items (template reference only)
 ```
 

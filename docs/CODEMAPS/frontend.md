@@ -68,6 +68,8 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 | `activitiesByApiaryProvider` (family)      | features/activities                  | live activities for one apiary (#42)                                     |
 | `activitiesStreamProvider`                 | features/activities                  | live org-wide activities (#43, org-scoped incl. defense-in-depth filter) |
 | `activitiesViewModelProvider` (family)     | features/activities/activity_filters | filtered list + empty-vs-no-results state (#42/#43)                      |
+| `todosRepositoryProvider`                  | features/todos                       | `TodosRepository` (#50; no screen wired to it yet — /todos is still ComingSoonScreen) |
+| `todoByIdProvider` (family)                | features/todos                       | live single todo by id (#50)                                             |
 | `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                      |
 
 ## Sync flow (client) — core/sync/
@@ -86,7 +88,10 @@ SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reco
 ## Client-side schema (core/sync/powersync_schema.dart)
 
 `apiaries` (name, notes, place_label, location_lon/lat REAL, org_id, timestamps) ·
-`apiary_counters` (apiary_id, counter_type, value) · `sync_rejected_ops` (**local-only** dead-letter).
+`apiary_counters` (apiary_id, counter_type, value) ·
+`todos` (title, description, due_date, priority, status, completed_at, assignee_id, org_id,
+timestamps — #50, plain scalar columns, no JSON-encoded column needed unlike `activities`) ·
+`sync_rejected_ops` (**local-only** dead-letter).
 `deleted_at` is not a local column (Sync Rules exclude tombstones). See [data.md](data.md).
 
 ## Theming / brand

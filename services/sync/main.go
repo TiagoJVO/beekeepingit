@@ -56,7 +56,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	coord, err := api.NewCoordinator(e.apiariesURL, e.activitiesURL)
+	coord, err := api.NewCoordinator(e.apiariesURL, e.activitiesURL, e.todosURL)
 	if err != nil {
 		return fmt.Errorf("build coordinator: %w", err)
 	}
@@ -157,6 +157,7 @@ type env struct {
 	organizationsURL string
 	apiariesURL      string
 	activitiesURL    string
+	todosURL         string
 	tokenIssuer      string
 	tokenAudience    string
 	tokenTTL         time.Duration
@@ -191,6 +192,7 @@ func loadEnv() (env, error) {
 		organizationsURL: req("INTERNAL_ORGANIZATIONS_URL"),
 		apiariesURL:      req("INTERNAL_APIARIES_URL"),
 		activitiesURL:    req("INTERNAL_ACTIVITIES_URL"),
+		todosURL:         req("INTERNAL_TODOS_URL"),
 		tokenIssuer:      req("SYNC_TOKEN_ISSUER"),
 		tokenAudience:    req("SYNC_TOKEN_AUDIENCE"),
 		tokenPrivateKey:  os.Getenv("SYNC_TOKEN_PRIVATE_KEY"),

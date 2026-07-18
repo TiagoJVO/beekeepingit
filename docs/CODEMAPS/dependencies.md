@@ -21,7 +21,7 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 ## Inter-service dependency graph (internal HTTP)
 
 ```text
-client ──JWT──► identity, organizations, apiaries, sync   (all via Traefik /v1/*)
+client ──JWT──► identity, organizations, apiaries, todos, sync   (all via Traefik /v1/*)
 organizations ─► identity            (INTERNAL_IDENTITY_URL, user resolve)
 apiaries       ─► identity, organizations   (org-resolver: sub→user, →membership)
 activities     ─► identity, organizations   (org-resolver, same wiring as apiaries)
@@ -29,9 +29,18 @@ activities     ─► apiaries            (INTERNAL_APIARIES_URL, #39: verify a 
                                         apiary_id belongs to the caller's org, GET /v1/apiaries/{id} —
                                         api/apiaries_client.go; activities has no DB access to
                                         apiaries' schema, ownership rule 1)
+todos          ─► identity, organizations   (org-resolver, same wiring as apiaries)
+todos          ─► organizations       (INTERNAL_ORGANIZATIONS_URL, #50: verify a client-supplied
+                                        assignee_id has an ACTIVE membership in the caller's org,
+                                        GET /internal/memberships/active?user_id= —
+                                        api/members_client.go; todos has no DB access to
+                                        organizations' schema, ownership rule 1; NO apiaries
+                                        dependency — todos has no apiary association yet, #51)
 sync           ─► identity, organizations   (org-resolver, on /v1)
 sync           ─► apiaries            (INTERNAL_APIARIES_URL: /internal/sync/validate+apply)
 sync           ─► activities          (INTERNAL_ACTIVITIES_URL, #39: /internal/sync/validate+apply,
+                                        routed by entity_type via Coordinator.groupOpsByOwner)
+sync           ─► todos               (INTERNAL_TODOS_URL, #50: /internal/sync/validate+apply,
                                         routed by entity_type via Coordinator.groupOpsByOwner)
 PowerSync      ─► sync                (validates tokens against /internal/sync/jwks.json)
 ```

@@ -79,7 +79,7 @@ func newStubApiaries(t *testing.T) *stubApiaries {
 func newSyncFixture(t *testing.T) (*servicetemplate.Server, *stubApiaries) {
 	t.Helper()
 	stub := newStubApiaries(t)
-	coord, err := api.NewCoordinator(stub.server.URL, stub.server.URL)
+	coord, err := api.NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -155,4 +155,37 @@ func TestSyncSlice_ResponsesConformToOpenAPIContract(t *testing.T) {
 		t.Fatalf("batch-reject status = %d, want 422, body = %s", recReject.Code, recReject.Body.String())
 	}
 	doc.ValidateResponseBody(t, http.MethodPost, "/v1/sync/batch", http.StatusUnprocessableEntity, recReject.Body.Bytes())
+}
+
+// TestLoadEnv_RequiresInternalTodosUrl proves loadEnv treats
+// INTERNAL_TODOS_URL as required (#50, mirroring the existing
+// INTERNAL_ACTIVITIES_URL requirement it was added alongside) — the
+// coordinator can't route "todo" ops to a service it was never told the
+// address of.
+func TestLoadEnv_RequiresInternalTodosUrl(t *testing.T) {
+	t.Setenv("SERVICE_NAME", "sync-test")
+	t.Setenv("OIDC_ISSUER_URL", "https://issuer.test/realms/beekeepingit")
+	t.Setenv("OIDC_AUDIENCE", "beekeepingit-test")
+	t.Setenv("INTERNAL_IDENTITY_URL", "http://identity:8080")
+	t.Setenv("INTERNAL_ORGANIZATIONS_URL", "http://organizations:8080")
+	t.Setenv("INTERNAL_APIARIES_URL", "http://apiaries:8080")
+	t.Setenv("INTERNAL_ACTIVITIES_URL", "http://activities:8080")
+	t.Setenv("SYNC_TOKEN_ISSUER", "https://issuer.test/realms/beekeepingit")
+	t.Setenv("SYNC_TOKEN_AUDIENCE", "beekeepingit-test")
+	// Deliberately NOT setting INTERNAL_TODOS_URL.
+
+	if _, err := loadEnv(); err == nil {
+		t.Fatalf("loadEnv succeeded without INTERNAL_TODOS_URL, want an error")
+	} else if !strings.Contains(err.Error(), "INTERNAL_TODOS_URL") {
+		t.Fatalf("loadEnv error = %v, want it to mention INTERNAL_TODOS_URL", err)
+	}
+
+	t.Setenv("INTERNAL_TODOS_URL", "http://todos:8080")
+	e, err := loadEnv()
+	if err != nil {
+		t.Fatalf("loadEnv with INTERNAL_TODOS_URL set: %v", err)
+	}
+	if e.todosURL != "http://todos:8080" {
+		t.Fatalf("e.todosURL = %q, want %q", e.todosURL, "http://todos:8080")
+	}
 }

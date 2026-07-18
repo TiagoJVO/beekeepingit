@@ -22,40 +22,45 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
-// activityEntityType is the sync wire entity_type activities' own
-// api/sync.go Op carries (client mirror: powersync_schema.dart's
-// activityEntityType) — the routing key groupOpsByOwner uses to tell an
-// activities op apart from every other (apiary/apiary_counter) op, which
-// all default to apiariesURL.
+// activityEntityType/todoEntityType are the sync wire entity_types
+// activities'/todos' own api/sync.go Op carries (client mirror:
+// powersync_schema.dart's activityEntityType/todoEntityType) — the routing
+// keys groupOpsByOwner uses to tell an activities/todos op apart from every
+// other (apiary/apiary_counter) op, which all default to apiariesURL.
 const activityEntityType = "activity"
+const todoEntityType = "todo"
 
 // Coordinator fans a client transaction out to owning services, grouped by
 // each op's entity_type (sync.md §6.1/§6.3: "groups ops by owning
-// service"). #39 is the first op kind that isn't owned by apiaries
+// service"). #39 was the first op kind that isn't owned by apiaries
 // (activities) — the two-phase validate-all-then-apply contract already
-// anticipated a second service; this is that extension, not a redesign.
-// Most pushes are still single-service (sync.md §1's overwhelming-majority
-// case) and take the byte-identical single-group fast path (handleSingle);
-// only a push that genuinely mixes an apiary/apiary_counter op with an
-// activity op (e.g. an apiary created and an activity logged against it in
+// anticipated a second service; #50 (todos) is the same extension applied a
+// second time, not a redesign. Most pushes are still single-service
+// (sync.md §1's overwhelming-majority case) and take the byte-identical
+// single-group fast path (handleSingle); only a push that genuinely mixes
+// ops across owning services (e.g. an apiary created and a todo logged in
 // the same offline session) exercises the multi-group merge (handleMulti).
 type Coordinator struct {
 	apiariesURL   string
 	activitiesURL string
+	todosURL      string
 	client        *http.Client
 }
 
-// NewCoordinator builds a Coordinator targeting the apiaries and activities
-// services — every op not recognized as an activity op defaults to
-// apiariesURL, so this stays additive as further owning services are wired
-// in (sync.md §6.3's "adding a second service later changes nothing here"
-// promise, now made real for the FIRST actual second service).
-func NewCoordinator(apiariesURL, activitiesURL string) (*Coordinator, error) {
+// NewCoordinator builds a Coordinator targeting the apiaries, activities and
+// todos services — every op not recognized as an activity or todo op
+// defaults to apiariesURL, so this stays additive as further owning
+// services are wired in (sync.md §6.3's "adding a second service later
+// changes nothing here" promise).
+func NewCoordinator(apiariesURL, activitiesURL, todosURL string) (*Coordinator, error) {
 	if apiariesURL == "" {
 		return nil, fmt.Errorf("sync: NewCoordinator requires apiariesURL")
 	}
 	if activitiesURL == "" {
 		return nil, fmt.Errorf("sync: NewCoordinator requires activitiesURL")
+	}
+	if todosURL == "" {
+		return nil, fmt.Errorf("sync: NewCoordinator requires todosURL")
 	}
 	return &Coordinator{
 		// Trim a trailing slash so an operator-supplied URL (env var, config)
@@ -63,6 +68,7 @@ func NewCoordinator(apiariesURL, activitiesURL string) (*Coordinator, error) {
 		// endpoint paths below.
 		apiariesURL:   strings.TrimRight(apiariesURL, "/"),
 		activitiesURL: strings.TrimRight(activitiesURL, "/"),
+		todosURL:      strings.TrimRight(todosURL, "/"),
 		client: &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
@@ -91,7 +97,7 @@ type upstreamResponse struct {
 // rejected by an owning service's own JSON decode with its usual "malformed
 // sync batch" message, not a bespoke error from this layer.
 func (c *Coordinator) handle(ctx context.Context, bearer string, body []byte) upstreamResponse {
-	groups, order := groupOpsByOwner(body, c.apiariesURL, c.activitiesURL)
+	groups, order := groupOpsByOwner(body, c.apiariesURL, c.activitiesURL, c.todosURL)
 	switch len(groups) {
 	case 0:
 		return c.handleSingle(ctx, bearer, c.apiariesURL, body)
@@ -198,13 +204,13 @@ type rawBatchOp struct {
 
 // groupOpsByOwner splits body's `{"ops":[...]}` array by each op's
 // entity_type into one sub-batch per owning service (activityEntityType →
-// activitiesURL; everything else, including a malformed/unrecognized op →
-// apiariesURL, its long-standing default owner). A body that isn't a valid
-// `{"ops":[...]}` object, or whose ops array is empty, returns (nil, nil) —
-// the caller (handle) falls back to the whole-body passthrough. order lists
-// each group's URL exactly once, in first-seen order, so callers can walk
-// the map deterministically.
-func groupOpsByOwner(body []byte, apiariesURL, activitiesURL string) (map[string][]byte, []string) {
+// activitiesURL; todoEntityType → todosURL; everything else, including a
+// malformed/unrecognized op → apiariesURL, its long-standing default
+// owner). A body that isn't a valid `{"ops":[...]}` object, or whose ops
+// array is empty, returns (nil, nil) — the caller (handle) falls back to
+// the whole-body passthrough. order lists each group's URL exactly once, in
+// first-seen order, so callers can walk the map deterministically.
+func groupOpsByOwner(body []byte, apiariesURL, activitiesURL, todosURL string) (map[string][]byte, []string) {
 	var rb struct {
 		Ops []json.RawMessage `json:"ops"`
 	}
@@ -218,8 +224,11 @@ func groupOpsByOwner(body []byte, apiariesURL, activitiesURL string) (map[string
 		var meta rawBatchOp
 		_ = json.Unmarshal(raw, &meta) // malformed op ⇒ falls through to apiariesURL; that service's own validate rejects it with field-level detail
 		ownerURL := apiariesURL
-		if meta.EntityType == activityEntityType {
+		switch meta.EntityType {
+		case activityEntityType:
 			ownerURL = activitiesURL
+		case todoEntityType:
+			ownerURL = todosURL
 		}
 		if _, ok := grouped[ownerURL]; !ok {
 			order = append(order, ownerURL)
