@@ -25,3 +25,14 @@
 - **Observability stack (`infra/helm/observability/`) not deployed to staging** — deliberately
   deferred given `DEV1-M`'s tight memory budget; revisit once the core stack's actual footprint on
   the live cluster is known.
+- **`apps/dev/beekeepingit-helmrelease.yaml` likely has the same install-time deadlock** as staging
+  had before `install.disableWait`/`upgrade.disableWait` were added here: Helm's default
+  wait-for-ready gates every Deployment before the release is considered successful, but
+  `charts/postgres/templates/schema-grants-job.yaml` (a post-install/post-upgrade hook every
+  DB-backed service and PowerSync depend on) only runs _after_ that wait succeeds — a from-scratch
+  install can never converge. dev has never hit this because its Flux `HelmRelease` has only ever
+  upgraded a release originally bootstrapped by a manual `helm install` (no `--wait` by default on
+  the raw CLI). Untested risk: if dev's cluster is ever torn down and re-bootstrapped purely
+  through Flux, it would deadlock the same way staging did. Consider applying the same
+  `disableWait` fix there too, or fixing the chart's hook ordering itself so neither environment
+  depends on this history quirk.

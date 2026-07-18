@@ -17,20 +17,31 @@ spec:
   releaseName: beekeepingit
   install:
     createNamespace: true
-    # Longer than the 5m default + a few retries: a from-scratch install on a
-    # single small node (DEV1-M) has ~9 Deployments cold-starting at once,
-    # all needing charts/postgres's schema-grants post-install hook to finish
-    # first (CNPG role reconciliation + Job scheduling under real resource
-    # contention) — CrashLoopBackOff's own growing backoff (10s/20s/40s/...)
-    # can outlast a tight window before that hook even gets a chance to run,
-    # which then fails the whole install and (with the default 0 retries)
-    # permanently stalls it. Observed exactly this on the first staging
-    # bring-up (D-26) — dev doesn't hit it because a long-lived k3d cluster's
-    # roles/schemas are already reconciled from prior installs.
+    # disableWait (= Helm's `--wait=false`): Helm's default wait-for-ready
+    # gates *all* main resources (every Deployment) before it's considered
+    # successful — but post-install hooks (charts/postgres/templates/
+    # schema-grants-job.yaml, which every DB-backed service's migration and
+    # PowerSync's `powersync_storage` connection depend on) only run *after*
+    # that wait succeeds. On a truly from-scratch install those Deployments
+    # can never become Ready without the hook, and the hook never runs
+    # without them being Ready first — a hard deadlock, observed on the
+    # first staging bring-up (D-26): the schema-grants Job never even got
+    # created, confirmed via `kubectl get jobs`, across repeated attempts.
+    # Disabling wait lets hooks fire right after resources are applied
+    # instead of being gated behind their readiness; Flux's own separate
+    # health-check/reconciliation still reports actual pod health. dev has
+    # never hit this because its Flux HelmRelease has only ever *upgraded*
+    # an already-successfully-installed release — that release was
+    # originally bootstrapped by a manual `helm install` (no `--wait` by
+    # default on the raw CLI), which sidesteps the deadlock entirely. Same
+    # gap likely exists in apps/dev/beekeepingit-helmrelease.yaml, just
+    # never exercised — see FOLLOWUPS.md.
+    disableWait: true
     timeout: 10m
     remediation:
       retries: 3
   upgrade:
+    disableWait: true
     timeout: 10m
   chart:
     spec:
