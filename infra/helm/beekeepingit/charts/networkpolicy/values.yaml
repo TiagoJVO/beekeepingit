@@ -179,6 +179,29 @@ edges:
     to: { app.kubernetes.io/name: journeys }
     port: 8080
 
+  # --- todos east-west (#50, services/values.yaml todos.env INTERNAL_*_URL +
+  # sync.env INTERNAL_TODOS_URL) ---
+  # todos resolves the caller's org via identity+organizations (same
+  # org-resolver wiring as activities/apiaries), and verifies a
+  # client-supplied assignee_id belongs to an active member of the caller's
+  # org by dialing organizations' own GET /internal/memberships/active
+  # (api/members_client.go) — the D-23 cross-service ownership guard. sync's
+  # write-back coordinator calls todos' /internal/sync/validate+apply
+  # (coordinator.go groupOpsByOwner). No todos-to-apiaries edge yet: apiary
+  # association (#51) hasn't landed.
+  - name: todos-to-identity
+    from: { app.kubernetes.io/name: todos }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: todos-to-organizations
+    from: { app.kubernetes.io/name: todos }
+    to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  - name: sync-to-todos
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: todos }
+    port: 8080
+
   # --- OIDC discovery/JWKS (docs/architecture/auth.md §4, internal split) ---
   # Our domain services are under default-deny and must reach authentik for
   # OIDC discovery — but authentik itself is EXCLUDED from default-deny (a
@@ -230,6 +253,13 @@ edges:
   # same as every other domain service.
   - name: journeys-to-authentik-server
     from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
+  # #50: todos' authn.NewMiddleware fetches OIDC discovery at startup, same
+  # as every other domain service.
+  - name: todos-to-authentik-server
+    from: { app.kubernetes.io/name: todos }
     to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
@@ -287,6 +317,17 @@ edges:
   # journeys' first in-cluster deploy (this PR shipped no image before now).
   - name: journeys-to-postgres
     from: { app.kubernetes.io/name: journeys }
+    to: { cnpgCluster: true }
+    port: 5432
+  # #50 (THE CRASH FIX, again): todos' dbaccess.Migrate + runtime pool connect
+  # to postgres-rw:5432 — the exact same gap activities hit on its own first
+  # in-cluster deploy above (#39). Without this edge the default-deny baseline
+  # blocks todos' egress to postgres, so its startup migration `dial` is
+  # refused and the pod CrashLoopBackOffs forever while postgres is healthy
+  # (confirmed via 3 live helm-e2e runs, only `todos` ever timing out while
+  # every sibling recovered). Mirrors activities-to-postgres above.
+  - name: todos-to-postgres
+    from: { app.kubernetes.io/name: todos }
     to: { cnpgCluster: true }
     port: 5432
   # PS_DATA_SOURCE_URI (logical replication) + PS_STORAGE_SOURCE_URI
@@ -366,6 +407,13 @@ edges:
   # other Go service (services/values.yaml otelEndpoint).
   - name: journeys-to-otel-collector
     from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+  # #50: todos exports traces/metrics/logs to the collector like every other
+  # Go service (services/values.yaml otelEndpoint).
+  - name: todos-to-otel-collector
+    from: { app.kubernetes.io/name: todos }
     to: { app.kubernetes.io/name: otel-collector }
     port: 4317
     egressOnly: true

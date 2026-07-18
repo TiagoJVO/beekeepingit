@@ -81,6 +81,28 @@ registry (no cross-module import — services depend on each other's data by ID,
 #45 shipped the full CRUD surface (create/edit/close/delete) in one story. Journey↔activity
 attribution is `activities.journey_id` (D-21), NOT a table in this schema.
 
+### `todos`
+
+```text
+todos             (id PK, organization_id, title, description NULL, due_date DATE NULL,
+                   priority[low|medium|high], status[open|done] DEFAULT 'open',
+                   completed_at NULL, assignee_id NULL-FK(soft, org member),
+                   created_at, updated_at, recorded_at, deleted_at)
+sync_conflict_log  (… same shape as apiaries.sync_conflict_log)
+audit_log          (… same shape as apiaries.audit_log)
+```
+
+`priority`/`status` validated in Go (`api/types.go`, D-20), not a DB enum/CHECK
+(extensible-enum convention). No JSONB attributes bag — every FR-TD-1 field is a plain typed
+column, unlike `activities.activities`. `assignee_id` (D-23, optional) is a cross-service soft
+reference verified against `organizations.memberships` via `api/members_client.go` (an HTTP
+call — todos has no DB access to the organizations schema). #50 shipped the full model +
+lifecycle in one story: create/edit (REST full resubmit) + complete/reopen (narrow
+status/completed_at update) + delete (`deleted_at` tombstone) — both REST (`api/write.go`)
+and sync-apply (`api/sync.go`, LWW on `updated_at`; complete/reopen apply as an ordinary
+patch, no bespoke wire op). Apiary association (#51) and list/filter (#53) are out of scope —
+no `apiary_id` column yet.
+
 ## Relationships
 
 ```text
@@ -108,6 +130,9 @@ journeys          (id, organization_id, name, main_activity_type, status, create
 journey_plan_items(id, organization_id, journey_id, apiary_id, created_at)
                    -- #45: two local tables, two sync entity types (`journey`/
                    -- `journey_plan_item`), mirroring apiaries/apiary_counters' own split
+todos             (id, organization_id, title, description, due_date, priority, status,
+                   completed_at, assignee_id, created_at, updated_at)
+                   -- #50: plain typed columns, no JSON-encoded attributes column needed
 ```
 
 Projection: server `location geography` → client `location_lon/lat` via `ST_X`/`ST_Y`
@@ -123,6 +148,7 @@ apiaries:       00001 create_apiaries · 00002 audit_log · 00003 add_location(P
                 00004 add_notes · 00005 create_apiary_counters · 00006 add_place_label
 activities:     00001 create_activities(+sync_conflict_log) · 00002 audit_log
 journeys:       00001 create_journeys(+journey_plan_items,+sync_conflict_log) · 00002 audit_log
+todos:          00001 create_todos(+sync_conflict_log) · 00002 audit_log
 shared/dbaccess:00001 create_example_items (template reference only)
 ```
 

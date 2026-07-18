@@ -46,6 +46,17 @@ const journeyEntityType = 'journey';
 const journeyPlanItemsTable = 'journey_plan_items';
 const journeyPlanItemEntityType = 'journey_plan_item';
 
+/// Local table + entity type for `todos.todos` (#50, FR-TD-1, FR-TEN-2). The
+/// server-owning service is `services/todos`, routed independently of
+/// activities/apiaries by `services/sync/api/coordinator.go`'s
+/// `groupOpsByOwner` (this table's own `entityTypeForTable` mapping in
+/// `powersync_connector.dart`). Unlike [activitiesTable], there is no JSON
+/// attributes bag to decode/encode — every column here is a plain scalar, so
+/// no connector-side transform is needed for this table (contrast
+/// `decodeActivityAttributes`).
+const todosTable = 'todos';
+const todoEntityType = 'todo';
+
 /// Local **dead-letter** table for offline writes the server permanently
 /// rejects on upload (a validation-class `4xx` — RFC 9457 `422`/`400`, sync.md
 /// §8's `rejected` state, D-12 notify-and-fix, #256/#260). The connector
@@ -183,6 +194,29 @@ const appSchema = Schema([
     Column.text('journey_id'),
     Column.text('apiary_id'),
     Column.text('created_at'),
+  ]),
+  // todos (#50, FR-TD-1, FR-TEN-2): one row per todo, matching the owning
+  // service's shape (services/todos/store/migrations/00001_create_todos.sql).
+  // `organization_id` is never written locally by
+  // features/todos/todos_repository.dart (server-derived, same convention as
+  // [activitiesTable]'s own organization_id). `priority`/`status` are the
+  // extensible, Go-validated vocabularies (D-20) — plain text columns, not a
+  // local enum. `due_date` is a plain YYYY-MM-DD string, nullable — a todo
+  // may legitimately have none. `completed_at` is nullable, set on complete
+  // and cleared on reopen. `assignee_id` (D-23) is the one field this
+  // repository DOES write locally (the user's own choice), unlike
+  // organization_id.
+  Table(todosTable, [
+    Column.text('organization_id'),
+    Column.text('title'),
+    Column.text('description'),
+    Column.text('due_date'),
+    Column.text('priority'),
+    Column.text('status'),
+    Column.text('completed_at'),
+    Column.text('assignee_id'),
+    Column.text('created_at'),
+    Column.text('updated_at'),
   ]),
   // Dead-letter for permanently-rejected uploads (see [rejectedOpsTable] doc).
   // Local-only: never syncs up/down, wiped by clear() with the rest of the

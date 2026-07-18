@@ -135,6 +135,21 @@ syncConfig:
           FROM journeys.journeys WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
         - SELECT id, organization_id, journey_id, apiary_id, created_at
           FROM journeys.journey_plan_items WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        # todos.todos (#50, FR-OF-1, FR-TD-1): stream the org's todos to the
+        # device so an offline create/edit/complete/reopen/delete reconciles
+        # across devices. Explicit column list matching the client's local
+        # schema (client/lib/core/sync/powersync_schema.dart's todos Table —
+        # NOT recorded_at/deleted_at, which the client doesn't declare), same
+        # additive-safety rationale as the apiaries.apiaries/activities.activities
+        # entries above. deleted_at IS NULL so a server-side tombstone leaves
+        # the client's result set. Only todos.todos streams — NOT its own
+        # audit_log/sync_conflict_log (unlike apiaries', which are included
+        # read-only above for #61's combined history timeline; todos has no
+        # such read surface yet). The todos schema is in the powersync
+        # publication (charts/postgres syncedSchemas).
+        - SELECT id, organization_id, title, description, due_date, priority,
+          status, completed_at, assignee_id, created_at, updated_at
+          FROM todos.todos WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.

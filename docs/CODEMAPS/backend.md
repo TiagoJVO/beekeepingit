@@ -109,6 +109,32 @@ it's `activities.journey_id` (D-21, supersedes the pre-D-21
 picker; #46 also added `GET /v1/journeys/{id}` above specifically so
 activities' own `JourneyVerifier` has an org-scoped endpoint to call.
 
+### todos (main.go; authnMW→orgMW→RequireRole(admin,user))
+
+```text
+POST   /v1/todos                    → createTodo    api/write.go (#50)
+PATCH  /v1/todos/{id}                → updateTodo    api/write.go (#50; full resubmit)
+POST   /v1/todos/{id}/complete      → completeTodo  api/write.go (#50; status=done+completed_at)
+POST   /v1/todos/{id}/reopen        → reopenTodo    api/write.go (#50; status=open, clears completed_at)
+DELETE /v1/todos/{id}                → deleteTodo    api/write.go (#50; soft-delete/tombstone)
+POST   /internal/sync/validate      → validateTodoBatch api/sync.go (#50; put/patch/delete)
+POST   /internal/sync/apply         → applyTodoBatch    api/sync.go (#50; LWW + tombstone)
+```
+
+#50 shipped the full model + lifecycle in one story (no data-model-only
+predecessor, unlike activities' #38→#39 split). No per-type JSONB attributes
+bag — every FR-TD-1 field is a plain typed column; `priority`/`status` are
+Go-validated vocabularies (D-20), not a DB enum/CHECK. `assignee_id` (D-23,
+optional) is verified against organizations via `api/members_client.go`'s
+`MemberVerifier` (an HTTP call to organizations' own internal
+`GET /internal/memberships/active?user_id=` — the same endpoint
+`authn.NewOrgResolver` already calls) BEFORE writing anything;
+`actor_user_id` (audit) is derived server-side from claims, never the client
+(FR-TEN-2). Complete/reopen have no bespoke sync wire op — offline they queue
+as an ordinary patch touching only status/completed_at, applied by the same
+LWW path as any edit. Apiary association (#51) and list/filter (#53) are out
+of scope.
+
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 
 ```text
@@ -119,12 +145,12 @@ GET   /internal/sync/jwks.json → JWKSHandler    api/handlers.go (unauth; Power
 
 `Coordinator.handle` (api/coordinator.go): groups ops by owning service via a
 `routes` map keyed by `entity_type` (`activity` → activities, #39;
-`journey`/`journey_plan_item` → journeys, #45; everything else, including any
-unrecognized entity_type → apiaries, the default), validate-all → if every
-group 200s, apply-all → merge results. Single-group batches (the common
-case) use the byte-identical pre-#39 fast path. 422 from any group aborts
-the whole push (nothing written anywhere); upstream error → 502 (batch stays
-queued, idempotent retry).
+`journey`/`journey_plan_item` → journeys, #45; `todo` → todos, #50; everything
+else, including any unrecognized entity_type → apiaries, the default),
+validate-all → if every group 200s, apply-all → merge results. Single-group
+batches (the common case) use the byte-identical pre-#39 fast path. 422 from
+any group aborts the whole push (nothing written anywhere); upstream error →
+502 (batch stays queued, idempotent retry).
 
 ## Service → store mapping (per DB-backed service)
 

@@ -88,6 +88,8 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 | `journeyByIdProvider` (family)             | features/journeys                    | live single `Journey` by id, no `apiaryIds` (#48; the detail screen's read path)                                                                                                                     |
 | `activitiesByJourneyProvider` (family)     | features/activities                  | live activities for one journey, by stored `journey_id` (#48, D-21)                                                                                                                                  |
 | `journeyStatsProvider` (family)            | features/journeys                    | live `JourneyStats` per journey id — apiaries visited/planned, hives harvested, honey collected, média alças/colmeia (#49, FR-JO-1, D-2, D-21, stored `journey_id` link only, never a live re-match) |
+| `todosRepositoryProvider`                  | features/todos                       | `TodosRepository` (#50; no screen wired to it yet — /todos is still ComingSoonScreen)                                                                                                                |
+| `todoByIdProvider` (family)                | features/todos                       | live single todo by id (#50)                                                                                                                                                                         |
 | `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                                                                                                                                                  |
 
 ## Sync flow (client) — core/sync/
@@ -110,6 +112,8 @@ SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reco
 `journeys` (name, main_activity_type, status, org_id, timestamps) ·
 `journey_plan_items` (journey_id, apiary_id, org_id, created_at) — #45, two tables/entity
 types mirroring apiaries/apiary_counters' own parent+child split ·
+`todos` (title, description, due_date, priority, status, completed_at, assignee_id, org_id,
+timestamps — #50, plain scalar columns, no JSON-encoded column needed unlike `activities`) ·
 `sync_rejected_ops` (**local-only** dead-letter).
 `deleted_at` is not a local column (Sync Rules exclude tombstones). See [data.md](data.md).
 
