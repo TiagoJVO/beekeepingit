@@ -110,7 +110,14 @@ spec:
           tag: latest
     pwa:
       image:
-        tag: latest
+        # One-off manual build (not CI), compiled with staging's real nip.io
+        # OIDC/gateway/PowerSync URLs via --dart-define — the client's
+        # AppConfig reads these at Dart *compile* time, not runtime, and CI's
+        # build-publish.yml never passes any, so `latest` has dev's
+        # *.beekeepingit.local:8443 baked in and login fails with a generic
+        # "check your connection" error (OIDC discovery against an
+        # unreachable .local host). See FOLLOWUPS.md for the real fix.
+        tag: staging-manual
     networkpolicy:
       # scaleway-up.sh installs Traefik into its own `traefik` namespace, not
       # `kube-system` (charts/networkpolicy/values.yaml's default, correct
