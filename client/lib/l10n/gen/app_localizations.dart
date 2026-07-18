@@ -1946,29 +1946,11 @@ abstract class AppLocalizations {
   /// **'New todo'**
   String get todoQuickCreateTitle;
 
-  /// Field label for a todo's title on the quick-create sheet (#52, FR-TD-1)
-  ///
-  /// In en, this message translates to:
-  /// **'Title'**
-  String get todoTitleLabel;
-
-  /// Validation message when a todo's title is left empty on the quick-create sheet (#52)
-  ///
-  /// In en, this message translates to:
-  /// **'Title is required'**
-  String get todoTitleRequired;
-
   /// Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)
   ///
   /// In en, this message translates to:
   /// **'Due date'**
   String get todoDueDateLabel;
-
-  /// Icon button that clears a picked due date back to unset on the quick-create sheet (#52)
-  ///
-  /// In en, this message translates to:
-  /// **'Clear due date'**
-  String get todoDueDateClearAction;
 
   /// Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.
   ///
@@ -1988,11 +1970,221 @@ abstract class AppLocalizations {
   /// **'Todo created'**
   String get todoCreatedConfirmation;
 
-  /// Error toast when the quick-create sheet's create() call throws (#52)
+  /// Header title for the standalone todo-create route (#293) — reachable by direct navigation/deep-linking, distinct from #52's own quick-create sheet
   ///
   /// In en, this message translates to:
-  /// **'Could not save todo: {error}'**
+  /// **'New todo'**
+  String get newTodoTitle;
+
+  /// Header title for the todo detail route (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo'**
+  String get todoDetailTitle;
+
+  /// Header title for the todo edit route (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit todo'**
+  String get editTodoTitle;
+
+  /// Label of the todo detail screen's edit FAB, routing to the edit form (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit todo'**
+  String get editTodoAction;
+
+  /// Field label for a todo's required title, on the create/edit form (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get todoTitleLabel;
+
+  /// Validation message when a todo's title is left blank on save (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Title is required'**
+  String get todoTitleRequired;
+
+  /// Field label for a todo's optional free-text description, on the form and the detail screen (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get todoDescriptionLabel;
+
+  /// Fallback shown on the todo detail screen when the todo has no description (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'No description'**
+  String get todoDescriptionUnset;
+
+  /// Field label for a todo's optional due date, on the form and the detail screen (#293, FR-TD-1) — due dates may be in the future, unlike an activity's occurred-at date
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get todoDueDateFieldLabel;
+
+  /// Tooltip/semantic label for the icon button that clears a set due date on the todo form (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear due date'**
+  String get todoDueDateClearAction;
+
+  /// Field label for a todo's priority dropdown, on the form and the detail screen (#293, FR-TD-1, D-20) — distinct from todoFilterPriorityLabel, the Todos tab's own filter dropdown
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get todoPriorityFieldLabel;
+
+  /// Field label for a todo's assignee picker, on the form and the detail screen (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Assignee'**
+  String get todoAssigneeFieldLabel;
+
+  /// Field label for a todo's apiary-association picker, on the form and the detail screen (#293, #51, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get todoApiaryFieldLabel;
+
+  /// The assignee picker's clear row label, and the detail screen's fallback when a todo has no assignee (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Unassigned'**
+  String get todoAssigneeUnassigned;
+
+  /// Fallback label for an assignee id not (yet) resolvable to a real name — offline, pre-first-fetch, or a removed member (#293, mirrors activityPerformedByMember). {id} is a short, non-spoofable id fragment, not the full id.
+  ///
+  /// In en, this message translates to:
+  /// **'Member {id}'**
+  String todoAssigneeUnknown(String id);
+
+  /// Shown in the assignee picker when the org member roster hasn't loaded yet (offline / pre-first-fetch) — the Unassigned clear row still renders alongside this (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'No members available yet.'**
+  String get todoAssigneeNoneAvailable;
+
+  /// The apiary picker's clear row label, and the detail screen's fallback for a general, org-level todo with no apiary association (#293, #51, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiary'**
+  String get todoApiaryNone;
+
+  /// Fallback label on the todo detail screen for an apiary id no longer in the locally-synced apiary set — a stale reference to a since-deleted apiary (#293, mirrors todos_repository.dart's own doc comment on this exact case)
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown apiary'**
+  String get todoApiaryUnknown;
+
+  /// Heading above the todo detail screen's read-only field list (#293, mirrors activityDetailAttributesHeader)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get todoDetailFieldsHeader;
+
+  /// Detail-screen row label for a done todo's completion timestamp (#293) — worded distinctly from the plain status word todoFilterStatusDone ("Completed") so the two never collide on the same screen
+  ///
+  /// In en, this message translates to:
+  /// **'Completed at'**
+  String get todoCompletedAtLabel;
+
+  /// Label of the complete/reopen toggle button while the todo is open (#293, FR-TD-1) — on both the detail screen and the form
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as complete'**
+  String get todoCompleteAction;
+
+  /// Label of the complete/reopen toggle button while the todo is done (#293, FR-TD-1) — on both the detail screen and the form
+  ///
+  /// In en, this message translates to:
+  /// **'Reopen'**
+  String get todoReopenAction;
+
+  /// Success toast after completing a todo via the toggle (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo marked complete'**
+  String get todoCompleteSuccess;
+
+  /// Error toast when completing a todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the todo: {error}'**
+  String todoCompleteError(String error);
+
+  /// Success toast after reopening a todo via the toggle (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo reopened'**
+  String get todoReopenSuccess;
+
+  /// Error toast when reopening a todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the todo: {error}'**
+  String todoReopenError(String error);
+
+  /// Success toast after creating or editing a todo (#293, mirrors activitySaveSuccess's own create-and-update-share-one-message precedent)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo saved'**
+  String get todoSaveSuccess;
+
+  /// Error toast when creating or editing a todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the todo: {error}'**
   String todoSaveError(String error);
+
+  /// Error toast when the edit form's initial load of an existing todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the todo: {error}'**
+  String todoLoadError(String error);
+
+  /// Label of the delete button on the todo form (#293 AC: delete the todo from the form)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete todo'**
+  String get deleteTodo;
+
+  /// Success toast after deleting a todo (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo deleted'**
+  String get todoDeleteSuccess;
+
+  /// Error toast when deleting a todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the todo: {error}'**
+  String todoDeleteError(String error);
+
+  /// Title of the delete-confirmation dialog on the todo form (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete todo?'**
+  String get deleteTodoConfirmTitle;
+
+  /// Body of the delete-confirmation dialog on the todo form (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently deletes this todo. This cannot be undone.'**
+  String get deleteTodoConfirmMessage;
+
+  /// Confirm action of the todo delete-confirmation dialog (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteTodoConfirmAction;
+
+  /// Cancel action of the todo delete-confirmation dialog (#293) — always a no-op
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get deleteTodoCancelAction;
 }
 
 class _AppLocalizationsDelegate

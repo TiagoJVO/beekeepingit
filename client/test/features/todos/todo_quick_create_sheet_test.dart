@@ -336,7 +336,7 @@ void main() {
           findsOneWidget,
         );
         expect(find.byType(CircularProgressIndicator), findsNothing);
-        expect(find.textContaining('Could not save todo'), findsOneWidget);
+        expect(find.textContaining("Couldn't save the todo"), findsOneWidget);
       },
     );
   });

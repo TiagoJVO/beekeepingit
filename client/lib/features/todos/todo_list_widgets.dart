@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
@@ -315,6 +316,11 @@ class _TodoTile extends StatelessWidget {
     return ListTile(
       key: Key('todo-${todo.id}'),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      // Tapping a row opens the read-focused detail screen (#293), not the
+      // edit form directly — mirrors _ActivityTile/journey list row's own
+      // tap-to-detail convention (activity_list_widgets.dart,
+      // journeys_list_screen.dart).
+      onTap: () => context.go('/todos/${todo.id}'),
       // The leading icon is the ONLY status signal for an open, non-overdue
       // row (no visible badge — that's reserved for overdue/done, this
       // file's own doc comment) — its `semanticLabel` gives screen readers a

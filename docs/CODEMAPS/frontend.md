@@ -56,9 +56,20 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   │       └ edit                        JourneyFormScreen features/journeys (#45; edit/close/
   │                                     delete, isEdit)
   ├ /todos                 TodosListScreen        features/todos      ◄ live (#53; org-wide
-  │                        todo list — status/priority/due-date filters (combinable), sortable
-  │                        by due date/priority/status, distinguishes open/overdue/done; own
-  │                        FAB (#52) opens todo_quick_create_sheet.dart, no pre-filled apiary)
+  │   │                    todo list — status/priority/due-date filters (combinable), sortable
+  │   │                    by due date/priority/status, distinguishes open/overdue/done; own
+  │   │                    FAB (#52) opens todo_quick_create_sheet.dart, no pre-filled apiary;
+  │   │                    row tap → detail (#293))
+  │   ├ new                TodoFormScreen         features/todos (#293; standalone create route —
+  │   │                    direct nav/deep-link only, distinct from #52's quick-create sheet)
+  │   └ :id                TodoDetailScreen       features/todos (#293, FR-TD-1; every field
+  │       │                read-only incl. resolved assignee/apiary names — todo_display.dart's
+  │       │                `todoAssigneeLabel`/`todoApiaryLabel`; complete/reopen toggle in place;
+  │       │                edit reachable via its own FAB)
+  │       └ edit                        TodoFormScreen features/todos (#293, FR-TD-1; full
+  │                                     create/edit form — title/description/due date/priority/
+  │                                     assignee (TodoAssigneePickerField)/apiary
+  │                                     (TodoApiaryPickerField); complete/reopen + delete, isEdit)
   └ /assistant             ComingSoonScreen (placeholder, M8)
 ```
 
