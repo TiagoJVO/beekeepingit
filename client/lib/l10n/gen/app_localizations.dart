@@ -1717,6 +1717,282 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
   String journeyStatsMissingLabel(int count);
+
+  /// Shell app bar title for the journey detail route (#48, FR-JO-3) — a generic, not per-instance, title mirroring apiaryDetailTitle/activityDetailTitle's own convention; the specific journey's name renders in the page body itself
+  ///
+  /// In en, this message translates to:
+  /// **'Journey'**
+  String get journeyDetailTitle;
+
+  /// Floating action button on the journey detail page that opens the existing edit form (#48) — mirrors editApiaryAction
+  ///
+  /// In en, this message translates to:
+  /// **'Edit journey'**
+  String get editJourneyAction;
+
+  /// Section heading above the journey detail page's per-apiary list (#48, FR-JO-3)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries'**
+  String get journeyDetailApiariesTitle;
+
+  /// Placeholder apiary card title when an activity's apiary_id can't be resolved against the currently-loaded apiary list — e.g. the apiary was deleted since, or apiariesStreamProvider hasn't emitted yet (#48) — never a raw internal id
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown apiary'**
+  String get journeyDetailApiaryNameUnknown;
+
+  /// Badge on a journey detail apiary card once it has at least one activity attributed to this journey via the stored journey_id (#48 AC: planned vs. actual)
+  ///
+  /// In en, this message translates to:
+  /// **'Visited'**
+  String get journeyDetailApiaryVisitedBadge;
+
+  /// Badge on a journey detail apiary card that's in the journey's plan but has no attributed activity yet (#48 AC: planned vs. actual)
+  ///
+  /// In en, this message translates to:
+  /// **'Planned'**
+  String get journeyDetailApiaryPlannedBadge;
+
+  /// Placeholder shown under a planned-only apiary card on the journey detail page, in place of an activity list (#48 AC: planned items clearly distinguished from completed ones)
+  ///
+  /// In en, this message translates to:
+  /// **'Not visited yet'**
+  String get journeyDetailApiaryNotVisitedYet;
+
+  /// Empty state on the journey detail page's apiaries section — the edge case of a journey with no plan and no attributed activities (#48)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries in this journey yet.'**
+  String get journeyDetailApiariesEmpty;
+
+  /// Empty state on the main Todos tab when the organization has no todos at all yet (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'No todos yet.'**
+  String get todosEmpty;
+
+  /// Shown instead of the plain empty state when status/priority/due-date filters are active but match nothing (#53 AC: combined filters + empty/no-results state)
+  ///
+  /// In en, this message translates to:
+  /// **'No todos match your filters.'**
+  String get todosFilterNoResults;
+
+  /// Error state on the main Todos tab (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load todos: {error}'**
+  String todosError(String error);
+
+  /// Field label for the Todos tab's status filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get todoFilterStatusLabel;
+
+  /// The status filter's cleared/default option — no status filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get todoFilterStatusAll;
+
+  /// Status filter option / status word for a todo that is neither done nor overdue (#53 AC: distinguishes open, completed, overdue)
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get todoFilterStatusOpen;
+
+  /// Status filter option / status word for an open todo whose due date has passed (#53 AC: overdue, feeds FR-AI-1's later "overdue todos" example)
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue'**
+  String get todoFilterStatusOverdue;
+
+  /// Status filter option / status word for a done todo — the display label for the underlying 'done' status value (#50/#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get todoFilterStatusDone;
+
+  /// Field label for the Todos tab's priority filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get todoFilterPriorityLabel;
+
+  /// The priority filter's cleared/default option — no priority filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'All priorities'**
+  String get todoFilterPriorityAll;
+
+  /// Display label for the 'low' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'Low'**
+  String get todoPriorityLowLabel;
+
+  /// Display label for the 'medium' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get todoPriorityMediumLabel;
+
+  /// Display label for the 'high' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'High'**
+  String get todoPriorityHighLabel;
+
+  /// Field label for the Todos tab's due-date filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due'**
+  String get todoFilterDueLabel;
+
+  /// The due-date filter's cleared/default option — no due-date filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Any date'**
+  String get todoFilterDueAny;
+
+  /// Due-date filter preset matching todos due today (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due today'**
+  String get todoFilterDueToday;
+
+  /// Due-date filter preset matching todos due within the current calendar week, Monday–Sunday (#53, feeds FR-AI-1's later "due in the next week" example)
+  ///
+  /// In en, this message translates to:
+  /// **'Due this week'**
+  String get todoFilterDueThisWeek;
+
+  /// Due-date filter preset matching todos due within the current calendar month (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due this month'**
+  String get todoFilterDueThisMonth;
+
+  /// Button that resets the status/priority/due-date filters at once, without touching the sort selection (#53, mirrors activityFilterClearAction)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get todoFilterClearAction;
+
+  /// Field label for the Todos tab's sort-field dropdown (#53 AC: sortable by due date, priority, and status)
+  ///
+  /// In en, this message translates to:
+  /// **'Sort by'**
+  String get todoSortFieldLabel;
+
+  /// Sort-field option: order by due date (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get todoSortFieldDueDate;
+
+  /// Sort-field option: order by priority level (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get todoSortFieldPriority;
+
+  /// Sort-field option: order by lifecycle status — overdue, then open, then completed (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get todoSortFieldStatus;
+
+  /// Current sort direction — also the direction-toggle button's tooltip/semantic label while ascending is active (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Ascending'**
+  String get todoSortDirectionAscendingLabel;
+
+  /// Current sort direction — also the direction-toggle button's tooltip/semantic label while descending is active (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Descending'**
+  String get todoSortDirectionDescendingLabel;
+
+  /// Shown in a todo row's subtitle in place of a formatted date when the todo has no due date (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'No due date'**
+  String get todoDueDateUnset;
+
+  /// Text of the overdue badge on a todo row — paired with a warning icon, never color alone (#53 AC, WCAG 2.2 AA 1.4.1)
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue'**
+  String get todoOverdueBadge;
+
+  /// Screen-reader label for a todo row's leading status icon — an open (not overdue, not done) row has no other visible status text (#53, WCAG 2.2 AA). {status} is one of todoFilterStatusOpen/Overdue/Done, already localized.
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {status}'**
+  String todoStatusSemanticLabel(String status);
+
+  /// Floating action button label to quick-create a todo (#52, FR-TD-1) — shown on the Todos tab's own FAB, the Apiaries tab's secondary FAB, and the apiary detail page's add-todo action
+  ///
+  /// In en, this message translates to:
+  /// **'New todo'**
+  String get addTodo;
+
+  /// Heading of the quick-create bottom sheet (#52, FR-TD-1, FR-UX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'New todo'**
+  String get todoQuickCreateTitle;
+
+  /// Field label for a todo's title on the quick-create sheet (#52, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get todoTitleLabel;
+
+  /// Validation message when a todo's title is left empty on the quick-create sheet (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Title is required'**
+  String get todoTitleRequired;
+
+  /// Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get todoDueDateLabel;
+
+  /// Icon button that clears a picked due date back to unset on the quick-create sheet (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear due date'**
+  String get todoDueDateClearAction;
+
+  /// Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.
+  ///
+  /// In en, this message translates to:
+  /// **'For {apiaryName}'**
+  String todoQuickCreateForApiary(String apiaryName);
+
+  /// Cancel button on the quick-create sheet — discards the in-progress todo without creating it (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get todoQuickCreateCancelAction;
+
+  /// Success toast shown after a quick-created todo saves (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo created'**
+  String get todoCreatedConfirmation;
+
+  /// Error toast when the quick-create sheet's create() call throws (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save todo: {error}'**
+  String todoSaveError(String error);
 }
 
 class _AppLocalizationsDelegate

@@ -105,7 +105,7 @@ func TestCoordinator_Handle(t *testing.T) {
 			var stub *stubApiaries
 			if tc.useUnreachableURL {
 				var err error
-				c, err = NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1")
+				c, err = NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1")
 				if err != nil {
 					t.Fatalf("NewCoordinator: %v", err)
 				}
@@ -114,7 +114,7 @@ func TestCoordinator_Handle(t *testing.T) {
 				stub.validateStatus = tc.validateStatus
 				stub.applyStatus = tc.applyStatus
 				var err error
-				c, err = NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL)
+				c, err = NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL, stub.server.URL)
 				if err != nil {
 					t.Fatalf("NewCoordinator: %v", err)
 				}
@@ -142,7 +142,7 @@ func TestCoordinator_Handle(t *testing.T) {
 func TestCoordinator_Success_ForwardsBearerAndRelaysApplyBody(t *testing.T) {
 	stub := newStubApiaries(t)
 	stub.applyBody = `{"results":[{"id":"x","op":"put","result":"applied"}]}`
-	c, err := NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL)
+	c, err := NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL, stub.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestCoordinator_Success_ForwardsBearerAndRelaysApplyBody(t *testing.T) {
 // still mapping to a 502 for the caller.
 func TestCoordinator_ValidateTransportFailure_LogsAndReturns502(t *testing.T) {
 	buf := captureDefaultLogger(t)
-	c, err := NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1")
+	c, err := NewCoordinator("http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1")
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestCoordinator_ApplyTransportFailure_LogsAndReturns502(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	c, err := NewCoordinator(server.URL, server.URL, server.URL)
+	c, err := NewCoordinator(server.URL, server.URL, server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestCoordinator_UpstreamResponseBody_IsSizeCapped(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	c, err := NewCoordinator(server.URL, server.URL, server.URL)
+	c, err := NewCoordinator(server.URL, server.URL, server.URL, server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -280,11 +280,11 @@ func TestBadGateway_BuildsRFC9457ProblemJSON(t *testing.T) {
 }
 
 // TestNewCoordinator_TrimsTrailingSlash is MEDIUM #3: an operator-supplied
-// INTERNAL_APIARIES_URL/INTERNAL_ACTIVITIES_URL/INTERNAL_JOURNEYS_URL with a
-// trailing slash must not produce a double-slash path when concatenated
-// with "/internal/sync/...".
+// INTERNAL_APIARIES_URL/INTERNAL_ACTIVITIES_URL/INTERNAL_JOURNEYS_URL/
+// INTERNAL_TODOS_URL with a trailing slash must not produce a double-slash
+// path when concatenated with "/internal/sync/...".
 func TestNewCoordinator_TrimsTrailingSlash(t *testing.T) {
-	c, err := NewCoordinator("http://apiaries.internal.svc/", "http://activities.internal.svc/", "http://journeys.internal.svc/")
+	c, err := NewCoordinator("http://apiaries.internal.svc/", "http://activities.internal.svc/", "http://journeys.internal.svc/", "http://todos.internal.svc/")
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -297,17 +297,26 @@ func TestNewCoordinator_TrimsTrailingSlash(t *testing.T) {
 	if c.routes[journeyEntityType] != "http://journeys.internal.svc" || c.routes[journeyPlanItemEntityType] != "http://journeys.internal.svc" {
 		t.Errorf("routes = %+v, want journey and journey_plan_item both routed to the trimmed journeysURL", c.routes)
 	}
+	if c.routes[todoEntityType] != "http://todos.internal.svc" {
+		t.Errorf("routes[todo] = %q, want %q (trailing slash trimmed)", c.routes[todoEntityType], "http://todos.internal.svc")
+	}
 }
 
 func TestNewCoordinator_RequiresActivitiesURL(t *testing.T) {
-	if _, err := NewCoordinator("http://apiaries.internal.svc", "", "http://journeys.internal.svc"); err == nil {
+	if _, err := NewCoordinator("http://apiaries.internal.svc", "", "http://journeys.internal.svc", "http://todos.internal.svc"); err == nil {
 		t.Fatalf("NewCoordinator with an empty activitiesURL succeeded, want an error")
 	}
 }
 
 func TestNewCoordinator_RequiresJourneysURL(t *testing.T) {
-	if _, err := NewCoordinator("http://apiaries.internal.svc", "http://activities.internal.svc", ""); err == nil {
+	if _, err := NewCoordinator("http://apiaries.internal.svc", "http://activities.internal.svc", "", "http://todos.internal.svc"); err == nil {
 		t.Fatalf("NewCoordinator with an empty journeysURL succeeded, want an error")
+	}
+}
+
+func TestNewCoordinator_RequiresTodosURL(t *testing.T) {
+	if _, err := NewCoordinator("http://apiaries.internal.svc", "http://activities.internal.svc", "http://journeys.internal.svc", ""); err == nil {
+		t.Fatalf("NewCoordinator with an empty todosURL succeeded, want an error")
 	}
 }
 
@@ -424,7 +433,7 @@ type Op struct {
 func TestCoordinator_Handle_RoutesByEntityType(t *testing.T) {
 	apiaries := newStubOwner(t)
 	activities := newStubOwner(t)
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -462,7 +471,7 @@ func TestCoordinator_Handle_RoutesJourneyOpsToJourneysService(t *testing.T) {
 	apiaries := newStubOwner(t)
 	activities := newStubOwner(t)
 	journeys := newStubOwner(t)
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, journeys.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, journeys.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -504,7 +513,7 @@ func TestCoordinator_Handle_MultiService_MergesApplyResults(t *testing.T) {
 	apiaries.applyResults = `{"results":[{"id":"apiary-1","op":"put","result":"applied"}]}`
 	activities := newStubOwner(t)
 	activities.applyResults = `{"results":[{"id":"activity-1","op":"put","result":"applied"}]}`
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -543,7 +552,7 @@ func TestCoordinator_Handle_MultiService_OneRejectionAppliesNeither(t *testing.T
 	apiaries := newStubOwner(t)
 	activities := newStubOwner(t)
 	activities.validateStatus = http.StatusUnprocessableEntity
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -570,7 +579,7 @@ func TestCoordinator_Handle_MultiService_OneRejectionAppliesNeither(t *testing.T
 func TestCoordinator_Handle_SingleServiceBatch_NeverCallsTheOtherService(t *testing.T) {
 	apiaries := newStubOwner(t)
 	activities := newStubOwner(t)
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -598,7 +607,7 @@ func TestCoordinator_Handle_MultiService_PartialApplyFailureHealsOnRetry(t *test
 	activities := newStubOwner(t)
 	// Group B's apply fails transiently on the first attempt.
 	activities.setApplyStatus(http.StatusInternalServerError)
-	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, apiaries.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}
@@ -638,5 +647,124 @@ func TestCoordinator_Handle_MultiService_PartialApplyFailureHealsOnRetry(t *test
 	}
 	if activities.appliedCount() != 1 || !activities.applied("activity-1") {
 		t.Fatalf("activities applied = %d op(s) after retry, want exactly activity-1", activities.appliedCount())
+	}
+}
+
+// --- Todo routing (#50, the second real additional owning service after
+// activities) ---
+
+// TestGroupOpsByOwner_RoutesTodoEntityTypeToTodos is the direct unit-test
+// counterpart of TestCoordinator_Handle_RoutesByEntityType, exercising
+// groupOpsByOwner itself rather than the full Coordinator.handle round trip:
+// a "todo" op must land in its own group keyed by todosURL, never merged
+// into the apiariesURL default group or the activitiesURL group.
+func TestGroupOpsByOwner_RoutesTodoEntityTypeToTodos(t *testing.T) {
+	body := []byte(`{"ops":[
+		{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
+		{"op":"put","entity_type":"todo","id":"todo-1","updated_at":"2026-07-16T10:00:00Z","data":{}}
+	]}`)
+	groups, order := groupOpsByOwner(body, "http://apiaries.internal.svc", map[string]string{
+		activityEntityType: "http://activities.internal.svc",
+		todoEntityType:     "http://todos.internal.svc",
+	})
+
+	if len(order) != 2 {
+		t.Fatalf("groups = %v, want exactly 2 (apiaries + todos)", order)
+	}
+	todoGroup, ok := groups["http://todos.internal.svc"]
+	if !ok {
+		t.Fatalf("no group routed to todosURL, groups = %+v", groups)
+	}
+	var parsed struct {
+		Ops []Op `json:"ops"`
+	}
+	if err := json.Unmarshal(todoGroup, &parsed); err != nil {
+		t.Fatalf("decode todos group: %v", err)
+	}
+	if len(parsed.Ops) != 1 || parsed.Ops[0].ID != "todo-1" {
+		t.Fatalf("todos group ops = %+v, want exactly the todo-1 op", parsed.Ops)
+	}
+	if _, ok := groups["http://activities.internal.svc"]; ok {
+		t.Fatalf("activitiesURL unexpectedly received a group for a batch with no activity op")
+	}
+}
+
+// TestCoordinator_MultiGroup_ApiaryPlusTodo is TestCoordinator_Handle_
+// RoutesByEntityType's todo counterpart, exercised through the full
+// Coordinator (not just groupOpsByOwner): a batch mixing an apiary op with a
+// todo op must route each to its own owning service and merge both
+// services' apply results back to the caller.
+func TestCoordinator_MultiGroup_ApiaryPlusTodo(t *testing.T) {
+	apiaries := newStubOwner(t)
+	apiaries.applyResults = `{"results":[{"id":"apiary-1","op":"put","result":"applied"}]}`
+	todos := newStubOwner(t)
+	todos.applyResults = `{"results":[{"id":"todo-1","op":"put","result":"applied"}]}`
+	c, err := NewCoordinator(apiaries.server.URL, apiaries.server.URL, apiaries.server.URL, todos.server.URL)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+
+	body := []byte(`{"ops":[
+		{"op":"put","entity_type":"apiary","id":"apiary-1","updated_at":"2026-07-16T10:00:00Z","data":{}},
+		{"op":"put","entity_type":"todo","id":"todo-1","updated_at":"2026-07-16T10:00:00Z","data":{}}
+	]}`)
+	resp := c.handle(context.Background(), "Bearer tok", body)
+	if resp.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", resp.status, resp.body)
+	}
+
+	if len(apiaries.validatedOps) != 1 || apiaries.validatedOps[0].ID != "apiary-1" {
+		t.Fatalf("apiaries validated ops = %+v, want exactly the apiary-1 op", apiaries.validatedOps)
+	}
+	if len(todos.validatedOps) != 1 || todos.validatedOps[0].ID != "todo-1" {
+		t.Fatalf("todos validated ops = %+v, want exactly the todo-1 op", todos.validatedOps)
+	}
+	if apiaries.appliedCount() != 1 || !apiaries.applied("apiary-1") {
+		t.Fatalf("apiaries applied = %d op(s), want exactly the apiary-1 op", apiaries.appliedCount())
+	}
+	if todos.appliedCount() != 1 || !todos.applied("todo-1") {
+		t.Fatalf("todos applied = %d op(s), want exactly the todo-1 op", todos.appliedCount())
+	}
+
+	var got struct {
+		Results []struct {
+			ID string `json:"id"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(resp.body, &got); err != nil {
+		t.Fatalf("decode merged response: %v, body = %s", err, resp.body)
+	}
+	ids := map[string]bool{}
+	for _, r := range got.Results {
+		ids[r.ID] = true
+	}
+	if !ids["apiary-1"] || !ids["todo-1"] {
+		t.Fatalf("merged results = %+v, want both apiary-1 and todo-1", got.Results)
+	}
+}
+
+// TestCoordinator_Handle_TodoOnlyBatch_NeverCallsActivities is the
+// single-service regression guard for the todo routing path, mirroring
+// TestCoordinator_Handle_SingleServiceBatch_NeverCallsTheOtherService: a
+// batch with only todo ops must not touch activitiesURL at all.
+func TestCoordinator_Handle_TodoOnlyBatch_NeverCallsActivities(t *testing.T) {
+	apiaries := newStubOwner(t)
+	activities := newStubOwner(t)
+	todos := newStubOwner(t)
+	c, err := NewCoordinator(apiaries.server.URL, activities.server.URL, apiaries.server.URL, todos.server.URL)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+
+	body := []byte(`{"ops":[{"op":"put","entity_type":"todo","id":"todo-1","updated_at":"2026-07-16T10:00:00Z","data":{}}]}`)
+	resp := c.handle(context.Background(), "Bearer tok", body)
+	if resp.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", resp.status, resp.body)
+	}
+	if len(activities.validatedOps) != 0 || activities.appliedCount() != 0 {
+		t.Fatalf("activities service was contacted for a todo-only batch: validated=%+v applied=%d", activities.validatedOps, activities.appliedCount())
+	}
+	if todos.appliedCount() != 1 || !todos.applied("todo-1") {
+		t.Fatalf("todos applied = %d op(s), want exactly the todo-1 op", todos.appliedCount())
 	}
 }

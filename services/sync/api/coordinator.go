@@ -29,6 +29,11 @@ import (
 // default to apiariesURL.
 const activityEntityType = "activity"
 
+// todoEntityType is the sync wire entity_type todos' own api/sync.go Op
+// carries (client mirror: powersync_schema.dart's todoEntityType) — routes
+// to todosURL the same way activityEntityType routes to activitiesURL.
+const todoEntityType = "todo"
+
 // journeyEntityType/journeyPlanItemEntityType are the two sync wire entity
 // types the journeys service owns (services/journeys/api/sync.go, #45,
 // mirroring how apiaries itself owns both "apiary" and "apiary_counter") —
@@ -44,28 +49,28 @@ const (
 // overwhelming-majority case) and take the byte-identical single-group fast
 // path (handleSingle); only a push that genuinely mixes ops owned by
 // different services (e.g. an apiary created and an activity logged against
-// it, or a journey and its plan-item apiaries, in the same offline session)
-// exercises the multi-group merge (handleMulti).
+// it, or a journey and its plan-item apiaries, or a todo, in the same
+// offline session) exercises the multi-group merge (handleMulti).
 //
 // routes maps a KNOWN non-default entity_type to its owning service's URL;
 // apiariesURL is the fallback for every entity_type NOT in routes
 // (apiary/apiary_counter, and any op the coordinator doesn't recognize at
 // all — sync.md §6.3's "adding a second service later changes nothing here"
 // promise). This is a routing TABLE, not a growing if/else chain: adding a
-// FOURTH owning service (todos, M5) is one more routes[...] entry in
-// NewCoordinator, not another branch in groupOpsByOwner.
+// FIFTH owning service is one more routes[...] entry in NewCoordinator, not
+// another branch in groupOpsByOwner.
 type Coordinator struct {
 	apiariesURL string
 	routes      map[string]string
 	client      *http.Client
 }
 
-// NewCoordinator builds a Coordinator targeting the apiaries, activities and
-// journeys services — every op whose entity_type isn't in `routes` defaults
-// to apiariesURL, so this stays additive as further owning services are
-// wired in (sync.md §6.3's "adding a second service later changes nothing
-// here" promise).
-func NewCoordinator(apiariesURL, activitiesURL, journeysURL string) (*Coordinator, error) {
+// NewCoordinator builds a Coordinator targeting the apiaries, activities,
+// journeys and todos services — every op whose entity_type isn't in
+// `routes` defaults to apiariesURL, so this stays additive as further
+// owning services are wired in (sync.md §6.3's "adding a second service
+// later changes nothing here" promise).
+func NewCoordinator(apiariesURL, activitiesURL, journeysURL, todosURL string) (*Coordinator, error) {
 	if apiariesURL == "" {
 		return nil, fmt.Errorf("sync: NewCoordinator requires apiariesURL")
 	}
@@ -75,18 +80,23 @@ func NewCoordinator(apiariesURL, activitiesURL, journeysURL string) (*Coordinato
 	if journeysURL == "" {
 		return nil, fmt.Errorf("sync: NewCoordinator requires journeysURL")
 	}
+	if todosURL == "" {
+		return nil, fmt.Errorf("sync: NewCoordinator requires todosURL")
+	}
 	// Trim a trailing slash so an operator-supplied URL (env var, config)
 	// never produces a double slash when concatenated with the internal
 	// endpoint paths below.
 	apiariesURL = strings.TrimRight(apiariesURL, "/")
 	activitiesURL = strings.TrimRight(activitiesURL, "/")
 	journeysURL = strings.TrimRight(journeysURL, "/")
+	todosURL = strings.TrimRight(todosURL, "/")
 	return &Coordinator{
 		apiariesURL: apiariesURL,
 		routes: map[string]string{
 			activityEntityType:        activitiesURL,
 			journeyEntityType:         journeysURL,
 			journeyPlanItemEntityType: journeysURL,
+			todoEntityType:            todosURL,
 		},
 		client: &http.Client{
 			Timeout:   10 * time.Second,

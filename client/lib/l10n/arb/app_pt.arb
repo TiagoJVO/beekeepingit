@@ -352,6 +352,52 @@
   "journeyStatsAverageSupersLabel": "Média alças/colmeia",
   "journeyStatsAverageSupersNoData": "Ainda sem dados",
   "journeyStatsMissingLabel": "{count, plural, =0{Todos os apiários planeados foram visitados} =1{Falta 1 apiário} other{Faltam {count} apiários}}",
+  "journeyDetailTitle": "Jornada",
+  "editJourneyAction": "Editar jornada",
+  "journeyDetailApiariesTitle": "Apiários",
+  "journeyDetailApiaryNameUnknown": "Apiário desconhecido",
+  "journeyDetailApiaryVisitedBadge": "Visitado",
+  "journeyDetailApiaryPlannedBadge": "Planeado",
+  "journeyDetailApiaryNotVisitedYet": "Ainda não visitado",
+  "journeyDetailApiariesEmpty": "Ainda não há apiários nesta jornada.",
+  "todosEmpty": "Ainda não há tarefas.",
+  "todosFilterNoResults": "Nenhuma tarefa corresponde aos filtros.",
+  "todosError": "Não foi possível carregar as tarefas: {error}",
+  "todoFilterStatusLabel": "Estado",
+  "todoFilterStatusAll": "Todas",
+  "todoFilterStatusOpen": "Em aberto",
+  "todoFilterStatusOverdue": "Atrasada",
+  "todoFilterStatusDone": "Concluída",
+  "todoFilterPriorityLabel": "Prioridade",
+  "todoFilterPriorityAll": "Todas as prioridades",
+  "todoPriorityLowLabel": "Baixa",
+  "todoPriorityMediumLabel": "Média",
+  "todoPriorityHighLabel": "Alta",
+  "todoFilterDueLabel": "Prazo",
+  "todoFilterDueAny": "Qualquer data",
+  "todoFilterDueToday": "Vence hoje",
+  "todoFilterDueThisWeek": "Vence esta semana",
+  "todoFilterDueThisMonth": "Vence este mês",
+  "todoFilterClearAction": "Limpar filtros",
+  "todoSortFieldLabel": "Ordenar por",
+  "todoSortFieldDueDate": "Prazo",
+  "todoSortFieldPriority": "Prioridade",
+  "todoSortFieldStatus": "Estado",
+  "todoSortDirectionAscendingLabel": "Crescente",
+  "todoSortDirectionDescendingLabel": "Decrescente",
+  "todoDueDateUnset": "Sem prazo",
+  "todoOverdueBadge": "Atrasada",
+  "todoStatusSemanticLabel": "Estado: {status}",
+  "addTodo": "Nova tarefa",
+  "todoQuickCreateTitle": "Nova tarefa",
+  "todoTitleLabel": "Título",
+  "todoTitleRequired": "O título é obrigatório",
+  "todoDueDateLabel": "Prazo",
+  "todoDueDateClearAction": "Limpar prazo",
+  "todoQuickCreateForApiary": "Para {apiaryName}",
+  "todoQuickCreateCancelAction": "Cancelar",
+  "todoCreatedConfirmation": "Tarefa criada",
+  "todoSaveError": "Não foi possível guardar a tarefa: {error}",
   "@activityLoadError": {
     "placeholders": {
       "error": {
@@ -362,6 +408,20 @@
   "@activityDeleteError": {
     "placeholders": {
       "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todosError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoStatusSemanticLabel": {
+    "placeholders": {
+      "status": {
         "type": "String"
       }
     }

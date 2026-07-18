@@ -267,6 +267,74 @@ void main() {
     });
   });
 
+  group('JourneysRepository.watchById() (#48, FR-JO-3)', () {
+    test('emits null for an unknown id', () async {
+      expect(await repo.watchById('missing').first, isNull);
+    });
+
+    test('emits the journey without its plan apiary ids (see the class doc '
+        'on why — the detail screen reads watchPlanApiariesByJourney '
+        'instead)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'feeding',
+        apiaryIds: const ['a1', 'a2'],
+      );
+
+      final journey = await repo.watchById(id).first;
+
+      expect(journey, isNotNull);
+      expect(journey!.name, 'Journey');
+      expect(journey.mainActivityType, 'feeding');
+      expect(journey.status, journeyStatusOpen);
+      expect(journey.apiaryIds, isEmpty);
+    });
+
+    test('re-emits after the journey row is updated', () async {
+      final id = await repo.create(
+        name: 'Old name',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      final emissions = <String?>[];
+      final sub = repo.watchById(id).listen((j) => emissions.add(j?.name));
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions, ['Old name']);
+
+      await repo.update(
+        id,
+        name: 'New name',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+        apiaryIds: const [],
+      );
+      await pumpEventQueue();
+
+      expect(emissions.last, 'New name');
+    });
+
+    test('emits null again once the journey is deleted', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      final emissions = <bool>[];
+      final sub = repo.watchById(id).listen((j) => emissions.add(j != null));
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions, [true]);
+
+      await repo.delete(id);
+      await pumpEventQueue();
+
+      expect(emissions.last, isFalse);
+    });
+  });
+
   group('JourneysRepository.update() plan diffing (#45, FR-JO-4)', () {
     test('removes an apiary no longer in the requested set', () async {
       final id = await repo.create(

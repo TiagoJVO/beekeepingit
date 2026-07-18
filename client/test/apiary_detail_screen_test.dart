@@ -1,10 +1,12 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +39,54 @@ class _ExistingOrganizationController extends OrganizationController {
   );
 }
 
+/// A no-op [LocalStoreEngine] — [_FakeTodosRepository] overrides every
+/// method the quick-create sheet touches, so the superclass's store is
+/// never actually used. Mirrors todo_quick_create_sheet_test.dart's/
+/// add_activity_screen_test.dart's own identical fixture.
+class _NoopLocalStore implements LocalStoreEngine {
+  @override
+  Stream<List<Map<String, Object?>>> watch(
+    String sql, [
+    List<Object?> args = const [],
+  ]) => const Stream.empty();
+  @override
+  Future<Map<String, Object?>?> getOptional(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => null;
+  @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
+  @override
+  Future<void> execute(String sql, [List<Object?> args = const []]) async {}
+  @override
+  Future<void> clear() async {}
+}
+
+/// Records `create()` calls from the apiary detail page's own contextual
+/// "New todo" FAB (#52, FR-UX-2) — mirrors
+/// todo_quick_create_sheet_test.dart's own `_FakeTodosRepository`.
+class _FakeTodosRepository extends TodosRepository {
+  _FakeTodosRepository() : super(_NoopLocalStore());
+
+  final List<({String title, String? apiaryId})> created = [];
+
+  @override
+  Future<String> create({
+    required String title,
+    required String priority,
+    String? description,
+    String? dueDate,
+    String? assigneeId,
+    String? apiaryId,
+  }) async {
+    created.add((title: title, apiaryId: apiaryId));
+    return 'fake-${created.length - 1}';
+  }
+}
+
 /// Builds the full app (real router/shell included) as an authenticated,
 /// onboarded user with a fixed local apiaries list — the detail screen
 /// (#32) reads from the same apiariesStreamProvider the list screen does,
@@ -52,14 +102,21 @@ class _ExistingOrganizationController extends OrganizationController {
 /// channel/network), so the form is left showing its own indefinite busy
 /// spinner rather than the loaded field — expected and asserted on, not a
 /// bug in the screen under test.
+///
+/// [todosRepository] is only needed by the #52 add-todo FAB tests below — a
+/// real (un-overridden) todosRepositoryProvider would otherwise hang on the
+/// never-resolving PowerSync chain the moment that FAB's sheet is saved.
 Widget _buildApp({
   required List<Apiary> apiaries,
   Map<String, List<ApiaryCounter>> counters = const {},
+  TodosRepository? todosRepository,
 }) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      if (todosRepository != null)
+        todosRepositoryProvider.overrideWith((ref) async => todosRepository),
       // The detail screen watches apiaryByIdProvider (HIGH finding: a
       // narrow per-id family provider, not the whole-org
       // apiariesStreamProvider) — overridden here the same way
@@ -391,4 +448,117 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  // --- Quick-create-todo FAB (#52, FR-TD-1, FR-UX-1, FR-UX-2) ---
+
+  group('add-todo FAB (#52)', () {
+    testWidgets(
+      'coexists with the existing add-activity and edit FABs (all three '
+      'render together)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-detail-add-todo-button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('apiary-detail-edit-button')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping it opens the quick-create sheet pre-filled with this apiary '
+      '(FR-UX-2 contextual create)',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            todosRepository: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-todo-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('todo-quick-create-apiary-chip')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Serra Norte'), findsWidgets);
+
+        await tester.enterText(
+          find.byKey(const Key('todo-quick-create-title-field')),
+          'Check queen',
+        );
+        await tester.tap(
+          find.byKey(const Key('todo-quick-create-save-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.title, 'Check queen');
+        expect(repo.created.single.apiaryId, 'a1');
+      },
+    );
+
+    testWidgets(
+      'the existing add-activity FAB still navigates as before (regression '
+      'guard)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        // Bounded pumps (not pumpAndSettle, which would hang forever): the
+        // pushed add-activity form's own journey-matching section
+        // (journeyMatchesProvider) depends on the real, never-resolving
+        // journeysRepositoryProvider in this environment, whose loading
+        // state renders an indeterminate LinearProgressIndicator — same
+        // rationale as this file's own edit-navigation test above, which
+        // hits the equivalent issue via apiariesRepositoryProvider.
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        expect(find.byKey(const Key('shell-back-button')), findsOneWidget);
+        expect(find.text('Add activity'), findsWidgets);
+      },
+    );
+  });
 }

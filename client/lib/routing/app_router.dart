@@ -12,6 +12,7 @@ import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/journeys/journey_detail_screen.dart';
 import '../features/journeys/journey_form_screen.dart';
 import '../features/journeys/journeys_list_screen.dart';
 import '../features/members/members_screen.dart';
@@ -20,6 +21,7 @@ import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/sync/sync_needs_fix_screen.dart';
+import '../features/todos/todos_list_screen.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../shell/app_shell.dart';
 import '../shell/coming_soon_screen.dart';
@@ -249,15 +251,29 @@ final routerProvider = Provider<GoRouter>((ref) {
                     name: 'journeyNew',
                     builder: (context, state) => const JourneyFormScreen(),
                   ),
-                  // Tapping a list row opens the edit form directly (no
-                  // dedicated detail screen yet — that's #48), mirroring
-                  // add_activity_screen.dart's own pre-#310 precedent.
+                  // Journey detail (#48, FR-JO-3, D-21): apiaries visited,
+                  // per-apiary activities (attributed via stored journey_id),
+                  // and the #49 stats section — reached by tapping a list
+                  // row. Edit/close/delete stay on the existing form, nested
+                  // UNDER this route so its full path
+                  // (`.../:id/edit`) and `journeyEdit` name are unchanged —
+                  // no existing deep link breaks (mirrors activityDetail's
+                  // own edit-nesting precedent above).
                   GoRoute(
-                    path: ':id/edit',
-                    name: 'journeyEdit',
-                    builder: (context, state) => JourneyFormScreen(
+                    path: ':id',
+                    name: 'journeyDetail',
+                    builder: (context, state) => JourneyDetailScreen(
                       journeyId: state.pathParameters['id']!,
                     ),
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        name: 'journeyEdit',
+                        builder: (context, state) => JourneyFormScreen(
+                          journeyId: state.pathParameters['id']!,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -269,10 +285,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/todos',
                 name: 'todos',
-                builder: (context, state) => ComingSoonScreen(
-                  icon: Icons.task_alt_outlined,
-                  title: AppLocalizations.of(context).todosComingSoon,
-                ),
+                builder: (context, state) => const TodosListScreen(),
               ),
             ],
           ),

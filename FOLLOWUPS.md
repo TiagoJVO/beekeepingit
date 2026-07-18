@@ -7,6 +7,8 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
----
-
-_No pending items._
+Currently empty — nothing pending. (#51's own hand-written-sqlc verification
+note is resolved: that PR already merged, and CI's containerized-Postgres
+integration tests — plus an independent code-reviewer and security-reviewer
+pass — confirmed the generated code binds/scans correctly at runtime, not
+just compiles.)

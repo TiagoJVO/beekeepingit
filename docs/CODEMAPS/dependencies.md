@@ -21,7 +21,7 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 ## Inter-service dependency graph (internal HTTP)
 
 ```text
-client ──JWT──► identity, organizations, apiaries, journeys, sync   (all via Traefik /v1/*)
+client ──JWT──► identity, organizations, apiaries, journeys, todos, sync   (all via Traefik /v1/*)
 organizations ─► identity            (INTERNAL_IDENTITY_URL, user resolve)
 apiaries       ─► identity, organizations   (org-resolver: sub→user, →membership)
 activities     ─► identity, organizations   (org-resolver, same wiring as apiaries)
@@ -37,12 +37,25 @@ activities     ─► journeys            (INTERNAL_JOURNEYS_URL, #46: verify a 
 journeys       ─► identity, organizations   (org-resolver, same wiring as apiaries)
 journeys       ─► apiaries            (INTERNAL_APIARIES_URL, #45: same ApiaryVerifier pattern
                                         as activities', for every apiary_id in a journey's plan)
+todos          ─► identity, organizations   (org-resolver, same wiring as apiaries)
+todos          ─► organizations       (INTERNAL_ORGANIZATIONS_URL, #50: verify a client-supplied
+                                        assignee_id has an ACTIVE membership in the caller's org,
+                                        GET /internal/memberships/active?user_id= —
+                                        api/members_client.go; todos has no DB access to
+                                        organizations' schema, ownership rule 1)
+todos          ─► apiaries            (INTERNAL_APIARIES_URL, #51: verify a client-supplied
+                                        apiary_id belongs to the caller's org, GET /v1/apiaries/{id}
+                                        — api/apiaries_client.go, same ApiaryVerifier pattern as
+                                        activities'/journeys'; todos has no DB access to apiaries'
+                                        schema, ownership rule 1)
 sync           ─► identity, organizations   (org-resolver, on /v1)
 sync           ─► apiaries            (INTERNAL_APIARIES_URL: /internal/sync/validate+apply)
 sync           ─► activities          (INTERNAL_ACTIVITIES_URL, #39: /internal/sync/validate+apply,
                                         routed by entity_type via Coordinator's routes map)
 sync           ─► journeys            (INTERNAL_JOURNEYS_URL, #45: /internal/sync/validate+apply,
                                         `journey`/`journey_plan_item` entity types)
+sync           ─► todos               (INTERNAL_TODOS_URL, #50: /internal/sync/validate+apply,
+                                        routed by entity_type via Coordinator's routes map)
 PowerSync      ─► sync                (validates tokens against /internal/sync/jwks.json)
 ```
 

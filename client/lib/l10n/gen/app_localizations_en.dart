@@ -979,4 +979,150 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get journeyDetailTitle => 'Journey';
+
+  @override
+  String get editJourneyAction => 'Edit journey';
+
+  @override
+  String get journeyDetailApiariesTitle => 'Apiaries';
+
+  @override
+  String get journeyDetailApiaryNameUnknown => 'Unknown apiary';
+
+  @override
+  String get journeyDetailApiaryVisitedBadge => 'Visited';
+
+  @override
+  String get journeyDetailApiaryPlannedBadge => 'Planned';
+
+  @override
+  String get journeyDetailApiaryNotVisitedYet => 'Not visited yet';
+
+  @override
+  String get journeyDetailApiariesEmpty => 'No apiaries in this journey yet.';
+
+  @override
+  String get todosEmpty => 'No todos yet.';
+
+  @override
+  String get todosFilterNoResults => 'No todos match your filters.';
+
+  @override
+  String todosError(String error) {
+    return 'Could not load todos: $error';
+  }
+
+  @override
+  String get todoFilterStatusLabel => 'Status';
+
+  @override
+  String get todoFilterStatusAll => 'All';
+
+  @override
+  String get todoFilterStatusOpen => 'Open';
+
+  @override
+  String get todoFilterStatusOverdue => 'Overdue';
+
+  @override
+  String get todoFilterStatusDone => 'Completed';
+
+  @override
+  String get todoFilterPriorityLabel => 'Priority';
+
+  @override
+  String get todoFilterPriorityAll => 'All priorities';
+
+  @override
+  String get todoPriorityLowLabel => 'Low';
+
+  @override
+  String get todoPriorityMediumLabel => 'Medium';
+
+  @override
+  String get todoPriorityHighLabel => 'High';
+
+  @override
+  String get todoFilterDueLabel => 'Due';
+
+  @override
+  String get todoFilterDueAny => 'Any date';
+
+  @override
+  String get todoFilterDueToday => 'Due today';
+
+  @override
+  String get todoFilterDueThisWeek => 'Due this week';
+
+  @override
+  String get todoFilterDueThisMonth => 'Due this month';
+
+  @override
+  String get todoFilterClearAction => 'Clear filters';
+
+  @override
+  String get todoSortFieldLabel => 'Sort by';
+
+  @override
+  String get todoSortFieldDueDate => 'Due date';
+
+  @override
+  String get todoSortFieldPriority => 'Priority';
+
+  @override
+  String get todoSortFieldStatus => 'Status';
+
+  @override
+  String get todoSortDirectionAscendingLabel => 'Ascending';
+
+  @override
+  String get todoSortDirectionDescendingLabel => 'Descending';
+
+  @override
+  String get todoDueDateUnset => 'No due date';
+
+  @override
+  String get todoOverdueBadge => 'Overdue';
+
+  @override
+  String todoStatusSemanticLabel(String status) {
+    return 'Status: $status';
+  }
+
+  @override
+  String get addTodo => 'New todo';
+
+  @override
+  String get todoQuickCreateTitle => 'New todo';
+
+  @override
+  String get todoTitleLabel => 'Title';
+
+  @override
+  String get todoTitleRequired => 'Title is required';
+
+  @override
+  String get todoDueDateLabel => 'Due date';
+
+  @override
+  String get todoDueDateClearAction => 'Clear due date';
+
+  @override
+  String todoQuickCreateForApiary(String apiaryName) {
+    return 'For $apiaryName';
+  }
+
+  @override
+  String get todoQuickCreateCancelAction => 'Cancel';
+
+  @override
+  String get todoCreatedConfirmation => 'Todo created';
+
+  @override
+  String todoSaveError(String error) {
+    return 'Could not save todo: $error';
+  }
 }

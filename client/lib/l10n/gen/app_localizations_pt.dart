@@ -985,4 +985,151 @@ class AppLocalizationsPt extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get journeyDetailTitle => 'Jornada';
+
+  @override
+  String get editJourneyAction => 'Editar jornada';
+
+  @override
+  String get journeyDetailApiariesTitle => 'Apiários';
+
+  @override
+  String get journeyDetailApiaryNameUnknown => 'Apiário desconhecido';
+
+  @override
+  String get journeyDetailApiaryVisitedBadge => 'Visitado';
+
+  @override
+  String get journeyDetailApiaryPlannedBadge => 'Planeado';
+
+  @override
+  String get journeyDetailApiaryNotVisitedYet => 'Ainda não visitado';
+
+  @override
+  String get journeyDetailApiariesEmpty =>
+      'Ainda não há apiários nesta jornada.';
+
+  @override
+  String get todosEmpty => 'Ainda não há tarefas.';
+
+  @override
+  String get todosFilterNoResults => 'Nenhuma tarefa corresponde aos filtros.';
+
+  @override
+  String todosError(String error) {
+    return 'Não foi possível carregar as tarefas: $error';
+  }
+
+  @override
+  String get todoFilterStatusLabel => 'Estado';
+
+  @override
+  String get todoFilterStatusAll => 'Todas';
+
+  @override
+  String get todoFilterStatusOpen => 'Em aberto';
+
+  @override
+  String get todoFilterStatusOverdue => 'Atrasada';
+
+  @override
+  String get todoFilterStatusDone => 'Concluída';
+
+  @override
+  String get todoFilterPriorityLabel => 'Prioridade';
+
+  @override
+  String get todoFilterPriorityAll => 'Todas as prioridades';
+
+  @override
+  String get todoPriorityLowLabel => 'Baixa';
+
+  @override
+  String get todoPriorityMediumLabel => 'Média';
+
+  @override
+  String get todoPriorityHighLabel => 'Alta';
+
+  @override
+  String get todoFilterDueLabel => 'Prazo';
+
+  @override
+  String get todoFilterDueAny => 'Qualquer data';
+
+  @override
+  String get todoFilterDueToday => 'Vence hoje';
+
+  @override
+  String get todoFilterDueThisWeek => 'Vence esta semana';
+
+  @override
+  String get todoFilterDueThisMonth => 'Vence este mês';
+
+  @override
+  String get todoFilterClearAction => 'Limpar filtros';
+
+  @override
+  String get todoSortFieldLabel => 'Ordenar por';
+
+  @override
+  String get todoSortFieldDueDate => 'Prazo';
+
+  @override
+  String get todoSortFieldPriority => 'Prioridade';
+
+  @override
+  String get todoSortFieldStatus => 'Estado';
+
+  @override
+  String get todoSortDirectionAscendingLabel => 'Crescente';
+
+  @override
+  String get todoSortDirectionDescendingLabel => 'Decrescente';
+
+  @override
+  String get todoDueDateUnset => 'Sem prazo';
+
+  @override
+  String get todoOverdueBadge => 'Atrasada';
+
+  @override
+  String todoStatusSemanticLabel(String status) {
+    return 'Estado: $status';
+  }
+
+  @override
+  String get addTodo => 'Nova tarefa';
+
+  @override
+  String get todoQuickCreateTitle => 'Nova tarefa';
+
+  @override
+  String get todoTitleLabel => 'Título';
+
+  @override
+  String get todoTitleRequired => 'O título é obrigatório';
+
+  @override
+  String get todoDueDateLabel => 'Prazo';
+
+  @override
+  String get todoDueDateClearAction => 'Limpar prazo';
+
+  @override
+  String todoQuickCreateForApiary(String apiaryName) {
+    return 'Para $apiaryName';
+  }
+
+  @override
+  String get todoQuickCreateCancelAction => 'Cancelar';
+
+  @override
+  String get todoCreatedConfirmation => 'Tarefa criada';
+
+  @override
+  String todoSaveError(String error) {
+    return 'Não foi possível guardar a tarefa: $error';
+  }
 }

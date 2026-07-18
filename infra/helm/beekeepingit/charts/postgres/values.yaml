@@ -34,11 +34,24 @@ schemas:
 # journeys (#45): same rationale — the client declares local `journeys`/
 # `journey_plan_items` tables (client/lib/core/sync/powersync_schema.dart)
 # so a journey created/edited offline (FR-OF-1) reconciles across devices.
+# todos (#50): same rationale — the client declares a local `todos` table
+# (client/lib/core/sync/powersync_schema.dart) and needs it replicated for
+# FR-OF-1. NOTE (operational, not a code/CI concern): the publication itself
+# is created ONCE, at cluster bootstrap, by `postInitApplicationSQL`'s
+# `CREATE PUBLICATION ... FOR TABLES IN SCHEMA` (cluster.yaml) — adding a
+# schema here only takes effect on a FRESH cluster bootstrap. An
+# already-bootstrapped/running cluster needs a one-time
+# `ALTER PUBLICATION powersync ADD TABLES IN SCHEMA todos;` run by hand
+# (the `powersync` role's membership in `todos_svc` below, by contrast, IS
+# continuously reconciled by CNPG's managed.roles, so that half self-heals).
+# Not blocking for CI/merge — the dev cluster is torn down/rebuilt via
+# infra/cluster scripts, which re-bootstraps from scratch.
 syncedSchemas:
   - apiaries
   - organizations
   - activities
   - journeys
+  - todos
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.
