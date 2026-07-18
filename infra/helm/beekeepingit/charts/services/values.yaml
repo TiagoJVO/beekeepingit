@@ -80,6 +80,11 @@ services:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
       INTERNAL_APIARIES_URL: http://apiaries:8080
+      # #46: journeys' URL for the cross-service journey_id ownership check
+      # (api/journeys_client.go's JourneyVerifier) — the same rationale as
+      # INTERNAL_APIARIES_URL above, closing the IDOR gap where journey_id
+      # was previously accepted with no ownership verification at all.
+      INTERNAL_JOURNEYS_URL: http://journeys:8080
   # #45: journeys (name, main activity type, apiaries-to-visit plan, D-21) —
   # needs its own DB role/secret (journeys schema, matching activities'
   # shape) plus apiaries' URL for the cross-service apiary_id ownership

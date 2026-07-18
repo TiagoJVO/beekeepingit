@@ -427,6 +427,86 @@ func TestJourneysRest_Create_ValidationRejectsBadInput(t *testing.T) {
 	}
 }
 
+// --- Read (GET, #46) ---
+
+// TestJourneysRest_Get_Success proves the new GET /v1/journeys/{id} endpoint
+// (#46, FR-JO-1) serves the same journeyDTO shape (apiary_ids included) the
+// create/update handlers already return.
+func TestJourneysRest_Get_Success(t *testing.T) {
+	apiaryA, apiaryB := uuid.NewString(), uuid.NewString()
+	f := newJourneysFixture(t, apiaryA, apiaryB)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Colheita", "harvest", []string{apiaryA, apiaryB})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodGet, "/v1/journeys/"+id, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got journeyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v, body = %s", err, rec.Body.String())
+	}
+	if got.ID != id || got.Name != "Colheita" || got.MainActivityType != "harvest" || got.Status != "open" {
+		t.Fatalf("got journey = %+v, want id=%s name=Colheita status=open type=harvest", got, id)
+	}
+	if len(got.ApiaryIDs) != 2 {
+		t.Fatalf("apiary_ids = %v, want 2 entries", got.ApiaryIDs)
+	}
+}
+
+func TestJourneysRest_Get_UnknownIdIsNotFound(t *testing.T) {
+	f := newJourneysFixture(t)
+	rec := f.do(t, http.MethodGet, "/v1/journeys/"+uuid.NewString(), nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for an unknown journey id, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysRest_Get_CrossOrgIsNotFound is the CRITICAL scope-hiding test
+// this endpoint exists to satisfy (ADR-0002, mirroring apiaries' getApiary
+// and the parallel PATCH/DELETE cross-org test above): a journey that
+// belongs to a DIFFERENT organization must 404, indistinguishable from a
+// nonexistent id — this is exactly the property activities' new
+// JourneyVerifier depends on to answer "does this journey_id belong to the
+// caller's org" without a dedicated internal endpoint.
+func TestJourneysRest_Get_CrossOrgIsNotFound(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Journey", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.doAs(t, otherOrgCaller(), http.MethodGet, "/v1/journeys/"+id, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-org get status = %d, want 404 (scope-hiding, ADR-0002), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysRest_Get_DeletedIsNotFound proves a tombstoned (soft-deleted)
+// journey also 404s on GET — GetJourney's own query already filters
+// `deleted_at IS NULL` (store/sqlc/queries/journeys.sql), this just proves
+// the HTTP layer surfaces that as the expected 404 rather than leaking a
+// deleted row.
+func TestJourneysRest_Get_DeletedIsNotFound(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Journey", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/journeys/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodGet, "/v1/journeys/"+id, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("get-after-delete status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestJourneysRest_History_CreateProducesOneAuditRow(t *testing.T) {
 	apiaryID := uuid.NewString()
 	f := newJourneysFixture(t, apiaryID)

@@ -75,6 +75,7 @@ type activitiesFixture struct {
 	srv      *servicetemplate.Server
 	pool     *pgxpool.Pool
 	apiaries *fakeApiaries
+	journeys *fakeJourneys
 }
 
 // fakeApiaries stands in for the real apiaries service's GET /v1/apiaries/{id}
@@ -125,12 +126,62 @@ func newFakeApiaries(t *testing.T, known map[string]bool) *fakeApiaries {
 	return f
 }
 
+// fakeJourneys is fakeApiaries' #46 counterpart, standing in for the real
+// journeys service's GET /v1/journeys/{id} (api/journeys_client.go's
+// JourneyVerifier target): 200 for any id in `known`, 404 otherwise — enough
+// to exercise the CRITICAL cross-org journey_id tenancy guard without
+// standing up a second real service + database in this test binary. Also
+// counts per-id hits so a test can prove the sync batch path de-duplicates
+// its ownership calls, mirroring fakeApiaries.
+type fakeJourneys struct {
+	server *httptest.Server
+	mu     sync.Mutex
+	hits   map[string]int
+}
+
+func (f *fakeJourneys) hitCount(journeyID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hits[journeyID]
+}
+
+func newFakeJourneys(t *testing.T, known map[string]bool) *fakeJourneys {
+	t.Helper()
+	f := &fakeJourneys{hits: map[string]int{}}
+	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/v1/journeys/")
+		f.mu.Lock()
+		f.hits[id]++
+		f.mu.Unlock()
+		if known[id] {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(f.server.Close)
+	return f
+}
+
 // newActivitiesFixture builds the test fixture. knownApiaryIDs (variadic —
 // most tests below don't create anything and need none) seeds the fake
 // apiaries server's known set; a REST-create/sync-apply test that expects a
 // SUCCESSFUL write must pass its apiary_id here, otherwise the (correct)
-// tenancy guard rejects it, exactly as it must for a real foreign id.
+// tenancy guard rejects it, exactly as it must for a real foreign id. No
+// journey_id is ever known by this variant — tests exercising journey_id
+// ownership use newActivitiesFixtureWithJourneys instead.
 func newActivitiesFixture(t *testing.T, knownApiaryIDs ...string) *activitiesFixture {
+	t.Helper()
+	return newActivitiesFixtureWithJourneys(t, knownApiaryIDs, nil)
+}
+
+// newActivitiesFixtureWithJourneys is newActivitiesFixture plus a fake
+// journeys service (#46) seeded with knownJourneyIDs — the JourneyVerifier
+// counterpart of knownApiaryIDs: a REST-create/sync-apply test that expects
+// a SUCCESSFUL write carrying a journey_id must pass it here, otherwise the
+// (correct) tenancy guard rejects it, exactly as it must for a real foreign
+// org's journey.
+func newActivitiesFixtureWithJourneys(t *testing.T, knownApiaryIDs, knownJourneyIDs []string) *activitiesFixture {
 	t.Helper()
 	ctx := context.Background()
 
@@ -142,6 +193,15 @@ func newActivitiesFixture(t *testing.T, knownApiaryIDs ...string) *activitiesFix
 	verifier, err := api.NewApiaryVerifier(fakeApiaries.server.URL, fakeApiaries.server.Client())
 	if err != nil {
 		t.Fatalf("NewApiaryVerifier: %v", err)
+	}
+	knownJourneys := make(map[string]bool, len(knownJourneyIDs))
+	for _, id := range knownJourneyIDs {
+		knownJourneys[id] = true
+	}
+	fakeJourneys := newFakeJourneys(t, knownJourneys)
+	journeyVerifier, err := api.NewJourneyVerifier(fakeJourneys.server.URL, fakeJourneys.server.Client())
+	if err != nil {
+		t.Fatalf("NewJourneyVerifier: %v", err)
 	}
 	const (
 		dbUser = "beekeepingit_test"
@@ -194,10 +254,10 @@ func newActivitiesFixture(t *testing.T, knownApiaryIDs ...string) *activitiesFix
 		t.Fatalf("New: %v", err)
 	}
 	srv.Mount("/internal/activities", injectClaims(api.InternalValidateRouter()))
-	srv.Mount("/v1/activities", injectClaims(api.Router(pool, verifier)))
-	srv.Mount("/internal/sync", injectClaims(api.InternalSyncRouter(pool, verifier)))
+	srv.Mount("/v1/activities", injectClaims(api.Router(pool, verifier, journeyVerifier)))
+	srv.Mount("/internal/sync", injectClaims(api.InternalSyncRouter(pool, verifier, journeyVerifier)))
 
-	return &activitiesFixture{srv: srv, pool: pool, apiaries: fakeApiaries}
+	return &activitiesFixture{srv: srv, pool: pool, apiaries: fakeApiaries, journeys: fakeJourneys}
 }
 
 func (f *activitiesFixture) do(t *testing.T, method, path string, body any) *httptest.ResponseRecorder {
@@ -633,6 +693,85 @@ func TestActivitiesRest_Create_CrossOrgApiaryIdIsRejected(t *testing.T) {
 	}
 }
 
+// TestActivitiesRest_Create_JourneyIdIsStoredWhenOwned proves the positive
+// case of #46's journey_id ownership guard: a journey_id that DOES belong to
+// the caller's org (registered with the fake journeys server) is accepted
+// and persisted, end to end — the guard must reject a foreign id (the next
+// test) without also rejecting a legitimate one.
+func TestActivitiesRest_Create_JourneyIdIsStoredWhenOwned(t *testing.T) {
+	apiaryID, journeyID := uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyID})
+	id := uuid.NewString()
+
+	body := validHarvestBody(id, apiaryID)
+	body["journey_id"] = journeyID
+	rec := f.do(t, http.MethodPost, "/v1/activities", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		JourneyID *string `json:"journey_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.JourneyID == nil || *got.JourneyID != journeyID {
+		t.Fatalf("journey_id = %v, want %q", got.JourneyID, journeyID)
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if !row.JourneyID.Valid || uuidString(row.JourneyID) != journeyID {
+		t.Fatalf("stored journey_id = %+v, want %q", row.JourneyID, journeyID)
+	}
+}
+
+// TestActivitiesRest_Create_CrossOrgJourneyIdIsRejected is the CRITICAL test
+// this story exists to add (#46 review finding): before JourneyVerifier
+// existed, journey_id was written with ZERO ownership verification — a
+// journey_id that belongs to a DIFFERENT organization than the caller's
+// resolved org must never be accepted, mirroring
+// TestActivitiesRest_Create_CrossOrgApiaryIdIsRejected exactly.
+func TestActivitiesRest_Create_CrossOrgJourneyIdIsRejected(t *testing.T) {
+	apiaryID := uuid.NewString()
+	foreignJourneyID := uuid.NewString()
+	// The fake journeys server is org-agnostic (mirrors the real GET
+	// /v1/journeys/{id}'s scope-hiding) — not registering foreignJourneyID at
+	// all models "belongs to another org" and "doesn't exist" as the
+	// identical 404 (ADR-0002), either way the write must be rejected.
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, nil)
+	id := uuid.NewString()
+
+	body := validHarvestBody(id, apiaryID)
+	body["journey_id"] = foreignJourneyID
+	rec := f.do(t, http.MethodPost, "/v1/activities", body)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (cross-org/unknown journey_id must be rejected), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "journey_id", "not_found") {
+		t.Fatalf("problem errors = %+v, want journey_id/not_found", p.Errors)
+	}
+
+	// Nothing must have been written — the tenancy guard runs BEFORE the
+	// insert, exactly like the apiary_id guard, so a rejected cross-org
+	// journey_id leaves no activity row at all (not even one with a null
+	// journey_id).
+	q := sqlcgen.New(f.pool)
+	if _, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	}); err == nil {
+		t.Fatalf("GetActivity found a row after a rejected cross-org journey_id create — the write must not have happened")
+	}
+}
+
 // TestActivitiesRest_Create_AttributionIsFromClaims_NeverClientSupplied
 // (FR-TEN-2): performed_by is derived server-side from the caller's
 // resolved user id (requireOrg → authn.FromContext), never from any
@@ -950,6 +1089,112 @@ func TestActivitiesSync_Validate_DedupesApiaryOwnershipCalls(t *testing.T) {
 	}
 	if got := f.apiaries.totalHits(); got != 1 {
 		t.Fatalf("total apiaries ownership calls = %d, want exactly 1", got)
+	}
+}
+
+// syncOpWithJourney is syncOp plus a journey_id (#46) on the op's data.
+func syncOpWithJourney(id, apiaryID, journeyID string) map[string]any {
+	op := syncOp(id, apiaryID)
+	data := op["data"].(map[string]any)
+	data["journey_id"] = journeyID
+	return op
+}
+
+// TestActivitiesSync_ValidateThenApply_JourneyIdIsStoredWhenOwned is the
+// sync-path positive case of #46's journey_id ownership guard, mirroring
+// TestActivitiesRest_Create_JourneyIdIsStoredWhenOwned.
+func TestActivitiesSync_ValidateThenApply_JourneyIdIsStoredWhenOwned(t *testing.T) {
+	apiaryID, journeyID := uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyID})
+	id := uuid.NewString()
+	batch := map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, journeyID)}}
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch); rec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch); rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if !row.JourneyID.Valid || uuidString(row.JourneyID) != journeyID {
+		t.Fatalf("stored journey_id = %+v, want %q", row.JourneyID, journeyID)
+	}
+}
+
+// TestActivitiesSync_Validate_RejectsCrossOrgJourneyId is the sync-path
+// counterpart of TestActivitiesRest_Create_CrossOrgJourneyIdIsRejected — the
+// offline queue must not be able to bypass the journey_id tenancy guard
+// either.
+func TestActivitiesSync_Validate_RejectsCrossOrgJourneyId(t *testing.T) {
+	apiaryID := uuid.NewString()
+	foreignJourneyID := uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, nil)
+	id := uuid.NewString()
+	batch := map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, foreignJourneyID)}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (cross-org/unknown journey_id), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "ops[0].data.journey_id", "not_found") {
+		t.Fatalf("problem errors = %+v, want ops[0].data.journey_id/not_found", p.Errors)
+	}
+}
+
+// TestActivitiesSync_Apply_CrossOrgJourneyIdIsNoOp is applyActivityOp's #46
+// journey_id counterpart of TestActivitiesSync_Apply_CrossOrgApiaryIdIsNoOp:
+// apply re-checks ownership independently of validate, and a rejected op
+// writes NOTHING — not even an activity row with journey_id dropped to null.
+func TestActivitiesSync_Apply_CrossOrgJourneyIdIsNoOp(t *testing.T) {
+	apiaryID := uuid.NewString()
+	foreignJourneyID := uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, nil)
+	id := uuid.NewString()
+	batch := map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, foreignJourneyID)}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200 (unknown/foreign journey_id is a no-op, not an error), body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	if _, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	}); err == nil {
+		t.Fatalf("GetActivity found a row for a cross-org journey_id op — it must have been a no-op")
+	}
+}
+
+// TestActivitiesSync_Apply_DedupesJourneyOwnershipCalls is
+// resolveJourneyOwnership's own regression guard, mirroring
+// TestActivitiesSync_Apply_DedupesApiaryOwnershipCalls: three ops all
+// against the SAME journey must hit the (fake) journeys service exactly
+// ONCE.
+func TestActivitiesSync_Apply_DedupesJourneyOwnershipCalls(t *testing.T) {
+	apiaryID, journeyID := uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyID})
+	batch := map[string]any{"ops": []any{
+		syncOpWithJourney(uuid.NewString(), apiaryID, journeyID),
+		syncOpWithJourney(uuid.NewString(), apiaryID, journeyID),
+		syncOpWithJourney(uuid.NewString(), apiaryID, journeyID),
+	}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := f.journeys.hitCount(journeyID); got != 1 {
+		t.Fatalf("journeys ownership calls for journey %s = %d, want exactly 1 (batch must de-dup ownership checks, one call per distinct journey, not per op)", journeyID, got)
 	}
 }
 

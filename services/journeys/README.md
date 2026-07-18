@@ -53,26 +53,34 @@ composite-key enrichment of the queued delete op needed.
 
 An activity carries the attribution link, **not** this schema: a **stored,
 nullable `activities.journey_id`** column (already present in
-`services/activities/store/migrations/00001_create_activities.sql`, unused
-until [#46](https://github.com/TiagoJVO/beekeepingit/issues/46) wires the
-activity-form picker) — this is a deliberate, already-confirmed decision
+`services/activities/store/migrations/00001_create_activities.sql`, wired by
+[#46](https://github.com/TiagoJVO/beekeepingit/issues/46)'s activity-form
+picker — see `services/activities/README.md`'s own "Cross-service journey
+ownership" section) — this is a deliberate, already-confirmed decision
 (D-21, supersedes the pre-D-21 idea of a `journeys`-owned
 `journey_activities` link table, `docs/architecture/data-model.md` §7). This
 service therefore never writes to the `activities` schema (ownership rule
 
 1. and doesn't need to know which activities are attributed to a given
-   journey to satisfy this story's own acceptance criteria.
+   journey to satisfy this story's own acceptance criteria. It does, however,
+   now serve as the **verification target** for that link: activities'
+   `JourneyVerifier` (`services/activities/api/journeys_client.go`) confirms a
+   client-supplied `journey_id` belongs to the caller's org by calling this
+   service's own `GET /v1/journeys/{id}` below — the same "ask the owning
+   service" pattern `services/apiaries`' `getApiary` already serves for
+   `apiary_id`.
 
 ## Surface
 
-| Route                          | Auth                 | Purpose                                                                                                                                                                                                                                          |
-| ------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `POST /v1/journeys`            | OIDC JWT + org scope | Create a journey (name, main_activity_type, apiary_ids) — status always starts `open`. Verifies every `apiary_id`'s ownership, records history. 201, or 422/409.                                                                                 |
-| `PATCH /v1/journeys/{id}`      | OIDC JWT + org scope | Edit a journey: name/main_activity_type/apiary_ids are a full resubmit (diffed against the stored plan — an unaffected apiary's row is untouched); `status` is optional (D-21's close/reopen transition rides this same PATCH). 200, or 404/422. |
-| `DELETE /v1/journeys/{id}`     | OIDC JWT + org scope | Delete a journey — a tombstone (`deleted_at`), not a hard delete. Plan items are left in place (inert), mirroring apiaries' own apiary+counter delete convention. Records history. 204, or 404.                                                  |
-| `POST /internal/sync/validate` | OIDC JWT + org scope | Dry-runs a batch mixing `entity_type: "journey"` and `"journey_plan_item"` ops — the counterpart of `services/apiaries/api/sync.go`'s own route.                                                                                                 |
-| `POST /internal/sync/apply`    | OIDC JWT + org scope | Applies a batch of `journey`/`journey_plan_item` ops in one local transaction — idempotent, LWW-compared for `journey` ops, folds a plan add/remove into a `journey`-entity history row.                                                         |
-| `GET /healthz`, `GET /readyz`  | none                 | Liveness / readiness.                                                                                                                                                                                                                            |
+| Route                          | Auth                 | Purpose                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /v1/journeys/{id}`        | OIDC JWT + org scope | Fetch a single journey by id (including its current live plan). Org-scoped; a journey belonging to a different org 404s, indistinguishable from a nonexistent id (ADR-0002 scope-hiding) — also the target activities' `JourneyVerifier` calls ([#46](https://github.com/TiagoJVO/beekeepingit/issues/46)). 200, or 404. |
+| `POST /v1/journeys`            | OIDC JWT + org scope | Create a journey (name, main_activity_type, apiary_ids) — status always starts `open`. Verifies every `apiary_id`'s ownership, records history. 201, or 422/409.                                                                                                                                                         |
+| `PATCH /v1/journeys/{id}`      | OIDC JWT + org scope | Edit a journey: name/main_activity_type/apiary_ids are a full resubmit (diffed against the stored plan — an unaffected apiary's row is untouched); `status` is optional (D-21's close/reopen transition rides this same PATCH). 200, or 404/422.                                                                         |
+| `DELETE /v1/journeys/{id}`     | OIDC JWT + org scope | Delete a journey — a tombstone (`deleted_at`), not a hard delete. Plan items are left in place (inert), mirroring apiaries' own apiary+counter delete convention. Records history. 204, or 404.                                                                                                                          |
+| `POST /internal/sync/validate` | OIDC JWT + org scope | Dry-runs a batch mixing `entity_type: "journey"` and `"journey_plan_item"` ops — the counterpart of `services/apiaries/api/sync.go`'s own route.                                                                                                                                                                         |
+| `POST /internal/sync/apply`    | OIDC JWT + org scope | Applies a batch of `journey`/`journey_plan_item` ops in one local transaction — idempotent, LWW-compared for `journey` ops, folds a plan add/remove into a `journey`-entity history row.                                                                                                                                 |
+| `GET /healthz`, `GET /readyz`  | none                 | Liveness / readiness.                                                                                                                                                                                                                                                                                                    |
 
 ## Configuration
 
