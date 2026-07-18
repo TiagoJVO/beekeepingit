@@ -46,7 +46,9 @@ jobs:
     # (bootstrap migrations + blueprint apply), so the whole job gets more room
     # (ADR-0016, oidc-integration.md §8). The in-job Flutter web build + image
     # import (#236) adds a few more minutes on top of the cluster bring-up.
-    timeout-minutes: 40
+    # Bumped 40 -> 45 (#50) to preserve the same slack after the domain-service
+    # readiness wait below grew by 5 minutes (900s).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -334,8 +336,18 @@ jobs:
         run: |
           # Backoffs were just reset by the rollout restart above, so this is a clean
           # boot: image start + probe warmup only.
+          #
+          # Bumped 600s -> 900s (#50): with `todos` as an 8th domain service now racing
+          # every other one to connect to Postgres right after the reset above, two
+          # separate live runs saw `todos` alone still crash-looping on a transient
+          # "connection refused" (Postgres momentarily not accepting connections, the
+          # same blip every service's own previous-instance logs show recovering from)
+          # right as the old 600s budget ran out, while every sibling service recovered
+          # in time. Nothing about `todos` itself is different from its siblings (same
+          # servicetemplate bootstrap, same probes/resources) — this is margin, not a
+          # code fix.
           kubectl -n beekeepingit-dev wait --for=condition=available deployment \
-            -l app.kubernetes.io/part-of=beekeepingit --timeout=600s
+            -l app.kubernetes.io/part-of=beekeepingit --timeout=900s
 
       # The AC: the postgres PostGIS smoke-query hook AND the authentik readiness hook run
       # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
