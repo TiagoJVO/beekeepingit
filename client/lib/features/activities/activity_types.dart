@@ -87,7 +87,8 @@ const treatmentContexts = [
 String? treatmentContextLabel(AppLocalizations l10n, String context) {
   return switch (context) {
     treatmentContextGeneral => l10n.treatmentContextGeneralLabel,
-    treatmentContextDiseaseSpecific => l10n.treatmentContextDiseaseSpecificLabel,
+    treatmentContextDiseaseSpecific =>
+      l10n.treatmentContextDiseaseSpecificLabel,
     treatmentContextDetectionOnly => l10n.treatmentContextDetectionOnlyLabel,
     _ => null,
   };

@@ -33,13 +33,10 @@ void main() {
       expect(entityTypeForTable('something_else'), apiaryEntityType);
     });
 
-    test(
-      'todos rows map to the todo entity type (#50) — routed to a '
-      'DIFFERENT owning service than apiaries/activities',
-      () {
-        expect(entityTypeForTable(todosTable), todoEntityType);
-      },
-    );
+    test('todos rows map to the todo entity type (#50) — routed to a '
+        'DIFFERENT owning service than apiaries/activities', () {
+      expect(entityTypeForTable(todosTable), todoEntityType);
+    });
   });
 
   group('decodeActivityAttributes (#39 — attributes must upload as an object, '
