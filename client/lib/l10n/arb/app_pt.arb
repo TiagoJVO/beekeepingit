@@ -352,6 +352,14 @@
   "journeyStatsAverageSupersLabel": "Média alças/colmeia",
   "journeyStatsAverageSupersNoData": "Ainda sem dados",
   "journeyStatsMissingLabel": "{count, plural, =0{Todos os apiários planeados foram visitados} =1{Falta 1 apiário} other{Faltam {count} apiários}}",
+  "journeyDetailTitle": "Jornada",
+  "editJourneyAction": "Editar jornada",
+  "journeyDetailApiariesTitle": "Apiários",
+  "journeyDetailApiaryNameUnknown": "Apiário desconhecido",
+  "journeyDetailApiaryVisitedBadge": "Visitado",
+  "journeyDetailApiaryPlannedBadge": "Planeado",
+  "journeyDetailApiaryNotVisitedYet": "Ainda não visitado",
+  "journeyDetailApiariesEmpty": "Ainda não há apiários nesta jornada.",
   "@activityLoadError": {
     "placeholders": {
       "error": {

@@ -979,4 +979,28 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get journeyDetailTitle => 'Journey';
+
+  @override
+  String get editJourneyAction => 'Edit journey';
+
+  @override
+  String get journeyDetailApiariesTitle => 'Apiaries';
+
+  @override
+  String get journeyDetailApiaryNameUnknown => 'Unknown apiary';
+
+  @override
+  String get journeyDetailApiaryVisitedBadge => 'Visited';
+
+  @override
+  String get journeyDetailApiaryPlannedBadge => 'Planned';
+
+  @override
+  String get journeyDetailApiaryNotVisitedYet => 'Not visited yet';
+
+  @override
+  String get journeyDetailApiariesEmpty => 'No apiaries in this journey yet.';
 }

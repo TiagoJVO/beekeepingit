@@ -25,11 +25,13 @@ import 'journey_status.dart';
 /// down.
 ///
 /// [apiaryIds] is only populated by [JourneysRepository.getById] (the edit
-/// form's pre-fill read) — [JourneysRepository.watchAll] (the list screen)
-/// deliberately leaves it empty, since the minimal list (#45's scope; full
-/// filtering/detail is #47/#48) never needs it, and joining every journey's
-/// plan into the list query would be wasted work for a screen that never
-/// shows it.
+/// form's pre-fill read) — [JourneysRepository.watchAll]/[watchById] (the
+/// list screen and the #48 detail screen, respectively) both deliberately
+/// leave it empty: the list never needs it (as before, #45/#47's own scope),
+/// and the detail screen instead reads [watchPlanApiariesByJourney]'s
+/// already-live map — which it needs anyway for FR-JO-3's visited-vs-planned
+/// split — rather than [watchById] duplicating that same data in a second
+/// live query.
 class Journey {
   const Journey({
     required this.id,
@@ -131,6 +133,24 @@ class JourneysRepository {
       [journeyId],
     );
     return rows.map((r) => r['apiary_id'] as String).toList();
+  }
+
+  /// Live single-journey watch (#48, FR-JO-3): the detail screen's read
+  /// path, mirroring [ApiariesRepository.watchById]'s/
+  /// [ActivitiesRepository.watchById]'s own per-id pattern. Emits null when
+  /// the id doesn't (or no longer) exist — deleted, or a stale deep link —
+  /// which the caller (journey_detail_screen.dart) handles by bouncing back
+  /// to the list, mirroring apiary_detail_screen.dart's own null handling.
+  /// [apiaryIds] is deliberately left empty here — see [Journey]'s own doc
+  /// comment on why.
+  Stream<Journey?> watchById(String id) {
+    return _store
+        .watch(
+          'SELECT id, organization_id, name, main_activity_type, status '
+          'FROM $journeysTable WHERE id = ?',
+          [id],
+        )
+        .map((rows) => rows.isEmpty ? null : _fromRow(rows.first, const []));
   }
 
   /// Updates a journey's name/main_activity_type/status and fully replaces
@@ -413,6 +433,17 @@ final journeysStreamProvider = StreamProvider.autoDispose<List<Journey>>((
   final org = await ref.watch(organizationProvider.future);
   yield* repo.watchAll(organizationId: org?.id);
 });
+
+/// Live single journey by id (#48, FR-JO-3) — the detail screen's read path.
+/// Family-keyed + autoDispose, mirroring [activityByIdProvider]'s/
+/// [apiaryByIdProvider]'s own per-id pattern: a write to an unrelated
+/// journey never re-triggers this.
+final journeyByIdProvider = StreamProvider.autoDispose.family<Journey?, String>(
+  (ref, journeyId) async* {
+    final repo = await ref.watch(journeysRepositoryProvider.future);
+    yield* repo.watchById(journeyId);
+  },
+);
 
 /// One journey's live [JourneyStats] (#49, FR-JO-1) — family-keyed +
 /// autoDispose, mirroring [activityByIdProvider]'s per-id pattern

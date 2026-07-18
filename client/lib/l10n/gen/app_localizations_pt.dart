@@ -985,4 +985,29 @@ class AppLocalizationsPt extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get journeyDetailTitle => 'Jornada';
+
+  @override
+  String get editJourneyAction => 'Editar jornada';
+
+  @override
+  String get journeyDetailApiariesTitle => 'Apiários';
+
+  @override
+  String get journeyDetailApiaryNameUnknown => 'Apiário desconhecido';
+
+  @override
+  String get journeyDetailApiaryVisitedBadge => 'Visitado';
+
+  @override
+  String get journeyDetailApiaryPlannedBadge => 'Planeado';
+
+  @override
+  String get journeyDetailApiaryNotVisitedYet => 'Ainda não visitado';
+
+  @override
+  String get journeyDetailApiariesEmpty =>
+      'Ainda não há apiários nesta jornada.';
 }
