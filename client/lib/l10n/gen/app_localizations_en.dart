@@ -1093,6 +1093,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get addTodo => 'New todo';
+
+  @override
+  String get todoQuickCreateTitle => 'New todo';
+
+  @override
   String get newTodoTitle => 'New todo';
 
   @override
@@ -1118,6 +1124,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get todoDueDateFieldLabel => 'Due date';
+
+  @override
+  String get todoDueDateLabel => 'Due date';
 
   @override
   String get todoDueDateClearAction => 'Clear due date';
@@ -1212,4 +1221,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteTodoCancelAction => 'Cancel';
+
+  @override
+  String todoQuickCreateForApiary(String apiaryName) {
+    return 'For $apiaryName';
+  }
+
+  @override
+  String get todoQuickCreateCancelAction => 'Cancel';
+
+  @override
+  String get todoCreatedConfirmation => 'Todo created';
 }

@@ -17,7 +17,10 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
 /organization/members      MembersScreen          features/members   (admin, #27)
 /account                   AccountScreen          features/account   (FR-AU-1)
 /sync-needs-fix            SyncNeedsFixScreen      features/sync      (D-12 dead-letter)
-StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
+StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per-tab FAB config
+  in `_fabConfigByTab`, generalized #52 to a primary + optional secondary tonal FAB, an
+  `onPressed(context)` action rather than only a route — Apiaries tab: primary "Add apiary"
+  + secondary "New todo" opening todo_quick_create_sheet.dart, no pre-filled apiary)
   ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ live (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
@@ -31,10 +34,13 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │       ├ activities/:activityId      ActivityDetailScreen features/activities (#310; read-only
   │       │   └ edit                    view — type/date/attrs/performer; Edit+Delete)
   │       │                             AddActivityScreen (#40/#41; edit + delete, isEdit)
-  │       └ (embedded)                  _ApiaryActivitiesSection on ApiaryDetailScreen (#42;
-  │                                     per-apiary activity list, type/date-range filters,
-  │                                     attribution — #44; capped preview → "view all" opens
-  │                                     the activities route above; a row → activity detail)
+  │       ├ (embedded)                  _ApiaryActivitiesSection on ApiaryDetailScreen (#42;
+  │       │                             per-apiary activity list, type/date-range filters,
+  │       │                             attribution — #44; capped preview → "view all" opens
+  │       │                             the activities route above; a row → activity detail)
+  │       └ (FAB, not a route)          add-todo FAB on ApiaryDetailScreen (#52, FR-UX-2) opens
+  │                                     features/todos/todo_quick_create_sheet.dart pre-filled
+  │                                     with this apiary (read-only chip, no apiary picker)
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
   │                        activity list, same filters + apiary label per row)
   ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45/#47; org-wide
@@ -51,8 +57,9 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │                                     delete, isEdit)
   ├ /todos                 TodosListScreen        features/todos      ◄ live (#53; org-wide
   │   │                    todo list — status/priority/due-date filters (combinable), sortable
-  │   │                    by due date/priority/status, distinguishes open/overdue/done; row tap
-  │   │                    → detail (#293); no create FAB yet — #52's own, separate story)
+  │   │                    by due date/priority/status, distinguishes open/overdue/done; own
+  │   │                    FAB (#52) opens todo_quick_create_sheet.dart, no pre-filled apiary;
+  │   │                    row tap → detail (#293))
   │   ├ new                TodoFormScreen         features/todos (#293; standalone create route —
   │   │                    direct nav/deep-link only, distinct from #52's quick-create sheet)
   │   └ :id                TodoDetailScreen       features/todos (#293, FR-TD-1; every field

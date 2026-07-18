@@ -246,28 +246,31 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('shell-fab')), findsNothing);
+      // The secondary "New todo" FAB (#52) is suppressed alongside the
+      // primary — both live in the same _ShellFab return, not two
+      // independently-suppressed widgets.
+      expect(find.byKey(const Key('shell-fab-secondary')), findsNothing);
 
       await tester.tap(find.byKey(const Key('apiaries-view-list-button')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+      expect(find.byKey(const Key('shell-fab-secondary')), findsOneWidget);
     },
   );
 
   testWidgets(
-    'tabs without their own quick-add action have no FAB (Activities/Todos/Assistant)',
+    'tabs without their own quick-add action have no FAB (Activities/Assistant)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
       // Activities has no FAB (its create entry point lives on the apiary
       // detail page, since an activity always needs an apiary context
-      // first); Todos (#53) has real content now but no create entry point
-      // yet either — that's #52's own, separate, additive story; Assistant
-      // has no real screen yet. Journeys (#45) DOES have its own "New
-      // journey" FAB — same rationale as Apiaries — so it's covered by its
-      // own test below, not this one.
-      for (final route in ['activities', 'todos', 'assistant']) {
+      // first); Assistant has no real screen yet. Journeys (#45) and Todos
+      // (#52) DO have their own FAB — covered by their own tests below, not
+      // this one.
+      for (final route in ['activities', 'assistant']) {
         await tester.tap(find.byKey(Key('shell-tab-$route')));
         await tester.pumpAndSettle();
         expect(
@@ -289,6 +292,92 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+    // No secondary action on Journeys — only Apiaries has one (#52).
+    expect(find.byKey(const Key('shell-fab-secondary')), findsNothing);
+  });
+
+  group('quick-create todo FAB (#52, FR-TD-1, FR-UX-1, FR-UX-2)', () {
+    testWidgets('the Todos tab shows its own "New todo" FAB', (tester) async {
+      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-tab-todos')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+      expect(find.text('New todo'), findsOneWidget);
+      expect(find.byKey(const Key('shell-fab-secondary')), findsNothing);
+    });
+
+    testWidgets('tapping the Todos tab FAB opens the quick-create sheet, '
+        'with no pre-filled apiary', (tester) async {
+      await tester.pumpWidget(_buildShellApp());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-tab-todos')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('todo-quick-create-title-field')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('todo-quick-create-apiary-chip')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'the Apiaries tab shows BOTH its primary "Add apiary" FAB and a '
+      'secondary "New todo" FAB (#52)',
+      (tester) async {
+        await tester.pumpWidget(_buildShellApp());
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+        expect(find.text('Add apiary'), findsOneWidget);
+        expect(find.byKey(const Key('shell-fab-secondary')), findsOneWidget);
+        expect(find.text('New todo'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the primary "Add apiary" FAB still navigates to the new-apiary form '
+      'unchanged (regression guard)',
+      (tester) async {
+        await tester.pumpWidget(_buildShellApp());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
+        expect(find.text('New apiary'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping the Apiaries tab secondary FAB opens the quick-create sheet, '
+      'with no pre-filled apiary',
+      (tester) async {
+        await tester.pumpWidget(_buildShellApp());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('shell-fab-secondary')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('todo-quick-create-title-field')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('todo-quick-create-apiary-chip')),
+          findsNothing,
+        );
+      },
+    );
   });
 
   testWidgets(

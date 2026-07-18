@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
@@ -86,6 +89,91 @@ Future<void> _openTodosTab(
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('shell-tab-todos')));
   await tester.pumpAndSettle();
+}
+
+/// A no-op [LocalStoreEngine] — [_FakeTodosRepository] overrides every
+/// method the quick-create sheet touches, so the superclass's store is
+/// never actually used. Mirrors todo_quick_create_sheet_test.dart's own
+/// identical fixture (kept file-private per this suite's own convention).
+class _NoopLocalStore implements LocalStoreEngine {
+  @override
+  Stream<List<Map<String, Object?>>> watch(
+    String sql, [
+    List<Object?> args = const [],
+  ]) => const Stream.empty();
+  @override
+  Future<Map<String, Object?>?> getOptional(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => null;
+  @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
+  @override
+  Future<void> execute(String sql, [List<Object?> args = const []]) async {}
+  @override
+  Future<void> clear() async {}
+}
+
+/// A live [TodosRepository] fake (#52's own "appears immediately"
+/// offline-first AC) — unlike the read-only fixed lists [_buildApp] above
+/// overrides [todosStreamProvider] with directly, this one drives
+/// [watchAll] off its own in-memory list, so a `create()` call (from the
+/// quick-create sheet's save button) is immediately reflected back through
+/// the SAME [todosStreamProvider]/[todosViewModelProvider] chain the real
+/// app uses — proving the new todo appears in the list without a real
+/// PowerSync round-trip, exactly like the local-first write path it mirrors
+/// (todos_repository.dart's own doc: every write is queued for sync, but
+/// visible locally immediately).
+class _FakeTodosRepository extends TodosRepository {
+  _FakeTodosRepository() : super(_NoopLocalStore());
+
+  final List<Todo> _created = [];
+  final _controller = StreamController<List<Todo>>.broadcast();
+
+  @override
+  Future<String> create({
+    required String title,
+    required String priority,
+    String? description,
+    String? dueDate,
+    String? assigneeId,
+    String? apiaryId,
+  }) async {
+    final todo = Todo(
+      id: 'fake-${_created.length}',
+      title: title,
+      priority: priority,
+      status: 'open',
+      dueDate: dueDate,
+      apiaryId: apiaryId,
+      organizationId: 'test-org',
+    );
+    _created.add(todo);
+    _controller.add(List.of(_created));
+    return todo.id;
+  }
+
+  @override
+  Stream<List<Todo>> watchAll({required String? organizationId}) async* {
+    yield List.of(_created);
+    yield* _controller.stream;
+  }
+}
+
+Widget _buildAppWithRepo({required _FakeTodosRepository repo}) {
+  return ProviderScope(
+    overrides: [
+      isAuthenticatedProvider.overrideWithValue(true),
+      apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
+      todosRepositoryProvider.overrideWith((ref) async => repo),
+      profileProvider.overrideWith(_CompleteProfileController.new),
+      organizationProvider.overrideWith(_ExistingOrganizationController.new),
+    ],
+    child: const BeekeepingitApp(),
+  );
 }
 
 void main() {
@@ -451,5 +539,52 @@ void main() {
         expect(titles, ['Low one', 'High one']);
       });
     });
+  });
+
+  group('quick-create (#52, FR-TD-1, FR-UX-1)', () {
+    testWidgets('the Todos tab shows a FAB labeled "New todo"', (tester) async {
+      await _openTodosTab(tester, todos: const []);
+
+      expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+      expect(find.text('New todo'), findsOneWidget);
+    });
+
+    testWidgets('tapping the FAB opens the quick-create sheet', (tester) async {
+      await _openTodosTab(tester, todos: const []);
+
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('todo-quick-create-title-field')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'completing create makes the new todo appear in the list immediately '
+      '(offline/local-store AC)',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await tester.pumpWidget(_buildAppWithRepo(repo: repo));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-tab-todos')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('todo-quick-create-title-field')),
+          'Inspect hive 3',
+        );
+        await tester.tap(
+          find.byKey(const Key('todo-quick-create-save-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('todo-fake-0')), findsOneWidget);
+        expect(find.text('Inspect hive 3'), findsOneWidget);
+      },
+    );
   });
 }
