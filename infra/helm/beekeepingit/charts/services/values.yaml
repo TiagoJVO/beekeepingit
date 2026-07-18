@@ -88,13 +88,7 @@ services:
   journeys:
     component: services-journeys
     port: 8080
-    db:
-      {
-        enabled: true,
-        role: journeys_svc,
-        secret: journeys-svc-credentials,
-        schema: journeys,
-      }
+    db: { enabled: true, role: journeys_svc, secret: journeys-svc-credentials, schema: journeys }
     env:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
