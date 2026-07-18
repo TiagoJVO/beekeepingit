@@ -42,6 +42,12 @@ class FakeLocalStore implements LocalStoreEngine {
   }
 
   @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => _select(sql, args);
+
+  @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
     if (normalized.startsWith('INSERT INTO APIARY_COUNTERS')) {

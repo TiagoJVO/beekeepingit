@@ -30,6 +30,15 @@ class PowerSyncLocalStore implements LocalStoreEngine {
   }
 
   @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async {
+    final rows = await _db.getAll(sql, args);
+    return _rowsToMaps(rows);
+  }
+
+  @override
   Future<void> execute(String sql, [List<Object?> args = const []]) {
     return _db.execute(sql, args);
   }

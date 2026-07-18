@@ -18,7 +18,7 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
 /account                   AccountScreen          features/account   (FR-AU-1)
 /sync-needs-fix            SyncNeedsFixScreen      features/sync      (D-12 dead-letter)
 StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
-  ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ only live tab (M2)
+  ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ live (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
   │       ├ edit                        ApiaryFormScreen
@@ -34,9 +34,13 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │                                     the activities route above; a row → activity detail)
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
   │                        activity list, same filters + apiary label per row)
-  ├ /journeys     ─┐
-  ├ /todos         ├ ComingSoonScreen (placeholders, M4–M8)
-  └ /assistant    ─┘
+  ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45; minimal —
+  │   │                    unfiltered name+status list, tap row → edit; filters are #47)
+  │   ├ new                JourneyFormScreen      features/journeys (#45; create)
+  │   └ :id/edit            JourneyFormScreen     features/journeys (#45; edit/close/delete,
+  │                        isEdit — no dedicated detail screen yet, that's #48)
+  ├ /todos         ─┐
+  └ /assistant     ─┘ ComingSoonScreen (placeholders, M5/M8)
 ```
 
 ## Layer flow
@@ -68,6 +72,8 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 | `activitiesByApiaryProvider` (family)      | features/activities                  | live activities for one apiary (#42)                                     |
 | `activitiesStreamProvider`                 | features/activities                  | live org-wide activities (#43, org-scoped incl. defense-in-depth filter) |
 | `activitiesViewModelProvider` (family)     | features/activities/activity_filters | filtered list + empty-vs-no-results state (#42/#43)                      |
+| `journeysRepositoryProvider`               | features/journeys                    | `JourneysRepository` (#45)                                               |
+| `journeysStreamProvider`                   | features/journeys                    | live org-wide journeys, unfiltered (#45)                                 |
 | `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                      |
 
 ## Sync flow (client) — core/sync/
@@ -86,7 +92,11 @@ SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reco
 ## Client-side schema (core/sync/powersync_schema.dart)
 
 `apiaries` (name, notes, place_label, location_lon/lat REAL, org_id, timestamps) ·
-`apiary_counters` (apiary_id, counter_type, value) · `sync_rejected_ops` (**local-only** dead-letter).
+`apiary_counters` (apiary_id, counter_type, value) ·
+`journeys` (name, main_activity_type, status, org_id, timestamps) ·
+`journey_plan_items` (journey_id, apiary_id, org_id, created_at) — #45, two tables/entity
+types mirroring apiaries/apiary_counters' own parent+child split ·
+`sync_rejected_ops` (**local-only** dead-letter).
 `deleted_at` is not a local column (Sync Rules exclude tombstones). See [data.md](data.md).
 
 ## Theming / brand

@@ -541,6 +541,12 @@ class _FakeRejectedStore implements LocalStoreEngine {
   ]) async => null;
 
   @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
+
+  @override
   Stream<List<Map<String, Object?>>> watch(
     String sql, [
     List<Object?> args = const [],

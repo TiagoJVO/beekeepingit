@@ -31,10 +31,14 @@ schemas:
 # other devices, breaking #39's offline AC (FR-OF-1). Adding it here puts the
 # activities schema in the `powersync` publication and makes the powersync
 # role a member of activities_svc (cluster.yaml managed.roles inRoles).
+# journeys (#45): same rationale — the client declares local `journeys`/
+# `journey_plan_items` tables (client/lib/core/sync/powersync_schema.dart)
+# so a journey created/edited offline (FR-OF-1) reconciles across devices.
 syncedSchemas:
   - apiaries
   - organizations
   - activities
+  - journeys
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.

@@ -993,5 +993,152 @@
   "deleteActivityCancelAction": "Cancel",
   "@deleteActivityCancelAction": {
     "description": "Cancel action in the delete-activity confirmation dialog (#41 AC: cancel is a no-op)"
+  },
+  "addJourney": "New journey",
+  "@addJourney": {
+    "description": "Floating action button to create a journey (#45, FR-JO-4)"
+  },
+  "newJourneyTitle": "New journey",
+  "@newJourneyTitle": {
+    "description": "Create form app bar title (#45)"
+  },
+  "editJourneyTitle": "Edit journey",
+  "@editJourneyTitle": {
+    "description": "Edit form app bar title (#45)"
+  },
+  "journeysEmpty": "No journeys yet. Tap “New journey” to create one.",
+  "@journeysEmpty": {
+    "description": "Empty state on the main Journeys tab when the organization has no journeys at all yet (#45, FR-JO-4)"
+  },
+  "journeysError": "Could not load journeys: {error}",
+  "@journeysError": {
+    "description": "Error state on the Journeys tab (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyNameLabel": "Name",
+  "@journeyNameLabel": {
+    "description": "Field label for a journey's name on the create/edit form (#45, FR-JO-4)"
+  },
+  "journeyNameRequired": "Name is required",
+  "@journeyNameRequired": {
+    "description": "Validation message when a journey's name is left empty (#45)"
+  },
+  "journeyMainActivityTypeLabel": "Main activity type",
+  "@journeyMainActivityTypeLabel": {
+    "description": "Field label for a journey's one main activity type on the create/edit form (#45, FR-JO-4, D-21)"
+  },
+  "journeyApiariesLabel": "Apiaries to visit",
+  "@journeyApiariesLabel": {
+    "description": "Section label above the apiary multi-select picker on the journey create/edit form (#45, FR-JO-4)"
+  },
+  "journeyApiariesRequired": "Select at least one apiary",
+  "@journeyApiariesRequired": {
+    "description": "Validation message when no apiary is selected for a journey's plan (#45)"
+  },
+  "journeyApiariesNoneAvailable": "No apiaries yet — add one from the Apiaries tab first.",
+  "@journeyApiariesNoneAvailable": {
+    "description": "Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)"
+  },
+  "journeyApiariesSelectedCount": "{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}",
+  "@journeyApiariesSelectedCount": {
+    "description": "Running count below the apiary multi-select picker (#45)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyLoadError": "Couldn't load the journey: {error}",
+  "@journeyLoadError": {
+    "description": "Error toast when loading an existing journey for editing throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeySaveSuccess": "Journey saved",
+  "@journeySaveSuccess": {
+    "description": "Success toast after creating or updating a journey (#45)"
+  },
+  "journeySaveError": "Couldn't save the journey: {error}",
+  "@journeySaveError": {
+    "description": "Error toast when saving a journey throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "closeJourneyAction": "Close journey",
+  "@closeJourneyAction": {
+    "description": "Button on the edit-journey form that closes an open journey (#45, D-21)"
+  },
+  "journeyCloseSuccess": "Journey closed",
+  "@journeyCloseSuccess": {
+    "description": "Success toast after closing a journey (#45, D-21)"
+  },
+  "journeyCloseError": "Couldn't close the journey: {error}",
+  "@journeyCloseError": {
+    "description": "Error toast when closing a journey throws (#45, D-21)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatusOpenLabel": "Open",
+  "@journeyStatusOpenLabel": {
+    "description": "Display label for a journey's open status (#45, D-21)"
+  },
+  "journeyStatusClosedLabel": "Closed",
+  "@journeyStatusClosedLabel": {
+    "description": "Display label for a journey's closed status (#45, D-21)"
+  },
+  "journeyStatusSemanticLabel": "Status: {label}",
+  "@journeyStatusSemanticLabel": {
+    "description": "Screen-reader label for the journey edit form's status chip (#45, D-21)",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteJourney": "Delete journey",
+  "@deleteJourney": {
+    "description": "Destructive button on the edit-journey form that opens the delete confirmation dialog (#45, FR-JO-4)"
+  },
+  "journeyDeleteSuccess": "Journey deleted",
+  "@journeyDeleteSuccess": {
+    "description": "Success toast after deleting a journey (#45)"
+  },
+  "journeyDeleteError": "Couldn't delete the journey: {error}",
+  "@journeyDeleteError": {
+    "description": "Error toast when deleting a journey throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteJourneyConfirmTitle": "Delete journey?",
+  "@deleteJourneyConfirmTitle": {
+    "description": "Title of the confirmation dialog shown before deleting a journey (#45, mirrors deleteActivityConfirmTitle)"
+  },
+  "deleteJourneyConfirmMessage": "This permanently deletes this journey. This cannot be undone.",
+  "@deleteJourneyConfirmMessage": {
+    "description": "Body of the confirmation dialog shown before deleting a journey (#45)"
+  },
+  "deleteJourneyConfirmAction": "Delete",
+  "@deleteJourneyConfirmAction": {
+    "description": "Confirm action in the delete-journey confirmation dialog (#45)"
+  },
+  "deleteJourneyCancelAction": "Cancel",
+  "@deleteJourneyCancelAction": {
+    "description": "Cancel action in the delete-journey confirmation dialog (#45 AC: cancel is a no-op)"
   }
 }
