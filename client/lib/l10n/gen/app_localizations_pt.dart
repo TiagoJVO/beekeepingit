@@ -911,4 +911,49 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get closedJourneyConfirmAddAction => 'Adicionar mesmo assim';
+
+  @override
+  String get journeyStatsSectionTitle => 'Estatísticas da jornada';
+
+  @override
+  String journeyStatsError(String error) {
+    return 'Não foi possível carregar as estatísticas da jornada: $error';
+  }
+
+  @override
+  String get journeyStatsApiariesVisitedLabel => 'Apiários visitados';
+
+  @override
+  String journeyStatsApiariesVisitedValue(int done, int planned) {
+    return '$done/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesHarvestedLabel => 'Colmeias trabalhadas';
+
+  @override
+  String get journeyStatsHoneyCollectedLabel => 'Mel colhido';
+
+  @override
+  String journeyStatsHoneyCollectedValue(String kg) {
+    return '$kg kg';
+  }
+
+  @override
+  String get journeyStatsAverageSupersLabel => 'Média alças/colmeia';
+
+  @override
+  String get journeyStatsAverageSupersNoData => 'Ainda sem dados';
+
+  @override
+  String journeyStatsMissingLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Faltam $count apiários',
+      one: 'Falta 1 apiário',
+      zero: 'Todos os apiários planeados foram visitados',
+    );
+    return '$_temp0';
+  }
 }

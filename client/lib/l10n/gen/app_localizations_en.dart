@@ -906,4 +906,49 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get closedJourneyConfirmAddAction => 'Add anyway';
+
+  @override
+  String get journeyStatsSectionTitle => 'Journey stats';
+
+  @override
+  String journeyStatsError(String error) {
+    return 'Couldn\'t load journey stats: $error';
+  }
+
+  @override
+  String get journeyStatsApiariesVisitedLabel => 'Apiaries visited';
+
+  @override
+  String journeyStatsApiariesVisitedValue(int done, int planned) {
+    return '$done/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesHarvestedLabel => 'Hives harvested';
+
+  @override
+  String get journeyStatsHoneyCollectedLabel => 'Honey collected';
+
+  @override
+  String journeyStatsHoneyCollectedValue(String kg) {
+    return '$kg kg';
+  }
+
+  @override
+  String get journeyStatsAverageSupersLabel => 'Média alças/colmeia';
+
+  @override
+  String get journeyStatsAverageSupersNoData => 'No data yet';
+
+  @override
+  String journeyStatsMissingLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries missing',
+      one: '1 apiary still missing',
+      zero: 'All planned apiaries visited',
+    );
+    return '$_temp0';
+  }
 }

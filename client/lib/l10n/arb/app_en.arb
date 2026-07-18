@@ -1227,5 +1227,68 @@
   "closedJourneyConfirmAddAction": "Add anyway",
   "@closedJourneyConfirmAddAction": {
     "description": "Confirm action in the closed-journey confirm dialog — proceeds with saving the activity against the closed journey (#46 AC)"
+  },
+  "journeyStatsSectionTitle": "Journey stats",
+  "@journeyStatsSectionTitle": {
+    "description": "Heading above the journey stats section (#49, FR-JO-1) — apiaries visited, hives harvested, honey collected, média alças/colmeia"
+  },
+  "journeyStatsError": "Couldn't load journey stats: {error}",
+  "@journeyStatsError": {
+    "description": "Error state when loading a journey's aggregated stats throws (#49)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsApiariesVisitedLabel": "Apiaries visited",
+  "@journeyStatsApiariesVisitedLabel": {
+    "description": "Stat card label for the apiaries-visited-vs-planned metric (#49, FR-JO-1), matching the Melargil prototype's \"apiários visitados\" card"
+  },
+  "journeyStatsApiariesVisitedValue": "{done}/{planned}",
+  "@journeyStatsApiariesVisitedValue": {
+    "description": "Value shown on the apiaries-visited stat card, e.g. \"3/5\" (#49, FR-JO-1)",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyStatsHivesHarvestedLabel": "Hives harvested",
+  "@journeyStatsHivesHarvestedLabel": {
+    "description": "Stat card label for Σ hives_involved across the journey's harvest activities (#49, D-2), matching the prototype's \"colmeias trabalhadas\" card"
+  },
+  "journeyStatsHoneyCollectedLabel": "Honey collected",
+  "@journeyStatsHoneyCollectedLabel": {
+    "description": "Stat card label for Σ honey_kg across the journey's harvest activities (#49), matching the prototype's \"mel colhido\" card"
+  },
+  "journeyStatsHoneyCollectedValue": "{kg} kg",
+  "@journeyStatsHoneyCollectedValue": {
+    "description": "Value shown on the honey-collected stat card, e.g. \"12.5 kg\" — kg is already locale-formatted by the caller (LocaleFormatting) (#49)",
+    "placeholders": {
+      "kg": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsAverageSupersLabel": "Média alças/colmeia",
+  "@journeyStatsAverageSupersLabel": {
+    "description": "Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49) — kept in Portuguese per the prototype/AC's own naming (docs/design/prototype.md's Q-JOUR answer, this issue's own AC wording), not translated to an English equivalent"
+  },
+  "journeyStatsAverageSupersNoData": "No data yet",
+  "@journeyStatsAverageSupersNoData": {
+    "description": "Shown instead of a number on the média alças/colmeia stat card when there is no hive-count denominator yet — zero harvest activities, or every one has a null/zero hives_involved (#49, NFR-TST-1's no-divide-by-zero case)"
+  },
+  "journeyStatsMissingLabel": "{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}",
+  "@journeyStatsMissingLabel": {
+    "description": "Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: \"how much is still missing, planned vs. done\")",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }
