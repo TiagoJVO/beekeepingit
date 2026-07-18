@@ -756,6 +756,34 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get journeysFilterNoResults => 'No journeys match your filters.';
+
+  @override
+  String get journeyFilterTypeLabel => 'Type';
+
+  @override
+  String get journeyFilterTypeAll => 'All types';
+
+  @override
+  String get journeyFilterDateRangeLabel => 'Date range';
+
+  @override
+  String get journeyFilterDateRangeUnset => 'Any date';
+
+  @override
+  String journeyFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get journeyFilterClearAction => 'Clear filters';
+
+  @override
+  String journeyProgressBadge(int done, int planned) {
+    return '$done/$planned apiaries visited';
+  }
+
+  @override
   String get journeyNameLabel => 'Name';
 
   @override
