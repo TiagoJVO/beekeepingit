@@ -494,6 +494,42 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **Supersedes:** Q-IMP. **Refines:** D-14 (milestone list, adds M12). **Touches:** FR-IE-2,
   #70.
 
+## D-26 — Cloud hosting: Scaleway Kapsule (managed Kubernetes)
+
+- **Decision (user, 2026-07-18):** production/staging deployment targets **Scaleway Kapsule** — a
+  **managed Kubernetes control plane** (free, HA, EU-region) with pay-as-you-go worker nodes.
+  Kept **vanilla/portable per NFR-ARC-2**: no Scaleway-specific managed services (managed
+  database, managed IAM, etc.) are adopted — the existing self-hosted stack (CloudNativePG
+  Postgres, Authentik, PowerSync, MinIO) deploys **unchanged** onto Kapsule via the existing Helm
+  umbrella chart + Flux GitOps (D-13), the same way it deploys onto the local k3d dev cluster
+  today.
+- **Alternatives considered:** **Hetzner Cloud** (cheapest, but self-managed k3s — extra ongoing
+  control-plane ops burden the project doesn't need yet); **OVHcloud MKS** (also a free EU managed
+  control plane, but pricier entry, ~€18/mo vs. Scaleway's ~€6.34/mo); **DigitalOcean, IBM Cloud,
+  AWS, GCP, Azure** (all can satisfy the compliance bar below with an EU region + signed DPA, but
+  cost more and/or fit less naturally for a small, cost-conscious single-org v1, per C-1/D-4).
+- **Compliance bar (not a data-sovereignty requirement):** the deciding compliance constraint is
+  the same one **D-22** already established for the AI provider — an **EU-region + signed DPA**,
+  not a requirement that the vendor itself be EU-incorporated. Scaleway (French, EU-native) clears
+  this easily; it was chosen on **cost + low ops burden**, not because non-EU vendors would have
+  failed `NFR-CMP-1`.
+- **Why Scaleway specifically:** its managed control plane is **free permanently** (not a trial),
+  the cheapest of the managed options evaluated, and its **S3-compatible Object Storage** is a
+  drop-in swap for MinIO later — exactly what `NFR-ARC-2`'s "object storage now, swap to cloud
+  later" already anticipated.
+- **Scope — this decision is the hosting provider only.** It does **not** resolve **Q-DR**
+  (backup/DR targets — still open) or **#90** (GDPR data export/erasure UI), both scheduled at
+  **M6 · Export** in the D-14 phase plan. Standing up a Scaleway cluster **ahead of that work**
+  means the first real deployment should be **staging-grade** (the already-scaffolded, currently
+  unused `environments/staging.yaml`) — not a `prod` environment holding real user data — until
+  DR and GDPR export/erasure land. Also not yet covered: production-grade TLS (currently
+  self-signed, dev/CI-grade — see `docs/architecture/platform.md`'s "Not yet covered here") and
+  Authentik/RBAC hardening, both still open under EPIC-14 (#15).
+- **Supersedes:** none — no `Q-*` previously tracked cloud-hosting choice; this is a new decision.
+- **Touches:** `NFR-ARC-2`, `NFR-ARC-3`, `NFR-CMP-1`, D-13 (GitOps extends to a new
+  `clusters/`/`apps/` env), D-22 (analogous DPA/EU-region bar), `infra/`,
+  [`docs/architecture/platform.md`](../docs/architecture/platform.md), EPIC-14 (#15, #90, #92).
+
 ---
 
 ## Open Spikes
