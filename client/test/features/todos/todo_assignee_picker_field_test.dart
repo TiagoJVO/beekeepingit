@@ -171,7 +171,10 @@ void main() {
         // No "none available" message: the currently-assigned id still gets
         // its own (fallback-labeled) row rather than an empty list.
         expect(find.byKey(const Key('todo-assignee-empty')), findsNothing);
-        expect(find.byKey(const Key('todo-assignee-option-m1')), findsOneWidget);
+        expect(
+          find.byKey(const Key('todo-assignee-option-m1')),
+          findsOneWidget,
+        );
 
         await tester.tap(find.byKey(const Key('todo-assignee-option-none')));
         await tester.pumpAndSettle();

@@ -300,7 +300,7 @@ void main() {
           'Inspect hive 3',
         );
         await tester.tap(find.byKey(const Key('todo-save-button')));
-        await tester.pumpAndSettle();
+        await _pumpBounded(tester);
 
         expect(repo.created, hasLength(1));
         final saved = repo.created.single;
@@ -337,7 +337,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('todo-save-button')));
-      await tester.pumpAndSettle();
+      await _pumpBounded(tester);
 
       expect(repo.created, hasLength(1));
       final saved = repo.created.single;
@@ -462,7 +462,7 @@ void main() {
           'Renamed todo',
         );
         await tester.tap(find.byKey(const Key('todo-save-button')));
-        await tester.pumpAndSettle();
+        await _pumpBounded(tester);
 
         expect(repo.created, isEmpty);
         expect(repo.updated, hasLength(1));
@@ -497,7 +497,7 @@ void main() {
         await tester.tap(find.byKey(const Key('todo-due-date-clear-button')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('todo-save-button')));
-        await tester.pumpAndSettle();
+        await _pumpBounded(tester);
 
         expect(repo.updated.single.dueDate, isNull);
         expect(repo.updated.single.assigneeId, 'm1');
@@ -516,7 +516,7 @@ void main() {
         await tester.tap(find.byKey(const Key('todo-assignee-option-m2')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('todo-save-button')));
-        await tester.pumpAndSettle();
+        await _pumpBounded(tester);
 
         expect(repo.updated.single.assigneeId, 'm2');
         expect(repo.updated.single.apiaryId, 'a1');
@@ -535,7 +535,7 @@ void main() {
         await tester.tap(find.byKey(const Key('todo-apiary-option-none')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('todo-save-button')));
-        await tester.pumpAndSettle();
+        await _pumpBounded(tester);
 
         expect(repo.updated.single.apiaryId, isNull);
         expect(repo.updated.single.assigneeId, 'm1');
@@ -758,10 +758,7 @@ void main() {
             tester,
             find.byKey(const Key('todo-apiary-option-a1')),
           );
-          expectHasSemanticsLabel(
-            tester,
-            const Key('todo-assignee-option-m1'),
-          );
+          expectHasSemanticsLabel(tester, const Key('todo-assignee-option-m1'));
           expectHasSemanticsLabel(tester, const Key('todo-apiary-option-a1'));
         },
       );

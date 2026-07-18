@@ -67,7 +67,9 @@ class _TodoDetailScreenState extends ConsumerState<TodoDetailScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            todo.isDone ? l10n.todoReopenError('$e') : l10n.todoCompleteError('$e'),
+            todo.isDone
+                ? l10n.todoReopenError('$e')
+                : l10n.todoCompleteError('$e'),
           ),
         ),
       );
@@ -136,9 +138,11 @@ class _TodoDetailBody extends ConsumerWidget {
     final theme = Theme.of(context);
     final memberNames =
         ref.watch(memberNamesProvider).value ?? const <String, String>{};
-    final apiaries = ref.watch(apiariesStreamProvider).value ?? const <Apiary>[];
+    final apiaries =
+        ref.watch(apiariesStreamProvider).value ?? const <Apiary>[];
 
-    final priorityLabel = todoPriorityLabel(l10n, todo.priority) ?? todo.priority;
+    final priorityLabel =
+        todoPriorityLabel(l10n, todo.priority) ?? todo.priority;
     final dueText = todo.dueDate == null
         ? l10n.todoDueDateUnset
         : LocaleFormatting.of(context).date(DateTime.parse(todo.dueDate!));
@@ -250,7 +254,9 @@ class _TodoDetailBody extends ConsumerWidget {
               const SizedBox(height: 24),
               PrimaryActionButton(
                 key: const Key('todo-detail-complete-toggle-button'),
-                label: todo.isDone ? l10n.todoReopenAction : l10n.todoCompleteAction,
+                label: todo.isDone
+                    ? l10n.todoReopenAction
+                    : l10n.todoCompleteAction,
                 icon: todo.isDone ? Icons.replay : Icons.check_circle_outline,
                 busy: busy,
                 onPressed: onToggleComplete,

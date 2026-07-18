@@ -309,16 +309,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: ':id',
                     name: 'todoDetail',
-                    builder: (context, state) => TodoDetailScreen(
-                      todoId: state.pathParameters['id']!,
-                    ),
+                    builder: (context, state) =>
+                        TodoDetailScreen(todoId: state.pathParameters['id']!),
                     routes: [
                       GoRoute(
                         path: 'edit',
                         name: 'todoEdit',
-                        builder: (context, state) => TodoFormScreen(
-                          todoId: state.pathParameters['id'],
-                        ),
+                        builder: (context, state) =>
+                            TodoFormScreen(todoId: state.pathParameters['id']),
                       ),
                     ],
                   ),

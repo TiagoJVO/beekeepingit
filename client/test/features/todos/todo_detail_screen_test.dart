@@ -92,6 +92,7 @@ class _FakeTodosRepository extends TodosRepository {
       apiaryId: t.apiaryId,
       organizationId: t.organizationId,
     );
+    completed.add(id);
     _controller.add(current);
   }
 
@@ -111,6 +112,7 @@ class _FakeTodosRepository extends TodosRepository {
       apiaryId: t.apiaryId,
       organizationId: t.organizationId,
     );
+    reopened.add(id);
     _controller.add(current);
   }
 }
@@ -160,11 +162,23 @@ Widget _buildApp({required _FakeTodosRepository repo}) {
   );
 }
 
+/// The todo detail screen's content (header, status, description, due date,
+/// priority, assignee, apiary, completed-at) exceeds the default 800x600 test
+/// viewport, pushing the complete/reopen toggle button off-screen — mirrors
+/// todo_form_screen_test.dart's own identical `_useTallViewport` fix.
+void _useTallViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1200, 3600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
 Future<void> _openDetail(
   WidgetTester tester, {
   required _FakeTodosRepository repo,
   String todoId = 't1',
 }) async {
+  _useTallViewport(tester);
   await tester.pumpWidget(_buildApp(repo: repo));
   await tester.pumpAndSettle();
   final router = GoRouter.of(tester.element(find.byType(AppShell)));
@@ -215,7 +229,7 @@ void main() {
       expect(find.text('High'), findsOneWidget);
       expect(find.text('Maria Silva'), findsOneWidget);
       expect(find.text('Serra Norte'), findsOneWidget);
-      expect(find.text('Open'), findsOneWidget);
+      expect(find.text('Status: Open'), findsOneWidget);
       // No edit controls on this read-focused screen (edit lives on the
       // form, reached via the FAB).
       expect(find.byType(TextFormField), findsNothing);
@@ -267,7 +281,7 @@ void main() {
       );
       await _openDetail(tester, repo: repo);
 
-      expect(find.text('Completed'), findsOneWidget);
+      expect(find.text('Status: Completed'), findsOneWidget);
       expect(find.text('Completed at'), findsOneWidget);
       // The complete/reopen action offers Reopen, not Mark as complete.
       expect(find.text('Reopen'), findsOneWidget);
@@ -288,7 +302,7 @@ void main() {
         expect(repo.completed, ['t1']);
         // Still on the detail screen (no navigation) — status flipped live.
         expect(find.byKey(const Key('todo-detail-header')), findsOneWidget);
-        expect(find.text('Completed'), findsOneWidget);
+        expect(find.text('Status: Completed'), findsOneWidget);
         expect(find.text('Reopen'), findsOneWidget);
       });
 
@@ -305,7 +319,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(repo.reopened, ['t1']);
-        expect(find.text('Open'), findsOneWidget);
+        expect(find.text('Status: Open'), findsOneWidget);
         expect(find.text('Mark as complete'), findsOneWidget);
       });
 
@@ -324,24 +338,23 @@ void main() {
         expect(find.byKey(const Key('todo-detail-header')), findsOneWidget);
       });
 
-      testWidgets(
-        'a failing reopen toggle shows an error and stays in place',
-        (tester) async {
-          final repo = _FakeTodosRepository(
-            _todo(status: 'done', completedAt: '2026-07-01T10:00:00Z'),
-            throwOnReopen: true,
-          );
-          await _openDetail(tester, repo: repo);
+      testWidgets('a failing reopen toggle shows an error and stays in place', (
+        tester,
+      ) async {
+        final repo = _FakeTodosRepository(
+          _todo(status: 'done', completedAt: '2026-07-01T10:00:00Z'),
+          throwOnReopen: true,
+        );
+        await _openDetail(tester, repo: repo);
 
-          await tester.tap(
-            find.byKey(const Key('todo-detail-complete-toggle-button')),
-          );
-          await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('todo-detail-complete-toggle-button')),
+        );
+        await tester.pumpAndSettle();
 
-          expect(find.textContaining('boom-reopen'), findsOneWidget);
-          expect(find.byKey(const Key('todo-detail-header')), findsOneWidget);
-        },
-      );
+        expect(find.textContaining('boom-reopen'), findsOneWidget);
+        expect(find.byKey(const Key('todo-detail-header')), findsOneWidget);
+      });
     });
 
     testWidgets('the edit FAB navigates to the edit form', (tester) async {

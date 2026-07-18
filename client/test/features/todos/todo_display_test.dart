@@ -22,16 +22,13 @@ void main() {
       );
     });
 
-    test(
-      'an unknown assigneeId (not yet in the roster, offline/pre-fetch) '
-      'falls back to a short id fragment',
-      () {
-        expect(
-          todoAssigneeLabel(_l10n, 'abcdefgh12345678', const {}),
-          'Member 12345678',
-        );
-      },
-    );
+    test('an unknown assigneeId (not yet in the roster, offline/pre-fetch) '
+        'falls back to a short id fragment', () {
+      expect(
+        todoAssigneeLabel(_l10n, 'abcdefgh12345678', const {}),
+        'Member 12345678',
+      );
+    });
 
     test('a blank name in the roster still falls back to the short id', () {
       expect(
@@ -61,12 +58,9 @@ void main() {
       expect(todoApiaryLabel(_l10n, 'a2', apiaries), 'Monte Alto');
     });
 
-    test(
-      'an apiaryId not found in the locally-synced set (stale/deleted) '
-      'falls back to Unknown apiary',
-      () {
-        expect(todoApiaryLabel(_l10n, 'gone', apiaries), 'Unknown apiary');
-      },
-    );
+    test('an apiaryId not found in the locally-synced set (stale/deleted) '
+        'falls back to Unknown apiary', () {
+      expect(todoApiaryLabel(_l10n, 'gone', apiaries), 'Unknown apiary');
+    });
   });
 }

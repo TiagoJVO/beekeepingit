@@ -97,7 +97,9 @@ class _RosterList extends StatelessWidget {
     // (short-id fallback) — see this file's own class doc comment.
     final entries = {...memberNames};
     final selected = selectedAssigneeId;
-    if (selected != null && selected.isNotEmpty && !entries.containsKey(selected)) {
+    if (selected != null &&
+        selected.isNotEmpty &&
+        !entries.containsKey(selected)) {
       entries[selected] = l10n.todoAssigneeUnknown(_shortId(selected));
     }
 

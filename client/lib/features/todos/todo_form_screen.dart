@@ -189,7 +189,9 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
       setState(() => _status = wasDone ? 'open' : 'done');
       messenger.showSnackBar(
         SnackBar(
-          content: Text(wasDone ? l10n.todoReopenSuccess : l10n.todoCompleteSuccess),
+          content: Text(
+            wasDone ? l10n.todoReopenSuccess : l10n.todoCompleteSuccess,
+          ),
         ),
       );
     } catch (e) {
@@ -312,7 +314,9 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
                     if (!knownTodoPriorities.contains(_priority))
                       DropdownMenuItem(
                         value: _priority,
-                        child: Text(todoPriorityLabel(l10n, _priority) ?? _priority),
+                        child: Text(
+                          todoPriorityLabel(l10n, _priority) ?? _priority,
+                        ),
                       ),
                   ],
                   onChanged: (v) {
@@ -340,7 +344,9 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
                   const SizedBox(height: 12),
                   SecondaryActionButton(
                     key: const Key('todo-complete-toggle-button'),
-                    label: isDone ? l10n.todoReopenAction : l10n.todoCompleteAction,
+                    label: isDone
+                        ? l10n.todoReopenAction
+                        : l10n.todoCompleteAction,
                     icon: isDone ? Icons.replay : Icons.check_circle_outline,
                     busy: _busy,
                     onPressed: _toggleComplete,

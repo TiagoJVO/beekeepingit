@@ -91,10 +91,7 @@ void main() {
           findsOneWidget,
         );
         expect(
-          _trailingIcon(
-            tester,
-            const Key('todo-apiary-option-none'),
-          ).icon,
+          _trailingIcon(tester, const Key('todo-apiary-option-none')).icon,
           Icons.radio_button_checked,
         );
       },
