@@ -45,20 +45,22 @@ class FakeLocalStore implements LocalStoreEngine {
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
     if (normalized.startsWith('INSERT INTO ACTIVITIES')) {
-      // (id, apiary_id, type, occurred_at, attributes, created_at,
-      // updated_at) — create() never sets performed_by/organization_id
-      // (activities_repository.dart's own doc: both are server-derived,
-      // populated only once the write round-trips through sync).
+      // (id, apiary_id, journey_id, type, occurred_at, attributes,
+      // created_at, updated_at) — create() never sets performed_by/
+      // organization_id (activities_repository.dart's own doc: both are
+      // server-derived, populated only once the write round-trips through
+      // sync). journey_id (#46/D-21) IS set locally now, optionally.
       rows.add({
         'id': args[0],
         'apiary_id': args[1],
+        'journey_id': args[2],
         'performed_by': null,
         'organization_id': null,
-        'type': args[2],
-        'occurred_at': args[3],
-        'attributes': args[4],
-        'created_at': args[5],
-        'updated_at': args[6],
+        'type': args[3],
+        'occurred_at': args[4],
+        'attributes': args[5],
+        'created_at': args[6],
+        'updated_at': args[7],
       });
     } else {
       throw UnsupportedError('FakeLocalStore.execute: unhandled SQL: $sql');

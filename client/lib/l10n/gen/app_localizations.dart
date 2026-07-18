@@ -1501,6 +1501,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get deleteJourneyCancelAction;
+
+  /// Section label above the journey attachment summary on the add-activity form (#46, FR-JO-1, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey'**
+  String get journeyAttachmentLabel;
+
+  /// Shown in the journey attachment summary when no journey is currently selected (either an auto-match miss, or the user explicitly deselected) (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'No journey attached'**
+  String get journeyAttachmentNone;
+
+  /// Small hint shown under the attached journey's name when it was auto-selected by the app (not explicitly chosen by the user) (#46, FR-JO-1, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-selected — matches this apiary and activity type'**
+  String get journeyAttachmentAutoSelectedHint;
+
+  /// Button that opens the journey picker to switch/select a journey on the add-activity form (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get journeyAttachmentChangeAction;
+
+  /// Button that deselects the currently-attached journey on the add-activity form (#46 AC: the user can deselect the pre-filled journey)
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get journeyAttachmentRemoveAction;
+
+  /// Title of the journey picker bottom sheet (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a journey'**
+  String get journeyPickerTitle;
+
+  /// Error state inside the journey picker bottom sheet (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load journeys: {error}'**
+  String journeyPickerError(String error);
+
+  /// The explicit "no journey" option, always the first row in the journey picker (#46 AC: the user can deselect the pre-filled journey)
+  ///
+  /// In en, this message translates to:
+  /// **'No journey'**
+  String get journeyPickerNoneOption;
+
+  /// Shown in the journey picker when there are no open matching journeys to list (auto-match miss) and "show hidden journeys" is off (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'No open journeys match this apiary and activity type yet.'**
+  String get journeyPickerNoOpenMatches;
+
+  /// Toggle in the journey picker that reveals closed matching journeys, normally hidden by default (#46, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Show hidden journeys'**
+  String get journeyPickerShowHiddenToggle;
+
+  /// Screen-reader label for a closed journey's row in the picker, once revealed via the show-hidden toggle (#46, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, closed journey'**
+  String journeyPickerClosedOptionSemanticLabel(String name);
+
+  /// The inline create-new-journey shortcut row at the bottom of the journey picker (#46 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'Create a new journey'**
+  String get journeyPickerCreateNewAction;
+
+  /// Title of the inline quick-create-journey bottom sheet, opened from the journey picker (#46 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'New journey'**
+  String get journeyQuickCreateTitle;
+
+  /// Cancel action on the inline quick-create-journey sheet — closes it without creating anything (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get journeyQuickCreateCancelAction;
+
+  /// Title of the confirm-to-proceed dialog shown when saving an activity against a closed journey (#46 AC, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'This journey is closed'**
+  String get closedJourneyConfirmTitle;
+
+  /// Body of the confirm-to-proceed dialog shown when saving an activity against a closed journey (#46 AC: "this journey is closed — add anyway?")
+  ///
+  /// In en, this message translates to:
+  /// **'\"{journeyName}\" is closed. Add this activity to it anyway?'**
+  String closedJourneyConfirmMessage(String journeyName);
+
+  /// Cancel action in the closed-journey confirm dialog — stays on the form, nothing is saved (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get closedJourneyConfirmCancelAction;
+
+  /// Confirm action in the closed-journey confirm dialog — proceeds with saving the activity against the closed journey (#46 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'Add anyway'**
+  String get closedJourneyConfirmAddAction;
 }
 
 class _AppLocalizationsDelegate

@@ -1,4 +1,4 @@
-<!-- Generated: 2026-07-14 | Files scanned: 95 | Token estimate: ~950 -->
+<!-- Generated: 2026-07-18 | Files scanned: 95 | Token estimate: ~980 -->
 
 # Dependencies Codemap
 
@@ -29,6 +29,11 @@ activities     ─► apiaries            (INTERNAL_APIARIES_URL, #39: verify a 
                                         apiary_id belongs to the caller's org, GET /v1/apiaries/{id} —
                                         api/apiaries_client.go; activities has no DB access to
                                         apiaries' schema, ownership rule 1)
+activities     ─► journeys            (INTERNAL_JOURNEYS_URL, #46: verify a client-supplied
+                                        journey_id belongs to the caller's org, GET /v1/journeys/{id} —
+                                        api/journeys_client.go, same ApiaryVerifier pattern;
+                                        closes a cross-org IDOR, journey_id was previously
+                                        accepted with no ownership check)
 journeys       ─► identity, organizations   (org-resolver, same wiring as apiaries)
 journeys       ─► apiaries            (INTERNAL_APIARIES_URL, #45: same ApiaryVerifier pattern
                                         as activities', for every apiary_id in a journey's plan)

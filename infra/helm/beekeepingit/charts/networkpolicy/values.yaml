@@ -139,6 +139,18 @@ edges:
     from: { app.kubernetes.io/name: activities }
     to: { app.kubernetes.io/name: apiaries }
     port: 8080
+  # #46: activities verifies a client-supplied journey_id belongs to the
+  # caller's org by dialing journeys' own GET /v1/journeys/{id}
+  # (api/journeys_client.go's JourneyVerifier) — same rationale as
+  # activities-to-apiaries above. Missing this edge is exactly the class of
+  # bug #45 already hit once (a service with a missing NetworkPolicy edge
+  # crash-loops/hangs in the real cluster even though everything looks fine
+  # on paper) — verified live on the local dev cluster, not just reviewed
+  # statically.
+  - name: activities-to-journeys
+    from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: journeys }
+    port: 8080
   - name: sync-to-activities
     from: { app.kubernetes.io/name: sync }
     to: { app.kubernetes.io/name: activities }

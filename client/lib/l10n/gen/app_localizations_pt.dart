@@ -849,4 +849,66 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteJourneyCancelAction => 'Cancelar';
+
+  @override
+  String get journeyAttachmentLabel => 'Jornada';
+
+  @override
+  String get journeyAttachmentNone => 'Nenhuma jornada associada';
+
+  @override
+  String get journeyAttachmentAutoSelectedHint =>
+      'Selecionada automaticamente — corresponde a este apiário e tipo de atividade';
+
+  @override
+  String get journeyAttachmentChangeAction => 'Alterar';
+
+  @override
+  String get journeyAttachmentRemoveAction => 'Remover';
+
+  @override
+  String get journeyPickerTitle => 'Escolher uma jornada';
+
+  @override
+  String journeyPickerError(String error) {
+    return 'Não foi possível carregar as jornadas: $error';
+  }
+
+  @override
+  String get journeyPickerNoneOption => 'Nenhuma jornada';
+
+  @override
+  String get journeyPickerNoOpenMatches =>
+      'Ainda não há jornadas abertas correspondentes a este apiário e tipo de atividade.';
+
+  @override
+  String get journeyPickerShowHiddenToggle => 'Mostrar jornadas ocultas';
+
+  @override
+  String journeyPickerClosedOptionSemanticLabel(String name) {
+    return '$name, jornada fechada';
+  }
+
+  @override
+  String get journeyPickerCreateNewAction => 'Criar nova jornada';
+
+  @override
+  String get journeyQuickCreateTitle => 'Nova jornada';
+
+  @override
+  String get journeyQuickCreateCancelAction => 'Cancelar';
+
+  @override
+  String get closedJourneyConfirmTitle => 'Esta jornada está fechada';
+
+  @override
+  String closedJourneyConfirmMessage(String journeyName) {
+    return '\"$journeyName\" está fechada. Adicionar esta atividade mesmo assim?';
+  }
+
+  @override
+  String get closedJourneyConfirmCancelAction => 'Cancelar';
+
+  @override
+  String get closedJourneyConfirmAddAction => 'Adicionar mesmo assim';
 }

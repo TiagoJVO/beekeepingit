@@ -1,4 +1,4 @@
-<!-- Generated: 2026-07-14 | Files scanned: 147 | Token estimate: ~1000 -->
+<!-- Generated: 2026-07-18 | Files scanned: 149 | Token estimate: ~1050 -->
 
 # Backend Codemap
 
@@ -64,8 +64,8 @@ POST   /internal/activities/validate → validateHandler  api/validate.go (state
 POST   /v1/activities                → createActivity   api/write.go (#39; online-only/direct callers)
 PATCH  /v1/activities/{id}           → updateActivity   api/write.go (#40; ownership re-verified only if apiary_id sent)
 DELETE /v1/activities/{id}           → deleteActivity   api/write.go (#41; soft-delete/tombstone)
-POST   /internal/sync/validate       → validateActivityBatch api/sync.go (#39/#40/#41; put/patch/delete)
-POST   /internal/sync/apply          → applyActivityBatch    api/sync.go (#39/#40/#41; LWW + tombstone)
+POST   /internal/sync/validate       → validateActivityBatch api/sync.go (#39/#40/#41/#46; put/patch/delete)
+POST   /internal/sync/apply          → applyActivityBatch    api/sync.go (#39/#40/#41/#46; LWW + tombstone)
 ```
 
 #38's scope was the data model (`api/types.go`'s type registry + JSONB
@@ -77,11 +77,17 @@ touches `apiary_id` verifies it belongs to the caller's org via
 `api/apiaries_client.go`'s `ApiaryVerifier` (an HTTP call to apiaries' own
 `GET /v1/apiaries/{id}` — this service has no DB access to the apiaries
 schema) BEFORE writing anything; `performed_by` is derived server-side from
-claims, never the client (FR-TEN-2). List is #42/#43.
+claims, never the client (FR-TEN-2). List is #42/#43. #46 (D-21) adds the
+same guard for the optional `journey_id` field via `api/journeys_client.go`'s
+`JourneyVerifier` (HTTP call to journeys' own `GET /v1/journeys/{id}`) —
+closes a cross-org IDOR where `journey_id` was previously accepted with no
+ownership check; `journey_id` is set once at create and never touched by
+edit.
 
 ### journeys (main.go; authnMW→orgMW→RequireRole(admin,user))
 
 ```text
+GET    /v1/journeys/{id}             → getJourney     api/write.go (#46; org-scoped; 404s cross-org, ADR-0002 — also the target activities' JourneyVerifier calls)
 POST   /v1/journeys                  → createJourney  api/write.go (#45; status always starts open)
 PATCH  /v1/journeys/{id}             → updateJourney  api/write.go (#45; full plan-items replace; D-21 close rides here)
 DELETE /v1/journeys/{id}             → deleteJourney  api/write.go (#45; soft-delete/tombstone)
@@ -96,10 +102,12 @@ itself) and `journey_plan_item` (one row per planned apiary, put/delete only
 — no patch). Every write touching `apiary_id` verifies it via
 `api/apiaries_client.go`'s `ApiaryVerifier` (same zero-trust HTTP-call
 pattern as activities'); `journey_id` itself is verified with a plain
-org-scoped DB read (same schema, no HTTP call needed). Journey↔activity
-attribution is NOT owned here — it's `activities.journey_id` (D-21,
-supersedes the pre-D-21 `journey_activities` link-table idea), consumed by
-#46's activity-form picker.
+org-scoped DB read (same schema, no HTTP call needed) wherever THIS service
+consults it internally. Journey↔activity attribution is NOT owned here —
+it's `activities.journey_id` (D-21, supersedes the pre-D-21
+`journey_activities` link-table idea), consumed by #46's activity-form
+picker; #46 also added `GET /v1/journeys/{id}` above specifically so
+activities' own `JourneyVerifier` has an org-scoped endpoint to call.
 
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 

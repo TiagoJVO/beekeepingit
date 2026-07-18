@@ -228,6 +228,36 @@ class JourneysRepository {
         .map((rows) => rows.map((r) => _fromRow(r, const [])).toList());
   }
 
+  /// Candidate journeys for the #46 activity-form picker (FR-JO-1, D-21):
+  /// every journey — open OR closed, both are returned here, the picker
+  /// itself decides what to show by default vs. behind the "show hidden
+  /// journeys" toggle (journey_matching.dart's `splitJourneyCandidates`) —
+  /// whose plan currently includes [apiaryId] AND whose
+  /// `main_activity_type` is [activityType]. This is the ENTIRE matching
+  /// rule (D-21: "the app looks for an open journey whose apiary and
+  /// activity type match"), evaluated purely against locally-synced data so
+  /// it works fully offline. Newest-first, same convention as [watchAll], so
+  /// the picker's auto-select (the first OPEN entry after splitting) is
+  /// "the most recently created matching journey".
+  Stream<List<Journey>> watchMatching({
+    required String apiaryId,
+    required String activityType,
+    required String? organizationId,
+  }) {
+    if (organizationId == null) return Stream.value(const []);
+    return _store
+        .watch(
+          'SELECT j.id, j.organization_id, j.name, j.main_activity_type, j.status '
+          'FROM $journeysTable j '
+          'JOIN $journeyPlanItemsTable p ON p.journey_id = j.id '
+          'WHERE (j.organization_id = ? OR j.organization_id IS NULL) '
+          'AND j.main_activity_type = ? AND p.apiary_id = ? '
+          'ORDER BY j.created_at DESC',
+          [organizationId, activityType, apiaryId],
+        )
+        .map((rows) => rows.map((r) => _fromRow(r, const [])).toList());
+  }
+
   Journey _fromRow(Map<String, Object?> r, List<String> apiaryIds) => Journey(
     id: r['id'] as String,
     organizationId: r['organization_id'] as String?,

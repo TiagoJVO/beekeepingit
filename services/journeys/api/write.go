@@ -94,15 +94,58 @@ type journeyDTO struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// Router returns the client-facing /v1/journeys surface: create, update
-// (including the full plan-items replace and the D-21 close transition) and
-// delete.
+// Router returns the client-facing /v1/journeys surface: read, create,
+// update (including the full plan-items replace and the D-21 close
+// transition) and delete.
 func Router(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handler {
 	r := chi.NewRouter()
+	r.Get("/{journeyId}", getJourney(pool))
 	r.Post("/", createJourney(pool, verifier))
 	r.Patch("/{journeyId}", updateJourney(pool, verifier))
 	r.Delete("/{journeyId}", deleteJourney(pool))
 	return r
+}
+
+// getJourney handles GET /v1/journeys/{journeyId} (#46, FR-JO-1): org-scoped
+// single-journey read, 404-hiding a foreign-org journey behind the identical
+// "not found" response a genuinely nonexistent id gets (ADR-0002
+// scope-hiding, the same convention apiaries' own getApiary uses). This is
+// the client-facing counterpart of activities' new JourneyVerifier
+// (services/activities/api/journeys_client.go) — that verifier calls this
+// exact endpoint, forwarding the caller's own bearer token, to answer "does
+// this journey_id belong to my org" before activities writes it, exactly
+// like activities' ApiaryVerifier already does against apiaries' getApiary.
+func getJourney(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		org, _, ok := requireOrg(w, r)
+		if !ok {
+			return
+		}
+		id, err := uuid.Parse(chi.URLParam(r, "journeyId"))
+		if err != nil {
+			problem.Write(w, r, problem.NotFound("journey not found"))
+			return
+		}
+		pgID := pgtype.UUID{Bytes: id, Valid: true}
+		q := sqlcgen.New(pool)
+		row, err := q.GetJourney(r.Context(), sqlcgen.GetJourneyParams{OrganizationID: org, ID: pgID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			problem.Write(w, r, problem.NotFound("journey not found"))
+			return
+		}
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "get journey failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		apiaryIDs, err := currentApiaryIDs(r.Context(), q, org, pgID)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list journey plan items failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		writeJSON(w, r, http.StatusOK, toJourneyDTO(row, apiaryIDs))
+	}
 }
 
 func createJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFunc {
