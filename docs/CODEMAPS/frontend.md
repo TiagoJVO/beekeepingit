@@ -39,14 +39,16 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart)
   │                        activity list, same filters + apiary label per row)
   ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45/#47; org-wide
   │   │                    list — date-range/activity-type filters (combinable), plan-vs-done
-  │   │                    progress badge per row, tap row → edit; #49 adds full statistics,
-  │   │                    #48 adds a dedicated detail screen)
+  │   │                    progress badge per row, tap row → detail (#48))
   │   ├ new                JourneyFormScreen      features/journeys (#45; create)
-  │   └ :id/edit            JourneyFormScreen     features/journeys (#45; edit/close/delete,
-  │                        isEdit — no dedicated detail screen yet, that's #48; #49 adds
-  │                        JourneyStatsSection, features/journeys/journey_stats_section.dart —
-  │                        apiaries visited, hives harvested, honey collected, média
-  │                        alças/colmeia, still not routed on its own, embeddable by #48)
+  │   └ :id                JourneyDetailScreen    features/journeys (#48, FR-JO-3; apiaries
+  │       │                visited vs. planned by stored journey_id (D-21), per-apiary
+  │       │                activities via the shared ActivityListView, embeds
+  │       │                JourneyStatsSection, features/journeys/journey_stats_section.dart —
+  │       │                #49's apiaries visited/hives harvested/honey collected/média
+  │       │                alças/colmeia; edit reachable via its own FAB)
+  │       └ edit                        JourneyFormScreen features/journeys (#45; edit/close/
+  │                                     delete, isEdit)
   ├ /todos         ─┐
   └ /assistant     ─┘ ComingSoonScreen (placeholders, M5/M8)
 ```
@@ -83,6 +85,8 @@ Business logic stays out of widgets (repos + pure helpers, e.g. `filterApiariesB
 | `journeysRepositoryProvider`               | features/journeys                    | `JourneysRepository` (#45)                                                                                                                                                                           |
 | `journeysStreamProvider`                   | features/journeys                    | live org-wide journeys, unfiltered (#45)                                                                                                                                                             |
 | `journeyMatchesProvider` (family)          | features/journeys/journey_picker     | live journeys matching one (apiary, activity type) pair (#46, D-21)                                                                                                                                  |
+| `journeyByIdProvider` (family)             | features/journeys                    | live single `Journey` by id, no `apiaryIds` (#48; the detail screen's read path)                                                                                                                     |
+| `activitiesByJourneyProvider` (family)     | features/activities                  | live activities for one journey, by stored `journey_id` (#48, D-21)                                                                                                                                  |
 | `journeyStatsProvider` (family)            | features/journeys                    | live `JourneyStats` per journey id — apiaries visited/planned, hives harvested, honey collected, média alças/colmeia (#49, FR-JO-1, D-2, D-21, stored `journey_id` link only, never a live re-match) |
 | `membershipLossPurgeProvider`              | core/sync/local_data_purge           | wipes local data on org loss (#125)                                                                                                                                                                  |
 

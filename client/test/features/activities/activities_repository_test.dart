@@ -80,6 +80,8 @@ class FakeLocalStore implements LocalStoreEngine {
 
     if (normalized.contains('WHERE APIARY_ID = ?')) {
       results = results.where((r) => r['apiary_id'] == args[0]).toList();
+    } else if (normalized.contains('WHERE JOURNEY_ID = ?')) {
+      results = results.where((r) => r['journey_id'] == args[0]).toList();
     } else if (normalized.contains(
       'ORGANIZATION_ID = ? OR ORGANIZATION_ID IS NULL',
     )) {
@@ -267,6 +269,87 @@ void main() {
         type: 'generic',
         occurredAt: '2026-06-01',
         attributes: const {},
+      );
+      await pumpEventQueue();
+
+      expect(emissions.last, 1);
+    });
+  });
+
+  group('ActivitiesRepository.watchByJourney() (#48, FR-JO-3, D-21)', () {
+    test(
+      'emits only the given journey\'s activities, newest occurred_at first',
+      () async {
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'harvest',
+          occurredAt: '2026-06-01',
+          attributes: const {},
+          journeyId: 'j1',
+        );
+        await repo.create(
+          apiaryId: 'a2',
+          type: 'feeding',
+          occurredAt: '2026-06-05',
+          attributes: const {},
+          journeyId: 'j2',
+        );
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'generic',
+          occurredAt: '2026-06-10',
+          attributes: const {},
+          journeyId: 'j1',
+        );
+
+        final activities = await repo.watchByJourney('j1').first;
+
+        expect(activities.map((a) => a.type).toList(), ['generic', 'harvest']);
+        expect(activities.every((a) => a.journeyId == 'j1'), isTrue);
+      },
+    );
+
+    test(
+      'excludes an activity with no journey attached (stored journey_id '
+      'scoping, D-21: not a live re-match against any journey\'s plan)',
+      () async {
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'generic',
+          occurredAt: '2026-06-01',
+          attributes: const {},
+        );
+
+        final activities = await repo.watchByJourney('j1').first;
+
+        expect(activities, isEmpty);
+      },
+    );
+
+    test(
+      'returns an empty list for a journey with no attributed activities',
+      () async {
+        final activities = await repo.watchByJourney('unknown-journey').first;
+        expect(activities, isEmpty);
+      },
+    );
+
+    test('re-emits after a write attributed to that journey', () async {
+      final emissions = <int>[];
+      final sub = repo
+          .watchByJourney('j1')
+          .listen((a) => emissions.add(a.length));
+      addTearDown(sub.cancel);
+
+      await pumpEventQueue();
+      expect(emissions, [0]);
+
+      await repo.create(
+        apiaryId: 'a1',
+        type: 'generic',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+        journeyId: 'j1',
       );
       await pumpEventQueue();
 
