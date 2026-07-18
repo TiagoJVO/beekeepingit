@@ -3,9 +3,14 @@
 # does for dev — see that file's comments for the releaseName/reconcileStrategy
 # rationale, which applies unchanged here.
 #
-# TODO before this is applied to a real cluster: replace the placeholder
-# app/auth hostnames below with the real domain from Phase 0 (see
-# infra/cluster/scaleway-up.sh's closing instructions).
+# Hostnames use nip.io (https://nip.io) — a free wildcard DNS service that
+# resolves <anything>.<ip-with-dashes>.nip.io to that literal IP, no
+# registration needed — since no real domain is owned yet. This is real
+# public DNS (not a local hosts-file hack), so it works from any device
+# (including mobile) and lets Let's Encrypt's HTTP-01 challenge issue a
+# genuinely trusted cert against it (see cert-manager-issuer.yaml). Swap for
+# a real domain later by updating global.appOrigin/gateway.appHost/authHost/
+# services.oidc.issuerUrl below — nothing else needs to change.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -59,12 +64,11 @@ spec:
       # real LoadBalancer/Ingress — no dev-only :8443 port here) — the
       # Authentik blueprint's OAuth2 redirect_uris/CORS-allowed-origins read
       # this, and a mismatch fails login with redirect_uri mismatch (observed
-      # on the first staging bring-up, D-26). TODO: replace with the real
-      # domain alongside gateway.appHost/authHost below.
-      appOrigin: https://staging.beekeepingit.example.com
+      # on the first staging bring-up, D-26).
+      appOrigin: https://app.51-159-204-90.nip.io
     gateway:
-      appHost: staging.beekeepingit.example.com # TODO: replace with the real domain
-      authHost: auth-staging.beekeepingit.example.com # TODO: replace with the real domain
+      appHost: app.51-159-204-90.nip.io
+      authHost: auth.51-159-204-90.nip.io
       certManager:
         enabled: true
         clusterIssuer: letsencrypt-prod
@@ -79,8 +83,8 @@ spec:
         # split-issuer pattern (ADR-0016, oidc-integration.md §6) — the `iss` a
         # browser token carries is the external HTTPS auth host, but services
         # fetch discovery from the internal Authentik Service (unreachable
-        # externally in-cluster). TODO: keep in sync with gateway.authHost above.
-        issuerUrl: https://auth-staging.beekeepingit.example.com/application/o/beekeepingit/
+        # externally in-cluster). Keep in sync with gateway.authHost above.
+        issuerUrl: https://auth.51-159-204-90.nip.io/application/o/beekeepingit/
         discoveryUrl: http://authentik-server/application/o/beekeepingit/
         audience: beekeepingit-pwa
       # All 7 services the `services` subchart actually renders (per
