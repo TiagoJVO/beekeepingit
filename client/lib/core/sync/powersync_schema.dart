@@ -196,16 +196,17 @@ const appSchema = Schema([
     Column.text('created_at'),
   ]),
   // todos (#50, FR-TD-1, FR-TEN-2): one row per todo, matching the owning
-  // service's shape (services/todos/store/migrations/00001_create_todos.sql).
-  // `organization_id` is never written locally by
+  // service's shape (services/todos/store/migrations/00001_create_todos.sql,
+  // 00003_add_apiary_id.sql). `organization_id` is never written locally by
   // features/todos/todos_repository.dart (server-derived, same convention as
   // [activitiesTable]'s own organization_id). `priority`/`status` are the
   // extensible, Go-validated vocabularies (D-20) — plain text columns, not a
   // local enum. `due_date` is a plain YYYY-MM-DD string, nullable — a todo
   // may legitimately have none. `completed_at` is nullable, set on complete
-  // and cleared on reopen. `assignee_id` (D-23) is the one field this
-  // repository DOES write locally (the user's own choice), unlike
-  // organization_id.
+  // and cleared on reopen. `assignee_id` (D-23) and `apiary_id` (#51,
+  // FR-TD-1: "may be associated with a specific apiary, or left as a
+  // general, org-level todo") are the two fields this repository DOES write
+  // locally (the user's own choice), unlike organization_id.
   Table(todosTable, [
     Column.text('organization_id'),
     Column.text('title'),
@@ -215,6 +216,7 @@ const appSchema = Schema([
     Column.text('status'),
     Column.text('completed_at'),
     Column.text('assignee_id'),
+    Column.text('apiary_id'),
     Column.text('created_at'),
     Column.text('updated_at'),
   ]),

@@ -5,18 +5,20 @@
 -- them, matching the activities convention that the DB layer trusts the API
 -- layer's validation pass. `assignee_id` (D-23) must already have been
 -- ownership-verified against the organizations service (api/members_client.go)
--- before this runs.
+-- before this runs; `apiary_id` (#51) must already have been
+-- ownership-verified against the apiaries service (api/apiaries_client.go)
+-- the same way.
 INSERT INTO todos.todos
-    (id, organization_id, title, description, due_date, priority, status, assignee_id, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    (id, organization_id, title, description, due_date, priority, status, assignee_id, apiary_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, organization_id, title, description, due_date, priority, status, completed_at,
-          assignee_id, created_at, updated_at, recorded_at, deleted_at;
+          assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at;
 
 -- name: GetTodo :one
 -- Org-scoped single-row read (never a client-supplied organization_id —
 -- api/common.go's requireOrg pattern, mirrored from activities).
 SELECT id, organization_id, title, description, due_date, priority, status, completed_at,
-       assignee_id, created_at, updated_at, recorded_at, deleted_at
+       assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at
 FROM todos.todos
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 
@@ -28,24 +30,25 @@ WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 -- tombstoned row, while sync-apply's LWW still applies OVER a tombstone (a
 -- strictly-newer offline edit can legitimately "undelete" the row).
 SELECT id, organization_id, title, description, due_date, priority, status, completed_at,
-       assignee_id, created_at, updated_at, recorded_at, deleted_at
+       assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at
 FROM todos.todos
 WHERE organization_id = $1 AND id = $2
 FOR UPDATE;
 
 -- name: UpdateTodo :one
 -- REST update (PATCH /v1/todos/{id}, FR-TD-1): a FULL resubmit of
--- title/description/due_date/priority/assignee_id — the caller computes the
--- full desired row first, so this always sets every one of those columns.
--- status/completed_at are NEVER written here — the complete/reopen routes
--- own that transition exclusively (CompleteTodo/ReopenTodo below). WHERE
--- deleted_at IS NULL is defense-in-depth — the handler already 404s a
--- tombstoned row via its own GetTodoForUpdate check before reaching here.
+-- title/description/due_date/priority/assignee_id/apiary_id — the caller
+-- computes the full desired row first, so this always sets every one of
+-- those columns. status/completed_at are NEVER written here — the
+-- complete/reopen routes own that transition exclusively (CompleteTodo/
+-- ReopenTodo below). WHERE deleted_at IS NULL is defense-in-depth — the
+-- handler already 404s a tombstoned row via its own GetTodoForUpdate check
+-- before reaching here.
 UPDATE todos.todos
-SET title = $3, description = $4, due_date = $5, priority = $6, assignee_id = $7, updated_at = $8, recorded_at = now()
+SET title = $3, description = $4, due_date = $5, priority = $6, assignee_id = $7, apiary_id = $8, updated_at = $9, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING id, organization_id, title, description, due_date, priority, status, completed_at,
-          assignee_id, created_at, updated_at, recorded_at, deleted_at;
+          assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at;
 
 -- name: CompleteTodo :one
 -- POST /v1/todos/{id}/complete: sets status='done' + completed_at, bumping
@@ -57,7 +60,7 @@ UPDATE todos.todos
 SET status = 'done', completed_at = $3, updated_at = $3, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING id, organization_id, title, description, due_date, priority, status, completed_at,
-          assignee_id, created_at, updated_at, recorded_at, deleted_at;
+          assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at;
 
 -- name: ReopenTodo :one
 -- POST /v1/todos/{id}/reopen: sets status='open' and clears completed_at.
@@ -65,7 +68,7 @@ UPDATE todos.todos
 SET status = 'open', completed_at = NULL, updated_at = $3, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 RETURNING id, organization_id, title, description, due_date, priority, status, completed_at,
-          assignee_id, created_at, updated_at, recorded_at, deleted_at;
+          assignee_id, apiary_id, created_at, updated_at, recorded_at, deleted_at;
 
 -- name: SoftDeleteTodo :execrows
 -- REST delete (DELETE /v1/todos/{id}): tombstone, matching the sync path's
@@ -85,7 +88,7 @@ WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 -- full desired row first. Mirrors activities' UpdateActivitySync.
 UPDATE todos.todos
 SET title = $3, description = $4, due_date = $5, priority = $6, status = $7, completed_at = $8,
-    assignee_id = $9, updated_at = $10, deleted_at = $11, recorded_at = now()
+    assignee_id = $9, apiary_id = $10, updated_at = $11, deleted_at = $12, recorded_at = now()
 WHERE organization_id = $1 AND id = $2;
 
 -- name: InsertAuditLog :exec

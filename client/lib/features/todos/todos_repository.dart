@@ -15,9 +15,11 @@ import '../organization/organization_repository.dart';
 /// (it isn't, FR-TEN-2), but because [TodosRepository.create] deliberately
 /// never writes it locally (mirrors activities_repository.dart's own
 /// [organizationId] doc): a freshly-created, not-yet-uploaded row has it
-/// NULL until the write round-trips through sync. [assigneeId] is the
-/// opposite case (D-23) — it IS written locally, since the user genuinely
-/// picks who to assign.
+/// NULL until the write round-trips through sync. [assigneeId] and
+/// [apiaryId] (#51, FR-TD-1: "may be associated with a specific apiary, or
+/// left as a general, org-level todo") are the opposite case — they ARE
+/// written locally, since the user genuinely picks who to assign / which
+/// apiary this relates to.
 class Todo {
   const Todo({
     required this.id,
@@ -28,6 +30,7 @@ class Todo {
     this.dueDate,
     this.completedAt,
     this.assigneeId,
+    this.apiaryId,
     this.organizationId,
   });
 
@@ -44,6 +47,15 @@ class Todo {
   /// ISO-8601 device timestamp, or null when the todo isn't completed.
   final String? completedAt;
   final String? assigneeId;
+
+  /// The apiary this todo relates to, or null for a general, org-level todo
+  /// (#51, FR-TD-1). A stale [apiaryId] (its apiary was later deleted
+  /// server-side — apiaries tombstones via `deleted_at`, never hard-deletes)
+  /// is tolerated by callers at read time: no crash, no broken data, just
+  /// treat it as "apiary unavailable" — there is no active
+  /// reconciliation that clears this column when its apiary is deleted (see
+  /// services/todos/README.md's "apiary association" section).
+  final String? apiaryId;
   final String? organizationId;
 
   bool get isDone => status == 'done';
@@ -59,15 +71,16 @@ class Todo {
 /// `organization_id` is deliberately NOT written here — exactly like
 /// activities_repository's own omission — it is derived SERVER-SIDE from the
 /// authenticated caller's token on write-back (FR-TEN-2), never from
-/// client-supplied data. `assignee_id` is the opposite case (D-23): it IS
-/// written locally, since the user genuinely picks who to assign — the
-/// server still re-verifies it belongs to an active member of the caller's
-/// org before accepting the write (services/todos/api/members_client.go),
-/// so a spoofed/foreign assignment is rejected server-side regardless of
-/// what this repository queues.
+/// client-supplied data. `assignee_id`/`apiary_id` (#51) are the opposite
+/// case (D-23, FR-TD-1): they ARE written locally, since the user genuinely
+/// picks who to assign / which apiary this relates to — the server still
+/// re-verifies each one before accepting the write (assignee_id against
+/// organizations, services/todos/api/members_client.go; apiary_id against
+/// apiaries, services/todos/api/apiaries_client.go), so a spoofed/foreign
+/// value is rejected server-side regardless of what this repository queues.
 ///
 /// [update] always resubmits the COMPLETE current state (title/description/
-/// due_date/priority/assignee_id) in one SQL UPDATE, matching
+/// due_date/priority/assignee_id/apiary_id) in one SQL UPDATE, matching
 /// services/todos/api/sync.go's own "an edit patch always carries all of
 /// these together" convention. [complete]/[reopen] are DELIBERATELY separate
 /// UPDATEs touching only status/completed_at(/updated_at), so an offline
@@ -88,21 +101,23 @@ class TodosRepository {
   /// Creates a todo. [priority] must already be one of the known values
   /// (`low`/`medium`/`high`, mirroring services/todos/api/types.go's own
   /// vocabulary, D-20). Every new todo starts `status='open'` with no
-  /// `completed_at` (D-23's default) and, absent [assigneeId], unassigned.
+  /// `completed_at` (D-23's default) and, absent [assigneeId], unassigned;
+  /// absent [apiaryId] (#51), it's a general, org-level todo (FR-TD-1).
   Future<String> create({
     required String title,
     required String priority,
     String? description,
     String? dueDate,
     String? assigneeId,
+    String? apiaryId,
   }) async {
     final id = _uuid.v4();
     final now = _nowIso();
     await _store.execute(
       'INSERT INTO $todosTable '
       '(id, title, description, due_date, priority, status, completed_at, '
-      'assignee_id, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'assignee_id, apiary_id, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         id,
         title,
@@ -112,6 +127,7 @@ class TodosRepository {
         'open',
         '',
         assigneeId ?? '',
+        apiaryId ?? '',
         now,
         now,
       ],
@@ -124,7 +140,8 @@ class TodosRepository {
   Future<Todo?> getById(String id) async {
     final row = await _store.getOptional(
       'SELECT id, organization_id, title, description, due_date, priority, '
-      'status, completed_at, assignee_id FROM $todosTable WHERE id = ?',
+      'status, completed_at, assignee_id, apiary_id FROM $todosTable '
+      'WHERE id = ?',
       [id],
     );
     return row == null ? null : _fromRow(row);
@@ -136,18 +153,20 @@ class TodosRepository {
     return _store
         .watch(
           'SELECT id, organization_id, title, description, due_date, '
-          'priority, status, completed_at, assignee_id FROM $todosTable '
-          'WHERE id = ?',
+          'priority, status, completed_at, assignee_id, apiary_id '
+          'FROM $todosTable WHERE id = ?',
           [id],
         )
         .map((rows) => rows.isEmpty ? null : _fromRow(rows.first));
   }
 
   /// Updates an existing todo's title/description/due_date/priority/
-  /// assignee_id — a FULL resubmit in one SQL UPDATE (this class's own doc
-  /// comment), matching the server's own PATCH semantics. Never touches
-  /// status/completed_at — [complete]/[reopen] own that transition
-  /// exclusively.
+  /// assignee_id/apiary_id — a FULL resubmit in one SQL UPDATE (this class's
+  /// own doc comment), matching the server's own PATCH semantics. Never
+  /// touches status/completed_at — [complete]/[reopen] own that transition
+  /// exclusively. The association (#51) can be set, changed or cleared the
+  /// same way [assigneeId] already is: pass the desired [apiaryId], a
+  /// different one, or omit it to clear.
   Future<void> update(
     String id, {
     required String title,
@@ -155,16 +174,19 @@ class TodosRepository {
     String? description,
     String? dueDate,
     String? assigneeId,
+    String? apiaryId,
   }) {
     return _store.execute(
       'UPDATE $todosTable SET title = ?, description = ?, due_date = ?, '
-      'priority = ?, assignee_id = ?, updated_at = ? WHERE id = ?',
+      'priority = ?, assignee_id = ?, apiary_id = ?, updated_at = ? '
+      'WHERE id = ?',
       [
         title,
         description ?? '',
         dueDate ?? '',
         priority,
         assigneeId ?? '',
+        apiaryId ?? '',
         _nowIso(),
         id,
       ],
@@ -174,7 +196,7 @@ class TodosRepository {
   /// Marks the todo done (FR-TD-1). A narrow UPDATE touching only
   /// status/completed_at(/updated_at) — queued offline as a status-only
   /// patch (this class's own doc comment), never resubmitting title/
-  /// description/due_date/priority/assignee_id.
+  /// description/due_date/priority/assignee_id/apiary_id.
   Future<void> complete(String id) {
     final now = _nowIso();
     return _store.execute(
@@ -252,6 +274,7 @@ class TodosRepository {
     status: r['status'] as String,
     completedAt: _optional(r['completed_at'] as String?),
     assigneeId: _optional(r['assignee_id'] as String?),
+    apiaryId: _optional(r['apiary_id'] as String?),
   );
 
   /// `''` and `null` both mean "no value" (this class's own convention,

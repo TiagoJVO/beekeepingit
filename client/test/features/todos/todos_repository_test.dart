@@ -44,8 +44,8 @@ class FakeLocalStore implements LocalStoreEngine {
     final normalized = sql.trim().toUpperCase();
     if (normalized.startsWith('INSERT INTO TODOS')) {
       // (id, title, description, due_date, priority, status, completed_at,
-      // assignee_id, created_at, updated_at) — create() never sets
-      // organization_id (todos_repository.dart's own doc: server-derived,
+      // assignee_id, apiary_id, created_at, updated_at) — create() never
+      // sets organization_id (todos_repository.dart's own doc: server-derived,
       // populated only once the write round-trips through sync).
       rows.add({
         'id': args[0],
@@ -57,22 +57,25 @@ class FakeLocalStore implements LocalStoreEngine {
         'status': args[5],
         'completed_at': args[6],
         'assignee_id': args[7],
-        'created_at': args[8],
-        'updated_at': args[9],
+        'apiary_id': args[8],
+        'created_at': args[9],
+        'updated_at': args[10],
       });
     } else if (normalized.startsWith(
       'UPDATE TODOS SET TITLE = ?, DESCRIPTION = ?',
     )) {
       // update(): title, description, due_date, priority, assignee_id,
-      // updated_at WHERE id — a full resubmit, organization_id untouched.
-      final id = args[6];
+      // apiary_id, updated_at WHERE id — a full resubmit, organization_id
+      // untouched.
+      final id = args[7];
       final row = rows.firstWhere((r) => r['id'] == id);
       row['title'] = args[0];
       row['description'] = args[1];
       row['due_date'] = args[2];
       row['priority'] = args[3];
       row['assignee_id'] = args[4];
-      row['updated_at'] = args[5];
+      row['apiary_id'] = args[5];
+      row['updated_at'] = args[6];
     } else if (normalized.startsWith(
       'UPDATE TODOS SET STATUS = ?, COMPLETED_AT = ?',
     )) {
@@ -138,8 +141,9 @@ void main() {
   tearDown(() => store.dispose());
 
   group('TodosRepository.create()', () {
-    test('inserts a local row with the given fields, defaulting to open '
-        'and unassigned (D-23)', () async {
+    test('inserts a local row with the given fields, defaulting to open, '
+        'unassigned (D-23) and no apiary association (#51, FR-TD-1)',
+        () async {
       final id = await repo.create(title: 'Inspect hive 3', priority: 'medium');
 
       expect(id, isNotEmpty);
@@ -150,23 +154,27 @@ void main() {
       expect(row['status'], 'open');
       expect(row['completed_at'], '');
       expect(row['assignee_id'], '');
+      expect(row['apiary_id'], '');
       // Never set locally (server-derived) — see the class doc.
       expect(row['organization_id'], isNull);
     });
 
-    test('stores description/due_date/assignee_id when provided', () async {
+    test('stores description/due_date/assignee_id/apiary_id when provided',
+        () async {
       await repo.create(
         title: 'Check varroa',
         priority: 'high',
         description: 'count mite drop',
         dueDate: '2026-08-01',
         assigneeId: 'user-1',
+        apiaryId: 'apiary-1',
       );
 
       final row = store.rows.single;
       expect(row['description'], 'count mite drop');
       expect(row['due_date'], '2026-08-01');
       expect(row['assignee_id'], 'user-1');
+      expect(row['apiary_id'], 'apiary-1');
     });
   });
 
@@ -183,6 +191,7 @@ void main() {
       expect(todo.description, isNull);
       expect(todo.dueDate, isNull);
       expect(todo.assigneeId, isNull);
+      expect(todo.apiaryId, isNull);
       expect(todo.completedAt, isNull);
       expect(todo.isDone, isFalse);
     });
@@ -209,36 +218,39 @@ void main() {
 
   group('TodosRepository.update() — full resubmit', () {
     test(
-      'changes title/description/due_date/priority/assignee_id together',
-      () async {
-        final id = await repo.create(title: 'old title', priority: 'low');
+        'changes title/description/due_date/priority/assignee_id/apiary_id '
+        'together', () async {
+      final id = await repo.create(title: 'old title', priority: 'low');
 
-        await repo.update(
-          id,
-          title: 'new title',
-          priority: 'high',
-          description: 'now with detail',
-          dueDate: '2026-09-01',
-          assigneeId: 'user-2',
-        );
+      await repo.update(
+        id,
+        title: 'new title',
+        priority: 'high',
+        description: 'now with detail',
+        dueDate: '2026-09-01',
+        assigneeId: 'user-2',
+        apiaryId: 'apiary-2',
+      );
 
-        final todo = await repo.getById(id);
-        expect(todo!.title, 'new title');
-        expect(todo.priority, 'high');
-        expect(todo.description, 'now with detail');
-        expect(todo.dueDate, '2026-09-01');
-        expect(todo.assigneeId, 'user-2');
-      },
-    );
+      final todo = await repo.getById(id);
+      expect(todo!.title, 'new title');
+      expect(todo.priority, 'high');
+      expect(todo.description, 'now with detail');
+      expect(todo.dueDate, '2026-09-01');
+      expect(todo.assigneeId, 'user-2');
+      expect(todo.apiaryId, 'apiary-2');
+    });
 
-    test('clears description/due_date/assignee_id when omitted (both null '
-        'and "" mean "no value")', () async {
+    test(
+        'clears description/due_date/assignee_id/apiary_id when omitted '
+        '(both null and "" mean "no value")', () async {
       final id = await repo.create(
         title: 'x',
         priority: 'low',
         description: 'has notes',
         dueDate: '2026-08-01',
         assigneeId: 'user-1',
+        apiaryId: 'apiary-1',
       );
 
       await repo.update(id, title: 'x', priority: 'low');
@@ -247,6 +259,7 @@ void main() {
       expect(todo!.description, isNull);
       expect(todo.dueDate, isNull);
       expect(todo.assigneeId, isNull);
+      expect(todo.apiaryId, isNull);
     });
 
     test('never touches status/completed_at', () async {
@@ -258,6 +271,47 @@ void main() {
       final todo = await repo.getById(id);
       expect(todo!.status, 'done');
       expect(todo.completedAt, isNotNull);
+    });
+
+    test('changes only apiary_id — the association can be set, changed or '
+        'cleared independently of every other field (#51 AC)', () async {
+      final id = await repo.create(
+        title: 'x',
+        priority: 'low',
+        description: 'keep me',
+        dueDate: '2026-08-01',
+        assigneeId: 'user-1',
+        apiaryId: 'apiary-1',
+      );
+
+      // Set → changed.
+      await repo.update(
+        id,
+        title: 'x',
+        priority: 'low',
+        description: 'keep me',
+        dueDate: '2026-08-01',
+        assigneeId: 'user-1',
+        apiaryId: 'apiary-2',
+      );
+      var todo = await repo.getById(id);
+      expect(todo!.apiaryId, 'apiary-2');
+      expect(todo.description, 'keep me');
+      expect(todo.assigneeId, 'user-1');
+
+      // Changed → cleared (a general, org-level todo again).
+      await repo.update(
+        id,
+        title: 'x',
+        priority: 'low',
+        description: 'keep me',
+        dueDate: '2026-08-01',
+        assigneeId: 'user-1',
+      );
+      todo = await repo.getById(id);
+      expect(todo!.apiaryId, isNull);
+      expect(todo.description, 'keep me');
+      expect(todo.assigneeId, 'user-1');
     });
   });
 
@@ -274,13 +328,14 @@ void main() {
     });
 
     test('complete() preserves title/description/due_date/priority/'
-        'assignee_id', () async {
+        'assignee_id/apiary_id', () async {
       final id = await repo.create(
         title: 'Inspect hive 3',
         priority: 'high',
         description: 'double check frames',
         dueDate: '2026-08-01',
         assigneeId: 'user-1',
+        apiaryId: 'apiary-1',
       );
 
       await repo.complete(id);
@@ -291,6 +346,7 @@ void main() {
       expect(todo.description, 'double check frames');
       expect(todo.dueDate, '2026-08-01');
       expect(todo.assigneeId, 'user-1');
+      expect(todo.apiaryId, 'apiary-1');
     });
 
     test('reopen() clears completed_at and sets status=open', () async {

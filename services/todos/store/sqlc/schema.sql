@@ -1,7 +1,7 @@
 -- sqlc's virtual schema for codegen only — mirrors the "up" side of
--- ../migrations/00001_create_todos.sql and 00002_create_audit_log.sql
--- (no down migration; runtime schema changes only ever happen via goose).
--- Update both files together.
+-- ../migrations/00001_create_todos.sql, 00002_create_audit_log.sql and
+-- 00003_add_apiary_id.sql (no down migration; runtime schema changes only
+-- ever happen via goose). Update all files together.
 CREATE SCHEMA IF NOT EXISTS todos;
 
 CREATE TABLE todos.todos (
@@ -14,6 +14,7 @@ CREATE TABLE todos.todos (
     status          TEXT NOT NULL DEFAULT 'open',
     completed_at    TIMESTAMPTZ,
     assignee_id     UUID,
+    apiary_id       UUID,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL,
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
