@@ -31,6 +31,7 @@ class Activity {
     required this.attributes,
     this.performedBy,
     this.organizationId,
+    this.journeyId,
   });
 
   final String id;
@@ -43,6 +44,15 @@ class Activity {
   final Map<String, dynamic> attributes;
   final String? performedBy;
   final String? organizationId;
+
+  /// The journey this activity attaches to (D-21/#46), or null for "no
+  /// journey" — mirrors [ActivitiesRepository.create]'s own `journeyId`
+  /// param. Exposed on the read model starting #47 so journeys' own list
+  /// (journeys_repository.dart's progress badge, journey_filters.dart's
+  /// date-range filter) can correlate an activity back to its journey
+  /// without a bespoke query of its own — the column has existed on the
+  /// local table since #46, only the read side didn't surface it until now.
+  final String? journeyId;
 
   DateTime get occurredAtDate => DateTime.parse(occurredAt);
 }
@@ -126,7 +136,7 @@ class ActivitiesRepository {
   /// form's initial load (add_activity_screen.dart's `_loadExisting`).
   Future<Activity?> getById(String id) async {
     final row = await _store.getOptional(
-      'SELECT id, apiary_id, performed_by, organization_id, type, '
+      'SELECT id, apiary_id, journey_id, performed_by, organization_id, type, '
       'occurred_at, attributes FROM $activitiesTable WHERE id = ?',
       [id],
     );
@@ -142,8 +152,8 @@ class ActivitiesRepository {
   Stream<Activity?> watchById(String id) {
     return _store
         .watch(
-          'SELECT id, apiary_id, performed_by, organization_id, type, '
-          'occurred_at, attributes FROM $activitiesTable WHERE id = ?',
+          'SELECT id, apiary_id, journey_id, performed_by, organization_id, '
+          'type, occurred_at, attributes FROM $activitiesTable WHERE id = ?',
           [id],
         )
         .map((rows) => rows.isEmpty ? null : _fromRow(rows.first));
@@ -192,8 +202,8 @@ class ActivitiesRepository {
   Stream<List<Activity>> watchByApiary(String apiaryId) {
     return _store
         .watch(
-          'SELECT id, apiary_id, performed_by, organization_id, type, '
-          'occurred_at, attributes FROM $activitiesTable '
+          'SELECT id, apiary_id, journey_id, performed_by, organization_id, '
+          'type, occurred_at, attributes FROM $activitiesTable '
           'WHERE apiary_id = ? ORDER BY occurred_at DESC, created_at DESC',
           [apiaryId],
         )
@@ -226,8 +236,8 @@ class ActivitiesRepository {
     if (organizationId == null) return Stream.value(const []);
     return _store
         .watch(
-          'SELECT id, apiary_id, performed_by, organization_id, type, '
-          'occurred_at, attributes FROM $activitiesTable '
+          'SELECT id, apiary_id, journey_id, performed_by, organization_id, '
+          'type, occurred_at, attributes FROM $activitiesTable '
           'WHERE organization_id = ? OR organization_id IS NULL '
           'ORDER BY occurred_at DESC, created_at DESC',
           [organizationId],
@@ -238,6 +248,7 @@ class ActivitiesRepository {
   Activity _fromRow(Map<String, Object?> r) => Activity(
     id: r['id'] as String,
     apiaryId: r['apiary_id'] as String,
+    journeyId: r['journey_id'] as String?,
     performedBy: r['performed_by'] as String?,
     organizationId: r['organization_id'] as String?,
     type: r['type'] as String,

@@ -1364,6 +1364,54 @@ abstract class AppLocalizations {
   /// **'Could not load journeys: {error}'**
   String journeysError(String error);
 
+  /// Shown instead of the plain empty state when date-range/activity-type filters are active but match nothing (#47 AC: combined filters + empty/no-results state)
+  ///
+  /// In en, this message translates to:
+  /// **'No journeys match your filters.'**
+  String get journeysFilterNoResults;
+
+  /// Field label for the Journeys tab's activity-type filter dropdown (#47, FR-JO-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Type'**
+  String get journeyFilterTypeLabel;
+
+  /// The Journeys tab's activity-type filter's cleared/default option — no type filter applied (#47)
+  ///
+  /// In en, this message translates to:
+  /// **'All types'**
+  String get journeyFilterTypeAll;
+
+  /// Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Date range'**
+  String get journeyFilterDateRangeLabel;
+
+  /// The Journeys tab's date-range filter's cleared/default state — no date filter applied (#47)
+  ///
+  /// In en, this message translates to:
+  /// **'Any date'**
+  String get journeyFilterDateRangeUnset;
+
+  /// The Journeys tab's selected date range, both bounds already locale-formatted by the caller (#47)
+  ///
+  /// In en, this message translates to:
+  /// **'{start} – {end}'**
+  String journeyFilterDateRangeValue(String start, String end);
+
+  /// Button that resets both the Journeys tab's type and date-range filters at once (#47)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get journeyFilterClearAction;
+
+  /// Per-row plan-vs-done progress badge on the Journeys tab (#47, FR-JO-2 — 'feitos/planeados'): how many of the journey's planned apiaries already have a matching recorded activity, out of the total planned. Only shown when planned > 0.
+  ///
+  /// In en, this message translates to:
+  /// **'{done}/{planned} apiaries visited'**
+  String journeyProgressBadge(int done, int planned);
+
   /// Field label for a journey's name on the create/edit form (#45, FR-JO-4)
   ///
   /// In en, this message translates to:

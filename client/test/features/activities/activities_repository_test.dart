@@ -142,6 +142,36 @@ void main() {
     );
   });
 
+  group('Activity.journeyId (#47) — read-side exposure of the #46 column', () {
+    test('getById()/watchById()/watchByApiary()/watchAll() all surface the '
+        'journey_id an activity was created with', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+        journeyId: 'j1',
+      );
+
+      expect((await repo.getById(id))!.journeyId, 'j1');
+      expect((await repo.watchById(id).first)!.journeyId, 'j1');
+      expect((await repo.watchByApiary('a1').first).single.journeyId, 'j1');
+      final all = await repo.watchAll(organizationId: 'org-a').first;
+      expect(all.single.journeyId, 'j1');
+    });
+
+    test('is null when no journey was attached at creation', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'generic',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+      );
+
+      expect((await repo.getById(id))!.journeyId, isNull);
+    });
+  });
+
   group('offline-create → wire op attributes shape (#39, FR-OF-1) — the '
       'string-vs-object mismatch that rejected every synced activity', () {
     test('the connector decodes the repository-stored JSON-string attributes '

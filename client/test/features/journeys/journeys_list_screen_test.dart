@@ -1,7 +1,9 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/journeys/journey_filters.dart';
 import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
@@ -74,7 +76,12 @@ class _ExistingOrganizationController extends OrganizationController {
   );
 }
 
-Widget _buildApp({required List<Journey> journeys, Journey? existingForEdit}) {
+Widget _buildApp({
+  required List<Journey> journeys,
+  Journey? existingForEdit,
+  List<Activity> activities = const [],
+  Map<String, List<String>> planApiariesByJourney = const {},
+}) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
@@ -89,6 +96,14 @@ Widget _buildApp({required List<Journey> journeys, Journey? existingForEdit}) {
       journeysStreamProvider.overrideWith((ref) => Stream.value(journeys)),
       journeysRepositoryProvider.overrideWith(
         (ref) async => _FakeJourneysRepository(existingForEdit),
+      ),
+      // The date-range filter and the progress badge (#47) both read these —
+      // overridden directly (rather than relying on the real, never-
+      // resolving activitiesRepositoryProvider/powerSyncProvider chain) so
+      // tests can control exactly what each journey's "activities" are.
+      activitiesStreamProvider.overrideWith((ref) => Stream.value(activities)),
+      journeyPlanApiariesByJourneyProvider.overrideWith(
+        (ref) => Stream.value(planApiariesByJourney),
       ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
@@ -166,5 +181,190 @@ void main() {
       find.byKey(const Key('journey-name-field')),
     );
     expect(nameField.controller!.text, 'Colheita de Primavera');
+  });
+
+  group('filters (#47, FR-JO-2)', () {
+    const harvestJourney = Journey(
+      id: 'j-harvest',
+      name: 'Colheita de Primavera',
+      mainActivityType: 'harvest',
+      status: journeyStatusOpen,
+    );
+    const feedingJourney = Journey(
+      id: 'j-feeding',
+      name: 'Alimentação de Inverno',
+      mainActivityType: 'feeding',
+      status: journeyStatusOpen,
+    );
+
+    Activity activityFor(
+      String journeyId, {
+      required String date,
+      String apiaryId = 'a1',
+    }) => Activity(
+      id: 'act-$journeyId-$date',
+      apiaryId: apiaryId,
+      type: 'generic',
+      occurredAt: date,
+      attributes: const {},
+      journeyId: journeyId,
+    );
+
+    testWidgets('selecting a type shows only matching journeys', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildApp(journeys: const [harvestJourney, feedingJourney]),
+      );
+      await _openJourneysTab(tester);
+
+      await tester.tap(find.byKey(const Key('journey-filter-type-field')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Feeding').last);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journey-j-harvest')), findsNothing);
+      expect(find.byKey(const Key('journey-j-feeding')), findsOneWidget);
+    });
+
+    testWidgets(
+      'setting a date range keeps only journeys with a recorded activity '
+      'within it',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            journeys: const [harvestJourney, feedingJourney],
+            activities: [
+              activityFor('j-harvest', date: '2026-06-05'),
+              activityFor('j-feeding', date: '2020-01-01'),
+            ],
+          ),
+        );
+        await _openJourneysTab(tester);
+
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(BeekeepingitApp)),
+        );
+        container
+            .read(journeyDateRangeFilterProvider.notifier)
+            .state = JourneyDateRange(
+          start: DateTime(2026, 6, 1),
+          end: DateTime(2026, 6, 10),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('journey-j-harvest')), findsOneWidget);
+        expect(find.byKey(const Key('journey-j-feeding')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'type and date-range filters combine (#47 AC) and the no-results '
+      'state shows when nothing matches',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            journeys: const [harvestJourney, feedingJourney],
+            activities: [
+              activityFor('j-harvest', date: '2026-06-05'),
+              activityFor('j-feeding', date: '2026-06-05'),
+            ],
+          ),
+        );
+        await _openJourneysTab(tester);
+
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(BeekeepingitApp)),
+        );
+        container.read(journeyTypeFilterProvider.notifier).state = 'harvest';
+        container
+            .read(journeyDateRangeFilterProvider.notifier)
+            .state = JourneyDateRange(
+          start: DateTime(2026, 6, 1),
+          end: DateTime(2026, 6, 10),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('journey-j-harvest')), findsOneWidget);
+        expect(find.byKey(const Key('journey-j-feeding')), findsNothing);
+
+        // Narrow further so nothing matches at all — the no-results state,
+        // not the "org has zero journeys" empty state.
+        container.read(journeyTypeFilterProvider.notifier).state = 'treatment';
+        await tester.pumpAndSettle();
+
+        expect(find.text('No journeys match your filters.'), findsOneWidget);
+        expect(
+          find.text('No journeys yet. Tap “New journey” to create one.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('the clear-filters button resets both filters', (tester) async {
+      await tester.pumpWidget(
+        _buildApp(journeys: const [harvestJourney, feedingJourney]),
+      );
+      await _openJourneysTab(tester);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(BeekeepingitApp)),
+      );
+      container.read(journeyTypeFilterProvider.notifier).state = 'harvest';
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('journey-j-feeding')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('journey-filter-clear-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journey-j-harvest')), findsOneWidget);
+      expect(find.byKey(const Key('journey-j-feeding')), findsOneWidget);
+    });
+  });
+
+  group('progress badge (#47, FR-JO-2 — "feitos/planeados")', () {
+    const journey = Journey(
+      id: 'j1',
+      name: 'Colheita de Primavera',
+      mainActivityType: 'harvest',
+      status: journeyStatusOpen,
+    );
+
+    testWidgets(
+      'shows the done/planned count when the journey has planned apiaries',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            journeys: const [journey],
+            activities: const [
+              Activity(
+                id: 'act1',
+                apiaryId: 'a1',
+                type: 'generic',
+                occurredAt: '2026-06-01',
+                attributes: {},
+                journeyId: 'j1',
+              ),
+            ],
+            planApiariesByJourney: const {
+              'j1': ['a1', 'a2'],
+            },
+          ),
+        );
+        await _openJourneysTab(tester);
+
+        expect(find.byKey(const Key('journey-progress-badge')), findsOneWidget);
+        expect(find.text('1/2 apiaries visited'), findsOneWidget);
+      },
+    );
+
+    testWidgets('is hidden when the journey has no planned apiaries yet', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_buildApp(journeys: const [journey]));
+      await _openJourneysTab(tester);
+
+      expect(find.byKey(const Key('journey-progress-badge')), findsNothing);
+    });
   });
 }
