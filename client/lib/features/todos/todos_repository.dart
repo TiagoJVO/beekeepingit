@@ -256,7 +256,8 @@ class TodosRepository {
     return _store
         .watch(
           'SELECT id, organization_id, title, description, due_date, '
-          'priority, status, completed_at, assignee_id FROM $todosTable '
+          'priority, status, completed_at, assignee_id, apiary_id '
+          'FROM $todosTable '
           'WHERE organization_id = ? OR organization_id IS NULL '
           'ORDER BY created_at DESC',
           [organizationId],
