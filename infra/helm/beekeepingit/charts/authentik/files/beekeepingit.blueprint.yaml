@@ -40,13 +40,17 @@ entries:
       # Explicit grant types — required on Authentik 2026.5.x (defaults to [] = no grants,
       # which rejects the authorization_code flow). The PWA uses auth-code + PKCE + refresh.
       grant_types: [authorization_code, refresh_token]
+      # {{ .Values.global.appOrigin }} is this environment's browser-facing app
+      # origin (dev: app.beekeepingit.local:8443 via k3d's host-port mapping;
+      # staging/prod: the real Ingress host, no port) — rendered via `tpl` in
+      # templates/blueprint-configmap.yaml, not a plain file include.
       redirect_uris:
         - { matching_mode: regex, url: "http://localhost:.*" }
-        - { matching_mode: regex, url: 'https://app\.beekeepingit\.local:8443/.*' }
+        - { matching_mode: regex, url: '{{ .Values.global.appOrigin | replace "." "\\." }}/.*' }
         # The PWA sends the bare origin (no path) as its redirect_uri, and Authentik derives
         # CORS-allowed origins from redirect_uris — an Origin has no path, so the regex above
         # (which requires "/…") never matches it. This strict entry covers redirect + CORS.
-        - { matching_mode: strict, url: "https://app.beekeepingit.local:8443" }
+        - { matching_mode: strict, url: "{{ .Values.global.appOrigin }}" }
       property_mappings:
         - !Find [
             authentik_providers_oauth2.scopemapping,

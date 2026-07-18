@@ -9,6 +9,17 @@ global:
   # `helm install ... --namespace <ns> --create-namespace`.
   namespace: beekeepingit
 
+  # Browser-facing origin of gateway.appHost (scheme + host + port, no trailing
+  # slash) — shared across subcharts (unlike gateway.appHost, a subchart can't
+  # read a sibling subchart's values, only global.*) because
+  # charts/authentik's blueprint needs it too: the OAuth2 provider's
+  # redirect_uris/CORS-allowed-origins must match wherever the PWA is actually
+  # served, or login fails with a redirect_uri mismatch (#193 follow-up,
+  # observed on the first staging bring-up, D-26). Dev's :8443 is k3d's
+  # host-port mapping (see charts/gateway/values.yaml) — other environments
+  # normally omit the port (standard 443 via a real LoadBalancer/Ingress).
+  appOrigin: https://app.beekeepingit.local:8443
+
   # Resource-request/limit presets every subchart should reference via
   # `.Values.global.resources.<tier>` instead of hardcoding numbers, so sizing is
   # tuned in one place per environment.

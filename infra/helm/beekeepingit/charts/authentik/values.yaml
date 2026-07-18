@@ -23,3 +23,4 @@ bootstrapEmail: admin@beekeepingit.local
 # real global.* via its own values.yaml.
 global:
   namespace: beekeepingit
+  appOrigin: https://app.beekeepingit.local:8443

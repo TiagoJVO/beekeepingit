@@ -55,6 +55,13 @@ spec:
     global:
       environment: staging
       namespace: beekeepingit-staging
+      # Must match gateway.appHost below (scheme + host, standard 443 via the
+      # real LoadBalancer/Ingress — no dev-only :8443 port here) — the
+      # Authentik blueprint's OAuth2 redirect_uris/CORS-allowed-origins read
+      # this, and a mismatch fails login with redirect_uri mismatch (observed
+      # on the first staging bring-up, D-26). TODO: replace with the real
+      # domain alongside gateway.appHost/authHost below.
+      appOrigin: https://staging.beekeepingit.example.com
     gateway:
       appHost: staging.beekeepingit.example.com # TODO: replace with the real domain
       authHost: auth-staging.beekeepingit.example.com # TODO: replace with the real domain
@@ -76,15 +83,24 @@ spec:
         issuerUrl: https://auth-staging.beekeepingit.example.com/application/o/beekeepingit/
         discoveryUrl: http://authentik-server/application/o/beekeepingit/
         audience: beekeepingit-pwa
-      # Only the 4 services the `services` subchart actually renders (per
-      # infra/helm/beekeepingit/values.yaml) — activities/journeys/todos/ai are
-      # reserved Postgres schemas for future services, not deployed workloads yet.
+      # All 7 services the `services` subchart actually renders (per
+      # charts/services/values.yaml) — correcting an earlier wrong claim here
+      # that only identity/organizations/apiaries/sync were real (verified
+      # live on the staging cluster: activities/journeys/todos are deployed
+      # Deployments too, not just reserved Postgres schemas). `ai` has no
+      # service yet, hence its absence here.
       services:
         identity:
           tag: latest
         organizations:
           tag: latest
         apiaries:
+          tag: latest
+        activities:
+          tag: latest
+        journeys:
+          tag: latest
+        todos:
           tag: latest
         sync:
           tag: latest
