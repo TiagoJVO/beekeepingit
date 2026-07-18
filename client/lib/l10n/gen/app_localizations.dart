@@ -1946,6 +1946,30 @@ abstract class AppLocalizations {
   /// **'New todo'**
   String get todoQuickCreateTitle;
 
+  /// Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get todoDueDateLabel;
+
+  /// Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.
+  ///
+  /// In en, this message translates to:
+  /// **'For {apiaryName}'**
+  String todoQuickCreateForApiary(String apiaryName);
+
+  /// Cancel button on the quick-create sheet — discards the in-progress todo without creating it (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get todoQuickCreateCancelAction;
+
+  /// Success toast shown after a quick-created todo saves (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo created'**
+  String get todoCreatedConfirmation;
+
   /// Header title for the standalone todo-create route (#293) — reachable by direct navigation/deep-linking, distinct from #52's own quick-create sheet
   ///
   /// In en, this message translates to:
@@ -1999,12 +2023,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Due date'**
   String get todoDueDateFieldLabel;
-
-  /// Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)
-  ///
-  /// In en, this message translates to:
-  /// **'Due date'**
-  String get todoDueDateLabel;
 
   /// Tooltip/semantic label for the icon button that clears a set due date on the todo form (#293)
   ///
@@ -2167,24 +2185,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get deleteTodoCancelAction;
-
-  /// Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.
-  ///
-  /// In en, this message translates to:
-  /// **'For {apiaryName}'**
-  String todoQuickCreateForApiary(String apiaryName);
-
-  /// Cancel button on the quick-create sheet — discards the in-progress todo without creating it (#52)
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel'**
-  String get todoQuickCreateCancelAction;
-
-  /// Success toast shown after a quick-created todo saves (#52)
-  ///
-  /// In en, this message translates to:
-  /// **'Todo created'**
-  String get todoCreatedConfirmation;
 }
 
 class _AppLocalizationsDelegate

@@ -1106,6 +1106,20 @@ class AppLocalizationsPt extends AppLocalizations {
   String get todoQuickCreateTitle => 'Nova tarefa';
 
   @override
+  String get todoDueDateLabel => 'Prazo';
+
+  @override
+  String todoQuickCreateForApiary(String apiaryName) {
+    return 'Para $apiaryName';
+  }
+
+  @override
+  String get todoQuickCreateCancelAction => 'Cancelar';
+
+  @override
+  String get todoCreatedConfirmation => 'Tarefa criada';
+
+  @override
   String get newTodoTitle => 'Nova tarefa';
 
   @override
@@ -1131,9 +1145,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get todoDueDateFieldLabel => 'Prazo';
-
-  @override
-  String get todoDueDateLabel => 'Prazo';
 
   @override
   String get todoDueDateClearAction => 'Limpar prazo';
@@ -1228,15 +1239,4 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteTodoCancelAction => 'Cancelar';
-
-  @override
-  String todoQuickCreateForApiary(String apiaryName) {
-    return 'Para $apiaryName';
-  }
-
-  @override
-  String get todoQuickCreateCancelAction => 'Cancelar';
-
-  @override
-  String get todoCreatedConfirmation => 'Tarefa criada';
 }
