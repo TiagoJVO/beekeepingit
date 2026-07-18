@@ -1003,4 +1003,92 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get journeyDetailApiariesEmpty => 'No apiaries in this journey yet.';
+
+  @override
+  String get todosEmpty => 'No todos yet.';
+
+  @override
+  String get todosFilterNoResults => 'No todos match your filters.';
+
+  @override
+  String todosError(String error) {
+    return 'Could not load todos: $error';
+  }
+
+  @override
+  String get todoFilterStatusLabel => 'Status';
+
+  @override
+  String get todoFilterStatusAll => 'All';
+
+  @override
+  String get todoFilterStatusOpen => 'Open';
+
+  @override
+  String get todoFilterStatusOverdue => 'Overdue';
+
+  @override
+  String get todoFilterStatusDone => 'Completed';
+
+  @override
+  String get todoFilterPriorityLabel => 'Priority';
+
+  @override
+  String get todoFilterPriorityAll => 'All priorities';
+
+  @override
+  String get todoPriorityLowLabel => 'Low';
+
+  @override
+  String get todoPriorityMediumLabel => 'Medium';
+
+  @override
+  String get todoPriorityHighLabel => 'High';
+
+  @override
+  String get todoFilterDueLabel => 'Due';
+
+  @override
+  String get todoFilterDueAny => 'Any date';
+
+  @override
+  String get todoFilterDueToday => 'Due today';
+
+  @override
+  String get todoFilterDueThisWeek => 'Due this week';
+
+  @override
+  String get todoFilterDueThisMonth => 'Due this month';
+
+  @override
+  String get todoFilterClearAction => 'Clear filters';
+
+  @override
+  String get todoSortFieldLabel => 'Sort by';
+
+  @override
+  String get todoSortFieldDueDate => 'Due date';
+
+  @override
+  String get todoSortFieldPriority => 'Priority';
+
+  @override
+  String get todoSortFieldStatus => 'Status';
+
+  @override
+  String get todoSortDirectionAscendingLabel => 'Ascending';
+
+  @override
+  String get todoSortDirectionDescendingLabel => 'Descending';
+
+  @override
+  String get todoDueDateUnset => 'No due date';
+
+  @override
+  String get todoOverdueBadge => 'Overdue';
+
+  @override
+  String todoStatusSemanticLabel(String status) {
+    return 'Status: $status';
+  }
 }

@@ -1765,6 +1765,174 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No apiaries in this journey yet.'**
   String get journeyDetailApiariesEmpty;
+
+  /// Empty state on the main Todos tab when the organization has no todos at all yet (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'No todos yet.'**
+  String get todosEmpty;
+
+  /// Shown instead of the plain empty state when status/priority/due-date filters are active but match nothing (#53 AC: combined filters + empty/no-results state)
+  ///
+  /// In en, this message translates to:
+  /// **'No todos match your filters.'**
+  String get todosFilterNoResults;
+
+  /// Error state on the main Todos tab (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load todos: {error}'**
+  String todosError(String error);
+
+  /// Field label for the Todos tab's status filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get todoFilterStatusLabel;
+
+  /// The status filter's cleared/default option — no status filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get todoFilterStatusAll;
+
+  /// Status filter option / status word for a todo that is neither done nor overdue (#53 AC: distinguishes open, completed, overdue)
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get todoFilterStatusOpen;
+
+  /// Status filter option / status word for an open todo whose due date has passed (#53 AC: overdue, feeds FR-AI-1's later "overdue todos" example)
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue'**
+  String get todoFilterStatusOverdue;
+
+  /// Status filter option / status word for a done todo — the display label for the underlying 'done' status value (#50/#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get todoFilterStatusDone;
+
+  /// Field label for the Todos tab's priority filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get todoFilterPriorityLabel;
+
+  /// The priority filter's cleared/default option — no priority filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'All priorities'**
+  String get todoFilterPriorityAll;
+
+  /// Display label for the 'low' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'Low'**
+  String get todoPriorityLowLabel;
+
+  /// Display label for the 'medium' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get todoPriorityMediumLabel;
+
+  /// Display label for the 'high' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'High'**
+  String get todoPriorityHighLabel;
+
+  /// Field label for the Todos tab's due-date filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due'**
+  String get todoFilterDueLabel;
+
+  /// The due-date filter's cleared/default option — no due-date filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Any date'**
+  String get todoFilterDueAny;
+
+  /// Due-date filter preset matching todos due today (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due today'**
+  String get todoFilterDueToday;
+
+  /// Due-date filter preset matching todos due within the current calendar week, Monday–Sunday (#53, feeds FR-AI-1's later "due in the next week" example)
+  ///
+  /// In en, this message translates to:
+  /// **'Due this week'**
+  String get todoFilterDueThisWeek;
+
+  /// Due-date filter preset matching todos due within the current calendar month (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due this month'**
+  String get todoFilterDueThisMonth;
+
+  /// Button that resets the status/priority/due-date filters at once, without touching the sort selection (#53, mirrors activityFilterClearAction)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get todoFilterClearAction;
+
+  /// Field label for the Todos tab's sort-field dropdown (#53 AC: sortable by due date, priority, and status)
+  ///
+  /// In en, this message translates to:
+  /// **'Sort by'**
+  String get todoSortFieldLabel;
+
+  /// Sort-field option: order by due date (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get todoSortFieldDueDate;
+
+  /// Sort-field option: order by priority level (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get todoSortFieldPriority;
+
+  /// Sort-field option: order by lifecycle status — overdue, then open, then completed (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get todoSortFieldStatus;
+
+  /// Current sort direction — also the direction-toggle button's tooltip/semantic label while ascending is active (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Ascending'**
+  String get todoSortDirectionAscendingLabel;
+
+  /// Current sort direction — also the direction-toggle button's tooltip/semantic label while descending is active (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Descending'**
+  String get todoSortDirectionDescendingLabel;
+
+  /// Shown in a todo row's subtitle in place of a formatted date when the todo has no due date (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'No due date'**
+  String get todoDueDateUnset;
+
+  /// Text of the overdue badge on a todo row — paired with a warning icon, never color alone (#53 AC, WCAG 2.2 AA 1.4.1)
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue'**
+  String get todoOverdueBadge;
+
+  /// Screen-reader label for a todo row's leading status icon — an open (not overdue, not done) row has no other visible status text (#53, WCAG 2.2 AA). {status} is one of todoFilterStatusOpen/Overdue/Done, already localized.
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {status}'**
+  String todoStatusSemanticLabel(String status);
 }
 
 class _AppLocalizationsDelegate

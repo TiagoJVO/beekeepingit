@@ -1370,5 +1370,127 @@
   "journeyDetailApiariesEmpty": "No apiaries in this journey yet.",
   "@journeyDetailApiariesEmpty": {
     "description": "Empty state on the journey detail page's apiaries section — the edge case of a journey with no plan and no attributed activities (#48)"
+  },
+  "todosEmpty": "No todos yet.",
+  "@todosEmpty": {
+    "description": "Empty state on the main Todos tab when the organization has no todos at all yet (#53, FR-TD-1)"
+  },
+  "todosFilterNoResults": "No todos match your filters.",
+  "@todosFilterNoResults": {
+    "description": "Shown instead of the plain empty state when status/priority/due-date filters are active but match nothing (#53 AC: combined filters + empty/no-results state)"
+  },
+  "todosError": "Could not load todos: {error}",
+  "@todosError": {
+    "description": "Error state on the main Todos tab (#53)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "todoFilterStatusLabel": "Status",
+  "@todoFilterStatusLabel": {
+    "description": "Field label for the Todos tab's status filter dropdown (#53, FR-TD-1)"
+  },
+  "todoFilterStatusAll": "All",
+  "@todoFilterStatusAll": {
+    "description": "The status filter's cleared/default option — no status filter applied (#53)"
+  },
+  "todoFilterStatusOpen": "Open",
+  "@todoFilterStatusOpen": {
+    "description": "Status filter option / status word for a todo that is neither done nor overdue (#53 AC: distinguishes open, completed, overdue)"
+  },
+  "todoFilterStatusOverdue": "Overdue",
+  "@todoFilterStatusOverdue": {
+    "description": "Status filter option / status word for an open todo whose due date has passed (#53 AC: overdue, feeds FR-AI-1's later \"overdue todos\" example)"
+  },
+  "todoFilterStatusDone": "Completed",
+  "@todoFilterStatusDone": {
+    "description": "Status filter option / status word for a done todo — the display label for the underlying 'done' status value (#50/#53)"
+  },
+  "todoFilterPriorityLabel": "Priority",
+  "@todoFilterPriorityLabel": {
+    "description": "Field label for the Todos tab's priority filter dropdown (#53, FR-TD-1)"
+  },
+  "todoFilterPriorityAll": "All priorities",
+  "@todoFilterPriorityAll": {
+    "description": "The priority filter's cleared/default option — no priority filter applied (#53)"
+  },
+  "todoPriorityLowLabel": "Low",
+  "@todoPriorityLowLabel": {
+    "description": "Display label for the 'low' todo priority level (#50/#53, D-20)"
+  },
+  "todoPriorityMediumLabel": "Medium",
+  "@todoPriorityMediumLabel": {
+    "description": "Display label for the 'medium' todo priority level (#50/#53, D-20)"
+  },
+  "todoPriorityHighLabel": "High",
+  "@todoPriorityHighLabel": {
+    "description": "Display label for the 'high' todo priority level (#50/#53, D-20)"
+  },
+  "todoFilterDueLabel": "Due",
+  "@todoFilterDueLabel": {
+    "description": "Field label for the Todos tab's due-date filter dropdown (#53, FR-TD-1)"
+  },
+  "todoFilterDueAny": "Any date",
+  "@todoFilterDueAny": {
+    "description": "The due-date filter's cleared/default option — no due-date filter applied (#53)"
+  },
+  "todoFilterDueToday": "Due today",
+  "@todoFilterDueToday": {
+    "description": "Due-date filter preset matching todos due today (#53)"
+  },
+  "todoFilterDueThisWeek": "Due this week",
+  "@todoFilterDueThisWeek": {
+    "description": "Due-date filter preset matching todos due within the current calendar week, Monday–Sunday (#53, feeds FR-AI-1's later \"due in the next week\" example)"
+  },
+  "todoFilterDueThisMonth": "Due this month",
+  "@todoFilterDueThisMonth": {
+    "description": "Due-date filter preset matching todos due within the current calendar month (#53)"
+  },
+  "todoFilterClearAction": "Clear filters",
+  "@todoFilterClearAction": {
+    "description": "Button that resets the status/priority/due-date filters at once, without touching the sort selection (#53, mirrors activityFilterClearAction)"
+  },
+  "todoSortFieldLabel": "Sort by",
+  "@todoSortFieldLabel": {
+    "description": "Field label for the Todos tab's sort-field dropdown (#53 AC: sortable by due date, priority, and status)"
+  },
+  "todoSortFieldDueDate": "Due date",
+  "@todoSortFieldDueDate": {
+    "description": "Sort-field option: order by due date (#53)"
+  },
+  "todoSortFieldPriority": "Priority",
+  "@todoSortFieldPriority": {
+    "description": "Sort-field option: order by priority level (#53)"
+  },
+  "todoSortFieldStatus": "Status",
+  "@todoSortFieldStatus": {
+    "description": "Sort-field option: order by lifecycle status — overdue, then open, then completed (#53)"
+  },
+  "todoSortDirectionAscendingLabel": "Ascending",
+  "@todoSortDirectionAscendingLabel": {
+    "description": "Current sort direction — also the direction-toggle button's tooltip/semantic label while ascending is active (#53)"
+  },
+  "todoSortDirectionDescendingLabel": "Descending",
+  "@todoSortDirectionDescendingLabel": {
+    "description": "Current sort direction — also the direction-toggle button's tooltip/semantic label while descending is active (#53)"
+  },
+  "todoDueDateUnset": "No due date",
+  "@todoDueDateUnset": {
+    "description": "Shown in a todo row's subtitle in place of a formatted date when the todo has no due date (#53)"
+  },
+  "todoOverdueBadge": "Overdue",
+  "@todoOverdueBadge": {
+    "description": "Text of the overdue badge on a todo row — paired with a warning icon, never color alone (#53 AC, WCAG 2.2 AA 1.4.1)"
+  },
+  "todoStatusSemanticLabel": "Status: {status}",
+  "@todoStatusSemanticLabel": {
+    "description": "Screen-reader label for a todo row's leading status icon — an open (not overdue, not done) row has no other visible status text (#53, WCAG 2.2 AA). {status} is one of todoFilterStatusOpen/Overdue/Done, already localized.",
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
   }
 }

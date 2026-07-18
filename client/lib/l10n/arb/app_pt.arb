@@ -360,6 +360,34 @@
   "journeyDetailApiaryPlannedBadge": "Planeado",
   "journeyDetailApiaryNotVisitedYet": "Ainda não visitado",
   "journeyDetailApiariesEmpty": "Ainda não há apiários nesta jornada.",
+  "todosEmpty": "Ainda não há tarefas.",
+  "todosFilterNoResults": "Nenhuma tarefa corresponde aos filtros.",
+  "todosError": "Não foi possível carregar as tarefas: {error}",
+  "todoFilterStatusLabel": "Estado",
+  "todoFilterStatusAll": "Todas",
+  "todoFilterStatusOpen": "Em aberto",
+  "todoFilterStatusOverdue": "Atrasada",
+  "todoFilterStatusDone": "Concluída",
+  "todoFilterPriorityLabel": "Prioridade",
+  "todoFilterPriorityAll": "Todas as prioridades",
+  "todoPriorityLowLabel": "Baixa",
+  "todoPriorityMediumLabel": "Média",
+  "todoPriorityHighLabel": "Alta",
+  "todoFilterDueLabel": "Prazo",
+  "todoFilterDueAny": "Qualquer data",
+  "todoFilterDueToday": "Vence hoje",
+  "todoFilterDueThisWeek": "Vence esta semana",
+  "todoFilterDueThisMonth": "Vence este mês",
+  "todoFilterClearAction": "Limpar filtros",
+  "todoSortFieldLabel": "Ordenar por",
+  "todoSortFieldDueDate": "Prazo",
+  "todoSortFieldPriority": "Prioridade",
+  "todoSortFieldStatus": "Estado",
+  "todoSortDirectionAscendingLabel": "Crescente",
+  "todoSortDirectionDescendingLabel": "Decrescente",
+  "todoDueDateUnset": "Sem prazo",
+  "todoOverdueBadge": "Atrasada",
+  "todoStatusSemanticLabel": "Estado: {status}",
   "@activityLoadError": {
     "placeholders": {
       "error": {
@@ -370,6 +398,20 @@
   "@activityDeleteError": {
     "placeholders": {
       "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todosError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoStatusSemanticLabel": {
+    "placeholders": {
+      "status": {
         "type": "String"
       }
     }

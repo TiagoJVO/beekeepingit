@@ -104,6 +104,24 @@ class FakeLocalStore implements LocalStoreEngine {
     var results = List<Map<String, Object?>>.from(rows);
     if (normalized.contains('WHERE ID = ?')) {
       results = results.where((r) => r['id'] == args[0]).toList();
+    } else if (normalized.contains(
+      'ORGANIZATION_ID = ? OR ORGANIZATION_ID IS NULL',
+    )) {
+      // watchAll's defense-in-depth org filter (#53, mirrors
+      // activities_repository_test.dart's own FakeLocalStore convention).
+      final orgId = args[0];
+      results = results
+          .where(
+            (r) =>
+                r['organization_id'] == orgId || r['organization_id'] == null,
+          )
+          .toList();
+    }
+    if (normalized.contains('ORDER BY CREATED_AT DESC')) {
+      results.sort(
+        (a, b) =>
+            (b['created_at'] as String).compareTo(a['created_at'] as String),
+      );
     }
     return results;
   }
@@ -161,8 +179,7 @@ void main() {
   });
 
   group('TodosRepository.getById()/watchById()', () {
-    test('getById returns the created todo, mapping "" back to null',
-        () async {
+    test('getById returns the created todo, mapping "" back to null', () async {
       final id = await repo.create(title: 'x', priority: 'low');
 
       final todo = await repo.getById(id);
@@ -356,19 +373,135 @@ void main() {
   });
 
   group('organization_id invariant (FR-TEN-2) — never written locally', () {
-    test('stays null through create(), update(), complete() and reopen()',
-        () async {
-      final id = await repo.create(title: 'x', priority: 'low');
-      expect(store.rows.single['organization_id'], isNull);
+    test(
+      'stays null through create(), update(), complete() and reopen()',
+      () async {
+        final id = await repo.create(title: 'x', priority: 'low');
+        expect(store.rows.single['organization_id'], isNull);
 
-      await repo.update(id, title: 'y', priority: 'medium');
-      expect(store.rows.single['organization_id'], isNull);
+        await repo.update(id, title: 'y', priority: 'medium');
+        expect(store.rows.single['organization_id'], isNull);
 
-      await repo.complete(id);
-      expect(store.rows.single['organization_id'], isNull);
+        await repo.complete(id);
+        expect(store.rows.single['organization_id'], isNull);
 
-      await repo.reopen(id);
-      expect(store.rows.single['organization_id'], isNull);
+        await repo.reopen(id);
+        expect(store.rows.single['organization_id'], isNull);
+      },
+    );
+  });
+
+  group('TodosRepository.watchAll() org-scoping (#53, FR-TD-1/FR-TEN-2)', () {
+    test('returns an empty stream when the organization id is null (not yet '
+        'loaded)', () async {
+      final todos = await repo.watchAll(organizationId: null).first;
+      expect(todos, isEmpty);
+    });
+
+    test('excludes another organization\'s todos — never leaks cross-tenant '
+        'data even if it were somehow present locally (#53 AC)', () async {
+      store.rows.addAll([
+        {
+          'id': 'own-1',
+          'organization_id': 'org-a',
+          'title': 'Mine',
+          'description': '',
+          'due_date': '',
+          'priority': 'low',
+          'status': 'open',
+          'completed_at': '',
+          'assignee_id': '',
+          'created_at': '2026-06-01T00:00:00Z',
+          'updated_at': '2026-06-01T00:00:00Z',
+        },
+        {
+          'id': 'foreign-1',
+          'organization_id': 'org-b',
+          'title': 'Not mine',
+          'description': '',
+          'due_date': '',
+          'priority': 'low',
+          'status': 'open',
+          'completed_at': '',
+          'assignee_id': '',
+          'created_at': '2026-06-02T00:00:00Z',
+          'updated_at': '2026-06-02T00:00:00Z',
+        },
+      ]);
+
+      final todos = await repo.watchAll(organizationId: 'org-a').first;
+
+      expect(todos.map((t) => t.id).toList(), ['own-1']);
+      expect(
+        todos.any((t) => t.organizationId == 'org-b'),
+        isFalse,
+        reason: 'org-a caller must never see org-b\'s todos',
+      );
+    });
+
+    test('still shows a freshly-created, not-yet-synced local row (null '
+        'organization_id) — offline-first: your own just-added todo must not '
+        'disappear from the list until it round-trips (FR-OF-1)', () async {
+      await repo.create(title: 'Inspect hive 3', priority: 'medium');
+
+      final todos = await repo.watchAll(organizationId: 'org-a').first;
+
+      expect(todos, hasLength(1));
+      expect(todos.single.organizationId, isNull);
+    });
+
+    test(
+      'includes only the caller\'s own org id or null, newest-created-first',
+      () async {
+        store.rows.addAll([
+          {
+            'id': 'older',
+            'organization_id': 'org-a',
+            'title': 'Older',
+            'description': '',
+            'due_date': '',
+            'priority': 'low',
+            'status': 'open',
+            'completed_at': '',
+            'assignee_id': '',
+            'created_at': '2026-05-01T00:00:00Z',
+            'updated_at': '2026-05-01T00:00:00Z',
+          },
+          {
+            'id': 'newer',
+            'organization_id': 'org-a',
+            'title': 'Newer',
+            'description': '',
+            'due_date': '',
+            'priority': 'high',
+            'status': 'open',
+            'completed_at': '',
+            'assignee_id': '',
+            'created_at': '2026-06-01T00:00:00Z',
+            'updated_at': '2026-06-01T00:00:00Z',
+          },
+        ]);
+
+        final todos = await repo.watchAll(organizationId: 'org-a').first;
+
+        expect(todos.map((t) => t.id).toList(), ['newer', 'older']);
+      },
+    );
+
+    test('watchAll re-emits after a write affecting the local set', () async {
+      final emissions = <int>[];
+      final sub = repo
+          .watchAll(organizationId: 'org-a')
+          .listen((todos) => emissions.add(todos.length));
+      addTearDown(sub.cancel);
+
+      await pumpEventQueue();
+      expect(emissions, [0]);
+
+      await repo.create(title: 'x', priority: 'low');
+      await pumpEventQueue();
+
+      expect(emissions.last, 1);
     });
   });
 }
