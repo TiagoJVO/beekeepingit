@@ -741,4 +741,112 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteActivityCancelAction => 'Cancelar';
+
+  @override
+  String get addJourney => 'Nova jornada';
+
+  @override
+  String get newJourneyTitle => 'Nova jornada';
+
+  @override
+  String get editJourneyTitle => 'Editar jornada';
+
+  @override
+  String get journeysEmpty =>
+      'Ainda não há jornadas. Toque em “Nova jornada” para criar uma.';
+
+  @override
+  String journeysError(String error) {
+    return 'Não foi possível carregar as jornadas: $error';
+  }
+
+  @override
+  String get journeyNameLabel => 'Nome';
+
+  @override
+  String get journeyNameRequired => 'O nome é obrigatório';
+
+  @override
+  String get journeyMainActivityTypeLabel => 'Atividade principal';
+
+  @override
+  String get journeyApiariesLabel => 'Apiários a visitar';
+
+  @override
+  String get journeyApiariesRequired => 'Selecione pelo menos um apiário';
+
+  @override
+  String get journeyApiariesNoneAvailable =>
+      'Ainda não há apiários — adicione um no separador Apiários primeiro.';
+
+  @override
+  String journeyApiariesSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiários selecionados',
+      one: '1 apiário selecionado',
+      zero: 'Nenhum apiário selecionado',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String journeyLoadError(String error) {
+    return 'Não foi possível carregar a jornada: $error';
+  }
+
+  @override
+  String get journeySaveSuccess => 'Jornada guardada';
+
+  @override
+  String journeySaveError(String error) {
+    return 'Não foi possível guardar a jornada: $error';
+  }
+
+  @override
+  String get closeJourneyAction => 'Fechar jornada';
+
+  @override
+  String get journeyCloseSuccess => 'Jornada fechada';
+
+  @override
+  String journeyCloseError(String error) {
+    return 'Não foi possível fechar a jornada: $error';
+  }
+
+  @override
+  String get journeyStatusOpenLabel => 'Aberta';
+
+  @override
+  String get journeyStatusClosedLabel => 'Fechada';
+
+  @override
+  String journeyStatusSemanticLabel(String label) {
+    return 'Estado: $label';
+  }
+
+  @override
+  String get deleteJourney => 'Eliminar jornada';
+
+  @override
+  String get journeyDeleteSuccess => 'Jornada eliminada';
+
+  @override
+  String journeyDeleteError(String error) {
+    return 'Não foi possível eliminar a jornada: $error';
+  }
+
+  @override
+  String get deleteJourneyConfirmTitle => 'Eliminar jornada?';
+
+  @override
+  String get deleteJourneyConfirmMessage =>
+      'Isto elimina permanentemente esta jornada. Esta ação não pode ser desfeita.';
+
+  @override
+  String get deleteJourneyConfirmAction => 'Eliminar';
+
+  @override
+  String get deleteJourneyCancelAction => 'Cancelar';
 }

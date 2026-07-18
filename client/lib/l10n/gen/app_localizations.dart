@@ -1333,6 +1333,174 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get deleteActivityCancelAction;
+
+  /// Floating action button to create a journey (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'New journey'**
+  String get addJourney;
+
+  /// Create form app bar title (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'New journey'**
+  String get newJourneyTitle;
+
+  /// Edit form app bar title (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit journey'**
+  String get editJourneyTitle;
+
+  /// Empty state on the main Journeys tab when the organization has no journeys at all yet (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'No journeys yet. Tap “New journey” to create one.'**
+  String get journeysEmpty;
+
+  /// Error state on the Journeys tab (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load journeys: {error}'**
+  String journeysError(String error);
+
+  /// Field label for a journey's name on the create/edit form (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get journeyNameLabel;
+
+  /// Validation message when a journey's name is left empty (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Name is required'**
+  String get journeyNameRequired;
+
+  /// Field label for a journey's one main activity type on the create/edit form (#45, FR-JO-4, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Main activity type'**
+  String get journeyMainActivityTypeLabel;
+
+  /// Section label above the apiary multi-select picker on the journey create/edit form (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries to visit'**
+  String get journeyApiariesLabel;
+
+  /// Validation message when no apiary is selected for a journey's plan (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one apiary'**
+  String get journeyApiariesRequired;
+
+  /// Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries yet — add one from the Apiaries tab first.'**
+  String get journeyApiariesNoneAvailable;
+
+  /// Running count below the apiary multi-select picker (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}'**
+  String journeyApiariesSelectedCount(int count);
+
+  /// Error toast when loading an existing journey for editing throws (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the journey: {error}'**
+  String journeyLoadError(String error);
+
+  /// Success toast after creating or updating a journey (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey saved'**
+  String get journeySaveSuccess;
+
+  /// Error toast when saving a journey throws (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the journey: {error}'**
+  String journeySaveError(String error);
+
+  /// Button on the edit-journey form that closes an open journey (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Close journey'**
+  String get closeJourneyAction;
+
+  /// Success toast after closing a journey (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey closed'**
+  String get journeyCloseSuccess;
+
+  /// Error toast when closing a journey throws (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t close the journey: {error}'**
+  String journeyCloseError(String error);
+
+  /// Display label for a journey's open status (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get journeyStatusOpenLabel;
+
+  /// Display label for a journey's closed status (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get journeyStatusClosedLabel;
+
+  /// Screen-reader label for the journey edit form's status chip (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {label}'**
+  String journeyStatusSemanticLabel(String label);
+
+  /// Destructive button on the edit-journey form that opens the delete confirmation dialog (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete journey'**
+  String get deleteJourney;
+
+  /// Success toast after deleting a journey (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey deleted'**
+  String get journeyDeleteSuccess;
+
+  /// Error toast when deleting a journey throws (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the journey: {error}'**
+  String journeyDeleteError(String error);
+
+  /// Title of the confirmation dialog shown before deleting a journey (#45, mirrors deleteActivityConfirmTitle)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete journey?'**
+  String get deleteJourneyConfirmTitle;
+
+  /// Body of the confirmation dialog shown before deleting a journey (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently deletes this journey. This cannot be undone.'**
+  String get deleteJourneyConfirmMessage;
+
+  /// Confirm action in the delete-journey confirmation dialog (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteJourneyConfirmAction;
+
+  /// Cancel action in the delete-journey confirmation dialog (#45 AC: cancel is a no-op)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get deleteJourneyCancelAction;
 }
 
 class _AppLocalizationsDelegate

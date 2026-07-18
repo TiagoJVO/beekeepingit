@@ -120,6 +120,21 @@ syncConfig:
         - SELECT id, organization_id, apiary_id, performed_by, journey_id, type,
           occurred_at, attributes, created_at, updated_at
           FROM activities.activities WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        # journeys.journeys / journeys.journey_plan_items (#45, FR-OF-1, D-21):
+        # stream a journey's own fields and its "apiaries to visit" plan so
+        # creating/editing/closing a journey offline reconciles across
+        # devices, and the edit form can pre-fill the currently-selected
+        # apiaries without a network call. Explicit column lists matching the
+        # client's local schema (client/lib/core/sync/powersync_schema.dart) —
+        # NOT recorded_at/deleted_at, same additive-safety rationale as every
+        # other entry here: this list must stay a SUPERSET of the client's
+        # local schema, or an added column silently stays NULL on devices
+        # that didn't write it locally (the #196/#33 incident this file's own
+        # header comment already documents for apiaries.apiaries).
+        - SELECT id, organization_id, name, main_activity_type, status, created_at, updated_at
+          FROM journeys.journeys WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        - SELECT id, organization_id, journey_id, apiary_id, created_at
+          FROM journeys.journey_plan_items WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.

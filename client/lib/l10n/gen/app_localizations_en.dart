@@ -736,4 +736,112 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteActivityCancelAction => 'Cancel';
+
+  @override
+  String get addJourney => 'New journey';
+
+  @override
+  String get newJourneyTitle => 'New journey';
+
+  @override
+  String get editJourneyTitle => 'Edit journey';
+
+  @override
+  String get journeysEmpty =>
+      'No journeys yet. Tap “New journey” to create one.';
+
+  @override
+  String journeysError(String error) {
+    return 'Could not load journeys: $error';
+  }
+
+  @override
+  String get journeyNameLabel => 'Name';
+
+  @override
+  String get journeyNameRequired => 'Name is required';
+
+  @override
+  String get journeyMainActivityTypeLabel => 'Main activity type';
+
+  @override
+  String get journeyApiariesLabel => 'Apiaries to visit';
+
+  @override
+  String get journeyApiariesRequired => 'Select at least one apiary';
+
+  @override
+  String get journeyApiariesNoneAvailable =>
+      'No apiaries yet — add one from the Apiaries tab first.';
+
+  @override
+  String journeyApiariesSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries selected',
+      one: '1 apiary selected',
+      zero: 'No apiaries selected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String journeyLoadError(String error) {
+    return 'Couldn\'t load the journey: $error';
+  }
+
+  @override
+  String get journeySaveSuccess => 'Journey saved';
+
+  @override
+  String journeySaveError(String error) {
+    return 'Couldn\'t save the journey: $error';
+  }
+
+  @override
+  String get closeJourneyAction => 'Close journey';
+
+  @override
+  String get journeyCloseSuccess => 'Journey closed';
+
+  @override
+  String journeyCloseError(String error) {
+    return 'Couldn\'t close the journey: $error';
+  }
+
+  @override
+  String get journeyStatusOpenLabel => 'Open';
+
+  @override
+  String get journeyStatusClosedLabel => 'Closed';
+
+  @override
+  String journeyStatusSemanticLabel(String label) {
+    return 'Status: $label';
+  }
+
+  @override
+  String get deleteJourney => 'Delete journey';
+
+  @override
+  String get journeyDeleteSuccess => 'Journey deleted';
+
+  @override
+  String journeyDeleteError(String error) {
+    return 'Couldn\'t delete the journey: $error';
+  }
+
+  @override
+  String get deleteJourneyConfirmTitle => 'Delete journey?';
+
+  @override
+  String get deleteJourneyConfirmMessage =>
+      'This permanently deletes this journey. This cannot be undone.';
+
+  @override
+  String get deleteJourneyConfirmAction => 'Delete';
+
+  @override
+  String get deleteJourneyCancelAction => 'Cancel';
 }

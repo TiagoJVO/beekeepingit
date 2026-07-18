@@ -61,6 +61,26 @@ added create, #40/#41 added edit/delete (delete via `deleted_at` tombstone, same
 as `apiaries.apiaries`) — both REST (`api/write.go`) and sync-apply (`api/sync.go`, LWW on
 `updated_at`).
 
+### `journeys`
+
+```text
+journeys           (id PK, organization_id, name, main_activity_type, status[open|closed],
+                    created_at, updated_at, recorded_at, deleted_at)
+journey_plan_items (id PK, organization_id, journey_id FK→journeys ON DELETE CASCADE,
+                    apiary_id NULL-FK(soft), created_at, deleted_at,
+                    UNIQUE(journey_id,apiary_id) WHERE deleted_at IS NULL)
+sync_conflict_log  (… same shape as apiaries.sync_conflict_log; `journey` entity only —
+                    `journey_plan_item` ops are pure set-membership, nothing to LWW-compare)
+audit_log          (… same shape as apiaries.audit_log; a plan add/remove is folded into a
+                    `journey`-entity "update" row, changed_fields=["apiary_ids"])
+```
+
+`main_activity_type` + `status` validated in Go (`api/types.go`), not a DB enum/CHECK —
+`main_activity_type`'s known set is a HAND-KEPT MIRROR of `activities/api/types.go`'s own
+registry (no cross-module import — services depend on each other's data by ID, never code).
+#45 shipped the full CRUD surface (create/edit/close/delete) in one story. Journey↔activity
+attribution is `activities.journey_id` (D-21), NOT a table in this schema.
+
 ## Relationships
 
 ```text
@@ -83,7 +103,11 @@ sync_rejected_ops (LOCAL-ONLY dead-letter: dedup_key, fix_apiary_id, op, payload
                    error_code, error_detail, rejected_at)               -- D-12
 activities        (id, organization_id, apiary_id, performed_by, journey_id, type,
                    occurred_at, attributes TEXT(JSON-encoded), created_at, updated_at)
-                   -- #38: schema declared for future Sync Rules; no read/write path yet
+journeys          (id, organization_id, name, main_activity_type, status, created_at,
+                   updated_at)
+journey_plan_items(id, organization_id, journey_id, apiary_id, created_at)
+                   -- #45: two local tables, two sync entity types (`journey`/
+                   -- `journey_plan_item`), mirroring apiaries/apiary_counters' own split
 ```
 
 Projection: server `location geography` → client `location_lon/lat` via `ST_X`/`ST_Y`
@@ -98,6 +122,7 @@ organizations:  00001 create_organizations · 00002 create_invitations · 00003 
 apiaries:       00001 create_apiaries · 00002 audit_log · 00003 add_location(PostGIS)
                 00004 add_notes · 00005 create_apiary_counters · 00006 add_place_label
 activities:     00001 create_activities(+sync_conflict_log) · 00002 audit_log
+journeys:       00001 create_journeys(+journey_plan_items,+sync_conflict_log) · 00002 audit_log
 shared/dbaccess:00001 create_example_items (template reference only)
 ```
 

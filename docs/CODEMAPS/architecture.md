@@ -17,10 +17,13 @@ Flutter PWA          Go services (chi)         PowerSync svc          │
 (local SQLite) ◄─────┤ identity                (streams down)         │
   │  ▲                │ organizations                ▲                │
   │  │ down-sync      │ apiaries ─┐                  │ logical repl    │
+  │  │                │ activities┤                  │                │
+  │  │                │ journeys ─┤                  │                │
   │  └────────────────┼───────────┼──────────────────┘                │
   │ writes            │ sync ─────┘ (write-back coordinator)          │
   └───────────────────┴──────────────────► Postgres + PostGIS (CNPG) ◄┘
-                                        schemas: identity / organizations / apiaries
+                          schemas: identity / organizations / apiaries /
+                                   activities / journeys
 
   OIDC: Authentik (auth.beekeepingit.local:8443)   Object store: MinIO
   Observability: OTel collector → Grafana          GitOps: Flux
@@ -28,12 +31,14 @@ Flutter PWA          Go services (chi)         PowerSync svc          │
 
 ## Service boundaries (each owns its Postgres schema)
 
-| Service         | Owns                                    | Calls (internal)                  |
-| --------------- | --------------------------------------- | --------------------------------- |
-| `identity`      | users, profiles                         | —                                 |
-| `organizations` | orgs, memberships, invitations          | identity                          |
-| `apiaries`      | apiaries, counters, conflict/audit logs | identity, organizations           |
-| `sync`          | nothing (stateless write-back + tokens) | identity, organizations, apiaries |
+| Service         | Owns                                              | Calls (internal)                                        |
+| --------------- | ------------------------------------------------- | ------------------------------------------------------- |
+| `identity`      | users, profiles                                   | —                                                       |
+| `organizations` | orgs, memberships, invitations                    | identity                                                |
+| `apiaries`      | apiaries, counters, conflict/audit logs           | identity, organizations                                 |
+| `activities`    | activities, conflict/audit logs                   | identity, organizations, apiaries                       |
+| `journeys`      | journeys, journey_plan_items, conflict/audit logs | identity, organizations, apiaries                       |
+| `sync`          | nothing (stateless write-back + tokens)           | identity, organizations, apiaries, activities, journeys |
 
 ## Data flow — local-first write (walking-skeleton §4.4)
 

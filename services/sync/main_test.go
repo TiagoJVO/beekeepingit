@@ -79,7 +79,7 @@ func newStubApiaries(t *testing.T) *stubApiaries {
 func newSyncFixture(t *testing.T) (*servicetemplate.Server, *stubApiaries) {
 	t.Helper()
 	stub := newStubApiaries(t)
-	coord, err := api.NewCoordinator(stub.server.URL, stub.server.URL)
+	coord, err := api.NewCoordinator(stub.server.URL, stub.server.URL, stub.server.URL)
 	if err != nil {
 		t.Fatalf("NewCoordinator: %v", err)
 	}

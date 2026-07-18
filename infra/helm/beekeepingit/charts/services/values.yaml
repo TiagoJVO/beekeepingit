@@ -80,6 +80,25 @@ services:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
       INTERNAL_APIARIES_URL: http://apiaries:8080
+  # #45: journeys (name, main activity type, apiaries-to-visit plan, D-21) —
+  # needs its own DB role/secret (journeys schema, matching activities'
+  # shape) plus apiaries' URL for the cross-service apiary_id ownership
+  # check (api/apiaries_client.go), same rationale as activities' own entry
+  # above.
+  journeys:
+    component: services-journeys
+    port: 8080
+    db:
+      {
+        enabled: true,
+        role: journeys_svc,
+        secret: journeys-svc-credentials,
+        schema: journeys,
+      }
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
+      INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+      INTERNAL_APIARIES_URL: http://apiaries:8080
   sync:
     component: services-sync
     port: 8080
@@ -92,6 +111,10 @@ services:
       # own internal sync validate/apply (api/coordinator.go's
       # groupOpsByOwner) so an offline-created activity reconciles on sync.
       INTERNAL_ACTIVITIES_URL: http://activities:8080
+      # #45: routes "journey"/"journey_plan_item"-entity_type ops to the
+      # journeys service the same way, via the coordinator's generalized
+      # entity_type -> service-URL routing table.
+      INTERNAL_JOURNEYS_URL: http://journeys:8080
       SYNC_TOKEN_ISSUER: http://sync:8080
       SYNC_TOKEN_AUDIENCE: powersync
 

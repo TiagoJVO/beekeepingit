@@ -79,6 +79,28 @@ touches `apiary_id` verifies it belongs to the caller's org via
 schema) BEFORE writing anything; `performed_by` is derived server-side from
 claims, never the client (FR-TEN-2). List is #42/#43.
 
+### journeys (main.go; authnMW→orgMW→RequireRole(admin,user))
+
+```text
+POST   /v1/journeys                  → createJourney  api/write.go (#45; status always starts open)
+PATCH  /v1/journeys/{id}             → updateJourney  api/write.go (#45; full plan-items replace; D-21 close rides here)
+DELETE /v1/journeys/{id}             → deleteJourney  api/write.go (#45; soft-delete/tombstone)
+POST   /internal/sync/validate       → validateJourneyBatch api/sync.go (`journey`/`journey_plan_item` ops)
+POST   /internal/sync/apply          → applyJourneyBatch    api/sync.go (LWW on `journey`; set-membership on `journey_plan_item`)
+```
+
+#45 ships the full CRUD surface in one story (name, one main activity type —
+D-21 narrows FR-JO-4 — and an apiaries-to-visit plan). Two sync entity types,
+mirroring apiaries' own `apiary`/`apiary_counter` split: `journey` (the row
+itself) and `journey_plan_item` (one row per planned apiary, put/delete only
+— no patch). Every write touching `apiary_id` verifies it via
+`api/apiaries_client.go`'s `ApiaryVerifier` (same zero-trust HTTP-call
+pattern as activities'); `journey_id` itself is verified with a plain
+org-scoped DB read (same schema, no HTTP call needed). Journey↔activity
+attribution is NOT owned here — it's `activities.journey_id` (D-21,
+supersedes the pre-D-21 `journey_activities` link-table idea), consumed by
+#46's activity-form picker.
+
 ### sync (main.go; no DB; authnMW→orgMW on /v1)
 
 ```text
@@ -87,12 +109,14 @@ POST  /v1/sync/batch           → BatchHandler   api/handlers.go → Coordinato
 GET   /internal/sync/jwks.json → JWKSHandler    api/handlers.go (unauth; PowerSync validates)
 ```
 
-`Coordinator.handle` (api/coordinator.go): groups ops by owning service via
-`entity_type` (`activity` → activities, #39; everything else → apiaries),
-validate-all → if every group 200s, apply-all → merge results. Single-group
-batches (the common case) use the byte-identical pre-#39 fast path. 422 from
-any group aborts the whole push (nothing written anywhere); upstream error →
-502 (batch stays queued, idempotent retry).
+`Coordinator.handle` (api/coordinator.go): groups ops by owning service via a
+`routes` map keyed by `entity_type` (`activity` → activities, #39;
+`journey`/`journey_plan_item` → journeys, #45; everything else, including any
+unrecognized entity_type → apiaries, the default), validate-all → if every
+group 200s, apply-all → merge results. Single-group batches (the common
+case) use the byte-identical pre-#39 fast path. 422 from any group aborts
+the whole push (nothing written anywhere); upstream error → 502 (batch stays
+queued, idempotent retry).
 
 ## Service → store mapping (per DB-backed service)
 

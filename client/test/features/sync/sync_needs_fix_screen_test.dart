@@ -165,6 +165,12 @@ class _FakeRejectedStore implements LocalStoreEngine {
   ]) async => null;
 
   @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => List<Map<String, Object?>>.from(rows);
+
+  @override
   Future<void> clear() async {
     rows.clear();
     _changes.add(null);
