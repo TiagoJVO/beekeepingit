@@ -13,10 +13,10 @@ import 'journey_status.dart';
 /// ([journeysViewModelProvider]), filterable by date range and activity
 /// type (combinable, #47 AC) with a plan-vs-done progress badge per row
 /// ([JourneyProgress] — see journey_filters.dart's own doc for what it
-/// deliberately does and doesn't count). Tapping a row opens the edit form
-/// directly (add_activity_screen.dart's own pre-#310 precedent), same as
-/// the earliest activities/apiaries edit affordances; the dedicated detail
-/// screen is #48's separate scope.
+/// deliberately does and doesn't count). Tapping a row opens the #48 journey
+/// detail screen (journey_detail_screen.dart) — apiaries visited, per-apiary
+/// activities, and the #49 stats section — from which edit/close/delete
+/// remain reachable via that screen's own edit FAB.
 ///
 /// **Date-range filter interpretation (#47 AC: "filterable by date range"):**
 /// a [Journey] itself carries no date field (just name/main_activity_type/
@@ -117,7 +117,7 @@ class JourneysListScreen extends ConsumerWidget {
                       label: statusLabel,
                       closed: !journey.isOpen,
                     ),
-                    onTap: () => context.go('/journeys/${journey.id}/edit'),
+                    onTap: () => context.go('/journeys/${journey.id}'),
                   );
                 },
               );

@@ -1717,6 +1717,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
   String journeyStatsMissingLabel(int count);
+
+  /// Shell app bar title for the journey detail route (#48, FR-JO-3) — a generic, not per-instance, title mirroring apiaryDetailTitle/activityDetailTitle's own convention; the specific journey's name renders in the page body itself
+  ///
+  /// In en, this message translates to:
+  /// **'Journey'**
+  String get journeyDetailTitle;
+
+  /// Floating action button on the journey detail page that opens the existing edit form (#48) — mirrors editApiaryAction
+  ///
+  /// In en, this message translates to:
+  /// **'Edit journey'**
+  String get editJourneyAction;
+
+  /// Section heading above the journey detail page's per-apiary list (#48, FR-JO-3)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries'**
+  String get journeyDetailApiariesTitle;
+
+  /// Placeholder apiary card title when an activity's apiary_id can't be resolved against the currently-loaded apiary list — e.g. the apiary was deleted since, or apiariesStreamProvider hasn't emitted yet (#48) — never a raw internal id
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown apiary'**
+  String get journeyDetailApiaryNameUnknown;
+
+  /// Badge on a journey detail apiary card once it has at least one activity attributed to this journey via the stored journey_id (#48 AC: planned vs. actual)
+  ///
+  /// In en, this message translates to:
+  /// **'Visited'**
+  String get journeyDetailApiaryVisitedBadge;
+
+  /// Badge on a journey detail apiary card that's in the journey's plan but has no attributed activity yet (#48 AC: planned vs. actual)
+  ///
+  /// In en, this message translates to:
+  /// **'Planned'**
+  String get journeyDetailApiaryPlannedBadge;
+
+  /// Placeholder shown under a planned-only apiary card on the journey detail page, in place of an activity list (#48 AC: planned items clearly distinguished from completed ones)
+  ///
+  /// In en, this message translates to:
+  /// **'Not visited yet'**
+  String get journeyDetailApiaryNotVisitedYet;
+
+  /// Empty state on the journey detail page's apiaries section — the edge case of a journey with no plan and no attributed activities (#48)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries in this journey yet.'**
+  String get journeyDetailApiariesEmpty;
 }
 
 class _AppLocalizationsDelegate

@@ -4,6 +4,7 @@ import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/journeys/journey_filters.dart';
+import 'package:beekeepingit_client/features/journeys/journey_stats.dart';
 import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
@@ -105,6 +106,24 @@ Widget _buildApp({
       journeyPlanApiariesByJourneyProvider.overrideWith(
         (ref) => Stream.value(planApiariesByJourney),
       ),
+      // Tapping a row now opens the #48 detail screen — overridden so that
+      // navigation resolves immediately rather than hanging on the real,
+      // never-resolving provider chain (mirrors the two overrides above).
+      journeyByIdProvider.overrideWith(
+        (ref, id) => Stream.value(
+          journeys.cast<Journey?>().firstWhere(
+            (j) => j!.id == id,
+            orElse: () => null,
+          ),
+        ),
+      ),
+      journeyStatsProvider.overrideWith(
+        (ref, id) => Stream.value(JourneyStats.empty),
+      ),
+      activitiesByJourneyProvider.overrideWith(
+        (ref, id) =>
+            Stream.value(activities.where((a) => a.journeyId == id).toList()),
+      ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
@@ -162,26 +181,36 @@ void main() {
     expect(find.text('Closed'), findsOneWidget);
   });
 
-  testWidgets('tapping a row navigates to its edit form (#45)', (tester) async {
-    const journey = Journey(
-      id: 'j1',
-      name: 'Colheita de Primavera',
-      mainActivityType: 'harvest',
-      status: journeyStatusOpen,
-    );
-    await tester.pumpWidget(
-      _buildApp(journeys: const [journey], existingForEdit: journey),
-    );
-    await _openJourneysTab(tester);
+  testWidgets(
+    'tapping a row opens the #48 journey detail screen; edit stays reachable '
+    'from there via its own edit FAB',
+    (tester) async {
+      const journey = Journey(
+        id: 'j1',
+        name: 'Colheita de Primavera',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+      );
+      await tester.pumpWidget(
+        _buildApp(journeys: const [journey], existingForEdit: journey),
+      );
+      await _openJourneysTab(tester);
 
-    await tester.tap(find.byKey(const Key('journey-j1')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('journey-j1')));
+      await tester.pumpAndSettle();
 
-    final nameField = tester.widget<TextFormField>(
-      find.byKey(const Key('journey-name-field')),
-    );
-    expect(nameField.controller!.text, 'Colheita de Primavera');
-  });
+      expect(find.byKey(const Key('journey-detail-header')), findsOneWidget);
+      expect(find.text('Colheita de Primavera'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('journey-detail-edit-button')));
+      await tester.pumpAndSettle();
+
+      final nameField = tester.widget<TextFormField>(
+        find.byKey(const Key('journey-name-field')),
+      );
+      expect(nameField.controller!.text, 'Colheita de Primavera');
+    },
+  );
 
   group('filters (#47, FR-JO-2)', () {
     const harvestJourney = Journey(

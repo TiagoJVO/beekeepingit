@@ -210,6 +210,28 @@ class ActivitiesRepository {
         .map((rows) => rows.map(_fromRow).toList());
   }
 
+  /// One journey's activities (#48, FR-JO-3, D-21), newest-first —
+  /// attributed by the activity's STORED `journey_id` column, never a live
+  /// re-match against the journey's current plan/apiary/type (D-21, mirrors
+  /// journeys_repository.dart's `getStats`/`watchStats` own doc on this same
+  /// guarantee): `journey_id` is set once at creation and never changed
+  /// afterward (this class's own doc comment above), so this query simply
+  /// reflects whatever is currently stored. No org filter needed here either
+  /// — same rationale as [watchByApiary]'s own doc: a journey belonging to
+  /// another organization is never locally present to begin with (the
+  /// journeys Sync Rule already scopes it out), so filtering activities by
+  /// [journeyId] alone can never cross a tenant boundary.
+  Stream<List<Activity>> watchByJourney(String journeyId) {
+    return _store
+        .watch(
+          'SELECT id, apiary_id, journey_id, performed_by, organization_id, '
+          'type, occurred_at, attributes FROM $activitiesTable '
+          'WHERE journey_id = ? ORDER BY occurred_at DESC, created_at DESC',
+          [journeyId],
+        )
+        .map((rows) => rows.map(_fromRow).toList());
+  }
+
   /// Every activity across every apiary in the caller's org (#43, FR-AC-6),
   /// newest-first. Tenancy (FR-TEN-2) is primarily enforced by the
   /// org-scoped PowerSync Sync Rule (#39's `activities.activities` bucket)
@@ -298,3 +320,12 @@ final activitiesStreamProvider = StreamProvider.autoDispose<List<Activity>>((
   final org = await ref.watch(organizationProvider.future);
   yield* repo.watchAll(organizationId: org?.id);
 });
+
+/// One journey's live activities (#48, FR-JO-3) — family-keyed + autoDispose,
+/// mirroring [activitiesByApiaryProvider]'s own per-id convention: a write
+/// to an unrelated journey's activities never re-triggers this.
+final activitiesByJourneyProvider = StreamProvider.autoDispose
+    .family<List<Activity>, String>((ref, journeyId) async* {
+      final repo = await ref.watch(activitiesRepositoryProvider.future);
+      yield* repo.watchByJourney(journeyId);
+    });
