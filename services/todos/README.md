@@ -49,16 +49,16 @@ shape).
 
 ## Surface
 
-| Route                          | Auth                 | Purpose                                                                                                                                                                                                                     |
-| ------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /v1/todos`                | OIDC JWT + org scope | Create a todo (FR-TD-1). Validates title/priority/due_date, verifies `assignee_id` (if present) against organizations before insert, records history. Always starts `status=open`. 201, or 422/409 on validation/idempotency conflict. |
-| `PATCH /v1/todos/{id}`          | OIDC JWT + org scope | Edit a todo — a **full resubmit** of title/description/due_date/priority/assignee_id. Re-verifies `assignee_id` only when the resubmitted value is non-empty; clearing it (omitted/null) writes NULL with **no** upstream call. Records history. 200, or 404/422. |
-| `POST /v1/todos/{id}/complete`  | OIDC JWT + org scope | Sets `status=done` + `completed_at=now`. Idempotent if already done (no-op, `completed_at` is not bumped). Records an ordinary `update` history row. 200, or 404.                                                          |
-| `POST /v1/todos/{id}/reopen`    | OIDC JWT + org scope | Sets `status=open`, clears `completed_at`. Idempotent if already open. 200, or 404.                                                                                                                                        |
-| `DELETE /v1/todos/{id}`         | OIDC JWT + org scope | Delete a todo — a **tombstone** (`deleted_at`), never a hard delete. Records history. 204, or 404 if already gone.                                                                                                         |
-| `POST /internal/sync/validate`  | OIDC JWT + org scope | Dry-runs a batch of `entity_type: "todo"` sync ops (`put`/`patch`/`delete`), including the assignee ownership check — the counterpart of `services/activities/api/sync.go`'s own route, called by `services/sync`'s coordinator. |
-| `POST /internal/sync/apply`     | OIDC JWT + org scope | Applies a batch of `entity_type: "todo"` ops in one local transaction — idempotent on the client id, LWW-compared against `updated_at`, tombstone-aware, conflict-logged on an LWW loss, records history.                 |
-| `GET /healthz`, `GET /readyz`   | none                 | Liveness / readiness.                                                                                                                                                                                                       |
+| Route                          | Auth                 | Purpose                                                                                                                                                                                                                                                           |
+| ------------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /v1/todos`               | OIDC JWT + org scope | Create a todo (FR-TD-1). Validates title/priority/due_date, verifies `assignee_id` (if present) against organizations before insert, records history. Always starts `status=open`. 201, or 422/409 on validation/idempotency conflict.                            |
+| `PATCH /v1/todos/{id}`         | OIDC JWT + org scope | Edit a todo — a **full resubmit** of title/description/due_date/priority/assignee_id. Re-verifies `assignee_id` only when the resubmitted value is non-empty; clearing it (omitted/null) writes NULL with **no** upstream call. Records history. 200, or 404/422. |
+| `POST /v1/todos/{id}/complete` | OIDC JWT + org scope | Sets `status=done` + `completed_at=now`. Idempotent if already done (no-op, `completed_at` is not bumped). Records an ordinary `update` history row. 200, or 404.                                                                                                 |
+| `POST /v1/todos/{id}/reopen`   | OIDC JWT + org scope | Sets `status=open`, clears `completed_at`. Idempotent if already open. 200, or 404.                                                                                                                                                                               |
+| `DELETE /v1/todos/{id}`        | OIDC JWT + org scope | Delete a todo — a **tombstone** (`deleted_at`), never a hard delete. Records history. 204, or 404 if already gone.                                                                                                                                                |
+| `POST /internal/sync/validate` | OIDC JWT + org scope | Dry-runs a batch of `entity_type: "todo"` sync ops (`put`/`patch`/`delete`), including the assignee ownership check — the counterpart of `services/activities/api/sync.go`'s own route, called by `services/sync`'s coordinator.                                  |
+| `POST /internal/sync/apply`    | OIDC JWT + org scope | Applies a batch of `entity_type: "todo"` ops in one local transaction — idempotent on the client id, LWW-compared against `updated_at`, tombstone-aware, conflict-logged on an LWW loss, records history.                                                         |
+| `GET /healthz`, `GET /readyz`  | none                 | Liveness / readiness.                                                                                                                                                                                                                                             |
 
 ### Complete/reopen over sync — no bespoke wire op
 
@@ -80,9 +80,9 @@ and organizations' own URL for the cross-service assignee-ownership check —
 **no separate apiaries URL is needed** (todos has no apiary association yet):
 
 | Variable                     | Notes                            |
-| ----------------------------- | --------------------------------- |
-| `INTERNAL_IDENTITY_URL`      | e.g. `http://identity:8080`       |
-| `INTERNAL_ORGANIZATIONS_URL` | e.g. `http://organizations:8080`  |
+| ---------------------------- | -------------------------------- |
+| `INTERNAL_IDENTITY_URL`      | e.g. `http://identity:8080`      |
+| `INTERNAL_ORGANIZATIONS_URL` | e.g. `http://organizations:8080` |
 
 ## Development
 
