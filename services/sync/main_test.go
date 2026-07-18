@@ -170,6 +170,7 @@ func TestLoadEnv_RequiresInternalTodosUrl(t *testing.T) {
 	t.Setenv("INTERNAL_ORGANIZATIONS_URL", "http://organizations:8080")
 	t.Setenv("INTERNAL_APIARIES_URL", "http://apiaries:8080")
 	t.Setenv("INTERNAL_ACTIVITIES_URL", "http://activities:8080")
+	t.Setenv("INTERNAL_JOURNEYS_URL", "http://journeys:8080")
 	t.Setenv("SYNC_TOKEN_ISSUER", "https://issuer.test/realms/beekeepingit")
 	t.Setenv("SYNC_TOKEN_AUDIENCE", "beekeepingit-test")
 	// Deliberately NOT setting INTERNAL_TODOS_URL.
