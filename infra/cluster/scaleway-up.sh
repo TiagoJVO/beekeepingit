@@ -14,7 +14,16 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cluster_name="${SCW_K8S_CLUSTER_NAME:-beekeepingit-staging}"
 region="${SCW_REGION:-fr-par}"
-node_type="${SCW_NODE_TYPE:-DEV1-M}"
+# DEV1-M (3vCPU/4GB) was the original default but proved insufficient on the
+# first staging bring-up (D-26): the full stack (CNPG, Traefik, cert-manager,
+# Flux's 6 controllers, Postgres, Authentik + its bundled Postgres, MinIO,
+# PowerSync, PWA, 7 Go services) pushed memory *requests* alone to ~90% of
+# allocatable, leaving no room for one-off Jobs (Authentik's blueprint-apply
+# worker, MinIO's bucket-creation post-install hook) to even get scheduled —
+# both sat Pending on "Insufficient memory" indefinitely. DEV1-L (4vCPU/8GB,
+# ~€30.66/mo vs DEV1-M's ~€14.26/mo) gives real headroom instead of inching
+# up; revisit down if usage stays low once the stack is stable.
+node_type="${SCW_NODE_TYPE:-DEV1-L}"
 
 for bin in scw kubectl helm flux; do
   if ! command -v "$bin" >/dev/null 2>&1; then
