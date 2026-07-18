@@ -22,7 +22,7 @@
       "Bash(gh issue list*)"
     ],
     "deny": ["Bash(git push --force*)", "Bash(git push -f*)", "Bash(git reset --hard*)"],
-    "ask": ["Edit(.github/workflows)", "Write(.github/workflows)", "Edit(infra)", "Write(infra)"]
+    "ask": ["Edit(.github/workflows)", "Write(.github/workflows)"]
   },
   "hooks": {
     "SessionStart": [
