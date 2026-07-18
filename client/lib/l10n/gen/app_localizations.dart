@@ -1657,6 +1657,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add anyway'**
   String get closedJourneyConfirmAddAction;
+
+  /// Heading above the journey stats section (#49, FR-JO-1) — apiaries visited, hives harvested, honey collected, média alças/colmeia
+  ///
+  /// In en, this message translates to:
+  /// **'Journey stats'**
+  String get journeyStatsSectionTitle;
+
+  /// Error state when loading a journey's aggregated stats throws (#49)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load journey stats: {error}'**
+  String journeyStatsError(String error);
+
+  /// Stat card label for the apiaries-visited-vs-planned metric (#49, FR-JO-1), matching the Melargil prototype's "apiários visitados" card
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries visited'**
+  String get journeyStatsApiariesVisitedLabel;
+
+  /// Value shown on the apiaries-visited stat card, e.g. "3/5" (#49, FR-JO-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{done}/{planned}'**
+  String journeyStatsApiariesVisitedValue(int done, int planned);
+
+  /// Stat card label for Σ hives_involved across the journey's harvest activities (#49, D-2), matching the prototype's "colmeias trabalhadas" card
+  ///
+  /// In en, this message translates to:
+  /// **'Hives harvested'**
+  String get journeyStatsHivesHarvestedLabel;
+
+  /// Stat card label for Σ honey_kg across the journey's harvest activities (#49), matching the prototype's "mel colhido" card
+  ///
+  /// In en, this message translates to:
+  /// **'Honey collected'**
+  String get journeyStatsHoneyCollectedLabel;
+
+  /// Value shown on the honey-collected stat card, e.g. "12.5 kg" — kg is already locale-formatted by the caller (LocaleFormatting) (#49)
+  ///
+  /// In en, this message translates to:
+  /// **'{kg} kg'**
+  String journeyStatsHoneyCollectedValue(String kg);
+
+  /// Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49) — kept in Portuguese per the prototype/AC's own naming (docs/design/prototype.md's Q-JOUR answer, this issue's own AC wording), not translated to an English equivalent
+  ///
+  /// In en, this message translates to:
+  /// **'Média alças/colmeia'**
+  String get journeyStatsAverageSupersLabel;
+
+  /// Shown instead of a number on the média alças/colmeia stat card when there is no hive-count denominator yet — zero harvest activities, or every one has a null/zero hives_involved (#49, NFR-TST-1's no-divide-by-zero case)
+  ///
+  /// In en, this message translates to:
+  /// **'No data yet'**
+  String get journeyStatsAverageSupersNoData;
+
+  /// Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: "how much is still missing, planned vs. done")
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
+  String journeyStatsMissingLabel(int count);
 }
 
 class _AppLocalizationsDelegate

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -5,7 +7,9 @@ import '../../core/sync/local_store.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import '../activities/activity_types.dart';
 import '../organization/organization_repository.dart';
+import 'journey_stats.dart';
 import 'journey_status.dart';
 
 /// A local journey row (#45, EPIC-04 M4, FR-JO-4, FR-TEN-2, D-21): the
@@ -258,6 +262,96 @@ class JourneysRepository {
         .map((rows) => rows.map((r) => _fromRow(r, const [])).toList());
   }
 
+  /// One-shot [JourneyStats] for [journeyId] (#49, FR-JO-1, D-2, D-21) — see
+  /// [watchStats]'s doc for the query shape; this is its one-shot
+  /// counterpart, mirroring [getById]/[watchById]'s existing split.
+  Future<JourneyStats> getStats(String journeyId) async {
+    final rows = await _store.getAll(_statsSql, [journeyId, journeyId]);
+    return _statsFromRows(rows);
+  }
+
+  /// Live [JourneyStats] for one journey (#49, FR-JO-1, D-2, D-21) — apiaries
+  /// visited vs. planned, hives harvested, honey collected, and média
+  /// alças/colmeia, recomputed whenever a plan item or an activity is
+  /// added/edited/deleted/re-attributed (a plain write to either table
+  /// re-triggers this watch — PowerSync/sqlite_async auto-detect a watched
+  /// query's source tables via `EXPLAIN QUERY PLAN`, so ONE UNION query
+  /// spanning [journeyPlanItemsTable] AND [activitiesTable] is enough to
+  /// invalidate on writes to either, no manual multi-stream combination
+  /// needed).
+  ///
+  /// Every attribution is by the activity's STORED `journey_id` column (D-21
+  /// — "supersedes Q-JOUR" per this issue's own note): this is NOT a live
+  /// re-match against the journey's current plan/apiary/type the way
+  /// [watchMatching] is. Editing an unrelated activity, or later removing an
+  /// apiary from this journey's plan, never changes an activity's own
+  /// already-recorded `journey_id` link or retroactively re-attributes it —
+  /// only [apiariesVisited]'s membership check against the CURRENT plan can
+  /// shift (by design: "planned vs. done" is always against the live plan;
+  /// the harvest sums are always against the immutable per-activity link).
+  ///
+  /// [_statsFromRows] does the row-shape parsing (single query, two row
+  /// "kinds" via a `source` discriminator column); [computeJourneyStats]
+  /// (journey_stats.dart) does the actual arithmetic, kept dependency-free
+  /// and independently unit-tested.
+  Stream<JourneyStats> watchStats(String journeyId) {
+    return _store.watch(_statsSql, [journeyId, journeyId]).map(_statsFromRows);
+  }
+
+  /// One UNION query touching both [journeyPlanItemsTable] (the plan) and
+  /// [activitiesTable] (every activity attributed to this journey by its
+  /// stored `journey_id`) — kept as a single statement specifically so
+  /// [watchStats]'s live query invalidates on a write to EITHER table (see
+  /// its own doc). The `source` column tells [_statsFromRows] which branch a
+  /// row came from; `type`/`attributes` are NULL on the `plan` branch (a
+  /// plan item has neither).
+  static const _statsSql =
+      "SELECT 'plan' AS source, apiary_id, NULL AS type, NULL AS attributes "
+      'FROM $journeyPlanItemsTable WHERE journey_id = ? '
+      'UNION ALL '
+      "SELECT 'activity' AS source, apiary_id, type, attributes "
+      'FROM $activitiesTable WHERE journey_id = ?';
+
+  /// Splits [_statsSql]'s combined row set back into the plan-item apiary
+  /// ids, the set of apiary ids with ANY attributed activity (regardless of
+  /// type — an apiary counts as "visited" the same way the Melargil
+  /// prototype's own `statsJornada` does, docs/design/prototype.md), and
+  /// every HARVEST-type activity's numeric attributes (D-2: only harvest
+  /// activities feed the hive/honey/supers sums) — then hands all three to
+  /// [computeJourneyStats] for the arithmetic.
+  JourneyStats _statsFromRows(List<Map<String, Object?>> rows) {
+    final plannedApiaryIds = <String>[];
+    final visitedApiaryIds = <String>{};
+    final harvestTotals = <HarvestActivityTotals>[];
+
+    for (final row in rows) {
+      final apiaryId = row['apiary_id'] as String;
+      if (row['source'] == 'plan') {
+        plannedApiaryIds.add(apiaryId);
+        continue;
+      }
+      visitedApiaryIds.add(apiaryId);
+      if (row['type'] != activityTypeHarvest) continue;
+      final rawAttributes = row['attributes'] as String?;
+      final attrs = rawAttributes == null
+          ? const <String, dynamic>{}
+          : (jsonDecode(rawAttributes) as Map<String, dynamic>);
+      harvestTotals.add(
+        HarvestActivityTotals(
+          hivesInvolved: (attrs['hives_involved'] as num?)?.toInt(),
+          honeyKg: attrs['honey_kg'] as num?,
+          honeySupers: (attrs['honey_supers'] as num?)?.toInt(),
+        ),
+      );
+    }
+
+    return computeJourneyStats(
+      plannedApiaryIds: plannedApiaryIds,
+      visitedApiaryIds: visitedApiaryIds,
+      harvestTotals: harvestTotals,
+    );
+  }
+
   /// Every journey's planned apiary ids across the caller's org (#47,
   /// FR-JO-2), keyed by journey id — the progress-badge input
   /// (journey_filters.dart's `computeJourneyProgress`) that [watchAll]
@@ -319,6 +413,16 @@ final journeysStreamProvider = StreamProvider.autoDispose<List<Journey>>((
   final org = await ref.watch(organizationProvider.future);
   yield* repo.watchAll(organizationId: org?.id);
 });
+
+/// One journey's live [JourneyStats] (#49, FR-JO-1) — family-keyed +
+/// autoDispose, mirroring [activityByIdProvider]'s per-id pattern
+/// (activities_repository.dart): a write to an unrelated journey's plan or
+/// activities never re-triggers this.
+final journeyStatsProvider = StreamProvider.autoDispose
+    .family<JourneyStats, String>((ref, journeyId) async* {
+      final repo = await ref.watch(journeysRepositoryProvider.future);
+      yield* repo.watchStats(journeyId);
+    });
 
 /// Every journey's planned apiary ids across the org (#47), live from local
 /// SQLite — the progress-badge input journeys_list_screen.dart needs

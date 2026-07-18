@@ -342,6 +342,16 @@
   "closedJourneyConfirmMessage": "\"{journeyName}\" está fechada. Adicionar esta atividade mesmo assim?",
   "closedJourneyConfirmCancelAction": "Cancelar",
   "closedJourneyConfirmAddAction": "Adicionar mesmo assim",
+  "journeyStatsSectionTitle": "Estatísticas da jornada",
+  "journeyStatsError": "Não foi possível carregar as estatísticas da jornada: {error}",
+  "journeyStatsApiariesVisitedLabel": "Apiários visitados",
+  "journeyStatsApiariesVisitedValue": "{done}/{planned}",
+  "journeyStatsHivesHarvestedLabel": "Colmeias trabalhadas",
+  "journeyStatsHoneyCollectedLabel": "Mel colhido",
+  "journeyStatsHoneyCollectedValue": "{kg} kg",
+  "journeyStatsAverageSupersLabel": "Média alças/colmeia",
+  "journeyStatsAverageSupersNoData": "Ainda sem dados",
+  "journeyStatsMissingLabel": "{count, plural, =0{Todos os apiários planeados foram visitados} =1{Falta 1 apiário} other{Faltam {count} apiários}}",
   "@activityLoadError": {
     "placeholders": {
       "error": {
