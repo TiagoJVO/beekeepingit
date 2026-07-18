@@ -1492,5 +1492,179 @@
         "type": "String"
       }
     }
+  },
+  "newTodoTitle": "New todo",
+  "@newTodoTitle": {
+    "description": "Header title for the standalone todo-create route (#293) — reachable by direct navigation/deep-linking, distinct from #52's own quick-create sheet"
+  },
+  "todoDetailTitle": "Todo",
+  "@todoDetailTitle": {
+    "description": "Header title for the todo detail route (#293, FR-TD-1)"
+  },
+  "editTodoTitle": "Edit todo",
+  "@editTodoTitle": {
+    "description": "Header title for the todo edit route (#293, FR-TD-1)"
+  },
+  "editTodoAction": "Edit todo",
+  "@editTodoAction": {
+    "description": "Label of the todo detail screen's edit FAB, routing to the edit form (#293)"
+  },
+  "todoTitleLabel": "Title",
+  "@todoTitleLabel": {
+    "description": "Field label for a todo's required title, on the create/edit form (#293, FR-TD-1)"
+  },
+  "todoTitleRequired": "Title is required",
+  "@todoTitleRequired": {
+    "description": "Validation message when a todo's title is left blank on save (#293)"
+  },
+  "todoDescriptionLabel": "Description",
+  "@todoDescriptionLabel": {
+    "description": "Field label for a todo's optional free-text description, on the form and the detail screen (#293, FR-TD-1)"
+  },
+  "todoDescriptionUnset": "No description",
+  "@todoDescriptionUnset": {
+    "description": "Fallback shown on the todo detail screen when the todo has no description (#293)"
+  },
+  "todoDueDateFieldLabel": "Due date",
+  "@todoDueDateFieldLabel": {
+    "description": "Field label for a todo's optional due date, on the form and the detail screen (#293, FR-TD-1) — due dates may be in the future, unlike an activity's occurred-at date"
+  },
+  "todoDueDateClearAction": "Clear due date",
+  "@todoDueDateClearAction": {
+    "description": "Tooltip/semantic label for the icon button that clears a set due date on the todo form (#293)"
+  },
+  "todoPriorityFieldLabel": "Priority",
+  "@todoPriorityFieldLabel": {
+    "description": "Field label for a todo's priority dropdown, on the form and the detail screen (#293, FR-TD-1, D-20) — distinct from todoFilterPriorityLabel, the Todos tab's own filter dropdown"
+  },
+  "todoAssigneeFieldLabel": "Assignee",
+  "@todoAssigneeFieldLabel": {
+    "description": "Field label for a todo's assignee picker, on the form and the detail screen (#293, FR-TD-1)"
+  },
+  "todoApiaryFieldLabel": "Apiary",
+  "@todoApiaryFieldLabel": {
+    "description": "Field label for a todo's apiary-association picker, on the form and the detail screen (#293, #51, FR-TD-1)"
+  },
+  "todoAssigneeUnassigned": "Unassigned",
+  "@todoAssigneeUnassigned": {
+    "description": "The assignee picker's clear row label, and the detail screen's fallback when a todo has no assignee (#293, FR-TD-1)"
+  },
+  "todoAssigneeUnknown": "Member {id}",
+  "@todoAssigneeUnknown": {
+    "description": "Fallback label for an assignee id not (yet) resolvable to a real name — offline, pre-first-fetch, or a removed member (#293, mirrors activityPerformedByMember). {id} is a short, non-spoofable id fragment, not the full id.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "todoAssigneeNoneAvailable": "No members available yet.",
+  "@todoAssigneeNoneAvailable": {
+    "description": "Shown in the assignee picker when the org member roster hasn't loaded yet (offline / pre-first-fetch) — the Unassigned clear row still renders alongside this (#293)"
+  },
+  "todoApiaryNone": "No apiary",
+  "@todoApiaryNone": {
+    "description": "The apiary picker's clear row label, and the detail screen's fallback for a general, org-level todo with no apiary association (#293, #51, FR-TD-1)"
+  },
+  "todoApiaryUnknown": "Unknown apiary",
+  "@todoApiaryUnknown": {
+    "description": "Fallback label on the todo detail screen for an apiary id no longer in the locally-synced apiary set — a stale reference to a since-deleted apiary (#293, mirrors todos_repository.dart's own doc comment on this exact case)"
+  },
+  "todoDetailFieldsHeader": "Details",
+  "@todoDetailFieldsHeader": {
+    "description": "Heading above the todo detail screen's read-only field list (#293, mirrors activityDetailAttributesHeader)"
+  },
+  "todoCompletedAtLabel": "Completed at",
+  "@todoCompletedAtLabel": {
+    "description": "Detail-screen row label for a done todo's completion timestamp (#293) — worded distinctly from the plain status word todoFilterStatusDone (\"Completed\") so the two never collide on the same screen"
+  },
+  "todoCompleteAction": "Mark as complete",
+  "@todoCompleteAction": {
+    "description": "Label of the complete/reopen toggle button while the todo is open (#293, FR-TD-1) — on both the detail screen and the form"
+  },
+  "todoReopenAction": "Reopen",
+  "@todoReopenAction": {
+    "description": "Label of the complete/reopen toggle button while the todo is done (#293, FR-TD-1) — on both the detail screen and the form"
+  },
+  "todoCompleteSuccess": "Todo marked complete",
+  "@todoCompleteSuccess": {
+    "description": "Success toast after completing a todo via the toggle (#293)"
+  },
+  "todoCompleteError": "Couldn't update the todo: {error}",
+  "@todoCompleteError": {
+    "description": "Error toast when completing a todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "todoReopenSuccess": "Todo reopened",
+  "@todoReopenSuccess": {
+    "description": "Success toast after reopening a todo via the toggle (#293)"
+  },
+  "todoReopenError": "Couldn't update the todo: {error}",
+  "@todoReopenError": {
+    "description": "Error toast when reopening a todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "todoSaveSuccess": "Todo saved",
+  "@todoSaveSuccess": {
+    "description": "Success toast after creating or editing a todo (#293, mirrors activitySaveSuccess's own create-and-update-share-one-message precedent)"
+  },
+  "todoSaveError": "Couldn't save the todo: {error}",
+  "@todoSaveError": {
+    "description": "Error toast when creating or editing a todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "todoLoadError": "Couldn't load the todo: {error}",
+  "@todoLoadError": {
+    "description": "Error toast when the edit form's initial load of an existing todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteTodo": "Delete todo",
+  "@deleteTodo": {
+    "description": "Label of the delete button on the todo form (#293 AC: delete the todo from the form)"
+  },
+  "todoDeleteSuccess": "Todo deleted",
+  "@todoDeleteSuccess": {
+    "description": "Success toast after deleting a todo (#293)"
+  },
+  "todoDeleteError": "Couldn't delete the todo: {error}",
+  "@todoDeleteError": {
+    "description": "Error toast when deleting a todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteTodoConfirmTitle": "Delete todo?",
+  "@deleteTodoConfirmTitle": {
+    "description": "Title of the delete-confirmation dialog on the todo form (#293)"
+  },
+  "deleteTodoConfirmMessage": "This permanently deletes this todo. This cannot be undone.",
+  "@deleteTodoConfirmMessage": {
+    "description": "Body of the delete-confirmation dialog on the todo form (#293)"
+  },
+  "deleteTodoConfirmAction": "Delete",
+  "@deleteTodoConfirmAction": {
+    "description": "Confirm action of the todo delete-confirmation dialog (#293)"
+  },
+  "deleteTodoCancelAction": "Cancel",
+  "@deleteTodoCancelAction": {
+    "description": "Cancel action of the todo delete-confirmation dialog (#293) — always a no-op"
   }
 }

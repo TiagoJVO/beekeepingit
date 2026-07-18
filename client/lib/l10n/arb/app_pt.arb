@@ -388,6 +388,42 @@
   "todoDueDateUnset": "Sem prazo",
   "todoOverdueBadge": "Atrasada",
   "todoStatusSemanticLabel": "Estado: {status}",
+  "newTodoTitle": "Nova tarefa",
+  "todoDetailTitle": "Tarefa",
+  "editTodoTitle": "Editar tarefa",
+  "editTodoAction": "Editar tarefa",
+  "todoTitleLabel": "Título",
+  "todoTitleRequired": "O título é obrigatório",
+  "todoDescriptionLabel": "Descrição",
+  "todoDescriptionUnset": "Sem descrição",
+  "todoDueDateFieldLabel": "Prazo",
+  "todoDueDateClearAction": "Limpar prazo",
+  "todoPriorityFieldLabel": "Prioridade",
+  "todoAssigneeFieldLabel": "Responsável",
+  "todoApiaryFieldLabel": "Apiário",
+  "todoAssigneeUnassigned": "Sem responsável",
+  "todoAssigneeUnknown": "Membro {id}",
+  "todoAssigneeNoneAvailable": "Ainda não há membros disponíveis.",
+  "todoApiaryNone": "Sem apiário",
+  "todoApiaryUnknown": "Apiário desconhecido",
+  "todoDetailFieldsHeader": "Detalhes",
+  "todoCompletedAtLabel": "Concluída em",
+  "todoCompleteAction": "Marcar como concluída",
+  "todoReopenAction": "Reabrir",
+  "todoCompleteSuccess": "Tarefa concluída",
+  "todoCompleteError": "Não foi possível atualizar a tarefa: {error}",
+  "todoReopenSuccess": "Tarefa reaberta",
+  "todoReopenError": "Não foi possível atualizar a tarefa: {error}",
+  "todoSaveSuccess": "Tarefa guardada",
+  "todoSaveError": "Não foi possível guardar a tarefa: {error}",
+  "todoLoadError": "Não foi possível carregar a tarefa: {error}",
+  "deleteTodo": "Eliminar tarefa",
+  "todoDeleteSuccess": "Tarefa eliminada",
+  "todoDeleteError": "Não foi possível eliminar a tarefa: {error}",
+  "deleteTodoConfirmTitle": "Eliminar tarefa?",
+  "deleteTodoConfirmMessage": "Isto elimina permanentemente esta tarefa. Esta ação não pode ser desfeita.",
+  "deleteTodoConfirmAction": "Eliminar",
+  "deleteTodoCancelAction": "Cancelar",
   "@activityLoadError": {
     "placeholders": {
       "error": {
@@ -412,6 +448,48 @@
   "@todoStatusSemanticLabel": {
     "placeholders": {
       "status": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoAssigneeUnknown": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoCompleteError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoReopenError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoSaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoLoadError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoDeleteError": {
+    "placeholders": {
+      "error": {
         "type": "String"
       }
     }

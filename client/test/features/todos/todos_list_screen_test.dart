@@ -1,6 +1,7 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
@@ -110,6 +111,43 @@ void main() {
       await _openTodosTab(tester, todos: const []);
 
       expect(find.text('No todos yet.'), findsOneWidget);
+    });
+
+    testWidgets('tapping a todo row navigates to its detail (#293)', (
+      tester,
+    ) async {
+      final todo = _todo('1', title: 'Inspect hive 3');
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            isAuthenticatedProvider.overrideWithValue(true),
+            apiariesStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+            todosStreamProvider.overrideWith((ref) => Stream.value([todo])),
+            todoByIdProvider.overrideWith(
+              (ref, id) => Stream.value(id == todo.id ? todo : null),
+            ),
+            memberNamesProvider.overrideWith(
+              (ref) async => const <String, String>{},
+            ),
+            profileProvider.overrideWith(_CompleteProfileController.new),
+            organizationProvider.overrideWith(
+              _ExistingOrganizationController.new,
+            ),
+          ],
+          child: const BeekeepingitApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-tab-todos')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('todo-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('todo-detail-header')), findsOneWidget);
+      expect(find.text('Inspect hive 3'), findsOneWidget);
     });
 
     testWidgets('shows an error state when the todos stream errors', (

@@ -37,9 +37,9 @@ String _journeyFabLabel(AppLocalizations l10n) => l10n.addJourney;
 /// idiomatic pattern), a header (contextual back, brand + screen title,
 /// sync-status pill, account), an offline banner, and a contextual honey FAB.
 ///
-/// Apiaries, Activities and Journeys now have real screens (M2/M3/M4); Todos
-/// and Assistant still show [ComingSoonScreen] placeholders (see
-/// coming_soon_screen.dart, M5/M8) — this shell itself doesn't know or care
+/// Apiaries, Activities, Journeys and Todos (M2/M3/M4/M5, #293) now have
+/// real screens; Assistant still shows a [ComingSoonScreen] placeholder (see
+/// coming_soon_screen.dart, M8) — this shell itself doesn't know or care
 /// which, it just renders whatever the active branch's navigator holds.
 class AppShell extends ConsumerWidget {
   const AppShell({required this.navigationShell, super.key});
@@ -239,6 +239,9 @@ class AppShell extends ConsumerWidget {
       'journeyNew' => l10n.newJourneyTitle,
       'journeyDetail' => l10n.journeyDetailTitle,
       'journeyEdit' => l10n.editJourneyTitle,
+      'todoNew' => l10n.newTodoTitle,
+      'todoDetail' => l10n.todoDetailTitle,
+      'todoEdit' => l10n.editTodoTitle,
       _ => activeTab.label(l10n),
     };
   }

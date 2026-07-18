@@ -21,6 +21,8 @@ import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/sync/sync_needs_fix_screen.dart';
+import '../features/todos/todo_detail_screen.dart';
+import '../features/todos/todo_form_screen.dart';
 import '../features/todos/todos_list_screen.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../shell/app_shell.dart';
@@ -286,6 +288,41 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/todos',
                 name: 'todos',
                 builder: (context, state) => const TodosListScreen(),
+                routes: [
+                  // Standalone create entry point (#293): reachable by
+                  // direct navigation/deep-linking. #52's own quick-create
+                  // is a bottom sheet, not a route, so there is no naming
+                  // collision — this route exists independently of that
+                  // story's own Todos-tab FAB.
+                  GoRoute(
+                    path: 'new',
+                    name: 'todoNew',
+                    builder: (context, state) => const TodoFormScreen(),
+                  ),
+                  // Todo detail (#293, FR-TD-1, FR-HIS-1): every field,
+                  // read-only, plus a complete/reopen toggle — reached by
+                  // tapping a row on the main Todos tab. Edit stays nested
+                  // UNDER this route (mirrors activityDetail's/
+                  // journeyDetail's own edit-nesting precedent above) so its
+                  // full path (`.../:id/edit`) and `todoEdit` name are
+                  // stable.
+                  GoRoute(
+                    path: ':id',
+                    name: 'todoDetail',
+                    builder: (context, state) => TodoDetailScreen(
+                      todoId: state.pathParameters['id']!,
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        name: 'todoEdit',
+                        builder: (context, state) => TodoFormScreen(
+                          todoId: state.pathParameters['id'],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),

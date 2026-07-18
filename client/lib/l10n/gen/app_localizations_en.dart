@@ -1091,4 +1091,125 @@ class AppLocalizationsEn extends AppLocalizations {
   String todoStatusSemanticLabel(String status) {
     return 'Status: $status';
   }
+
+  @override
+  String get newTodoTitle => 'New todo';
+
+  @override
+  String get todoDetailTitle => 'Todo';
+
+  @override
+  String get editTodoTitle => 'Edit todo';
+
+  @override
+  String get editTodoAction => 'Edit todo';
+
+  @override
+  String get todoTitleLabel => 'Title';
+
+  @override
+  String get todoTitleRequired => 'Title is required';
+
+  @override
+  String get todoDescriptionLabel => 'Description';
+
+  @override
+  String get todoDescriptionUnset => 'No description';
+
+  @override
+  String get todoDueDateFieldLabel => 'Due date';
+
+  @override
+  String get todoDueDateClearAction => 'Clear due date';
+
+  @override
+  String get todoPriorityFieldLabel => 'Priority';
+
+  @override
+  String get todoAssigneeFieldLabel => 'Assignee';
+
+  @override
+  String get todoApiaryFieldLabel => 'Apiary';
+
+  @override
+  String get todoAssigneeUnassigned => 'Unassigned';
+
+  @override
+  String todoAssigneeUnknown(String id) {
+    return 'Member $id';
+  }
+
+  @override
+  String get todoAssigneeNoneAvailable => 'No members available yet.';
+
+  @override
+  String get todoApiaryNone => 'No apiary';
+
+  @override
+  String get todoApiaryUnknown => 'Unknown apiary';
+
+  @override
+  String get todoDetailFieldsHeader => 'Details';
+
+  @override
+  String get todoCompletedAtLabel => 'Completed at';
+
+  @override
+  String get todoCompleteAction => 'Mark as complete';
+
+  @override
+  String get todoReopenAction => 'Reopen';
+
+  @override
+  String get todoCompleteSuccess => 'Todo marked complete';
+
+  @override
+  String todoCompleteError(String error) {
+    return 'Couldn\'t update the todo: $error';
+  }
+
+  @override
+  String get todoReopenSuccess => 'Todo reopened';
+
+  @override
+  String todoReopenError(String error) {
+    return 'Couldn\'t update the todo: $error';
+  }
+
+  @override
+  String get todoSaveSuccess => 'Todo saved';
+
+  @override
+  String todoSaveError(String error) {
+    return 'Couldn\'t save the todo: $error';
+  }
+
+  @override
+  String todoLoadError(String error) {
+    return 'Couldn\'t load the todo: $error';
+  }
+
+  @override
+  String get deleteTodo => 'Delete todo';
+
+  @override
+  String get todoDeleteSuccess => 'Todo deleted';
+
+  @override
+  String todoDeleteError(String error) {
+    return 'Couldn\'t delete the todo: $error';
+  }
+
+  @override
+  String get deleteTodoConfirmTitle => 'Delete todo?';
+
+  @override
+  String get deleteTodoConfirmMessage =>
+      'This permanently deletes this todo. This cannot be undone.';
+
+  @override
+  String get deleteTodoConfirmAction => 'Delete';
+
+  @override
+  String get deleteTodoCancelAction => 'Cancel';
 }
