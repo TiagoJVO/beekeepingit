@@ -18,9 +18,9 @@ Phases 0–4 shipped in #330 (image-automation removed; `infra/gitops/` split in
   GitOps-bootstrapped, `infra/gitops/` leaving `main` makes its Kustomization go stale:
   `git clone https://github.com/TiagoJVO/beekeepingit-gitops && kubectl apply -f beekeepingit-gitops/clusters/dev/`.
   No-op if you only use `dev-up.sh`'s local direct-apply loop.
-- **Phase 5 — real domain `melargil.net`** (naming confirmed, consistent `-rc`): prod
-  `beekeepingit.melargil.net` + `auth.beekeepingit.melargil.net`; staging
-  `beekeepingit-rc.melargil.net` + `auth.beekeepingit-rc.melargil.net`. In order, after the cluster
+- **Phase 5 — real domain `melargil.pt`** (naming confirmed, consistent `-rc`): prod
+  `beekeepingit.melargil.pt` + `auth.beekeepingit.melargil.pt`; staging
+  `beekeepingit-rc.melargil.pt` + `auth.beekeepingit-rc.melargil.pt`. In order, after the cluster
   is up so hosts resolve: (1) Scaleway reserved IP per env → Traefik's LoadBalancer; (2) Cloudflare
   A records (DNS-only) → those IPs; (3) swap the nip.io / `.example` values for the real ones in the
   gitops repo's `apps/{staging,prod}/beekeepingit-helmrelease.yaml`, `environments/{staging,prod}.yaml`,
