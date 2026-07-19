@@ -1,0 +1,37 @@
+# Flux image-automation ENGINE for a future `prod` cluster — see
+# flux-system.yaml's header (not deployed yet, prepared per D-26). Mirrors
+# clusters/staging/image-automation.yaml, pointed at apps/prod/ — but the
+# tag SELECTION strategy differs (see service-images.yaml): staging tracks
+# "always newest main build", prod tracks "the newest approved release"
+# (.github/workflows/release-deploy.yml), so it converges to a
+# release-published event instead of every merge.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: beekeepingit-prod
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: beekeepingit
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        email: 41898282+github-actions[bot]@users.noreply.github.com
+        name: flux-image-automation
+      messageTemplate: |
+        chore(deploy): update prod image tags
+
+        Automated by Flux image-automation.
+        {{ range $image, $_ := .Updated.Images -}}
+        - {{ $image }}
+        {{ end -}}
+    push:
+      branch: main
+  update:
+    path: ./infra/gitops/apps/prod
+    strategy: Setters

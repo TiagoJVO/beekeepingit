@@ -54,28 +54,31 @@ spec:
         discoveryUrl: http://authentik-server/application/o/beekeepingit/
         audience: beekeepingit-pwa
       # Same 7 services as apps/staging/ — see that file's comment.
-      # TODO: image-automation is deferred everywhere for now (dev/staging
-      # both run `latest`), but shipping prod on a floating `latest` tag
-      # with no promotion gate would be a real regression — resolve before
-      # prod ever actually deploys, not just mirror this placeholder.
+      # Image-automation is wired (clusters/prod/{image-automation,
+      # service-images}.yaml) — semver-filtered, only ever advances on an
+      # approved .github/workflows/release-deploy.yml release, never
+      # "whatever's newest" the way staging's does. v0.0.0 below is a inert
+      # placeholder (no release has ever been cut) — live only once the
+      # Flux Git-write credential exists (FOLLOWUPS.md) AND a real prod
+      # cluster exists to apply any of this to.
       services:
         identity:
-          tag: latest
+          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-identity:tag"}
         organizations:
-          tag: latest
+          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-organizations:tag"}
         apiaries:
-          tag: latest
+          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-apiaries:tag"}
         activities:
-          tag: latest
+          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-activities:tag"}
         journeys:
-          tag: latest
+          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-journeys:tag"}
         todos:
-          tag: latest
+          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-todos:tag"}
         sync:
-          tag: latest
+          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-sync:tag"}
     pwa:
       image:
-        tag: latest # TODO: a real per-environment CI-built image — see FOLLOWUPS.md
+        tag: latest # TODO: no client-prod build exists yet — see release-deploy.yml's own comment and FOLLOWUPS.md
     # networkpolicy.gatewayNamespace intentionally NOT overridden (defaults
     # to kube-system, charts/networkpolicy/values.yaml) — prod's own cluster
     # bring-up hasn't been designed yet, so which namespace its ingress
