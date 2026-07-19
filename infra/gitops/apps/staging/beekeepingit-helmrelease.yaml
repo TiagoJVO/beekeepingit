@@ -72,10 +72,10 @@ spec:
       certManager:
         enabled: true
         clusterIssuer: letsencrypt-prod
-    # Image-automation ($imagepolicy setter markers, mirroring apps/dev/) is
-    # explicitly deferred (see the deployment plan's Phase 4) — staging starts
-    # on `latest`, same as dev does today, until the Flux Git-write credential
-    # is provisioned and per-service ImagePolicy objects exist for this env.
+    # Image-automation is now wired (clusters/staging/{image-automation,
+    # service-images}.yaml) — the $imagepolicy setter markers below are live
+    # once the Flux Git-write credential exists (FOLLOWUPS.md); until then
+    # they're inert and these stay on `latest`/`staging-manual` as set.
     services:
       oidc:
         # Chart defaults (charts/services/values.yaml) hardcode the dev `.local`
@@ -95,29 +95,29 @@ spec:
       # service yet, hence its absence here.
       services:
         identity:
-          tag: latest
+          tag: latest # {"$imagepolicy": "flux-system:services-identity:tag"}
         organizations:
-          tag: latest
+          tag: latest # {"$imagepolicy": "flux-system:services-organizations:tag"}
         apiaries:
-          tag: latest
+          tag: latest # {"$imagepolicy": "flux-system:services-apiaries:tag"}
         activities:
-          tag: latest
+          tag: latest # {"$imagepolicy": "flux-system:services-activities:tag"}
         journeys:
-          tag: latest
+          tag: latest # {"$imagepolicy": "flux-system:services-journeys:tag"}
         todos:
-          tag: latest
+          tag: latest # {"$imagepolicy": "flux-system:services-todos:tag"}
         sync:
-          tag: latest
+          tag: latest # {"$imagepolicy": "flux-system:services-sync:tag"}
     pwa:
       image:
-        # One-off manual build (not CI), compiled with staging's real nip.io
-        # OIDC/gateway/PowerSync URLs via --dart-define — the client's
-        # AppConfig reads these at Dart *compile* time, not runtime, and CI's
-        # build-publish.yml never passes any, so `latest` has dev's
-        # *.beekeepingit.local:8443 baked in and login fails with a generic
-        # "check your connection" error (OIDC discovery against an
-        # unreachable .local host). See FOLLOWUPS.md for the real fix.
-        tag: staging-manual
+        # One-off manual build (not CI yet), compiled with staging's real
+        # nip.io OIDC/gateway/PowerSync URLs via --dart-define — the client's
+        # AppConfig reads these at Dart *compile* time, not runtime.
+        # build-publish.yml now builds a proper client-staging variant
+        # (tagged staging-<ts>-<sha>); once image-automation's Git-write
+        # credential exists (FOLLOWUPS.md), the marker below takes over and
+        # this manual tag is replaced automatically.
+        tag: staging-manual # {"$imagepolicy": "flux-system:client:tag"}
     networkpolicy:
       # scaleway-up.sh installs Traefik into its own `traefik` namespace, not
       # `kube-system` (charts/networkpolicy/values.yaml's default, correct
