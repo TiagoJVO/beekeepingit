@@ -12,29 +12,29 @@ The Flux controllers themselves are installed **imperatively**, not tracked in G
 GitOps scope is the _application_ reconciliation, not self-managing the Flux install):
 
 ```sh
-# --components-extra adds the image-reflector + image-automation controllers used by the CI/CD
-# image-automation flow (#88, image-automation/). Harmless to include now even though that flow
-# is dormant until the first service publishes an image.
-flux install --components-extra=image-reflector-controller,image-automation-controller
+# Base controllers only. Flux is read-only here — it reconciles from Git, it does not
+# write to it (D-27/ADR-0018 replaced image-automation, so the image-reflector/
+# image-automation controllers are no longer installed).
+flux install
 flux check     # verify
 ```
 
 ## Layout
 
-| Path                                                                                 | What it is                                                                                                                                                                |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`clusters/dev/flux-system.yaml`](clusters/dev/flux-system.yaml)                     | `GitRepository` (this repo, `main`) + the self-referential `Kustomization` that keeps everything under `clusters/dev/` (including itself) reconciled from Git             |
-| [`clusters/dev/apps.yaml`](clusters/dev/apps.yaml)                                   | `Kustomization` pointing Flux at `apps/dev/`                                                                                                                              |
-| [`apps/dev/beekeepingit-helmrelease.yaml`](apps/dev/beekeepingit-helmrelease.yaml)   | `HelmRelease` deploying the umbrella chart into `beekeepingit-dev`, mirroring `environments/dev.yaml`                                                                     |
-| [`apps/dev/authentik-helmrelease.yaml`](apps/dev/authentik-helmrelease.yaml)         | `HelmRepository` (authentik) + `HelmRelease` deploying Authentik (bundled Postgres, no Redis) directly, not nested in the umbrella chart, see ADR-0012/ADR-0016           |
-| [`apps/dev/minio-helmrelease.yaml`](apps/dev/minio-helmrelease.yaml)                 | `HelmRepository` (minio) + `HelmRelease` deploying MinIO directly, same reasoning, ADR-0012                                                                               |
-| [`apps/dev/observability-helmrelease.yaml`](apps/dev/observability-helmrelease.yaml) | `HelmRelease` deploying the observability chart (`infra/helm/observability`, #87) after MinIO (`dependsOn`) — see ADR-0013                                                |
-| [`image-automation/`](image-automation/)                                             | CI/CD image-automation engine + per-service templates (#88); **dormant** — outside the reconciled paths above until the first service publishes an image (see its README) |
+| Path                                                                                 | What it is                                                                                                                                                      |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`clusters/dev/flux-system.yaml`](clusters/dev/flux-system.yaml)                     | `GitRepository` (this repo, `main`) + the self-referential `Kustomization` that keeps everything under `clusters/dev/` (including itself) reconciled from Git   |
+| [`clusters/dev/apps.yaml`](clusters/dev/apps.yaml)                                   | `Kustomization` pointing Flux at `apps/dev/`                                                                                                                    |
+| [`apps/dev/beekeepingit-helmrelease.yaml`](apps/dev/beekeepingit-helmrelease.yaml)   | `HelmRelease` deploying the umbrella chart into `beekeepingit-dev`, mirroring `environments/dev.yaml`                                                           |
+| [`apps/dev/authentik-helmrelease.yaml`](apps/dev/authentik-helmrelease.yaml)         | `HelmRepository` (authentik) + `HelmRelease` deploying Authentik (bundled Postgres, no Redis) directly, not nested in the umbrella chart, see ADR-0012/ADR-0016 |
+| [`apps/dev/minio-helmrelease.yaml`](apps/dev/minio-helmrelease.yaml)                 | `HelmRepository` (minio) + `HelmRelease` deploying MinIO directly, same reasoning, ADR-0012                                                                     |
+| [`apps/dev/observability-helmrelease.yaml`](apps/dev/observability-helmrelease.yaml) | `HelmRelease` deploying the observability chart (`infra/helm/observability`, #87) after MinIO (`dependsOn`) — see ADR-0013                                      |
 
-Adding `staging`/`prod` later means adding `clusters/staging/`, `clusters/prod/` (own
-`GitRepository`/bootstrap `Kustomization`, likely pointing at a release branch/tag instead of
-`main`) and `apps/staging/`, `apps/prod/` `HelmRelease`s — mirroring how
-`environments/{staging,prod}.yaml` already exist as unused overlays on the Helm chart.
+`staging` and `prod` now exist as their own `clusters/{staging,prod}/` + `apps/{staging,prod}/`
+trees, mirroring `dev`. Under D-27 ([ADR-0018](../../docs/adr/0018-release-triggered-deploy-pipeline.md))
+this whole `infra/gitops/` tree moves to a separate `beekeepingit-gitops` repo; the Helm chart stays
+in this repo and Flux sources the two independently. Until that split lands, everything is reconciled
+from this repo as described above.
 
 ### Why Authentik/MinIO are separate `HelmRelease`s, not umbrella subcharts
 

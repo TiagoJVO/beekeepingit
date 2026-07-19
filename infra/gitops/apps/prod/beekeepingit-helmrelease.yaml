@@ -53,29 +53,27 @@ spec:
         issuerUrl: https://auth.beekeepingit.example/application/o/beekeepingit/ # TODO: real domain
         discoveryUrl: http://authentik-server/application/o/beekeepingit/
         audience: beekeepingit-pwa
-      # Same 7 services as apps/staging/ — see that file's comment.
-      # Image-automation is wired (clusters/prod/{image-automation,
-      # service-images}.yaml) — semver-filtered, only ever advances on an
-      # approved .github/workflows/release-deploy.yml release, never
-      # "whatever's newest" the way staging's does. v0.0.0 below is a inert
-      # placeholder (no release has ever been cut) — live only once the
-      # Flux Git-write credential exists (FOLLOWUPS.md) AND a real prod
-      # cluster exists to apply any of this to.
+      # Same 7 services as apps/staging/ — see that file's comment. Tags are set
+      # by the release-triggered tag-bump PR (D-27, ADR-0018): an un-suffixed
+      # (non-`-rc`) release is approval-gated in the `production` GitHub
+      # Environment, publishes that version's images, and opens a PR bumping the
+      # tags below. v0.0.0 is an inert placeholder (no release cut yet) and stays
+      # until such a PR lands AND a real prod cluster exists to apply this to.
       services:
         identity:
-          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-identity:tag"}
+          tag: v0.0.0
         organizations:
-          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-organizations:tag"}
+          tag: v0.0.0
         apiaries:
-          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-apiaries:tag"}
+          tag: v0.0.0
         activities:
-          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-activities:tag"}
+          tag: v0.0.0
         journeys:
-          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-journeys:tag"}
+          tag: v0.0.0
         todos:
-          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-todos:tag"}
+          tag: v0.0.0
         sync:
-          tag: v0.0.0 # {"$imagepolicy": "flux-system:services-sync:tag"}
+          tag: v0.0.0
     pwa:
       image:
         tag: latest # TODO: no client-prod build exists yet — see release-deploy.yml's own comment and FOLLOWUPS.md

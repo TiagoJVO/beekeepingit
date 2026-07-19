@@ -93,7 +93,7 @@ powersync:
 
 # The Go services (#23) — identity/organizations/apiaries/sync. Image tag +
 # per-service wiring live in the subchart's own values.yaml; overlays/CI bump
-# the tag. On merge, Flux image-automation reconciles the published tag.
+# the tag. A release's tag-bump PR sets the deployed tag (D-27, ADR-0018).
 services:
   enabled: true
 

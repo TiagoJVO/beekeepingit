@@ -30,9 +30,8 @@ services:
   # All 7 services the `services` subchart renders (charts/services/values.yaml)
   # — activities/journeys/todos are real deployed workloads, not just
   # reserved Postgres schemas. `ai` has no service yet, hence its absence.
-  # Image-automation ($imagepolicy setter markers, mirroring apps/dev/) is
-  # explicitly deferred — staging starts on `latest` until the Flux Git-write
-  # credential is provisioned and per-service ImagePolicy objects exist.
+  # Tags stay on `latest` here; a release's tag-bump PR sets the deployed tag
+  # (D-27, ADR-0018). This overlay is for manual `helm install -f` testing.
   services:
     identity:
       tag: latest

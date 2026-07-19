@@ -42,10 +42,9 @@ services:
     discoveryUrl: http://authentik-server/application/o/beekeepingit/
     audience: beekeepingit-pwa
   # Same 7 services as environments/staging.yaml — see that file's comment.
-  # Image-automation is deferred everywhere for now (dev and staging both
-  # still run `latest`); revisit before prod ever actually deploys — running
-  # prod on a floating `latest` tag with no image-automation/promotion gate
-  # would be a real regression from every other environment's story.
+  # Tags are promoted by an approval-gated release's tag-bump PR (D-27,
+  # ADR-0018), never a floating `latest`; the placeholder tags here matter only
+  # once a real prod cluster exists (deferred per D-26).
   services:
     identity:
       tag: latest

@@ -55,27 +55,22 @@ spec:
     global:
       environment: dev
       namespace: beekeepingit-dev
-    # Per-component image tags carrying Flux image-automation **setter markers**
-    # (`# {"$imagepolicy": ...}`): once activated, a merge that publishes a newer
-    # image makes ImageUpdateAutomation rewrite the tag here and commit it, so the
-    # deploy is a Git commit — not a manual `kubectl`/`helm` (#23 AC#5, #88).
-    #
-    # DORMANT until activated: activation needs the per-service ImageRepository/
-    # ImagePolicy under `../../image-automation/` moved into a reconciled path and
-    # a Flux Git-write credential (EPIC-14 #89). Until then the tags stay `latest`
-    # and this HelmRelease is only used by the Flux GitOps path — the local
+    # Per-component image tags. dev is deliberately out of the release-triggered
+    # deploy path (D-27, ADR-0018): CI can't reach a local k3d cluster, so dev is
+    # never auto-deployed. These tags stay `latest`, and the local
     # `helm ... -f environments/dev.yaml` dev loop reads the chart, not this file,
-    # so it keeps using `latest`/locally-imported images regardless.
+    # so it keeps using `latest`/locally-imported images regardless. This
+    # HelmRelease matters only if dev is ever driven by Flux from Git.
     services:
       services:
         identity:
-          tag: latest # {"$imagepolicy": "flux-system:services-identity:tag"}
+          tag: latest
         organizations:
-          tag: latest # {"$imagepolicy": "flux-system:services-organizations:tag"}
+          tag: latest
         apiaries:
-          tag: latest # {"$imagepolicy": "flux-system:services-apiaries:tag"}
+          tag: latest
         sync:
-          tag: latest # {"$imagepolicy": "flux-system:services-sync:tag"}
+          tag: latest
     pwa:
       image:
-        tag: latest # {"$imagepolicy": "flux-system:client:tag"}
+        tag: latest

@@ -228,10 +228,11 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
   under test is built in-job from the PR's own checkout (`#236`) — a client-only PR that skipped
   the e2e would ship the one artifact the test exists to exercise unverified (`#245`).
 - [`gitops-ci.yml`](../../.github/workflows/gitops-ci.yml) — kubeconform-validates the Flux
-  manifests under `infra/gitops/**` (including the image-automation templates).
+  manifests under `infra/gitops/**`.
 
-Deploy is **not** done from CI: on merge, CI publishes an image and **Flux image-automation**
-commits the new tag into Git for Flux to reconcile — see GitOps below.
+Deploy is **not** done from CI: a published GitHub Release triggers CI to publish images and open a
+tag-bump **pull request** against the GitOps state; a human merges it and Flux reconciles (D-27,
+[ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md)) — see GitOps below.
 
 ## GitOps (Flux)
 
@@ -241,13 +242,14 @@ change is merged to `main`. See the directory's own
 [README](../../infra/gitops/README.md) for layout and day-to-day operation, and
 [ADR-0009](../adr/0009-gitops-flux.md) for why Flux and why hand-wired (not `flux bootstrap`).
 
-**Image-automation** closes the CI/CD loop (#88, [ADR-0014](../adr/0014-cicd-pipeline.md)): the
-image-reflector + image-automation controllers watch ghcr.io and commit each new commit-tagged
-image into `apps/dev/`, which Flux reconciles — so a merge deploys with no manual `kubectl`. The
-engine + per-service templates live in
-[`infra/gitops/image-automation/`](../../infra/gitops/image-automation/), **dormant** (outside the
-reconciled paths) until the first service publishes an image and a Git write-credential is
-provisioned (an EPIC-14 #89 secrets task).
+**Release-triggered promotion** closes the CI/CD loop (D-27,
+[ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md), superseding the image-automation plan
+in [ADR-0014](../adr/0014-cicd-pipeline.md) §4): a published Release makes CI build the release
+version's images and open a tag-bump **PR** against the GitOps manifests; a human merges it and Flux
+reconciles. Flux stays **read-only** — no image-automation controllers, no standing git-write
+credential. `-rc` releases target `staging`; un-suffixed releases target `prod` behind the
+`production` GitHub Environment's approval. `dev` is out of this path (CI can't reach a local
+cluster) and stays a manual `helm ... -f environments/dev.yaml` loop.
 
 ## Not yet covered here
 
@@ -259,8 +261,8 @@ certManager.enabled`, cert-manager + Let's Encrypt, ADR-0017) and live on `stagi
 - PowerSync's real org-scoped Sync Rules and per-org sync-token connector (`docs/architecture/sync.md`,
   ADR-0006) — `#22` ships a placeholder sync-config and an IdP-JWKS stopgap (see
   `FOLLOWUPS.md`) since `apiaries`/`organizations` don't exist until `#23`/`#106`.
-- End-to-end **publish→deploy** from CI — the #88 pipeline publishes images and lets Flux
-  image-automation update manifests, but it is **dormant until the first service ships a
-  `Dockerfile`**; that path is exercised then (see [ADR-0014](../adr/0014-cicd-pipeline.md)). Note
-  the `postgres` subchart's `helm test` smoke-query hook _does_ now run against a live cluster in CI
-  (`helm-e2e.yml`, `#154`) — it's no longer local-only.
+- End-to-end **release→deploy** — the release-triggered PR-based promotion (D-27,
+  [ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md)) is designed but **not yet exercised
+  end-to-end**: `release-deploy.yml`'s tag-bump-PR step and the `beekeepingit-gitops` repo split are
+  in progress. Note the `postgres` subchart's `helm test` smoke-query hook _does_ now run against a
+  live cluster in CI (`helm-e2e.yml`, `#154`) — it's no longer local-only.

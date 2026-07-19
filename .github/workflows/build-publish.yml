@@ -6,9 +6,9 @@
 # change (path filtering — AC #1), so the build job self-discovers work and no-ops cleanly while
 # the repo has no Dockerfiles yet (same "green before code" philosophy as ci.yml / taskfiles/*).
 #
-# On merge to main, images publish to ghcr.io tagged by commit SHA (AC #4); Flux image-automation
-# then bumps the deployed tag in Git and reconciles it onto the cluster — no manual kubectl
-# (AC #5, see infra/gitops/image-automation/). Container-image scanning gates the build (AC #3);
+# On merge to main, images publish to ghcr.io tagged by commit SHA (AC #4) as build artifacts —
+# they are NOT auto-deployed. Deploys come only from a published Release (D-27, ADR-0018,
+# .github/workflows/release-deploy.yml). Container-image scanning gates the build (AC #3);
 # repo-level dependency/secret scanning lives in security-scan.yml.
 #
 # macOS runners for iOS builds are intentionally NOT here at M0 — added at M5 by EPIC-15 (AC #6);
@@ -189,9 +189,8 @@ jobs:
         with:
           images: ${{ matrix.image }}
           # `sha-<short>` on every build (AC #4 "tagged by commit"). On main, also a
-          # timestamp-prefixed tag so Flux image-automation can order builds by recency
-          # (commit SHAs aren't chronologically sortable) — the example ImagePolicy in
-          # infra/gitops/image-automation/ filters on this `<YYYYMMDDHHMMSS>-<sha>` scheme.
+          # timestamp-prefixed `<YYYYMMDDHHMMSS>-<sha>` tag so builds are chronologically
+          # orderable (commit SHAs aren't).
           # Env-prefixed (matrix.env, e.g. "dev-sha-...", "staging-latest") for the
           # client's per-environment variants, so multiple environments can share one
           # image repo without colliding tags; empty prefix (unchanged scheme) for

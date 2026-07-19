@@ -54,7 +54,8 @@ wait_for_pod() {
 
 echo
 echo "installing/upgrading the Flux controllers (idempotent)"
-flux install --components-extra=image-reflector-controller,image-automation-controller
+# Base controllers only — Flux is read-only (D-27/ADR-0018 dropped image-automation).
+flux install
 flux check
 
 echo

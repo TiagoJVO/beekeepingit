@@ -72,10 +72,10 @@ spec:
       certManager:
         enabled: true
         clusterIssuer: letsencrypt-prod
-    # Image-automation is now wired (clusters/staging/{image-automation,
-    # service-images}.yaml) — the $imagepolicy setter markers below are live
-    # once the Flux Git-write credential exists (FOLLOWUPS.md); until then
-    # they're inert and these stay on `latest`/`staging-manual` as set.
+    # Image tags are set by the release-triggered tag-bump PR (D-27, ADR-0018):
+    # cutting a `-rc` release publishes that version's images and opens a PR
+    # bumping the tags below; merging it makes Flux reconcile. No image-automation
+    # and no Flux Git-write credential — the tags stay as set until such a PR lands.
     services:
       oidc:
         # Chart defaults (charts/services/values.yaml) hardcode the dev `.local`
@@ -95,29 +95,28 @@ spec:
       # service yet, hence its absence here.
       services:
         identity:
-          tag: latest # {"$imagepolicy": "flux-system:services-identity:tag"}
+          tag: latest
         organizations:
-          tag: latest # {"$imagepolicy": "flux-system:services-organizations:tag"}
+          tag: latest
         apiaries:
-          tag: latest # {"$imagepolicy": "flux-system:services-apiaries:tag"}
+          tag: latest
         activities:
-          tag: latest # {"$imagepolicy": "flux-system:services-activities:tag"}
+          tag: latest
         journeys:
-          tag: latest # {"$imagepolicy": "flux-system:services-journeys:tag"}
+          tag: latest
         todos:
-          tag: latest # {"$imagepolicy": "flux-system:services-todos:tag"}
+          tag: latest
         sync:
-          tag: latest # {"$imagepolicy": "flux-system:services-sync:tag"}
+          tag: latest
     pwa:
       image:
         # One-off manual build (not CI yet), compiled with staging's real
         # nip.io OIDC/gateway/PowerSync URLs via --dart-define — the client's
-        # AppConfig reads these at Dart *compile* time, not runtime.
-        # build-publish.yml now builds a proper client-staging variant
-        # (tagged staging-<ts>-<sha>); once image-automation's Git-write
-        # credential exists (FOLLOWUPS.md), the marker below takes over and
-        # this manual tag is replaced automatically.
-        tag: staging-manual # {"$imagepolicy": "flux-system:client:tag"}
+        # AppConfig reads these at Dart *compile* time, not runtime. Under D-27
+        # (ADR-0018) the deployable PWA build moves into release-deploy.yml,
+        # tagged by release version; the release tag-bump PR replaces this
+        # manual tag once that lands (see FOLLOWUPS.md).
+        tag: staging-manual
     networkpolicy:
       # scaleway-up.sh installs Traefik into its own `traefik` namespace, not
       # `kube-system` (charts/networkpolicy/values.yaml's default, correct

@@ -9,14 +9,14 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 
 | Service                      | Role                                                        | Where configured                            |
 | ---------------------------- | ----------------------------------------------------------- | ------------------------------------------- |
-| **Authentik**                | OIDC IdP (auth host); replaced Keycloak (ADR-0016)          | charts/authentik; client AppConfig.oidc*    |
+| **Authentik**                | OIDC IdP (auth host); replaced Keycloak (ADR-0016)          | charts/authentik; client AppConfig.oidc\*   |
 | **PowerSync**                | Sync engine — streams Postgres→device, JWKS-verified tokens | charts/powersync (+ Sync Rules)             |
 | **Postgres+PostGIS**         | Primary datastore (CloudNativePG operator)                  | charts/postgres; `beekeepingit-postgres-rw` |
 | **MinIO**                    | S3-compatible object storage                                | charts/minio; via `shared/objectstore`      |
 | **Traefik**                  | Gateway/ingress (`/`, `/v1/*`, `/sync-stream/**`)           | charts/gateway; ADR-0012                    |
 | **OTel Collector → Grafana** | Traces/metrics/logs (observability)                         | helm/observability; ADR-0013                |
 | **Flux**                     | GitOps reconciliation                                       | infra/gitops; ADR-0009                      |
-| **ghcr.io**                  | Container registry (`ghcr.io/tiagojvo/beekeepingit`)        | infra/gitops/image-automation               |
+| **ghcr.io**                  | Container registry (`ghcr.io/tiagojvo/beekeepingit`)        | build-publish.yml; release-deploy.yml       |
 
 ## Inter-service dependency graph (internal HTTP)
 

@@ -120,9 +120,10 @@ helm upgrade --install cert-manager jetstack/cert-manager \
   --set crds.enabled=true
 
 # 4. Flux controllers (same as infra/gitops/README.md's dev prerequisite —
-# imperative, not GitOps-managed, per ADR-0009).
+# imperative, not GitOps-managed, per ADR-0009). Base controllers only: Flux is
+# read-only (D-27/ADR-0018 dropped image-automation).
 echo "installing Flux controllers"
-flux install --components-extra=image-reflector-controller,image-automation-controller
+flux install
 flux check
 
 cat <<EOF

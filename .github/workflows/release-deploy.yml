@@ -1,8 +1,8 @@
-# Release → prod pipeline (D-26/ADR-0017, complementing build-publish.yml's
-# merge-to-main → staging path). A published GitHub Release is a deliberate,
-# human-decided promotion event — unlike staging's "always deploy newest
-# main build" via Flux image-automation, prod should only ever advance on
-# an explicitly released, approved version.
+# Release → prod image publish (D-26/ADR-0017; deploy model D-27/ADR-0018).
+# A published GitHub Release is a deliberate, human-decided promotion event.
+# NOTE: this workflow currently only builds + publishes the prod image set; the
+# release→tag-bump-PR step and the `-rc`→staging routing (D-27, ADR-0018) are
+# still to be added — see DEPLOYMENT_PIPELINE_PLAN.md / FOLLOWUPS.md.
 #
 # NOT the same "detect changed components" logic as build-publish.yml: a
 # Release isn't tied to a diff range (it can be cut from any commit), and
@@ -19,10 +19,9 @@
 # (lint/test/build/scan, so you see scan results before deciding whether to
 # approve), `publish` reuses its GHA layer cache (same cache-from/cache-to
 # pattern build-publish.yml already uses for its own build→push split) and
-# only pushes once approved. Prod's own Flux image-automation (inert until a
-# real prod cluster exists — infra/gitops/clusters/prod/) polls the registry
-# separately and only ever considers semver-tagged images, so nothing prod
-# could pick up even exists before that approval.
+# only pushes once approved. Deploy itself is a separate step (D-27/ADR-0018):
+# a merged tag-bump PR against the GitOps repo, which Flux reconciles — not yet
+# wired here (see the NOTE above).
 name: release-deploy
 
 on:
@@ -102,10 +101,9 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ matrix.image }}
-          # The release's own tag (e.g. v1.2.3) — prod's ImagePolicy
-          # (infra/gitops/clusters/prod/service-images.yaml) filters for
-          # exactly this semver shape, ignoring staging's constant stream of
-          # sha-/timestamp-tagged builds.
+          # The release's own tag (e.g. v1.2.3) — the release-triggered tag-bump
+          # PR (D-27, ADR-0018) will set exactly this version in the prod
+          # HelmRelease.
           tags: |
             type=raw,value=${{ github.event.release.tag_name }}
 

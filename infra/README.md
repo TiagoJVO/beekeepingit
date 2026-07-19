@@ -35,8 +35,9 @@ HelmRelease depends on that same bootstrap `GitRepository`. See
 infra/cluster/up.sh
 
 # 2. Install/upgrade the Flux controllers (idempotent) — authentik/minio below are
-#    Flux HelmReleases, so this is a real prerequisite, not optional.
-flux install --components-extra=image-reflector-controller,image-automation-controller
+#    Flux HelmReleases, so this is a real prerequisite, not optional. Base
+#    controllers only: Flux is read-only (D-27/ADR-0018 dropped image-automation).
+flux install
 
 # 3. Fetch chart dependencies (local + vendored third-party, see the chart's README) —
 #    re-run after cloning, after changing a dependency version, AND after editing any
