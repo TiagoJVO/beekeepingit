@@ -207,7 +207,7 @@ jobs:
           # until a real prod domain exists (D-26); a bare (prod) release shouldn't
           # be cut until then.
           if [ "$TARGET" = "staging" ]; then
-            DART_DEFINES="--dart-define=OIDC_ISSUER=https://auth.51-159-204-90.nip.io/application/o/beekeepingit/ --dart-define=GATEWAY_BASE_URL=https://app.51-159-204-90.nip.io --dart-define=OIDC_ACCOUNT_URL=https://auth.51-159-204-90.nip.io/if/user/#/settings --dart-define=POWERSYNC_URL=https://app.51-159-204-90.nip.io/sync-stream/"
+            DART_DEFINES="--dart-define=OIDC_ISSUER=https://auth.beekeepingit-rc.melargil.pt/application/o/beekeepingit/ --dart-define=GATEWAY_BASE_URL=https://beekeepingit-rc.melargil.pt --dart-define=OIDC_ACCOUNT_URL=https://auth.beekeepingit-rc.melargil.pt/if/user/#/settings --dart-define=POWERSYNC_URL=https://beekeepingit-rc.melargil.pt/sync-stream/"
           else
             DART_DEFINES="--dart-define=OIDC_ISSUER=https://auth.beekeepingit.example/application/o/beekeepingit/ --dart-define=GATEWAY_BASE_URL=https://app.beekeepingit.example --dart-define=OIDC_ACCOUNT_URL=https://auth.beekeepingit.example/if/user/#/settings --dart-define=POWERSYNC_URL=https://app.beekeepingit.example/sync-stream/"
           fi
