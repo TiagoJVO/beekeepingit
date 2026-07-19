@@ -44,7 +44,7 @@ same way k3d itself bundles Traefik. See `charts/postgres/Chart.yaml` and ADR-00
 ### Standalone Flux release (a maintained upstream chart exists, but Flux can't resolve it nested — e.g. `authentik`, `minio`)
 
 **Don't** nest a vendored chart as a Helm dependency of anything in this umbrella if the umbrella
-itself is deployed by Flux straight from Git (see [`infra/gitops/`](../../gitops/)) — its
+itself is deployed by Flux straight from Git (see the [`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo) — its
 source-controller only resolves the umbrella's own top-level dependencies from what's checked
 into Git, it does not recursively resolve a subchart's own nested vendored dependency (confirmed
 directly: a pristine checkout without one, tried once, rendered zero of the vendored chart's
@@ -52,7 +52,7 @@ actual resources, silently — see ADR-0012, which supersedes the wrapper-chart 
 repo used at first).
 
 Instead: deploy the vendored chart as its **own standalone Flux `HelmRepository` + `HelmRelease`**
-under [`infra/gitops/apps/dev/`](../../gitops/apps/dev/) (`authentik-helmrelease.yaml`,
+under the beekeepingit-gitops repo's [`apps/dev/`](https://github.com/TiagoJVO/beekeepingit-gitops/tree/main/apps/dev) (`authentik-helmrelease.yaml`,
 `minio-helmrelease.yaml` are live examples), with `dependsOn: [beekeepingit]` if it needs a
 Secret/ConfigMap this umbrella creates. If the service needs supplementary resources the vendored
 chart can't own itself (a generated-credential Secret — the standard `lookup` + `randAlphaNum`

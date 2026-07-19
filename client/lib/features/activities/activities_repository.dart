@@ -31,6 +31,7 @@ class Activity {
     required this.attributes,
     this.performedBy,
     this.organizationId,
+    this.journeyId,
   });
 
   final String id;
@@ -43,6 +44,15 @@ class Activity {
   final Map<String, dynamic> attributes;
   final String? performedBy;
   final String? organizationId;
+
+  /// The journey this activity attaches to (D-21/#46), or null for "no
+  /// journey" — mirrors [ActivitiesRepository.create]'s own `journeyId`
+  /// param. Exposed on the read model starting #47 so journeys' own list
+  /// (journeys_repository.dart's progress badge, journey_filters.dart's
+  /// date-range filter) can correlate an activity back to its journey
+  /// without a bespoke query of its own — the column has existed on the
+  /// local table since #46, only the read side didn't surface it until now.
+  final String? journeyId;
 
   DateTime get occurredAtDate => DateTime.parse(occurredAt);
 }
@@ -60,8 +70,13 @@ class Activity {
 /// both are derived SERVER-SIDE from the authenticated caller's token on
 /// write-back (FR-TEN-2: "each activity is recorded against the user who
 /// performed it"), never from client-supplied data, so a spoofed attribution
-/// is not even representable on the wire. `journey_id` is similarly omitted
-/// (D-21/#46, unused until M4 — there is no journey to attach to yet).
+/// is not even representable on the wire. `journey_id` (D-21/#46) IS written
+/// by [create] (optionally — see its own doc) now that the activity-form
+/// picker exists; it is set once at creation and never changed by [update]
+/// (mirrors `services/activities/api/write.go`'s updateActivity, which
+/// likewise never touches it — the server enforces this too, so a client
+/// that somehow tried to change it on PATCH would have the field silently
+/// ignored server-side).
 ///
 /// `apiary_id` is likewise never written by [update] (#40): the edit UI
 /// never exposes moving an activity to a different apiary, so every local
@@ -84,19 +99,34 @@ class ActivitiesRepository {
   /// requirement. [occurredAt] is a plain `YYYY-MM-DD` string, matching the
   /// server's `DATE` column (services/activities/api/validate.go's
   /// `dateLayout`) — no time-of-day component.
+  ///
+  /// [journeyId] (D-21/#46) is the journey this activity attaches to, or
+  /// null for "no journey" — the activity-form picker's auto-select/
+  /// deselect/switch/create-new outcome (journey_picker.dart), set once here
+  /// and never changed afterward (this class's own doc comment).
   Future<String> create({
     required String apiaryId,
     required String type,
     required String occurredAt,
     required Map<String, dynamic> attributes,
+    String? journeyId,
   }) async {
     final id = _uuid.v4();
     final now = _nowIso();
     await _store.execute(
       'INSERT INTO $activitiesTable '
-      '(id, apiary_id, type, occurred_at, attributes, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, apiaryId, type, occurredAt, jsonEncode(attributes), now, now],
+      '(id, apiary_id, journey_id, type, occurred_at, attributes, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        apiaryId,
+        journeyId,
+        type,
+        occurredAt,
+        jsonEncode(attributes),
+        now,
+        now,
+      ],
     );
     return id;
   }
@@ -106,7 +136,7 @@ class ActivitiesRepository {
   /// form's initial load (add_activity_screen.dart's `_loadExisting`).
   Future<Activity?> getById(String id) async {
     final row = await _store.getOptional(
-      'SELECT id, apiary_id, performed_by, organization_id, type, '
+      'SELECT id, apiary_id, journey_id, performed_by, organization_id, type, '
       'occurred_at, attributes FROM $activitiesTable WHERE id = ?',
       [id],
     );
@@ -122,8 +152,8 @@ class ActivitiesRepository {
   Stream<Activity?> watchById(String id) {
     return _store
         .watch(
-          'SELECT id, apiary_id, performed_by, organization_id, type, '
-          'occurred_at, attributes FROM $activitiesTable WHERE id = ?',
+          'SELECT id, apiary_id, journey_id, performed_by, organization_id, '
+          'type, occurred_at, attributes FROM $activitiesTable WHERE id = ?',
           [id],
         )
         .map((rows) => rows.isEmpty ? null : _fromRow(rows.first));
@@ -172,10 +202,32 @@ class ActivitiesRepository {
   Stream<List<Activity>> watchByApiary(String apiaryId) {
     return _store
         .watch(
-          'SELECT id, apiary_id, performed_by, organization_id, type, '
-          'occurred_at, attributes FROM $activitiesTable '
+          'SELECT id, apiary_id, journey_id, performed_by, organization_id, '
+          'type, occurred_at, attributes FROM $activitiesTable '
           'WHERE apiary_id = ? ORDER BY occurred_at DESC, created_at DESC',
           [apiaryId],
+        )
+        .map((rows) => rows.map(_fromRow).toList());
+  }
+
+  /// One journey's activities (#48, FR-JO-3, D-21), newest-first —
+  /// attributed by the activity's STORED `journey_id` column, never a live
+  /// re-match against the journey's current plan/apiary/type (D-21, mirrors
+  /// journeys_repository.dart's `getStats`/`watchStats` own doc on this same
+  /// guarantee): `journey_id` is set once at creation and never changed
+  /// afterward (this class's own doc comment above), so this query simply
+  /// reflects whatever is currently stored. No org filter needed here either
+  /// — same rationale as [watchByApiary]'s own doc: a journey belonging to
+  /// another organization is never locally present to begin with (the
+  /// journeys Sync Rule already scopes it out), so filtering activities by
+  /// [journeyId] alone can never cross a tenant boundary.
+  Stream<List<Activity>> watchByJourney(String journeyId) {
+    return _store
+        .watch(
+          'SELECT id, apiary_id, journey_id, performed_by, organization_id, '
+          'type, occurred_at, attributes FROM $activitiesTable '
+          'WHERE journey_id = ? ORDER BY occurred_at DESC, created_at DESC',
+          [journeyId],
         )
         .map((rows) => rows.map(_fromRow).toList());
   }
@@ -206,8 +258,8 @@ class ActivitiesRepository {
     if (organizationId == null) return Stream.value(const []);
     return _store
         .watch(
-          'SELECT id, apiary_id, performed_by, organization_id, type, '
-          'occurred_at, attributes FROM $activitiesTable '
+          'SELECT id, apiary_id, journey_id, performed_by, organization_id, '
+          'type, occurred_at, attributes FROM $activitiesTable '
           'WHERE organization_id = ? OR organization_id IS NULL '
           'ORDER BY occurred_at DESC, created_at DESC',
           [organizationId],
@@ -218,6 +270,7 @@ class ActivitiesRepository {
   Activity _fromRow(Map<String, Object?> r) => Activity(
     id: r['id'] as String,
     apiaryId: r['apiary_id'] as String,
+    journeyId: r['journey_id'] as String?,
     performedBy: r['performed_by'] as String?,
     organizationId: r['organization_id'] as String?,
     type: r['type'] as String,
@@ -240,13 +293,11 @@ final activitiesRepositoryProvider = FutureProvider<ActivitiesRepository>((
 /// Live single activity by id (#40/#41) — the edit screen's read path,
 /// mirroring [apiaryByIdProvider]'s family + autoDispose pattern
 /// (apiaries_repository.dart).
-final activityByIdProvider = StreamProvider.autoDispose.family<Activity?, String>((
-  ref,
-  activityId,
-) async* {
-  final repo = await ref.watch(activitiesRepositoryProvider.future);
-  yield* repo.watchById(activityId);
-});
+final activityByIdProvider = StreamProvider.autoDispose
+    .family<Activity?, String>((ref, activityId) async* {
+      final repo = await ref.watch(activitiesRepositoryProvider.future);
+      yield* repo.watchById(activityId);
+    });
 
 /// One apiary's live activities (#42) — family-keyed + autoDispose, mirroring
 /// apiaries_repository.dart's apiaryCountersProvider/apiaryByIdProvider
@@ -269,3 +320,12 @@ final activitiesStreamProvider = StreamProvider.autoDispose<List<Activity>>((
   final org = await ref.watch(organizationProvider.future);
   yield* repo.watchAll(organizationId: org?.id);
 });
+
+/// One journey's live activities (#48, FR-JO-3) — family-keyed + autoDispose,
+/// mirroring [activitiesByApiaryProvider]'s own per-id convention: a write
+/// to an unrelated journey's activities never re-triggers this.
+final activitiesByJourneyProvider = StreamProvider.autoDispose
+    .family<List<Activity>, String>((ref, journeyId) async* {
+      final repo = await ref.watch(activitiesRepositoryProvider.future);
+      yield* repo.watchByJourney(journeyId);
+    });

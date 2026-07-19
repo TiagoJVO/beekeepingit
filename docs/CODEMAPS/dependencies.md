@@ -1,4 +1,4 @@
-<!-- Generated: 2026-07-14 | Files scanned: 95 | Token estimate: ~950 -->
+<!-- Generated: 2026-07-18 | Files scanned: 95 | Token estimate: ~980 -->
 
 # Dependencies Codemap
 
@@ -9,19 +9,19 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 
 | Service                      | Role                                                        | Where configured                            |
 | ---------------------------- | ----------------------------------------------------------- | ------------------------------------------- |
-| **Authentik**                | OIDC IdP (auth host); replaced Keycloak (ADR-0016)          | charts/authentik; client AppConfig.oidc*    |
+| **Authentik**                | OIDC IdP (auth host); replaced Keycloak (ADR-0016)          | charts/authentik; client AppConfig.oidc\*   |
 | **PowerSync**                | Sync engine — streams Postgres→device, JWKS-verified tokens | charts/powersync (+ Sync Rules)             |
 | **Postgres+PostGIS**         | Primary datastore (CloudNativePG operator)                  | charts/postgres; `beekeepingit-postgres-rw` |
 | **MinIO**                    | S3-compatible object storage                                | charts/minio; via `shared/objectstore`      |
 | **Traefik**                  | Gateway/ingress (`/`, `/v1/*`, `/sync-stream/**`)           | charts/gateway; ADR-0012                    |
 | **OTel Collector → Grafana** | Traces/metrics/logs (observability)                         | helm/observability; ADR-0013                |
-| **Flux**                     | GitOps reconciliation                                       | infra/gitops; ADR-0009                      |
-| **ghcr.io**                  | Container registry (`ghcr.io/tiagojvo/beekeepingit`)        | infra/gitops/image-automation               |
+| **Flux**                     | GitOps reconciliation                                       | beekeepingit-gitops repo; ADR-0009          |
+| **ghcr.io**                  | Container registry (`ghcr.io/tiagojvo/beekeepingit`)        | build-publish.yml; release-deploy.yml       |
 
 ## Inter-service dependency graph (internal HTTP)
 
 ```text
-client ──JWT──► identity, organizations, apiaries, sync   (all via Traefik /v1/*)
+client ──JWT──► identity, organizations, apiaries, journeys, todos, sync   (all via Traefik /v1/*)
 organizations ─► identity            (INTERNAL_IDENTITY_URL, user resolve)
 apiaries       ─► identity, organizations   (org-resolver: sub→user, →membership)
 activities     ─► identity, organizations   (org-resolver, same wiring as apiaries)
@@ -29,10 +29,33 @@ activities     ─► apiaries            (INTERNAL_APIARIES_URL, #39: verify a 
                                         apiary_id belongs to the caller's org, GET /v1/apiaries/{id} —
                                         api/apiaries_client.go; activities has no DB access to
                                         apiaries' schema, ownership rule 1)
+activities     ─► journeys            (INTERNAL_JOURNEYS_URL, #46: verify a client-supplied
+                                        journey_id belongs to the caller's org, GET /v1/journeys/{id} —
+                                        api/journeys_client.go, same ApiaryVerifier pattern;
+                                        closes a cross-org IDOR, journey_id was previously
+                                        accepted with no ownership check)
+journeys       ─► identity, organizations   (org-resolver, same wiring as apiaries)
+journeys       ─► apiaries            (INTERNAL_APIARIES_URL, #45: same ApiaryVerifier pattern
+                                        as activities', for every apiary_id in a journey's plan)
+todos          ─► identity, organizations   (org-resolver, same wiring as apiaries)
+todos          ─► organizations       (INTERNAL_ORGANIZATIONS_URL, #50: verify a client-supplied
+                                        assignee_id has an ACTIVE membership in the caller's org,
+                                        GET /internal/memberships/active?user_id= —
+                                        api/members_client.go; todos has no DB access to
+                                        organizations' schema, ownership rule 1)
+todos          ─► apiaries            (INTERNAL_APIARIES_URL, #51: verify a client-supplied
+                                        apiary_id belongs to the caller's org, GET /v1/apiaries/{id}
+                                        — api/apiaries_client.go, same ApiaryVerifier pattern as
+                                        activities'/journeys'; todos has no DB access to apiaries'
+                                        schema, ownership rule 1)
 sync           ─► identity, organizations   (org-resolver, on /v1)
 sync           ─► apiaries            (INTERNAL_APIARIES_URL: /internal/sync/validate+apply)
 sync           ─► activities          (INTERNAL_ACTIVITIES_URL, #39: /internal/sync/validate+apply,
-                                        routed by entity_type via Coordinator.groupOpsByOwner)
+                                        routed by entity_type via Coordinator's routes map)
+sync           ─► journeys            (INTERNAL_JOURNEYS_URL, #45: /internal/sync/validate+apply,
+                                        `journey`/`journey_plan_item` entity types)
+sync           ─► todos               (INTERNAL_TODOS_URL, #50: /internal/sync/validate+apply,
+                                        routed by entity_type via Coordinator's routes map)
 PowerSync      ─► sync                (validates tokens against /internal/sync/jwks.json)
 ```
 

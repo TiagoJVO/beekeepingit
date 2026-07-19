@@ -741,4 +741,502 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteActivityCancelAction => 'Cancelar';
+
+  @override
+  String get addJourney => 'Nova jornada';
+
+  @override
+  String get newJourneyTitle => 'Nova jornada';
+
+  @override
+  String get editJourneyTitle => 'Editar jornada';
+
+  @override
+  String get journeysEmpty =>
+      'Ainda não há jornadas. Toque em “Nova jornada” para criar uma.';
+
+  @override
+  String journeysError(String error) {
+    return 'Não foi possível carregar as jornadas: $error';
+  }
+
+  @override
+  String get journeysFilterNoResults =>
+      'Nenhuma jornada corresponde aos filtros.';
+
+  @override
+  String get journeyFilterTypeLabel => 'Tipo';
+
+  @override
+  String get journeyFilterTypeAll => 'Todos os tipos';
+
+  @override
+  String get journeyFilterDateRangeLabel => 'Intervalo de datas';
+
+  @override
+  String get journeyFilterDateRangeUnset => 'Qualquer data';
+
+  @override
+  String journeyFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get journeyFilterClearAction => 'Limpar filtros';
+
+  @override
+  String journeyProgressBadge(int done, int planned) {
+    return '$done/$planned apiários visitados';
+  }
+
+  @override
+  String get journeyNameLabel => 'Nome';
+
+  @override
+  String get journeyNameRequired => 'O nome é obrigatório';
+
+  @override
+  String get journeyMainActivityTypeLabel => 'Atividade principal';
+
+  @override
+  String get journeyApiariesLabel => 'Apiários a visitar';
+
+  @override
+  String get journeyApiariesRequired => 'Selecione pelo menos um apiário';
+
+  @override
+  String get journeyApiariesNoneAvailable =>
+      'Ainda não há apiários — adicione um no separador Apiários primeiro.';
+
+  @override
+  String journeyApiariesSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiários selecionados',
+      one: '1 apiário selecionado',
+      zero: 'Nenhum apiário selecionado',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String journeyLoadError(String error) {
+    return 'Não foi possível carregar a jornada: $error';
+  }
+
+  @override
+  String get journeySaveSuccess => 'Jornada guardada';
+
+  @override
+  String journeySaveError(String error) {
+    return 'Não foi possível guardar a jornada: $error';
+  }
+
+  @override
+  String get closeJourneyAction => 'Fechar jornada';
+
+  @override
+  String get journeyCloseSuccess => 'Jornada fechada';
+
+  @override
+  String journeyCloseError(String error) {
+    return 'Não foi possível fechar a jornada: $error';
+  }
+
+  @override
+  String get journeyStatusOpenLabel => 'Aberta';
+
+  @override
+  String get journeyStatusClosedLabel => 'Fechada';
+
+  @override
+  String journeyStatusSemanticLabel(String label) {
+    return 'Estado: $label';
+  }
+
+  @override
+  String get deleteJourney => 'Eliminar jornada';
+
+  @override
+  String get journeyDeleteSuccess => 'Jornada eliminada';
+
+  @override
+  String journeyDeleteError(String error) {
+    return 'Não foi possível eliminar a jornada: $error';
+  }
+
+  @override
+  String get deleteJourneyConfirmTitle => 'Eliminar jornada?';
+
+  @override
+  String get deleteJourneyConfirmMessage =>
+      'Isto elimina permanentemente esta jornada. Esta ação não pode ser desfeita.';
+
+  @override
+  String get deleteJourneyConfirmAction => 'Eliminar';
+
+  @override
+  String get deleteJourneyCancelAction => 'Cancelar';
+
+  @override
+  String get journeyAttachmentLabel => 'Jornada';
+
+  @override
+  String get journeyAttachmentNone => 'Nenhuma jornada associada';
+
+  @override
+  String get journeyAttachmentAutoSelectedHint =>
+      'Selecionada automaticamente — corresponde a este apiário e tipo de atividade';
+
+  @override
+  String get journeyAttachmentChangeAction => 'Alterar';
+
+  @override
+  String get journeyAttachmentRemoveAction => 'Remover';
+
+  @override
+  String get journeyPickerTitle => 'Escolher uma jornada';
+
+  @override
+  String journeyPickerError(String error) {
+    return 'Não foi possível carregar as jornadas: $error';
+  }
+
+  @override
+  String get journeyPickerNoneOption => 'Nenhuma jornada';
+
+  @override
+  String get journeyPickerNoOpenMatches =>
+      'Ainda não há jornadas abertas correspondentes a este apiário e tipo de atividade.';
+
+  @override
+  String get journeyPickerShowHiddenToggle => 'Mostrar jornadas ocultas';
+
+  @override
+  String journeyPickerClosedOptionSemanticLabel(String name) {
+    return '$name, jornada fechada';
+  }
+
+  @override
+  String get journeyPickerCreateNewAction => 'Criar nova jornada';
+
+  @override
+  String get journeyQuickCreateTitle => 'Nova jornada';
+
+  @override
+  String get journeyQuickCreateCancelAction => 'Cancelar';
+
+  @override
+  String get closedJourneyConfirmTitle => 'Esta jornada está fechada';
+
+  @override
+  String closedJourneyConfirmMessage(String journeyName) {
+    return '\"$journeyName\" está fechada. Adicionar esta atividade mesmo assim?';
+  }
+
+  @override
+  String get closedJourneyConfirmCancelAction => 'Cancelar';
+
+  @override
+  String get closedJourneyConfirmAddAction => 'Adicionar mesmo assim';
+
+  @override
+  String get journeyStatsSectionTitle => 'Estatísticas da jornada';
+
+  @override
+  String journeyStatsError(String error) {
+    return 'Não foi possível carregar as estatísticas da jornada: $error';
+  }
+
+  @override
+  String get journeyStatsApiariesVisitedLabel => 'Apiários visitados';
+
+  @override
+  String journeyStatsApiariesVisitedValue(int done, int planned) {
+    return '$done/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesHarvestedLabel => 'Colmeias trabalhadas';
+
+  @override
+  String get journeyStatsHoneyCollectedLabel => 'Mel colhido';
+
+  @override
+  String journeyStatsHoneyCollectedValue(String kg) {
+    return '$kg kg';
+  }
+
+  @override
+  String get journeyStatsAverageSupersLabel => 'Média alças/colmeia';
+
+  @override
+  String get journeyStatsAverageSupersNoData => 'Ainda sem dados';
+
+  @override
+  String journeyStatsMissingLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Faltam $count apiários',
+      one: 'Falta 1 apiário',
+      zero: 'Todos os apiários planeados foram visitados',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get journeyDetailTitle => 'Jornada';
+
+  @override
+  String get editJourneyAction => 'Editar jornada';
+
+  @override
+  String get journeyDetailApiariesTitle => 'Apiários';
+
+  @override
+  String get journeyDetailApiaryNameUnknown => 'Apiário desconhecido';
+
+  @override
+  String get journeyDetailApiaryVisitedBadge => 'Visitado';
+
+  @override
+  String get journeyDetailApiaryPlannedBadge => 'Planeado';
+
+  @override
+  String get journeyDetailApiaryNotVisitedYet => 'Ainda não visitado';
+
+  @override
+  String get journeyDetailApiariesEmpty =>
+      'Ainda não há apiários nesta jornada.';
+
+  @override
+  String get todosEmpty => 'Ainda não há tarefas.';
+
+  @override
+  String get todosFilterNoResults => 'Nenhuma tarefa corresponde aos filtros.';
+
+  @override
+  String todosError(String error) {
+    return 'Não foi possível carregar as tarefas: $error';
+  }
+
+  @override
+  String get todoFilterStatusLabel => 'Estado';
+
+  @override
+  String get todoFilterStatusAll => 'Todas';
+
+  @override
+  String get todoFilterStatusOpen => 'Em aberto';
+
+  @override
+  String get todoFilterStatusOverdue => 'Atrasada';
+
+  @override
+  String get todoFilterStatusDone => 'Concluída';
+
+  @override
+  String get todoFilterPriorityLabel => 'Prioridade';
+
+  @override
+  String get todoFilterPriorityAll => 'Todas as prioridades';
+
+  @override
+  String get todoPriorityLowLabel => 'Baixa';
+
+  @override
+  String get todoPriorityMediumLabel => 'Média';
+
+  @override
+  String get todoPriorityHighLabel => 'Alta';
+
+  @override
+  String get todoFilterDueLabel => 'Prazo';
+
+  @override
+  String get todoFilterDueAny => 'Qualquer data';
+
+  @override
+  String get todoFilterDueToday => 'Vence hoje';
+
+  @override
+  String get todoFilterDueThisWeek => 'Vence esta semana';
+
+  @override
+  String get todoFilterDueThisMonth => 'Vence este mês';
+
+  @override
+  String get todoFilterClearAction => 'Limpar filtros';
+
+  @override
+  String get todoSortFieldLabel => 'Ordenar por';
+
+  @override
+  String get todoSortFieldDueDate => 'Prazo';
+
+  @override
+  String get todoSortFieldPriority => 'Prioridade';
+
+  @override
+  String get todoSortFieldStatus => 'Estado';
+
+  @override
+  String get todoSortDirectionAscendingLabel => 'Crescente';
+
+  @override
+  String get todoSortDirectionDescendingLabel => 'Decrescente';
+
+  @override
+  String get todoDueDateUnset => 'Sem prazo';
+
+  @override
+  String get todoOverdueBadge => 'Atrasada';
+
+  @override
+  String todoStatusSemanticLabel(String status) {
+    return 'Estado: $status';
+  }
+
+  @override
+  String get addTodo => 'Nova tarefa';
+
+  @override
+  String get todoQuickCreateTitle => 'Nova tarefa';
+
+  @override
+  String get todoDueDateLabel => 'Prazo';
+
+  @override
+  String todoQuickCreateForApiary(String apiaryName) {
+    return 'Para $apiaryName';
+  }
+
+  @override
+  String get todoQuickCreateCancelAction => 'Cancelar';
+
+  @override
+  String get todoCreatedConfirmation => 'Tarefa criada';
+
+  @override
+  String get newTodoTitle => 'Nova tarefa';
+
+  @override
+  String get todoDetailTitle => 'Tarefa';
+
+  @override
+  String get editTodoTitle => 'Editar tarefa';
+
+  @override
+  String get editTodoAction => 'Editar tarefa';
+
+  @override
+  String get todoTitleLabel => 'Título';
+
+  @override
+  String get todoTitleRequired => 'O título é obrigatório';
+
+  @override
+  String get todoDescriptionLabel => 'Descrição';
+
+  @override
+  String get todoDescriptionUnset => 'Sem descrição';
+
+  @override
+  String get todoDueDateFieldLabel => 'Prazo';
+
+  @override
+  String get todoDueDateClearAction => 'Limpar prazo';
+
+  @override
+  String get todoPriorityFieldLabel => 'Prioridade';
+
+  @override
+  String get todoAssigneeFieldLabel => 'Responsável';
+
+  @override
+  String get todoApiaryFieldLabel => 'Apiário';
+
+  @override
+  String get todoAssigneeUnassigned => 'Sem responsável';
+
+  @override
+  String todoAssigneeUnknown(String id) {
+    return 'Membro $id';
+  }
+
+  @override
+  String get todoAssigneeNoneAvailable => 'Ainda não há membros disponíveis.';
+
+  @override
+  String get todoApiaryNone => 'Sem apiário';
+
+  @override
+  String get todoApiaryUnknown => 'Apiário desconhecido';
+
+  @override
+  String get todoDetailFieldsHeader => 'Detalhes';
+
+  @override
+  String get todoCompletedAtLabel => 'Concluída em';
+
+  @override
+  String get todoCompleteAction => 'Marcar como concluída';
+
+  @override
+  String get todoReopenAction => 'Reabrir';
+
+  @override
+  String get todoCompleteSuccess => 'Tarefa concluída';
+
+  @override
+  String todoCompleteError(String error) {
+    return 'Não foi possível atualizar a tarefa: $error';
+  }
+
+  @override
+  String get todoReopenSuccess => 'Tarefa reaberta';
+
+  @override
+  String todoReopenError(String error) {
+    return 'Não foi possível atualizar a tarefa: $error';
+  }
+
+  @override
+  String get todoSaveSuccess => 'Tarefa guardada';
+
+  @override
+  String todoSaveError(String error) {
+    return 'Não foi possível guardar a tarefa: $error';
+  }
+
+  @override
+  String todoLoadError(String error) {
+    return 'Não foi possível carregar a tarefa: $error';
+  }
+
+  @override
+  String get deleteTodo => 'Eliminar tarefa';
+
+  @override
+  String get todoDeleteSuccess => 'Tarefa eliminada';
+
+  @override
+  String todoDeleteError(String error) {
+    return 'Não foi possível eliminar a tarefa: $error';
+  }
+
+  @override
+  String get deleteTodoConfirmTitle => 'Eliminar tarefa?';
+
+  @override
+  String get deleteTodoConfirmMessage =>
+      'Isto elimina permanentemente esta tarefa. Esta ação não pode ser desfeita.';
+
+  @override
+  String get deleteTodoConfirmAction => 'Eliminar';
+
+  @override
+  String get deleteTodoCancelAction => 'Cancelar';
 }

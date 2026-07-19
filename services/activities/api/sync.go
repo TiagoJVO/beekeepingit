@@ -91,10 +91,14 @@ type ApplyResponse struct {
 // Coordinator already expects for every owning service
 // ("{serviceURL}/internal/sync/validate"/"/apply"). Mount under
 // "/internal/sync" behind the OIDC authn + org-resolver middleware.
-func InternalSyncRouter(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handler {
+// journeyVerifier (#46) closes the same IDOR gap on the offline queue that
+// write.go's createActivity closes on the REST path — journey_id must be
+// ownership-checked here too, since the field PWA creates the vast majority
+// of activities through THIS path, not REST.
+func InternalSyncRouter(pool *pgxpool.Pool, verifier *ApiaryVerifier, journeyVerifier *JourneyVerifier) http.Handler {
 	r := chi.NewRouter()
-	r.Post("/validate", validateActivityBatch(verifier))
-	r.Post("/apply", applyActivityBatch(pool, verifier))
+	r.Post("/validate", validateActivityBatch(verifier, journeyVerifier))
+	r.Post("/apply", applyActivityBatch(pool, verifier, journeyVerifier))
 	return r
 }
 
@@ -140,10 +144,16 @@ func resolveApiaryOwnership(ctx context.Context, verifier *ApiaryVerifier, beare
 		if data.ApiaryID == nil {
 			continue
 		}
-		apiaryID := *data.ApiaryID
-		if _, err := uuid.Parse(apiaryID); err != nil {
+		parsed, err := uuid.Parse(*data.ApiaryID)
+		if err != nil {
 			continue // malformed id — structural validation handles it
 		}
+		// Keyed by the canonical form (not the raw client string) so a
+		// non-canonically-cased but valid UUID still matches the lookups in
+		// validateActivityOp/applyActivityOp, which both normalize via
+		// uuid.Parse(...).String() — a mismatched key here silently no-ops
+		// an op that WAS actually verified as owned.
+		apiaryID := parsed.String()
 		if _, done := owned[apiaryID]; done {
 			continue // already resolved this distinct id — the de-dup
 		}
@@ -156,12 +166,50 @@ func resolveApiaryOwnership(ctx context.Context, verifier *ApiaryVerifier, beare
 	return owned, nil
 }
 
+// resolveJourneyOwnership is resolveApiaryOwnership's #46 counterpart:
+// verifies every DISTINCT, well-formed journey_id in the batch up front —
+// de-duplicated to one upstream call per distinct id, and before any DB
+// transaction is opened (same HIGH-severity discipline resolveApiaryOwnership
+// documents: never hold a pooled Postgres connection open across a blocking
+// cross-service HTTP call). Ops whose journey_id is absent or malformed are
+// skipped (structural validation handles those independently) — journey_id
+// is optional, so most ops resolve nothing here at all.
+func resolveJourneyOwnership(ctx context.Context, verifier *JourneyVerifier, bearer string, batch Batch) (map[string]bool, error) {
+	owned := map[string]bool{}
+	for _, op := range batch.Ops {
+		var data activityData
+		if len(op.Data) > 0 {
+			if err := json.Unmarshal(op.Data, &data); err != nil {
+				continue // malformed data — structural validation handles it
+			}
+		}
+		if data.JourneyID == nil {
+			continue
+		}
+		parsed, err := uuid.Parse(*data.JourneyID)
+		if err != nil {
+			continue // malformed id — structural validation handles it
+		}
+		// Canonical form, same rationale as resolveApiaryOwnership above.
+		journeyID := parsed.String()
+		if _, done := owned[journeyID]; done {
+			continue // already resolved this distinct id — the de-dup
+		}
+		belongs, err := verifier.BelongsToOrg(ctx, bearer, journeyID)
+		if err != nil {
+			return nil, err // fail closed: whole batch aborts
+		}
+		owned[journeyID] = belongs
+	}
+	return owned, nil
+}
+
 // validateActivityBatch dry-runs every op against the same rules
 // applyActivityOp enforces, INCLUDING the cross-org apiary_id ownership
 // check. The ownership HTTP calls are made ONCE per distinct apiary_id, up
 // front (resolveApiaryOwnership); the per-op check below is then a pure
 // in-memory map lookup, so validate is both cheap and symmetric with apply.
-func validateActivityBatch(verifier *ApiaryVerifier) http.HandlerFunc {
+func validateActivityBatch(verifier *ApiaryVerifier, journeyVerifier *JourneyVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if _, _, ok := requireOrg(w, r); !ok {
 			return
@@ -183,10 +231,16 @@ func validateActivityBatch(verifier *ApiaryVerifier) http.HandlerFunc {
 			problem.Write(w, r, problem.Internal())
 			return
 		}
+		ownedJourneys, err := resolveJourneyOwnership(r.Context(), journeyVerifier, bearer, batch)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "validate activity batch: verify journey ownership failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
 
 		var fieldErrs []problem.FieldError
 		for i, op := range batch.Ops {
-			fieldErrs = append(fieldErrs, validateActivityOp(i, op, owned)...)
+			fieldErrs = append(fieldErrs, validateActivityOp(i, op, owned, ownedJourneys)...)
 		}
 		if len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more ops are invalid", fieldErrs...))
@@ -214,7 +268,7 @@ func validateActivityBatch(verifier *ApiaryVerifier) http.HandlerFunc {
 // it — the common case, since the UI never exposes moving an activity to a
 // different apiary — simply keeps the stored value; applyActivityOp's
 // mergeActivityOp handles the fallback).
-func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldError {
+func validateActivityOp(i int, op Op, owned, ownedJourneys map[string]bool) []problem.FieldError {
 	prefix := fmt.Sprintf("ops[%d]", i)
 	var errs []problem.FieldError
 
@@ -252,10 +306,10 @@ func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldErro
 			errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "required", Message: "apiary_id is required"})
 		}
 	default:
-		if _, err := uuid.Parse(*data.ApiaryID); err != nil {
+		if parsed, err := uuid.Parse(*data.ApiaryID); err != nil {
 			errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "invalid", Message: "apiary_id must be a UUID"})
 		} else {
-			apiaryID = *data.ApiaryID
+			apiaryID = parsed.String() // canonical form — matches owned's key
 		}
 	}
 
@@ -280,9 +334,12 @@ func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldErro
 			errs = append(errs, problem.FieldError{Field: prefix + ".data." + e.Field, Code: e.Code, Message: e.Message})
 		}
 	}
+	journeyID := ""
 	if data.JourneyID != nil {
-		if _, err := uuid.Parse(*data.JourneyID); err != nil {
+		if parsed, err := uuid.Parse(*data.JourneyID); err != nil {
 			errs = append(errs, problem.FieldError{Field: prefix + ".data.journey_id", Code: "invalid", Message: "journey_id must be a UUID"})
+		} else {
+			journeyID = parsed.String() // canonical form — matches ownedJourneys's key
 		}
 	}
 
@@ -295,6 +352,11 @@ func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldErro
 	if apiaryID != "" && !owned[apiaryID] {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.apiary_id", Code: "not_found", Message: "apiary_id does not refer to an apiary in this organization"})
 	}
+	// Same ownership guard for journey_id (#46 — closes the IDOR gap where
+	// this field was previously accepted with no verification at all).
+	if journeyID != "" && !ownedJourneys[journeyID] {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.journey_id", Code: "not_found", Message: "journey_id does not refer to a journey in this organization"})
+	}
 
 	return errs
 }
@@ -305,7 +367,7 @@ func validateActivityOp(i int, op Op, owned map[string]bool) []problem.FieldErro
 // review fix: no blocking cross-service HTTP call ever runs while a pooled
 // Postgres connection is held), de-duplicated to one upstream call per
 // distinct apiary_id; applyActivityOp then consults that map in-memory.
-func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFunc {
+func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier, journeyVerifier *JourneyVerifier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org, userID, ok := requireOrg(w, r)
 		if !ok {
@@ -321,15 +383,22 @@ func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handl
 			return
 		}
 
-		// Resolve ownership for every distinct apiary_id BEFORE opening the
-		// transaction (zero-trust re-check — apply is a separate request from
-		// validate, sync.md §6.2 — but done once, up front, not per-op inside
-		// the tx). Fail closed on an upstream error: the whole batch aborts
-		// and heals on PowerSync's idempotent forward-retry.
+		// Resolve ownership for every distinct apiary_id AND journey_id
+		// BEFORE opening the transaction (zero-trust re-check — apply is a
+		// separate request from validate, sync.md §6.2 — but done once, up
+		// front, not per-op inside the tx). Fail closed on an upstream
+		// error: the whole batch aborts and heals on PowerSync's idempotent
+		// forward-retry.
 		bearer := r.Header.Get("Authorization")
 		owned, err := resolveApiaryOwnership(r.Context(), verifier, bearer, batch)
 		if err != nil {
 			logging.FromContext(r.Context()).ErrorContext(r.Context(), "apply activity sync batch: verify apiary ownership failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+		ownedJourneys, err := resolveJourneyOwnership(r.Context(), journeyVerifier, bearer, batch)
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "apply activity sync batch: verify journey ownership failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -338,7 +407,7 @@ func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handl
 		err = withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
 			results = make([]OpResult, 0, len(batch.Ops))
 			for _, op := range batch.Ops {
-				res, err := applyActivityOp(r.Context(), q, owned, org, userID, op)
+				res, err := applyActivityOp(r.Context(), q, owned, ownedJourneys, org, userID, op)
 				if err != nil {
 					return err
 				}
@@ -369,7 +438,7 @@ func applyActivityBatch(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handl
 // LWW-compared UPDATE path below, potentially "undeleting" it on a
 // strictly-newer put), never as "missing" — treating it as missing would
 // attempt a fresh INSERT against a live primary key and fail outright.
-func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]bool, org pgtype.UUID, userID string, op Op) (OpResult, error) {
+func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned, ownedJourneys map[string]bool, org pgtype.UUID, userID string, op Op) (OpResult, error) {
 	id, err := uuid.Parse(op.ID)
 	if err != nil {
 		return OpResult{}, err
@@ -398,6 +467,22 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned map[string]b
 			return OpResult{}, err
 		}
 		if !owned[apiaryID.String()] {
+			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+		}
+	}
+	// Same tenancy guard for journey_id (#46, CRITICAL — closes the IDOR gap
+	// where this field was previously applied with no verification at all):
+	// an unknown/foreign journey_id, when one IS present, no-ops the WHOLE
+	// op — mirrors the apiary_id convention immediately above rather than
+	// silently dropping just the journey_id and still writing the rest of
+	// the activity, so the same "reject the write outright on a bad
+	// cross-service reference" shape applies uniformly to both fields.
+	if data.JourneyID != nil {
+		journeyID, err := uuid.Parse(*data.JourneyID)
+		if err != nil {
+			return OpResult{}, err
+		}
+		if !ownedJourneys[journeyID.String()] {
 			return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
 		}
 	}

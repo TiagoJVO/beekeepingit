@@ -68,7 +68,12 @@ class _AttrSpec {
 /// file, since the two run in different languages/toolchains).
 final Map<String, List<_AttrSpec>> _typeSchemas = {
   activityTypeHarvest: [
-    const _AttrSpec('honey_supers', required: true, kind: _Kind.integer, min: 0),
+    const _AttrSpec(
+      'honey_supers',
+      required: true,
+      kind: _Kind.integer,
+      min: 0,
+    ),
     const _AttrSpec('honey_kg', kind: _Kind.number, min: 0),
     const _AttrSpec('hives_involved', kind: _Kind.integer, min: 0),
     // lot_batch (#292, FR-AC-1, D-19): optional free-text lot/batch
@@ -85,21 +90,27 @@ final Map<String, List<_AttrSpec>> _typeSchemas = {
     const _AttrSpec('notes', maxLen: _maxNotesLength),
   ],
   activityTypeTreatment: [
-    const _AttrSpec('treatment_context', required: true, vocab: treatmentContexts),
+    const _AttrSpec(
+      'treatment_context',
+      required: true,
+      vocab: treatmentContexts,
+    ),
     // treatment_type is required UNLESS this is a detection-only report
     // (#291 AC: "a detection can be logged with no treatment attached
     // yet").
     _AttrSpec(
       'treatment_type',
       vocab: treatmentTypes,
-      requiredIf: (attrs) => attrs['treatment_context'] != treatmentContextDetectionOnly,
+      requiredIf: (attrs) =>
+          attrs['treatment_context'] != treatmentContextDetectionOnly,
     ),
     _AttrSpec(
       'disease',
       vocab: diseaseConditions,
       requiredIf: (attrs) {
         final ctx = attrs['treatment_context'];
-        return ctx == treatmentContextDiseaseSpecific || ctx == treatmentContextDetectionOnly;
+        return ctx == treatmentContextDiseaseSpecific ||
+            ctx == treatmentContextDetectionOnly;
       },
     ),
     const _AttrSpec('hives_involved', kind: _Kind.integer, min: 0),
@@ -126,7 +137,8 @@ List<ActivityAttributeError> validateActivityAttributes(
       ActivityAttributeError(
         field: 'type',
         code: 'invalid',
-        message: 'type must be one of the known activity types: $knownActivityTypes',
+        message:
+            'type must be one of the known activity types: $knownActivityTypes',
       ),
     ];
   }
@@ -179,7 +191,11 @@ ActivityAttributeError? _validateAttr(
   switch (spec.kind) {
     case _Kind.string:
       if (value is! String) {
-        return ActivityAttributeError(field: field, code: 'invalid', message: '"${spec.key}" must be a string');
+        return ActivityAttributeError(
+          field: field,
+          code: 'invalid',
+          message: '"${spec.key}" must be a string',
+        );
       }
       if (spec.vocab != null && !spec.vocab!.contains(value)) {
         return ActivityAttributeError(
@@ -198,10 +214,18 @@ ActivityAttributeError? _validateAttr(
     case _Kind.number:
     case _Kind.integer:
       if (value is! num) {
-        return ActivityAttributeError(field: field, code: 'invalid', message: '"${spec.key}" must be a number');
+        return ActivityAttributeError(
+          field: field,
+          code: 'invalid',
+          message: '"${spec.key}" must be a number',
+        );
       }
       if (spec.kind == _Kind.integer && value != value.truncate()) {
-        return ActivityAttributeError(field: field, code: 'invalid', message: '"${spec.key}" must be an integer');
+        return ActivityAttributeError(
+          field: field,
+          code: 'invalid',
+          message: '"${spec.key}" must be an integer',
+        );
       }
       if (spec.min != null && value < spec.min!) {
         return ActivityAttributeError(

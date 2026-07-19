@@ -7,6 +7,10 @@ import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../journeys/journey_matching.dart';
+import '../journeys/journey_picker.dart';
+import '../journeys/journey_quick_create_sheet.dart';
+import '../journeys/journeys_repository.dart';
 import 'activities_repository.dart';
 import 'activity_attributes.dart';
 import 'activity_types.dart';
@@ -45,12 +49,39 @@ class AddActivityScreen extends ConsumerStatefulWidget {
   ConsumerState<AddActivityScreen> createState() => _AddActivityScreenState();
 }
 
+/// Whether the user has explicitly interacted with the #46 journey picker
+/// for the currently-selected activity type — see
+/// [_AddActivityScreenState._journeyTouch]'s own doc comment.
+enum _JourneyTouch { none, deselected, selected }
+
 class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
   final _formKey = GlobalKey<FormState>();
 
   String _selectedType = activityTypeHarvest;
   DateTime _occurredAt = DateTime.now();
   bool _busy = false;
+
+  // --- Journey attachment (#46, FR-JO-1, D-21) — create-time only, see the
+  // section below and journeyIdToSave in _save(). Not shown/editable in edit
+  // mode: journey_id is immutable after creation (activities_repository.dart's
+  // own doc comment, mirroring the server's updateActivity), and the AC only
+  // covers "when logging an activity".
+  //
+  // _journeyTouch tracks whether the user has EXPLICITLY interacted with the
+  // picker for the CURRENT _selectedType — while `none`, the effective
+  // selection is always re-derived from the live matching query (auto-select/
+  // auto-match-miss); once the user deselects or picks/creates a journey,
+  // that explicit choice sticks until the activity type changes again (a
+  // type change invalidates any prior match/choice, since a journey's
+  // main_activity_type must match — see the type dropdown's onChanged).
+  _JourneyTouch _journeyTouch = _JourneyTouch.none;
+  String? _manualJourneyId;
+  // Only set right after an inline create (journey_quick_create_sheet.dart) —
+  // covers the brief window before the local store's own live query
+  // (journeyMatchesProvider) necessarily catches up with the just-written
+  // row, so the "attached to" summary never shows a raw id/blank in between.
+  String? _manualJourneyNameFallback;
+  List<Journey> _lastKnownJourneyMatches = const [];
 
   // One controller per possible attribute key across every type (#38's
   // FR-AC-1 schema) — only the ones relevant to [_selectedType] are shown
@@ -233,16 +264,195 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     return null;
   }
 
+  /// The AC-defined effective journey selection: while the user hasn't
+  /// touched the picker for the current type, it's the live matching
+  /// query's auto-select (an open match, or null on an auto-match miss);
+  /// once touched, it's whatever the user explicitly chose (including an
+  /// explicit "no journey"). Pure derivation over [_lastKnownJourneyMatches]
+  /// (cached from the last build of [_journeyAttachmentSection]) — never
+  /// stored as its own state, so a rebuild always reflects the CURRENT
+  /// matching data without a separate sync step.
+  String? _effectiveJourneyId() {
+    switch (_journeyTouch) {
+      case _JourneyTouch.none:
+        return splitJourneyCandidates(
+          _lastKnownJourneyMatches,
+        ).autoSelected?.id;
+      case _JourneyTouch.deselected:
+        return null;
+      case _JourneyTouch.selected:
+        return _manualJourneyId;
+    }
+  }
+
+  /// The #46 activity-form journey picker section (AC: auto-select,
+  /// deselect, switch, inline create, closed-hidden-by-default) — only
+  /// rendered for a NEW activity (this method is only called when
+  /// `!widget.isEdit`, see [build]). Caches the live query's current result
+  /// in [_lastKnownJourneyMatches] so [_effectiveJourneyId]/[_save] (called
+  /// from a button press, not from build) can read the same data
+  /// synchronously.
+  Widget _journeyAttachmentSection(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    final matchesAsync = ref.watch(
+      journeyMatchesProvider((
+        apiaryId: widget.apiaryId,
+        activityType: _selectedType,
+      )),
+    );
+
+    return matchesAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: LinearProgressIndicator(),
+      ),
+      // Non-critical to the rest of the form — a transient load error here
+      // must not block logging the activity itself, so this section simply
+      // renders nothing rather than surfacing its own error UI.
+      error: (_, _) => const SizedBox.shrink(),
+      data: (matches) {
+        _lastKnownJourneyMatches = matches;
+        final effectiveId = _effectiveJourneyId();
+        Journey? effectiveJourney;
+        if (effectiveId != null) {
+          for (final journey in matches) {
+            if (journey.id == effectiveId) {
+              effectiveJourney = journey;
+              break;
+            }
+          }
+        }
+        final displayName =
+            effectiveJourney?.name ??
+            (effectiveId == null ? null : _manualJourneyNameFallback);
+        final autoSelectedHint =
+            _journeyTouch == _JourneyTouch.none && effectiveId != null;
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.journeyAttachmentLabel,
+                      style: theme.textTheme.labelMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      key: const Key('activity-journey-attachment-name'),
+                      displayName ?? l10n.journeyAttachmentNone,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    if (autoSelectedHint)
+                      Text(
+                        l10n.journeyAttachmentAutoSelectedHint,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                  ],
+                ),
+              ),
+              TextButton(
+                key: const Key('activity-journey-change-button'),
+                onPressed: _openJourneyPicker,
+                child: Text(l10n.journeyAttachmentChangeAction),
+              ),
+              if (effectiveId != null)
+                TextButton(
+                  key: const Key('activity-journey-remove-button'),
+                  onPressed: () => setState(() {
+                    _journeyTouch = _JourneyTouch.deselected;
+                    _manualJourneyId = null;
+                    _manualJourneyNameFallback = null;
+                  }),
+                  child: Text(l10n.journeyAttachmentRemoveAction),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openJourneyPicker() async {
+    final outcome = await showJourneyPickerSheet(
+      context,
+      apiaryId: widget.apiaryId,
+      activityType: _selectedType,
+      currentJourneyId: _effectiveJourneyId(),
+    );
+    if (!mounted || outcome == null) return;
+    switch (outcome) {
+      case JourneyPickerNone():
+        setState(() {
+          _journeyTouch = _JourneyTouch.deselected;
+          _manualJourneyId = null;
+          _manualJourneyNameFallback = null;
+        });
+      case JourneyPickerSelected(:final journeyId):
+        setState(() {
+          _journeyTouch = _JourneyTouch.selected;
+          _manualJourneyId = journeyId;
+          _manualJourneyNameFallback = null;
+        });
+      case JourneyPickerCreateNew():
+        final created = await showJourneyQuickCreateSheet(
+          context,
+          initialApiaryId: widget.apiaryId,
+          initialMainActivityType: _selectedType,
+        );
+        if (!mounted || created == null) return;
+        setState(() {
+          _journeyTouch = _JourneyTouch.selected;
+          _manualJourneyId = created.id;
+          _manualJourneyNameFallback = created.name;
+        });
+    }
+  }
+
   /// Saves via [ActivitiesRepository.create] (add) or
   /// [ActivitiesRepository.update] (#40, edit) depending on [isEdit] —
   /// mirrors apiary_form_screen.dart's own `_save`, including reusing the
   /// SAME success/error toast text for both flows (apiarySaveSuccess/Error's
   /// own precedent: one "saved"/"couldn't save" message covers create and
   /// update alike).
+  ///
+  /// #46/D-21: on create, resolves the effective journey selection and — if
+  /// it points at a CLOSED journey — shows the AC's explicit
+  /// confirm-to-proceed warning before writing anything; canceling leaves
+  /// the form open with nothing saved. The closed-status check is a FRESH
+  /// read ([JourneysRepository.getById], not the cached matches list) so it
+  /// can never act on stale data.
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
+
+    String? journeyIdToSave;
+    if (!widget.isEdit) {
+      journeyIdToSave = _effectiveJourneyId();
+      if (journeyIdToSave != null) {
+        final journeysRepo = await ref.read(journeysRepositoryProvider.future);
+        final journey = await journeysRepo.getById(journeyIdToSave);
+        if (!mounted) return;
+        if (journey != null && !journey.isOpen) {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (_) =>
+                ClosedJourneyConfirmDialog(journeyName: journey.name),
+          );
+          if (!mounted) return;
+          if (confirmed != true) return;
+        }
+      }
+    }
+
     setState(() => _busy = true);
     try {
       final repo = await ref.read(activitiesRepositoryProvider.future);
@@ -259,6 +469,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
           type: _selectedType,
           occurredAt: _isoDate(_occurredAt),
           attributes: _buildAttributes(),
+          journeyId: journeyIdToSave,
         );
       }
       if (!mounted) return;
@@ -351,10 +562,24 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
                         ],
                         onChanged: (value) {
                           if (value != null) {
-                            setState(() => _selectedType = value);
+                            setState(() {
+                              _selectedType = value;
+                              // A journey's main_activity_type is fixed — any
+                              // prior match/choice is invalid for the new
+                              // type, so the picker resets to auto-select
+                              // fresh against the new type (#46 AC's
+                              // matching rule).
+                              _journeyTouch = _JourneyTouch.none;
+                              _manualJourneyId = null;
+                              _manualJourneyNameFallback = null;
+                            });
                           }
                         },
                       ),
+                      if (!widget.isEdit) ...[
+                        const SizedBox(height: 16),
+                        _journeyAttachmentSection(l10n),
+                      ],
                       const SizedBox(height: 16),
                       InkWell(
                         key: const Key('activity-occurred-at-field'),
@@ -664,6 +889,52 @@ class DeleteActivityConfirmDialog extends StatelessWidget {
           ),
           onPressed: () => Navigator.of(context).pop(true),
           child: Text(l10n.deleteActivityConfirmAction),
+        ),
+      ],
+    );
+  }
+}
+
+/// The #46/D-21 AC's explicit confirm-to-proceed warning shown before saving
+/// an activity against a CLOSED journey ("this journey is closed — add
+/// anyway?") — mirrors [DeleteActivityConfirmDialog]'s own shape (danger
+/// styling via the theme's error color, [kMinTapTarget] tap targets,
+/// cancel/dismiss is always a no-op — here, "stay on the form, nothing
+/// saved"). Pulled out as its own public widget for the same testability
+/// reason [DeleteActivityConfirmDialog] is.
+class ClosedJourneyConfirmDialog extends StatelessWidget {
+  const ClosedJourneyConfirmDialog({required this.journeyName, super.key});
+
+  /// The closed journey's name, interpolated into the warning message so the
+  /// user knows exactly which journey they're about to add to.
+  final String journeyName;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return AlertDialog(
+      key: const Key('activity-closed-journey-confirm-dialog'),
+      icon: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+      title: Text(l10n.closedJourneyConfirmTitle),
+      content: Text(l10n.closedJourneyConfirmMessage(journeyName)),
+      actions: [
+        TextButton(
+          key: const Key('activity-closed-journey-confirm-cancel'),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+          ),
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(l10n.closedJourneyConfirmCancelAction),
+        ),
+        TextButton(
+          key: const Key('activity-closed-journey-confirm-add'),
+          style: TextButton.styleFrom(
+            foregroundColor: theme.colorScheme.error,
+            minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+          ),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text(l10n.closedJourneyConfirmAddAction),
         ),
       ],
     );

@@ -46,7 +46,9 @@ jobs:
     # (bootstrap migrations + blueprint apply), so the whole job gets more room
     # (ADR-0016, oidc-integration.md §8). The in-job Flutter web build + image
     # import (#236) adds a few more minutes on top of the cluster bring-up.
-    timeout-minutes: 40
+    # Bumped 40 -> 45 (#50) to preserve the same slack after the domain-service
+    # readiness wait below grew by 5 minutes (900s).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -88,15 +90,25 @@ jobs:
             infra:
               - 'infra/helm/**'
               - 'infra/cluster/**'
-              - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
               - '.github/workflows/helm-e2e.yml'
             e2e:
               - 'infra/helm/**'
               - 'infra/cluster/**'
-              - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
               - '.github/workflows/helm-e2e.yml'
               - 'client/**'
               - 'services/**'
+
+      # The Authentik HelmRelease used to bring up the IdP below lives in the
+      # beekeepingit-gitops repo now (D-27/ADR-0018), not this one. Check it out
+      # into a subdir so the bring-up step can apply it. Public repo, so the
+      # default token suffices; a change to it there can't trigger this e2e
+      # (cross-repo) — the gitops repo's own CI validates it instead.
+      - name: Check out the GitOps manifests (Authentik HelmRelease)
+        if: steps.changes.outputs.e2e == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: TiagoJVO/beekeepingit-gitops
+          path: beekeepingit-gitops
 
       # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
       # local dev (infra/cluster/*.sh) and the rest of CI use. (mise installs
@@ -271,7 +283,7 @@ jobs:
         if: steps.changes.outputs.e2e == 'true'
         run: |
           flux install
-          sed '/^  dependsOn:$/,+1d' infra/gitops/apps/dev/authentik-helmrelease.yaml \
+          sed '/^  dependsOn:$/,+1d' beekeepingit-gitops/apps/dev/authentik-helmrelease.yaml \
             | kubectl apply -f -
           # The server Deployment is created by helm-controller a moment after the
           # HelmRelease reconciles; wait for it to appear, then for the rollout (the
@@ -334,8 +346,18 @@ jobs:
         run: |
           # Backoffs were just reset by the rollout restart above, so this is a clean
           # boot: image start + probe warmup only.
+          #
+          # Bumped 600s -> 900s (#50): with `todos` as an 8th domain service now racing
+          # every other one to connect to Postgres right after the reset above, two
+          # separate live runs saw `todos` alone still crash-looping on a transient
+          # "connection refused" (Postgres momentarily not accepting connections, the
+          # same blip every service's own previous-instance logs show recovering from)
+          # right as the old 600s budget ran out, while every sibling service recovered
+          # in time. Nothing about `todos` itself is different from its siblings (same
+          # servicetemplate bootstrap, same probes/resources) — this is margin, not a
+          # code fix.
           kubectl -n beekeepingit-dev wait --for=condition=available deployment \
-            -l app.kubernetes.io/part-of=beekeepingit --timeout=600s
+            -l app.kubernetes.io/part-of=beekeepingit --timeout=900s
 
       # The AC: the postgres PostGIS smoke-query hook AND the authentik readiness hook run
       # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
@@ -447,7 +469,7 @@ jobs:
           kubectl -n kube-system logs deploy/traefik --tail=150 || true
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
-          for d in identity organizations apiaries activities sync pwa beekeepingit-powersync; do
+          for d in identity organizations apiaries activities journeys todos sync pwa beekeepingit-powersync; do
             echo "=== previous logs: $d ==="
             kubectl -n beekeepingit-dev logs "deploy/$d" --previous --tail=30 || true
           done

@@ -36,23 +36,31 @@ class FakeLocalStore implements LocalStoreEngine {
   }
 
   @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => _select(sql, args);
+
+  @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
     if (normalized.startsWith('INSERT INTO ACTIVITIES')) {
-      // (id, apiary_id, type, occurred_at, attributes, created_at,
-      // updated_at) — create() never sets performed_by/organization_id
-      // (activities_repository.dart's own doc: both are server-derived,
-      // populated only once the write round-trips through sync).
+      // (id, apiary_id, journey_id, type, occurred_at, attributes,
+      // created_at, updated_at) — create() never sets performed_by/
+      // organization_id (activities_repository.dart's own doc: both are
+      // server-derived, populated only once the write round-trips through
+      // sync). journey_id (#46/D-21) IS set locally now, optionally.
       rows.add({
         'id': args[0],
         'apiary_id': args[1],
+        'journey_id': args[2],
         'performed_by': null,
         'organization_id': null,
-        'type': args[2],
-        'occurred_at': args[3],
-        'attributes': args[4],
-        'created_at': args[5],
-        'updated_at': args[6],
+        'type': args[3],
+        'occurred_at': args[4],
+        'attributes': args[5],
+        'created_at': args[6],
+        'updated_at': args[7],
       });
     } else {
       throw UnsupportedError('FakeLocalStore.execute: unhandled SQL: $sql');
@@ -72,6 +80,8 @@ class FakeLocalStore implements LocalStoreEngine {
 
     if (normalized.contains('WHERE APIARY_ID = ?')) {
       results = results.where((r) => r['apiary_id'] == args[0]).toList();
+    } else if (normalized.contains('WHERE JOURNEY_ID = ?')) {
+      results = results.where((r) => r['journey_id'] == args[0]).toList();
     } else if (normalized.contains(
       'ORGANIZATION_ID = ? OR ORGANIZATION_ID IS NULL',
     )) {
@@ -132,6 +142,36 @@ void main() {
         expect(row['organization_id'], isNull);
       },
     );
+  });
+
+  group('Activity.journeyId (#47) — read-side exposure of the #46 column', () {
+    test('getById()/watchById()/watchByApiary()/watchAll() all surface the '
+        'journey_id an activity was created with', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+        journeyId: 'j1',
+      );
+
+      expect((await repo.getById(id))!.journeyId, 'j1');
+      expect((await repo.watchById(id).first)!.journeyId, 'j1');
+      expect((await repo.watchByApiary('a1').first).single.journeyId, 'j1');
+      final all = await repo.watchAll(organizationId: 'org-a').first;
+      expect(all.single.journeyId, 'j1');
+    });
+
+    test('is null when no journey was attached at creation', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'generic',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+      );
+
+      expect((await repo.getById(id))!.journeyId, isNull);
+    });
   });
 
   group('offline-create → wire op attributes shape (#39, FR-OF-1) — the '
@@ -229,6 +269,87 @@ void main() {
         type: 'generic',
         occurredAt: '2026-06-01',
         attributes: const {},
+      );
+      await pumpEventQueue();
+
+      expect(emissions.last, 1);
+    });
+  });
+
+  group('ActivitiesRepository.watchByJourney() (#48, FR-JO-3, D-21)', () {
+    test(
+      'emits only the given journey\'s activities, newest occurred_at first',
+      () async {
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'harvest',
+          occurredAt: '2026-06-01',
+          attributes: const {},
+          journeyId: 'j1',
+        );
+        await repo.create(
+          apiaryId: 'a2',
+          type: 'feeding',
+          occurredAt: '2026-06-05',
+          attributes: const {},
+          journeyId: 'j2',
+        );
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'generic',
+          occurredAt: '2026-06-10',
+          attributes: const {},
+          journeyId: 'j1',
+        );
+
+        final activities = await repo.watchByJourney('j1').first;
+
+        expect(activities.map((a) => a.type).toList(), ['generic', 'harvest']);
+        expect(activities.every((a) => a.journeyId == 'j1'), isTrue);
+      },
+    );
+
+    test(
+      'excludes an activity with no journey attached (stored journey_id '
+      'scoping, D-21: not a live re-match against any journey\'s plan)',
+      () async {
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'generic',
+          occurredAt: '2026-06-01',
+          attributes: const {},
+        );
+
+        final activities = await repo.watchByJourney('j1').first;
+
+        expect(activities, isEmpty);
+      },
+    );
+
+    test(
+      'returns an empty list for a journey with no attributed activities',
+      () async {
+        final activities = await repo.watchByJourney('unknown-journey').first;
+        expect(activities, isEmpty);
+      },
+    );
+
+    test('re-emits after a write attributed to that journey', () async {
+      final emissions = <int>[];
+      final sub = repo
+          .watchByJourney('j1')
+          .listen((a) => emissions.add(a.length));
+      addTearDown(sub.cancel);
+
+      await pumpEventQueue();
+      expect(emissions, [0]);
+
+      await repo.create(
+        apiaryId: 'a1',
+        type: 'generic',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+        journeyId: 'j1',
       );
       await pumpEventQueue();
 

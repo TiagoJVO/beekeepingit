@@ -9,6 +9,17 @@ global:
   # `helm install ... --namespace <ns> --create-namespace`.
   namespace: beekeepingit
 
+  # Browser-facing origin of gateway.appHost (scheme + host + port, no trailing
+  # slash) — shared across subcharts (unlike gateway.appHost, a subchart can't
+  # read a sibling subchart's values, only global.*) because
+  # charts/authentik's blueprint needs it too: the OAuth2 provider's
+  # redirect_uris/CORS-allowed-origins must match wherever the PWA is actually
+  # served, or login fails with a redirect_uri mismatch (#193 follow-up,
+  # observed on the first staging bring-up, D-26). Dev's :8443 is k3d's
+  # host-port mapping (see charts/gateway/values.yaml) — other environments
+  # normally omit the port (standard 443 via a real LoadBalancer/Ingress).
+  appOrigin: https://app.beekeepingit.local:8443
+
   # Resource-request/limit presets every subchart should reference via
   # `.Values.global.resources.<tier>` instead of hardcoding numbers, so sizing is
   # tuned in one place per environment.
@@ -56,7 +67,7 @@ minio:
   # No workload of its own (just the root-credentials Secret) — MinIO itself is
   # a separate Flux HelmRelease, see ADR-0012. Its buckets (loki/tempo, #87) are
   # configured on that standalone HelmRelease
-  # (infra/gitops/apps/dev/minio-helmrelease.yaml), not here.
+  # (the beekeepingit-gitops repo's apps/dev/minio-helmrelease.yaml), not here.
 
 gateway:
   enabled: true
@@ -82,7 +93,7 @@ powersync:
 
 # The Go services (#23) — identity/organizations/apiaries/sync. Image tag +
 # per-service wiring live in the subchart's own values.yaml; overlays/CI bump
-# the tag. On merge, Flux image-automation reconciles the published tag.
+# the tag. A release's tag-bump PR sets the deployed tag (D-27, ADR-0018).
 services:
   enabled: true
 

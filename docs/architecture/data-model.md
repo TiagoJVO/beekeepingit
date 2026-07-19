@@ -60,7 +60,7 @@ erDiagram
     APIARIES ||--o{ APIARY_COUNTERS : "has typed counters (D-20)"
     APIARIES ||--o{ ACTIVITIES : "site of (soft)"
     JOURNEYS ||--o{ JOURNEY_PLAN_ITEMS : "plans"
-    JOURNEYS ||--o{ JOURNEY_ACTIVITIES : "attributes (soft, Q-JOUR)"
+    JOURNEYS ||--o{ ACTIVITIES : "attributes via activities.journey_id (soft, D-21)"
     APIARIES ||--o{ TODOS : "optional context (soft)"
 
     USERS {
@@ -120,21 +120,14 @@ erDiagram
         uuid id PK
         uuid organization_id "soft -> organizations"
         text name
-        date start_date
-        date end_date
+        text main_activity_type "one main activity type (D-21, FR-JO-4)"
+        text status "open|closed (D-21)"
     }
     JOURNEY_PLAN_ITEMS {
         uuid id PK
         uuid organization_id
         uuid journey_id FK
-        uuid apiary_id "soft -> apiaries"
-        text planned_type "intended activity (FR-JO-4)"
-    }
-    JOURNEY_ACTIVITIES {
-        uuid id PK
-        uuid organization_id
-        uuid journey_id FK
-        uuid activity_id "soft -> activities (Q-JOUR)"
+        uuid apiary_id "soft -> apiaries, apiaries-to-visit plan (FR-JO-4)"
     }
     TODOS {
         uuid id PK
@@ -182,15 +175,15 @@ pending invite per address per org" without needing an `expires_at`-driven clean
 One Postgres cluster; **one schema per service**; a service writes **only** its own schema
 ([#104](service-decomposition.md) / D-6).
 
-| Schema          | Service       | Tables                                                 | Notes                                                                                                                                                                                                                                            |
-| --------------- | ------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `identity`      | identity      | `users`, `user_settings`, `entitlements`(stub)         | **`users` is global** (not org-owned → no `organization_id`); `entitlements` is the D-4 feature-toggle stub                                                                                                                                      |
-| `organizations` | organizations | `organizations`, `memberships`, `invitations`          | `organizations` is the **tenant root** (its `id` is the tenant key); membership carries the role (NFR-ROL-1)                                                                                                                                     |
-| `apiaries`      | apiaries      | `apiaries`, `apiary_counters`                          | PostGIS `location`; typed 1-N counters (`apiary_counters`, D-20 — hive count is a counter row, not an `apiaries` column) — §7                                                                                                                    |
-| `activities`    | activities    | `activities`                                           | JSONB `attributes` + promoted `hives_involved`/`honey_kg`                                                                                                                                                                                        |
-| `journeys`      | journeys      | `journeys`, `journey_plan_items`, `journey_activities` | planned-vs-actual; attribution is **Q-JOUR**                                                                                                                                                                                                     |
-| `todos`         | todos         | `todos`                                                | lifecycle/assignment/area are **Q-TODO**                                                                                                                                                                                                         |
-| `ai`            | ai            | `ai_consents`, `ai_query_log`, `ai_action_log`         | **no domain data, no direct writes** (D-11 / NFR-AI-4): consent (Q-AICLOUD) + audit of NL→query (D-8) **and** NL→**proposed actions** (FR-AI-2). A confirmed action executes via the **owning** service's API — `ai` never writes another schema |
+| Schema          | Service       | Tables                                         | Notes                                                                                                                                                                                                                                            |
+| --------------- | ------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `identity`      | identity      | `users`, `user_settings`, `entitlements`(stub) | **`users` is global** (not org-owned → no `organization_id`); `entitlements` is the D-4 feature-toggle stub                                                                                                                                      |
+| `organizations` | organizations | `organizations`, `memberships`, `invitations`  | `organizations` is the **tenant root** (its `id` is the tenant key); membership carries the role (NFR-ROL-1)                                                                                                                                     |
+| `apiaries`      | apiaries      | `apiaries`, `apiary_counters`                  | PostGIS `location`; typed 1-N counters (`apiary_counters`, D-20 — hive count is a counter row, not an `apiaries` column) — §7                                                                                                                    |
+| `activities`    | activities    | `activities`                                   | JSONB `attributes` + promoted `hives_involved`/`honey_kg`                                                                                                                                                                                        |
+| `journeys`      | journeys      | `journeys`, `journey_plan_items`               | planned-vs-actual; attribution is the **direct, nullable `activities.journey_id`** column (owned by the `activities` schema, not a `journeys`-owned link table) — resolved by **D-21**                                                           |
+| `todos`         | todos         | `todos`                                        | lifecycle/assignment resolved by **D-23**; apiary association (nullable `apiary_id`, no separate "area" entity — FR-TD-1) resolved by **#51**                                                                                                    |
+| `ai`            | ai            | `ai_consents`, `ai_query_log`, `ai_action_log` | **no domain data, no direct writes** (D-11 / NFR-AI-4): consent (Q-AICLOUD) + audit of NL→query (D-8) **and** NL→**proposed actions** (FR-AI-2). A confirmed action executes via the **owning** service's API — `ai` never writes another schema |
 
 **History is per-service, not a schema of its own.** Each owning service carries its **own**
 append-only `audit_log` (and the conflict sibling `sync_conflict_log`) **inside its own schema**,
@@ -294,10 +287,21 @@ counter_type text, value int CHECK ≥ 0)` with **`UNIQUE (apiary_id, counter_ty
   to **typed, indexable columns**. Keeps FR-JO-1 stats fast without giving up type flexibility.
 - **Client-generated UUIDs:** essential for offline create (no server round-trip); v7 for index
   locality. This also makes the sync upload idempotent on PK.
-- **Journey attribution as a link table** (`journey_activities` in the `journeys` schema, soft
-  ref to `activities`): keeps the journeys concern out of the `activities` schema; the
-  **manual-vs-auto** attribution rule is **Q-JOUR** (resolved in EPIC-04 #46; journeys are
-  outside the walking-skeleton slice).
+- **Journey attribution — a direct nullable FK column on `activities`, not a link table**
+  (**D-21**, supersedes this doc's earlier pre-D-21 design of a separate `journey_activities`
+  link table in the `journeys` schema): an activity carries a **stored, nullable
+  `activities.journey_id`** (added in `activities`' own schema/migration ahead of the `journeys`
+  service existing, #38/#39) rather than the reverse — a `journeys`-owned join table would have
+  needed the `journeys` schema to reference `activities` rows, which is backwards from how every
+  other cross-schema reference in this model is drawn (the _dependent_ row carries the soft
+  reference, not the referenced-by side). The **smart auto-select with manual override** UX (D-21)
+  pre-fills a matching **open** journey's id into a new activity's `journey_id`, with the user able
+  to deselect/switch/create-on-the-spot/attach-to-closed from the activity form (#46); journey
+  statistics (FR-JO-1) and "how much is missing" are computed from these **stored** links, not a
+  live re-match. **One main activity type per journey** (a plain column on `journeys` itself, per
+  D-21's narrowing of FR-JO-4) replaces the earlier idea of a per-plan-item `planned_type` on
+  `journeys.journey_plan_items` — a manual per-apiary planned-activity list is an explicitly
+  deferred future extension, not this milestone's (M4) scope.
 - **History is occurred-at vs recorded-at aware:** `audit_log` records both device time and
   server time so history stays correct across offline edits + late sync; it is **append-only**,
   **per-service**, and **pseudonymous** (actor = internal user ID only) — [history.md](history.md)
@@ -312,15 +316,15 @@ counter_type text, value int CHECK ≥ 0)` with **`UNIQUE (apiary_id, counter_ty
 
 ## 8. Open questions & hand-offs
 
-| Item                                              | Effect on the model                                                                          | Resolved in                                                                               |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Q-SYNC (**resolved**)                             | tombstones, LWW clock (`updated_at`), upload idempotency                                     | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106, SP-1 #54) |
-| Q-HIS (**resolved**)                              | `audit_log` capture (per-service, in-transaction), immutability, retention, GDPR, visibility | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)                |
-| [Q-JOUR](../../requirements/open-questions.md)    | journey↔activity attribution; "how much is missing"                                          | EPIC-04 (#46)                                                                             |
-| [Q-TODO](../../requirements/open-questions.md)    | todo status set, assignment, "area" semantics                                                | EPIC-05                                                                                   |
-| [Q-JOIN](../../requirements/open-questions.md)    | invitation expiry/re-invite, member removal, admin transfer                                  | EPIC-01                                                                                   |
-| [Q-AICLOUD](../../requirements/open-questions.md) | `ai_consents` fields (DPA version, scope, residency)                                         | EPIC-08                                                                                   |
-| [Q-PERF](../../requirements/open-questions.md)    | concrete indexes beyond the keys/GIST noted here                                             | per-service build                                                                         |
+| Item                                              | Effect on the model                                                                                                                        | Resolved in                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Q-SYNC (**resolved**)                             | tombstones, LWW clock (`updated_at`), upload idempotency                                                                                   | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106, SP-1 #54) |
+| Q-HIS (**resolved**)                              | `audit_log` capture (per-service, in-transaction), immutability, retention, GDPR, visibility                                               | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)                |
+| Q-JOUR (**resolved**)                             | journey↔activity attribution (`activities.journey_id`, direct nullable FK, no link table); "how much is missing" derived from stored links | [D-21](../../requirements/decisions.md), EPIC-04 (#45/#46)                                |
+| [Q-TODO](../../requirements/open-questions.md)    | todo status set, assignment, "area" semantics                                                                                              | EPIC-05                                                                                   |
+| [Q-JOIN](../../requirements/open-questions.md)    | invitation expiry/re-invite, member removal, admin transfer                                                                                | EPIC-01                                                                                   |
+| [Q-AICLOUD](../../requirements/open-questions.md) | `ai_consents` fields (DPA version, scope, residency)                                                                                       | EPIC-08                                                                                   |
+| [Q-PERF](../../requirements/open-questions.md)    | concrete indexes beyond the keys/GIST noted here                                                                                           | per-service build                                                                         |
 
 ## 9. Acceptance-criteria traceability (#105)
 

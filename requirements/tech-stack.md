@@ -24,6 +24,7 @@ The reasoning behind the intended stack, and the input to a future service decom
 | AI assistant          | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11)                         |
 | API style             | REST + OpenAPI (client); gRPC optional (inter-service)                                | Implemented (`contracts/openapi/`)          |
 | Orchestration         | Kubernetes + Helm                                                                     | Decided (NFR-ARC)                           |
+| Cloud hosting         | **Scaleway Kapsule** (managed control plane, EU region)                               | Decided (D-26)                              |
 | Observability         | OpenTelemetry + Prometheus + Grafana + Loki/Tempo                                     | Implemented (ADR-0013)                      |
 | Object storage        | MinIO (S3-compatible)                                                                 | Implemented (`services/shared/objectstore`) |
 | CI/CD                 | GitHub Actions                                                                        | Implemented (`.github/workflows/`)          |
@@ -138,6 +139,11 @@ codebase throughout.
 
 - **k8s + Helm** (one cluster for v1, `NFR-ARC-3`); **GitOps: Flux** (`D-13`), hand-wired
   `Kustomization`/`HelmRelease` objects (not `flux bootstrap`), no ArgoCD.
+- **Cloud hosting: Scaleway Kapsule** (`D-26`) — managed Kubernetes control plane, EU region,
+  chosen over Hetzner/OVHcloud/DigitalOcean/IBM Cloud/hyperscalers on cost + low ops burden (the
+  `NFR-CMP-1` EU-region + DPA bar is satisfied by several candidates, per the `D-22` precedent — it
+  wasn't the deciding factor). No Scaleway-specific managed services are adopted; the self-hosted
+  stack (Postgres/Authentik/PowerSync/MinIO) deploys unchanged, keeping `NFR-ARC-2` portability.
 - **Gateway/ingress:** **Traefik** (settled by `#84`/[ADR-0010](../docs/adr/0010-platform-backing-services-provisioning.md)
   — k3d already bundles it as the cluster's ingress controller, so it's reused rather than
   installing NGINX as a second one) (+ a thin BFF if needed).

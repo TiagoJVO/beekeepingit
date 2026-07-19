@@ -15,8 +15,8 @@ generated `root-credentials` Secret). Nesting this stack inside the umbrella the
 **deadlocks a fresh install** (umbrella never `Ready` because of Tempo → MinIO never
 installs — found on the live dev cluster, not by `helm lint`/`template`). As its own
 release, the ordering is acyclic: umbrella → MinIO → this
-([`infra/gitops/apps/dev/observability-helmrelease.yaml`](../../gitops/apps/dev/observability-helmrelease.yaml),
-`dependsOn: [beekeepingit, minio]`).
+([`apps/dev/observability-helmrelease.yaml`](https://github.com/TiagoJVO/beekeepingit-gitops/blob/main/apps/dev/observability-helmrelease.yaml)
+in the beekeepingit-gitops repo, `dependsOn: [beekeepingit, minio]`).
 
 ## Structure
 

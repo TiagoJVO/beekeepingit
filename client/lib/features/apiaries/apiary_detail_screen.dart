@@ -8,6 +8,7 @@ import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
+import '../todos/todo_quick_create_sheet.dart';
 import 'apiaries_repository.dart';
 import 'counter_types.dart';
 
@@ -39,6 +40,12 @@ class ApiaryDetailScreen extends ConsumerWidget {
     // family-keyed StreamProvider mirroring apiaryCountersProvider's
     // existing per-id pattern -- overridable in widget tests the same way.
     final apiaryAsync = ref.watch(apiaryByIdProvider(apiaryId));
+    // Read directly (not just inside the `data:` branch below) so the
+    // add-todo FAB — the only one of the three that needs the apiary's own
+    // NAME, not just its id (#52, FR-UX-2) — can gate its own presence on
+    // the apiary actually being loaded, without touching the other two
+    // FABs' existing unconditional-render behavior.
+    final apiary = apiaryAsync.value;
 
     return Scaffold(
       body: apiaryAsync.when(
@@ -66,6 +73,25 @@ class ApiaryDetailScreen extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // Contextual quick-create-todo entry point (#52, FR-UX-2): needs
+          // the apiary's own NAME (for the sheet's read-only "For {name}"
+          // chip), so — unlike its two siblings below, which only need
+          // [apiaryId] and render regardless of load state — this one only
+          // appears once the apiary has actually loaded.
+          if (apiary != null) ...[
+            FloatingActionButton.extended(
+              key: const Key('apiary-detail-add-todo-button'),
+              heroTag: 'apiary-detail-add-todo-button',
+              onPressed: () => showTodoQuickCreateSheet(
+                context,
+                initialApiaryId: apiary.id,
+                initialApiaryName: apiary.name,
+              ),
+              icon: const Icon(Icons.task_alt_outlined),
+              label: Text(l10n.addTodo),
+            ),
+            const SizedBox(height: 12),
+          ],
           // Add-activity entry point (#39, FR-AC-2): the natural place to
           // log an activity is right where the apiary itself already is.
           // Only the add flow — the activities LIST is #42/#43's scope.

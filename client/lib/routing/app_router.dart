@@ -12,12 +12,18 @@ import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/journeys/journey_detail_screen.dart';
+import '../features/journeys/journey_form_screen.dart';
+import '../features/journeys/journeys_list_screen.dart';
 import '../features/members/members_screen.dart';
 import '../features/organization/organization_repository.dart';
 import '../features/organization/organization_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/sync/sync_needs_fix_screen.dart';
+import '../features/todos/todo_detail_screen.dart';
+import '../features/todos/todo_form_screen.dart';
+import '../features/todos/todos_list_screen.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../shell/app_shell.dart';
 import '../shell/coming_soon_screen.dart';
@@ -234,13 +240,44 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             navigatorKey: _journeysBranchKey,
             routes: [
+              // The main Journeys tab (#45, FR-JO-4): every journey in the
+              // org, unfiltered (date-range/type filtering is #47). Replaces
+              // the M4 ComingSoonScreen placeholder.
               GoRoute(
                 path: '/journeys',
                 name: 'journeys',
-                builder: (context, state) => ComingSoonScreen(
-                  icon: Icons.route_outlined,
-                  title: AppLocalizations.of(context).journeysComingSoon,
-                ),
+                builder: (context, state) => const JourneysListScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'new',
+                    name: 'journeyNew',
+                    builder: (context, state) => const JourneyFormScreen(),
+                  ),
+                  // Journey detail (#48, FR-JO-3, D-21): apiaries visited,
+                  // per-apiary activities (attributed via stored journey_id),
+                  // and the #49 stats section — reached by tapping a list
+                  // row. Edit/close/delete stay on the existing form, nested
+                  // UNDER this route so its full path
+                  // (`.../:id/edit`) and `journeyEdit` name are unchanged —
+                  // no existing deep link breaks (mirrors activityDetail's
+                  // own edit-nesting precedent above).
+                  GoRoute(
+                    path: ':id',
+                    name: 'journeyDetail',
+                    builder: (context, state) => JourneyDetailScreen(
+                      journeyId: state.pathParameters['id']!,
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        name: 'journeyEdit',
+                        builder: (context, state) => JourneyFormScreen(
+                          journeyId: state.pathParameters['id']!,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
@@ -250,10 +287,40 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/todos',
                 name: 'todos',
-                builder: (context, state) => ComingSoonScreen(
-                  icon: Icons.task_alt_outlined,
-                  title: AppLocalizations.of(context).todosComingSoon,
-                ),
+                builder: (context, state) => const TodosListScreen(),
+                routes: [
+                  // Standalone create entry point (#293): reachable by
+                  // direct navigation/deep-linking. #52's own quick-create
+                  // is a bottom sheet, not a route, so there is no naming
+                  // collision — this route exists independently of that
+                  // story's own Todos-tab FAB.
+                  GoRoute(
+                    path: 'new',
+                    name: 'todoNew',
+                    builder: (context, state) => const TodoFormScreen(),
+                  ),
+                  // Todo detail (#293, FR-TD-1, FR-HIS-1): every field,
+                  // read-only, plus a complete/reopen toggle — reached by
+                  // tapping a row on the main Todos tab. Edit stays nested
+                  // UNDER this route (mirrors activityDetail's/
+                  // journeyDetail's own edit-nesting precedent above) so its
+                  // full path (`.../:id/edit`) and `todoEdit` name are
+                  // stable.
+                  GoRoute(
+                    path: ':id',
+                    name: 'todoDetail',
+                    builder: (context, state) =>
+                        TodoDetailScreen(todoId: state.pathParameters['id']!),
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        name: 'todoEdit',
+                        builder: (context, state) =>
+                            TodoFormScreen(todoId: state.pathParameters['id']),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),

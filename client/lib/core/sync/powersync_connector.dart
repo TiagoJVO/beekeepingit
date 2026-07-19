@@ -371,20 +371,24 @@ String lwwTimestampFor(
 /// Maps a queued CRUD entry's source table to its wire entity_type (#256:
 /// the queue now carries two tables' writes — [apiariesTable] rows and
 /// [apiaryCountersTable] rows — where before #256 everything was an apiary;
-/// #39 adds a THIRD, [activitiesTable], routed by
-/// services/sync/api/coordinator.go's groupOpsByOwner to a DIFFERENT owning
-/// service entirely (activities, not apiaries) — getting this mapping wrong
-/// would silently misroute every offline-created activity to apiaries,
-/// which doesn't own that table and would reject it). Any unrecognized
-/// table defaults to the apiary entity type, preserving the previous
-/// hardcoded behavior for safety; a genuinely new syncable table must add
-/// its own mapping here alongside its schema entry (powersync_schema.dart).
-/// Top-level + `@visibleForTesting` so the dispatch is unit-testable
-/// without a real PowerSync database.
+/// #39 added a THIRD, [activitiesTable]; #45 a FOURTH/FIFTH,
+/// [journeysTable]/[journeyPlanItemsTable]; and #50 a SIXTH, [todosTable] —
+/// each routed by services/sync/api/coordinator.go's groupOpsByOwner to its
+/// OWN owning service (activities, journeys, todos — not apiaries) —
+/// getting this mapping wrong would silently misroute an offline-created
+/// row to apiaries, which doesn't own that table and would reject it). Any
+/// unrecognized table defaults to the apiary entity type, preserving the
+/// previous hardcoded behavior for safety; a genuinely new syncable table
+/// must add its own mapping here alongside its schema entry
+/// (powersync_schema.dart). Top-level + `@visibleForTesting` so the
+/// dispatch is unit-testable without a real PowerSync database.
 @visibleForTesting
 String entityTypeForTable(String table) => switch (table) {
   apiaryCountersTable => apiaryCounterEntityType,
   activitiesTable => activityEntityType,
+  journeysTable => journeyEntityType,
+  journeyPlanItemsTable => journeyPlanItemEntityType,
+  todosTable => todoEntityType,
   _ => apiaryEntityType,
 };
 

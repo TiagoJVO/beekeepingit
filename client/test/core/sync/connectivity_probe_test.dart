@@ -58,19 +58,16 @@ void main() {
       expect(await probe.check(), isFalse);
     });
 
-    test(
-      'dispose() closes the injected http.Client (HIGH #1 — resource leak: '
-      'the probe owns an http.Client never closed on logout/membership-purge '
-      'teardown)',
-      () {
-        final client = _TrackingHttpClient();
-        final probe = HttpConnectivityProbe(client: client);
+    test('dispose() closes the injected http.Client (HIGH #1 — resource leak: '
+        'the probe owns an http.Client never closed on logout/membership-purge '
+        'teardown)', () {
+      final client = _TrackingHttpClient();
+      final probe = HttpConnectivityProbe(client: client);
 
-        probe.dispose();
+      probe.dispose();
 
-        expect(client.closed, isTrue);
-      },
-    );
+      expect(client.closed, isTrue);
+    });
   });
 }
 

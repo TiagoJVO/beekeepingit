@@ -3,6 +3,18 @@
 # the `networkpolicy:` key in the parent's values.yaml/environments/*.yaml.
 enabled: true
 
+# Namespace the ingress controller runs in — k3d/k3s installs Traefik into
+# `kube-system` by default, which is why every gateway-to-backend edge below
+# used to hardcode that literal. Scaleway staging installs Traefik into its
+# own `traefik` namespace instead (infra/cluster/scaleway-up.sh) — override
+# this per environment rather than the namespace literal in each edge (values
+# .yaml is plain data, not template-rendered, so `{{ }}` doesn't work inside
+# `edges:` below; the `__gateway__` sentinel is substituted for this value in
+# templates/allow-pod-to-pod.yaml instead). Found the hard way (D-26): every
+# gateway-to-backend edge was silently non-functional on staging until this
+# was added — Traefik simply wasn't in the namespace the policy allowed.
+gatewayNamespace: kube-system
+
 # Every real pod-to-pod edge in the namespace, derived directly from the
 # actual wiring (not guessed) — see each source file cited per edge. Each
 # entry renders BOTH sides of the same NetworkPolicy pair: an egress rule on
@@ -33,47 +45,69 @@ enabled: true
 # after all, silently blocking its other, un-enumerated callers (e.g.
 # Prometheus scraping otel-collector's own metrics port).
 edges:
-  # --- Gateway (Traefik, kube-system) -> in-namespace backends ---
-  # charts/gateway/values.yaml `routes`/`authRoutes`/`powersyncRoute`. Traefik
-  # is k3d's bundled ingress controller (infra/cluster/k3d-config.yaml,
-  # docs/architecture/platform.md "Cluster") and k3d/k3s installs it into
-  # `kube-system` by default — the only expected source of ingress traffic
-  # into this namespace from outside it. If a future environment's ingress
-  # controller lives elsewhere, update the `namespaceSelector` below.
+  # --- Gateway (Traefik) -> in-namespace backends ---
+  # charts/gateway/values.yaml `routes`/`authRoutes`/`powersyncRoute`. `from`
+  # here is the `__gateway__` sentinel, resolved to `.Values.gatewayNamespace`
+  # by templates/allow-pod-to-pod.yaml — k3d/k3s installs Traefik into
+  # `kube-system` by default (that value's default), but it's whatever
+  # namespace the actual ingress controller runs in for a given environment
+  # (e.g. Scaleway staging installs it into its own `traefik` namespace, see
+  # infra/cluster/scaleway-up.sh) — the only expected source of ingress
+  # traffic into this namespace from outside it.
   - name: gateway-to-pwa
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     # 80, not 8080: the pwa reverted to the stock nginx image on port 80 (#224
     # path-B revert, #235); NetworkPolicy matches the CONTAINER port, so this
     # ingress allow must be 80 or Traefik→pwa is dropped and the gateway 502s.
     to: { app.kubernetes.io/name: pwa }
     port: 80
   - name: gateway-to-apiaries
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: apiaries }
     port: 8080
   # #39: the /v1/activities REST route (charts/gateway/values.yaml `routes`)
   # for online-only/direct callers — the field PWA writes activities via sync,
   # not this route, but the route exists so this ingress allow must too.
   - name: gateway-to-activities
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: activities }
     port: 8080
+  # #45: the /v1/journeys REST route (charts/gateway/values.yaml `routes`),
+  # same rationale as gateway-to-activities above — the field PWA writes
+  # journeys via sync, not this route, but the route exists (write.go's
+  # online-only/direct-caller surface) so this ingress allow must too.
+  - name: gateway-to-journeys
+    from: { namespaceSelector: __gateway__ }
+    to: { app.kubernetes.io/name: journeys }
+    port: 8080
   - name: gateway-to-organizations
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: organizations }
     port: 8080
   - name: gateway-to-identity
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: identity }
     port: 8080
   - name: gateway-to-sync
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: sync }
     port: 8080
   - name: gateway-to-powersync
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: powersync }
     port: 8080
+  # cert-manager's ingress-shim (charts/gateway/templates/ingress.yaml's
+  # certManager.enabled annotation, D-26) dynamically creates a short-lived
+  # `cm-acme-http-solver-*` pod per ACME HTTP-01 challenge, in THIS namespace
+  # (same namespace as the Ingress being solved for) — Traefik routes the
+  # challenge request to it just like any other backend, so it needs the same
+  # kind of allow rule. Missing this blocked cert-manager's own self-check
+  # ("context deadline exceeded") indefinitely on the first attempt, D-26.
+  # Port 8089 is the solver's fixed listen port (not configurable).
+  - name: gateway-to-acme-solver
+    from: { namespaceSelector: __gateway__ }
+    to: { acme.cert-manager.io/http01-solver: "true" }
+    port: 8089
   # NB: there is deliberately NO gateway-to-authentik-server edge. Traefik
   # does route the auth host to authentik-server, but that pod is EXCLUDED
   # from default-deny (vendored authentik stack, see _helpers.tpl), so it has
@@ -131,9 +165,77 @@ edges:
     from: { app.kubernetes.io/name: activities }
     to: { app.kubernetes.io/name: apiaries }
     port: 8080
+  # #46: activities verifies a client-supplied journey_id belongs to the
+  # caller's org by dialing journeys' own GET /v1/journeys/{id}
+  # (api/journeys_client.go's JourneyVerifier) — same rationale as
+  # activities-to-apiaries above. Missing this edge is exactly the class of
+  # bug #45 already hit once (a service with a missing NetworkPolicy edge
+  # crash-loops/hangs in the real cluster even though everything looks fine
+  # on paper) — verified live on the local dev cluster, not just reviewed
+  # statically.
+  - name: activities-to-journeys
+    from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: journeys }
+    port: 8080
   - name: sync-to-activities
     from: { app.kubernetes.io/name: sync }
     to: { app.kubernetes.io/name: activities }
+    port: 8080
+  # --- journeys east-west (#45, services/values.yaml journeys.env
+  # INTERNAL_*_URL + sync.env INTERNAL_JOURNEYS_URL) --- same rationale as
+  # activities' own block above: journeys resolves the caller's org via
+  # identity+organizations (same org-resolver wiring), and verifies a
+  # client-supplied apiary_id belongs to the caller's org by dialing
+  # apiaries' own GET /v1/apiaries/{id} (api/apiaries_client.go). sync's
+  # write-back coordinator calls journeys' /internal/sync/validate+apply.
+  - name: journeys-to-identity
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: journeys-to-organizations
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  - name: journeys-to-apiaries
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: apiaries }
+    port: 8080
+  - name: sync-to-journeys
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: journeys }
+    port: 8080
+
+  # --- todos east-west (#50, services/values.yaml todos.env INTERNAL_*_URL +
+  # sync.env INTERNAL_TODOS_URL) ---
+  # todos resolves the caller's org via identity+organizations (same
+  # org-resolver wiring as activities/apiaries), and verifies a
+  # client-supplied assignee_id belongs to an active member of the caller's
+  # org by dialing organizations' own GET /internal/memberships/active
+  # (api/members_client.go) — the D-23 cross-service ownership guard. sync's
+  # write-back coordinator calls todos' /internal/sync/validate+apply
+  # (coordinator.go groupOpsByOwner).
+  - name: todos-to-identity
+    from: { app.kubernetes.io/name: todos }
+    to: { app.kubernetes.io/name: identity }
+    port: 8080
+  - name: todos-to-organizations
+    from: { app.kubernetes.io/name: todos }
+    to: { app.kubernetes.io/name: organizations }
+    port: 8080
+  # #51: todos verifies a client-supplied apiary_id belongs to the caller's
+  # org by dialing apiaries' own GET /v1/apiaries/{id} (api/apiaries_client.go)
+  # — a todo may be associated with a specific apiary, or left as a general,
+  # org-level todo (FR-TD-1). Same rationale as activities-to-apiaries and
+  # journeys-to-apiaries above; get this edge right in the SAME PR that adds
+  # the dependency, learning from #50's own precedent of shipping a
+  # NetworkPolicy edge separately after a red CI run.
+  - name: todos-to-apiaries
+    from: { app.kubernetes.io/name: todos }
+    to: { app.kubernetes.io/name: apiaries }
+    port: 8080
+  - name: sync-to-todos
+    from: { app.kubernetes.io/name: sync }
+    to: { app.kubernetes.io/name: todos }
     port: 8080
 
   # --- OIDC discovery/JWKS (docs/architecture/auth.md §4, internal split) ---
@@ -183,6 +285,20 @@ edges:
     to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
     port: 9000
     egressOnly: true
+  # #45: journeys' authn.NewMiddleware fetches OIDC discovery at startup,
+  # same as every other domain service.
+  - name: journeys-to-authentik-server
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
+  # #50: todos' authn.NewMiddleware fetches OIDC discovery at startup, same
+  # as every other domain service.
+  - name: todos-to-authentik-server
+    from: { app.kubernetes.io/name: todos }
+    to: { app.kubernetes.io/name: authentik, app.kubernetes.io/component: server }
+    port: 9000
+    egressOnly: true
   # `helm test` hook (charts/authentik/templates/tests/ready-test.yaml) —
   # probes authentik-server's readiness endpoint; runs in CI (helm-e2e.yml).
   #
@@ -228,6 +344,28 @@ edges:
     from: { app.kubernetes.io/name: activities }
     to: { cnpgCluster: true }
     port: 5432
+  # #45 (mirrors activities-to-postgres's THE CRASH FIX above): journeys'
+  # dbaccess.Migrate + runtime pool connect to postgres-rw:5432. Without this
+  # edge the default-deny baseline blocks journeys' egress to postgres, so
+  # its startup migration `dial` is refused and the pod CrashLoopBackOffs
+  # forever while postgres is healthy — exactly the incident documented
+  # above for activities' own first in-cluster deploy, repeated here for
+  # journeys' first in-cluster deploy (this PR shipped no image before now).
+  - name: journeys-to-postgres
+    from: { app.kubernetes.io/name: journeys }
+    to: { cnpgCluster: true }
+    port: 5432
+  # #50 (THE CRASH FIX, again): todos' dbaccess.Migrate + runtime pool connect
+  # to postgres-rw:5432 — the exact same gap activities hit on its own first
+  # in-cluster deploy above (#39). Without this edge the default-deny baseline
+  # blocks todos' egress to postgres, so its startup migration `dial` is
+  # refused and the pod CrashLoopBackOffs forever while postgres is healthy
+  # (confirmed via 3 live helm-e2e runs, only `todos` ever timing out while
+  # every sibling recovered). Mirrors activities-to-postgres above.
+  - name: todos-to-postgres
+    from: { app.kubernetes.io/name: todos }
+    to: { cnpgCluster: true }
+    port: 5432
   # PS_DATA_SOURCE_URI (logical replication) + PS_STORAGE_SOURCE_URI
   # (charts/postgres/templates/cluster.yaml's `powersync` managed role).
   - name: powersync-to-postgres
@@ -265,7 +403,7 @@ edges:
   # observability and MinIO, is the correct pattern (bringing all three under
   # netpol with live-verified edges is tracked on #89).
 
-  # --- Observability (infra/gitops/apps/dev/observability-helmrelease.yaml
+  # --- Observability (the beekeepingit-gitops repo's apps/dev/observability-helmrelease.yaml
   # targetNamespace: beekeepingit-dev — same namespace) ---
   # services/values.yaml otelEndpoint: otel-collector:4317, shared by every
   # Go service. Attached per-service (not a namespace-wide egress-to-
@@ -298,6 +436,20 @@ edges:
   # other Go service (services/values.yaml otelEndpoint).
   - name: activities-to-otel-collector
     from: { app.kubernetes.io/name: activities }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+  # #45: journeys exports traces/metrics/logs to the collector like every
+  # other Go service (services/values.yaml otelEndpoint).
+  - name: journeys-to-otel-collector
+    from: { app.kubernetes.io/name: journeys }
+    to: { app.kubernetes.io/name: otel-collector }
+    port: 4317
+    egressOnly: true
+  # #50: todos exports traces/metrics/logs to the collector like every other
+  # Go service (services/values.yaml otelEndpoint).
+  - name: todos-to-otel-collector
+    from: { app.kubernetes.io/name: todos }
     to: { app.kubernetes.io/name: otel-collector }
     port: 4317
     egressOnly: true
