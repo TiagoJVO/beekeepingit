@@ -6,9 +6,17 @@
 #   - a Scaleway account with billing set up, in an EU region
 #   - `scw init` already run (stores the API access/secret key + default
 #     project/region — see https://www.scaleway.com/en/docs/console/account/how-to/create-api-keys/)
-#   - a real domain, with $STAGING_APP_HOST / $STAGING_AUTH_HOST DNS records
-#     pointyable at the LoadBalancer this script provisions (see step 3 below
-#     for how to learn its IP once the ingress controller is up)
+#
+# Optional dynamic DNS (D-27/Phase 5): set the env vars below and this script
+# pushes Traefik's freshly-assigned LoadBalancer IP to Cloudflare on each bring-up.
+# We deliberately do NOT reserve a static Scaleway IP (a held flexible IP bills
+# ~EUR3/mo even while the cluster is torn down); dynamic DNS keeps the standing
+# cost at zero. Skipped if CF_API_TOKEN is unset (then point DNS by hand from the
+# summary printed at the end):
+#   CF_API_TOKEN      Cloudflare token, scoped to Zone > DNS > Edit on the zone
+#   CF_ZONE_ID        the zone's ID (Cloudflare dashboard -> the zone -> API section)
+#   STAGING_APP_HOST  e.g. beekeepingit-rc.melargil.net
+#   STAGING_AUTH_HOST e.g. auth.beekeepingit-rc.melargil.net
 set -euo pipefail
 
 cluster_name="${SCW_K8S_CLUSTER_NAME:-beekeepingit-staging}"
@@ -111,6 +119,60 @@ helm repo update traefik >/dev/null
 helm upgrade --install traefik traefik/traefik \
   --namespace traefik --create-namespace --wait
 
+# 3b. Dynamic DNS. Kapsule assigns Traefik's LoadBalancer a fresh IP on every
+# bring-up (we don't reserve a static one — see the header), so push the current
+# IP to Cloudflare here. DNS-only (proxied:false) so cert-manager's HTTP-01
+# challenge can reach it; low TTL so the change propagates fast. Idempotent —
+# re-running just re-points the records. Skipped unless CF_API_TOKEN is set.
+if [ -n "${CF_API_TOKEN:-}" ]; then
+  for bin in curl jq; do
+    command -v "$bin" >/dev/null 2>&1 || {
+      echo "error: '$bin' is required for the Cloudflare DNS update (CF_API_TOKEN is set)" >&2
+      exit 1
+    }
+  done
+  : "${CF_ZONE_ID:?set CF_ZONE_ID (the zone ID) when CF_API_TOKEN is set}"
+  : "${STAGING_APP_HOST:?set STAGING_APP_HOST (e.g. beekeepingit-rc.melargil.net) when CF_API_TOKEN is set}"
+  : "${STAGING_AUTH_HOST:?set STAGING_AUTH_HOST (e.g. auth.beekeepingit-rc.melargil.net) when CF_API_TOKEN is set}"
+
+  echo "waiting for Traefik's LoadBalancer IP (Kapsule assigns it a moment after the Service is created)"
+  lb_ip=""
+  for _ in {1..60}; do
+    lb_ip="$(kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+    [ -n "$lb_ip" ] && break
+    sleep 5
+  done
+  if [ -z "$lb_ip" ]; then
+    echo "error: Traefik LoadBalancer IP not assigned within 5 minutes" >&2
+    exit 1
+  fi
+  echo "Traefik LoadBalancer IP: $lb_ip"
+
+  cf_api="https://api.cloudflare.com/client/v4"
+  # Create the A record if absent, else PATCH its content to the current IP.
+  cf_upsert_a() {
+    local fqdn="$1" ip="$2" rec_id
+    rec_id="$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" \
+      "$cf_api/zones/$CF_ZONE_ID/dns_records?type=A&name=$fqdn" | jq -r '.result[0].id // empty')"
+    if [ -n "$rec_id" ]; then
+      curl -fsS -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+        "$cf_api/zones/$CF_ZONE_ID/dns_records/$rec_id" \
+        --data "$(jq -nc --arg ip "$ip" '{content: $ip}')" >/dev/null
+      echo "cloudflare: A $fqdn -> $ip (updated)"
+    else
+      curl -fsS -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+        "$cf_api/zones/$CF_ZONE_ID/dns_records" \
+        --data "$(jq -nc --arg n "$fqdn" --arg ip "$ip" \
+          '{type: "A", name: $n, content: $ip, ttl: 120, proxied: false}')" >/dev/null
+      echo "cloudflare: A $fqdn -> $ip (created)"
+    fi
+  }
+  cf_upsert_a "$STAGING_APP_HOST" "$lb_ip"
+  cf_upsert_a "$STAGING_AUTH_HOST" "$lb_ip"
+else
+  echo "CF_API_TOKEN not set — skipping the Cloudflare DNS update (point DNS by hand; see the summary below)"
+fi
+
 echo "installing/upgrading cert-manager"
 helm repo add jetstack https://charts.jetstack.io >/dev/null
 helm repo update jetstack >/dev/null
@@ -129,8 +191,9 @@ cat <<EOF
 
 Cluster ready. Remaining one-time setup, in order:
 
-1. Point DNS (A/AAAA records for \$STAGING_APP_HOST / \$STAGING_AUTH_HOST) at
-   Traefik's LoadBalancer external IP:
+1. DNS: if CF_API_TOKEN was set, the A records for \$STAGING_APP_HOST /
+   \$STAGING_AUTH_HOST were already pushed to Cloudflare above. Otherwise point
+   them at Traefik's LoadBalancer IP manually:
 
      kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 
