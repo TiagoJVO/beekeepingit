@@ -75,32 +75,12 @@ jobs:
             if echo "$changed" | grep -q "^${dir}/"; then
               name="$(echo "$dir" | tr '/' '-')"
               image="ghcr.io/${owner}/beekeepingit/${name}"
-              if [ "$dir" = "client" ]; then
-                # The PWA's OIDC/gateway/PowerSync URLs are Dart *compile-time*
-                # constants (client/lib/core/config/app_config.dart) baked in via
-                # --dart-define at `flutter build web` time — unlike the Go
-                # services' runtime env vars, one image can't serve every
-                # environment. Build one variant per environment instead, each
-                # tagged with an env prefix on the SAME image repo (see the
-                # `tags:` step below) rather than a separate repo per env.
-                #
-                # These values must be kept in sync BY HAND with each
-                # environment's infra/helm/beekeepingit/environments/*.yaml
-                # overlay (global.appOrigin, gateway.appHost/authHost,
-                # services.oidc.issuerUrl) — the two aren't derived from one
-                # source yet (see FOLLOWUPS.md for the tracked follow-up).
-                #
-                # prod is deliberately NOT built here: no real domain exists
-                # yet (D-26, environments/prod.yaml) — there's nothing real to
-                # bake in. Add a client-prod entry, mirroring these two, once
-                # prod's placeholder URLs become real.
-                dev_defines="--dart-define=OIDC_ISSUER=https://auth.beekeepingit.local:8443/application/o/beekeepingit/ --dart-define=GATEWAY_BASE_URL=https://app.beekeepingit.local:8443 --dart-define=OIDC_ACCOUNT_URL=https://auth.beekeepingit.local:8443/if/user/#/settings --dart-define=POWERSYNC_URL=https://app.beekeepingit.local:8443/sync-stream/"
-                staging_defines="--dart-define=OIDC_ISSUER=https://auth.51-159-204-90.nip.io/application/o/beekeepingit/ --dart-define=GATEWAY_BASE_URL=https://app.51-159-204-90.nip.io --dart-define=OIDC_ACCOUNT_URL=https://auth.51-159-204-90.nip.io/if/user/#/settings --dart-define=POWERSYNC_URL=https://app.51-159-204-90.nip.io/sync-stream/"
-                include="${include}{\"component\":\"client-dev\",\"path\":\"${dir}\",\"image\":\"${image}\",\"env\":\"dev\",\"dartDefines\":\"${dev_defines}\"},"
-                include="${include}{\"component\":\"client-staging\",\"path\":\"${dir}\",\"image\":\"${image}\",\"env\":\"staging\",\"dartDefines\":\"${staging_defines}\"},"
-              else
-                include="${include}{\"component\":\"${name}\",\"path\":\"${dir}\",\"image\":\"${image}\",\"env\":\"\",\"dartDefines\":\"\"},"
-              fi
+              # Every component (Go service or the PWA) is one build. The client is
+              # built define-less here (AppConfig's dev defaults) as pure CI/artifact
+              # validation — its real per-environment, deployable build is produced by
+              # release-deploy.yml with the target env's URLs baked in (D-27, ADR-0018).
+              # No per-environment client variants here anymore.
+              include="${include}{\"component\":\"${name}\",\"path\":\"${dir}\",\"image\":\"${image}\"},"
             fi
           done
           include="${include%,}" # trim trailing comma
@@ -141,7 +121,6 @@ jobs:
       - name: Lint, test & build artifact (affected component)
         env:
           COMPONENT_PATH: ${{ matrix.path }}
-          DART_DEFINES: ${{ matrix.dartDefines }}
         run: |
           set -euo pipefail
           if [ -f "$COMPONENT_PATH/go.mod" ]; then
@@ -154,14 +133,14 @@ jobs:
             # `task dart:l10n-check` (#78 AC): regenerate lib/l10n/gen and fail
             # on malformed ARB, an EN/PT key mismatch, or stale committed
             # codegen output — before spending time on analyze/test/build.
-            # $DART_DEFINES is intentionally unquoted below — it's several
-            # space-separated --dart-define=... flags (one per environment;
-            # see the detect job's per-environment matrix comment) that need
-            # word-splitting, not one string. Empty for non-client components.
+            # No --dart-define: this is a pure-CI validation build, so it uses
+            # AppConfig's dev defaults (client/lib/core/config/app_config.dart).
+            # The real per-environment deployable PWA is built by release-deploy.yml
+            # with the target env's URLs baked in (D-27, ADR-0018).
             ( task dart:l10n-check \
               && cd "$COMPONENT_PATH" && flutter pub get && dart run powersync:setup_web \
               && flutter analyze && flutter test \
-              && flutter build web --release --no-web-resources-cdn $DART_DEFINES )
+              && flutter build web --release --no-web-resources-cdn )
           else
             echo "::error::unknown component type at $COMPONENT_PATH (no go.mod or pubspec.yaml)"
             exit 1
@@ -189,16 +168,14 @@ jobs:
         with:
           images: ${{ matrix.image }}
           # `sha-<short>` on every build (AC #4 "tagged by commit"). On main, also a
-          # timestamp-prefixed `<YYYYMMDDHHMMSS>-<sha>` tag so builds are chronologically
-          # orderable (commit SHAs aren't).
-          # Env-prefixed (matrix.env, e.g. "dev-sha-...", "staging-latest") for the
-          # client's per-environment variants, so multiple environments can share one
-          # image repo without colliding tags; empty prefix (unchanged scheme) for
-          # every other component, which has no per-environment variants.
+          # timestamp-prefixed `<YYYYMMDDHHMMSS>-<sha>` tag and `latest`. These are
+          # build artifacts for CI, not deployables — deploys come from a Release
+          # (D-27, ADR-0018). The client publishes plain `client:latest` (dev-default
+          # URLs), which the dev cluster's Flux HelmRelease pulls.
           tags: |
-            type=sha,prefix=${{ matrix.env && format('{0}-sha-', matrix.env) || 'sha-' }}
-            type=raw,value={{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}},prefix=${{ matrix.env && format('{0}-', matrix.env) || '' }}
-            type=raw,value=latest,enable={{is_default_branch}},prefix=${{ matrix.env && format('{0}-', matrix.env) || '' }}
+            type=sha,prefix=sha-
+            type=raw,value={{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}
+            type=raw,value=latest,enable={{is_default_branch}}
 
       # Build to the local daemon first so the image is scanned BEFORE it can be published —
       # a failing scan must block the push, not chase an already-published tag.

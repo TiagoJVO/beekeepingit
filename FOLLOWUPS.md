@@ -14,8 +14,7 @@
 Mechanism now recorded in [D-27](requirements/decisions.md) /
 [ADR-0018](docs/adr/0018-release-triggered-deploy-pipeline.md); the abandoned Flux image-automation
 has been removed. The full multi-phase plan lives in `DEPLOYMENT_PIPELINE_PLAN.md` (a working
-handoff doc — delete once executed). Remaining phases, each gated on user confirmation or an
-outward-facing action:
+handoff doc — delete once executed). Phase status on this branch, and the remaining gated work:
 
 - **Phase 2 (GitOps repo split) — DONE on this branch.** `TiagoJVO/beekeepingit-gitops` created and
   populated; `infra/gitops/` removed here; `dev-up.sh`/`dev-down.sh`/`scaleway-up.sh`/`helm-e2e.yml`
@@ -25,31 +24,34 @@ outward-facing action:
 beekeepingit-gitops/clusters/dev/` — else its Kustomization goes stale when `infra/gitops/` leaves
   `beekeepingit@main`. (The new repo also wants branch protection on `main` before Phase 3 wires the
   tag-bump PR into it.)
-- **Rework `release-deploy.yml`** (Phase 3) — add `-rc`→staging / bare-tag→prod routing and the
-  release→tag-bump-PR step against the new repo. **Credential decided: a fine-grained PAT** scoped
-  to `contents:write` + `pull_requests:write` on `beekeepingit-gitops` only, stored as the
-  `beekeepingit` Actions secret `GITOPS_PR_TOKEN` (user creates it — Claude can't create/enter
-  tokens). Prerequisites before this can run end-to-end: (1) that PAT + secret, (2) branch
-  protection on `beekeepingit-gitops`'s `main`.
-- **PWA build path** (Phase 4) — move the only deployable client build into `release-deploy.yml`
-  (tagged by release version), leaving `build-publish.yml` as pure CI. Coupled to Phase 3 (same
-  file); this also resolves the current `build-publish.yml` per-env client matrix and the
-  `client:latest` vs. dev HelmRelease `tag: latest` mismatch.
+- **Phase 3 (release-deploy rework) — DONE on this branch.** `release-deploy.yml` now routes
+  `-rc`→staging / bare-tag→prod, gates prod via a single `approve` job on the `production`
+  Environment, builds+scans+pushes every service + the PWA at the release version, and opens a
+  tag-bump PR against `beekeepingit-gitops` via `peter-evans/create-pull-request` +
+  `GITOPS_PR_TOKEN`. Credential = fine-grained PAT (`GITOPS_PR_TOKEN` secret) — **created ✓**;
+  `beekeepingit-gitops` `main` branch protection — **set ✓**. Not exercised end-to-end until a
+  release is cut (Phase 6).
+- **Phase 4 (PWA build path) — DONE on this branch.** The only deployable client build lives in
+  `release-deploy.yml` (per-target `--dart-define` URLs, tagged by release version);
+  `build-publish.yml`'s client is now a single define-less pure-CI build, which also resolves the
+  old per-env client matrix and the `client:latest` vs. dev HelmRelease `tag: latest` mismatch
+  (`client:latest` now carries dev-default URLs, which is what dev's Flux path pulls).
 - **Real domain `melargil.net`** (Phase 5) — 4 hostnames (app+auth × staging+prod, ADR-0016),
   Scaleway reserved IPs, Cloudflare DNS. Subdomain naming still to confirm with the user.
 - **End-to-end verification** (Phase 6) — bring staging up, cut `v0.0.1-rc1`, walk the whole chain.
 
 ### Other
 
-- **Switch staging's PWA image tag off `staging-manual`** once the release-triggered client build
-  (Phase 4) produces a real per-environment image. `apps/staging/beekeepingit-helmrelease.yaml` and
-  `environments/staging.yaml` both pin `pwa.image.tag: staging-manual` (a locally-built-and-pushed
-  image). Resolves when Phase 4 lands, not before — pointing at a non-existent tag would break the
-  deploy.
+- **Switch staging's PWA image tag off `staging-manual`.** The gitops repo's
+  `apps/staging/beekeepingit-helmrelease.yaml` (and this repo's `environments/staging.yaml`) still
+  pin `pwa.image.tag: staging-manual` (a locally-built one-off). The Phase 3/4 mechanism is in
+  place, but the tag only actually switches when the first `-rc` release's tag-bump PR sets
+  `pwa.image.tag` to the release version and is merged (Phase 6) — don't hand-edit it to a
+  non-existent tag before then.
 - **Observability is intentionally not deployed anywhere** (dev, staging, or a future prod) —
   not a gap to revisit, a deliberate choice for now.
-- Minor known trade-off, not blocking: the per-environment PWA URLs in the client build workflow
-  and each `infra/helm/beekeepingit/environments/*.yaml` overlay are two independently-maintained
-  copies of the same values (`global.appOrigin`, `gateway.appHost`/`authHost`,
-  `services.oidc.issuerUrl` vs. `--dart-define` flags) — no shared source yet. Phase 4 may
-  consolidate; worth a GitHub issue if it drifts. Not urgent today.
+- Minor known trade-off, not blocking: the per-environment PWA URLs in `release-deploy.yml`'s
+  `publish-client` job and each `infra/helm/beekeepingit/environments/*.yaml` overlay are two
+  independently-maintained copies of the same values (`global.appOrigin`, `gateway.appHost`/
+  `authHost`, `services.oidc.issuerUrl` vs. `--dart-define` flags) — no shared source yet (Phase 4
+  did not consolidate them). Worth a GitHub issue if it drifts. Not urgent today.
