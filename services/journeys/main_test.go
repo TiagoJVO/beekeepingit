@@ -88,6 +88,12 @@ func newFakeApiaries(t *testing.T, known map[string]bool) *fakeApiaries {
 	f := &fakeApiaries{hits: map[string]int{}}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/v1/apiaries/")
+		// Mirrors the real handler's uuid.Parse(chi.URLParam(...)) (apiaries/
+		// api/write.go) — case-insensitive, so this double doesn't fail a
+		// non-canonically-cased id the real service would accept.
+		if parsed, err := uuid.Parse(id); err == nil {
+			id = parsed.String()
+		}
 		f.mu.Lock()
 		f.hits[id]++
 		f.mu.Unlock()
@@ -927,6 +933,43 @@ func TestJourneysSync_Validate_RejectsCrossOrgApiaryId(t *testing.T) {
 	p := decodeProblem(t, rec)
 	if !problemHasFieldCode(p, "ops[1].data.apiary_id", "not_found") {
 		t.Fatalf("problem errors = %+v, want ops[1].data.apiary_id/not_found", p.Errors)
+	}
+}
+
+// TestJourneysSync_Validate_NonCanonicalCaseApiaryIdStillValidates is the
+// regression guard for the review finding that resolveApiaryOwnership (via
+// verifyApiaryIDs) keys `owned` by the CANONICAL uuid.Parse(...).String()
+// form, while validateJourneyPlanItemOp used to look it up with the raw,
+// unnormalized client string instead — so an apiary_id sent in a
+// non-canonical case (still a perfectly valid, owned UUID) would spuriously
+// fail as "not_found" even though the up-front ownership check HAD
+// confirmed it belongs to the caller's org. The op must both validate AND
+// apply successfully, producing an actual plan-item row.
+func TestJourneysSync_Validate_NonCanonicalCaseApiaryIdStillValidates(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID) // fake apiaries server knows the canonical (lowercase) form
+	journeyID, planItemID := uuid.NewString(), uuid.NewString()
+	batch := map[string]any{"ops": []any{
+		journeyPutOp(journeyID, "Journey", "harvest"),
+		planItemPutOp(planItemID, journeyID, strings.ToUpper(apiaryID)),
+	}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200 (a non-canonically-cased but owned apiary_id must still validate), body = %s", rec.Code, rec.Body.String())
+	}
+
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+	q := sqlcgen.New(f.pool)
+	items, err := q.ListJourneyPlanItemsByJourney(context.Background(), sqlcgen.ListJourneyPlanItemsByJourneyParams{OrganizationID: devseedOrg(), JourneyID: pgtype.UUID{Bytes: uuid.MustParse(journeyID), Valid: true}})
+	if err != nil {
+		t.Fatalf("ListJourneyPlanItemsByJourney: %v", err)
+	}
+	if len(items) != 1 || uuidString(items[0].ApiaryID) != apiaryID {
+		t.Fatalf("plan items = %+v, want one row for apiary %s", items, apiaryID)
 	}
 }
 

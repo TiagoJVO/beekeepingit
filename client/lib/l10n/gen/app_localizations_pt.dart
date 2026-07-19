@@ -1106,16 +1106,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get todoQuickCreateTitle => 'Nova tarefa';
 
   @override
-  String get todoTitleLabel => 'Título';
-
-  @override
-  String get todoTitleRequired => 'O título é obrigatório';
-
-  @override
   String get todoDueDateLabel => 'Prazo';
-
-  @override
-  String get todoDueDateClearAction => 'Limpar prazo';
 
   @override
   String todoQuickCreateForApiary(String apiaryName) {
@@ -1129,7 +1120,123 @@ class AppLocalizationsPt extends AppLocalizations {
   String get todoCreatedConfirmation => 'Tarefa criada';
 
   @override
+  String get newTodoTitle => 'Nova tarefa';
+
+  @override
+  String get todoDetailTitle => 'Tarefa';
+
+  @override
+  String get editTodoTitle => 'Editar tarefa';
+
+  @override
+  String get editTodoAction => 'Editar tarefa';
+
+  @override
+  String get todoTitleLabel => 'Título';
+
+  @override
+  String get todoTitleRequired => 'O título é obrigatório';
+
+  @override
+  String get todoDescriptionLabel => 'Descrição';
+
+  @override
+  String get todoDescriptionUnset => 'Sem descrição';
+
+  @override
+  String get todoDueDateFieldLabel => 'Prazo';
+
+  @override
+  String get todoDueDateClearAction => 'Limpar prazo';
+
+  @override
+  String get todoPriorityFieldLabel => 'Prioridade';
+
+  @override
+  String get todoAssigneeFieldLabel => 'Responsável';
+
+  @override
+  String get todoApiaryFieldLabel => 'Apiário';
+
+  @override
+  String get todoAssigneeUnassigned => 'Sem responsável';
+
+  @override
+  String todoAssigneeUnknown(String id) {
+    return 'Membro $id';
+  }
+
+  @override
+  String get todoAssigneeNoneAvailable => 'Ainda não há membros disponíveis.';
+
+  @override
+  String get todoApiaryNone => 'Sem apiário';
+
+  @override
+  String get todoApiaryUnknown => 'Apiário desconhecido';
+
+  @override
+  String get todoDetailFieldsHeader => 'Detalhes';
+
+  @override
+  String get todoCompletedAtLabel => 'Concluída em';
+
+  @override
+  String get todoCompleteAction => 'Marcar como concluída';
+
+  @override
+  String get todoReopenAction => 'Reabrir';
+
+  @override
+  String get todoCompleteSuccess => 'Tarefa concluída';
+
+  @override
+  String todoCompleteError(String error) {
+    return 'Não foi possível atualizar a tarefa: $error';
+  }
+
+  @override
+  String get todoReopenSuccess => 'Tarefa reaberta';
+
+  @override
+  String todoReopenError(String error) {
+    return 'Não foi possível atualizar a tarefa: $error';
+  }
+
+  @override
+  String get todoSaveSuccess => 'Tarefa guardada';
+
+  @override
   String todoSaveError(String error) {
     return 'Não foi possível guardar a tarefa: $error';
   }
+
+  @override
+  String todoLoadError(String error) {
+    return 'Não foi possível carregar a tarefa: $error';
+  }
+
+  @override
+  String get deleteTodo => 'Eliminar tarefa';
+
+  @override
+  String get todoDeleteSuccess => 'Tarefa eliminada';
+
+  @override
+  String todoDeleteError(String error) {
+    return 'Não foi possível eliminar a tarefa: $error';
+  }
+
+  @override
+  String get deleteTodoConfirmTitle => 'Eliminar tarefa?';
+
+  @override
+  String get deleteTodoConfirmMessage =>
+      'Isto elimina permanentemente esta tarefa. Esta ação não pode ser desfeita.';
+
+  @override
+  String get deleteTodoConfirmAction => 'Eliminar';
+
+  @override
+  String get deleteTodoCancelAction => 'Cancelar';
 }

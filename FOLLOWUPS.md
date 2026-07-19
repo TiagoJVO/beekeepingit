@@ -62,3 +62,14 @@ beekeepingit-gitops/clusters/dev/` — else its Kustomization goes stale when `i
   independently-maintained copies of the same values (`global.appOrigin`, `gateway.appHost`/
   `authHost`, `services.oidc.issuerUrl` vs. `--dart-define` flags) — no shared source yet (Phase 4
   did not consolidate them). Worth a GitHub issue if it drifts. Not urgent today.
+
+## Not covered by an automated test: `todo_form_screen.dart`'s date picker
+
+- **What**: actually driving the real `showDatePicker` calendar UI to pick a
+  _new_ due date — only the pre-fill/display and the clear-button path are
+  tested.
+- **Why**: no existing precedent in this codebase for testing that
+  interaction (`add_activity_screen.dart`'s own `occurredAt` date field is
+  the same shape and isn't UI-driven in its own tests either).
+- **Status**: not blocking; a reviewer wanting this covered should add it as
+  a follow-up.
