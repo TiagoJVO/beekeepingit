@@ -15,8 +15,8 @@
 # summary printed at the end):
 #   CF_API_TOKEN      Cloudflare token, scoped to Zone > DNS > Edit on the zone
 #   CF_ZONE_ID        the zone's ID (Cloudflare dashboard -> the zone -> API section)
-#   STAGING_APP_HOST  e.g. beekeepingit-rc.melargil.net
-#   STAGING_AUTH_HOST e.g. auth.beekeepingit-rc.melargil.net
+#   STAGING_APP_HOST  e.g. beekeepingit-rc.melargil.pt
+#   STAGING_AUTH_HOST e.g. auth.beekeepingit-rc.melargil.pt
 set -euo pipefail
 
 cluster_name="${SCW_K8S_CLUSTER_NAME:-beekeepingit-staging}"
@@ -132,8 +132,8 @@ if [ -n "${CF_API_TOKEN:-}" ]; then
     }
   done
   : "${CF_ZONE_ID:?set CF_ZONE_ID (the zone ID) when CF_API_TOKEN is set}"
-  : "${STAGING_APP_HOST:?set STAGING_APP_HOST (e.g. beekeepingit-rc.melargil.net) when CF_API_TOKEN is set}"
-  : "${STAGING_AUTH_HOST:?set STAGING_AUTH_HOST (e.g. auth.beekeepingit-rc.melargil.net) when CF_API_TOKEN is set}"
+  : "${STAGING_APP_HOST:?set STAGING_APP_HOST (e.g. beekeepingit-rc.melargil.pt) when CF_API_TOKEN is set}"
+  : "${STAGING_AUTH_HOST:?set STAGING_AUTH_HOST (e.g. auth.beekeepingit-rc.melargil.pt) when CF_API_TOKEN is set}"
 
   echo "waiting for Traefik's LoadBalancer IP (Kapsule assigns it a moment after the Service is created)"
   lb_ip=""
