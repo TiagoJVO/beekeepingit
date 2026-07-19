@@ -368,6 +368,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
   (#91). None block current M0-M2 scope; the following are accepted as **future-relevant data
   points**, to be triaged into concrete FR/NFR changes when the owning feature epic
   (apiaries/activities/import-export) is planned:
+
   - Beekeeper/apiary DGAV registration number (optional field).
   - Annual stock-declaration record (Sept 1-30 window + 20%/20-colony interim trigger),
     distinct from the live hive count (FR-AP-7/D-2).
@@ -529,6 +530,37 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **Touches:** `NFR-ARC-2`, `NFR-ARC-3`, `NFR-CMP-1`, D-13 (GitOps extends to a new
   `clusters/`/`apps/` env), D-22 (analogous DPA/EU-region bar), `infra/`,
   [`docs/architecture/platform.md`](../docs/architecture/platform.md), EPIC-14 (#15, #90, #92).
+
+## D-27 — Deploy pipeline: release-triggered, PR-based promotion (replaces GitOps image-automation)
+
+- **Decision (user, 2026-07-19):** deployments are driven by **published GitHub Releases**, not by
+  Flux image-automation watching the registry. A release tag suffixed `-rc` (e.g. `v1.2.3-rc1`)
+  targets **staging**; an un-suffixed tag (`v1.2.3`) targets **prod**, gated behind the `production`
+  GitHub Environment's required-reviewer approval. CI builds and tags the image set for that exact
+  release version and opens a small tag-bump **pull request** against the GitOps state; a human
+  merges it and Flux (unchanged, still read-only) reconciles. No component ever holds a standing
+  git-write credential, and the flow works within `main`'s existing PR-only branch protection.
+- **Why image-automation was dropped:** Flux's `image-automation-controller` requires a **standing
+  git-write credential** (a deploy key) to auto-commit tag bumps to `main` — rejected by the user. A
+  direct-push-after-approval variant is also **impossible on this repo**: `main` requires PRs, and
+  GitHub's "allow specified actors to bypass required PRs" is **organization-repo-only** — this is a
+  personal (`owner_type: User`) repo, so nothing short of a repo-admin credential could push, which
+  is the same standing secret merely relocated. The release → PR → merge pattern needs no standing
+  credential at all.
+- **GitOps repo split:** `infra/gitops/` moves to its own **`beekeepingit-gitops`** repo; the Helm
+  chart (`infra/helm/beekeepingit/`) stays in this repo. Now that the mechanism is PR-based (not
+  direct-push) this is pure structural hygiene, not a security trade-off — Flux sources the chart
+  from this repo and the release-manifests from the new one (a supported split). `release-deploy.yml`
+  opens its tag-bump PR against the new repo, which needs a scoped token or a small GitHub App
+  (tracked in `FOLLOWUPS.md`).
+- **Supersedes:** [ADR-0014](../docs/adr/0014-cicd-pipeline.md)'s decision #4 (deploy via Flux
+  image-automation). The image-reflector/image-automation controllers, the `ImageRepository`/
+  `ImagePolicy`/`ImageUpdateAutomation` objects, and every `$imagepolicy` setter marker are removed;
+  `build-publish.yml` stays as pure per-PR CI (lint/test/build/scan), no longer a deploy trigger.
+- **Recorded in:** [ADR-0018](../docs/adr/0018-release-triggered-deploy-pipeline.md).
+- **Touches:** `NFR-ARC-3`, `NFR-MNT-1`, D-13 (Flux GitOps unchanged, still read-only), D-26 /
+  [ADR-0017](../docs/adr/0017-scaleway-cloud-hosting.md), EPIC-13 (#88), EPIC-14 (#89 — the git-write
+  credential this removes the need for).
 
 ---
 
