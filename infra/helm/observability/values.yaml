@@ -231,7 +231,7 @@ loki:
         # MinIO runs as its own standalone Flux HelmRelease with a pinned
         # releaseName "minio" (ADR-0012), same namespace — bare short DNS name.
         # Its loki/tempo buckets are configured on that HelmRelease's values
-        # (infra/gitops/apps/dev/minio-helmrelease.yaml).
+        # (the beekeepingit-gitops repo's apps/dev/minio-helmrelease.yaml).
         endpoint: minio:9000
         region: us-east-1
         # Credentials come from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (env, below)

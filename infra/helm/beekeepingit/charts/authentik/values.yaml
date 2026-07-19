@@ -4,7 +4,7 @@
 #
 # This chart only creates the supplementary config/Postgres Secrets and the
 # blueprint ConfigMap — Authentik itself is a separate Flux `HelmRelease`
-# (infra/gitops/apps/dev/authentik-helmrelease.yaml) that references these
+# (the beekeepingit-gitops repo's apps/dev/authentik-helmrelease.yaml) that references these
 # resources by name. See ADR-0012 (pattern) and ADR-0016 (the swap).
 enabled: true
 
@@ -23,3 +23,4 @@ bootstrapEmail: admin@beekeepingit.local
 # real global.* via its own values.yaml.
 global:
   namespace: beekeepingit
+  appOrigin: https://app.beekeepingit.local:8443

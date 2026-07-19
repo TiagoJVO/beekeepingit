@@ -1,10 +1,63 @@
-# Staging overlay — not deployed anywhere yet (NFR-ARC-2: design for future
-# cloud/environment integration without forcing it). Demonstrates the
-# per-environment override convention future service subcharts follow.
+# Staging overlay — deployed on Scaleway Kapsule (D-26); mirrors the `values:`
+# block of the beekeepingit-gitops repo's apps/staging/beekeepingit-helmrelease.yaml (the
+# actual Flux-managed source of truth) so this file stays useful for manual
+# pre-merge `helm install -f environments/staging.yaml` testing instead of
+# drifting into a stale placeholder — keep the two in sync by hand when
+# either changes; see that HelmRelease's own comments for the full
+# rationale behind each value below (nip.io hostnames, split OIDC
+# issuer/discovery, the networkpolicy.gatewayNamespace fix, the one-off
+# manually-built PWA image).
 global:
   environment: staging
   namespace: beekeepingit-staging
-  resources:
-    small:
-      requests: { cpu: 50m, memory: 64Mi }
-      limits: { cpu: 150m, memory: 128Mi }
+  # No resources override here — staging currently runs the umbrella's base
+  # small/medium/large defaults (values.yaml) unchanged; DEV1-L (D-26) has
+  # enough headroom that this hasn't needed tuning yet.
+  appOrigin: https://app.51-159-204-90.nip.io
+
+gateway:
+  appHost: app.51-159-204-90.nip.io
+  authHost: auth.51-159-204-90.nip.io
+  certManager:
+    enabled: true
+    clusterIssuer: letsencrypt-prod
+
+services:
+  oidc:
+    issuerUrl: https://auth.51-159-204-90.nip.io/application/o/beekeepingit/
+    discoveryUrl: http://authentik-server/application/o/beekeepingit/
+    audience: beekeepingit-pwa
+  # All 7 services the `services` subchart renders (charts/services/values.yaml)
+  # — activities/journeys/todos are real deployed workloads, not just
+  # reserved Postgres schemas. `ai` has no service yet, hence its absence.
+  # Tags stay on `latest` here; a release's tag-bump PR sets the deployed tag
+  # (D-27, ADR-0018). This overlay is for manual `helm install -f` testing.
+  services:
+    identity:
+      tag: latest
+    organizations:
+      tag: latest
+    apiaries:
+      tag: latest
+    activities:
+      tag: latest
+    journeys:
+      tag: latest
+    todos:
+      tag: latest
+    sync:
+      tag: latest
+
+pwa:
+  image:
+    # One-off manual build, not CI (compiled with the nip.io URLs above via
+    # --dart-define — AppConfig reads these at Dart *compile* time, so `latest`
+    # would have dev's *.beekeepingit.local:8443 baked in and fail to log in).
+    # See FOLLOWUPS.md for the real per-environment-build fix.
+    tag: staging-manual
+
+networkpolicy:
+  # scaleway-up.sh installs Traefik into its own `traefik` namespace, not
+  # `kube-system` (the chart default, correct for k3d/dev) — every
+  # gateway-to-backend NetworkPolicy edge silently blocks Traefik without this.
+  gatewayNamespace: traefik

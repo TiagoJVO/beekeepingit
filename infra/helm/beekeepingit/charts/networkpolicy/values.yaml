@@ -3,6 +3,18 @@
 # the `networkpolicy:` key in the parent's values.yaml/environments/*.yaml.
 enabled: true
 
+# Namespace the ingress controller runs in — k3d/k3s installs Traefik into
+# `kube-system` by default, which is why every gateway-to-backend edge below
+# used to hardcode that literal. Scaleway staging installs Traefik into its
+# own `traefik` namespace instead (infra/cluster/scaleway-up.sh) — override
+# this per environment rather than the namespace literal in each edge (values
+# .yaml is plain data, not template-rendered, so `{{ }}` doesn't work inside
+# `edges:` below; the `__gateway__` sentinel is substituted for this value in
+# templates/allow-pod-to-pod.yaml instead). Found the hard way (D-26): every
+# gateway-to-backend edge was silently non-functional on staging until this
+# was added — Traefik simply wasn't in the namespace the policy allowed.
+gatewayNamespace: kube-system
+
 # Every real pod-to-pod edge in the namespace, derived directly from the
 # actual wiring (not guessed) — see each source file cited per edge. Each
 # entry renders BOTH sides of the same NetworkPolicy pair: an egress rule on
@@ -33,29 +45,31 @@ enabled: true
 # after all, silently blocking its other, un-enumerated callers (e.g.
 # Prometheus scraping otel-collector's own metrics port).
 edges:
-  # --- Gateway (Traefik, kube-system) -> in-namespace backends ---
-  # charts/gateway/values.yaml `routes`/`authRoutes`/`powersyncRoute`. Traefik
-  # is k3d's bundled ingress controller (infra/cluster/k3d-config.yaml,
-  # docs/architecture/platform.md "Cluster") and k3d/k3s installs it into
-  # `kube-system` by default — the only expected source of ingress traffic
-  # into this namespace from outside it. If a future environment's ingress
-  # controller lives elsewhere, update the `namespaceSelector` below.
+  # --- Gateway (Traefik) -> in-namespace backends ---
+  # charts/gateway/values.yaml `routes`/`authRoutes`/`powersyncRoute`. `from`
+  # here is the `__gateway__` sentinel, resolved to `.Values.gatewayNamespace`
+  # by templates/allow-pod-to-pod.yaml — k3d/k3s installs Traefik into
+  # `kube-system` by default (that value's default), but it's whatever
+  # namespace the actual ingress controller runs in for a given environment
+  # (e.g. Scaleway staging installs it into its own `traefik` namespace, see
+  # infra/cluster/scaleway-up.sh) — the only expected source of ingress
+  # traffic into this namespace from outside it.
   - name: gateway-to-pwa
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     # 80, not 8080: the pwa reverted to the stock nginx image on port 80 (#224
     # path-B revert, #235); NetworkPolicy matches the CONTAINER port, so this
     # ingress allow must be 80 or Traefik→pwa is dropped and the gateway 502s.
     to: { app.kubernetes.io/name: pwa }
     port: 80
   - name: gateway-to-apiaries
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: apiaries }
     port: 8080
   # #39: the /v1/activities REST route (charts/gateway/values.yaml `routes`)
   # for online-only/direct callers — the field PWA writes activities via sync,
   # not this route, but the route exists so this ingress allow must too.
   - name: gateway-to-activities
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: activities }
     port: 8080
   # #45: the /v1/journeys REST route (charts/gateway/values.yaml `routes`),
@@ -63,25 +77,37 @@ edges:
   # journeys via sync, not this route, but the route exists (write.go's
   # online-only/direct-caller surface) so this ingress allow must too.
   - name: gateway-to-journeys
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: journeys }
     port: 8080
   - name: gateway-to-organizations
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: organizations }
     port: 8080
   - name: gateway-to-identity
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: identity }
     port: 8080
   - name: gateway-to-sync
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: sync }
     port: 8080
   - name: gateway-to-powersync
-    from: { namespaceSelector: kube-system }
+    from: { namespaceSelector: __gateway__ }
     to: { app.kubernetes.io/name: powersync }
     port: 8080
+  # cert-manager's ingress-shim (charts/gateway/templates/ingress.yaml's
+  # certManager.enabled annotation, D-26) dynamically creates a short-lived
+  # `cm-acme-http-solver-*` pod per ACME HTTP-01 challenge, in THIS namespace
+  # (same namespace as the Ingress being solved for) — Traefik routes the
+  # challenge request to it just like any other backend, so it needs the same
+  # kind of allow rule. Missing this blocked cert-manager's own self-check
+  # ("context deadline exceeded") indefinitely on the first attempt, D-26.
+  # Port 8089 is the solver's fixed listen port (not configurable).
+  - name: gateway-to-acme-solver
+    from: { namespaceSelector: __gateway__ }
+    to: { acme.cert-manager.io/http01-solver: "true" }
+    port: 8089
   # NB: there is deliberately NO gateway-to-authentik-server edge. Traefik
   # does route the auth host to authentik-server, but that pod is EXCLUDED
   # from default-deny (vendored authentik stack, see _helpers.tpl), so it has
@@ -377,7 +403,7 @@ edges:
   # observability and MinIO, is the correct pattern (bringing all three under
   # netpol with live-verified edges is tracked on #89).
 
-  # --- Observability (infra/gitops/apps/dev/observability-helmrelease.yaml
+  # --- Observability (the beekeepingit-gitops repo's apps/dev/observability-helmrelease.yaml
   # targetNamespace: beekeepingit-dev — same namespace) ---
   # services/values.yaml otelEndpoint: otel-collector:4317, shared by every
   # Go service. Attached per-service (not a namespace-wide egress-to-

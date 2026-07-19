@@ -16,6 +16,14 @@ metadata:
   labels:
     {{- include "beekeepingit.labels" . | nindent 4 }}
     app.kubernetes.io/name: gateway
+  {{- if .Values.certManager.enabled }}
+  annotations:
+    # cert-manager's ingress-shim watches for this and creates a Certificate
+    # requesting the `tls.secretName` below via the named ClusterIssuer —
+    # templates/tls-secret.yaml steps aside entirely in this mode (see its
+    # own condition) so there's exactly one owner of that Secret.
+    cert-manager.io/cluster-issuer: {{ .Values.certManager.clusterIssuer }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingressClassName }}
   tls:

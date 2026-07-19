@@ -4,7 +4,7 @@ description: >-
   BeekeepingIT-specific supplementary resource for MinIO (NFR-ARC-2): a generated
   root-credentials Secret (never a literal value in git, NFR-SEC). MinIO itself (the
   official `charts.min.io` chart) is deployed separately as its own Flux `HelmRelease`
-  (`infra/gitops/apps/dev/minio-helmrelease.yaml`) — not nested here — since Flux's
+  (the beekeepingit-gitops repo's `apps/dev/minio-helmrelease.yaml`) — not nested here — since Flux's
   GitRepository-sourced charts don't recursively resolve a subchart's own vendored
   dependency. See ADR-0012.
 type: application

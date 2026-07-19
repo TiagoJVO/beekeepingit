@@ -4,7 +4,7 @@
 #
 # This chart only creates the supplementary root-credentials Secret — MinIO
 # itself is a separate Flux `HelmRelease`
-# (infra/gitops/apps/dev/minio-helmrelease.yaml) that references it by name.
+# (the beekeepingit-gitops repo's apps/dev/minio-helmrelease.yaml) that references it by name.
 # See ADR-0012.
 enabled: true
 

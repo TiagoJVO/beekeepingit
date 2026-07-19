@@ -49,6 +49,20 @@ powersyncRoute:
 ingressClassName: traefik
 selfSignedCertDays: 365
 
+# Trusted TLS via cert-manager (EPIC-14 scope originally, brought forward for
+# the staging environment, D-26) — mutually exclusive with the self-signed
+# cert templates/tls-secret.yaml generates: when enabled, that template skips
+# entirely and cert-manager's ingress-shim (watching for the annotation below)
+# creates/renews the same-named TLS Secret itself via ACME HTTP-01. Off by
+# default — dev keeps the self-signed cert, no ACME account/rate-limit
+# concerns for a local cluster with no public endpoint.
+certManager:
+  enabled: false
+  # Name of a cluster-scoped ClusterIssuer (not templated here — it's cluster
+  # infrastructure, not release-scoped; see the beekeepingit-gitops repo's clusters/staging/
+  # cert-manager-issuer.yaml).
+  clusterIssuer: ""
+
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.
 global:

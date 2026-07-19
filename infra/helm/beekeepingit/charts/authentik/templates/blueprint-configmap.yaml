@@ -7,6 +7,13 @@ this ConfigMap into the worker's blueprint file-discovery dir; the worker then a
 `beekeepingit.yaml` idempotently. See files/beekeepingit.blueprint.yaml and
 docs/architecture/oidc-integration.md §8. The key is `beekeepingit.yaml` (the mounted
 filename) regardless of the source file's name.
+
+Rendered through `tpl` (not a plain `.Files.Get`, which never processes `{{ }}`)
+so the file's `{{ .Values.global.appOrigin }}` placeholders — the OAuth2
+provider's redirect_uris/CORS-allowed-origins — resolve per environment.
+Without this, every environment got dev's hardcoded app.beekeepingit.local
+origin baked in, and login failed everywhere else with a redirect_uri
+mismatch (observed on the first staging bring-up, D-26).
 */}}
 {{- if .Values.enabled }}
 apiVersion: v1
@@ -19,5 +26,5 @@ metadata:
     app.kubernetes.io/name: authentik
 data:
   beekeepingit.yaml: |
-    {{- .Files.Get (printf "files/%s" .Values.blueprintFile) | nindent 4 }}
+    {{- tpl (.Files.Get (printf "files/%s" .Values.blueprintFile)) . | nindent 4 }}
 {{- end }}
