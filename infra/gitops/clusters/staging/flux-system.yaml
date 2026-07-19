@@ -8,12 +8,6 @@
 # Tracks `main`, same as dev, for now — there is no release-branch/tag
 # convention yet to decouple staging's deploy cadence from dev's. Revisit
 # `spec.ref` here if that's ever wanted.
-#
-# TEMPORARY: pinned to the cloud-provider-selection-69de9f feature branch
-# instead of `main` so this first stand-up can be verified end-to-end before
-# merge (nothing under infra/gitops/{apps,clusters}/staging/ exists on `main`
-# yet). Revert to `branch: main` before this branch merges — see
-# FOLLOWUPS.md.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -23,7 +17,7 @@ spec:
   interval: 1m
   url: https://github.com/TiagoJVO/beekeepingit
   ref:
-    branch: claude/cloud-provider-selection-69de9f
+    branch: main
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
