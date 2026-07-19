@@ -1,0 +1,175 @@
+# Release → prod pipeline (D-26/ADR-0017, complementing build-publish.yml's
+# merge-to-main → staging path). A published GitHub Release is a deliberate,
+# human-decided promotion event — unlike staging's "always deploy newest
+# main build" via Flux image-automation, prod should only ever advance on
+# an explicitly released, approved version.
+#
+# NOT the same "detect changed components" logic as build-publish.yml: a
+# Release isn't tied to a diff range (it can be cut from any commit), and
+# prod needs a complete, consistent image set for that version — so this
+# builds every buildable Go service unconditionally, not just recently
+# changed ones. The PWA is deliberately excluded: its OIDC/gateway URLs are
+# baked in at build time (see build-publish.yml's own comment), and there's
+# no real prod domain yet to bake in (D-26, environments/prod.yaml) — add a
+# client-prod build here once that exists.
+#
+# The registry push is gated behind the `production` GitHub Environment
+# (required reviewer) — split into two jobs because environment protection
+# rules only gate at the job level, not mid-job: `build` runs unrestricted
+# (lint/test/build/scan, so you see scan results before deciding whether to
+# approve), `publish` reuses its GHA layer cache (same cache-from/cache-to
+# pattern build-publish.yml already uses for its own build→push split) and
+# only pushes once approved. Prod's own Flux image-automation (inert until a
+# real prod cluster exists — infra/gitops/clusters/prod/) polls the registry
+# separately and only ever considers semver-tagged images, so nothing prod
+# could pick up even exists before that approval.
+name: release-deploy
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: detect buildable services
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.scan.outputs.matrix }}
+      has_work: ${{ steps.scan.outputs.has_work }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Enumerate Go services (every Dockerfile'd Go module, excluding client)
+        id: scan
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          include=""
+          for dir in $(find . -type f -name Dockerfile \
+            -not -path './.git/*' -not -path '*/.claude/*' -not -path '*/node_modules/*' \
+            -printf '%h\n' | sed 's|^\./||' | sort -u); do
+            # Go services only — the PWA needs its own environment-specific
+            # build (not done here, see this file's header comment).
+            if [ -f "$dir/go.mod" ]; then
+              name="$(echo "$dir" | tr '/' '-')"
+              image="ghcr.io/${owner}/beekeepingit/${name}"
+              include="${include}{\"component\":\"${name}\",\"path\":\"${dir}\",\"image\":\"${image}\"},"
+            fi
+          done
+          include="${include%,}"
+          if [ -n "$include" ]; then
+            echo "has_work=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[${include}]}" >> "$GITHUB_OUTPUT"
+            echo "Buildable Go services: [${include}]"
+          else
+            echo "has_work=false" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            echo "No buildable Go services yet — nothing to release."
+          fi
+
+  build:
+    name: build ${{ matrix.component }}
+    needs: detect
+    if: needs.detect.outputs.has_work == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up toolchains from mise.toml
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Lint, test & build artifact
+        env:
+          COMPONENT_PATH: ${{ matrix.path }}
+        run: |
+          set -euo pipefail
+          task go:lint -- "$COMPONENT_PATH"
+          task go:test -- "$COMPONENT_PATH"
+          ( cd "$COMPONENT_PATH" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app . )
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Image metadata (tag by release version)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ matrix.image }}
+          # The release's own tag (e.g. v1.2.3) — prod's ImagePolicy
+          # (infra/gitops/clusters/prod/service-images.yaml) filters for
+          # exactly this semver shape, ignoring staging's constant stream of
+          # sha-/timestamp-tagged builds.
+          tags: |
+            type=raw,value=${{ github.event.release.tag_name }}
+
+      - name: Build image (load, no push — scan gates before anything's published)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ matrix.path }}
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.component }}
+
+      - name: Trivy image scan (blocks on HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}:${{ steps.meta.outputs.version }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  publish:
+    name: publish ${{ matrix.component }} (requires approval)
+    needs: [detect, build]
+    if: needs.detect.outputs.has_work == 'true'
+    runs-on: ubuntu-latest
+    # Gates this job on the `production` GitHub Environment's protection
+    # rules (required reviewer) — nothing below runs until approved in the
+    # Actions UI. `build` above already ran unrestricted, so the approval
+    # decision is made with real lint/test/scan results already visible.
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Image metadata (tag by release version)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ github.event.release.tag_name }}
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image (approved — cache reused from the build job above)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ matrix.path }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-${{ matrix.component }}
