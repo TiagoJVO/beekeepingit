@@ -60,12 +60,13 @@ section covers the _why_.
   (`dev`/`staging`/`prod`), `global.namespace`, and the resource-tier shape, enforced by
   `helm lint`/`helm template`/`helm install`.
 - **Per-environment overrides**: `environments/{dev,staging,prod}.yaml` overlay `global.*` (`-f`
-  on top of `values.yaml`). Only `dev` is deployed anywhere today; `staging`/`prod` exist to
-  prove the override mechanism per `NFR-ARC-2` (don't force cloud/multi-env now, but don't block
-  it later either).
+  on top of `values.yaml`). `dev` (local k3d) and `staging` (Scaleway Kapsule, D-26, ADR-0017) are
+  both deployed; `prod` exists to prove the override mechanism per `NFR-ARC-2` and has its
+  own inert GitOps scaffold prepared (`infra/gitops/{clusters,apps}/prod/`) but is deliberately not
+  deployed anywhere yet (D-26 defers it until `Q-DR`/`#90` land at M6).
 - **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0010](../adr/0010-platform-backing-services-provisioning.md)):
   `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
-  portable `Ingress` + self-signed TLS Secret, reusing k3d's Traefik) are hand-rolled — there's
+  portable `Ingress` + a TLS Secret, reusing k3d's Traefik locally) are hand-rolled — there's
   nothing to vendor for either. `authentik` and `minio` only hold what a vendored chart can't own
   itself (generated config/credential Secrets; for the IdP, also the declarative **blueprint**
   ConfigMap — the analogue of a realm import) — the actual vendored charts (the `authentik` chart
@@ -250,8 +251,11 @@ provisioned (an EPIC-14 #89 secrets task).
 
 ## Not yet covered here
 
-- Production-grade IdP (Authentik) flow/RBAC hardening and trusted-CA TLS for the gateway (both
-  EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0010).
+- Production-grade IdP (Authentik) flow/RBAC hardening (EPIC-14, `#15` — the `#84` seed is dev/CI-
+  grade by design, see ADR-0010). Trusted-CA TLS for the gateway is now available (`gateway.
+certManager.enabled`, cert-manager + Let's Encrypt, ADR-0017) and live on `staging` — `dev`
+  still uses the self-signed cert, since a local k3d cluster has no public endpoint for an ACME
+  challenge to reach.
 - PowerSync's real org-scoped Sync Rules and per-org sync-token connector (`docs/architecture/sync.md`,
   ADR-0006) — `#22` ships a placeholder sync-config and an IdP-JWKS stopgap (see
   `FOLLOWUPS.md`) since `apiaries`/`organizations` don't exist until `#23`/`#106`.
