@@ -36,6 +36,10 @@ const organizationsTestAudience = "beekeepingit-organizations"
 type stubUser struct {
 	UserID string
 	Email  string
+	// Name is the identity.users display name the stub's batch
+	// /internal/users/names endpoint returns for this user (#44 member-names
+	// composition). Empty for most tests that predate it.
+	Name string
 }
 
 // stubIdentity stands in for the identity service's internal resolve
@@ -57,6 +61,27 @@ func newStubIdentity(t *testing.T, users map[string]stubUser) *stubIdentity {
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		// Batch name resolve (#44): reverse-resolve the requested user_ids to
+		// names from the sub-keyed users map. Ids with no match (or an empty
+		// name) are simply omitted, mirroring identity's real endpoint.
+		if r.URL.Path == "/internal/users/names" {
+			wanted := map[string]struct{}{}
+			for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
+				wanted[strings.TrimSpace(id)] = struct{}{}
+			}
+			type nameRow struct {
+				UserID string `json:"user_id"`
+				Name   string `json:"name"`
+			}
+			var data []nameRow
+			for _, u := range s.users {
+				if _, ok := wanted[u.UserID]; ok {
+					data = append(data, nameRow{UserID: u.UserID, Name: u.Name})
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
 			return
 		}
 		const prefix = "/internal/users/by-sub/"

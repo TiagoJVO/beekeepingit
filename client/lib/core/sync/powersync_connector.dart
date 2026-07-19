@@ -253,6 +253,17 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
         };
       }
     }
+    // activities `attributes` is stored locally as JSON-encoded TEXT
+    // (activities_repository.dart's jsonEncode; PowerSync's local schema has no
+    // JSON column type, powersync_schema.dart's activities table doc). Left
+    // as-is, the queued opData carries it as a JSON *string*, but the activities
+    // sync-apply/validate contract (services/activities/api/sync.go's
+    // activityData.Attributes, matching the REST create shape in write.go)
+    // expects a nested JSON object — so every offline-created/edited activity
+    // was rejected on upload with "attributes must be a JSON object" (found by
+    // live E2E testing of M3, EPIC-03/#39). Decode it back to an object here so
+    // the wire op matches the server contract.
+    data = decodeActivityAttributes(e.table, data);
     // Device edit time is the LWW comparator (sync.md §4.3) — see
     // [lwwTimestampFor]'s doc for why DELETE needs a per-op cache rather than
     // a bare `DateTime.now()` fallback.
@@ -360,22 +371,55 @@ String lwwTimestampFor(
 /// Maps a queued CRUD entry's source table to its wire entity_type (#256:
 /// the queue now carries two tables' writes — [apiariesTable] rows and
 /// [apiaryCountersTable] rows — where before #256 everything was an apiary;
-/// #39 adds a THIRD, [activitiesTable], routed by
-/// services/sync/api/coordinator.go's groupOpsByOwner to a DIFFERENT owning
-/// service entirely (activities, not apiaries) — getting this mapping wrong
-/// would silently misroute every offline-created activity to apiaries,
-/// which doesn't own that table and would reject it). Any unrecognized
-/// table defaults to the apiary entity type, preserving the previous
-/// hardcoded behavior for safety; a genuinely new syncable table must add
-/// its own mapping here alongside its schema entry (powersync_schema.dart).
-/// Top-level + `@visibleForTesting` so the dispatch is unit-testable
-/// without a real PowerSync database.
+/// #39 added a THIRD, [activitiesTable]; #45 a FOURTH/FIFTH,
+/// [journeysTable]/[journeyPlanItemsTable]; and #50 a SIXTH, [todosTable] —
+/// each routed by services/sync/api/coordinator.go's groupOpsByOwner to its
+/// OWN owning service (activities, journeys, todos — not apiaries) —
+/// getting this mapping wrong would silently misroute an offline-created
+/// row to apiaries, which doesn't own that table and would reject it). Any
+/// unrecognized table defaults to the apiary entity type, preserving the
+/// previous hardcoded behavior for safety; a genuinely new syncable table
+/// must add its own mapping here alongside its schema entry
+/// (powersync_schema.dart). Top-level + `@visibleForTesting` so the
+/// dispatch is unit-testable without a real PowerSync database.
 @visibleForTesting
 String entityTypeForTable(String table) => switch (table) {
   apiaryCountersTable => apiaryCounterEntityType,
   activitiesTable => activityEntityType,
+  journeysTable => journeyEntityType,
+  journeyPlanItemsTable => journeyPlanItemEntityType,
+  todosTable => todoEntityType,
   _ => apiaryEntityType,
 };
+
+/// Normalizes an [activitiesTable] op's `attributes` back to a nested JSON
+/// object before it goes on the wire (#39, EPIC-03). The client stores
+/// `attributes` as JSON-encoded TEXT (activities_repository.dart's `jsonEncode`
+/// — PowerSync's local schema has no JSON column type, powersync_schema.dart's
+/// activities table doc), so a queued CRUD op's `data['attributes']` is a
+/// String. The activities sync-apply/validate contract expects an *object*
+/// (services/activities/api/sync.go's `activityData.Attributes`, matching the
+/// REST create shape in write.go) — uploaded as a string it was rejected with
+/// "attributes must be a JSON object", so no offline activity ever reached the
+/// server via the normal offline-first path (found by live E2E testing of M3).
+///
+/// Only rewrites when the value is actually a String, so it is a safe no-op for:
+/// every non-activities table (apiaries/counters), a `delete` op (null [data]),
+/// and a `patch` that didn't touch `attributes` (the column is simply absent
+/// from opData). A `put` (full row) and a `patch` that changed `attributes`
+/// both carry the String and get decoded. Top-level + `@visibleForTesting` so
+/// the rewrite is unit-testable without a real PowerSync database, matching this
+/// file's other pure seams ([entityTypeForTable]/[lwwTimestampFor]).
+@visibleForTesting
+Map<String, dynamic>? decodeActivityAttributes(
+  String table,
+  Map<String, dynamic>? data,
+) {
+  if (table != activitiesTable || data == null) return data;
+  final attrs = data['attributes'];
+  if (attrs is! String) return data;
+  return {...data, 'attributes': jsonDecode(attrs)};
+}
 
 /// Parses the apply endpoint's `{"results": [{"id","op","result"}]}` body
 /// (services/apiaries/api/sync.go's `ApplyResponse`) and returns one

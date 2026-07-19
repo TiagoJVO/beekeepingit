@@ -105,7 +105,12 @@ spec:
         {{- if $edge.from.namespaceSelector }}
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ $edge.from.namespaceSelector }}
+              {{- /* "__gateway__" is a sentinel, not a literal namespace — values.yaml
+                     is plain data (not template-rendered), so edges can't reference
+                     .Values.gatewayNamespace directly; this is the one substitution
+                     point instead. See charts/networkpolicy/values.yaml's gatewayNamespace
+                     comment. */}}
+              kubernetes.io/metadata.name: {{ if eq $edge.from.namespaceSelector "__gateway__" }}{{ $root.Values.gatewayNamespace }}{{ else }}{{ $edge.from.namespaceSelector }}{{ end }}
         {{- else }}
         - podSelector:
             matchLabels:

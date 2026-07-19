@@ -264,13 +264,13 @@ never stores personal data in the first place:
 
 FR-HIS-1 is **all entities**. In v1 that is:
 
-| Entity                                                 | Owning service | History source                            |
-| ------------------------------------------------------ | -------------- | ----------------------------------------- |
-| `apiaries`                                             | apiaries       | `apiaries.audit_log`                      |
-| `activities`                                           | activities     | `activities.audit_log`                    |
-| `journeys`, `journey_plan_items`, `journey_activities` | journeys       | `journeys.audit_log`                      |
-| `todos`                                                | todos          | `todos.audit_log`                         |
-| `memberships`, `organizations`, `invitations`          | organizations  | `organizations.audit_log` (admin actions) |
+| Entity                                        | Owning service | History source                            |
+| --------------------------------------------- | -------------- | ----------------------------------------- |
+| `apiaries`                                    | apiaries       | `apiaries.audit_log`                      |
+| `activities`                                  | activities     | `activities.audit_log`                    |
+| `journeys`, `journey_plan_items`              | journeys       | `journeys.audit_log`                      |
+| `todos`                                       | todos          | `todos.audit_log`                         |
+| `memberships`, `organizations`, `invitations` | organizations  | `organizations.audit_log` (admin actions) |
 
 `identity.users` records only minimal self-profile changes; it is global (not org-owned) and carries
 no `organization_id`. The `ai` service **records no domain history** — a confirmed AI action executes

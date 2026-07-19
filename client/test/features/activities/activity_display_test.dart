@@ -40,16 +40,19 @@ void main() {
       expect(line, isNot(contains('Honey harvested (kg)')));
     });
 
-    test('harvest: includes the optional lot_batch identifier when present (#292)', () {
-      final line = activitySummaryLine(
-        _l10n,
-        _activity(
-          type: 'harvest',
-          attributes: {'honey_supers': 4, 'lot_batch': '2026-07-A1'},
-        ),
-      );
-      expect(line, contains('Lot / batch identifier: 2026-07-A1'));
-    });
+    test(
+      'harvest: includes the optional lot_batch identifier when present (#292)',
+      () {
+        final line = activitySummaryLine(
+          _l10n,
+          _activity(
+            type: 'harvest',
+            attributes: {'honey_supers': 4, 'lot_batch': '2026-07-A1'},
+          ),
+        );
+        expect(line, contains('Lot / batch identifier: 2026-07-A1'));
+      },
+    );
 
     test('harvest: an absent lot_batch is simply not included', () {
       final line = activitySummaryLine(
@@ -148,35 +151,38 @@ void main() {
           },
         ),
       );
-      expect(
-        rowFor(rows, 'Honey supers harvested')?.value,
-        '4',
-      );
+      expect(rowFor(rows, 'Honey supers harvested')?.value, '4');
       expect(rowFor(rows, 'Honey harvested (kg)')?.value, '12.5');
       expect(rowFor(rows, 'Lot / batch identifier')?.value, '2026-07-A1');
       // Absent optional (hives_involved) yields no row at all.
       expect(rowFor(rows, 'Hives involved'), isNull);
     });
 
-    test('notes IS included on the detail (unlike the compact summary line)', () {
-      final rows = activityDetailRows(
-        _l10n,
-        _activity(
-          type: 'generic',
-          attributes: {'notes': 'Full field note visible on detail.'},
-        ),
-      );
-      expect(rows, hasLength(1));
-      expect(rows.single.value, 'Full field note visible on detail.');
-    });
+    test(
+      'notes IS included on the detail (unlike the compact summary line)',
+      () {
+        final rows = activityDetailRows(
+          _l10n,
+          _activity(
+            type: 'generic',
+            attributes: {'notes': 'Full field note visible on detail.'},
+          ),
+        );
+        expect(rows, hasLength(1));
+        expect(rows.single.value, 'Full field note visible on detail.');
+      },
+    );
 
-    test('a blank (whitespace-only) attribute is omitted, not an empty row', () {
-      final rows = activityDetailRows(
-        _l10n,
-        _activity(type: 'generic', attributes: {'notes': '   '}),
-      );
-      expect(rows, isEmpty);
-    });
+    test(
+      'a blank (whitespace-only) attribute is omitted, not an empty row',
+      () {
+        final rows = activityDetailRows(
+          _l10n,
+          _activity(type: 'generic', attributes: {'notes': '   '}),
+        );
+        expect(rows, isEmpty);
+      },
+    );
 
     test('generic with no attributes yields no rows', () {
       final rows = activityDetailRows(_l10n, _activity(type: 'generic'));
@@ -245,6 +251,52 @@ void main() {
     test('a null performedBy (not yet synced back) shows "Unknown"', () {
       final text = activityAttributionText(_l10n, _activity(), 'user-1');
       expect(text, 'Unknown');
+    });
+
+    test('resolves another performer to their real name when known (#44)', () {
+      final text = activityAttributionText(
+        _l10n,
+        _activity(performedBy: 'user-2'),
+        'user-1',
+        memberNames: const {'user-2': 'Ana Silva'},
+      );
+      expect(text, 'Ana Silva');
+    });
+
+    test(
+      '"You" takes precedence over the caller\'s own name in the roster',
+      () {
+        final text = activityAttributionText(
+          _l10n,
+          _activity(performedBy: 'user-1'),
+          'user-1',
+          memberNames: const {'user-1': 'Me Myself'},
+        );
+        expect(text, 'You');
+      },
+    );
+
+    test('falls back to the short id when the performer is not in the roster '
+        '(e.g. a removed member)', () {
+      final text = activityAttributionText(
+        _l10n,
+        _activity(performedBy: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'),
+        'user-1',
+        memberNames: const {'user-2': 'Ana Silva'},
+      );
+      expect(text, isNot('Ana Silva'));
+      expect(text, contains('eeeeeeee'));
+    });
+
+    test('falls back to the short id when the resolved name is empty '
+        '(incomplete profile)', () {
+      final text = activityAttributionText(
+        _l10n,
+        _activity(performedBy: 'user-aaaaaaaa'),
+        'user-1',
+        memberNames: const {'user-aaaaaaaa': ''},
+      );
+      expect(text, contains('aaaaaaaa'));
     });
   });
 }

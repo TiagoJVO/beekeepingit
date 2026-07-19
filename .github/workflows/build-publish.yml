@@ -6,9 +6,9 @@
 # change (path filtering — AC #1), so the build job self-discovers work and no-ops cleanly while
 # the repo has no Dockerfiles yet (same "green before code" philosophy as ci.yml / taskfiles/*).
 #
-# On merge to main, images publish to ghcr.io tagged by commit SHA (AC #4); Flux image-automation
-# then bumps the deployed tag in Git and reconciles it onto the cluster — no manual kubectl
-# (AC #5, see infra/gitops/image-automation/). Container-image scanning gates the build (AC #3);
+# On merge to main, images publish to ghcr.io tagged by commit SHA (AC #4) as build artifacts —
+# they are NOT auto-deployed. Deploys come only from a published Release (D-27, ADR-0018,
+# .github/workflows/release-deploy.yml). Container-image scanning gates the build (AC #3);
 # repo-level dependency/secret scanning lives in security-scan.yml.
 #
 # macOS runners for iOS builds are intentionally NOT here at M0 — added at M5 by EPIC-15 (AC #6);
@@ -75,6 +75,11 @@ jobs:
             if echo "$changed" | grep -q "^${dir}/"; then
               name="$(echo "$dir" | tr '/' '-')"
               image="ghcr.io/${owner}/beekeepingit/${name}"
+              # Every component (Go service or the PWA) is one build. The client is
+              # built define-less here (AppConfig's dev defaults) as pure CI/artifact
+              # validation — its real per-environment, deployable build is produced by
+              # release-deploy.yml with the target env's URLs baked in (D-27, ADR-0018).
+              # No per-environment client variants here anymore.
               include="${include}{\"component\":\"${name}\",\"path\":\"${dir}\",\"image\":\"${image}\"},"
             fi
           done
@@ -128,6 +133,10 @@ jobs:
             # `task dart:l10n-check` (#78 AC): regenerate lib/l10n/gen and fail
             # on malformed ARB, an EN/PT key mismatch, or stale committed
             # codegen output — before spending time on analyze/test/build.
+            # No --dart-define: this is a pure-CI validation build, so it uses
+            # AppConfig's dev defaults (client/lib/core/config/app_config.dart).
+            # The real per-environment deployable PWA is built by release-deploy.yml
+            # with the target env's URLs baked in (D-27, ADR-0018).
             ( task dart:l10n-check \
               && cd "$COMPONENT_PATH" && flutter pub get && dart run powersync:setup_web \
               && flutter analyze && flutter test \
@@ -147,7 +156,7 @@ jobs:
       # (no live cluster/gateway needed) — see client/lighthouserc.json and
       # docs/client/pwa-installability.md.
       - name: PWA installability audit (Lighthouse CI, client only)
-        if: matrix.component == 'client'
+        if: startsWith(matrix.component, 'client')
         working-directory: ${{ matrix.path }}
         run: npx --yes @lhci/cli@0.13.0 autorun --config=./lighthouserc.json
 
@@ -159,9 +168,10 @@ jobs:
         with:
           images: ${{ matrix.image }}
           # `sha-<short>` on every build (AC #4 "tagged by commit"). On main, also a
-          # timestamp-prefixed tag so Flux image-automation can order builds by recency
-          # (commit SHAs aren't chronologically sortable) — the example ImagePolicy in
-          # infra/gitops/image-automation/ filters on this `<YYYYMMDDHHMMSS>-<sha>` scheme.
+          # timestamp-prefixed `<YYYYMMDDHHMMSS>-<sha>` tag and `latest`. These are
+          # build artifacts for CI, not deployables — deploys come from a Release
+          # (D-27, ADR-0018). The client publishes plain `client:latest` (dev-default
+          # URLs), which the dev cluster's Flux HelmRelease pulls.
           tags: |
             type=sha,prefix=sha-
             type=raw,value={{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}

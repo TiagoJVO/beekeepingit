@@ -15,6 +15,11 @@
 // via the apiaries service itself (api/apiaries_client.go) before writing
 // anything — activities has no database access to the apiaries schema
 // (ownership rule 1). Edit/delete/list are later EPIC-03 stories.
+//
+// #46 (EPIC-04 M4) adds the same ownership guard for the optional
+// journey_id field: both write paths verify it against the journeys service
+// itself (api/journeys_client.go) before create — journey_id, once set, is
+// otherwise immutable (never touched by edit).
 // Wiring follows services/servicetemplate/example/main.go.
 package main
 
@@ -52,12 +57,20 @@ func run(ctx context.Context) error {
 	identityURL := os.Getenv("INTERNAL_IDENTITY_URL")
 	organizationsURL := os.Getenv("INTERNAL_ORGANIZATIONS_URL")
 	apiariesURL := os.Getenv("INTERNAL_APIARIES_URL")
-	if identityURL == "" || organizationsURL == "" || apiariesURL == "" {
-		return fmt.Errorf("config: INTERNAL_IDENTITY_URL, INTERNAL_ORGANIZATIONS_URL and INTERNAL_APIARIES_URL are required")
+	journeysURL := os.Getenv("INTERNAL_JOURNEYS_URL")
+	if identityURL == "" || organizationsURL == "" || apiariesURL == "" || journeysURL == "" {
+		return fmt.Errorf("config: INTERNAL_IDENTITY_URL, INTERNAL_ORGANIZATIONS_URL, INTERNAL_APIARIES_URL and INTERNAL_JOURNEYS_URL are required")
 	}
 	apiaryVerifier, err := api.NewApiaryVerifier(apiariesURL, nil)
 	if err != nil {
 		return fmt.Errorf("build apiary verifier: %w", err)
+	}
+	// journeyVerifier (#46) closes the cross-org journey_id IDOR gap the
+	// same way apiaryVerifier already closes it for apiary_id — see
+	// api/journeys_client.go's package doc for the full rationale.
+	journeyVerifier, err := api.NewJourneyVerifier(journeysURL, nil)
+	if err != nil {
+		return fmt.Errorf("build journey verifier: %w", err)
 	}
 
 	providers, err := otelboot.Bootstrap(ctx, otelboot.Config{
@@ -112,8 +125,8 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("build server: %w", err)
 	}
 	srv.Mount("/internal/activities", scoped(api.InternalValidateRouter()))
-	srv.Mount("/v1/activities", scoped(api.Router(pool, apiaryVerifier)))
-	srv.Mount("/internal/sync", scoped(api.InternalSyncRouter(pool, apiaryVerifier)))
+	srv.Mount("/v1/activities", scoped(api.Router(pool, apiaryVerifier, journeyVerifier)))
+	srv.Mount("/internal/sync", scoped(api.InternalSyncRouter(pool, apiaryVerifier, journeyVerifier)))
 
 	return srv.Run(ctx)
 }

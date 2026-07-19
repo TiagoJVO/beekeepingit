@@ -3,7 +3,7 @@ name: observability
 description: >-
   Observability stack for the BeekeepingIT platform (#87, NFR-OBS-1/NFR-PER-1) —
   OTel Collector + kube-prometheus-stack + Loki + Tempo + a local/dev alert sink.
-  Deployed as its OWN Flux HelmRelease (infra/gitops/apps/dev/), separate from the
+  Deployed as its OWN Flux HelmRelease (the beekeepingit-gitops repo's apps/dev/), separate from the
   beekeepingit umbrella chart, so its Loki/Tempo can depend on MinIO (dependsOn:
   [minio]) without creating a dependency cycle — MinIO's own HelmRelease dependsOn
   the umbrella (for the root-credentials Secret), so anything needing MinIO can't

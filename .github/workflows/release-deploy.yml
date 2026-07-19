@@ -1,0 +1,317 @@
+# Release-triggered deploy pipeline (D-27, ADR-0018) — replaces the abandoned
+# Flux image-automation. A published GitHub Release is a deliberate, human-decided
+# promotion event, routed by its tag:
+#
+#   - tag contains `-rc` (e.g. v1.2.3-rc1) -> STAGING (fast, no approval gate)
+#   - tag has no `-rc`  (e.g. v1.2.3)       -> PROD, gated behind the `production`
+#                                              GitHub Environment's required reviewer
+#
+# CI builds + publishes that version's complete image set — every buildable Go
+# service AND the PWA (compiled with the *target* environment's OIDC/gateway URLs,
+# which are Dart compile-time constants — client/lib/core/config/app_config.dart)
+# — then opens a tag-bump PR against the beekeepingit-gitops repo with
+# GITOPS_PR_TOKEN (a fine-grained PAT scoped to that repo only). A human merges the
+# PR and Flux reconciles. No standing git-write credential lives in Flux, and the
+# PAT can only open a PR against the GitOps repo — it can't push to that repo's
+# branch-protected `main`, nor touch this repo.
+#
+# Gating: a single `approve` job references `environment:` (staging -> auto-created
+# and ungated; prod -> the required-reviewer gate), so a prod release takes ONE
+# approval rather than one per service. The scan runs inside each publish job
+# (build -> load -> Trivy -> push), so a failing scan blocks the push even after
+# approval. `open-pr` runs only once every image is published.
+name: release-deploy
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  route:
+    name: route by release tag
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.r.outputs.target }}
+      environment: ${{ steps.r.outputs.environment }}
+    steps:
+      - name: Route -rc -> staging, otherwise prod
+        id: r
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAG" ]; then echo "::error::release has no tag_name"; exit 1; fi
+          case "$TAG" in
+            *-rc*) target=staging; environment=staging ;;
+            *) target=prod; environment=production ;;
+          esac
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "Release '$TAG' -> $target (GitHub Environment: $environment)"
+
+  detect:
+    name: detect buildable services
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.scan.outputs.matrix }}
+      has_work: ${{ steps.scan.outputs.has_work }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Enumerate Go services (every Dockerfile'd Go module, excluding client)
+        id: scan
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          include=""
+          for dir in $(find . -type f -name Dockerfile \
+            -not -path './.git/*' -not -path '*/.claude/*' -not -path '*/node_modules/*' \
+            -printf '%h\n' | sed 's|^\./||' | sort -u); do
+            # Go services only — the PWA is built by the build-client/publish-client
+            # jobs below (it needs an environment-specific compile).
+            if [ -f "$dir/go.mod" ]; then
+              name="$(echo "$dir" | tr '/' '-')"
+              image="ghcr.io/${owner}/beekeepingit/${name}"
+              include="${include}{\"component\":\"${name}\",\"path\":\"${dir}\",\"image\":\"${image}\"},"
+            fi
+          done
+          include="${include%,}"
+          if [ -n "$include" ]; then
+            echo "has_work=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[${include}]}" >> "$GITHUB_OUTPUT"
+            echo "Buildable Go services: [${include}]"
+          else
+            echo "has_work=false" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            echo "No buildable Go services yet — nothing to release."
+          fi
+
+  # The single environment gate. staging -> `staging` (auto-created, no protection
+  # rules = runs immediately). prod -> `production` (waits for the required
+  # reviewer). Everything downstream `needs: approve`, so one approval releases the
+  # whole prod publish, not one per matrixed service.
+  approve:
+    name: approve ${{ needs.route.outputs.target }} publish
+    needs: route
+    runs-on: ubuntu-latest
+    environment: ${{ needs.route.outputs.environment }}
+    steps:
+      - run: echo "Approved to publish the ${{ needs.route.outputs.target }} image set."
+
+  publish:
+    name: publish ${{ matrix.component }}
+    needs: [route, detect, approve]
+    if: needs.detect.outputs.has_work == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up toolchains from mise.toml
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Lint, test & build artifact (release can be cut from any commit)
+        env:
+          COMPONENT_PATH: ${{ matrix.path }}
+        run: |
+          set -euo pipefail
+          task go:lint -- "$COMPONENT_PATH"
+          task go:test -- "$COMPONENT_PATH"
+          ( cd "$COMPONENT_PATH" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app . )
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Image metadata (tag by release version)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ github.event.release.tag_name }}
+
+      - name: Build image (load, no push — scan gates before publishing)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ matrix.path }}
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.component }}
+
+      - name: Trivy image scan (blocks on HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}:${{ steps.meta.outputs.version }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image (scan passed; cache reused from the build step above)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ matrix.path }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-${{ matrix.component }}
+
+  publish-client:
+    name: publish client (${{ needs.route.outputs.target }})
+    needs: [route, approve]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up toolchains from mise.toml
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Compute image ref (ghcr requires a lowercased owner)
+        id: img
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/${owner}/beekeepingit/client" >> "$GITHUB_OUTPUT"
+
+      - name: Lint, test & build the web bundle (target-env URLs baked in)
+        env:
+          TARGET: ${{ needs.route.outputs.target }}
+        run: |
+          set -euo pipefail
+          # The PWA's OIDC/gateway/PowerSync URLs are Dart *compile-time* constants
+          # (--dart-define), so one image can't serve every environment — the target
+          # (from the release tag) picks which URLs are baked in. Keep these in sync
+          # BY HAND with infra/helm/beekeepingit/environments/<env>.yaml
+          # (global.appOrigin, gateway.appHost/authHost, services.oidc.issuerUrl) —
+          # not derived from one source yet (FOLLOWUPS.md). prod's are placeholders
+          # until a real prod domain exists (D-26); a bare (prod) release shouldn't
+          # be cut until then.
+          if [ "$TARGET" = "staging" ]; then
+            DART_DEFINES="--dart-define=OIDC_ISSUER=https://auth.51-159-204-90.nip.io/application/o/beekeepingit/ --dart-define=GATEWAY_BASE_URL=https://app.51-159-204-90.nip.io --dart-define=OIDC_ACCOUNT_URL=https://auth.51-159-204-90.nip.io/if/user/#/settings --dart-define=POWERSYNC_URL=https://app.51-159-204-90.nip.io/sync-stream/"
+          else
+            DART_DEFINES="--dart-define=OIDC_ISSUER=https://auth.beekeepingit.example/application/o/beekeepingit/ --dart-define=GATEWAY_BASE_URL=https://app.beekeepingit.example --dart-define=OIDC_ACCOUNT_URL=https://auth.beekeepingit.example/if/user/#/settings --dart-define=POWERSYNC_URL=https://app.beekeepingit.example/sync-stream/"
+          fi
+          # $DART_DEFINES is intentionally unquoted below (word-splits into several
+          # --dart-define flags), matching build-publish.yml's client build.
+          task dart:l10n-check
+          cd client
+          flutter pub get
+          dart run powersync:setup_web
+          flutter analyze
+          flutter test
+          # shellcheck disable=SC2086
+          flutter build web --release --no-web-resources-cdn $DART_DEFINES
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Image metadata (tag by release version)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ steps.img.outputs.image }}
+          tags: |
+            type=raw,value=${{ github.event.release.tag_name }}
+
+      - name: Build image (load, no push — scan gates before publishing)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: client
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-client
+          cache-to: type=gha,mode=max,scope=release-client
+
+      - name: Trivy image scan (blocks on HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.img.outputs.image }}:${{ steps.meta.outputs.version }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image (scan passed; cache reused from the build step above)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: client
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-client
+
+  open-pr:
+    name: open tag-bump PR (${{ needs.route.outputs.target }})
+    needs: [route, detect, publish, publish-client]
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the GitOps repo (not this one) with the fine-grained PAT so the
+      # PR branch can be pushed there. Token scoped to contents+PR write on
+      # beekeepingit-gitops only (D-27); it cannot merge (branch-protected main).
+      - name: Check out beekeepingit-gitops
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: TiagoJVO/beekeepingit-gitops
+          token: ${{ secrets.GITOPS_PR_TOKEN }}
+
+      - name: Bump the target environment's image tags to the release version
+        env:
+          TARGET: ${{ needs.route.outputs.target }}
+          VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          file="apps/${TARGET}/beekeepingit-helmrelease.yaml"
+          # Every `tag:` line in this HelmRelease is a component image tag (the 7
+          # services + the PWA); the release publishes them all at the same version,
+          # so set them uniformly. sed (not yq) keeps the file's heavy explanatory
+          # comments and formatting intact — a clean one-value-per-line diff for the
+          # human reviewer. VERSION is a semver-ish tag (no `|`, no regex metachars
+          # that matter on the replacement side).
+          sed -i -E "s|^([[:space:]]*tag:)[[:space:]].*|\1 ${VERSION}|" "$file"
+          echo "::group::bumped $file"
+          grep -nE "tag:" "$file"
+          echo "::endgroup::"
+
+      - name: Open the tag-bump PR
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ secrets.GITOPS_PR_TOKEN }}
+          branch: deploy/${{ github.event.release.tag_name }}
+          delete-branch: true
+          commit-message: "chore(deploy): ${{ needs.route.outputs.target }} -> ${{ github.event.release.tag_name }}"
+          title: "chore(deploy): ${{ needs.route.outputs.target }} -> ${{ github.event.release.tag_name }}"
+          body: |
+            Automated by `release-deploy.yml` (D-27, ADR-0018) for release
+            **${{ github.event.release.tag_name }}** -> **${{ needs.route.outputs.target }}**.
+
+            Bumps every image tag in `apps/${{ needs.route.outputs.target }}/beekeepingit-helmrelease.yaml`
+            to the release version. Merge to let Flux reconcile onto the cluster;
+            roll back by reverting the merge.

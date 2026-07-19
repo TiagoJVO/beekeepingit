@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/core/sync/powersync_connector.dart';
+import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -34,23 +36,31 @@ class FakeLocalStore implements LocalStoreEngine {
   }
 
   @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => _select(sql, args);
+
+  @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
     if (normalized.startsWith('INSERT INTO ACTIVITIES')) {
-      // (id, apiary_id, type, occurred_at, attributes, created_at,
-      // updated_at) — create() never sets performed_by/organization_id
-      // (activities_repository.dart's own doc: both are server-derived,
-      // populated only once the write round-trips through sync).
+      // (id, apiary_id, journey_id, type, occurred_at, attributes,
+      // created_at, updated_at) — create() never sets performed_by/
+      // organization_id (activities_repository.dart's own doc: both are
+      // server-derived, populated only once the write round-trips through
+      // sync). journey_id (#46/D-21) IS set locally now, optionally.
       rows.add({
         'id': args[0],
         'apiary_id': args[1],
+        'journey_id': args[2],
         'performed_by': null,
         'organization_id': null,
-        'type': args[2],
-        'occurred_at': args[3],
-        'attributes': args[4],
-        'created_at': args[5],
-        'updated_at': args[6],
+        'type': args[3],
+        'occurred_at': args[4],
+        'attributes': args[5],
+        'created_at': args[6],
+        'updated_at': args[7],
       });
     } else {
       throw UnsupportedError('FakeLocalStore.execute: unhandled SQL: $sql');
@@ -70,6 +80,8 @@ class FakeLocalStore implements LocalStoreEngine {
 
     if (normalized.contains('WHERE APIARY_ID = ?')) {
       results = results.where((r) => r['apiary_id'] == args[0]).toList();
+    } else if (normalized.contains('WHERE JOURNEY_ID = ?')) {
+      results = results.where((r) => r['journey_id'] == args[0]).toList();
     } else if (normalized.contains(
       'ORGANIZATION_ID = ? OR ORGANIZATION_ID IS NULL',
     )) {
@@ -132,6 +144,86 @@ void main() {
     );
   });
 
+  group('Activity.journeyId (#47) — read-side exposure of the #46 column', () {
+    test('getById()/watchById()/watchByApiary()/watchAll() all surface the '
+        'journey_id an activity was created with', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+        journeyId: 'j1',
+      );
+
+      expect((await repo.getById(id))!.journeyId, 'j1');
+      expect((await repo.watchById(id).first)!.journeyId, 'j1');
+      expect((await repo.watchByApiary('a1').first).single.journeyId, 'j1');
+      final all = await repo.watchAll(organizationId: 'org-a').first;
+      expect(all.single.journeyId, 'j1');
+    });
+
+    test('is null when no journey was attached at creation', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'generic',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+      );
+
+      expect((await repo.getById(id))!.journeyId, isNull);
+    });
+  });
+
+  group('offline-create → wire op attributes shape (#39, FR-OF-1) — the '
+      'string-vs-object mismatch that rejected every synced activity', () {
+    test('the connector decodes the repository-stored JSON-string attributes '
+        'back to an object, so the POST body carries a nested object', () async {
+      // 1. Real local create: the repository JSON-encodes attributes into the
+      //    TEXT column (there is no JSON column type on-device), so the stored
+      //    value — which PowerSync then queues verbatim as the op's opData — is
+      //    a String, NOT an object.
+      await repo.create(
+        apiaryId: 'a1',
+        type: 'inspection',
+        occurredAt: '2026-06-01',
+        attributes: {'queen_seen': true, 'frames': 8},
+      );
+      final storedAttributes = store.rows.single['attributes'];
+      expect(
+        storedAttributes,
+        isA<String>(),
+        reason:
+            'root cause: attributes is stored as JSON-encoded TEXT, so the '
+            'queued op would upload it as a string without the connector fix',
+      );
+
+      // 2. The connector's normalization (what _toOp applies to every activities
+      //    op before it goes on the wire). Feed it the exact opData shape a put
+      //    carries (the full row's columns).
+      final opData = {
+        'apiary_id': store.rows.single['apiary_id'],
+        'type': store.rows.single['type'],
+        'occurred_at': store.rows.single['occurred_at'],
+        'attributes': storedAttributes,
+        'updated_at': store.rows.single['updated_at'],
+      };
+      final decoded = decodeActivityAttributes(activitiesTable, opData)!;
+
+      // 3. The actual bytes that hit POST /v1/sync/batch (uploadData jsonEncodes
+      //    the ops). Re-decoding proves attributes is a JSON object there, which
+      //    is exactly what services/activities/api/sync.go's activityData
+      //    expects — a JSON string would be rejected "attributes must be a JSON
+      //    object".
+      final body = jsonEncode({
+        'ops': [decoded],
+      });
+      final wire = jsonDecode(body) as Map<String, dynamic>;
+      final wireAttributes = (wire['ops'] as List).single['attributes'];
+      expect(wireAttributes, isA<Map<String, dynamic>>());
+      expect(wireAttributes, {'queen_seen': true, 'frames': 8});
+    });
+  });
+
   group('ActivitiesRepository.watchByApiary() (#42, FR-AC-5)', () {
     test(
       'emits only the given apiary\'s activities, newest occurred_at first',
@@ -177,6 +269,87 @@ void main() {
         type: 'generic',
         occurredAt: '2026-06-01',
         attributes: const {},
+      );
+      await pumpEventQueue();
+
+      expect(emissions.last, 1);
+    });
+  });
+
+  group('ActivitiesRepository.watchByJourney() (#48, FR-JO-3, D-21)', () {
+    test(
+      'emits only the given journey\'s activities, newest occurred_at first',
+      () async {
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'harvest',
+          occurredAt: '2026-06-01',
+          attributes: const {},
+          journeyId: 'j1',
+        );
+        await repo.create(
+          apiaryId: 'a2',
+          type: 'feeding',
+          occurredAt: '2026-06-05',
+          attributes: const {},
+          journeyId: 'j2',
+        );
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'generic',
+          occurredAt: '2026-06-10',
+          attributes: const {},
+          journeyId: 'j1',
+        );
+
+        final activities = await repo.watchByJourney('j1').first;
+
+        expect(activities.map((a) => a.type).toList(), ['generic', 'harvest']);
+        expect(activities.every((a) => a.journeyId == 'j1'), isTrue);
+      },
+    );
+
+    test(
+      'excludes an activity with no journey attached (stored journey_id '
+      'scoping, D-21: not a live re-match against any journey\'s plan)',
+      () async {
+        await repo.create(
+          apiaryId: 'a1',
+          type: 'generic',
+          occurredAt: '2026-06-01',
+          attributes: const {},
+        );
+
+        final activities = await repo.watchByJourney('j1').first;
+
+        expect(activities, isEmpty);
+      },
+    );
+
+    test(
+      'returns an empty list for a journey with no attributed activities',
+      () async {
+        final activities = await repo.watchByJourney('unknown-journey').first;
+        expect(activities, isEmpty);
+      },
+    );
+
+    test('re-emits after a write attributed to that journey', () async {
+      final emissions = <int>[];
+      final sub = repo
+          .watchByJourney('j1')
+          .listen((a) => emissions.add(a.length));
+      addTearDown(sub.cancel);
+
+      await pumpEventQueue();
+      expect(emissions, [0]);
+
+      await repo.create(
+        apiaryId: 'a1',
+        type: 'generic',
+        occurredAt: '2026-06-01',
+        attributes: const {},
+        journeyId: 'j1',
       );
       await pumpEventQueue();
 

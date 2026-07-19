@@ -32,6 +32,133 @@ void main() {
     test('an unrecognized table defaults to the apiary entity type', () {
       expect(entityTypeForTable('something_else'), apiaryEntityType);
     });
+
+    test('todos rows map to the todo entity type (#50) — routed to a '
+        'DIFFERENT owning service than apiaries/activities', () {
+      expect(entityTypeForTable(todosTable), todoEntityType);
+    });
+  });
+
+  group('decodeActivityAttributes (#39 — attributes must upload as an object, '
+      'not a JSON string)', () {
+    test('an activities put decodes the JSON-string attributes into a Map', () {
+      // What PowerSync queues: the row column is JSON-encoded TEXT
+      // (activities_repository.dart's jsonEncode), so opData carries a String.
+      final data = <String, dynamic>{
+        'apiary_id': 'apiary-1',
+        'type': 'inspection',
+        'occurred_at': '2026-07-14',
+        'attributes': jsonEncode({'queen_seen': true, 'frames': 8}),
+        'updated_at': '2026-07-14T10:00:00Z',
+      };
+
+      final out = decodeActivityAttributes(activitiesTable, data)!;
+
+      // The regression: attributes must be an object on the wire, or the
+      // server rejects it with "attributes must be a JSON object".
+      expect(out['attributes'], isA<Map<String, dynamic>>());
+      expect(out['attributes'], {'queen_seen': true, 'frames': 8});
+      // Other columns pass through untouched.
+      expect(out['apiary_id'], 'apiary-1');
+      expect(out['type'], 'inspection');
+    });
+
+    test(
+      'journey_id (#46, D-21) passes through untouched, alongside the '
+      'attributes decode — no special handling needed for the new column',
+      () {
+        final data = <String, dynamic>{
+          'apiary_id': 'apiary-1',
+          'journey_id': 'journey-1',
+          'type': 'harvest',
+          'occurred_at': '2026-07-14',
+          'attributes': jsonEncode({'honey_supers': 4}),
+          'updated_at': '2026-07-14T10:00:00Z',
+        };
+
+        final out = decodeActivityAttributes(activitiesTable, data)!;
+
+        expect(out['journey_id'], 'journey-1');
+        expect(out['attributes'], {'honey_supers': 4});
+      },
+    );
+
+    test(
+      'a null journey_id (no journey attached) also passes through untouched',
+      () {
+        final data = <String, dynamic>{
+          'apiary_id': 'apiary-1',
+          'journey_id': null,
+          'type': 'harvest',
+          'occurred_at': '2026-07-14',
+          'attributes': jsonEncode({'honey_supers': 4}),
+          'updated_at': '2026-07-14T10:00:00Z',
+        };
+
+        final out = decodeActivityAttributes(activitiesTable, data)!;
+
+        expect(out['journey_id'], isNull);
+      },
+    );
+
+    test('a patch that changed attributes (opData carries only the changed '
+        'columns) also decodes it', () {
+      final data = <String, dynamic>{
+        'attributes': jsonEncode({'note': 'requeened'}),
+        'updated_at': '2026-07-14T11:00:00Z',
+      };
+
+      final out = decodeActivityAttributes(activitiesTable, data)!;
+
+      expect(out['attributes'], isA<Map<String, dynamic>>());
+      expect(out['attributes'], {'note': 'requeened'});
+    });
+
+    test('empty attributes decode to an empty Map (not the string "{}")', () {
+      final data = <String, dynamic>{
+        'attributes': jsonEncode(<String, dynamic>{}),
+      };
+
+      final out = decodeActivityAttributes(activitiesTable, data)!;
+
+      expect(out['attributes'], isA<Map<String, dynamic>>());
+      expect(out['attributes'], isEmpty);
+    });
+
+    test('a patch that did not touch attributes is left as-is (no key to '
+        'decode)', () {
+      final data = <String, dynamic>{
+        'occurred_at': '2026-07-14',
+        'updated_at': '2026-07-14T11:00:00Z',
+      };
+
+      expect(decodeActivityAttributes(activitiesTable, data), same(data));
+    });
+
+    test('a delete (null opData) is passed through untouched', () {
+      expect(decodeActivityAttributes(activitiesTable, null), isNull);
+    });
+
+    test('a non-activities table is never rewritten, even if it happens to '
+        'carry a string attributes column', () {
+      final data = <String, dynamic>{'attributes': '{"x":1}'};
+
+      // apiaries/counters ops must be handed to the server verbatim — only the
+      // activities contract expects a nested object here.
+      expect(decodeActivityAttributes(apiariesTable, data), same(data));
+      expect(decodeActivityAttributes(apiaryCountersTable, data), same(data));
+    });
+
+    test(
+      'an already-decoded Map attributes is left untouched (idempotent)',
+      () {
+        final data = <String, dynamic>{
+          'attributes': {'queen_seen': true},
+        };
+
+        expect(decodeActivityAttributes(activitiesTable, data), same(data));
+      },
+    );
   });
 
   group('parseSupersededChanges', () {
@@ -354,63 +481,54 @@ void main() {
     });
   });
 
-  group(
-    'lwwTimestampFor (MEDIUM #1 — retried DELETE must not get an '
-    'ever-later timestamp)',
-    () {
-      test(
-        'a put/patch payload\'s own updated_at is passed through untouched, '
-        'and nothing is cached for it',
-        () {
-          final cache = <String, String>{};
+  group('lwwTimestampFor (MEDIUM #1 — retried DELETE must not get an '
+      'ever-later timestamp)', () {
+    test('a put/patch payload\'s own updated_at is passed through untouched, '
+        'and nothing is cached for it', () {
+      final cache = <String, String>{};
 
-          final result = lwwTimestampFor('row-1', {
-            'updated_at': '2026-07-14T10:00:00Z',
-          }, cache);
+      final result = lwwTimestampFor('row-1', {
+        'updated_at': '2026-07-14T10:00:00Z',
+      }, cache);
 
-          expect(result, '2026-07-14T10:00:00Z');
-          expect(cache, isEmpty);
-        },
-      );
+      expect(result, '2026-07-14T10:00:00Z');
+      expect(cache, isEmpty);
+    });
 
-      test(
-        'a delete (no payload) gets a device timestamp, captured once and '
+    test('a delete (no payload) gets a device timestamp, captured once and '
         'reused on every subsequent retry of the same queued op — not '
-        'recomputed fresh each time',
-        () async {
-          final cache = <String, String>{};
+        'recomputed fresh each time', () async {
+      final cache = <String, String>{};
 
-          final firstAttempt = lwwTimestampFor('row-1', null, cache);
-          // A real retry is separated in time (the SDK's forward-retry
-          // backoff); without the fix each call recomputes DateTime.now(),
-          // so this delay would otherwise make the values differ.
-          await Future<void>.delayed(const Duration(milliseconds: 5));
-          final retryAttempt = lwwTimestampFor('row-1', null, cache);
-          await Future<void>.delayed(const Duration(milliseconds: 5));
-          final secondRetryAttempt = lwwTimestampFor('row-1', null, cache);
+      final firstAttempt = lwwTimestampFor('row-1', null, cache);
+      // A real retry is separated in time (the SDK's forward-retry
+      // backoff); without the fix each call recomputes DateTime.now(),
+      // so this delay would otherwise make the values differ.
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final retryAttempt = lwwTimestampFor('row-1', null, cache);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final secondRetryAttempt = lwwTimestampFor('row-1', null, cache);
 
-          expect(
-            retryAttempt,
-            firstAttempt,
-            reason:
-                'a retry must reuse the original delete time, not a fresh '
-                'now() that could spuriously win a later LWW conflict',
-          );
-          expect(secondRetryAttempt, firstAttempt);
-        },
+      expect(
+        retryAttempt,
+        firstAttempt,
+        reason:
+            'a retry must reuse the original delete time, not a fresh '
+            'now() that could spuriously win a later LWW conflict',
       );
+      expect(secondRetryAttempt, firstAttempt);
+    });
 
-      test('two different deleted rows get independent timestamps', () {
-        final cache = <String, String>{};
+    test('two different deleted rows get independent timestamps', () {
+      final cache = <String, String>{};
 
-        lwwTimestampFor('row-1', null, cache);
-        lwwTimestampFor('row-2', null, cache);
+      lwwTimestampFor('row-1', null, cache);
+      lwwTimestampFor('row-2', null, cache);
 
-        expect(cache.keys, containsAll(<String>['row-1', 'row-2']));
-        expect(cache, hasLength(2));
-      });
-    },
-  );
+      expect(cache.keys, containsAll(<String>['row-1', 'row-2']));
+      expect(cache, hasLength(2));
+    });
+  });
 }
 
 /// A minimal [http.Client] that records whether [close] was called, so
@@ -464,6 +582,12 @@ class _FakeRejectedStore implements LocalStoreEngine {
     String sql, [
     List<Object?> args = const [],
   ]) async => null;
+
+  @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
 
   @override
   Stream<List<Map<String, Object?>>> watch(

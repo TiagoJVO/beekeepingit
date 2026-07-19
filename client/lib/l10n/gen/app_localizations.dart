@@ -1333,6 +1333,858 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get deleteActivityCancelAction;
+
+  /// Floating action button to create a journey (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'New journey'**
+  String get addJourney;
+
+  /// Create form app bar title (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'New journey'**
+  String get newJourneyTitle;
+
+  /// Edit form app bar title (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit journey'**
+  String get editJourneyTitle;
+
+  /// Empty state on the main Journeys tab when the organization has no journeys at all yet (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'No journeys yet. Tap “New journey” to create one.'**
+  String get journeysEmpty;
+
+  /// Error state on the Journeys tab (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load journeys: {error}'**
+  String journeysError(String error);
+
+  /// Shown instead of the plain empty state when date-range/activity-type filters are active but match nothing (#47 AC: combined filters + empty/no-results state)
+  ///
+  /// In en, this message translates to:
+  /// **'No journeys match your filters.'**
+  String get journeysFilterNoResults;
+
+  /// Field label for the Journeys tab's activity-type filter dropdown (#47, FR-JO-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Type'**
+  String get journeyFilterTypeLabel;
+
+  /// The Journeys tab's activity-type filter's cleared/default option — no type filter applied (#47)
+  ///
+  /// In en, this message translates to:
+  /// **'All types'**
+  String get journeyFilterTypeAll;
+
+  /// Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Date range'**
+  String get journeyFilterDateRangeLabel;
+
+  /// The Journeys tab's date-range filter's cleared/default state — no date filter applied (#47)
+  ///
+  /// In en, this message translates to:
+  /// **'Any date'**
+  String get journeyFilterDateRangeUnset;
+
+  /// The Journeys tab's selected date range, both bounds already locale-formatted by the caller (#47)
+  ///
+  /// In en, this message translates to:
+  /// **'{start} – {end}'**
+  String journeyFilterDateRangeValue(String start, String end);
+
+  /// Button that resets both the Journeys tab's type and date-range filters at once (#47)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get journeyFilterClearAction;
+
+  /// Per-row plan-vs-done progress badge on the Journeys tab (#47, FR-JO-2 — 'feitos/planeados'): how many of the journey's planned apiaries already have a matching recorded activity, out of the total planned. Only shown when planned > 0.
+  ///
+  /// In en, this message translates to:
+  /// **'{done}/{planned} apiaries visited'**
+  String journeyProgressBadge(int done, int planned);
+
+  /// Field label for a journey's name on the create/edit form (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get journeyNameLabel;
+
+  /// Validation message when a journey's name is left empty (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Name is required'**
+  String get journeyNameRequired;
+
+  /// Field label for a journey's one main activity type on the create/edit form (#45, FR-JO-4, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Main activity type'**
+  String get journeyMainActivityTypeLabel;
+
+  /// Section label above the apiary multi-select picker on the journey create/edit form (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries to visit'**
+  String get journeyApiariesLabel;
+
+  /// Validation message when no apiary is selected for a journey's plan (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one apiary'**
+  String get journeyApiariesRequired;
+
+  /// Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries yet — add one from the Apiaries tab first.'**
+  String get journeyApiariesNoneAvailable;
+
+  /// Running count below the apiary multi-select picker (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}'**
+  String journeyApiariesSelectedCount(int count);
+
+  /// Error toast when loading an existing journey for editing throws (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the journey: {error}'**
+  String journeyLoadError(String error);
+
+  /// Success toast after creating or updating a journey (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey saved'**
+  String get journeySaveSuccess;
+
+  /// Error toast when saving a journey throws (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the journey: {error}'**
+  String journeySaveError(String error);
+
+  /// Button on the edit-journey form that closes an open journey (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Close journey'**
+  String get closeJourneyAction;
+
+  /// Success toast after closing a journey (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey closed'**
+  String get journeyCloseSuccess;
+
+  /// Error toast when closing a journey throws (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t close the journey: {error}'**
+  String journeyCloseError(String error);
+
+  /// Display label for a journey's open status (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get journeyStatusOpenLabel;
+
+  /// Display label for a journey's closed status (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get journeyStatusClosedLabel;
+
+  /// Screen-reader label for the journey edit form's status chip (#45, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {label}'**
+  String journeyStatusSemanticLabel(String label);
+
+  /// Destructive button on the edit-journey form that opens the delete confirmation dialog (#45, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete journey'**
+  String get deleteJourney;
+
+  /// Success toast after deleting a journey (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey deleted'**
+  String get journeyDeleteSuccess;
+
+  /// Error toast when deleting a journey throws (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the journey: {error}'**
+  String journeyDeleteError(String error);
+
+  /// Title of the confirmation dialog shown before deleting a journey (#45, mirrors deleteActivityConfirmTitle)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete journey?'**
+  String get deleteJourneyConfirmTitle;
+
+  /// Body of the confirmation dialog shown before deleting a journey (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently deletes this journey. This cannot be undone.'**
+  String get deleteJourneyConfirmMessage;
+
+  /// Confirm action in the delete-journey confirmation dialog (#45)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteJourneyConfirmAction;
+
+  /// Cancel action in the delete-journey confirmation dialog (#45 AC: cancel is a no-op)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get deleteJourneyCancelAction;
+
+  /// Section label above the journey attachment summary on the add-activity form (#46, FR-JO-1, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey'**
+  String get journeyAttachmentLabel;
+
+  /// Shown in the journey attachment summary when no journey is currently selected (either an auto-match miss, or the user explicitly deselected) (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'No journey attached'**
+  String get journeyAttachmentNone;
+
+  /// Small hint shown under the attached journey's name when it was auto-selected by the app (not explicitly chosen by the user) (#46, FR-JO-1, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-selected — matches this apiary and activity type'**
+  String get journeyAttachmentAutoSelectedHint;
+
+  /// Button that opens the journey picker to switch/select a journey on the add-activity form (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get journeyAttachmentChangeAction;
+
+  /// Button that deselects the currently-attached journey on the add-activity form (#46 AC: the user can deselect the pre-filled journey)
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get journeyAttachmentRemoveAction;
+
+  /// Title of the journey picker bottom sheet (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a journey'**
+  String get journeyPickerTitle;
+
+  /// Error state inside the journey picker bottom sheet (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load journeys: {error}'**
+  String journeyPickerError(String error);
+
+  /// The explicit "no journey" option, always the first row in the journey picker (#46 AC: the user can deselect the pre-filled journey)
+  ///
+  /// In en, this message translates to:
+  /// **'No journey'**
+  String get journeyPickerNoneOption;
+
+  /// Shown in the journey picker when there are no open matching journeys to list (auto-match miss) and "show hidden journeys" is off (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'No open journeys match this apiary and activity type yet.'**
+  String get journeyPickerNoOpenMatches;
+
+  /// Toggle in the journey picker that reveals closed matching journeys, normally hidden by default (#46, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'Show hidden journeys'**
+  String get journeyPickerShowHiddenToggle;
+
+  /// Screen-reader label for a closed journey's row in the picker, once revealed via the show-hidden toggle (#46, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, closed journey'**
+  String journeyPickerClosedOptionSemanticLabel(String name);
+
+  /// The inline create-new-journey shortcut row at the bottom of the journey picker (#46 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'Create a new journey'**
+  String get journeyPickerCreateNewAction;
+
+  /// Title of the inline quick-create-journey bottom sheet, opened from the journey picker (#46 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'New journey'**
+  String get journeyQuickCreateTitle;
+
+  /// Cancel action on the inline quick-create-journey sheet — closes it without creating anything (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get journeyQuickCreateCancelAction;
+
+  /// Title of the confirm-to-proceed dialog shown when saving an activity against a closed journey (#46 AC, D-21)
+  ///
+  /// In en, this message translates to:
+  /// **'This journey is closed'**
+  String get closedJourneyConfirmTitle;
+
+  /// Body of the confirm-to-proceed dialog shown when saving an activity against a closed journey (#46 AC: "this journey is closed — add anyway?")
+  ///
+  /// In en, this message translates to:
+  /// **'\"{journeyName}\" is closed. Add this activity to it anyway?'**
+  String closedJourneyConfirmMessage(String journeyName);
+
+  /// Cancel action in the closed-journey confirm dialog — stays on the form, nothing is saved (#46)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get closedJourneyConfirmCancelAction;
+
+  /// Confirm action in the closed-journey confirm dialog — proceeds with saving the activity against the closed journey (#46 AC)
+  ///
+  /// In en, this message translates to:
+  /// **'Add anyway'**
+  String get closedJourneyConfirmAddAction;
+
+  /// Heading above the journey stats section (#49, FR-JO-1) — apiaries visited, hives harvested, honey collected, média alças/colmeia
+  ///
+  /// In en, this message translates to:
+  /// **'Journey stats'**
+  String get journeyStatsSectionTitle;
+
+  /// Error state when loading a journey's aggregated stats throws (#49)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load journey stats: {error}'**
+  String journeyStatsError(String error);
+
+  /// Stat card label for the apiaries-visited-vs-planned metric (#49, FR-JO-1), matching the Melargil prototype's "apiários visitados" card
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries visited'**
+  String get journeyStatsApiariesVisitedLabel;
+
+  /// Value shown on the apiaries-visited stat card, e.g. "3/5" (#49, FR-JO-1)
+  ///
+  /// In en, this message translates to:
+  /// **'{done}/{planned}'**
+  String journeyStatsApiariesVisitedValue(int done, int planned);
+
+  /// Stat card label for Σ hives_involved across the journey's harvest activities (#49, D-2), matching the prototype's "colmeias trabalhadas" card
+  ///
+  /// In en, this message translates to:
+  /// **'Hives harvested'**
+  String get journeyStatsHivesHarvestedLabel;
+
+  /// Stat card label for Σ honey_kg across the journey's harvest activities (#49), matching the prototype's "mel colhido" card
+  ///
+  /// In en, this message translates to:
+  /// **'Honey collected'**
+  String get journeyStatsHoneyCollectedLabel;
+
+  /// Value shown on the honey-collected stat card, e.g. "12.5 kg" — kg is already locale-formatted by the caller (LocaleFormatting) (#49)
+  ///
+  /// In en, this message translates to:
+  /// **'{kg} kg'**
+  String journeyStatsHoneyCollectedValue(String kg);
+
+  /// Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49) — kept in Portuguese per the prototype/AC's own naming (docs/design/prototype.md's Q-JOUR answer, this issue's own AC wording), not translated to an English equivalent
+  ///
+  /// In en, this message translates to:
+  /// **'Média alças/colmeia'**
+  String get journeyStatsAverageSupersLabel;
+
+  /// Shown instead of a number on the média alças/colmeia stat card when there is no hive-count denominator yet — zero harvest activities, or every one has a null/zero hives_involved (#49, NFR-TST-1's no-divide-by-zero case)
+  ///
+  /// In en, this message translates to:
+  /// **'No data yet'**
+  String get journeyStatsAverageSupersNoData;
+
+  /// Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: "how much is still missing, planned vs. done")
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
+  String journeyStatsMissingLabel(int count);
+
+  /// Shell app bar title for the journey detail route (#48, FR-JO-3) — a generic, not per-instance, title mirroring apiaryDetailTitle/activityDetailTitle's own convention; the specific journey's name renders in the page body itself
+  ///
+  /// In en, this message translates to:
+  /// **'Journey'**
+  String get journeyDetailTitle;
+
+  /// Floating action button on the journey detail page that opens the existing edit form (#48) — mirrors editApiaryAction
+  ///
+  /// In en, this message translates to:
+  /// **'Edit journey'**
+  String get editJourneyAction;
+
+  /// Section heading above the journey detail page's per-apiary list (#48, FR-JO-3)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiaries'**
+  String get journeyDetailApiariesTitle;
+
+  /// Placeholder apiary card title when an activity's apiary_id can't be resolved against the currently-loaded apiary list — e.g. the apiary was deleted since, or apiariesStreamProvider hasn't emitted yet (#48) — never a raw internal id
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown apiary'**
+  String get journeyDetailApiaryNameUnknown;
+
+  /// Badge on a journey detail apiary card once it has at least one activity attributed to this journey via the stored journey_id (#48 AC: planned vs. actual)
+  ///
+  /// In en, this message translates to:
+  /// **'Visited'**
+  String get journeyDetailApiaryVisitedBadge;
+
+  /// Badge on a journey detail apiary card that's in the journey's plan but has no attributed activity yet (#48 AC: planned vs. actual)
+  ///
+  /// In en, this message translates to:
+  /// **'Planned'**
+  String get journeyDetailApiaryPlannedBadge;
+
+  /// Placeholder shown under a planned-only apiary card on the journey detail page, in place of an activity list (#48 AC: planned items clearly distinguished from completed ones)
+  ///
+  /// In en, this message translates to:
+  /// **'Not visited yet'**
+  String get journeyDetailApiaryNotVisitedYet;
+
+  /// Empty state on the journey detail page's apiaries section — the edge case of a journey with no plan and no attributed activities (#48)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries in this journey yet.'**
+  String get journeyDetailApiariesEmpty;
+
+  /// Empty state on the main Todos tab when the organization has no todos at all yet (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'No todos yet.'**
+  String get todosEmpty;
+
+  /// Shown instead of the plain empty state when status/priority/due-date filters are active but match nothing (#53 AC: combined filters + empty/no-results state)
+  ///
+  /// In en, this message translates to:
+  /// **'No todos match your filters.'**
+  String get todosFilterNoResults;
+
+  /// Error state on the main Todos tab (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load todos: {error}'**
+  String todosError(String error);
+
+  /// Field label for the Todos tab's status filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get todoFilterStatusLabel;
+
+  /// The status filter's cleared/default option — no status filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get todoFilterStatusAll;
+
+  /// Status filter option / status word for a todo that is neither done nor overdue (#53 AC: distinguishes open, completed, overdue)
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get todoFilterStatusOpen;
+
+  /// Status filter option / status word for an open todo whose due date has passed (#53 AC: overdue, feeds FR-AI-1's later "overdue todos" example)
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue'**
+  String get todoFilterStatusOverdue;
+
+  /// Status filter option / status word for a done todo — the display label for the underlying 'done' status value (#50/#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get todoFilterStatusDone;
+
+  /// Field label for the Todos tab's priority filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get todoFilterPriorityLabel;
+
+  /// The priority filter's cleared/default option — no priority filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'All priorities'**
+  String get todoFilterPriorityAll;
+
+  /// Display label for the 'low' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'Low'**
+  String get todoPriorityLowLabel;
+
+  /// Display label for the 'medium' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get todoPriorityMediumLabel;
+
+  /// Display label for the 'high' todo priority level (#50/#53, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'High'**
+  String get todoPriorityHighLabel;
+
+  /// Field label for the Todos tab's due-date filter dropdown (#53, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due'**
+  String get todoFilterDueLabel;
+
+  /// The due-date filter's cleared/default option — no due-date filter applied (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Any date'**
+  String get todoFilterDueAny;
+
+  /// Due-date filter preset matching todos due today (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due today'**
+  String get todoFilterDueToday;
+
+  /// Due-date filter preset matching todos due within the current calendar week, Monday–Sunday (#53, feeds FR-AI-1's later "due in the next week" example)
+  ///
+  /// In en, this message translates to:
+  /// **'Due this week'**
+  String get todoFilterDueThisWeek;
+
+  /// Due-date filter preset matching todos due within the current calendar month (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due this month'**
+  String get todoFilterDueThisMonth;
+
+  /// Button that resets the status/priority/due-date filters at once, without touching the sort selection (#53, mirrors activityFilterClearAction)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get todoFilterClearAction;
+
+  /// Field label for the Todos tab's sort-field dropdown (#53 AC: sortable by due date, priority, and status)
+  ///
+  /// In en, this message translates to:
+  /// **'Sort by'**
+  String get todoSortFieldLabel;
+
+  /// Sort-field option: order by due date (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get todoSortFieldDueDate;
+
+  /// Sort-field option: order by priority level (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get todoSortFieldPriority;
+
+  /// Sort-field option: order by lifecycle status — overdue, then open, then completed (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get todoSortFieldStatus;
+
+  /// Current sort direction — also the direction-toggle button's tooltip/semantic label while ascending is active (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Ascending'**
+  String get todoSortDirectionAscendingLabel;
+
+  /// Current sort direction — also the direction-toggle button's tooltip/semantic label while descending is active (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'Descending'**
+  String get todoSortDirectionDescendingLabel;
+
+  /// Shown in a todo row's subtitle in place of a formatted date when the todo has no due date (#53)
+  ///
+  /// In en, this message translates to:
+  /// **'No due date'**
+  String get todoDueDateUnset;
+
+  /// Text of the overdue badge on a todo row — paired with a warning icon, never color alone (#53 AC, WCAG 2.2 AA 1.4.1)
+  ///
+  /// In en, this message translates to:
+  /// **'Overdue'**
+  String get todoOverdueBadge;
+
+  /// Screen-reader label for a todo row's leading status icon — an open (not overdue, not done) row has no other visible status text (#53, WCAG 2.2 AA). {status} is one of todoFilterStatusOpen/Overdue/Done, already localized.
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {status}'**
+  String todoStatusSemanticLabel(String status);
+
+  /// Floating action button label to quick-create a todo (#52, FR-TD-1) — shown on the Todos tab's own FAB, the Apiaries tab's secondary FAB, and the apiary detail page's add-todo action
+  ///
+  /// In en, this message translates to:
+  /// **'New todo'**
+  String get addTodo;
+
+  /// Heading of the quick-create bottom sheet (#52, FR-TD-1, FR-UX-1)
+  ///
+  /// In en, this message translates to:
+  /// **'New todo'**
+  String get todoQuickCreateTitle;
+
+  /// Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get todoDueDateLabel;
+
+  /// Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.
+  ///
+  /// In en, this message translates to:
+  /// **'For {apiaryName}'**
+  String todoQuickCreateForApiary(String apiaryName);
+
+  /// Cancel button on the quick-create sheet — discards the in-progress todo without creating it (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get todoQuickCreateCancelAction;
+
+  /// Success toast shown after a quick-created todo saves (#52)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo created'**
+  String get todoCreatedConfirmation;
+
+  /// Header title for the standalone todo-create route (#293) — reachable by direct navigation/deep-linking, distinct from #52's own quick-create sheet
+  ///
+  /// In en, this message translates to:
+  /// **'New todo'**
+  String get newTodoTitle;
+
+  /// Header title for the todo detail route (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo'**
+  String get todoDetailTitle;
+
+  /// Header title for the todo edit route (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit todo'**
+  String get editTodoTitle;
+
+  /// Label of the todo detail screen's edit FAB, routing to the edit form (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Edit todo'**
+  String get editTodoAction;
+
+  /// Field label for a todo's required title, on the create/edit form (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get todoTitleLabel;
+
+  /// Validation message when a todo's title is left blank on save (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Title is required'**
+  String get todoTitleRequired;
+
+  /// Field label for a todo's optional free-text description, on the form and the detail screen (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get todoDescriptionLabel;
+
+  /// Fallback shown on the todo detail screen when the todo has no description (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'No description'**
+  String get todoDescriptionUnset;
+
+  /// Field label for a todo's optional due date, on the form and the detail screen (#293, FR-TD-1) — due dates may be in the future, unlike an activity's occurred-at date
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get todoDueDateFieldLabel;
+
+  /// Tooltip/semantic label for the icon button that clears a set due date on the todo form (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear due date'**
+  String get todoDueDateClearAction;
+
+  /// Field label for a todo's priority dropdown, on the form and the detail screen (#293, FR-TD-1, D-20) — distinct from todoFilterPriorityLabel, the Todos tab's own filter dropdown
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get todoPriorityFieldLabel;
+
+  /// Field label for a todo's assignee picker, on the form and the detail screen (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Assignee'**
+  String get todoAssigneeFieldLabel;
+
+  /// Field label for a todo's apiary-association picker, on the form and the detail screen (#293, #51, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get todoApiaryFieldLabel;
+
+  /// The assignee picker's clear row label, and the detail screen's fallback when a todo has no assignee (#293, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Unassigned'**
+  String get todoAssigneeUnassigned;
+
+  /// Fallback label for an assignee id not (yet) resolvable to a real name — offline, pre-first-fetch, or a removed member (#293, mirrors activityPerformedByMember). {id} is a short, non-spoofable id fragment, not the full id.
+  ///
+  /// In en, this message translates to:
+  /// **'Member {id}'**
+  String todoAssigneeUnknown(String id);
+
+  /// Shown in the assignee picker when the org member roster hasn't loaded yet (offline / pre-first-fetch) — the Unassigned clear row still renders alongside this (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'No members available yet.'**
+  String get todoAssigneeNoneAvailable;
+
+  /// The apiary picker's clear row label, and the detail screen's fallback for a general, org-level todo with no apiary association (#293, #51, FR-TD-1)
+  ///
+  /// In en, this message translates to:
+  /// **'No apiary'**
+  String get todoApiaryNone;
+
+  /// Fallback label on the todo detail screen for an apiary id no longer in the locally-synced apiary set — a stale reference to a since-deleted apiary (#293, mirrors todos_repository.dart's own doc comment on this exact case)
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown apiary'**
+  String get todoApiaryUnknown;
+
+  /// Heading above the todo detail screen's read-only field list (#293, mirrors activityDetailAttributesHeader)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get todoDetailFieldsHeader;
+
+  /// Detail-screen row label for a done todo's completion timestamp (#293) — worded distinctly from the plain status word todoFilterStatusDone ("Completed") so the two never collide on the same screen
+  ///
+  /// In en, this message translates to:
+  /// **'Completed at'**
+  String get todoCompletedAtLabel;
+
+  /// Label of the complete/reopen toggle button while the todo is open (#293, FR-TD-1) — on both the detail screen and the form
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as complete'**
+  String get todoCompleteAction;
+
+  /// Label of the complete/reopen toggle button while the todo is done (#293, FR-TD-1) — on both the detail screen and the form
+  ///
+  /// In en, this message translates to:
+  /// **'Reopen'**
+  String get todoReopenAction;
+
+  /// Success toast after completing a todo via the toggle (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo marked complete'**
+  String get todoCompleteSuccess;
+
+  /// Error toast when completing a todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the todo: {error}'**
+  String todoCompleteError(String error);
+
+  /// Success toast after reopening a todo via the toggle (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo reopened'**
+  String get todoReopenSuccess;
+
+  /// Error toast when reopening a todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t update the todo: {error}'**
+  String todoReopenError(String error);
+
+  /// Success toast after creating or editing a todo (#293, mirrors activitySaveSuccess's own create-and-update-share-one-message precedent)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo saved'**
+  String get todoSaveSuccess;
+
+  /// Error toast when creating or editing a todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save the todo: {error}'**
+  String todoSaveError(String error);
+
+  /// Error toast when the edit form's initial load of an existing todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load the todo: {error}'**
+  String todoLoadError(String error);
+
+  /// Label of the delete button on the todo form (#293 AC: delete the todo from the form)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete todo'**
+  String get deleteTodo;
+
+  /// Success toast after deleting a todo (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo deleted'**
+  String get todoDeleteSuccess;
+
+  /// Error toast when deleting a todo fails (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t delete the todo: {error}'**
+  String todoDeleteError(String error);
+
+  /// Title of the delete-confirmation dialog on the todo form (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete todo?'**
+  String get deleteTodoConfirmTitle;
+
+  /// Body of the delete-confirmation dialog on the todo form (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'This permanently deletes this todo. This cannot be undone.'**
+  String get deleteTodoConfirmMessage;
+
+  /// Confirm action of the todo delete-confirmation dialog (#293)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteTodoConfirmAction;
+
+  /// Cancel action of the todo delete-confirmation dialog (#293) — always a no-op
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get deleteTodoCancelAction;
 }
 
 class _AppLocalizationsDelegate

@@ -103,16 +103,16 @@ today.)
 
 ### 3.2 What replicates down
 
-| Entity (owning service)                                | Syncs to device                           | Direction            | Why                                                                                                                          |
-| ------------------------------------------------------ | ----------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `organizations` (the **active** org)                   | that one row                              | read-only on device¹ | tenant root, names/settings for the UI                                                                                       |
-| `memberships`, `users` (org roster, minimal profile)   | the org's members                         | read-only            | display `performed_by` / `assigned_to` names offline                                                                         |
-| `apiaries`                                             | all org rows                              | read-write           | core field entity (incl. PostGIS location for offline proximity, [data-model.md](data-model.md) §6)                          |
-| `activities`                                           | all org rows                              | read-write           | core field entity; `performed_by` attribution                                                                                |
-| `journeys`, `journey_plan_items`, `journey_activities` | all org rows                              | read-write           | planned-vs-actual in the field                                                                                               |
-| `todos`                                                | all org rows                              | read-write           | field task capture                                                                                                           |
-| `audit_log` (recent window)                            | recent history for the org's entities     | read-only            | "view history" works offline for **recent** changes (§7); deep history is an online read ([history.md](history.md) §6, #107) |
-| `sync_conflict_log` (own org)                          | conflict rows touching the device's edits | read-only            | surface "your offline edit was superseded" (§4, §8)                                                                          |
+| Entity (owning service)                              | Syncs to device                           | Direction            | Why                                                                                                                          |
+| ---------------------------------------------------- | ----------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `organizations` (the **active** org)                 | that one row                              | read-only on device¹ | tenant root, names/settings for the UI                                                                                       |
+| `memberships`, `users` (org roster, minimal profile) | the org's members                         | read-only            | display `performed_by` / `assigned_to` names offline                                                                         |
+| `apiaries`                                           | all org rows                              | read-write           | core field entity (incl. PostGIS location for offline proximity, [data-model.md](data-model.md) §6)                          |
+| `activities`                                         | all org rows                              | read-write           | core field entity; `performed_by` attribution                                                                                |
+| `journeys`, `journey_plan_items`                     | all org rows                              | read-write           | planned-vs-actual in the field; attribution rides `activities.journey_id` (D-21), not a `journeys`-owned table               |
+| `todos`                                              | all org rows                              | read-write           | field task capture                                                                                                           |
+| `audit_log` (recent window)                          | recent history for the org's entities     | read-only            | "view history" works offline for **recent** changes (§7); deep history is an online read ([history.md](history.md) §6, #107) |
+| `sync_conflict_log` (own org)                        | conflict rows touching the device's edits | read-only            | surface "your offline edit was superseded" (§4, §8)                                                                          |
 
 ¹ _Read-only on device_ = the app has no UI path to edit it offline; org/membership admin is an
 **online** Admin-App concern (NFR-ROL-2). It still replicates down for display.

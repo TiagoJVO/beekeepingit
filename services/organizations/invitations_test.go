@@ -355,6 +355,94 @@ func TestRevokeInvitation_ThenReinvite(t *testing.T) {
 	}
 }
 
+// TestListMemberNames_AnyMemberResolvesRealNames is the #44 follow-up core
+// AC: the /members/names roster is readable by ANY active member (not just an
+// admin, unlike /members), and resolves each member's user_id to their real
+// display name via identity — the capability that lets activity attribution
+// show a name instead of a short id fragment. It also asserts the contrast
+// that makes the new endpoint necessary: the same non-admin member is still
+// 403 on the admin-only /members list, and a caller from another org gets 404
+// (ADR-0002), and the 200 body conforms to the OpenAPI contract.
+func TestListMemberNames_AnyMemberResolvesRealNames(t *testing.T) {
+	adminSub := "c1111111-1111-4111-8111-111111111111"
+	adminUserID := "a0000000-0000-7000-8000-0000000000c1"
+	memberSub := "c2222222-2222-4222-8222-222222222222"
+	memberUserID := "a0000000-0000-7000-8000-0000000000c2"
+	memberEmail := "worker@example.com"
+
+	f := newOrgFixtureWithEmailClaims(t,
+		map[string]stubUser{
+			adminSub:  {UserID: adminUserID, Name: "Ana Admin"},
+			memberSub: {UserID: memberUserID, Email: memberEmail, Name: "Bruno Worker"},
+		},
+		map[string]tokenClaim{
+			memberSub: {Email: memberEmail, EmailVerified: true},
+		},
+	)
+	adminBearer := f.token(t, adminSub)
+	memberBearer := f.token(t, memberSub)
+
+	orgID := "b0000000-0000-7000-8000-000000000c01"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{
+		"id": orgID, "name": "Names Co.",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{
+		"email": memberEmail, "role": "user",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("invite status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	// The invitee logs in (auto-join) — now an active, non-admin member.
+	if rec := f.do(t, http.MethodGet, "/v1/organizations/me", memberBearer, nil); rec.Code != http.StatusOK {
+		t.Fatalf("member accept-on-login status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// The non-admin member is still 403 on the admin-only members list — the
+	// exact gap the names endpoint exists to close.
+	if rec := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/members", memberBearer, nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("non-admin GET /members status = %d, want 403, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// ...but CAN read /members/names, resolving every member to a real name.
+	recNames := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/members/names", memberBearer, nil)
+	if recNames.Code != http.StatusOK {
+		t.Fatalf("non-admin GET /members/names status = %d, want 200, body = %s", recNames.Code, recNames.Body.String())
+	}
+	var names struct {
+		Data []api.MemberNameResponse `json:"data"`
+	}
+	if err := json.Unmarshal(recNames.Body.Bytes(), &names); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	got := map[string]string{}
+	for _, m := range names.Data {
+		got[m.UserID] = m.Name
+	}
+	if got[adminUserID] != "Ana Admin" {
+		t.Errorf("admin name = %q, want %q (full map: %v)", got[adminUserID], "Ana Admin", got)
+	}
+	if got[memberUserID] != "Bruno Worker" {
+		t.Errorf("member name = %q, want %q (full map: %v)", got[memberUserID], "Bruno Worker", got)
+	}
+
+	// Contract conformance of the 200 body (#153 boundary convention).
+	doc, err := contracttest.Load("../../contracts/openapi/organizations.openapi.yaml")
+	if err != nil {
+		t.Fatalf("load contract: %v", err)
+	}
+	doc.ValidateResponseBody(t, http.MethodGet, "/v1/organizations/"+orgID+"/members/names", http.StatusOK, recNames.Body.Bytes())
+
+	// A caller who is not a member of this org is refused with 404, never
+	// shown the roster (ADR-0002 — the path never widens scope). This sub is
+	// unknown to the stub identity, so it resolves to the same handler-level
+	// "no org for the caller" 404 a genuine outsider hits.
+	outsiderSub := "c3333333-3333-4333-8333-333333333333"
+	if rec := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/members/names", f.token(t, outsiderSub), nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("outsider GET /members/names status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestCreateInvitation_InvalidEmail_Returns422 covers required-field
 // validation on the invite request.
 func TestCreateInvitation_InvalidEmail_Returns422(t *testing.T) {

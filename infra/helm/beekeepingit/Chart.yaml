@@ -13,7 +13,7 @@ appVersion: "0.1.0"
 # `authentik`/`minio` only hold our own supplementary templates (generated
 # credentials, the Authentik blueprint) — the actual vendored charts
 # (authentik/authentik, charts.min.io) are deployed separately as their own Flux
-# `HelmRelease`s (`infra/gitops/apps/dev/`), not nested here, since Flux's
+# `HelmRelease`s (the beekeepingit-gitops repo's `apps/dev/`), not nested here, since Flux's
 # GitRepository-sourced charts don't recursively resolve a subchart's own vendored
 # dependency — see ADR-0012 (supersedes the ADR-0010 wrapper-chart approach for
 # these two) and ADR-0016 (the Keycloak→Authentik swap).

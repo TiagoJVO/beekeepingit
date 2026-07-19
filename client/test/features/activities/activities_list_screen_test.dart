@@ -98,6 +98,11 @@ class _NoopLocalStore implements LocalStoreEngine {
     List<Object?> args = const [],
   ]) async => null;
   @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
+  @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {}
   @override
   Future<void> clear() async {}

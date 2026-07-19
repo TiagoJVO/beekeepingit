@@ -575,7 +575,8 @@ driven through it:
   `traefik` root span for `POST /v1/sync/batch` continuing into the `sync` service and its
   `/internal/sync/validate` + `/internal/sync/apply` fan-out to `apiaries` (W3C `traceparent`
   propagated across the internal REST calls). Traefik's own span is enabled by
-  [`traefik-tracing.yaml`](../../infra/gitops/apps/dev/traefik-tracing.yaml).
+  [`traefik-tracing.yaml`](https://github.com/TiagoJVO/beekeepingit-gitops/blob/main/apps/dev/traefik-tracing.yaml)
+  (in the beekeepingit-gitops repo).
 - **Loki** holds per-service structured logs (`service_name` = `identity`/`organizations`/
   `apiaries`/`sync`) carrying `trace_id`/`span_id`, so a log line links back to its trace.
 - `infra/observability-smoke-test.sh` passes against this collector, closing #87's deferred

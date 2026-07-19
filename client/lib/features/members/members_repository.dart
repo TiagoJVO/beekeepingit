@@ -23,6 +23,23 @@ class Member {
   final String status;
 }
 
+/// A member's display name
+/// (contracts/openapi/organizations.openapi.yaml's MemberName schema, #44
+/// follow-up) — `user_id` -> `name` only, no role/status/email. Backs
+/// per-user attribution display (FR-TEN-2): resolving an activity's
+/// `performed_by` id to a real name instead of a short id fragment.
+class MemberName {
+  const MemberName({required this.userId, required this.name});
+
+  factory MemberName.fromJson(Map<String, dynamic> json) => MemberName(
+    userId: json['user_id'] as String,
+    name: json['name'] as String? ?? '',
+  );
+
+  final String userId;
+  final String name;
+}
+
 /// A pending (or resolved) email invitation
 /// (contracts/openapi/organizations.openapi.yaml's Invitation schema, #27,
 /// FR-ONB-3, D-3).
@@ -99,6 +116,29 @@ class MembersRepository {
     return _page(json, Invitation.fromJson);
   }
 
+  /// Fetches the org's full member-name roster (all pages) as a
+  /// `user_id -> display name` map, for resolving per-user attribution (#44,
+  /// FR-TEN-2). Unlike [listMembers] (admin-only server-side), the
+  /// `/members/names` endpoint is readable by ANY active member, so this
+  /// works for a plain user too. Members whose name is empty (incomplete or
+  /// removed profile) are omitted, so the caller falls back to a short id
+  /// fragment for them rather than showing a blank attribution.
+  Future<Map<String, String>> listMemberNames(String orgId) async {
+    final names = <String, String>{};
+    String? cursor;
+    do {
+      final json = await _api.getJson(
+        _pagedPath('/organizations/$orgId/members/names', cursor: cursor),
+      );
+      final page = _page(json, MemberName.fromJson);
+      for (final m in page.items) {
+        if (m.name.isNotEmpty) names[m.userId] = m.name;
+      }
+      cursor = page.nextCursor;
+    } while (cursor != null);
+    return names;
+  }
+
   Future<Invitation> invite(
     String orgId, {
     required String email,
@@ -145,6 +185,30 @@ class MembersRepository {
 
 final membersRepositoryProvider = Provider<MembersRepository>((ref) {
   return MembersRepository(ref.watch(apiClientProvider));
+});
+
+/// The caller's org member-name lookup (`user_id -> display name`), for
+/// resolving per-user activity attribution to a real name (#44,
+/// activity_display.dart's `activityAttributionText`). Online-fetch +
+/// session cache, matching [MembersRepository]'s online-only stance (member
+/// data is not a synced, offline-first entity — sync.md): offline, or before
+/// the first successful fetch, this resolves to an empty map and attribution
+/// degrades to a short id fragment rather than erroring.
+///
+/// Best-effort by design: a not-yet-onboarded (`null` org) state or any fetch
+/// failure yields an empty map, so a name-lookup problem never turns the
+/// offline-first activities list into an error screen — attribution simply
+/// falls back. Re-fetched when the org changes (e.g. after onboarding).
+final memberNamesProvider = FutureProvider<Map<String, String>>((ref) async {
+  final org = await ref.watch(organizationProvider.future);
+  if (org == null) return const {};
+  try {
+    return await ref.watch(membersRepositoryProvider).listMemberNames(org.id);
+  } on ApiException {
+    return const {};
+  } on ApiNetworkException {
+    return const {};
+  }
 });
 
 /// Members + invitations for the caller's own organization, refetched
