@@ -119,8 +119,8 @@ helm upgrade --install cert-manager jetstack/cert-manager \
   --namespace cert-manager --create-namespace --wait \
   --set crds.enabled=true
 
-# 4. Flux controllers (same as infra/gitops/README.md's dev prerequisite —
-# imperative, not GitOps-managed, per ADR-0009). Base controllers only: Flux is
+# 4. Flux controllers (same as the beekeepingit-gitops README's dev prerequisite
+# — imperative, not GitOps-managed, per ADR-0009). Base controllers only: Flux is
 # read-only (D-27/ADR-0018 dropped image-automation).
 echo "installing Flux controllers"
 flux install
@@ -136,11 +136,13 @@ Cluster ready. Remaining one-time setup, in order:
      kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 
 2. Create the cert-manager ClusterIssuer (not templated here — it needs a
-   real ACME account email; see infra/gitops/README.md for where this lands
-   once staging is bootstrapped).
+   real ACME account email; see the beekeepingit-gitops README for where this
+   lands once staging is bootstrapped).
 
-3. Bootstrap GitOps for this cluster (see infra/gitops/README.md):
+3. Bootstrap GitOps for this cluster — the Flux manifests live in the
+   beekeepingit-gitops repo now (D-27/ADR-0018):
 
-     kubectl apply -f infra/gitops/clusters/staging/
+     git clone https://github.com/TiagoJVO/beekeepingit-gitops
+     kubectl apply -f beekeepingit-gitops/clusters/staging/
 
 EOF

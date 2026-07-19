@@ -67,7 +67,7 @@ minio:
   # No workload of its own (just the root-credentials Secret) — MinIO itself is
   # a separate Flux HelmRelease, see ADR-0012. Its buckets (loki/tempo, #87) are
   # configured on that standalone HelmRelease
-  # (infra/gitops/apps/dev/minio-helmrelease.yaml), not here.
+  # (the beekeepingit-gitops repo's apps/dev/minio-helmrelease.yaml), not here.
 
 gateway:
   enabled: true

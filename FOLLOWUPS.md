@@ -17,9 +17,14 @@ has been removed. The full multi-phase plan lives in `DEPLOYMENT_PIPELINE_PLAN.m
 handoff doc — delete once executed). Remaining phases, each gated on user confirmation or an
 outward-facing action:
 
-- **Split `infra/gitops/` into a `beekeepingit-gitops` repo** (Phase 2) — needs `gh repo create`,
-  re-points the live dev cluster's Flux `GitRepository`, reworks the bring-up scripts' bootstrap
-  step. Direction confirmed (D-27); repo creation itself still to be approved.
+- **Phase 2 (GitOps repo split) — DONE on this branch.** `TiagoJVO/beekeepingit-gitops` created and
+  populated; `infra/gitops/` removed here; `dev-up.sh`/`dev-down.sh`/`scaleway-up.sh`/`helm-e2e.yml`
+  rewired to source manifests from the new repo (via `infra/cluster/gitops-dir.sh` or a second CI
+  checkout). **Post-merge action (manual, your cluster):** re-point the live dev cluster's Flux at
+  the new repo — `git clone https://github.com/TiagoJVO/beekeepingit-gitops && kubectl apply -f
+beekeepingit-gitops/clusters/dev/` — else its Kustomization goes stale when `infra/gitops/` leaves
+  `beekeepingit@main`. (The new repo also wants branch protection on `main` before Phase 3 wires the
+  tag-bump PR into it.)
 - **Rework `release-deploy.yml`** (Phase 3) — add `-rc`→staging / bare-tag→prod routing and the
   release→tag-bump-PR step against the new repo. Needs a scoped token / GitHub App for the
   cross-repo PR (a new standing secret — pending sign-off).

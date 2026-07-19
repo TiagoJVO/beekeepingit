@@ -6,7 +6,8 @@
 - **Decisions:** [D-26](../../requirements/decisions.md) (hosting provider choice), builds on
   [D-1](../../requirements/decisions.md) (single cluster), [D-13](../../requirements/decisions.md)
   (GitOps: Flux)
-- **Design:** [`infra/README.md`](../../infra/README.md), [`infra/gitops/README.md`](../../infra/gitops/README.md)
+- **Design:** [`infra/README.md`](../../infra/README.md), the
+  [`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo (GitOps manifests, split out per D-27/ADR-0018)
 
 ## Context
 

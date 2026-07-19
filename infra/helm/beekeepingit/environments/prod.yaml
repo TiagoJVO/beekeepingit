@@ -6,12 +6,12 @@
 # story yet.
 #
 # Structurally mirrors environments/staging.yaml (see that file's comments
-# and infra/gitops/apps/staging/beekeepingit-helmrelease.yaml for the full
-# rationale behind each shape) so the two stay easy to diff, but every
-# host/hostname-shaped value below is a clearly-marked placeholder — there is
-# no prod cluster, IP, or domain yet. Fill these in for real (and add
-# infra/gitops/clusters/prod/, apps/prod/ mirroring staging's) when prod
-# actually gets built.
+# and the beekeepingit-gitops repo's apps/staging/beekeepingit-helmrelease.yaml
+# for the full rationale behind each shape) so the two stay easy to diff, but
+# every host/hostname-shaped value below is a clearly-marked placeholder — there
+# is no prod cluster, IP, or domain yet. Fill these in for real (and add the
+# beekeepingit-gitops repo's clusters/prod/, apps/prod/ mirroring staging's) when
+# prod actually gets built.
 global:
   environment: prod
   namespace: beekeepingit-prod

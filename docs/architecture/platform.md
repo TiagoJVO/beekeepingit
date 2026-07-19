@@ -62,8 +62,8 @@ section covers the _why_.
 - **Per-environment overrides**: `environments/{dev,staging,prod}.yaml` overlay `global.*` (`-f`
   on top of `values.yaml`). `dev` (local k3d) and `staging` (Scaleway Kapsule, D-26, ADR-0017) are
   both deployed; `prod` exists to prove the override mechanism per `NFR-ARC-2` and has its
-  own inert GitOps scaffold prepared (`infra/gitops/{clusters,apps}/prod/`) but is deliberately not
-  deployed anywhere yet (D-26 defers it until `Q-DR`/`#90` land at M6).
+  own inert GitOps scaffold prepared (the beekeepingit-gitops repo's `clusters/prod/` + `apps/prod/`)
+  but is deliberately not deployed anywhere yet (D-26 defers it until `Q-DR`/`#90` land at M6).
 - **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0010](../adr/0010-platform-backing-services-provisioning.md)):
   `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
   portable `Ingress` + a TLS Secret, reusing k3d's Traefik locally) are hand-rolled — there's
@@ -71,7 +71,7 @@ section covers the _why_.
   itself (generated config/credential Secrets; for the IdP, also the declarative **blueprint**
   ConfigMap — the analogue of a realm import) — the actual vendored charts (the `authentik` chart
   from `charts.goauthentik.io`, the official `charts.min.io` MinIO chart) run as their own
-  standalone Flux `HelmRelease`s (`infra/gitops/apps/dev/`), not nested here, since Flux's
+  standalone Flux `HelmRelease`s (the beekeepingit-gitops repo's `apps/dev/`), not nested here, since Flux's
   GitRepository-sourced charts don't recursively resolve a subchart's own vendored dependency (the
   original nested-wrapper approach silently deployed zero of the vendored chart's workload) — see
   [ADR-0012](../adr/0012-keycloak-minio-standalone-helmreleases.md) (which set this standalone
@@ -114,8 +114,8 @@ alerting) and contributing to `NFR-PER-1`.
 
 It is **its own chart** ([`infra/helm/observability/`](../../infra/helm/observability/)) +
 **its own Flux `HelmRelease`**
-([`infra/gitops/apps/dev/observability-helmrelease.yaml`](../../infra/gitops/apps/dev/observability-helmrelease.yaml),
-`dependsOn: [beekeepingit, minio]`), **not part of the beekeepingit umbrella** — its
+([`apps/dev/observability-helmrelease.yaml`](https://github.com/TiagoJVO/beekeepingit-gitops/blob/main/apps/dev/observability-helmrelease.yaml)
+in the beekeepingit-gitops repo, `dependsOn: [beekeepingit, minio]`), **not part of the beekeepingit umbrella** — its
 Loki/Tempo need MinIO's buckets at boot (Tempo hard-fails without its bucket, confirmed
 live), and MinIO's own `HelmRelease` depends on the umbrella for the `root-credentials`
 Secret; nesting the stack in the umbrella therefore deadlocks a fresh install
@@ -227,8 +227,8 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
   those. The whole client tree gates the run (not just `client/e2e/**`) because the PWA image
   under test is built in-job from the PR's own checkout (`#236`) — a client-only PR that skipped
   the e2e would ship the one artifact the test exists to exercise unverified (`#245`).
-- [`gitops-ci.yml`](../../.github/workflows/gitops-ci.yml) — kubeconform-validates the Flux
-  manifests under `infra/gitops/**`.
+- GitOps-manifest validation (`kubeconform` against the Flux CRD schemas) moved to the
+  `beekeepingit-gitops` repo's own `gitops-ci.yml` when the manifests were split out (D-27/ADR-0018).
 
 Deploy is **not** done from CI: a published GitHub Release triggers CI to publish images and open a
 tag-bump **pull request** against the GitOps state; a human merges it and Flux reconciles (D-27,
@@ -236,10 +236,12 @@ tag-bump **pull request** against the GitOps state; a human merges it and Flux r
 
 ## GitOps (Flux)
 
-[`infra/gitops/`](../../infra/gitops/) reconciles the umbrella chart above onto the `dev` cluster
-from this repo — a manual `helm install`/`upgrade` is no longer how `dev` gets updated once a
-change is merged to `main`. See the directory's own
-[README](../../infra/gitops/README.md) for layout and day-to-day operation, and
+The Flux manifests live in the separate
+[`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo (split out per
+D-27/[ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md)); Flux sources the umbrella
+**chart** from this repo and the **manifests** (HelmReleases, per-env overrides) from there, and
+reconciles them onto each cluster — a manual `helm install`/`upgrade` is no longer how `dev` gets
+updated once a change merges. See that repo's README for layout and day-to-day operation, and
 [ADR-0009](../adr/0009-gitops-flux.md) for why Flux and why hand-wired (not `flux bootstrap`).
 
 **Release-triggered promotion** closes the CI/CD loop (D-27,

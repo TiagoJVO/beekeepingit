@@ -90,15 +90,25 @@ jobs:
             infra:
               - 'infra/helm/**'
               - 'infra/cluster/**'
-              - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
               - '.github/workflows/helm-e2e.yml'
             e2e:
               - 'infra/helm/**'
               - 'infra/cluster/**'
-              - 'infra/gitops/apps/dev/authentik-helmrelease.yaml'
               - '.github/workflows/helm-e2e.yml'
               - 'client/**'
               - 'services/**'
+
+      # The Authentik HelmRelease used to bring up the IdP below lives in the
+      # beekeepingit-gitops repo now (D-27/ADR-0018), not this one. Check it out
+      # into a subdir so the bring-up step can apply it. Public repo, so the
+      # default token suffices; a change to it there can't trigger this e2e
+      # (cross-repo) — the gitops repo's own CI validates it instead.
+      - name: Check out the GitOps manifests (Authentik HelmRelease)
+        if: steps.changes.outputs.e2e == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: TiagoJVO/beekeepingit-gitops
+          path: beekeepingit-gitops
 
       # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
       # local dev (infra/cluster/*.sh) and the rest of CI use. (mise installs
@@ -273,7 +283,7 @@ jobs:
         if: steps.changes.outputs.e2e == 'true'
         run: |
           flux install
-          sed '/^  dependsOn:$/,+1d' infra/gitops/apps/dev/authentik-helmrelease.yaml \
+          sed '/^  dependsOn:$/,+1d' beekeepingit-gitops/apps/dev/authentik-helmrelease.yaml \
             | kubectl apply -f -
           # The server Deployment is created by helm-controller a moment after the
           # HelmRelease reconciles; wait for it to appear, then for the rollout (the

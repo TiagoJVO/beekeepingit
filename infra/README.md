@@ -19,12 +19,13 @@ infra/cluster/dev-down.sh  # uninstalls the releases, then deletes the k3d clust
 Requires `k3d`, `kubectl`, `helm`, `flux`, and `flock` on `PATH`. On Windows, run these from the
 WSL2 environment (see the local-dev-environment notes) — the scripts are plain POSIX `bash`.
 
-`dev-up.sh` does NOT apply `infra/gitops/clusters/dev/` (the one-time GitOps bootstrap that makes
-Flux auto-sync from this repo's `main` branch) — that would deploy the umbrella chart from
+`dev-up.sh` does NOT bootstrap GitOps (apply the `beekeepingit-gitops` repo's `clusters/dev/`, the
+one-time wiring that makes Flux auto-sync from `main`) — that would deploy the umbrella chart from
 `main`, ignoring whatever's checked out locally, the opposite of what a pre-merge dev/test loop
 needs. It also skips the observability stack (`#87`) — not one of `#22`'s components, and its
-HelmRelease depends on that same bootstrap `GitRepository`. See
-[`infra/gitops/README.md`](gitops/README.md) for the post-merge bootstrap step.
+HelmRelease depends on that same bootstrap `GitRepository`. The Flux manifests live in the separate
+[`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo now (D-27/ADR-0018);
+see its README for the post-merge bootstrap step.
 
 ### Step-by-step (what `dev-up.sh`/`dev-down.sh` actually do)
 
@@ -65,16 +66,18 @@ kubectl -n beekeepingit-dev wait --for=condition=ready pod \
   -l cnpg.io/cluster=beekeepingit-postgres --timeout=180s
 
 # 6. Authentik/MinIO are separate Flux HelmReleases (ADR-0012/ADR-0016), not part
-#    of the umbrella release above — either let Flux reconcile them (if bootstrapped,
-#    see infra/gitops/README.md) or apply them directly for local-only testing. Their
-#    `dependsOn: [beekeepingit]` targets a HelmRelease *object* that only exists
-#    once bootstrapped, so strip it for this direct-apply path (committed files
-#    untouched) — step 4's install already guarantees what dependsOn was
-#    protecting (the config/Postgres Secrets + blueprint ConfigMap these reference
-#    are created synchronously when the release's resources are applied, independent
-#    of `--wait`):
+#    of the umbrella release above, and their manifests live in the beekeepingit-gitops
+#    repo now (D-27/ADR-0018). dev-up.sh resolves a checkout via gitops-dir.sh (a
+#    shallow clone, or a BEEKEEPINGIT_GITOPS_DIR override); apply them directly for
+#    local-only testing. Their `dependsOn: [beekeepingit]` targets a HelmRelease
+#    *object* that only exists once bootstrapped, so strip it for this direct-apply
+#    path (committed files untouched) — step 4's install already guarantees what
+#    dependsOn was protecting (the config/Postgres Secrets + blueprint ConfigMap
+#    these reference are created synchronously when the release's resources are
+#    applied, independent of `--wait`):
+gitops_dir="$(infra/cluster/gitops-dir.sh)"
 for f in authentik-helmrelease.yaml minio-helmrelease.yaml; do
-  sed '/^  dependsOn:$/,+1d' "infra/gitops/apps/dev/$f" \
+  sed '/^  dependsOn:$/,+1d' "$gitops_dir/apps/dev/$f" \
     | infra/cluster/with-lock.sh kubectl apply -f -
 done
 
@@ -93,8 +96,8 @@ helm test beekeepingit --namespace beekeepingit-dev
 
 # 9. Tear down
 infra/cluster/with-lock.sh kubectl delete --ignore-not-found \
-  -f infra/gitops/apps/dev/authentik-helmrelease.yaml \
-  -f infra/gitops/apps/dev/minio-helmrelease.yaml
+  -f "$gitops_dir/apps/dev/authentik-helmrelease.yaml" \
+  -f "$gitops_dir/apps/dev/minio-helmrelease.yaml"
 infra/cluster/with-lock.sh helm uninstall beekeepingit --namespace beekeepingit-dev
 infra/cluster/down.sh
 ```

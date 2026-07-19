@@ -15,7 +15,7 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 | **MinIO**                    | S3-compatible object storage                                | charts/minio; via `shared/objectstore`      |
 | **Traefik**                  | Gateway/ingress (`/`, `/v1/*`, `/sync-stream/**`)           | charts/gateway; ADR-0012                    |
 | **OTel Collector → Grafana** | Traces/metrics/logs (observability)                         | helm/observability; ADR-0013                |
-| **Flux**                     | GitOps reconciliation                                       | infra/gitops; ADR-0009                      |
+| **Flux**                     | GitOps reconciliation                                       | beekeepingit-gitops repo; ADR-0009          |
 | **ghcr.io**                  | Container registry (`ghcr.io/tiagojvo/beekeepingit`)        | build-publish.yml; release-deploy.yml       |
 
 ## Inter-service dependency graph (internal HTTP)

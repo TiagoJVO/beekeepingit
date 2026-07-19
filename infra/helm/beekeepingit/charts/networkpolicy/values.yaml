@@ -403,7 +403,7 @@ edges:
   # observability and MinIO, is the correct pattern (bringing all three under
   # netpol with live-verified edges is tracked on #89).
 
-  # --- Observability (infra/gitops/apps/dev/observability-helmrelease.yaml
+  # --- Observability (the beekeepingit-gitops repo's apps/dev/observability-helmrelease.yaml
   # targetNamespace: beekeepingit-dev — same namespace) ---
   # services/values.yaml otelEndpoint: otel-collector:4317, shared by every
   # Go service. Attached per-service (not a namespace-wide egress-to-

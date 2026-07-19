@@ -51,8 +51,8 @@ does not exist`, crash-loop — confirmed live) until MinIO exists. So the umbre
    remote dependencies fine, verified live; only _nested_ subchart-of-a-subchart
    dependencies break, per [ADR-0012](0012-keycloak-minio-standalone-helmreleases.md)),
    plus the local `alert-webhook-sink` chart.
-   [`infra/gitops/apps/dev/observability-helmrelease.yaml`](../../infra/gitops/apps/dev/observability-helmrelease.yaml)
-   deploys it with `dependsOn: [beekeepingit, minio]`, giving the acyclic layering a
+   [`apps/dev/observability-helmrelease.yaml`](https://github.com/TiagoJVO/beekeepingit-gitops/blob/main/apps/dev/observability-helmrelease.yaml)
+   (in the beekeepingit-gitops repo, D-27/ADR-0018) deploys it with `dependsOn: [beekeepingit, minio]`, giving the acyclic layering a
    fresh cluster needs: umbrella (creates the Secret) → MinIO (creates the buckets) →
    observability (Tempo boots against an existing bucket). Pinned versions:
    `kube-prometheus-stack` 87.10.0, `loki` 7.0.0, `tempo` 1.24.4,

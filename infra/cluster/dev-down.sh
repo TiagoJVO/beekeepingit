@@ -7,10 +7,9 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$script_dir/../.." && pwd)"
 namespace="beekeepingit-dev"
 
-for bin in k3d kubectl helm flock; do
+for bin in k3d kubectl helm flock git; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "error: '$bin' not found on PATH" >&2
     exit 1
@@ -19,9 +18,12 @@ done
 
 if k3d cluster list beekeeping >/dev/null 2>&1; then
   echo "removing the Authentik/MinIO Flux HelmReleases"
+  # These manifests live in the beekeepingit-gitops repo now (D-27/ADR-0018);
+  # resolve a checkout (shallow clone, or a BEEKEEPINGIT_GITOPS_DIR override).
+  gitops_dir="$("$script_dir/gitops-dir.sh")"
   "$script_dir/with-lock.sh" kubectl delete --ignore-not-found \
-    -f "$repo_root/infra/gitops/apps/dev/authentik-helmrelease.yaml" \
-    -f "$repo_root/infra/gitops/apps/dev/minio-helmrelease.yaml"
+    -f "$gitops_dir/apps/dev/authentik-helmrelease.yaml" \
+    -f "$gitops_dir/apps/dev/minio-helmrelease.yaml"
 
   echo "uninstalling the beekeepingit umbrella release"
   "$script_dir/with-lock.sh" helm uninstall beekeepingit --namespace "$namespace" || true

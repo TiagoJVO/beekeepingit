@@ -216,11 +216,13 @@ Core technology decisions (2026-06-27). Detail and rationale in
   and committed like any other change** (branch → PR → squash-merge), then applied once with
   `kubectl apply -f infra/gitops/clusters/dev/` to bootstrap — **not** `flux bootstrap github`,
   which would push a deploy-key-backed commit directly to `main`, bypassing the PR-only workflow
-  (`CONTRIBUTING.md`). After the one-time apply, `infra/gitops/` is self-managed by Flux.
+  (`CONTRIBUTING.md`). After the one-time apply, the GitOps manifests are self-managed by Flux.
 - **Reconciliation is polling-only** (`GitRepository` interval, no GitHub webhook receiver) — the
   local cluster has no public endpoint for GitHub to call.
-- See [`infra/gitops/README.md`](../infra/gitops/README.md) and
-  [ADR-0009](../docs/adr/0009-gitops-flux.md). Touches `NFR-ARC-3`, `NFR-MNT-1`, `#86`.
+- **Note (D-27/ADR-0018):** the GitOps manifests have since moved out of this repo into the
+  separate [`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo; the
+  hand-wired, PR-only principle above is unchanged.
+- See [ADR-0009](../docs/adr/0009-gitops-flux.md). Touches `NFR-ARC-3`, `NFR-MNT-1`, `#86`.
 
 ## D-14 — Delivery model: per-feature milestones + cross-cutting streams
 

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Single-command bring-up for the whole local dev environment (#22,
 # NFR-ARC-2/NFR-ARC-3): the k3d cluster + CNPG operator (up.sh), the Flux
-# controllers (a previously-manual prerequisite, see infra/gitops/README.md —
-# made idempotent here so this script is genuinely self-contained from an
+# controllers (a previously-manual prerequisite, see the beekeepingit-gitops
+# repo's README — made idempotent here so this script is genuinely self-contained from an
 # empty cluster), the beekeepingit umbrella release (Postgres+PostGIS,
 # Authentik config/Postgres creds + blueprint, MinIO creds, gateway, PowerSync),
 # the standalone Authentik/MinIO Flux HelmReleases (applied directly, not via the
 # `main`-tracking GitOps bootstrap — see the note below), and a smoke test.
 #
-# Deliberately does NOT apply `infra/gitops/clusters/dev/` (the one-time
-# GitOps bootstrap that makes Flux auto-sync from this repo's `main` branch):
+# Deliberately does NOT bootstrap GitOps (apply the beekeepingit-gitops repo's
+# `clusters/dev/`, the one-time wiring that makes Flux auto-sync from `main`):
 # that would deploy the umbrella chart from `main`, ignoring whatever's
 # checked out locally — the opposite of what a pre-merge dev/test loop needs.
-# See infra/gitops/README.md for the post-merge bootstrap step. Also skips the
-# observability stack (#87) — it's not one of #22's components and its
+# See the beekeepingit-gitops README for the post-merge bootstrap step. Also
+# skips the observability stack (#87) — it's not one of #22's components and its
 # HelmRelease depends on that same bootstrap `GitRepository`.
 set -euo pipefail
 
@@ -22,7 +22,7 @@ repo_root="$(cd "$script_dir/../.." && pwd)"
 chart_dir="$repo_root/infra/helm/beekeepingit"
 namespace="beekeepingit-dev"
 
-for bin in k3d kubectl helm flux flock; do
+for bin in k3d kubectl helm flux flock git; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "error: '$bin' not found on PATH" >&2
     exit 1
@@ -82,10 +82,14 @@ wait_for_pod cnpg.io/cluster=beekeepingit-postgres 180s
 
 echo
 echo "applying the Authentik/MinIO Flux HelmReleases directly (local-only, not GitOps-synced)"
+# These manifests live in the beekeepingit-gitops repo now (D-27/ADR-0018), not
+# this one — resolve a checkout (shallow clone, or a BEEKEEPINGIT_GITOPS_DIR
+# override for offline use). See gitops-dir.sh.
+gitops_dir="$("$script_dir/gitops-dir.sh")"
 # Both files' `dependsOn: [beekeepingit]` targets the *HelmRelease object*
 # named "beekeepingit" that only exists once the cluster is GitOps-bootstrapped
-# (infra/gitops/clusters/dev/) — which this script deliberately skips (see the
-# note above). Stripped here for this direct-apply path only (committed files
+# (the gitops repo's clusters/dev/) — which this script deliberately skips (see
+# the note above). Stripped here for this direct-apply path only (committed files
 # are untouched): the umbrella release install above already guarantees the
 # credential Secret/ConfigMap these reference exist (created synchronously as
 # part of applying the release's resources, independent of `--wait`), which is
@@ -93,7 +97,7 @@ echo "applying the Authentik/MinIO Flux HelmReleases directly (local-only, not G
 # (not piped together) since neither file ends with its own trailing `---`, so
 # concatenating them loses the document boundary between the two.
 for f in authentik-helmrelease.yaml minio-helmrelease.yaml; do
-  sed '/^  dependsOn:$/,+1d' "$repo_root/infra/gitops/apps/dev/$f" \
+  sed '/^  dependsOn:$/,+1d' "$gitops_dir/apps/dev/$f" \
     | "$script_dir/with-lock.sh" kubectl apply -f -
 done
 

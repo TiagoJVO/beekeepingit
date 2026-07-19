@@ -59,7 +59,7 @@ selfSignedCertDays: 365
 certManager:
   enabled: false
   # Name of a cluster-scoped ClusterIssuer (not templated here — it's cluster
-  # infrastructure, not release-scoped; see infra/gitops/clusters/staging/
+  # infrastructure, not release-scoped; see the beekeepingit-gitops repo's clusters/staging/
   # cert-manager-issuer.yaml).
   clusterIssuer: ""
 

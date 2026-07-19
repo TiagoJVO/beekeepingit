@@ -8,7 +8,7 @@ description: >-
   the `platform-operator` group, and one seed user) — the analogue of Keycloak's realm
   import. Authentik itself (the upstream `authentik/authentik` chart, with bundled Postgres)
   is deployed separately as its own Flux `HelmRelease`
-  (`infra/gitops/apps/dev/authentik-helmrelease.yaml`) — not nested here — since Flux's
+  (the beekeepingit-gitops repo's `apps/dev/authentik-helmrelease.yaml`) — not nested here — since Flux's
   GitRepository-sourced charts don't recursively resolve a subchart's own vendored
   dependency. See ADR-0012 (pattern) and ADR-0016 (the Keycloak→Authentik swap) plus the
   frozen contract in docs/architecture/oidc-integration.md. Production hardening (real

@@ -265,7 +265,7 @@ errors, `snake_case`, UUID v7 ids, bearer JWT, tenancy never a client parameter)
 | **`GET /v1/sync/token`**                        | PWA (PowerSync `fetchCredentials`) → `sync`    | Bearer (OIDC JWT) → `200 { token, expires_at }`; token = RS256 sync token, TTL minutes, org claim from membership ([sync.md](sync.md) §3.4)                                                                                                                         |
 | **`POST /v1/sync/batch`**                       | PWA (PowerSync `uploadData`) → `sync`          | Bearer → body = one client transaction: `{ ops: [ { op: put\|patch\|delete, entity_type, id, data, updated_at } ] }`; `200` per-op results (`applied` · `superseded` · rejected detail) or `422` problem+json with the offending op(s) ([sync.md](sync.md) §5.2/§6) |
 | **`GET /v1/apiaries`, `GET /v1/apiaries/{id}`** | PWA (e2e assertions; later Admin) → `apiaries` | Existing contract [`apiaries.openapi.yaml`](../../contracts/openapi/apiaries.openapi.yaml); cursor pagination                                                                                                                                                       |
-| **Sync stream**                                 | PWA (PowerSync web SDK) ↔ PowerSync service    | Engine protocol (behind the ADR-0005/NFR-ARC-2 boundary), authenticated by the **sync token**; org-parameterized stream over `apiaries` + the active `organizations` row                                                                                            |
+| **Sync stream**                                 | PWA (PowerSync web SDK) ↔ PowerSync service   | Engine protocol (behind the ADR-0005/NFR-ARC-2 boundary), authenticated by the **sync token**; org-parameterized stream over `apiaries` + the active `organizations` row                                                                                            |
 
 A new **`contracts/openapi/sync.openapi.yaml`** (token + batch, stamped from
 `_shared/components.openapi.yaml`) is a #23 deliverable — it is the write-back seam's public
@@ -575,7 +575,8 @@ driven through it:
   `traefik` root span for `POST /v1/sync/batch` continuing into the `sync` service and its
   `/internal/sync/validate` + `/internal/sync/apply` fan-out to `apiaries` (W3C `traceparent`
   propagated across the internal REST calls). Traefik's own span is enabled by
-  [`traefik-tracing.yaml`](../../infra/gitops/apps/dev/traefik-tracing.yaml).
+  [`traefik-tracing.yaml`](https://github.com/TiagoJVO/beekeepingit-gitops/blob/main/apps/dev/traefik-tracing.yaml)
+  (in the beekeepingit-gitops repo).
 - **Loki** holds per-service structured logs (`service_name` = `identity`/`organizations`/
   `apiaries`/`sync`) carrying `trace_id`/`span_id`, so a log line links back to its trace.
 - `infra/observability-smoke-test.sh` passes against this collector, closing #87's deferred

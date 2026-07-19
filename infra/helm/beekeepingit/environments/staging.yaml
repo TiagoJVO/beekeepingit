@@ -1,5 +1,5 @@
 # Staging overlay — deployed on Scaleway Kapsule (D-26); mirrors the `values:`
-# block of infra/gitops/apps/staging/beekeepingit-helmrelease.yaml (the
+# block of the beekeepingit-gitops repo's apps/staging/beekeepingit-helmrelease.yaml (the
 # actual Flux-managed source of truth) so this file stays useful for manual
 # pre-merge `helm install -f environments/staging.yaml` testing instead of
 # drifting into a stale placeholder — keep the two in sync by hand when
