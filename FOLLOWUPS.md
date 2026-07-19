@@ -26,8 +26,11 @@ beekeepingit-gitops/clusters/dev/` — else its Kustomization goes stale when `i
   `beekeepingit@main`. (The new repo also wants branch protection on `main` before Phase 3 wires the
   tag-bump PR into it.)
 - **Rework `release-deploy.yml`** (Phase 3) — add `-rc`→staging / bare-tag→prod routing and the
-  release→tag-bump-PR step against the new repo. Needs a scoped token / GitHub App for the
-  cross-repo PR (a new standing secret — pending sign-off).
+  release→tag-bump-PR step against the new repo. **Credential decided: a fine-grained PAT** scoped
+  to `contents:write` + `pull_requests:write` on `beekeepingit-gitops` only, stored as the
+  `beekeepingit` Actions secret `GITOPS_PR_TOKEN` (user creates it — Claude can't create/enter
+  tokens). Prerequisites before this can run end-to-end: (1) that PAT + secret, (2) branch
+  protection on `beekeepingit-gitops`'s `main`.
 - **PWA build path** (Phase 4) — move the only deployable client build into `release-deploy.yml`
   (tagged by release version), leaving `build-publish.yml` as pure CI. Coupled to Phase 3 (same
   file); this also resolves the current `build-publish.yml` per-env client matrix and the
