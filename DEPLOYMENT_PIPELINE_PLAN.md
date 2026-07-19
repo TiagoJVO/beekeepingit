@@ -235,8 +235,8 @@ hostnames, not one** — an app host and a separate auth host (`gateway.appHost`
 for staging). So the real scheme needs 4 hostnames total once both environments
 are live, e.g. (naming TBD with user):
 
-| Environment | App host                         | Auth host                             |
-| ----------- | -------------------------------- | ------------------------------------- |
+| Environment | App host                        | Auth host                            |
+| ----------- | ------------------------------- | ------------------------------------ |
 | prod        | `beekeepingit.melargil.pt`      | `auth.beekeepingit.melargil.pt` (?)  |
 | staging/rc  | `beekeeping-rc.melargil.pt` (?) | `auth.beekeeping-rc.melargil.pt` (?) |
 
