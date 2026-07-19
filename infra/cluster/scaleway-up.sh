@@ -11,7 +11,6 @@
 #     for how to learn its IP once the ingress controller is up)
 set -euo pipefail
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cluster_name="${SCW_K8S_CLUSTER_NAME:-beekeepingit-staging}"
 region="${SCW_REGION:-fr-par}"
 # DEV1-M (3vCPU/4GB) was the original default but proved insufficient on the
