@@ -1,6 +1,17 @@
-# Prod overlay — not deployed anywhere yet (NFR-ARC-2: design for future
-# cloud/environment integration without forcing it). Demonstrates the
-# per-environment override convention future service subcharts follow.
+# Prod overlay — NOT deployed anywhere yet, and deliberately so: D-26 scopes
+# the first real cloud deployment to staging-grade only, until Q-DR
+# (backup/DR targets, still open) and #90 (GDPR data export/erasure UI) land
+# — both scheduled at M6 · Export in the D-14 phase plan. Standing up a real
+# prod environment before then would mean real user data with no DR/export
+# story yet.
+#
+# Structurally mirrors environments/staging.yaml (see that file's comments
+# and infra/gitops/apps/staging/beekeepingit-helmrelease.yaml for the full
+# rationale behind each shape) so the two stay easy to diff, but every
+# host/hostname-shaped value below is a clearly-marked placeholder — there is
+# no prod cluster, IP, or domain yet. Fill these in for real (and add
+# infra/gitops/clusters/prod/, apps/prod/ mirroring staging's) when prod
+# actually gets built.
 global:
   environment: prod
   namespace: beekeepingit-prod
@@ -14,3 +25,50 @@ global:
     large:
       requests: { cpu: 500m, memory: 512Mi }
       limits: { cpu: "1", memory: 1Gi }
+  # TODO: real prod domain, once one exists — not nip.io (that's a staging
+  # convenience; prod needs a real, owned, brandable domain).
+  appOrigin: https://app.beekeepingit.example # TODO: real domain
+
+gateway:
+  appHost: app.beekeepingit.example # TODO: real domain
+  authHost: auth.beekeepingit.example # TODO: real domain
+  certManager:
+    enabled: true
+    clusterIssuer: letsencrypt-prod # TODO: confirm this ClusterIssuer exists in prod's cluster
+
+services:
+  oidc:
+    issuerUrl: https://auth.beekeepingit.example/application/o/beekeepingit/ # TODO: real domain
+    discoveryUrl: http://authentik-server/application/o/beekeepingit/
+    audience: beekeepingit-pwa
+  # Same 7 services as environments/staging.yaml — see that file's comment.
+  # Image-automation is deferred everywhere for now (dev and staging both
+  # still run `latest`); revisit before prod ever actually deploys — running
+  # prod on a floating `latest` tag with no image-automation/promotion gate
+  # would be a real regression from every other environment's story.
+  services:
+    identity:
+      tag: latest
+    organizations:
+      tag: latest
+    apiaries:
+      tag: latest
+    activities:
+      tag: latest
+    journeys:
+      tag: latest
+    todos:
+      tag: latest
+    sync:
+      tag: latest
+
+pwa:
+  image:
+    tag: latest # TODO: a real per-environment CI-built image — see FOLLOWUPS.md
+
+networkpolicy:
+  # Unset (defaults to `kube-system`, charts/networkpolicy/values.yaml) —
+  # prod's own cluster bring-up hasn't been designed yet, so which namespace
+  # its ingress controller lives in isn't known. Revisit alongside
+  # infra/cluster/scaleway-up.sh once prod's cluster script exists — see
+  # that script's own gatewayNamespace: traefik override for the pattern.
