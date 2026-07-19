@@ -169,7 +169,11 @@ void main() {
     ]) {
       // Hero title + body (apiary/activity detail plum header) and the notes
       // "sticky note" callout are genuine body text, held to the 4.5:1 bar.
-      _expectAaContrast('$name hero onHeroSurface', brand.onHeroSurface, brand.heroSurface);
+      _expectAaContrast(
+        '$name hero onHeroSurface',
+        brand.onHeroSurface,
+        brand.heroSurface,
+      );
       _expectAaContrast(
         '$name hero onHeroSurfaceMuted',
         brand.onHeroSurfaceMuted,
@@ -209,7 +213,8 @@ void main() {
     expect(
       cresta,
       greaterThan(1.3),
-      reason: 'cresta icon-on-tint ($cresta:1) — decorative, but should stay '
+      reason:
+          'cresta icon-on-tint ($cresta:1) — decorative, but should stay '
           'visibly distinct from its tile',
     );
   });

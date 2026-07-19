@@ -9,13 +9,13 @@
 
 ## Where the system lives (`client/lib/theming/`)
 
-| File                | What                                                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `brand_tokens.dart` | Every brand **colour** hex (single source of truth). Includes the activity-type palette, notes-card and trailing-chevron tints.        |
-| `brand_dimens.dart` | Every brand **radius / control height / spacing** value.                                                                               |
-| `brand_theme.dart`  | `BrandTheme` `ThemeExtension` — look-and-feel roles Material's `ColorScheme` lacks (hero surface, eyebrow, notes, per-type accents). Read via `context.brand`. Brightness-aware. |
-| `app_theme.dart`    | Builds `ThemeData` from the above: colour scheme **plus** component themes (cards, inputs, buttons, chips, nav, FAB) so default widgets already look right. |
-| `brand_widgets.dart`| The shared building blocks screens compose (see below).                                                                                |
+| File                 | What                                                                                                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `brand_tokens.dart`  | Every brand **colour** hex (single source of truth). Includes the activity-type palette, notes-card and trailing-chevron tints.                                                  |
+| `brand_dimens.dart`  | Every brand **radius / control height / spacing** value.                                                                                                                         |
+| `brand_theme.dart`   | `BrandTheme` `ThemeExtension` — look-and-feel roles Material's `ColorScheme` lacks (hero surface, eyebrow, notes, per-type accents). Read via `context.brand`. Brightness-aware. |
+| `app_theme.dart`     | Builds `ThemeData` from the above: colour scheme **plus** component themes (cards, inputs, buttons, chips, nav, FAB) so default widgets already look right.                      |
+| `brand_widgets.dart` | The shared building blocks screens compose (see below).                                                                                                                          |
 
 Field-action buttons live in `core/widgets/field_action_button.dart`
 (`PrimaryActionButton` = honey 60px; `SecondaryActionButton` = outlined 56px,

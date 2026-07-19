@@ -58,9 +58,7 @@ void main() {
   testWidgets('BrandCard fires onTap', (tester) async {
     var tapped = false;
     await tester.pumpWidget(
-      _host(
-        BrandCard(onTap: () => tapped = true, child: const Text('tap me')),
-      ),
+      _host(BrandCard(onTap: () => tapped = true, child: const Text('tap me'))),
     );
     await tester.tap(find.text('tap me'));
     expect(tapped, isTrue);
@@ -95,9 +93,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _host(
-        const EmptyState(message: 'No results.', icon: Icons.search_off),
-      ),
+      _host(const EmptyState(message: 'No results.', icon: Icons.search_off)),
     );
     expect(find.text('No results.'), findsOneWidget);
     expect(find.byIcon(Icons.search_off), findsOneWidget);
@@ -107,11 +103,7 @@ void main() {
     var tapped = false;
     await tester.pumpWidget(
       _host(
-        BrandChip(
-          label: 'Harvest',
-          selected: true,
-          onTap: () => tapped = true,
-        ),
+        BrandChip(label: 'Harvest', selected: true, onTap: () => tapped = true),
       ),
     );
     expect(find.text('Harvest'), findsOneWidget);
