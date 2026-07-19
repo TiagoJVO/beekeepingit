@@ -36,8 +36,15 @@ beekeepingit-gitops/clusters/dev/` — else its Kustomization goes stale when `i
   `build-publish.yml`'s client is now a single define-less pure-CI build, which also resolves the
   old per-env client matrix and the `client:latest` vs. dev HelmRelease `tag: latest` mismatch
   (`client:latest` now carries dev-default URLs, which is what dev's Flux path pulls).
-- **Real domain `melargil.net`** (Phase 5) — 4 hostnames (app+auth × staging+prod, ADR-0016),
-  Scaleway reserved IPs, Cloudflare DNS. Subdomain naming still to confirm with the user.
+- **Real domain `melargil.net`** (Phase 5) — naming **confirmed** (consistent `-rc`): prod
+  `beekeepingit.melargil.net` + `auth.beekeepingit.melargil.net`; staging
+  `beekeepingit-rc.melargil.net` + `auth.beekeepingit-rc.melargil.net`. Still to do, in order
+  (sequenced after the cluster is up, so the hosts resolve): (1) a Scaleway reserved IP per env
+  attached to Traefik's LoadBalancer; (2) Cloudflare A records (DNS-only / grey-cloud) → those IPs;
+  (3) swap the nip.io / `.example` values for the real ones in the gitops repo's
+  `apps/{staging,prod}/beekeepingit-helmrelease.yaml`, this repo's `environments/{staging,prod}.yaml`,
+  and `release-deploy.yml`'s `publish-client` dart-defines. cert-manager stays HTTP-01 (no change)
+  unless the Cloudflare proxy is turned on for these records.
 - **End-to-end verification** (Phase 6) — bring staging up, cut `v0.0.1-rc1`, walk the whole chain.
 
 ### Other
