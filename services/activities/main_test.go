@@ -1804,6 +1804,100 @@ func TestActivitiesRest_History_CrossOrg_NotFound(t *testing.T) {
 	}
 }
 
+// TestActivitiesRest_History_ChangePayloadNeverEmbedsPersonalData is the
+// activities counterpart of apiaries' own pseudonymity regression
+// (TestApiariesSlice_History_ChangePayloadNeverEmbedsPersonalData, #59).
+// history.md §7.3 makes GDPR erasure safe by CONSTRUCTION: an audit row
+// carries only the opaque actor UUID, never denormalized names/emails — so
+// erasing a user from identity.users leaves nothing personal behind in any
+// service's audit_log. That guarantee is only as good as its weakest write
+// path, and #60 gave activities its own HTTP read surface for these rows.
+//
+// Asserts against the HTTP response rather than the table directly (unlike
+// the apiaries test): the wire shape is what #60 actually exposed, so this
+// guards the DTO mapping too, not just what got stored. Covers all three
+// audit change types AND the sync_conflict_log "superseded" entry, whose
+// change carries whole winning/losing row payloads — the likeliest place for
+// a field to smuggle personal data in unnoticed.
+func TestActivitiesRest_History_ChangePayloadNeverEmbedsPersonalData(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	// create + update + delete over REST (three audit change types)...
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	// ...plus a stale offline edit that loses LWW, producing a superseded
+	// conflict row with full winning/losing payloads.
+	losingOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2020-01-01T00:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-17",
+			"attributes": map[string]any{"notes": "stale offline edit"},
+		},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{losingOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("losing apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getActivityHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) == 0 {
+		t.Fatalf("history returned no entries; the assertions below would vacuously pass")
+	}
+	var sawSuperseded bool
+	for _, e := range got.Data {
+		if e.EventKind == history.EventSuperseded {
+			sawSuperseded = true
+		}
+	}
+	if !sawSuperseded {
+		t.Fatalf("no superseded entry in the timeline — the conflict payload, this test's main target, went unchecked: %+v", got.Data)
+	}
+
+	// devseed's known PII — if it ever leaked into a payload it would appear
+	// verbatim as one of these substrings, at any nesting depth.
+	forbidden := []string{devseed.UserName, devseed.UserEmail}
+
+	for _, e := range got.Data {
+		body := string(e.Change)
+		for _, pii := range forbidden {
+			if strings.Contains(body, pii) {
+				t.Fatalf("change payload for event_kind=%s contains denormalized PII %q: %s", e.EventKind, pii, body)
+			}
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(e.Change, &decoded); err != nil {
+			t.Fatalf("change payload for event_kind=%s is not a JSON object: %s", e.EventKind, body)
+		}
+		for _, key := range []string{"actor_name", "name", "email"} {
+			if _, ok := decoded[key]; ok {
+				t.Fatalf("change payload for event_kind=%s embeds a %q field: %s", e.EventKind, key, body)
+			}
+		}
+		// The actor is exposed as an opaque UUID and nothing else.
+		if e.ActorUserID != nil && *e.ActorUserID != devseed.UserID {
+			t.Fatalf("ActorUserID = %q, want the opaque devseed user UUID %q", *e.ActorUserID, devseed.UserID)
+		}
+	}
+}
+
 // --- /internal/sync validate/apply — edit (#40) ---
 
 func TestActivitiesSync_Apply_Patch_UpdatesActivity(t *testing.T) {

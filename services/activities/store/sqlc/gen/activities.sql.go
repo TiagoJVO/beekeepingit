@@ -443,9 +443,11 @@ type ListEntityTimelineRow struct {
 // audit_log rows and the {winning_payload, losing_payload, winner} conflict
 // payload for sync_conflict_log rows — the two tables' change shapes differ
 // by design (§3 vs §4.2), so callers branch on event_kind to interpret it.
-// Unlike apiaries' own copy of this query, this one IS exposed via HTTP from
-// the moment it's added (GET /v1/activities/{id}/history, #60) — activities
-// had no prior "typed groundwork, no HTTP surface yet" stage for it.
+// Exposed via HTTP from the moment it's added (GET /v1/activities/{id}/
+// history, #60) — activities had no prior "typed groundwork, no HTTP surface
+// yet" stage for it, unlike apiaries' own copy of this query, which sat
+// unexposed between #61 and #60 and is now served by that service's
+// equivalent route.
 func (q *Queries) ListEntityTimeline(ctx context.Context, arg ListEntityTimelineParams) ([]ListEntityTimelineRow, error) {
 	rows, err := q.db.Query(ctx, listEntityTimeline, arg.OrganizationID, arg.EntityType, arg.EntityID)
 	if err != nil {
