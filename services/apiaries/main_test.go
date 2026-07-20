@@ -1446,6 +1446,170 @@ func TestApiariesRest_History_CreateUpdateDeleteEachProduceOneAuditRow(t *testin
 	}
 }
 
+// historyEntryView mirrors api/history.go's historyEntryDTO wire shape — this
+// test file's own decode target (can't import the api package's unexported
+// type across packages), matching apiaryView's own convention just below.
+type historyEntryView struct {
+	ID            string          `json:"id"`
+	EntityType    string          `json:"entity_type"`
+	EntityID      string          `json:"entity_id"`
+	EventKind     string          `json:"event_kind"`
+	ActorUserID   *string         `json:"actor_user_id"`
+	OccurredAt    time.Time       `json:"occurred_at"`
+	RecordedAt    time.Time       `json:"recorded_at"`
+	ChangedFields []string        `json:"changed_fields"`
+	Change        json.RawMessage `json:"change"`
+}
+
+type historyListView struct {
+	Data []historyEntryView `json:"data"`
+}
+
+func (f *apiariesFixture) getApiaryHistory(t *testing.T, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	return f.do(t, http.MethodGet, "/v1/apiaries/"+id+"/history", nil)
+}
+
+// TestApiariesRest_History_GetReturnsCombinedTimelineChronologically is #60's
+// core AC: GET /v1/apiaries/{id}/history exposes the same combined
+// audit_log+sync_conflict_log timeline ListEntityTimeline (#61) already
+// builds — create/update/delete via the REST write paths, then read it back
+// over HTTP in chronological (recorded_at) order, oldest first, exactly like
+// f.auditLogFor's own direct-DB assertions elsewhere in this file.
+func TestApiariesRest_History_GetReturnsCombinedTimelineChronologically(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Encosta do Sol", int32Ptr(3), nil)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"hive_count": 12}); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/apiaries/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getApiaryHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, update, delete): %+v", len(got.Data), got.Data)
+	}
+	wantKinds := []string{history.ChangeCreate, history.ChangeUpdate, history.ChangeDelete}
+	for i, want := range wantKinds {
+		e := got.Data[i]
+		if e.EventKind != want {
+			t.Fatalf("history[%d].EventKind = %q, want %q", i, e.EventKind, want)
+		}
+		if e.EntityType != "apiary" || e.EntityID != id {
+			t.Fatalf("history[%d] entity = (%q,%q), want (apiary,%q)", i, e.EntityType, e.EntityID, id)
+		}
+		if e.ActorUserID == nil || *e.ActorUserID != devseed.UserID {
+			t.Fatalf("history[%d].ActorUserID = %v, want %q", i, e.ActorUserID, devseed.UserID)
+		}
+		if e.OccurredAt.IsZero() || e.RecordedAt.IsZero() {
+			t.Fatalf("history[%d] has a zero timestamp: %+v", i, e)
+		}
+	}
+	if len(got.Data[1].ChangedFields) != 1 || got.Data[1].ChangedFields[0] != "hive_count" {
+		t.Fatalf("update entry ChangedFields = %v, want [hive_count]", got.Data[1].ChangedFields)
+	}
+	// Chronological, oldest first (recorded_at, matching auditLogFor's own
+	// ordering) — not just the right length/kinds.
+	if !got.Data[0].RecordedAt.Before(got.Data[1].RecordedAt) || !got.Data[1].RecordedAt.Before(got.Data[2].RecordedAt) {
+		t.Fatalf("history entries not chronologically ordered: %+v", got.Data)
+	}
+}
+
+// TestApiariesRest_History_ConflictSurfacesAsSupersededOverHTTP is the HTTP
+// counterpart of TestApiariesSlice_History_ConflictSurfacesInCombinedTimeline
+// (which asserts the same thing directly against sqlcgen.ListEntityTimeline):
+// an LWW-losing offline edit shows up over the new REST endpoint as a
+// "superseded" event (history.md §6), not silently missing.
+func TestApiariesRest_History_ConflictSurfacesAsSupersededOverHTTP(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	otherUser := sameOrgOtherUserCaller()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Encosta Nova", 3, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+	winningTS := t0.Add(2 * time.Minute)
+	if got := f.applyAs(t, otherUser, patchHive(id, 20, winningTS)); got.Results[0].Result != "applied" {
+		t.Fatalf("winning edit result = %q, want applied", got.Results[0].Result)
+	}
+	losingTS := t0.Add(time.Minute)
+	if got := f.apply(t, patchHive(id, 12, losingTS)); got.Results[0].Result != "superseded" {
+		t.Fatalf("losing edit result = %q, want superseded", got.Results[0].Result)
+	}
+
+	rec := f.getApiaryHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, winning update, superseded loss): %+v", len(got.Data), got.Data)
+	}
+	superseded := got.Data[2]
+	if superseded.EventKind != history.EventSuperseded {
+		t.Fatalf("last entry EventKind = %q, want %q", superseded.EventKind, history.EventSuperseded)
+	}
+	if superseded.ChangedFields != nil {
+		t.Fatalf("superseded entry ChangedFields = %v, want nil (only audit_log rows carry it)", superseded.ChangedFields)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(superseded.Change, &change); err != nil {
+		t.Fatalf("unmarshal superseded change: %v", err)
+	}
+	if change["winner"] != "server" {
+		t.Fatalf("superseded change[winner] = %v, want server", change["winner"])
+	}
+}
+
+// TestApiariesRest_History_NotFound_UnknownID: a history request for an id
+// that was never created 404s, same as GET /v1/apiaries/{id} itself.
+func TestApiariesRest_History_NotFound_UnknownID(t *testing.T) {
+	f := newApiariesFixture(t)
+	rec := f.getApiaryHistory(t, uuid.NewString())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("history status for unknown id = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestApiariesRest_History_CrossOrg_NotFound is the #60 IDOR regression: org
+// B must not be able to read org A's apiary history by id, mirroring
+// TestApiariesSlice_CrossOrg_GetReturns404NotFound and the activities
+// cross-org carry-over fix (#284/#39) this task explicitly calls out not to
+// regress. 404 (ADR-0002 scope-hiding), not a distinguishable
+// exists-but-forbidden signal, and not an empty-but-200 body either (which
+// would still leak "this id exists in some org").
+func TestApiariesRest_History_CrossOrg_NotFound(t *testing.T) {
+	f := newApiariesFixture(t)
+	id := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	if got := f.apply(t, putOp(id, "Org A Apiary", 5, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create result = %q, want applied", got.Results[0].Result)
+	}
+
+	other := otherOrgCaller()
+	rec := f.doAs(t, other, http.MethodGet, "/v1/apiaries/"+id+"/history", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-org history status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestApiariesRest_Notes_CreateAndUpdateRoundTrip is #196's core REST AC:
 // notes is optional on create, present on read when set, and independently
 // updatable via PATCH without disturbing other fields (mirrors how

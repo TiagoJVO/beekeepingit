@@ -132,3 +132,40 @@ SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, 
 FROM activities.audit_log
 WHERE organization_id = $1 AND entity_type = $2 AND entity_id = $3
 ORDER BY recorded_at, id;
+
+-- name: ListEntityTimeline :many
+-- The combined per-entity timeline (#60 AC, history.md §6), mirroring
+-- apiaries' ListEntityTimeline query (services/apiaries/store/sqlc/queries/
+-- apiaries.sql, #61) exactly, against this service's own audit_log/
+-- sync_conflict_log tables: UNIONs activities.audit_log (applied
+-- create/update/delete rows, event_kind = change_type) with
+-- activities.sync_conflict_log (LWW-loss rows, event_kind hardcoded
+-- 'superseded' — mirrors history.EventSuperseded — history.md §6 "LWW
+-- losers... surfaced as a superseded timeline event, not silently
+-- overwritten"), ordered chronologically. change carries the audit delta for
+-- audit_log rows and the {winning_payload, losing_payload, winner} conflict
+-- payload for sync_conflict_log rows — the two tables' change shapes differ
+-- by design (§3 vs §4.2), so callers branch on event_kind to interpret it.
+-- Exposed via HTTP from the moment it's added (GET /v1/activities/{id}/
+-- history, #60) — activities had no prior "typed groundwork, no HTTP surface
+-- yet" stage for it, unlike apiaries' own copy of this query, which sat
+-- unexposed between #61 and #60 and is now served by that service's
+-- equivalent route.
+SELECT timeline.id, timeline.organization_id, timeline.entity_type, timeline.entity_id,
+       timeline.event_kind, timeline.actor_user_id, timeline.occurred_at, timeline.recorded_at,
+       timeline.changed_fields, timeline.change
+FROM (
+    SELECT al.id, al.organization_id, al.entity_type, al.entity_id, al.change_type AS event_kind,
+           al.actor_user_id, al.occurred_at, al.recorded_at, al.changed_fields, al.change
+    FROM activities.audit_log al
+    WHERE al.organization_id = $1 AND al.entity_type = $2 AND al.entity_id = $3
+
+    UNION ALL
+
+    SELECT scl.id, scl.organization_id, scl.entity_type, scl.entity_id, 'superseded' AS event_kind,
+           scl.actor_user_id, scl.occurred_at, scl.recorded_at, NULL::text[] AS changed_fields,
+           jsonb_build_object('winning_payload', scl.winning_payload, 'losing_payload', scl.losing_payload, 'winner', scl.winner) AS change
+    FROM activities.sync_conflict_log scl
+    WHERE scl.organization_id = $1 AND scl.entity_type = $2 AND scl.entity_id = $3
+) timeline
+ORDER BY timeline.recorded_at, timeline.id;

@@ -1695,5 +1695,111 @@
   "deleteTodoCancelAction": "Cancel",
   "@deleteTodoCancelAction": {
     "description": "Cancel action of the todo delete-confirmation dialog (#293) — always a no-op"
+  },
+  "historySectionTitle": "History",
+  "@historySectionTitle": {
+    "description": "Header of the per-entity change-history timeline section on an apiary/activity detail screen (#60, FR-HIS-1)"
+  },
+  "historyScreenTitle": "History",
+  "@historyScreenTitle": {
+    "description": "App-bar title of the full per-entity history screen reached from the detail-screen section's view-all link (#60, FR-HIS-1)"
+  },
+  "historyEmpty": "No changes recorded yet",
+  "@historyEmpty": {
+    "description": "Empty state of the history timeline (#60) — also what an offline device with no synced history slice shows, which is a legitimate empty result, not an error"
+  },
+  "historyError": "Could not load history: {error}",
+  "@historyError": {
+    "description": "Error state of the history timeline (#60)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "historyViewAllAction": "View all",
+  "@historyViewAllAction": {
+    "description": "Link from the capped history section on a detail screen to the full history screen (#60) — mirrors the activities section's own view-all affordance (#42)"
+  },
+  "historyEventCreated": "Created",
+  "@historyEventCreated": {
+    "description": "Timeline label for an audit_log change_type=create row (#60, history.md §3)"
+  },
+  "historyEventUpdated": "Updated",
+  "@historyEventUpdated": {
+    "description": "Timeline label for an audit_log change_type=update row (#60, history.md §3)"
+  },
+  "historyEventDeleted": "Deleted",
+  "@historyEventDeleted": {
+    "description": "Timeline label for an audit_log change_type=delete row — a soft-delete tombstone (#60, history.md §3)"
+  },
+  "historyEventSuperseded": "Superseded",
+  "@historyEventSuperseded": {
+    "description": "Timeline label for a sync_conflict_log row: an offline edit that lost last-write-wins and was preserved rather than dropped (#60, history.md §6)"
+  },
+  "historyEventUnknown": "Changed",
+  "@historyEventUnknown": {
+    "description": "Fallback timeline label for an event kind this client version doesn't recognize (#60) — the vocabulary is extensible server-side (D-20), so an unknown kind degrades to a generic label instead of breaking the timeline"
+  },
+  "historyChangedFieldsValue": "Changed: {fields}",
+  "@historyChangedFieldsValue": {
+    "description": "Sub-line of an update entry listing which fields changed (#60) — fields is already localized and comma-joined by the caller",
+    "placeholders": {
+      "fields": {
+        "type": "String"
+      }
+    }
+  },
+  "historySupersededDetail": "Replaced by a newer version from another device",
+  "@historySupersededDetail": {
+    "description": "Sub-line of a superseded entry (#60, history.md §6 'your offline change was superseded by a newer value') — explains that the edit was kept in the record, not lost"
+  },
+  "historyActorYou": "You",
+  "@historyActorYou": {
+    "description": "History-entry actor when it is the signed-in user (#60) — mirrors activityPerformedByYou"
+  },
+  "historyActorMember": "Member {id}",
+  "@historyActorMember": {
+    "description": "History-entry actor fallback when the org roster has no display name for the user id (#60) — mirrors activityPerformedByMember; id is a short trailing id fragment",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "historyActorUnknown": "Unknown",
+  "@historyActorUnknown": {
+    "description": "History-entry actor when the row carries no actor_user_id at all (#60) — history.md §3 allows a null actor"
+  },
+  "historyEntrySemanticLabel": "{event} by {actor}, {timestamp}",
+  "@historyEntrySemanticLabel": {
+    "description": "Screen-reader label for one history timeline entry (#60, WCAG 2.2 AA) — collapses the visually-separate event/actor/time into one announcement; all three parts are already localized and formatted by the caller",
+    "placeholders": {
+      "event": {
+        "type": "String"
+      },
+      "actor": {
+        "type": "String"
+      },
+      "timestamp": {
+        "type": "String"
+      }
+    }
+  },
+  "historyFieldLocation": "Location",
+  "@historyFieldLocation": {
+    "description": "Localized name of the apiaries.location column when it appears in an update entry's changed-fields list (#60). Columns whose user-facing name already has a form label reuse that key instead (name, notes, place_label, hive_count, occurred_at) — only the gaps get a historyField* key of their own"
+  },
+  "historyFieldActivityType": "Activity type",
+  "@historyFieldActivityType": {
+    "description": "Localized name of the activities.type column in a changed-fields list (#60)"
+  },
+  "historyFieldAttributes": "Details",
+  "@historyFieldAttributes": {
+    "description": "Localized name of the activities.attributes column (the per-type attribute bag) in a changed-fields list (#60)"
+  },
+  "historyFieldApiary": "Apiary",
+  "@historyFieldApiary": {
+    "description": "Localized name of the activities.apiary_id column in a changed-fields list (#60)"
   }
 }

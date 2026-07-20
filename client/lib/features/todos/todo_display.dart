@@ -1,5 +1,6 @@
 import '../../l10n/gen/app_localizations.dart';
 import '../apiaries/apiaries_repository.dart';
+import '../members/member_display.dart';
 
 /// The assignee display text for one todo (#293, FR-TD-1) — mirrors
 /// activity_display.dart's `activityAttributionText` precedence, minus its
@@ -29,7 +30,7 @@ String todoAssigneeLabel(
   }
   final name = memberNames[assigneeId];
   if (name != null && name.isNotEmpty) return name;
-  return l10n.todoAssigneeUnknown(_shortId(assigneeId));
+  return l10n.todoAssigneeUnknown(shortMemberId(assigneeId));
 }
 
 /// The apiary display text for one todo (#293, FR-TD-1), resolved:
@@ -53,8 +54,3 @@ String todoApiaryLabel(
   }
   return l10n.todoApiaryUnknown;
 }
-
-/// The last 8 characters of a UUID — mirrors activity_display.dart's own
-/// `_shortId`, enough to visually distinguish different assignees within one
-/// org without printing the full 36-character id.
-String _shortId(String id) => id.length <= 8 ? id : id.substring(id.length - 8);
