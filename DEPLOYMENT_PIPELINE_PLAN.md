@@ -217,13 +217,13 @@ up the new repo, rewiring every `GitRepository`/`HelmRelease` reference across
 paths under `infra/gitops/`), bigger than anything else in this plan. Good moment
 to do it though — before more accumulates there.
 
-## 5. New plan: real domain (`melargil.net`) instead of nip.io
+## 5. New plan: real domain (`melargil.pt`) instead of nip.io
 
-User owns **`melargil.net`** (registrar: LusoAloja; DNS/nameservers: **Cloudflare**
+User owns **`melargil.pt`** (registrar: LusoAloja; DNS/nameservers: **Cloudflare**
 — so all DNS record management happens in the Cloudflare dashboard/API, not
 LusoAloja). Goal: real subdomains instead of the nip.io placeholder used so far.
 
-User's proposed names: `beekeepingit.melargil.net` and `beekeeping-rc.melargil.net`
+User's proposed names: `beekeepingit.melargil.pt` and `beekeeping-rc.melargil.pt`
 — **note the inconsistency** (`beekeepingit` vs `beekeeping-rc`, missing the `it`)
 — confirm exact naming with the user before creating records; this plan assumes
 it's intentional shorthand but flags it rather than silently "fixing" it.
@@ -235,10 +235,10 @@ hostnames, not one** — an app host and a separate auth host (`gateway.appHost`
 for staging). So the real scheme needs 4 hostnames total once both environments
 are live, e.g. (naming TBD with user):
 
-| Environment | App host                         | Auth host                             |
-| ----------- | -------------------------------- | ------------------------------------- |
-| prod        | `beekeepingit.melargil.net`      | `auth.beekeepingit.melargil.net` (?)  |
-| staging/rc  | `beekeeping-rc.melargil.net` (?) | `auth.beekeeping-rc.melargil.net` (?) |
+| Environment | App host                        | Auth host                            |
+| ----------- | ------------------------------- | ------------------------------------ |
+| prod        | `beekeepingit.melargil.pt`      | `auth.beekeepingit.melargil.pt` (?)  |
+| staging/rc  | `beekeeping-rc.melargil.pt` (?) | `auth.beekeeping-rc.melargil.pt` (?) |
 
 ### Steps for next session
 
@@ -269,7 +269,7 @@ are live, e.g. (naming TBD with user):
    domain, no change needed, **unless** step 3 ends up using Cloudflare's proxy
    (which would break HTTP-01) or a wildcard cert becomes desirable (DNS-01
    supports wildcards, HTTP-01 doesn't) — DNS-01 needs a Cloudflare API token
-   scoped to DNS-edit on just the `melargil.net` zone, stored as a cert-manager
+   scoped to DNS-edit on just the `melargil.pt` zone, stored as a cert-manager
    Secret. Default to keeping HTTP-01 unless a concrete reason to switch comes up.
 5. **Update values once DNS is live**: `global.appOrigin`, `gateway.appHost`/
    `authHost`, `services.oidc.issuerUrl` in `environments/staging.yaml` (and
