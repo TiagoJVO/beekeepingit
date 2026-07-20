@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import 'todo_priority.dart';
 import 'todos_repository.dart';
 
@@ -156,86 +159,90 @@ class _TodoQuickCreateSheetState extends ConsumerState<_TodoQuickCreateSheet> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        l10n.todoQuickCreateTitle,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 16),
+                      SectionHeader(l10n.todoQuickCreateTitle),
+                      const SizedBox(height: BrandDimens.gapField),
                       if (widget.initialApiaryId != null) ...[
                         _ApiaryChip(
                           name:
                               widget.initialApiaryName ??
                               widget.initialApiaryId!,
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: BrandDimens.gapField),
                       ],
-                      TextFormField(
-                        key: const Key('todo-quick-create-title-field'),
-                        controller: _titleController,
-                        autofocus: true,
-                        maxLength: 200,
-                        autovalidateMode: AutovalidateMode.onUserInteraction,
-                        validator: (v) => (v == null || v.trim().isEmpty)
-                            ? l10n.todoTitleRequired
-                            : null,
-                        decoration: InputDecoration(
-                          labelText: l10n.todoTitleLabel,
+                      LabeledField(
+                        label: l10n.todoTitleLabel,
+                        child: TextFormField(
+                          key: const Key('todo-quick-create-title-field'),
+                          controller: _titleController,
+                          autofocus: true,
+                          maxLength: 200,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? l10n.todoTitleRequired
+                              : null,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        key: const Key('todo-quick-create-priority-field'),
-                        initialValue: _priority,
-                        isExpanded: true,
-                        decoration: InputDecoration(
-                          // Reuses the Todos tab's own filter-label copy (DRY)
-                          // — same concept ("Priority"), no second key needed.
-                          labelText: l10n.todoFilterPriorityLabel,
+                      const SizedBox(height: BrandDimens.gapField),
+                      LabeledField(
+                        // Reuses the Todos tab's own filter-label copy (DRY) —
+                        // same concept ("Priority"), no second key needed.
+                        label: l10n.todoFilterPriorityLabel,
+                        child: DropdownButtonFormField<String>(
+                          key: const Key('todo-quick-create-priority-field'),
+                          initialValue: _priority,
+                          isExpanded: true,
+                          items: [
+                            for (final p in knownTodoPriorities)
+                              DropdownMenuItem(
+                                value: p,
+                                child: Text(todoPriorityLabel(l10n, p) ?? p),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _priority = value);
+                            }
+                          },
                         ),
-                        items: [
-                          for (final p in knownTodoPriorities)
-                            DropdownMenuItem(
-                              value: p,
-                              child: Text(todoPriorityLabel(l10n, p) ?? p),
-                            ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) setState(() => _priority = value);
-                        },
                       ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              key: const Key(
-                                'todo-quick-create-due-date-field',
-                              ),
-                              onTap: _pickDueDate,
-                              child: InputDecorator(
-                                decoration: InputDecoration(
-                                  labelText: l10n.todoDueDateLabel,
+                      const SizedBox(height: BrandDimens.gapField),
+                      LabeledField(
+                        label: l10n.todoDueDateLabel,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                key: const Key(
+                                  'todo-quick-create-due-date-field',
                                 ),
-                                child: Text(
-                                  _dueDate == null
-                                      ? l10n.todoDueDateUnset
-                                      : LocaleFormatting.of(
-                                          context,
-                                        ).date(_dueDate!),
+                                onTap: _pickDueDate,
+                                child: InputDecorator(
+                                  decoration: const InputDecoration(),
+                                  child: Text(
+                                    _dueDate == null
+                                        ? l10n.todoDueDateUnset
+                                        : LocaleFormatting.of(
+                                            context,
+                                          ).date(_dueDate!),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          if (_dueDate != null)
-                            IconButton(
-                              key: const Key(
-                                'todo-quick-create-due-date-clear-button',
+                            if (_dueDate != null)
+                              IconButton(
+                                key: const Key(
+                                  'todo-quick-create-due-date-clear-button',
+                                ),
+                                tooltip: l10n.todoDueDateClearAction,
+                                constraints: const BoxConstraints(
+                                  minWidth: kMinTapTarget,
+                                  minHeight: kMinTapTarget,
+                                ),
+                                icon: const Icon(Icons.clear),
+                                onPressed: _clearDueDate,
                               ),
-                              tooltip: l10n.todoDueDateClearAction,
-                              icon: const Icon(Icons.clear),
-                              onPressed: _clearDueDate,
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),

@@ -103,7 +103,6 @@ class ActivityFilterBar extends StatelessWidget {
                   child: InputDecorator(
                     decoration: InputDecoration(
                       labelText: l10n.activityFilterDateRangeLabel,
-                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                     child: Text(

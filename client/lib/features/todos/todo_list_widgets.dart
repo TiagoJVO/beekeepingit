@@ -5,6 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import 'todo_filters.dart';
 import 'todo_priority.dart';
 import 'todos_repository.dart';
@@ -67,7 +71,12 @@ class TodoFilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(
+        BrandDimens.gutter,
+        8,
+        BrandDimens.gutter,
+        4,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -80,7 +89,6 @@ class TodoFilterBar extends StatelessWidget {
                   isExpanded: true,
                   decoration: InputDecoration(
                     labelText: l10n.todoFilterStatusLabel,
-                    border: const OutlineInputBorder(),
                     isDense: true,
                   ),
                   items: [
@@ -112,7 +120,6 @@ class TodoFilterBar extends StatelessWidget {
                   isExpanded: true,
                   decoration: InputDecoration(
                     labelText: l10n.todoFilterPriorityLabel,
-                    border: const OutlineInputBorder(),
                     isDense: true,
                   ),
                   items: [
@@ -141,7 +148,6 @@ class TodoFilterBar extends StatelessWidget {
                   isExpanded: true,
                   decoration: InputDecoration(
                     labelText: l10n.todoFilterDueLabel,
-                    border: const OutlineInputBorder(),
                     isDense: true,
                   ),
                   items: [
@@ -190,7 +196,6 @@ class TodoFilterBar extends StatelessWidget {
                   isExpanded: true,
                   decoration: InputDecoration(
                     labelText: l10n.todoSortFieldLabel,
-                    border: const OutlineInputBorder(),
                     isDense: true,
                   ),
                   items: [
@@ -259,25 +264,25 @@ class TodoListView extends StatelessWidget {
       ),
       data: (vm) {
         if (!vm.hasAnyTodos) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(l10n.todosEmpty),
-            ),
+          return EmptyState(
+            message: l10n.todosEmpty,
+            icon: Icons.checklist_outlined,
           );
         }
         if (vm.filtered.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(l10n.todosFilterNoResults),
-            ),
-          );
+          return EmptyState(message: l10n.todosFilterNoResults);
         }
         return ListView.separated(
           key: const Key('todo-list'),
+          padding: const EdgeInsets.fromLTRB(
+            BrandDimens.gutter,
+            4,
+            BrandDimens.gutter,
+            BrandDimens.scrollBottomInset,
+          ),
           itemCount: vm.filtered.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, _) =>
+              const SizedBox(height: BrandDimens.gapCard),
           itemBuilder: (context, i) =>
               _TodoTile(todo: vm.filtered[i], today: vm.today),
         );
@@ -307,58 +312,100 @@ class _TodoTile extends StatelessWidget {
         : overdue
         ? l10n.todoFilterStatusOverdue
         : l10n.todoFilterStatusOpen;
-    final statusColor = todo.isDone
-        ? theme.colorScheme.onSurfaceVariant
+    final brand = context.brand;
+    // The leading tile's brand accent carries the same three-way status
+    // split the icon does: muted/generic for done, the terracotta treatment
+    // accent for overdue (an attention state), the gold cresta accent for a
+    // plain open row. Colours come from `context.brand`, never a raw hex.
+    final statusVisual = todo.isDone
+        ? brand.generic
         : overdue
-        ? theme.colorScheme.error
-        : theme.colorScheme.onSurfaceVariant;
+        ? brand.treatment
+        : brand.cresta;
+    final statusIcon = todo.isDone
+        ? Icons.check_circle
+        : overdue
+        ? Icons.warning_amber_outlined
+        : Icons.radio_button_unchecked;
 
-    return ListTile(
+    // Composed from [BrandCard] in [BrandRowCard]'s exact shape (leading tile
+    // · title/subtitle · trailing · chevron) rather than [BrandRowCard]
+    // itself, because a done todo's title must keep its strikethrough (#53
+    // AC: "distinguishes ... completed" — a non-colour-only signal, WCAG 2.2
+    // AA 1.4.1) and BrandRowCard takes a plain title String with no room for
+    // a per-row text decoration.
+    return BrandCard(
       key: Key('todo-${todo.id}'),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      semanticLabel: '${todo.title}. $dueText · $priorityLabel',
       // Tapping a row opens the read-focused detail screen (#293), not the
       // edit form directly — mirrors _ActivityTile/journey list row's own
       // tap-to-detail convention (activity_list_widgets.dart,
       // journeys_list_screen.dart).
       onTap: () => context.go('/todos/${todo.id}'),
-      // The leading icon is the ONLY status signal for an open, non-overdue
-      // row (no visible badge — that's reserved for overdue/done, this
-      // file's own doc comment) — its `semanticLabel` gives screen readers a
-      // text alternative (WCAG 2.2 AA 1.1.1), never relying on the icon
-      // shape/color alone.
-      leading: Icon(
-        todo.isDone
-            ? Icons.check_circle
-            : overdue
-            ? Icons.warning_amber_outlined
-            : Icons.radio_button_unchecked,
-        color: statusColor,
-        semanticLabel: l10n.todoStatusSemanticLabel(statusWord),
-      ),
-      title: Text(
-        todo.title,
-        style: todo.isDone
-            ? TextStyle(
-                decoration: TextDecoration.lineThrough,
-                color: theme.colorScheme.onSurfaceVariant,
-              )
-            : null,
-      ),
-      subtitle: Row(
+      child: Row(
         children: [
-          Flexible(
-            child: Text(
-              '$dueText · $priorityLabel',
-              overflow: TextOverflow.ellipsis,
+          // The leading icon is the ONLY status signal for an open,
+          // non-overdue row (no visible badge — that's reserved for
+          // overdue/done, this file's own doc comment) — the wrapping
+          // `Semantics` label gives screen readers a text alternative (WCAG
+          // 2.2 AA 1.1.1), never relying on the icon shape/colour alone.
+          Semantics(
+            label: l10n.todoStatusSemanticLabel(statusWord),
+            child: LeadingIconTile(
+              icon: statusIcon,
+              color: statusVisual.color,
+              tint: statusVisual.tint,
+              size: BrandDimens.sizeLeadingTileSmall,
             ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  todo.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppTheme.bodyFontFamily,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 17,
+                    color: todo.isDone
+                        ? theme.colorScheme.onSurfaceVariant
+                        : theme.colorScheme.onSurface,
+                    decoration: todo.isDone ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '$dueText · $priorityLabel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppTheme.bodyFontFamily,
+                    fontSize: 14,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Text + icon together (never color alone, WCAG 2.2 AA 1.4.1, #53
+          // AC): only rendered for an overdue row — done/open rows are
+          // already distinguished by the leading tile + (for done) the
+          // strikethrough title above.
+          if (overdue) ...[
+            const SizedBox(width: 10),
+            _OverdueBadge(label: l10n.todoOverdueBadge),
+          ],
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: Icon(Icons.chevron_right, color: brand.trailingIcon),
           ),
         ],
       ),
-      // Text + icon together (never color alone, WCAG 2.2 AA 1.4.1, #53 AC):
-      // only rendered for an overdue row — done/open rows are already
-      // distinguished by the leading icon + (for done) the strikethrough
-      // title above.
-      trailing: overdue ? _OverdueBadge(label: l10n.todoOverdueBadge) : null,
     );
   }
 }
@@ -382,7 +429,7 @@ class _OverdueBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

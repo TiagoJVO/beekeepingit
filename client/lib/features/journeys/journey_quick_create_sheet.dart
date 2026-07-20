@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 import 'apiary_multi_select_field.dart';
 import 'journeys_repository.dart';
@@ -125,106 +127,117 @@ class _JourneyQuickCreateSheetState
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
+          BrandDimens.gutter,
+          BrandDimens.gutter,
+          BrandDimens.gutter,
           24 + MediaQuery.of(context).viewInsets.bottom,
         ),
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+        // The fields scroll, the action row stays pinned: with the
+        // gloves-friendly control heights (58px fields, 60px primary button —
+        // BrandDimens) this sheet's natural height exceeds a small phone's
+        // viewport, and a single scroll view around EVERYTHING would push
+        // Save/Cancel below the fold where a user in the field can't reach
+        // them. Keeping the actions outside the scrollable keeps them
+        // reachable at any screen size, text scale, or future field count —
+        // the same structure todo_quick_create_sheet.dart uses.
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SectionHeader(l10n.journeyQuickCreateTitle),
+                      const SizedBox(height: BrandDimens.gapField),
+                      LabeledField(
+                        label: l10n.journeyNameLabel,
+                        child: TextFormField(
+                          key: const Key('journey-quick-create-name-field'),
+                          controller: _nameController,
+                          maxLength: 200,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? l10n.journeyNameRequired
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: BrandDimens.gapField),
+                      LabeledField(
+                        label: l10n.journeyMainActivityTypeLabel,
+                        child: DropdownButtonFormField<String>(
+                          key: const Key(
+                            'journey-quick-create-main-activity-type-field',
+                          ),
+                          initialValue: _mainActivityType,
+                          isExpanded: true,
+                          items: [
+                            for (final type in knownActivityTypes)
+                              DropdownMenuItem(
+                                value: type,
+                                child: Text(
+                                  activityTypeLabel(l10n, type) ?? type,
+                                ),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _mainActivityType = value);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: BrandDimens.gapField),
+                      ApiaryMultiSelectField(
+                        selectedApiaryIds: _apiaryIds,
+                        onChanged: (ids) => setState(() {
+                          _apiaryIds = ids;
+                          _apiaryIdsError = null;
+                        }),
+                      ),
+                      if (_apiaryIdsError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6, left: 4),
+                          child: Text(
+                            _apiaryIdsError!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
               children: [
-                Text(
-                  l10n.journeyQuickCreateTitle,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('journey-quick-create-name-field'),
-                  controller: _nameController,
-                  maxLength: 200,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? l10n.journeyNameRequired
-                      : null,
-                  decoration: InputDecoration(
-                    labelText: l10n.journeyNameLabel,
-                    border: const OutlineInputBorder(),
+                Expanded(
+                  child: SecondaryActionButton(
+                    key: const Key('journey-quick-create-cancel-button'),
+                    label: l10n.journeyQuickCreateCancelAction,
+                    busy: false,
+                    onPressed: _busy ? null : () => Navigator.of(context).pop(),
                   ),
                 ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  key: const Key(
-                    'journey-quick-create-main-activity-type-field',
+                const SizedBox(width: 12),
+                Expanded(
+                  child: PrimaryActionButton(
+                    key: const Key('journey-quick-create-save-button'),
+                    label: l10n.saveButton,
+                    busy: _busy,
+                    onPressed: _create,
                   ),
-                  initialValue: _mainActivityType,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.journeyMainActivityTypeLabel,
-                    border: const OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final type in knownActivityTypes)
-                      DropdownMenuItem(
-                        value: type,
-                        child: Text(activityTypeLabel(l10n, type) ?? type),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _mainActivityType = value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                ApiaryMultiSelectField(
-                  selectedApiaryIds: _apiaryIds,
-                  onChanged: (ids) => setState(() {
-                    _apiaryIds = ids;
-                    _apiaryIdsError = null;
-                  }),
-                ),
-                if (_apiaryIdsError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, left: 4),
-                    child: Text(
-                      _apiaryIdsError!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SecondaryActionButton(
-                        key: const Key('journey-quick-create-cancel-button'),
-                        label: l10n.journeyQuickCreateCancelAction,
-                        busy: false,
-                        onPressed: _busy
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: PrimaryActionButton(
-                        key: const Key('journey-quick-create-save-button'),
-                        label: l10n.saveButton,
-                        busy: _busy,
-                        onPressed: _create,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );

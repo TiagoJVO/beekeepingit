@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../organization/organization_repository.dart';
 import 'journey_matching.dart';
 import 'journey_status.dart';
@@ -109,12 +113,17 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: const EdgeInsets.fromLTRB(
+          BrandDimens.gutter,
+          BrandDimens.gutter,
+          BrandDimens.gutter,
+          24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(l10n.journeyPickerTitle, style: theme.textTheme.titleLarge),
+            SectionHeader(l10n.journeyPickerTitle),
             const SizedBox(height: 8),
             Flexible(
               child: matchesAsync.when(
@@ -159,7 +168,7 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                             ).pop(JourneyPickerSelected(journey.id)),
                           ),
                         if (candidates.closed.isNotEmpty) ...[
-                          const Divider(),
+                          Divider(color: context.brand.cardBorder),
                           SwitchListTile(
                             key: const Key('journey-picker-show-hidden-toggle'),
                             title: Text(l10n.journeyPickerShowHiddenToggle),
@@ -176,7 +185,7 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                                 ).pop(JourneyPickerSelected(journey.id)),
                               ),
                         ],
-                        const Divider(),
+                        Divider(color: context.brand.cardBorder),
                         _CreateJourneyTile(
                           onTap: () => Navigator.of(
                             context,
@@ -212,17 +221,77 @@ class _NoJourneyTile extends StatelessWidget {
       button: true,
       selected: selected,
       label: l10n.journeyPickerNoneOption,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kMinTapTarget),
-        child: ExcludeSemantics(
-          child: ListTile(
-            key: const Key('journey-picker-none-option'),
-            onTap: onTap,
-            leading: Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? theme.colorScheme.primary : null,
+      child: ExcludeSemantics(
+        child: _PickerRow(
+          rowKey: const Key('journey-picker-none-option'),
+          icon: selected ? Icons.radio_button_checked : Icons.radio_button_off,
+          iconColor: selected
+              ? theme.colorScheme.secondary
+              : theme.colorScheme.onSurfaceVariant,
+          title: l10n.journeyPickerNoneOption,
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
+/// One branded picker row — the shared shape behind the "no journey",
+/// per-journey and create-new options: a full [kMinTapTarget]-tall ink row
+/// with a leading state icon, the option's label, and an optional trailing
+/// badge. Replaces the three files-worth of near-identical [ListTile]s these
+/// options used to each build, so the sheet's rows pick up the brand type
+/// scale/colours in one place.
+class _PickerRow extends StatelessWidget {
+  const _PickerRow({
+    required this.rowKey,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.onTap,
+    this.titleColor,
+    this.trailing,
+  });
+
+  final Key rowKey;
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final Color? titleColor;
+  final Widget? trailing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        key: rowKey,
+        borderRadius: BrandDimens.borderCard,
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: kMinTapTarget),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, color: iconColor),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontFamily: AppTheme.bodyFontFamily,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      color: titleColor ?? scheme.onSurface,
+                    ),
+                  ),
+                ),
+                if (trailing != null) ...[const SizedBox(width: 10), trailing!],
+              ],
             ),
-            title: Text(l10n.journeyPickerNoneOption),
           ),
         ),
       ),
@@ -253,24 +322,36 @@ class _JourneyTile extends StatelessWidget {
       button: true,
       selected: selected,
       label: label,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kMinTapTarget),
-        child: ExcludeSemantics(
-          child: ListTile(
-            key: Key('journey-picker-option-${journey.id}'),
-            onTap: onTap,
-            leading: Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? theme.colorScheme.primary : null,
-            ),
-            title: Text(journey.name),
-            trailing: closed
-                ? Chip(
-                    label: Text(l10n.journeyStatusClosedLabel),
-                    visualDensity: VisualDensity.compact,
-                  )
-                : null,
-          ),
+      child: ExcludeSemantics(
+        child: _PickerRow(
+          rowKey: Key('journey-picker-option-${journey.id}'),
+          icon: selected ? Icons.radio_button_checked : Icons.radio_button_off,
+          iconColor: selected
+              ? theme.colorScheme.secondary
+              : theme.colorScheme.onSurfaceVariant,
+          title: journey.name,
+          trailing: closed
+              ? Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(
+                      BrandDimens.radiusBadge,
+                    ),
+                  ),
+                  child: Text(
+                    l10n.journeyStatusClosedLabel,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              : null,
+          onTap: onTap,
         ),
       ),
     );
@@ -293,21 +374,14 @@ class _CreateJourneyTile extends StatelessWidget {
     return Semantics(
       button: true,
       label: l10n.journeyPickerCreateNewAction,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kMinTapTarget),
-        child: ExcludeSemantics(
-          child: ListTile(
-            key: const Key('journey-picker-create-new-option'),
-            onTap: onTap,
-            leading: Icon(
-              Icons.add_circle_outline,
-              color: theme.colorScheme.primary,
-            ),
-            title: Text(
-              l10n.journeyPickerCreateNewAction,
-              style: TextStyle(color: theme.colorScheme.primary),
-            ),
-          ),
+      child: ExcludeSemantics(
+        child: _PickerRow(
+          rowKey: const Key('journey-picker-create-new-option'),
+          icon: Icons.add_circle_outline,
+          iconColor: theme.colorScheme.secondary,
+          title: l10n.journeyPickerCreateNewAction,
+          titleColor: theme.colorScheme.secondary,
+          onTap: onTap,
         ),
       ),
     );
