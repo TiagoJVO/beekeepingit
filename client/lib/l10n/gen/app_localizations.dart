@@ -2185,6 +2185,130 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get deleteTodoCancelAction;
+
+  /// Header of the per-entity change-history timeline section on an apiary/activity detail screen (#60, FR-HIS-1)
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get historySectionTitle;
+
+  /// App-bar title of the full per-entity history screen reached from the detail-screen section's view-all link (#60, FR-HIS-1)
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get historyScreenTitle;
+
+  /// Empty state of the history timeline (#60) — also what an offline device with no synced history slice shows, which is a legitimate empty result, not an error
+  ///
+  /// In en, this message translates to:
+  /// **'No changes recorded yet'**
+  String get historyEmpty;
+
+  /// Error state of the history timeline (#60)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load history: {error}'**
+  String historyError(String error);
+
+  /// Link from the capped history section on a detail screen to the full history screen (#60) — mirrors the activities section's own view-all affordance (#42)
+  ///
+  /// In en, this message translates to:
+  /// **'View all'**
+  String get historyViewAllAction;
+
+  /// Timeline label for an audit_log change_type=create row (#60, history.md §3)
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get historyEventCreated;
+
+  /// Timeline label for an audit_log change_type=update row (#60, history.md §3)
+  ///
+  /// In en, this message translates to:
+  /// **'Updated'**
+  String get historyEventUpdated;
+
+  /// Timeline label for an audit_log change_type=delete row — a soft-delete tombstone (#60, history.md §3)
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted'**
+  String get historyEventDeleted;
+
+  /// Timeline label for a sync_conflict_log row: an offline edit that lost last-write-wins and was preserved rather than dropped (#60, history.md §6)
+  ///
+  /// In en, this message translates to:
+  /// **'Superseded'**
+  String get historyEventSuperseded;
+
+  /// Fallback timeline label for an event kind this client version doesn't recognize (#60) — the vocabulary is extensible server-side (D-20), so an unknown kind degrades to a generic label instead of breaking the timeline
+  ///
+  /// In en, this message translates to:
+  /// **'Changed'**
+  String get historyEventUnknown;
+
+  /// Sub-line of an update entry listing which fields changed (#60) — fields is already localized and comma-joined by the caller
+  ///
+  /// In en, this message translates to:
+  /// **'Changed: {fields}'**
+  String historyChangedFieldsValue(String fields);
+
+  /// Sub-line of a superseded entry (#60, history.md §6 'your offline change was superseded by a newer value') — explains that the edit was kept in the record, not lost
+  ///
+  /// In en, this message translates to:
+  /// **'Replaced by a newer version from another device'**
+  String get historySupersededDetail;
+
+  /// History-entry actor when it is the signed-in user (#60) — mirrors activityPerformedByYou
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get historyActorYou;
+
+  /// History-entry actor fallback when the org roster has no display name for the user id (#60) — mirrors activityPerformedByMember; id is a short trailing id fragment
+  ///
+  /// In en, this message translates to:
+  /// **'Member {id}'**
+  String historyActorMember(String id);
+
+  /// History-entry actor when the row carries no actor_user_id at all (#60) — history.md §3 allows a null actor
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get historyActorUnknown;
+
+  /// Screen-reader label for one history timeline entry (#60, WCAG 2.2 AA) — collapses the visually-separate event/actor/time into one announcement; all three parts are already localized and formatted by the caller
+  ///
+  /// In en, this message translates to:
+  /// **'{event} by {actor}, {timestamp}'**
+  String historyEntrySemanticLabel(
+    String event,
+    String actor,
+    String timestamp,
+  );
+
+  /// Localized name of the apiaries.location column when it appears in an update entry's changed-fields list (#60). Columns whose user-facing name already has a form label reuse that key instead (name, notes, place_label, hive_count, occurred_at) — only the gaps get a historyField* key of their own
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get historyFieldLocation;
+
+  /// Localized name of the activities.type column in a changed-fields list (#60)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity type'**
+  String get historyFieldActivityType;
+
+  /// Localized name of the activities.attributes column (the per-type attribute bag) in a changed-fields list (#60)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get historyFieldAttributes;
+
+  /// Localized name of the activities.apiary_id column in a changed-fields list (#60)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get historyFieldApiary;
 }
 
 class _AppLocalizationsDelegate

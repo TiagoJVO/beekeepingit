@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/sync/powersync_schema.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
+import '../history/history_section.dart';
 import '../todos/todo_quick_create_sheet.dart';
 import 'apiaries_repository.dart';
 import 'counter_types.dart';
@@ -189,6 +191,16 @@ class _ApiaryDetailBody extends StatelessWidget {
               ],
               const SizedBox(height: 14),
               _ApiaryActivitiesSection(apiaryId: apiary.id),
+              const SizedBox(height: 14),
+              // This apiary's change history (#60, FR-HIS-1, history.md §8):
+              // the per-entity timeline lives ON the entity's detail screen,
+              // capped like the activities section above and linking out to
+              // the full list for the same virtualization reason.
+              HistorySection(
+                entityType: apiaryEntityType,
+                entityId: apiary.id,
+                onViewAll: () => context.go('/apiaries/${apiary.id}/history'),
+              ),
             ],
           ),
         ),

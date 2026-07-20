@@ -1232,4 +1232,77 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteTodoCancelAction => 'Cancel';
+
+  @override
+  String get historySectionTitle => 'History';
+
+  @override
+  String get historyScreenTitle => 'History';
+
+  @override
+  String get historyEmpty => 'No changes recorded yet';
+
+  @override
+  String historyError(String error) {
+    return 'Could not load history: $error';
+  }
+
+  @override
+  String get historyViewAllAction => 'View all';
+
+  @override
+  String get historyEventCreated => 'Created';
+
+  @override
+  String get historyEventUpdated => 'Updated';
+
+  @override
+  String get historyEventDeleted => 'Deleted';
+
+  @override
+  String get historyEventSuperseded => 'Superseded';
+
+  @override
+  String get historyEventUnknown => 'Changed';
+
+  @override
+  String historyChangedFieldsValue(String fields) {
+    return 'Changed: $fields';
+  }
+
+  @override
+  String get historySupersededDetail =>
+      'Replaced by a newer version from another device';
+
+  @override
+  String get historyActorYou => 'You';
+
+  @override
+  String historyActorMember(String id) {
+    return 'Member $id';
+  }
+
+  @override
+  String get historyActorUnknown => 'Unknown';
+
+  @override
+  String historyEntrySemanticLabel(
+    String event,
+    String actor,
+    String timestamp,
+  ) {
+    return '$event by $actor, $timestamp';
+  }
+
+  @override
+  String get historyFieldLocation => 'Location';
+
+  @override
+  String get historyFieldActivityType => 'Activity type';
+
+  @override
+  String get historyFieldAttributes => 'Details';
+
+  @override
+  String get historyFieldApiary => 'Apiary';
 }

@@ -5,6 +5,7 @@ import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/history/history_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:flutter/material.dart';
@@ -135,9 +136,30 @@ Widget _buildApp({
         activitiesRepositoryProvider.overrideWith((ref) async => repo),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
+      // The detail screen's history section (#60) watches this; left
+      // un-overridden it would hang on the un-resolvable powerSyncProvider
+      // chain, same reason every other provider here is stubbed. Empty is
+      // the honest default — these fixtures record no history.
+      entityHistoryProvider.overrideWith(
+        (ref, target) => Stream.value(const <HistoryEntry>[]),
+      ),
     ],
     child: const BeekeepingitApp(),
   );
+}
+
+/// Taps the detail screen's delete action, scrolling it into view first.
+///
+/// The button sits at the bottom of a `SingleChildScrollView` whose content
+/// grew past one viewport once the history section (#60) landed below the
+/// attributes card — a bare `tap()` then resolves to a coordinate the edit
+/// FAB overlays, silently navigating to the edit form instead of opening the
+/// confirm dialog.
+Future<void> _tapDelete(WidgetTester tester) async {
+  final button = find.byKey(const Key('activity-detail-delete-button'));
+  await tester.ensureVisible(button);
+  await tester.pumpAndSettle();
+  await tester.tap(button);
 }
 
 void main() {
@@ -247,9 +269,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Cancel first: the existing confirmation step must gate the delete.
-        await tester.tap(
-          find.byKey(const Key('activity-detail-delete-button')),
-        );
+        await _tapDelete(tester);
         await tester.pumpAndSettle();
         expect(
           find.byKey(const Key('activity-delete-confirm-dialog')),
@@ -262,9 +282,7 @@ void main() {
         expect(repo.deleted, isEmpty);
 
         // Confirming actually deletes the activity via the repository.
-        await tester.tap(
-          find.byKey(const Key('activity-detail-delete-button')),
-        );
+        await _tapDelete(tester);
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('activity-delete-confirm-delete')),
@@ -295,9 +313,7 @@ void main() {
         );
 
         // Start the delete; it stays pending on the completer.
-        await tester.tap(
-          find.byKey(const Key('activity-detail-delete-button')),
-        );
+        await _tapDelete(tester);
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('activity-delete-confirm-delete')),
