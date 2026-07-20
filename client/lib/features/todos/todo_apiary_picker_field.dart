@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../apiaries/apiaries_repository.dart';
 
 /// The todo/apiary association picker (#293, #51, FR-TD-1) — a SINGLE-select
@@ -46,80 +50,82 @@ class _TodoApiaryPickerFieldState extends ConsumerState<TodoApiaryPickerField> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
+    final brand = context.brand;
     final apiariesAsync = ref.watch(apiariesStreamProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(l10n.todoApiaryFieldLabel, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        TextField(
-          key: const Key('todo-apiary-search-field'),
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: l10n.apiariesSearchHint,
-            prefixIcon: const Icon(Icons.search),
-            border: const OutlineInputBorder(),
-            isDense: true,
+    return LabeledField(
+      label: l10n.todoApiaryFieldLabel,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            key: const Key('todo-apiary-search-field'),
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: l10n.apiariesSearchHint,
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+            ),
+            onChanged: (v) => setState(() => _query = v),
           ),
-          onChanged: (v) => setState(() => _query = v),
-        ),
-        const SizedBox(height: 8),
-        apiariesAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator()),
+          const SizedBox(height: 8),
+          apiariesAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (err, _) => Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(l10n.apiariesError('$err')),
+            ),
+            data: (apiaries) {
+              final filtered = filterApiariesByQuery(apiaries, _query);
+              return Container(
+                key: const Key('todo-apiary-list'),
+                constraints: const BoxConstraints(maxHeight: 280),
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: brand.cardColor,
+                  border: Border.all(color: brand.cardBorder),
+                  borderRadius: BrandDimens.borderCard,
+                ),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    _TodoOptionTile(
+                      key: const Key('todo-apiary-option-none'),
+                      label: l10n.todoApiaryNone,
+                      selected: widget.selectedApiaryId == null,
+                      onTap: () => widget.onChanged(null),
+                    ),
+                    if (apiaries.isEmpty)
+                      Padding(
+                        key: const Key('todo-apiary-empty'),
+                        padding: const EdgeInsets.all(16),
+                        child: Text(l10n.journeyApiariesNoneAvailable),
+                      )
+                    else if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(l10n.apiariesSearchNoResults),
+                      )
+                    else
+                      for (final apiary in filtered) ...[
+                        Divider(height: 1, color: brand.cardBorder),
+                        _TodoOptionTile(
+                          key: Key('todo-apiary-option-${apiary.id}'),
+                          label: apiary.name,
+                          selected: widget.selectedApiaryId == apiary.id,
+                          onTap: () => widget.onChanged(apiary.id),
+                        ),
+                      ],
+                  ],
+                ),
+              );
+            },
           ),
-          error: (err, _) => Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(l10n.apiariesError('$err')),
-          ),
-          data: (apiaries) {
-            final filtered = filterApiariesByQuery(apiaries, _query);
-            return Container(
-              key: const Key('todo-apiary-list'),
-              constraints: const BoxConstraints(maxHeight: 280),
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  _TodoOptionTile(
-                    key: const Key('todo-apiary-option-none'),
-                    label: l10n.todoApiaryNone,
-                    selected: widget.selectedApiaryId == null,
-                    onTap: () => widget.onChanged(null),
-                  ),
-                  if (apiaries.isEmpty)
-                    Padding(
-                      key: const Key('todo-apiary-empty'),
-                      padding: const EdgeInsets.all(16),
-                      child: Text(l10n.journeyApiariesNoneAvailable),
-                    )
-                  else if (filtered.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(l10n.apiariesSearchNoResults),
-                    )
-                  else
-                    for (final apiary in filtered) ...[
-                      const Divider(height: 1),
-                      _TodoOptionTile(
-                        key: Key('todo-apiary-option-${apiary.id}'),
-                        label: apiary.name,
-                        selected: widget.selectedApiaryId == apiary.id,
-                        onTap: () => widget.onChanged(apiary.id),
-                      ),
-                    ],
-                ],
-              ),
-            );
-          },
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -148,18 +154,43 @@ class _TodoOptionTile extends StatelessWidget {
       button: true,
       selected: selected,
       label: label,
-      child: InkWell(
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: kMinTapTarget),
-          child: ExcludeSemantics(
-            child: ListTile(
-              title: Text(label),
-              trailing: Icon(
-                selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                color: selected ? theme.colorScheme.primary : null,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: kMinTapTarget),
+            child: ExcludeSemantics(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontFamily: AppTheme.bodyFontFamily,
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          fontSize: 16,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      selected
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color: selected
+                          ? theme.colorScheme.secondary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

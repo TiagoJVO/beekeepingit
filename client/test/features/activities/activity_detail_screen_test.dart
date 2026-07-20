@@ -213,6 +213,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('apiary-detail-header')), findsOneWidget);
 
+        await tester.ensureVisible(find.byKey(const Key('activity-act1')));
         await tester.tap(find.byKey(const Key('activity-act1')));
         await tester.pumpAndSettle();
 

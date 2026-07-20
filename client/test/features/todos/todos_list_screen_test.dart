@@ -176,6 +176,31 @@ Widget _buildAppWithRepo({required _FakeTodosRepository repo}) {
   );
 }
 
+/// Every rendered todo row's title, in the order the list lays them out —
+/// the branded row cards (`BrandCard`, todo_list_widgets.dart) carry their
+/// title as a plain descendant [Text] rather than a `ListTile.title`, so
+/// render order is read off each row's vertical offset. Replaces the old
+/// `widgetList<ListTile>(...).map((t) => t.title)` sort assertion; the intent
+/// (which todo renders before which) is unchanged.
+List<String> _rowTitlesInOrder(WidgetTester tester) {
+  final titles = <(double, String)>[];
+  for (final element
+      in find
+          .descendant(
+            of: find.byKey(const Key('todo-list')),
+            matching: find.byType(Text),
+          )
+          .evaluate()) {
+    final text = (element.widget as Text).data;
+    if (text == null) continue;
+    // Titles are bold (w700); the due-date/priority subtitle is not.
+    if ((element.widget as Text).style?.fontWeight != FontWeight.w700) continue;
+    titles.add((tester.getTopLeft(find.byWidget(element.widget)).dy, text));
+  }
+  titles.sort((a, b) => a.$1.compareTo(b.$1));
+  return titles.map((e) => e.$2).toList();
+}
+
 void main() {
   group('main Todos tab (#53, FR-TD-1)', () {
     testWidgets('lists every todo in the org', (tester) async {
@@ -505,11 +530,10 @@ void main() {
           await tester.tap(find.text('Priority').last);
           await tester.pumpAndSettle();
 
-          final tiles = tester
-              .widgetList<ListTile>(find.byType(ListTile))
-              .toList();
-          final titles = tiles.map((t) => (t.title! as Text).data).toList();
-          expect(titles, ['High one', 'Low one']);
+          // Rows are branded cards (BrandCard), not ListTiles, so the render
+          // order is asserted by each keyed row's vertical position rather
+          // than by reading ListTile.title — same intent: high before low.
+          expect(_rowTitlesInOrder(tester), ['High one', 'Low one']);
         },
       );
 
@@ -532,11 +556,7 @@ void main() {
         await tester.tap(find.byKey(const Key('todo-sort-direction-button')));
         await tester.pumpAndSettle();
 
-        final tiles = tester
-            .widgetList<ListTile>(find.byType(ListTile))
-            .toList();
-        final titles = tiles.map((t) => (t.title! as Text).data).toList();
-        expect(titles, ['Low one', 'High one']);
+        expect(_rowTitlesInOrder(tester), ['Low one', 'High one']);
       });
     });
   });

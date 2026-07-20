@@ -5,12 +5,38 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../members/members_repository.dart';
 import '../profile/profile_repository.dart';
 import 'activities_repository.dart';
 import 'activity_display.dart';
 import 'activity_filters.dart';
 import 'activity_types.dart';
+
+/// The single mapping from an activity type to its brand accent + tile tint
+/// (`context.brand`'s cresta/feeding/treatment/generic roles) — every screen
+/// that renders a typed activity row/chip/picker reuses this rather than its
+/// own switch (activities list, apiary detail's embedded section, the
+/// add-activity type picker).
+ActivityTypeVisual activityTypeVisual(BuildContext context, String type) {
+  final brand = context.brand;
+  return switch (type) {
+    activityTypeHarvest => brand.cresta,
+    activityTypeFeeding => brand.feeding,
+    activityTypeTreatment => brand.treatment,
+    _ => brand.generic,
+  };
+}
+
+/// The Material icon paired with [activityTypeVisual] for a given type.
+IconData activityTypeIcon(String type) => switch (type) {
+  activityTypeHarvest => Icons.hive_outlined,
+  activityTypeFeeding => Icons.restaurant_outlined,
+  activityTypeTreatment => Icons.healing_outlined,
+  _ => Icons.event_note_outlined,
+};
 
 /// The type + date-range filter bar shared by #42's apiary-scoped section
 /// and #43's main Activities tab (DRY, #42/#43 AC: filterable by type and
@@ -52,7 +78,6 @@ class ActivityFilterBar extends StatelessWidget {
             isExpanded: true,
             decoration: InputDecoration(
               labelText: l10n.activityFilterTypeLabel,
-              border: const OutlineInputBorder(),
               isDense: true,
             ),
             items: [
@@ -78,7 +103,6 @@ class ActivityFilterBar extends StatelessWidget {
                   child: InputDecorator(
                     decoration: InputDecoration(
                       labelText: l10n.activityFilterDateRangeLabel,
-                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                     child: Text(
@@ -202,20 +226,10 @@ class ActivityListView extends ConsumerWidget {
       ),
       data: (vm) {
         if (!vm.hasAnyActivities) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(emptyText),
-            ),
-          );
+          return EmptyState(message: emptyText);
         }
         if (vm.filtered.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(l10n.activitiesFilterNoResults),
-            ),
-          );
+          return EmptyState(message: l10n.activitiesFilterNoResults);
         }
         // Cap the rendered rows only when there's a "view all" escape hatch,
         // so a capped preview never strands rows the user can't reach (#42/
@@ -290,6 +304,7 @@ class _ActivityTile extends StatelessWidget {
       currentUserId,
       memberNames: memberNames,
     );
+    final typeVisual = activityTypeVisual(context, activity.type);
 
     return ListTile(
       key: Key('activity-${activity.id}'),
@@ -304,7 +319,12 @@ class _ActivityTile extends StatelessWidget {
       onTap: () => context.go(
         '/apiaries/${activity.apiaryId}/activities/${activity.id}',
       ),
-      leading: Icon(_iconFor(activity.type)),
+      leading: LeadingIconTile(
+        icon: activityTypeIcon(activity.type),
+        color: typeVisual.color,
+        tint: typeVisual.tint,
+        size: BrandDimens.sizeLeadingTileSmall,
+      ),
       title: Text(title),
       subtitle: Text(subtitle),
       trailing: Semantics(
@@ -320,13 +340,6 @@ class _ActivityTile extends StatelessWidget {
       ),
     );
   }
-
-  IconData _iconFor(String type) => switch (type) {
-    activityTypeHarvest => Icons.hive_outlined,
-    activityTypeFeeding => Icons.restaurant_outlined,
-    activityTypeTreatment => Icons.healing_outlined,
-    _ => Icons.event_note_outlined,
-  };
 }
 
 /// The "view all N activities" row shown at the foot of a capped preview

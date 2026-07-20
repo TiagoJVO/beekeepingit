@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../members/members_repository.dart';
 import '../profile/profile_repository.dart';
 import 'history_display.dart';
@@ -57,19 +60,16 @@ class HistorySection extends ConsumerWidget {
     return Container(
       key: const Key('history-section'),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(16),
+        color: context.brand.cardColor,
+        border: Border.all(color: context.brand.cardBorder),
+        borderRadius: BrandDimens.borderCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
+          SectionHeader(
+            l10n.historySectionTitle,
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-            child: Text(
-              l10n.historySectionTitle,
-              style: theme.textTheme.titleMedium,
-            ),
           ),
           historyAsync.when(
             // A bounded, non-spinner loading state: the local query resolves

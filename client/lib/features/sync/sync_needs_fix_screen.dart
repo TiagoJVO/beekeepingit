@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/sync/powersync_schema.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_widgets.dart';
 import 'sync_rejected_repository.dart';
 
 /// The **needs-fix list** (sync.md §8 notify-and-fix, D-12, EPIC-06 #7): the
@@ -43,15 +44,9 @@ class SyncNeedsFixScreen extends ConsumerWidget {
         ),
         data: (ops) {
           if (ops.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  l10n.syncNeedsFixEmpty,
-                  key: const Key('needs-fix-empty'),
-                  textAlign: TextAlign.center,
-                ),
-              ),
+            return EmptyState(
+              key: const Key('needs-fix-empty'),
+              message: l10n.syncNeedsFixEmpty,
             );
           }
           return ListView.separated(

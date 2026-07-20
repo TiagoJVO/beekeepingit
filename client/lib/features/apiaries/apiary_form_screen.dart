@@ -302,7 +302,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                         autofocus: !widget.isEdit,
                         decoration: InputDecoration(
                           labelText: l10n.apiaryNameLabel,
-                          border: const OutlineInputBorder(),
                         ),
                         validator: (v) => (v == null || v.trim().isEmpty)
                             ? l10n.apiaryNameRequired
@@ -318,7 +317,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                         ],
                         decoration: InputDecoration(
                           labelText: l10n.hiveCountLabel,
-                          border: const OutlineInputBorder(),
                         ),
                         validator: (v) {
                           final n = int.tryParse((v ?? '').trim());
@@ -336,7 +334,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                         decoration: InputDecoration(
                           labelText: l10n.apiaryPlaceLabelLabel,
                           hintText: l10n.apiaryPlaceLabelHint,
-                          border: const OutlineInputBorder(),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -420,7 +417,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                         decoration: InputDecoration(
                           labelText: l10n.apiaryNotesLabel,
                           hintText: l10n.apiaryNotesHint,
-                          border: const OutlineInputBorder(),
                           alignLabelWithHint: true,
                         ),
                       ),

@@ -123,8 +123,10 @@ void main() {
 
     expect(find.byKey(const Key('account-name-field')), findsOneWidget);
     expect(find.byKey(const Key('account-email-field')), findsOneWidget);
-    expect(find.text('Ana'), findsOneWidget);
-    expect(find.text('ana@example.com'), findsOneWidget);
+    // Name + email now appear twice: once in the read-only avatar header
+    // (the prototype's account card) and once in the editable field below.
+    expect(find.text('Ana'), findsNWidgets(2));
+    expect(find.text('ana@example.com'), findsNWidgets(2));
     // Presence/wiring only — not tapped: it opens a real browser tab via a
     // web-only platform call (see account_platform.dart), matching how
     // widget_test.dart never taps 'login-button' for the same reason.
@@ -306,6 +308,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('account-sync-now-button')),
+      );
       await tester.tap(find.byKey(const Key('account-sync-now-button')));
       await tester.pumpAndSettle();
 
@@ -326,6 +331,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('account-sync-now-button')),
+      );
       await tester.tap(find.byKey(const Key('account-sync-now-button')));
       await tester.pumpAndSettle();
 

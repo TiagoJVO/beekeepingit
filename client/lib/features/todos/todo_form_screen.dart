@@ -6,6 +6,8 @@ import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import 'todo_apiary_picker_field.dart';
 import 'todo_assignee_picker_field.dart';
 import 'todo_priority.dart';
@@ -256,79 +258,80 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(
+            BrandDimens.gutterForm,
+            BrandDimens.gutterForm,
+            BrandDimens.gutterForm,
+            BrandDimens.scrollBottomInset,
+          ),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextFormField(
-                  key: const Key('todo-title-field'),
-                  controller: _titleController,
-                  maxLength: 500,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? l10n.todoTitleRequired
-                      : null,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoTitleLabel,
-                    border: const OutlineInputBorder(),
+                LabeledField(
+                  label: l10n.todoTitleLabel,
+                  child: TextFormField(
+                    key: const Key('todo-title-field'),
+                    controller: _titleController,
+                    maxLength: 500,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? l10n.todoTitleRequired
+                        : null,
                   ),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('todo-description-field'),
-                  controller: _descriptionController,
-                  minLines: 3,
-                  maxLines: 6,
-                  maxLength: 10000,
-                  textInputAction: TextInputAction.newline,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoDescriptionLabel,
-                    border: const OutlineInputBorder(),
-                    alignLabelWithHint: true,
+                const SizedBox(height: BrandDimens.gapField),
+                LabeledField(
+                  label: l10n.todoDescriptionLabel,
+                  child: TextFormField(
+                    key: const Key('todo-description-field'),
+                    controller: _descriptionController,
+                    minLines: 3,
+                    maxLines: 6,
+                    maxLength: 10000,
+                    textInputAction: TextInputAction.newline,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: BrandDimens.gapField),
                 _dueDateField(l10n),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  key: const Key('todo-priority-field'),
-                  initialValue: _priority,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoPriorityFieldLabel,
-                    border: const OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final p in knownTodoPriorities)
-                      DropdownMenuItem(
-                        value: p,
-                        child: Text(todoPriorityLabel(l10n, p) ?? p),
-                      ),
-                    // A stored priority this client version doesn't know
-                    // (replicated from a newer server, D-20) still renders —
-                    // mirrors add_activity_screen.dart's own `disease` field
-                    // fix for the identical
-                    // initialValue-must-be-in-items assertion risk.
-                    if (!knownTodoPriorities.contains(_priority))
-                      DropdownMenuItem(
-                        value: _priority,
-                        child: Text(
-                          todoPriorityLabel(l10n, _priority) ?? _priority,
+                const SizedBox(height: BrandDimens.gapField),
+                LabeledField(
+                  label: l10n.todoPriorityFieldLabel,
+                  child: DropdownButtonFormField<String>(
+                    key: const Key('todo-priority-field'),
+                    initialValue: _priority,
+                    isExpanded: true,
+                    items: [
+                      for (final p in knownTodoPriorities)
+                        DropdownMenuItem(
+                          value: p,
+                          child: Text(todoPriorityLabel(l10n, p) ?? p),
                         ),
-                      ),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) setState(() => _priority = v);
-                  },
+                      // A stored priority this client version doesn't know
+                      // (replicated from a newer server, D-20) still renders —
+                      // mirrors add_activity_screen.dart's own `disease` field
+                      // fix for the identical
+                      // initialValue-must-be-in-items assertion risk.
+                      if (!knownTodoPriorities.contains(_priority))
+                        DropdownMenuItem(
+                          value: _priority,
+                          child: Text(
+                            todoPriorityLabel(l10n, _priority) ?? _priority,
+                          ),
+                        ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _priority = v);
+                    },
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: BrandDimens.gapField),
                 TodoAssigneePickerField(
                   selectedAssigneeId: _assigneeId,
                   onChanged: (v) => setState(() => _assigneeId = v),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: BrandDimens.gapField),
                 TodoApiaryPickerField(
                   selectedApiaryId: _apiaryId,
                   onChanged: (v) => setState(() => _apiaryId = v),
@@ -373,27 +376,28 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
     final dueText = _dueDate == null
         ? l10n.todoDueDateUnset
         : LocaleFormatting.of(context).date(_dueDate!);
-    return InkWell(
-      key: const Key('todo-due-date-field'),
-      onTap: _pickDueDate,
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: l10n.todoDueDateFieldLabel,
-          border: const OutlineInputBorder(),
-          suffixIcon: _dueDate == null
-              ? null
-              : IconButton(
-                  key: const Key('todo-due-date-clear-button'),
-                  tooltip: l10n.todoDueDateClearAction,
-                  constraints: const BoxConstraints(
-                    minWidth: kMinTapTarget,
-                    minHeight: kMinTapTarget,
+    return LabeledField(
+      label: l10n.todoDueDateFieldLabel,
+      child: InkWell(
+        key: const Key('todo-due-date-field'),
+        onTap: _pickDueDate,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            suffixIcon: _dueDate == null
+                ? null
+                : IconButton(
+                    key: const Key('todo-due-date-clear-button'),
+                    tooltip: l10n.todoDueDateClearAction,
+                    constraints: const BoxConstraints(
+                      minWidth: kMinTapTarget,
+                      minHeight: kMinTapTarget,
+                    ),
+                    icon: const Icon(Icons.clear),
+                    onPressed: _clearDueDate,
                   ),
-                  icon: const Icon(Icons.clear),
-                  onPressed: _clearDueDate,
-                ),
+          ),
+          child: Text(dueText),
         ),
-        child: Text(dueText),
       ),
     );
   }

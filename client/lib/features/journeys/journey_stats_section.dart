@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import 'journey_stats.dart';
 import 'journeys_repository.dart';
 
@@ -31,21 +35,20 @@ class JourneyStatsSection extends ConsumerWidget {
     final theme = Theme.of(context);
     final statsAsync = ref.watch(journeyStatsProvider(journeyId));
 
+    final brand = context.brand;
+
     return Container(
       key: const Key('journey-stats-section'),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(BrandDimens.padCard),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(16),
+        color: brand.cardColor,
+        border: Border.all(color: brand.cardBorder),
+        borderRadius: BrandDimens.borderCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            l10n.journeyStatsSectionTitle,
-            style: theme.textTheme.titleMedium,
-          ),
+          SectionHeader(l10n.journeyStatsSectionTitle),
           const SizedBox(height: 12),
           statsAsync.when(
             loading: () => const Center(
@@ -128,8 +131,12 @@ class _JourneyStatsBody extends StatelessWidget {
 
 /// One stat card: a large value over a small label, matching the
 /// prototype's own stat-card shape (a bold number over a muted caption) —
-/// mirrors apiary_detail_screen.dart's `_CounterBadge` sizing/spacing
-/// convention, scaled up for a 2-line card instead of a single pill.
+/// the same visual language as apiary_detail_screen.dart's counter tiles (a
+/// tinted, rounded tile carrying the figure), re-grounded for this section's
+/// light card instead of that screen's plum hero: the tile ground is the
+/// theme's raised-surface role and the value takes the Playfair display face
+/// at the brand field radius, so the figure reads as a headline rather than
+/// body copy while keeping its AA-safe `onSurface` ink.
 class _StatTile extends StatelessWidget {
   const _StatTile({
     required this.statKey,
@@ -149,8 +156,8 @@ class _StatTile extends StatelessWidget {
       width: 148,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(14),
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BrandDimens.borderField,
       ),
       child: Semantics(
         label: '$label: $value',
@@ -161,9 +168,11 @@ class _StatTile extends StatelessWidget {
             children: [
               Text(
                 value,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
+                style: TextStyle(
+                  fontFamily: AppTheme.displayFontFamily,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 24,
+                  color: theme.colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 4),

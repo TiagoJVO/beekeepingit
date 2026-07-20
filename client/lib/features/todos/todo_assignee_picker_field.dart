@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../members/member_display.dart';
 import '../members/members_repository.dart';
 
@@ -43,36 +47,32 @@ class TodoAssigneePickerField extends ConsumerWidget {
     final theme = Theme.of(context);
     final memberNamesAsync = ref.watch(memberNamesProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(l10n.todoAssigneeFieldLabel, style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        memberNamesAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator()),
-          ),
-          // Best-effort by design (mirrors memberNamesProvider's own doc
-          // comment): a lookup failure degrades to the same empty-roster
-          // rendering below rather than an error screen blocking the rest of
-          // the form.
-          error: (_, _) => _RosterList(
-            l10n: l10n,
-            theme: theme,
-            memberNames: const {},
-            selectedAssigneeId: selectedAssigneeId,
-            onChanged: onChanged,
-          ),
-          data: (memberNames) => _RosterList(
-            l10n: l10n,
-            theme: theme,
-            memberNames: memberNames,
-            selectedAssigneeId: selectedAssigneeId,
-            onChanged: onChanged,
-          ),
+    return LabeledField(
+      label: l10n.todoAssigneeFieldLabel,
+      child: memberNamesAsync.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.all(16),
+          child: Center(child: CircularProgressIndicator()),
         ),
-      ],
+        // Best-effort by design (mirrors memberNamesProvider's own doc
+        // comment): a lookup failure degrades to the same empty-roster
+        // rendering below rather than an error screen blocking the rest of
+        // the form.
+        error: (_, _) => _RosterList(
+          l10n: l10n,
+          theme: theme,
+          memberNames: const {},
+          selectedAssigneeId: selectedAssigneeId,
+          onChanged: onChanged,
+        ),
+        data: (memberNames) => _RosterList(
+          l10n: l10n,
+          theme: theme,
+          memberNames: memberNames,
+          selectedAssigneeId: selectedAssigneeId,
+          onChanged: onChanged,
+        ),
+      ),
     );
   }
 }
@@ -104,12 +104,15 @@ class _RosterList extends StatelessWidget {
       entries[selected] = l10n.todoAssigneeUnknown(shortMemberId(selected));
     }
 
+    final brand = context.brand;
     return Container(
       key: const Key('todo-assignee-list'),
       constraints: const BoxConstraints(maxHeight: 280),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(12),
+        color: brand.cardColor,
+        border: Border.all(color: brand.cardBorder),
+        borderRadius: BrandDimens.borderCard,
       ),
       child: ListView(
         shrinkWrap: true,
@@ -128,7 +131,7 @@ class _RosterList extends StatelessWidget {
             )
           else
             for (final entry in entries.entries) ...[
-              const Divider(height: 1),
+              Divider(height: 1, color: brand.cardBorder),
               _TodoOptionTile(
                 key: Key('todo-assignee-option-${entry.key}'),
                 label: entry.value,
@@ -166,18 +169,43 @@ class _TodoOptionTile extends StatelessWidget {
       button: true,
       selected: selected,
       label: label,
-      child: InkWell(
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: kMinTapTarget),
-          child: ExcludeSemantics(
-            child: ListTile(
-              title: Text(label),
-              trailing: Icon(
-                selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                color: selected ? theme.colorScheme.primary : null,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: kMinTapTarget),
+            child: ExcludeSemantics(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontFamily: AppTheme.bodyFontFamily,
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          fontSize: 16,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      selected
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color: selected
+                          ? theme.colorScheme.secondary
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

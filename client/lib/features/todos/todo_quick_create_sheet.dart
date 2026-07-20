@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
+import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import 'todo_priority.dart';
 import 'todos_repository.dart';
 
@@ -137,118 +140,138 @@ class _TodoQuickCreateSheetState extends ConsumerState<_TodoQuickCreateSheet> {
           16,
           24 + MediaQuery.of(context).viewInsets.bottom,
         ),
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+        // The fields scroll, the action row stays pinned: with the
+        // gloves-friendly control heights (58px fields, 60px primary button —
+        // BrandDimens) this sheet's natural height exceeds a small phone's
+        // viewport, and a single scroll view around EVERYTHING would push
+        // Save/Cancel below the fold where a user in the field can't reach
+        // them. Keeping the actions outside the scrollable keeps them
+        // reachable at any screen size, text scale, or future field count.
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SectionHeader(l10n.todoQuickCreateTitle),
+                      const SizedBox(height: BrandDimens.gapField),
+                      if (widget.initialApiaryId != null) ...[
+                        _ApiaryChip(
+                          name:
+                              widget.initialApiaryName ??
+                              widget.initialApiaryId!,
+                        ),
+                        const SizedBox(height: BrandDimens.gapField),
+                      ],
+                      LabeledField(
+                        label: l10n.todoTitleLabel,
+                        child: TextFormField(
+                          key: const Key('todo-quick-create-title-field'),
+                          controller: _titleController,
+                          autofocus: true,
+                          maxLength: 200,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? l10n.todoTitleRequired
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: BrandDimens.gapField),
+                      LabeledField(
+                        // Reuses the Todos tab's own filter-label copy (DRY) —
+                        // same concept ("Priority"), no second key needed.
+                        label: l10n.todoFilterPriorityLabel,
+                        child: DropdownButtonFormField<String>(
+                          key: const Key('todo-quick-create-priority-field'),
+                          initialValue: _priority,
+                          isExpanded: true,
+                          items: [
+                            for (final p in knownTodoPriorities)
+                              DropdownMenuItem(
+                                value: p,
+                                child: Text(todoPriorityLabel(l10n, p) ?? p),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _priority = value);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: BrandDimens.gapField),
+                      LabeledField(
+                        label: l10n.todoDueDateLabel,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                key: const Key(
+                                  'todo-quick-create-due-date-field',
+                                ),
+                                onTap: _pickDueDate,
+                                child: InputDecorator(
+                                  decoration: const InputDecoration(),
+                                  child: Text(
+                                    _dueDate == null
+                                        ? l10n.todoDueDateUnset
+                                        : LocaleFormatting.of(
+                                            context,
+                                          ).date(_dueDate!),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (_dueDate != null)
+                              IconButton(
+                                key: const Key(
+                                  'todo-quick-create-due-date-clear-button',
+                                ),
+                                tooltip: l10n.todoDueDateClearAction,
+                                constraints: const BoxConstraints(
+                                  minWidth: kMinTapTarget,
+                                  minHeight: kMinTapTarget,
+                                ),
+                                icon: const Icon(Icons.clear),
+                                onPressed: _clearDueDate,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
               children: [
-                Text(
-                  l10n.todoQuickCreateTitle,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                if (widget.initialApiaryId != null) ...[
-                  _ApiaryChip(
-                    name: widget.initialApiaryName ?? widget.initialApiaryId!,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                TextFormField(
-                  key: const Key('todo-quick-create-title-field'),
-                  controller: _titleController,
-                  autofocus: true,
-                  maxLength: 200,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? l10n.todoTitleRequired
-                      : null,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoTitleLabel,
-                    border: const OutlineInputBorder(),
+                Expanded(
+                  child: SecondaryActionButton(
+                    key: const Key('todo-quick-create-cancel-button'),
+                    label: l10n.todoQuickCreateCancelAction,
+                    busy: false,
+                    onPressed: _busy ? null : () => Navigator.of(context).pop(),
                   ),
                 ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  key: const Key('todo-quick-create-priority-field'),
-                  initialValue: _priority,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    // Reuses the Todos tab's own filter-label copy (DRY) —
-                    // same concept ("Priority"), no need for a second key.
-                    labelText: l10n.todoFilterPriorityLabel,
-                    border: const OutlineInputBorder(),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: PrimaryActionButton(
+                    key: const Key('todo-quick-create-save-button'),
+                    label: l10n.saveButton,
+                    busy: _busy,
+                    onPressed: _create,
                   ),
-                  items: [
-                    for (final p in knownTodoPriorities)
-                      DropdownMenuItem(
-                        value: p,
-                        child: Text(todoPriorityLabel(l10n, p) ?? p),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setState(() => _priority = value);
-                  },
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: InkWell(
-                        key: const Key('todo-quick-create-due-date-field'),
-                        onTap: _pickDueDate,
-                        child: InputDecorator(
-                          decoration: InputDecoration(
-                            labelText: l10n.todoDueDateLabel,
-                            border: const OutlineInputBorder(),
-                          ),
-                          child: Text(
-                            _dueDate == null
-                                ? l10n.todoDueDateUnset
-                                : LocaleFormatting.of(context).date(_dueDate!),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (_dueDate != null)
-                      IconButton(
-                        key: const Key(
-                          'todo-quick-create-due-date-clear-button',
-                        ),
-                        tooltip: l10n.todoDueDateClearAction,
-                        icon: const Icon(Icons.clear),
-                        onPressed: _clearDueDate,
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SecondaryActionButton(
-                        key: const Key('todo-quick-create-cancel-button'),
-                        label: l10n.todoQuickCreateCancelAction,
-                        busy: false,
-                        onPressed: _busy
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: PrimaryActionButton(
-                        key: const Key('todo-quick-create-save-button'),
-                        label: l10n.saveButton,
-                        busy: _busy,
-                        onPressed: _create,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );

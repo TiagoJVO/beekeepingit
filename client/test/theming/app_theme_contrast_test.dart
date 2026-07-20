@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:beekeepingit_client/theming/app_theme.dart';
+import 'package:beekeepingit_client/theming/brand_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -151,6 +152,70 @@ void main() {
       'dark',
       AppTheme.dark().colorScheme,
       minRatio: _kMinNormalTextContrast,
+    );
+  });
+
+  // --- BrandTheme extension roles (hero surface, notes callout, activity-type
+  // tints) — the look-and-feel roles Material's ColorScheme has no slot for
+  // (lib/theming/brand_theme.dart). These carry real text/graphics on the
+  // restyled screens, so they get the same computational AA guard the
+  // ColorScheme roles above already have.
+
+  test('BrandTheme text-carrying roles meet WCAG 2.2 AA (4.5:1) in both '
+      'brightnesses', () {
+    for (final (name, brand) in <(String, BrandTheme)>[
+      ('light', AppTheme.light().extension<BrandTheme>()!),
+      ('dark', AppTheme.dark().extension<BrandTheme>()!),
+    ]) {
+      // Hero title + body (apiary/activity detail plum header) and the notes
+      // "sticky note" callout are genuine body text, held to the 4.5:1 bar.
+      _expectAaContrast(
+        '$name hero onHeroSurface',
+        brand.onHeroSurface,
+        brand.heroSurface,
+      );
+      _expectAaContrast(
+        '$name hero onHeroSurfaceMuted',
+        brand.onHeroSurfaceMuted,
+        brand.heroSurface,
+      );
+      _expectAaContrast('$name notes text', brand.notesText, brand.notesBg);
+    }
+  });
+
+  test('BrandTheme activity-type icon tints meet the non-text 3:1 floor '
+      '(graphical), except the decorative gold cresta pair', () {
+    // The type icon tiles are graphical objects; in light mode their tints are
+    // opaque so contrast is meaningful (dark-mode tints are translucent washes
+    // over the plum card, so a raw-token ratio would be misleading and is not
+    // asserted here). feeding/treatment/generic clear the 3:1 non-text floor.
+    final brand = AppTheme.light().extension<BrandTheme>()!;
+    for (final (name, v) in <(String, ActivityTypeVisual)>[
+      ('feeding', brand.feeding),
+      ('treatment', brand.treatment),
+      ('generic', brand.generic),
+    ]) {
+      _expectAaContrast(
+        'light activity $name icon-on-tint',
+        v.color,
+        v.tint,
+        minRatio: _kMinNonTextContrast,
+      );
+    }
+    // Cresta is honey/gold-on-sand (~2.85:1), below even the 3:1 non-text
+    // floor — the same documented gold-as-decorative exception brand_tokens
+    // and the tertiary pair above already call out. It's exempt from SC
+    // 1.4.11 because the icon is DECORATIVE: the activity type is always
+    // shown as an adjacent text label (and the apiary/hive name carries the
+    // row's meaning), so the tinted icon never solely conveys content. Guard
+    // only that it hasn't regressed to invisibly-low contrast.
+    final cresta = _contrastRatio(brand.cresta.color, brand.cresta.tint);
+    expect(
+      cresta,
+      greaterThan(1.3),
+      reason:
+          'cresta icon-on-tint ($cresta:1) — decorative, but should stay '
+          'visibly distinct from its tile',
     );
   });
 }

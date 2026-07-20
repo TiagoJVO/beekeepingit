@@ -165,7 +165,6 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                         keyboardType: TextInputType.emailAddress,
                         decoration: InputDecoration(
                           labelText: l10n.membersInviteEmailLabel,
-                          border: const OutlineInputBorder(),
                           errorText: _emailError,
                         ),
                         validator: (v) {

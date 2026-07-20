@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 import 'apiary_multi_select_field.dart';
 import 'journey_status.dart';
@@ -200,7 +202,12 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(
+            BrandDimens.gutterForm,
+            BrandDimens.gutterForm,
+            BrandDimens.gutterForm,
+            BrandDimens.scrollBottomInset,
+          ),
           child: Form(
             key: _formKey,
             child: Column(
@@ -208,45 +215,48 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
               children: [
                 if (widget.isEdit)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _StatusChip(status: _status),
+                    padding: const EdgeInsets.only(
+                      bottom: BrandDimens.gapField,
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _StatusChip(status: _status),
+                    ),
                   ),
-                TextFormField(
-                  key: const Key('journey-name-field'),
-                  controller: _nameController,
-                  maxLength: 200,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? l10n.journeyNameRequired
-                      : null,
-                  decoration: InputDecoration(
-                    labelText: l10n.journeyNameLabel,
-                    border: const OutlineInputBorder(),
+                LabeledField(
+                  label: l10n.journeyNameLabel,
+                  child: TextFormField(
+                    key: const Key('journey-name-field'),
+                    controller: _nameController,
+                    maxLength: 200,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? l10n.journeyNameRequired
+                        : null,
                   ),
                 ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  key: const Key('journey-main-activity-type-field'),
-                  initialValue: _mainActivityType,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.journeyMainActivityTypeLabel,
-                    border: const OutlineInputBorder(),
+                const SizedBox(height: BrandDimens.gapField),
+                LabeledField(
+                  label: l10n.journeyMainActivityTypeLabel,
+                  child: DropdownButtonFormField<String>(
+                    key: const Key('journey-main-activity-type-field'),
+                    initialValue: _mainActivityType,
+                    isExpanded: true,
+                    items: [
+                      for (final type in knownActivityTypes)
+                        DropdownMenuItem(
+                          value: type,
+                          child: Text(activityTypeLabel(l10n, type) ?? type),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _mainActivityType = value);
+                      }
+                    },
                   ),
-                  items: [
-                    for (final type in knownActivityTypes)
-                      DropdownMenuItem(
-                        value: type,
-                        child: Text(activityTypeLabel(l10n, type) ?? type),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _mainActivityType = value);
-                    }
-                  },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: BrandDimens.gapField),
                 ApiaryMultiSelectField(
                   selectedApiaryIds: _apiaryIds,
                   onChanged: (ids) => setState(() {
@@ -325,8 +335,8 @@ class _StatusChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: closed
               ? theme.colorScheme.surfaceContainerHighest
-              : theme.colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(12),
+              : theme.colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
         ),
         child: ExcludeSemantics(
           child: Text(
@@ -334,7 +344,8 @@ class _StatusChip extends StatelessWidget {
             style: theme.textTheme.labelMedium?.copyWith(
               color: closed
                   ? theme.colorScheme.onSurfaceVariant
-                  : theme.colorScheme.onPrimaryContainer,
+                  : theme.colorScheme.onSecondaryContainer,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),

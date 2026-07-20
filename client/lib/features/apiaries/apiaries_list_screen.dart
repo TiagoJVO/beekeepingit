@@ -8,6 +8,9 @@ import '../../core/geo/distance.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import 'apiaries_repository.dart';
 import 'apiary_map_screen.dart';
 
@@ -145,9 +148,6 @@ class ApiariesListScreen extends ConsumerWidget {
                   decoration: InputDecoration(
                     hintText: l10n.apiariesSearchHint,
                     prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
                     isDense: true,
                     suffixIcon: query.isEmpty
                         ? null
@@ -192,22 +192,28 @@ class ApiariesListScreen extends ConsumerWidget {
                 ),
                 data: (vm) {
                   if (!vm.hasAnyApiaries) {
-                    return Center(child: Text(l10n.apiariesEmpty));
+                    return EmptyState(
+                      message: l10n.apiariesEmpty,
+                      icon: Icons.hive_outlined,
+                    );
                   }
                   if (vm.ordered.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(l10n.apiariesSearchNoResults),
-                      ),
-                    );
+                    return EmptyState(message: l10n.apiariesSearchNoResults);
                   }
 
                   final deviceLocation = location.value;
+                  final brand = context.brand;
 
                   return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(
+                      BrandDimens.gutter,
+                      4,
+                      BrandDimens.gutter,
+                      BrandDimens.scrollBottomInset,
+                    ),
                     itemCount: vm.ordered.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(height: BrandDimens.gapCard),
                     itemBuilder: (context, i) {
                       final apiary = vm.ordered[i];
                       final distanceText = _distanceSubtitle(
@@ -216,19 +222,17 @@ class ApiariesListScreen extends ConsumerWidget {
                         apiary,
                         deviceLocation,
                       );
-                      return ListTile(
+                      return BrandRowCard(
                         key: Key('apiary-${apiary.id}'),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 8,
+                        title: apiary.name,
+                        subtitle: distanceText == null
+                            ? l10n.hiveCountValue(apiary.hiveCount)
+                            : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
+                        leading: LeadingIconTile(
+                          icon: Icons.hive,
+                          color: brand.cresta.color,
+                          tint: brand.cresta.tint,
                         ),
-                        title: Text(apiary.name),
-                        subtitle: Text(
-                          distanceText == null
-                              ? l10n.hiveCountValue(apiary.hiveCount)
-                              : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
                         onTap: () => context.go('/apiaries/${apiary.id}'),
                       );
                     },

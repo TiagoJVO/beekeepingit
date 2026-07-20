@@ -100,7 +100,6 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                     autofocus: true,
                     decoration: InputDecoration(
                       labelText: l10n.organizationNameLabel,
-                      border: const OutlineInputBorder(),
                       errorText: _fieldErrors['name'],
                     ),
                     validator: (v) => (v == null || v.trim().isEmpty)
@@ -113,7 +112,6 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                     controller: _addressController,
                     decoration: InputDecoration(
                       labelText: l10n.organizationAddressLabel,
-                      border: const OutlineInputBorder(),
                       errorText: _fieldErrors['address'],
                     ),
                   ),

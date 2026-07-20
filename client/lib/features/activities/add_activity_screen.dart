@@ -550,7 +550,6 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
                         isExpanded: true,
                         decoration: InputDecoration(
                           labelText: l10n.activityTypeFieldLabel,
-                          border: const OutlineInputBorder(),
                         ),
                         items: [
                           for (final type in knownActivityTypes)
@@ -588,7 +587,6 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
                         child: InputDecorator(
                           decoration: InputDecoration(
                             labelText: l10n.activityOccurredAtLabel,
-                            border: const OutlineInputBorder(),
                           ),
                           child: Text(
                             LocaleFormatting.of(context).date(_occurredAt),
@@ -664,10 +662,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
             autovalidateMode: AutovalidateMode.onUserInteraction,
             validator: (_) => _attrError(l10n, 'lot_batch'),
             onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              labelText: l10n.activityLotBatchLabel,
-              border: const OutlineInputBorder(),
-            ),
+            decoration: InputDecoration(labelText: l10n.activityLotBatchLabel),
           ),
           const SizedBox(height: 16),
           _notesField(l10n),
@@ -791,7 +786,6 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
     validator: (_) => _attrError(l10n, 'notes'),
     decoration: InputDecoration(
       labelText: l10n.activityNotesLabel,
-      border: const OutlineInputBorder(),
       alignLabelWithHint: true,
     ),
   );
@@ -816,10 +810,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       // attribute is missing/invalid (HIGH review fix).
       autovalidateMode: AutovalidateMode.onUserInteraction,
       validator: (_) => _attrError(l10n, attrKey),
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: InputDecoration(labelText: label),
       onChanged: (_) => setState(() {}),
     );
   }
@@ -845,11 +836,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       // treatment_type for a detection-only report, #291 AC).
       autovalidateMode: AutovalidateMode.onUserInteraction,
       validator: (_) => _attrError(l10n, attrKey),
-      decoration: InputDecoration(
-        labelText: label,
-        helperText: helperText,
-        border: const OutlineInputBorder(),
-      ),
+      decoration: InputDecoration(labelText: label, helperText: helperText),
       items: [
         for (final option in options)
           DropdownMenuItem(
