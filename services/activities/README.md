@@ -33,7 +33,11 @@ this is the direct carry-over of #38's review finding, closed here the same
 way apiaries closed its own cross-tenant IDOR on counter sync (#284). An
 edit that doesn't touch `apiary_id` (the common case — the client's edit UI
 never exposes moving an activity to a different apiary) makes no
-cross-service call at all. List is a later EPIC-03 story (#42/#43).
+cross-service call at all. List is a later EPIC-03 story (#42/#43) that
+turned out to need no new REST surface (the field client lists purely from
+its own PowerSync-synced local activities table). The one new read route
+this service exposes today is the per-entity history timeline
+(`GET /v1/activities/{id}/history`, #60/FR-HIS-1) documented below.
 
 [#46](https://github.com/TiagoJVO/beekeepingit/issues/46) (EPIC-04 M4, D-21)
 wires the optional `journey_id` field the same way: `POST /v1/activities`
@@ -104,15 +108,16 @@ existing type, is a **code-only** change — append to `typeSchemas` in
 
 ## Surface
 
-| Route                                | Auth                 | Purpose                                                                                                                                                                                                                                                                                        |
-| ------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /internal/activities/validate` | OIDC JWT + org scope | Stateless attribute-schema validation of `{type, occurred_at, attributes}`; never persists (#38). 200 `{"valid":true}` or 422 RFC 9457 with field detail.                                                                                                                                      |
-| `POST /v1/activities`                | OIDC JWT + org scope | Create an activity (#39, online-only/direct callers -- the field PWA creates through sync instead). Verifies `apiary_id` ownership, derives `performed_by` from claims (FR-TEN-2), records history (FR-HIS-1). 201 with the created activity, or 422/409 on validation/idempotency conflict.   |
-| `PATCH /v1/activities/{id}`          | OIDC JWT + org scope | Edit an activity (#40, FR-AC-3, online-only/direct callers). Re-validates type/occurred_at/attributes, re-verifies `apiary_id` ownership only when the request carries one, records history. 200 with the updated activity, or 404/422.                                                        |
-| `DELETE /v1/activities/{id}`         | OIDC JWT + org scope | Delete an activity (#41, FR-AC-4, online-only/direct callers) -- a **tombstone** (`deleted_at`), not a hard delete. Records history. 204, or 404 if already gone.                                                                                                                              |
-| `POST /internal/sync/validate`       | OIDC JWT + org scope | Dry-runs a batch of `entity_type: "activity"` sync ops (`put`/`patch`/`delete`, #40/#41) -- the counterpart of `services/apiaries/api/sync.go`'s own route, called by `services/sync`'s coordinator.                                                                                           |
-| `POST /internal/sync/apply`          | OIDC JWT + org scope | Applies a batch of `entity_type: "activity"` ops in one local transaction -- idempotent on the client-generated id, LWW-compared against the stored row's `updated_at` for edit/delete (#40/#41), records history, logs a conflict (server wins) on an LWW-losing or differing-content resend. |
-| `GET /healthz`, `GET /readyz`        | none                 | Liveness / readiness.                                                                                                                                                                                                                                                                          |
+| Route                                | Auth                 | Purpose                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------ | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /internal/activities/validate` | OIDC JWT + org scope | Stateless attribute-schema validation of `{type, occurred_at, attributes}`; never persists (#38). 200 `{"valid":true}` or 422 RFC 9457 with field detail.                                                                                                                                                                        |
+| `GET /v1/activities/{id}/history`    | OIDC JWT + org scope | The activity's combined change history -- `audit_log` entries plus `superseded` conflict-log events, chronological, unpaginated (#60/FR-HIS-1); 404 if the activity doesn't exist or belongs to another org. Online fallback only -- a synced device renders history from its local PowerSync-replicated tables (history.md §6). |
+| `POST /v1/activities`                | OIDC JWT + org scope | Create an activity (#39, online-only/direct callers -- the field PWA creates through sync instead). Verifies `apiary_id` ownership, derives `performed_by` from claims (FR-TEN-2), records history (FR-HIS-1). 201 with the created activity, or 422/409 on validation/idempotency conflict.                                     |
+| `PATCH /v1/activities/{id}`          | OIDC JWT + org scope | Edit an activity (#40, FR-AC-3, online-only/direct callers). Re-validates type/occurred_at/attributes, re-verifies `apiary_id` ownership only when the request carries one, records history. 200 with the updated activity, or 404/422.                                                                                          |
+| `DELETE /v1/activities/{id}`         | OIDC JWT + org scope | Delete an activity (#41, FR-AC-4, online-only/direct callers) -- a **tombstone** (`deleted_at`), not a hard delete. Records history. 204, or 404 if already gone.                                                                                                                                                                |
+| `POST /internal/sync/validate`       | OIDC JWT + org scope | Dry-runs a batch of `entity_type: "activity"` sync ops (`put`/`patch`/`delete`, #40/#41) -- the counterpart of `services/apiaries/api/sync.go`'s own route, called by `services/sync`'s coordinator.                                                                                                                             |
+| `POST /internal/sync/apply`          | OIDC JWT + org scope | Applies a batch of `entity_type: "activity"` ops in one local transaction -- idempotent on the client-generated id, LWW-compared against the stored row's `updated_at` for edit/delete (#40/#41), records history, logs a conflict (server wins) on an LWW-losing or differing-content resend.                                   |
+| `GET /healthz`, `GET /readyz`        | none                 | Liveness / readiness.                                                                                                                                                                                                                                                                                                            |
 
 ## Configuration
 
@@ -136,15 +141,16 @@ sqlc generate -f store/sqlc/sqlc.yaml
 go build ./...
 go test ./...   # api/... is fast, pure-Go unit tests (type-registry validation, the
                  # ApiaryVerifier's/JourneyVerifier's HTTP behavior against an httptest
-                 # fake — no real DB); the top-level package needs testcontainers/Postgres
-                 # (postgres:16-alpine — no PostGIS columns here, unlike apiaries): schema
-                 # tenancy check, the validate endpoint, the create/edit/delete REST paths
-                 # (including the cross-org apiary_id/journey_id rejection, #39's carry-over
-                 # from #38's review, #40's own re-verification on edit, and #46's journey_id
-                 # IDOR closure), the sync validate/apply endpoints (create/edit/delete, LWW,
-                 # tombstone-exclusion-from-list, offline op idempotency, ownership-call
-                 # de-duplication for both apiary_id and journey_id), and store-layer
-                 # insert/read + cross-org isolation.
+                 # fake, the history.go DTO mapping — no real DB); the top-level package
+                 # needs testcontainers/Postgres (postgres:16-alpine — no PostGIS columns
+                 # here, unlike apiaries): schema tenancy check, the validate endpoint, the
+                 # create/edit/delete/history REST paths (including the cross-org
+                 # apiary_id/journey_id rejection, #39's carry-over from #38's review, #40's
+                 # own re-verification on edit, #46's journey_id IDOR closure, and #60's own
+                 # cross-org history rejection), the sync validate/apply endpoints
+                 # (create/edit/delete, LWW, tombstone-exclusion-from-list, offline op
+                 # idempotency, ownership-call de-duplication for both apiary_id and
+                 # journey_id), and store-layer insert/read + cross-org isolation.
 ```
 
 ## Tenancy (FR-TEN-2)

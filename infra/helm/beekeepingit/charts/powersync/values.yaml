@@ -120,6 +120,31 @@ syncConfig:
         - SELECT id, organization_id, apiary_id, performed_by, journey_id, type,
           occurred_at, attributes, created_at, updated_at
           FROM activities.activities WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        # activities.audit_log / activities.sync_conflict_log (#60, FR-HIS-1,
+        # history.md §6/§8): the per-activity history timeline's offline path.
+        # Same flat unfiltered-`SELECT *` shape and same full-log (not
+        # time-bounded) rationale as the apiaries.audit_log /
+        # apiaries.sync_conflict_log entries above — see their comment; Sync
+        # Rules can't express a LIMIT or a rolling time window, so v1
+        # replicates the whole per-org log.
+        #
+        # These land in the SAME local `audit_log` / `sync_conflict_log` tables
+        # as the apiaries entries: PowerSync names the output table from the
+        # unqualified FROM name, and both schemas' DDL is column-identical
+        # (services/activities/store/migrations/00002_create_audit_log.sql vs.
+        # services/apiaries/store/migrations/00002_create_audit_log.sql). That
+        # is deliberate, not a collision — both logs are polymorphic on
+        # (entity_type, entity_id) (history.md §3), so one local table per log
+        # kind serves every entity's timeline and the client filters by
+        # entity_type (client/lib/features/history/history_repository.dart's
+        # UNION ALL, mirroring the server's ListEntityTimeline query).
+        #
+        # Read-only on the device: nothing in the client ever writes these
+        # tables, so they generate no CRUD ops and need no
+        # `entityTypeForTable` mapping in powersync_connector.dart (contrast
+        # every other table here, which is write-backed).
+        - SELECT * FROM activities.audit_log WHERE organization_id = bucket.organization_id
+        - SELECT * FROM activities.sync_conflict_log WHERE organization_id = bucket.organization_id
         # journeys.journeys / journeys.journey_plan_items (#45, FR-OF-1, D-21):
         # stream a journey's own fields and its "apiaries to visit" plan so
         # creating/editing/closing a journey offline reconciles across

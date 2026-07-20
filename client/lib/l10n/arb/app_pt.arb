@@ -499,5 +499,59 @@
         "type": "String"
       }
     }
-  }
+  },
+  "historySectionTitle": "Histórico",
+  "historyScreenTitle": "Histórico",
+  "historyEmpty": "Ainda não há alterações registadas",
+  "historyError": "Não foi possível carregar o histórico: {error}",
+  "@historyError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "historyViewAllAction": "Ver tudo",
+  "historyEventCreated": "Criado",
+  "historyEventUpdated": "Atualizado",
+  "historyEventDeleted": "Eliminado",
+  "historyEventSuperseded": "Substituído",
+  "historyEventUnknown": "Alterado",
+  "historyChangedFieldsValue": "Alterado: {fields}",
+  "@historyChangedFieldsValue": {
+    "placeholders": {
+      "fields": {
+        "type": "String"
+      }
+    }
+  },
+  "historySupersededDetail": "Substituído por uma versão mais recente de outro dispositivo",
+  "historyActorYou": "Você",
+  "historyActorMember": "Membro {id}",
+  "@historyActorMember": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "historyActorUnknown": "Desconhecido",
+  "historyEntrySemanticLabel": "{event} por {actor}, {timestamp}",
+  "@historyEntrySemanticLabel": {
+    "placeholders": {
+      "event": {
+        "type": "String"
+      },
+      "actor": {
+        "type": "String"
+      },
+      "timestamp": {
+        "type": "String"
+      }
+    }
+  },
+  "historyFieldLocation": "Localização",
+  "historyFieldActivityType": "Tipo de atividade",
+  "historyFieldAttributes": "Detalhes",
+  "historyFieldApiary": "Apiário"
 }

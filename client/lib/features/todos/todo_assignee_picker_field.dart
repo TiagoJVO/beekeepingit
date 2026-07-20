@@ -7,6 +7,7 @@ import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
+import '../members/member_display.dart';
 import '../members/members_repository.dart';
 
 /// The todo assignee picker (#293, FR-TD-1) — a single-select list of the
@@ -100,7 +101,7 @@ class _RosterList extends StatelessWidget {
     if (selected != null &&
         selected.isNotEmpty &&
         !entries.containsKey(selected)) {
-      entries[selected] = l10n.todoAssigneeUnknown(_shortId(selected));
+      entries[selected] = l10n.todoAssigneeUnknown(shortMemberId(selected));
     }
 
     final brand = context.brand;
@@ -143,8 +144,6 @@ class _RosterList extends StatelessWidget {
     );
   }
 }
-
-String _shortId(String id) => id.length <= 8 ? id : id.substring(id.length - 8);
 
 /// One selectable, single-select row — deliberately duplicated from
 /// todo_apiary_picker_field.dart's own private `_TodoOptionTile` (same

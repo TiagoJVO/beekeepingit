@@ -35,6 +35,7 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/health"
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 	"github.com/TiagoJVO/beekeepingit/services/shared/devseed"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 // testOrgHeader lets a test request stand in as a caller resolved to a
@@ -1609,6 +1610,291 @@ func TestActivitiesRest_History_DeleteProducesAuditRow(t *testing.T) {
 	}
 	if uuidString(rows[1].ActorUserID) != devseed.UserID {
 		t.Fatalf("audit actor_user_id = %q, want the deleting user %q (FR-HIS-1: actor + timestamp)", uuidString(rows[1].ActorUserID), devseed.UserID)
+	}
+}
+
+// --- GET /v1/activities/{id}/history (#60, FR-HIS-1) ---
+
+// historyEntryView mirrors api/history.go's historyEntryDTO wire shape —
+// this test file's own decode target (can't import the api package's
+// unexported type across packages).
+type historyEntryView struct {
+	ID            string          `json:"id"`
+	EntityType    string          `json:"entity_type"`
+	EntityID      string          `json:"entity_id"`
+	EventKind     string          `json:"event_kind"`
+	ActorUserID   *string         `json:"actor_user_id"`
+	OccurredAt    time.Time       `json:"occurred_at"`
+	RecordedAt    time.Time       `json:"recorded_at"`
+	ChangedFields []string        `json:"changed_fields"`
+	Change        json.RawMessage `json:"change"`
+}
+
+type historyListView struct {
+	Data []historyEntryView `json:"data"`
+}
+
+func (f *activitiesFixture) getActivityHistory(t *testing.T, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	return f.do(t, http.MethodGet, "/v1/activities/"+id+"/history", nil)
+}
+
+// TestActivitiesRest_History_GetReturnsCombinedTimelineChronologically is
+// #60's core AC: GET /v1/activities/{id}/history exposes the combined
+// audit_log+sync_conflict_log timeline ListEntityTimeline builds (mirroring
+// apiaries' own #61/#60 read) — create/update/delete via the REST write
+// paths, then read it back over HTTP in chronological (recorded_at) order,
+// oldest first.
+func TestActivitiesRest_History_GetReturnsCombinedTimelineChronologically(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getActivityHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, update, delete): %+v", len(got.Data), got.Data)
+	}
+	wantKinds := []string{history.ChangeCreate, history.ChangeUpdate, history.ChangeDelete}
+	for i, want := range wantKinds {
+		e := got.Data[i]
+		if e.EventKind != want {
+			t.Fatalf("history[%d].EventKind = %q, want %q", i, e.EventKind, want)
+		}
+		if e.EntityType != "activity" || e.EntityID != id {
+			t.Fatalf("history[%d] entity = (%q,%q), want (activity,%q)", i, e.EntityType, e.EntityID, id)
+		}
+		if e.ActorUserID == nil || *e.ActorUserID != devseed.UserID {
+			t.Fatalf("history[%d].ActorUserID = %v, want %q", i, e.ActorUserID, devseed.UserID)
+		}
+		if e.OccurredAt.IsZero() || e.RecordedAt.IsZero() {
+			t.Fatalf("history[%d] has a zero timestamp: %+v", i, e)
+		}
+	}
+	if len(got.Data[1].ChangedFields) == 0 {
+		t.Fatalf("update entry ChangedFields = %v, want at least one changed field", got.Data[1].ChangedFields)
+	}
+	if !got.Data[0].RecordedAt.Before(got.Data[1].RecordedAt) || !got.Data[1].RecordedAt.Before(got.Data[2].RecordedAt) {
+		t.Fatalf("history entries not chronologically ordered: %+v", got.Data)
+	}
+}
+
+// TestActivitiesRest_History_ConflictSurfacesAsSupersededOverHTTP proves the
+// #60 REST endpoint surfaces an LWW-losing offline edit as a "superseded"
+// event (history.md §6), not silently missing — the HTTP counterpart of
+// TestActivitiesSync_Apply_Delete_OlderThanLastEditIsSuperseded's own
+// conflict scenario, but for a patch-vs-patch race read back via the new
+// history route instead of asserted directly against the DB.
+func TestActivitiesRest_History_ConflictSurfacesAsSupersededOverHTTP(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOp(id, apiaryID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// A newer edit lands first (11:00) and wins.
+	winningOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{"notes": "winner"}},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{winningOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("winning patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// An older queued edit (10:30, between the create's 10:00 and the
+	// winning edit's 11:00) arrives after — it loses.
+	losingOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T10:30:00Z",
+		"data":       map[string]any{"type": api.TypeFeeding, "occurred_at": "2026-07-16", "attributes": map[string]any{"notes": "loser"}},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{losingOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("losing patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var applyResult struct {
+		Results []struct {
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &applyResult); err != nil {
+		t.Fatalf("decode apply response: %v", err)
+	}
+	if len(applyResult.Results) != 1 || applyResult.Results[0].Result != "superseded" {
+		t.Fatalf("losing patch result = %+v, want one superseded op", applyResult.Results)
+	}
+
+	histRec := f.getActivityHistory(t, id)
+	if histRec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", histRec.Code, histRec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(histRec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, winning update, superseded loss): %+v", len(got.Data), got.Data)
+	}
+	last := got.Data[2]
+	if last.EventKind != history.EventSuperseded {
+		t.Fatalf("last entry EventKind = %q, want %q", last.EventKind, history.EventSuperseded)
+	}
+	if last.ChangedFields != nil {
+		t.Fatalf("superseded entry ChangedFields = %v, want nil (only audit_log rows carry it)", last.ChangedFields)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(last.Change, &change); err != nil {
+		t.Fatalf("unmarshal superseded change: %v", err)
+	}
+	if change["winner"] != "server" {
+		t.Fatalf("superseded change[winner] = %v, want server", change["winner"])
+	}
+}
+
+// TestActivitiesRest_History_NotFound_UnknownID: a history request for an id
+// that was never created 404s, same as the REST create/edit/delete paths.
+func TestActivitiesRest_History_NotFound_UnknownID(t *testing.T) {
+	f := newActivitiesFixture(t)
+	rec := f.getActivityHistory(t, uuid.NewString())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("history status for unknown id = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestActivitiesRest_History_CrossOrg_NotFound is the #60 IDOR regression:
+// org B must not be able to read org A's activity history by id — the same
+// CRITICAL cross-org guard TestActivitiesRest_CrossOrg_WritesCannotTouchOtherOrgsRow
+// proves for edit/delete (#284/#39 carry-over), now proven for the new
+// history route too, so it never regresses that fix. 404 (ADR-0002
+// scope-hiding), not an empty-but-200 body (which would still leak "this id
+// exists in some org").
+func TestActivitiesRest_History_CrossOrg_NotFound(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	other := otherOrgCaller()
+	rec := f.doAs(t, other, http.MethodGet, "/v1/activities/"+id+"/history", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-org history status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestActivitiesRest_History_ChangePayloadNeverEmbedsPersonalData is the
+// activities counterpart of apiaries' own pseudonymity regression
+// (TestApiariesSlice_History_ChangePayloadNeverEmbedsPersonalData, #59).
+// history.md §7.3 makes GDPR erasure safe by CONSTRUCTION: an audit row
+// carries only the opaque actor UUID, never denormalized names/emails — so
+// erasing a user from identity.users leaves nothing personal behind in any
+// service's audit_log. That guarantee is only as good as its weakest write
+// path, and #60 gave activities its own HTTP read surface for these rows.
+//
+// Asserts against the HTTP response rather than the table directly (unlike
+// the apiaries test): the wire shape is what #60 actually exposed, so this
+// guards the DTO mapping too, not just what got stored. Covers all three
+// audit change types AND the sync_conflict_log "superseded" entry, whose
+// change carries whole winning/losing row payloads — the likeliest place for
+// a field to smuggle personal data in unnoticed.
+func TestActivitiesRest_History_ChangePayloadNeverEmbedsPersonalData(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	// create + update + delete over REST (three audit change types)...
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	// ...plus a stale offline edit that loses LWW, producing a superseded
+	// conflict row with full winning/losing payloads.
+	losingOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2020-01-01T00:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-17",
+			"attributes": map[string]any{"notes": "stale offline edit"},
+		},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{losingOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("losing apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getActivityHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) == 0 {
+		t.Fatalf("history returned no entries; the assertions below would vacuously pass")
+	}
+	var sawSuperseded bool
+	for _, e := range got.Data {
+		if e.EventKind == history.EventSuperseded {
+			sawSuperseded = true
+		}
+	}
+	if !sawSuperseded {
+		t.Fatalf("no superseded entry in the timeline — the conflict payload, this test's main target, went unchecked: %+v", got.Data)
+	}
+
+	// devseed's known PII — if it ever leaked into a payload it would appear
+	// verbatim as one of these substrings, at any nesting depth.
+	forbidden := []string{devseed.UserName, devseed.UserEmail}
+
+	for _, e := range got.Data {
+		body := string(e.Change)
+		for _, pii := range forbidden {
+			if strings.Contains(body, pii) {
+				t.Fatalf("change payload for event_kind=%s contains denormalized PII %q: %s", e.EventKind, pii, body)
+			}
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(e.Change, &decoded); err != nil {
+			t.Fatalf("change payload for event_kind=%s is not a JSON object: %s", e.EventKind, body)
+		}
+		for _, key := range []string{"actor_name", "name", "email"} {
+			if _, ok := decoded[key]; ok {
+				t.Fatalf("change payload for event_kind=%s embeds a %q field: %s", e.EventKind, key, body)
+			}
+		}
+		// The actor is exposed as an opaque UUID and nothing else.
+		if e.ActorUserID != nil && *e.ActorUserID != devseed.UserID {
+			t.Fatalf("ActorUserID = %q, want the opaque devseed user UUID %q", *e.ActorUserID, devseed.UserID)
+		}
 	}
 }
 

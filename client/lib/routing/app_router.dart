@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/auth/auth_controller.dart';
+import '../core/sync/powersync_schema.dart';
 import '../features/account/account_screen.dart';
 import '../features/activities/activities_list_screen.dart';
 import '../features/activities/activity_detail_screen.dart';
@@ -12,6 +13,7 @@ import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/history/history_screen.dart';
 import '../features/journeys/journey_detail_screen.dart';
 import '../features/journeys/journey_form_screen.dart';
 import '../features/journeys/journeys_list_screen.dart';
@@ -199,6 +201,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                       // full path (`.../activities/:activityId/edit`) and
                       // `activityEdit` name are unchanged — no existing deep
                       // link breaks.
+                      // Full per-apiary change history (#60, FR-HIS-1): the
+                      // uncapped counterpart of the detail page's embedded
+                      // HistorySection, same preview-then-full-screen split
+                      // as `activities` above and for the same reason (a
+                      // shrink-wrapped preview can't virtualize).
+                      GoRoute(
+                        path: 'history',
+                        name: 'apiaryHistory',
+                        builder: (context, state) => HistoryScreen(
+                          entityType: apiaryEntityType,
+                          entityId: state.pathParameters['id']!,
+                        ),
+                      ),
                       GoRoute(
                         path: 'activities/:activityId',
                         name: 'activityDetail',
@@ -213,6 +228,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                             builder: (context, state) => AddActivityScreen(
                               apiaryId: state.pathParameters['id']!,
                               activityId: state.pathParameters['activityId']!,
+                            ),
+                          ),
+                          // Per-activity change history (#60, FR-HIS-1) —
+                          // the same generic screen the apiary route above
+                          // uses, differing only in the entity type it is
+                          // pointed at.
+                          GoRoute(
+                            path: 'history',
+                            name: 'activityHistory',
+                            builder: (context, state) => HistoryScreen(
+                              entityType: activityEntityType,
+                              entityId: state.pathParameters['activityId']!,
                             ),
                           ),
                         ],

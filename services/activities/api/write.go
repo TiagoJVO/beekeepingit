@@ -92,13 +92,16 @@ type activityDTO struct {
 }
 
 // Router returns the client-facing /v1/activities surface: the REST create
-// route (#39/FR-AC-2) plus edit (#40/FR-AC-3) and delete (#41/FR-AC-4).
-// List is a later EPIC-03 story (#42/#43), following #38's own
-// scope-split precedent. journeyVerifier (#46) is only consulted by create —
-// journey_id is immutable after creation (updateActivity's own doc comment),
-// so edit/delete never need it.
+// route (#39/FR-AC-2) plus edit (#40/FR-AC-3), delete (#41/FR-AC-4) and the
+// per-activity history read (#60/FR-HIS-1, history.go). List is a later
+// EPIC-03 story (#42/#43), following #38's own scope-split precedent —
+// history.go's read is scoped to one entity's timeline, not a list surface.
+// journeyVerifier (#46) is only consulted by create — journey_id is immutable
+// after creation (updateActivity's own doc comment), so edit/delete never need it.
 func Router(pool *pgxpool.Pool, verifier *ApiaryVerifier, journeyVerifier *JourneyVerifier) http.Handler {
+	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
+	r.Get("/{activityId}/history", getActivityHistory(q))
 	r.Post("/", createActivity(pool, verifier, journeyVerifier))
 	r.Patch("/{activityId}", updateActivity(pool, verifier))
 	r.Delete("/{activityId}", deleteActivity(pool))
