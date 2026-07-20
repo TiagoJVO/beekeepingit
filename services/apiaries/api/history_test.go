@@ -106,6 +106,65 @@ func TestTimelineRowToDTO_SupersededRowHasNoActorAndNoChangedFields(t *testing.T
 	}
 }
 
+// TestTimelineRowToDTO_NullOccurredAtIsOmittedNotZeroTime pins the wire
+// contract for a NULL occurred_at.
+//
+// The timeline UNIONs two tables whose nullability differs: audit_log's
+// occurred_at is NOT NULL, sync_conflict_log's is nullable (the losing
+// offline edit may carry no device time). Mapped through a non-pointer
+// time.Time, that NULL would serialize as "0001-01-01T00:00:00Z" — a
+// real-looking timestamp indistinguishable from a genuine one, which the
+// client would happily parse into a bogus date. The client's OTHER source for
+// the same timeline (its local synced tables) preserves a true SQL NULL, so
+// the two sources would disagree on the same row — breaking the identical
+// -shape invariant the client repository documents and relies on.
+func TestTimelineRowToDTO_NullOccurredAtIsOmittedNotZeroTime(t *testing.T) {
+	row := sqlcgen.ListEntityTimelineRow{
+		ID:          pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		EntityType:  "apiary",
+		EntityID:    pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		EventKind:   history.EventSuperseded,
+		ActorUserID: pgtype.UUID{Valid: false},
+		OccurredAt:  pgtype.Timestamptz{Valid: false}, // the case under test
+		RecordedAt:  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		Change:      []byte(`{"winner":"server"}`),
+	}
+
+	got := timelineRowToDTO(row)
+	if got.OccurredAt != nil {
+		t.Fatalf("OccurredAt = %v, want nil for a NULL column", *got.OccurredAt)
+	}
+
+	// The mapping alone isn't the contract — the JSON is. Assert the key is
+	// absent rather than present-and-zero.
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal DTO: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unmarshal DTO: %v", err)
+	}
+	if v, ok := decoded["occurred_at"]; ok {
+		t.Fatalf("occurred_at present as %v, want the key omitted entirely", v)
+	}
+	// recorded_at is NOT NULL on both tables and must still be emitted.
+	if _, ok := decoded["recorded_at"]; !ok {
+		t.Fatalf("recorded_at missing from %s", encoded)
+	}
+}
+
+func TestTimestampPtr(t *testing.T) {
+	if got := timestampPtr(pgtype.Timestamptz{Valid: false}); got != nil {
+		t.Errorf("timestampPtr(invalid) = %v, want nil", *got)
+	}
+	now := time.Now().UTC()
+	got := timestampPtr(pgtype.Timestamptz{Time: now, Valid: true})
+	if got == nil || !got.Equal(now) {
+		t.Errorf("timestampPtr(valid) = %v, want %v", got, now)
+	}
+}
+
 func TestActorUserIDPtr(t *testing.T) {
 	if got := actorUserIDPtr(pgtype.UUID{Valid: false}); got != nil {
 		t.Errorf("actorUserIDPtr(invalid) = %v, want nil", *got)

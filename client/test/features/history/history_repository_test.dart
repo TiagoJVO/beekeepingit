@@ -307,6 +307,53 @@ void main() {
       expect(h.requests.single.path, endsWith('/v1/apiaries/a1/history'));
     });
 
+    test(
+      'a superseded row with no device time stays null, matching the local path',
+      () async {
+        // The invariant this class documents: both sources produce the
+        // identical shape. sync_conflict_log.occurred_at is nullable, and the
+        // server omits the key rather than emitting Go's zero time — so the
+        // REST path must land on null here, exactly as the local path does
+        // for a true SQL NULL (see the local superseded test above).
+        final h = _buildRepo(
+          handler: (_) async => http.Response(
+            jsonEncode({
+              'data': [
+                {
+                  'id': 'c1',
+                  'entity_type': apiaryEntityType,
+                  'entity_id': 'a1',
+                  'event_kind': supersededEventKind,
+                  'recorded_at': '2026-07-19T10:00:00Z',
+                  // no occurred_at, no actor_user_id, no changed_fields
+                  'change': {
+                    'winning_payload': {'name': 'Server wins'},
+                    'losing_payload': {'name': 'Client loses'},
+                    'winner': 'server',
+                  },
+                },
+              ],
+            }),
+            200,
+          ),
+        );
+
+        final e = (await h.repo.fetchRemoteTimeline(
+          entityType: apiaryEntityType,
+          entityId: 'a1',
+        )).single;
+
+        expect(e.kind, HistoryEventKind.superseded);
+        expect(e.occurredAt, isNull);
+        expect(e.actorUserId, isNull);
+        expect(e.changedFields, isEmpty);
+        // The REST source already carries the assembled conflict payload, so
+        // it is passed through rather than rebuilt.
+        expect(e.conflictWinner, 'server');
+        expect(e.change['winning_payload'], {'name': 'Server wins'});
+      },
+    );
+
     test('routes an activity to its own owning service path', () async {
       final h = _buildRepo();
 

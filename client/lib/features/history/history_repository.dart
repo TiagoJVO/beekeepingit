@@ -153,6 +153,26 @@ class HistoryRepository {
         .map((rows) => rows.map(_fromRow).toList());
   }
 
+  /// A one-shot read of the same timeline [watchLocalTimeline] streams.
+  ///
+  /// Exists for one specific race: [entityHistoryProvider]'s `await for`
+  /// *pauses* its local subscription while the online fallback is in flight,
+  /// so a sync that lands mid-fetch stays queued behind the network call.
+  /// Re-reading here lets the provider prefer that just-landed local data
+  /// over a remote result that is already stale by the time it resolves.
+  Future<List<HistoryEntry>> getLocalTimeline({
+    required String entityType,
+    required String entityId,
+  }) async {
+    final rows = await _store.getAll(_timelineSql, [
+      entityType,
+      entityId,
+      entityType,
+      entityId,
+    ]);
+    return rows.map(_fromRow).toList();
+  }
+
   static const _timelineSql =
       'SELECT id, entity_type, entity_id, change_type AS event_kind, '
       'actor_user_id, occurred_at, recorded_at, changed_fields, change, '
@@ -312,6 +332,14 @@ final historyRepositoryProvider = FutureProvider<HistoryRepository>((
 /// REST timeline, and only **once** per provider lifetime: the result is
 /// cached so a later empty local emission re-yields it instead of
 /// re-querying the network on every change notification.
+///
+/// The re-read after the fetch is not redundant. `await for` **pauses** the
+/// local subscription for the duration of the awaited call, so a sync that
+/// completes mid-fetch is still sitting queued when the network result
+/// arrives — and yielding the remote result then would briefly show stale
+/// (or, on a failed fetch, empty) data over local rows that already exist on
+/// device. Checking once more keeps "local wins whenever it has rows" true
+/// even across that window.
 final entityHistoryProvider = StreamProvider.autoDispose
     .family<List<HistoryEntry>, HistoryTarget>((ref, target) async* {
       final repo = await ref.watch(historyRepositoryProvider.future);
@@ -331,6 +359,14 @@ final entityHistoryProvider = StreamProvider.autoDispose
             entityType: target.entityType,
             entityId: target.entityId,
           );
+          final landed = await repo.getLocalTimeline(
+            entityType: target.entityType,
+            entityId: target.entityId,
+          );
+          if (landed.isNotEmpty) {
+            yield landed;
+            continue;
+          }
         }
         yield remote;
       }

@@ -54,7 +54,7 @@ type historyEntryDTO struct {
 	EntityID      string          `json:"entity_id"`
 	EventKind     string          `json:"event_kind"`
 	ActorUserID   *string         `json:"actor_user_id,omitempty"`
-	OccurredAt    time.Time       `json:"occurred_at"`
+	OccurredAt    *time.Time      `json:"occurred_at,omitempty"`
 	RecordedAt    time.Time       `json:"recorded_at"`
 	ChangedFields []string        `json:"changed_fields,omitempty"`
 	Change        json.RawMessage `json:"change"`
@@ -135,7 +135,7 @@ func timelineRowToDTO(row sqlcgen.ListEntityTimelineRow) historyEntryDTO {
 		EntityID:      uuidString(row.EntityID),
 		EventKind:     row.EventKind,
 		ActorUserID:   actorUserIDPtr(row.ActorUserID),
-		OccurredAt:    row.OccurredAt.Time,
+		OccurredAt:    timestampPtr(row.OccurredAt),
 		RecordedAt:    row.RecordedAt.Time,
 		ChangedFields: row.ChangedFields,
 		Change:        json.RawMessage(row.Change),
@@ -155,4 +155,25 @@ func actorUserIDPtr(id pgtype.UUID) *string {
 	}
 	s := uuidString(id)
 	return &s
+}
+
+// timestampPtr converts a nullable timestamptz column to historyEntryDTO's
+// *time.Time, mirroring actorUserIDPtr's handling of a nullable UUID.
+//
+// The timeline UNIONs two tables whose occurred_at nullability DIFFERS:
+// audit_log's is NOT NULL, but sync_conflict_log's is nullable (the losing
+// offline edit may carry no device time), so the unioned column is nullable
+// overall. A plain `row.OccurredAt.Time` would silently render that NULL as
+// Go's zero time and serialize it as "0001-01-01T00:00:00Z" — a real-looking
+// timestamp the client cannot distinguish from a genuine one, and which its
+// local-store path (which preserves a true SQL NULL) would never produce.
+// Returning nil keeps the REST and offline sources producing the identical
+// shape, which the client's own history repository documents as an invariant.
+// recorded_at needs no equivalent: it is NOT NULL on both tables.
+func timestampPtr(ts pgtype.Timestamptz) *time.Time {
+	if !ts.Valid {
+		return nil
+	}
+	t := ts.Time
+	return &t
 }

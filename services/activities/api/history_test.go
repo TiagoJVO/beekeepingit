@@ -106,6 +106,60 @@ func TestTimelineRowToDTO_SupersededRowHasNoActorAndNoChangedFields(t *testing.T
 	}
 }
 
+// TestTimelineRowToDTO_NullOccurredAtIsOmittedNotZeroTime pins the wire
+// contract for a NULL occurred_at — see apiaries' identical test for the full
+// rationale; the two services share this DTO shape.
+//
+// In short: sync_conflict_log.occurred_at is nullable (the losing offline
+// edit may carry no device time) while audit_log's is NOT NULL, so the
+// unioned column is nullable. Through a non-pointer time.Time that NULL would
+// serialize as "0001-01-01T00:00:00Z", which the client cannot tell from a
+// genuine timestamp — and which its local-store path, preserving a true SQL
+// NULL, would never produce for the same row.
+func TestTimelineRowToDTO_NullOccurredAtIsOmittedNotZeroTime(t *testing.T) {
+	row := sqlcgen.ListEntityTimelineRow{
+		ID:          pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		EntityType:  "activity",
+		EntityID:    pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		EventKind:   history.EventSuperseded,
+		ActorUserID: pgtype.UUID{Valid: false},
+		OccurredAt:  pgtype.Timestamptz{Valid: false}, // the case under test
+		RecordedAt:  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		Change:      []byte(`{"winner":"server"}`),
+	}
+
+	got := timelineRowToDTO(row)
+	if got.OccurredAt != nil {
+		t.Fatalf("OccurredAt = %v, want nil for a NULL column", *got.OccurredAt)
+	}
+
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal DTO: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unmarshal DTO: %v", err)
+	}
+	if v, ok := decoded["occurred_at"]; ok {
+		t.Fatalf("occurred_at present as %v, want the key omitted entirely", v)
+	}
+	if _, ok := decoded["recorded_at"]; !ok {
+		t.Fatalf("recorded_at missing from %s", encoded)
+	}
+}
+
+func TestTimestampPtr(t *testing.T) {
+	if got := timestampPtr(pgtype.Timestamptz{Valid: false}); got != nil {
+		t.Errorf("timestampPtr(invalid) = %v, want nil", *got)
+	}
+	now := time.Now().UTC()
+	got := timestampPtr(pgtype.Timestamptz{Time: now, Valid: true})
+	if got == nil || !got.Equal(now) {
+		t.Errorf("timestampPtr(valid) = %v, want %v", got, now)
+	}
+}
+
 func TestActorUserIDPtr(t *testing.T) {
 	if got := actorUserIDPtr(pgtype.UUID{Valid: false}); got != nil {
 		t.Errorf("actorUserIDPtr(invalid) = %v, want nil", *got)
