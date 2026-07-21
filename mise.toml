@@ -33,6 +33,7 @@ sqlc = "1.31.1"                                          # typed SQL query codeg
 actionlint = "latest"        # GitHub Actions workflow linter
 shellcheck = "latest"        # shell script linter
 gitleaks = "latest"          # secret scanning
+yq = "4"                     # YAML query/extraction (scripts/check-deploy-url-drift.sh — #369)
 "npm:prettier" = "3"                 # Markdown / YAML / JSON formatter
 "npm:markdownlint-cli2" = "latest"   # Markdown linter
 
