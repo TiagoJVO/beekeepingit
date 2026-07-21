@@ -34,6 +34,16 @@ export default defineConfig({
     baseURL,
     // Dev cluster uses a self-signed cert.
     ignoreHTTPSErrors: true,
+    // Location is mandatory on the apiary form (#341, FR-AP-7), and the form's
+    // "use current location" action goes through `geolocator` →
+    // `navigator.geolocation`. Granting the permission up front (and pinning a
+    // fixed coordinate) makes that path deterministic — no permission prompt to
+    // dismiss, no real device location — so the create step has a reliable
+    // fallback if the embedded map's canvas tap doesn't take under headless
+    // chromium. The coordinate is mainland Portugal, matching the app's own
+    // default map center (apiary_form_screen.dart's `_pickerFallbackCenter`).
+    permissions: ["geolocation"],
+    geolocation: { latitude: 39.5, longitude: -8.0 },
     // The OIDC callback + Flutter re-bootstrap is a full page load that can be
     // slow on a cold stack; the default 30s navigation budget is tight, so
     // raise it for waitForURL/goto across the suite.

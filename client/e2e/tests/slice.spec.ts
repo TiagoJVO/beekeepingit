@@ -181,6 +181,59 @@ async function login(page: Page) {
   await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible({ timeout: 30_000 });
 }
 
+/**
+ * Sets the apiary form's (now mandatory) location — #341, FR-AP-7.
+ *
+ * Two things about the current form make this non-obvious:
+ *
+ * 1. The picker is **collapsed by default** (apiary_form_screen.dart's
+ *    `_mapPickerExpanded`) so the primary Save action stays above the fold, so
+ *    the map and its controls don't exist until "Set on map" is tapped.
+ *
+ * 2. The map surface is a `Semantics(label: …)` wrapper around `FlutterMap`
+ *    (`_LocationPicker`), and it is NOT reachable via `getByLabel`. Dumping
+ *    the semantics tree shows that wrapper merges with everything under it
+ *    into a single **leaf** node (childCount 0) whose label is the picker
+ *    label AND the Esri attribution, concatenated. Flutter web renders a
+ *    tappable leaf as `role="button"` and writes the label as DOM **text**
+ *    (`SemanticButton` → `LabelRepresentation.domText`), never as an
+ *    `aria-label` attribute — `aria-label` is only used for nodes that have
+ *    children. So `getByLabel("Map: tap to place the apiary's pin")` matches
+ *    nothing and waits out the whole test budget (the failure this replaced).
+ *    Match the role plus a regex on the accessible name instead — regex, not
+ *    an exact string, because of the concatenated attribution.
+ *
+ * The map tap is the interaction we want to exercise (it's what the widget
+ * tests drive), and Playwright dispatches real mouse events at the point, so
+ * flutter_map's own tap recognizer resolves the LatLng exactly as a user tap
+ * would. Headless canvas gesture handling is the one part of this flow that
+ * can't be verified off CI (no Docker/k3d locally), so "Use current location"
+ * — the form's other location affordance, and the one the widget tests'
+ * `_setLocationViaCurrentLocation` helper uses — backs it up; playwright
+ * .config.ts grants the geolocation permission and pins a fixed coordinate so
+ * that path needs no prompt. Either way we assert the location really is set
+ * before returning, since `_save` silently refuses (showing
+ * `apiaryLocationRequired`) without one and every later step would then fail
+ * for a confusing reason.
+ */
+async function setApiaryLocation(page: Page) {
+  await page.getByText("Set on map", { exact: true }).click();
+  const locationSet = page.getByText(/Location set:/);
+
+  await page
+    .getByRole("button", { name: /Map: tap to place the apiary/ })
+    .click({ position: { x: 120, y: 110 }, timeout: 20_000 })
+    .catch(() => {});
+  // flutter_map debounces a plain tap behind its double-tap-disambiguation
+  // timer before invoking MapOptions.onTap, so give the status line a moment
+  // to flip before deciding the tap didn't take.
+  await locationSet.waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
+  if (!(await locationSet.isVisible().catch(() => false))) {
+    await page.getByText("Use current location", { exact: true }).click();
+  }
+  await expect(locationSet).toBeVisible({ timeout: 20_000 });
+}
+
 test("login → create → offline edit → sync", async ({ page, context, browser }) => {
   // Capture the OIDC access token from the app's own requests (the provider
   // disallows direct grant, so we don't mint one out-of-band). Also stashed at
@@ -222,13 +275,8 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.press("Backspace");
   await page.keyboard.type(apiaryNotes, { delay: 80 });
   // Location is now MANDATORY (#341, FR-AP-7): the form can't be saved without
-  // one. Expand the collapsed map picker and tap it to drop a pin (the same
-  // tap-to-place interaction the widget tests exercise) — deterministic and,
-  // unlike "Use current location", needs no geolocation permission grant.
-  await page.getByText("Set on map", { exact: true }).click();
-  await page
-    .getByLabel("Map: tap to place the apiary's pin")
-    .click({ position: { x: 120, y: 110 } });
+  // one.
+  await setApiaryLocation(page);
   await page.getByText("Save", { exact: true }).click();
 
   await expect(page.getByText(apiaryName)).toBeVisible();
@@ -244,7 +292,16 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // Open the hive counter's inline editor by tapping its card.
   await page.getByText("No hives").click();
   await enableSemantics(page);
-  const hives = page.getByLabel("Hives");
+  // `exact` matters here: Playwright's getByLabel is substring + case-
+  // insensitive by default, and the counter CARD next to the editor reads
+  // "No hives" — which contains "hives". The card happens to expose its text
+  // as DOM text rather than an aria-label (merged leaf → domText), so it isn't
+  // actually a label match today, but pinning the exact accessible name keeps
+  // this from turning into a strict-mode violation on any future card that
+  // does carry an aria-label. The editor's own field is the only aria-label
+  // "Hives" (InputDecoration.labelText → the semantics label Flutter web puts
+  // on the <input>).
+  const hives = page.getByLabel("Hives", { exact: true });
   await hives.click();
   // Clear the field reliably before typing (Flutter web can drop the first
   // keystroke after a select-all), then type digit-by-digit.
