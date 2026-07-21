@@ -29,9 +29,17 @@ import 'journeys_repository.dart';
 ///
 /// [initialApiaryId] pre-selects the apiary the activity is being logged
 /// against (the natural default — this journey is being created FOR this
-/// apiary) and [initialMainActivityType] pre-fills the activity's own type
-/// (the natural default for "a journey to match this activity") — both
-/// remain editable, since a user might genuinely want a different plan.
+/// apiary); it remains editable, since a user might genuinely want the plan
+/// to span more apiaries.
+///
+/// [mainActivityType] is the activity's own type and is **locked** here (not
+/// merely pre-filled): an activity can only attach to a journey whose main
+/// activity type matches it (D-21 — the normal picker only ever offers
+/// type-matching journeys via `journeyMatchesProvider`), so letting this
+/// inline shortcut pick a *different* type would create a journey the
+/// activity cannot correctly attach to (#343). The field is shown read-only
+/// so the user sees what type the new journey will carry, without being able
+/// to diverge from the activity being registered.
 ///
 /// Returns both the new journey's id AND its entered name (not just the id):
 /// the caller (add_activity_screen.dart) displays the name immediately in
@@ -42,7 +50,7 @@ import 'journeys_repository.dart';
 Future<({String id, String name})?> showJourneyQuickCreateSheet(
   BuildContext context, {
   required String initialApiaryId,
-  required String initialMainActivityType,
+  required String mainActivityType,
 }) {
   return showModalBottomSheet<({String id, String name})>(
     context: context,
@@ -54,7 +62,7 @@ Future<({String id, String name})?> showJourneyQuickCreateSheet(
     enableDrag: false,
     builder: (_) => _JourneyQuickCreateSheet(
       initialApiaryId: initialApiaryId,
-      initialMainActivityType: initialMainActivityType,
+      mainActivityType: mainActivityType,
     ),
   );
 }
@@ -62,11 +70,11 @@ Future<({String id, String name})?> showJourneyQuickCreateSheet(
 class _JourneyQuickCreateSheet extends ConsumerStatefulWidget {
   const _JourneyQuickCreateSheet({
     required this.initialApiaryId,
-    required this.initialMainActivityType,
+    required this.mainActivityType,
   });
 
   final String initialApiaryId;
-  final String initialMainActivityType;
+  final String mainActivityType;
 
   @override
   ConsumerState<_JourneyQuickCreateSheet> createState() =>
@@ -77,7 +85,6 @@ class _JourneyQuickCreateSheetState
     extends ConsumerState<_JourneyQuickCreateSheet> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  late String _mainActivityType = widget.initialMainActivityType;
   late Set<String> _apiaryIds = {widget.initialApiaryId};
   bool _busy = false;
   String? _apiaryIdsError;
@@ -107,7 +114,7 @@ class _JourneyQuickCreateSheetState
       final name = _nameController.text.trim();
       final id = await repo.create(
         name: name,
-        mainActivityType: _mainActivityType,
+        mainActivityType: widget.mainActivityType,
         apiaryIds: _apiaryIds.toList(),
       );
       if (!mounted) return;
@@ -169,26 +176,35 @@ class _JourneyQuickCreateSheetState
                       const SizedBox(height: BrandDimens.gapField),
                       LabeledField(
                         label: l10n.journeyMainActivityTypeLabel,
+                        // Locked to the activity being registered (#343): an
+                        // activity can only attach to a type-matching journey
+                        // (D-21), so this inline shortcut must not be able to
+                        // pick a divergent type. Rendered as a disabled
+                        // dropdown (onChanged: null) — visible and
+                        // screen-reader-legible, but not changeable.
                         child: DropdownButtonFormField<String>(
                           key: const Key(
                             'journey-quick-create-main-activity-type-field',
                           ),
-                          initialValue: _mainActivityType,
+                          initialValue: widget.mainActivityType,
                           isExpanded: true,
                           items: [
-                            for (final type in knownActivityTypes)
-                              DropdownMenuItem(
-                                value: type,
-                                child: Text(
-                                  activityTypeLabel(l10n, type) ?? type,
-                                ),
+                            DropdownMenuItem(
+                              value: widget.mainActivityType,
+                              child: Text(
+                                activityTypeLabel(
+                                      l10n,
+                                      widget.mainActivityType,
+                                    ) ??
+                                    widget.mainActivityType,
                               ),
+                            ),
                           ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _mainActivityType = value);
-                            }
-                          },
+                          onChanged: null,
+                          disabledHint: Text(
+                            activityTypeLabel(l10n, widget.mainActivityType) ??
+                                widget.mainActivityType,
+                          ),
                         ),
                       ),
                       const SizedBox(height: BrandDimens.gapField),

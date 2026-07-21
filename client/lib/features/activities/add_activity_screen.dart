@@ -405,7 +405,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
         final created = await showJourneyQuickCreateSheet(
           context,
           initialApiaryId: widget.apiaryId,
-          initialMainActivityType: _selectedType,
+          mainActivityType: _selectedType,
         );
         if (!mounted || created == null) return;
         setState(() {
