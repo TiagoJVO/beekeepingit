@@ -217,7 +217,9 @@ jobs:
           # (from the release tag) picks which URLs are baked in. Keep these in sync
           # BY HAND with infra/helm/beekeepingit/environments/<env>.yaml
           # (global.appOrigin, gateway.appHost/authHost, services.oidc.issuerUrl) —
-          # not derived from one source yet (FOLLOWUPS.md). prod's are placeholders
+          # not derived from one source yet, but `task repo:deploy-urls`
+          # (scripts/check-deploy-url-drift.sh, run by `task ci`) FAILS if the two
+          # copies disagree, so drift can't ship silently (#369). prod's are placeholders
           # until a real prod domain exists (D-26); a bare (prod) release shouldn't
           # be cut until then.
           if [ "$TARGET" = "staging" ]; then
