@@ -40,6 +40,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addApiary => 'Add apiary';
 
   @override
+  String get actionsMenuLabel => 'Actions';
+
+  @override
   String hiveCountValue(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -50,6 +53,39 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String superCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count supers',
+      one: '1 super',
+      zero: 'No supers',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeHiveLabel => 'Hives';
+
+  @override
+  String get counterTypeSuperLabel => 'Supers';
+
+  @override
+  String get apiaryAddCounterAction => 'Add counter';
+
+  @override
+  String get apiaryAddCounterTitle => 'Add a counter';
+
+  @override
+  String get apiaryNoCountersToAdd => 'Every counter type is already here.';
+
+  @override
+  String get counterDecrementLabel => 'Decrease';
+
+  @override
+  String get counterIncrementLabel => 'Increase';
 
   @override
   String get newApiaryTitle => 'New apiary';
@@ -543,6 +579,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get apiaryFormLocationNotSet =>
       'No location set — tap the map to place a pin';
+
+  @override
+  String get apiaryLocationRequired =>
+      'Set the apiary\'s location before saving.';
 
   @override
   String get apiaryMapPickerLabel => 'Map: tap to place the apiary\'s pin';
@@ -1305,4 +1345,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get historyFieldApiary => 'Apiary';
+
+  @override
+  String get discardChangesTitle => 'Discard changes?';
+
+  @override
+  String get discardChangesMessage =>
+      'You have unsaved changes. If you leave now, they will be lost.';
+
+  @override
+  String get discardChangesConfirmAction => 'Discard';
+
+  @override
+  String get discardChangesCancelAction => 'Keep editing';
 }

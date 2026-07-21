@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/widgets/actions_speed_dial.dart';
 import '../core/widgets/tap_target.dart';
+import '../core/widgets/unsaved_changes.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/sync/sync_rejected_repository.dart';
 import '../features/todos/todo_quick_create_sheet.dart';
@@ -10,73 +12,58 @@ import '../l10n/gen/app_localizations.dart';
 import '../theming/brand_tokens.dart';
 import 'sync_status.dart';
 
-/// One FAB button's rendering + action (FR-UX-2) — [onPressed] takes the
-/// [BuildContext] rather than being a bare [VoidCallback] so an action can
-/// either navigate (`context.go(...)`) OR open a bottom sheet
+/// One quick-action's config (FR-UX-2), fed to the shell's [ActionsSpeedDial].
+/// [onPressed] takes the [BuildContext] rather than being a bare [VoidCallback]
+/// so an action can either navigate (`context.go(...)`) OR open a bottom sheet
 /// (`showTodoQuickCreateSheet(context)`, #52) from the same config shape,
 /// instead of the config carrying a route string that only navigation-based
-/// actions can use.
+/// actions can use. Hero tagging and expanded/collapsed styling are the speed
+/// dial's own concern now (#347), so this no longer carries a hero tag or a
+/// tonal flag.
 class _FabAction {
   const _FabAction({
     required this.key,
-    required this.heroTag,
     required this.label,
     required this.onPressed,
     this.icon = Icons.add,
-    this.tonal = false,
   });
 
   final Key key;
-
-  /// Every [FloatingActionButton] on a route with more than one visible at
-  /// once needs its own distinct hero tag (Flutter's own Hero mechanism
-  /// otherwise treats every un-tagged FAB as sharing a single default tag
-  /// and throws) — only ever one [_FabConfig] renders at a time (keyed by
-  /// the active tab), so reusing 'shell-fab' as a tag across different
-  /// configs' primaries is safe; [secondary] just needs its OWN, different
-  /// tag from its sibling primary.
-  final String heroTag;
   final String Function(AppLocalizations l10n) label;
   final IconData icon;
-
-  /// Whether this uses the subordinate tonal (secondaryContainer) styling
-  /// rather than the primary honey styling — the "second, visually
-  /// subordinate stacked action" look (#52, mirrors
-  /// apiary_detail_screen.dart's own stacked `FloatingActionButton.extended`
-  /// widgets).
-  final bool tonal;
   final void Function(BuildContext context) onPressed;
 }
 
-/// Per-tab quick-add config for the contextual FAB (FR-UX-2). Tabs without a
-/// real feature screen yet (Assistant — M8) have no entry here, so [AppShell]
-/// omits the FAB rather than wiring it to a screen that doesn't exist.
-/// [secondary] is optional — only the Apiaries tab has one (#52): a
-/// subordinate "New todo" action stacked above its own primary "New apiary"
-/// FAB, mirroring `apiary_detail_screen.dart`'s own multi-FAB `Column`.
+/// Per-tab quick-add config for the contextual actions (FR-UX-2). Tabs without
+/// a real feature screen yet (Assistant — M8) have no entry here, so [AppShell]
+/// omits the control rather than wiring it to a screen that doesn't exist.
+/// [secondary] is optional — only the Apiaries tab has one (#52): a "New todo"
+/// action alongside its primary "New apiary" action. With two actions the
+/// shell renders a single expandable "Actions" button (#347); with one, a
+/// direct FAB.
 class _FabConfig {
   const _FabConfig({required this.primary, this.secondary});
 
   final _FabAction primary;
   final _FabAction? secondary;
+
+  /// The scope's actions, primary first, for [ActionsSpeedDial].
+  List<_FabAction> get actions => [primary, if (secondary != null) secondary!];
 }
 
 const _fabConfigByTab = <String, _FabConfig>{
   'apiaries': _FabConfig(
     primary: _FabAction(
-      key: Key('shell-fab'),
-      heroTag: 'shell-fab',
+      key: Key('shell-fab-new-apiary'),
       label: _apiaryFabLabel,
       onPressed: _openNewApiary,
     ),
     // A secondary, contextual quick-add (#52, FR-UX-2) — no pre-filled
     // apiary, since it's opened from the tab root, not a specific apiary.
     secondary: _FabAction(
-      key: Key('shell-fab-secondary'),
-      heroTag: 'shell-fab-secondary',
+      key: Key('shell-fab-new-todo'),
       label: _todoFabLabel,
       icon: Icons.task_alt_outlined,
-      tonal: true,
       onPressed: _openTodoQuickCreate,
     ),
   ),
@@ -87,7 +74,6 @@ const _fabConfigByTab = <String, _FabConfig>{
   'journeys': _FabConfig(
     primary: _FabAction(
       key: Key('shell-fab'),
-      heroTag: 'shell-fab',
       label: _journeyFabLabel,
       onPressed: _openNewJourney,
     ),
@@ -98,7 +84,6 @@ const _fabConfigByTab = <String, _FabConfig>{
   'todos': _FabConfig(
     primary: _FabAction(
       key: Key('shell-fab'),
-      heroTag: 'shell-fab',
       label: _todoFabLabel,
       icon: Icons.task_alt_outlined,
       onPressed: _openTodoQuickCreate,
@@ -206,8 +191,8 @@ class AppShell extends ConsumerWidget {
       appBar: _ShellHeader(
         title: _titleFor(routeName, activeTab, l10n),
         onBack: canGoBack ? () => _popBranch() : null,
-        onSyncTap: () => context.go('/account'),
-        onAccountTap: () => context.go('/account'),
+        onSyncTap: () => _guardedGo(context, ref, '/account'),
+        onAccountTap: () => _guardedGo(context, ref, '/account'),
       ),
       body: Column(
         children: [
@@ -222,10 +207,7 @@ class AppShell extends ConsumerWidget {
       bottomNavigationBar: NavigationBar(
         key: const Key('shell-bottom-nav'),
         selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: (index) => navigationShell.goBranch(
-          index,
-          initialLocation: index == navigationShell.currentIndex,
-        ),
+        onDestinationSelected: (index) => _onSelectTab(context, ref, index),
         destinations: [
           for (final tab in tabs)
             NavigationDestination(
@@ -240,15 +222,58 @@ class AppShell extends ConsumerWidget {
   }
 
   // Pops the active branch's own Navigator (via the key StatefulShellRoute
-  // assigns each branch) back to its root — not the root GoRouter, since a
-  // shell branch's pushed pages live in a nested Navigator the root router
-  // doesn't directly control.
+  // assigns each branch) — not the root GoRouter, since a shell branch's
+  // pushed pages live in a nested Navigator the root router doesn't directly
+  // control. Uses `maybePop` (not `pop`) so a pushed edit/create screen's
+  // [PopScope] unsaved-changes guard (#345) is consulted — a plain `pop`
+  // bypasses PopScope and would discard edits silently. Read-only pushed
+  // screens have no PopScope, so `maybePop` just pops them as before.
   void _popBranch() {
     final navigatorKey = navigationShell
         .route
         .branches[navigationShell.currentIndex]
         .navigatorKey;
-    navigatorKey.currentState?.pop();
+    navigatorKey.currentState?.maybePop();
+  }
+
+  // Switching primary tabs (#345, FR-UX-2): two behaviors bundled here.
+  // (1) Scope reset — `initialLocation: true` always resets the target branch
+  // to its root, so a tab never carries over the previous session's scoped
+  // state (the product owner's directed change: a fresh tab, not wherever it
+  // was last left). (2) Unsaved-changes guard — a tab-switch is a
+  // `context.go`-style route change no PopScope sees, so if the current
+  // edit/create screen has pending edits, prompt confirm-discard first and
+  // only switch if the user confirms.
+  Future<void> _onSelectTab(
+    BuildContext context,
+    WidgetRef ref,
+    int index,
+  ) async {
+    if (!await _confirmLeaveIfDirty(context, ref)) return;
+    navigationShell.goBranch(index, initialLocation: true);
+  }
+
+  // Guards a header `context.go` (account/sync) the same way as a tab-switch:
+  // these too are route changes a PopScope never sees (#345).
+  Future<void> _guardedGo(
+    BuildContext context,
+    WidgetRef ref,
+    String location,
+  ) async {
+    if (!await _confirmLeaveIfDirty(context, ref)) return;
+    if (context.mounted) context.go(location);
+  }
+
+  // Returns whether it's OK to leave the current screen: true immediately when
+  // nothing is dirty (read-only screens never set the flag), otherwise prompts
+  // the confirm-discard dialog and clears the flag on confirmation (#345).
+  Future<bool> _confirmLeaveIfDirty(BuildContext context, WidgetRef ref) async {
+    if (!ref.read(unsavedChangesProvider)) return true;
+    final discard = await showDiscardChangesDialog(context);
+    if (discard) {
+      ref.read(unsavedChangesProvider.notifier).markClean();
+    }
+    return discard;
   }
 
   // Extracted out of build() (MEDIUM-7: oversized build()) — the two
@@ -578,56 +603,28 @@ class _ShellFab extends ConsumerWidget {
     // by canGoBack; the map view (#34/#35, its own full-screen layout with
     // no room for a floating action) is covered by onApiaryMap above, since
     // it's a sibling view rather than a pushed route.
-    final fab = (canGoBack || onApiaryMap)
+    final config = (canGoBack || onApiaryMap)
         ? null
         : _fabConfigByTab[activeTabRoute];
-    if (fab == null) return const SizedBox.shrink();
+    if (config == null) return const SizedBox.shrink();
 
     final l10n = AppLocalizations.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
 
-    // Only the Apiaries tab has a [_FabConfig.secondary] (#52) — stacked
-    // ABOVE the primary in a `Column`, mirroring
-    // apiary_detail_screen.dart's own multi-FAB stacking convention (last
-    // child in the list sits at the actual bottom-right FAB position).
-    if (fab.secondary == null) {
-      return _fabButton(context, l10n, colorScheme, fab.primary);
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        _fabButton(context, l10n, colorScheme, fab.secondary!),
-        const SizedBox(height: 12),
-        _fabButton(context, l10n, colorScheme, fab.primary),
+    // One "Actions" control (#347, FR-UX-1/FR-UX-2): with a single action it
+    // renders as a direct primary FAB; the Apiaries tab's two actions collapse
+    // into an expandable speed dial instead of stacking. Each config action
+    // maps to a [SpeedDialAction], closing over this build's [context] so both
+    // navigating and sheet-opening actions share one shape.
+    return ActionsSpeedDial(
+      actions: [
+        for (final action in config.actions)
+          SpeedDialAction(
+            key: action.key,
+            label: action.label(l10n),
+            icon: action.icon,
+            onPressed: () => action.onPressed(context),
+          ),
       ],
-    );
-  }
-
-  // Honey FAB drawn from the theme primary/onPrimary (BrandTokens honey /
-  // onHoney) — the "one honey primary action" shared with
-  // PrimaryActionButton, not a second hardcoded honey (#243). A [tonal]
-  // action (#52's secondary) uses the theme's secondaryContainer pairing
-  // instead, so it reads as visually subordinate to the primary honey
-  // action it's stacked above.
-  Widget _fabButton(
-    BuildContext context,
-    AppLocalizations l10n,
-    ColorScheme colorScheme,
-    _FabAction action,
-  ) {
-    return FloatingActionButton.extended(
-      key: action.key,
-      heroTag: action.heroTag,
-      backgroundColor: action.tonal
-          ? colorScheme.secondaryContainer
-          : colorScheme.primary,
-      foregroundColor: action.tonal
-          ? colorScheme.onSecondaryContainer
-          : colorScheme.onPrimary,
-      onPressed: () => action.onPressed(context),
-      icon: Icon(action.icon),
-      label: Text(action.label(l10n)),
     );
   }
 }

@@ -89,7 +89,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
   @override
   Future<String> create({
     required String name,
-    required int hiveCount,
+    int? hiveCount,
     String? notes,
     String? placeLabel,
     double? locationLon,
@@ -100,7 +100,9 @@ class _FakeApiariesRepository extends ApiariesRepository {
       Apiary(
         id: 'fake-${created.length}',
         name: name,
-        hiveCount: hiveCount,
+        // The form no longer sets a counter (#346): create omits hiveCount,
+        // so the created apiary starts with none (hive count reads 0).
+        hiveCount: hiveCount ?? 0,
         notes: notes,
         placeLabel: placeLabel,
         locationLon: locationLon,
@@ -232,14 +234,242 @@ Widget _buildApp({
   );
 }
 
+/// Sets a location on the open apiary form by expanding the map picker and
+/// tapping "use current location" (resolved via the overridden
+/// [DeviceLocationService]). Location is mandatory (#341), so create tests
+/// must set one before saving.
+Future<void> _setLocationViaCurrentLocation(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('apiary-use-current-location-button')));
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  group('the primary actions stay reachable with the map picker expanded '
+      '(FR-UX-1, D-18, #341 regression)', () {
+    // The defect this guards: #341 made location mandatory, so every apiary
+    // creation has to expand the 220px map picker — and back when Save was
+    // the last child of the form's scroll view, that pushed it below the
+    // fold on a short viewport, behind a map whose gesture region swallows
+    // the drag that would scroll it back. CI reproduced exactly this: a
+    // fully valid form (name + notes + "Location set: …"), Save clicked,
+    // silent no-op, still parked on "New apiary". Save now lives in a pinned
+    // action bar OUTSIDE the scroll view, so these tests deliberately never
+    // scroll it into view before tapping it — `ensureVisible` is used only
+    // for the in-form location controls, which legitimately scroll.
+    const shortViewport = Size(400, 640);
+
+    testWidgets(
+      'Save is on-screen and actually saves while the picker is expanded, at '
+      'a short viewport and scrolled to the bottom of the form',
+      (tester) async {
+        tester.view.physicalSize = shortViewport;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            repositoryOverride: repo,
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationAvailable(lon: -8.0, lat: 39.5),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          'Encosta Nova',
+        );
+        await tester.pump();
+
+        // Expand the picker and set a location — exactly what a real
+        // creation now has to do. Both controls live inside the scroll view,
+        // so they're scrolled into view first; that also leaves the form
+        // scrolled away from the top, which is the state Save has to survive.
+        final toggle = find.byKey(const Key('apiary-toggle-map-button'));
+        await tester.ensureVisible(toggle);
+        await tester.pumpAndSettle();
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+
+        final useCurrent = find.byKey(
+          const Key('apiary-use-current-location-button'),
+        );
+        await tester.ensureVisible(useCurrent);
+        await tester.pumpAndSettle();
+        await tester.tap(useCurrent);
+        await tester.pumpAndSettle();
+
+        // The picker is expanded and the location is set — the exact state
+        // that used to strand the user.
+        expect(find.byKey(const Key('apiary-location-picker')), findsOneWidget);
+        expect(find.text('Location set: 39.50000, -8.00000'), findsOneWidget);
+
+        // Save is fully inside the viewport…
+        final save = find.byKey(const Key('apiary-save-button'));
+        final saveRect = tester.getRect(save);
+        final screen = Offset.zero & tester.view.physicalSize;
+        expect(
+          screen.contains(saveRect.topLeft) &&
+              screen.contains(saveRect.bottomRight - const Offset(1, 1)),
+          isTrue,
+          reason:
+              'Save must be fully on-screen with the map picker expanded; '
+              'it rendered at $saveRect on a $shortViewport viewport',
+        );
+        // …still a gloves-friendly target (D-18)…
+        expectMinTapTarget(tester, save);
+        // …and a tap at its rendered position really reaches the handler —
+        // NO ensureVisible/scrolling first, which is the whole point.
+        await tester.tap(save);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          repo.created,
+          hasLength(1),
+          reason:
+              'tapping Save with the picker expanded must create the '
+              'apiary, not silently no-op',
+        );
+        expect(repo.created.single.locationLat, 39.5);
+        expect(repo.created.single.locationLon, -8.0);
+        // And it left the form.
+        expect(find.byKey(const Key('apiary-name-field')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the pinned Save keeps its semantics label and the location-required '
+      'error still surfaces from it',
+      (tester) async {
+        tester.view.physicalSize = shortViewport;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(apiaries: const [], repositoryOverride: repo),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          'Encosta Nova',
+        );
+        final toggle = find.byKey(const Key('apiary-toggle-map-button'));
+        await tester.ensureVisible(toggle);
+        await tester.pumpAndSettle();
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+
+        expectHasSemanticsLabel(tester, const Key('apiary-save-button'));
+
+        // Saving with the picker expanded but no pin still surfaces the
+        // mandatory-location error (#341) rather than doing nothing.
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final error = find.byKey(const Key('apiary-location-required-error'));
+        await tester.ensureVisible(error);
+        await tester.pumpAndSettle();
+        expect(error, findsOneWidget);
+        expect(repo.created, isEmpty);
+      },
+    );
+  });
+
+  testWidgets(
+    'the create form has NO hive/counter field (#346, D-20: counters are '
+    'managed on the detail screen, not set at creation)',
+    (tester) async {
+      await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+
+      // The form is on-screen (its name field exists) but the old inline
+      // hive field is gone entirely.
+      expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
+      expect(find.byKey(const Key('apiary-hive-field')), findsNothing);
+      expect(find.text('Number of hives'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'saving a create form never sets a counter — create() is called without a '
+    'hiveCount (#346)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = _FakeApiariesRepository();
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [],
+          repositoryOverride: repo,
+          // Location is mandatory now (#341) — set one via "use current
+          // location" so the create form passes validation and reaches save.
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('apiary-name-field')),
+        'Encosta Nova',
+      );
+      await _setLocationViaCurrentLocation(tester);
+      await tester.tap(find.byKey(const Key('apiary-save-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(repo.created, hasLength(1));
+      // The fake records hiveCount ?? 0; the create form passes null, so the
+      // recorded apiary reads 0 hives (no counter row would be written).
+      expect(repo.created.single.hiveCount, 0);
+    },
+  );
+
   testWidgets(
     'the create form has a notes field that accepts free text (FR-AP-8, #196)',
     (tester) async {
       await tester.pumpWidget(_buildApp(apiaries: const []));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('apiary-notes-field')), findsOneWidget);
@@ -267,7 +497,9 @@ void main() {
       await tester.pumpWidget(_buildApp(apiaries: const []));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       // Place label field accepts free text (#252 AC: optional free-text
@@ -314,22 +546,12 @@ void main() {
   );
 
   testWidgets(
-    'a create form with only name + hives (no location) saves successfully — '
-    'the exact seam the walking-skeleton e2e exercises (#252)',
+    'saving without a location shows the required error and does NOT create '
+    '(#341, FR-AP-7 — location is mandatory)',
     (tester) async {
-      // Regression guard for the e2e failure: an always-embedded map picker
-      // pushed Save below the fold / collided with the location controls, so
-      // the create-with-only-name+hives flow (which never touches location)
-      // broke. Drives the real save path with NO location set via a fake
-      // repository (so it completes without a PowerSync backend — the seam
-      // this suite's other create tests can't reach) and asserts create() was
-      // called and the form navigated away.
-      //
-      // A tall viewport so the whole form fits without scrolling — this test
-      // isolates the SAVE LOGIC (create-with-no-location succeeds), not the
-      // layout/reachability of Save (which the collapse-by-default change and
-      // the live e2e cover). With everything on-screen, tapping Save can't
-      // miss.
+      // Replaces the pre-#341 "create with no location succeeds" test:
+      // location is now mandatory, so a save attempt with only a name must be
+      // blocked with a validation error and must not call create().
       tester.view.physicalSize = const Size(1200, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -341,36 +563,90 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       await tester.enterText(
         find.byKey(const Key('apiary-name-field')),
         'Encosta Nova',
       );
-      // Hives already defaults to "0"; leave it. Never touch location.
+      // Map picker still collapsed by default (the #252 layout guarantee) —
+      // Save stays reachable; the location is simply not set.
       expect(
         find.byKey(const Key('apiary-location-picker')),
         findsNothing,
         reason: 'map picker must be collapsed by default so Save is reachable',
       );
 
-      // Save by key — the primary action must work with no location set.
-      // Bounded pumps (not pumpAndSettle): saving navigates to the list and
-      // shows a SnackBar (a 4s timer), so the frame scheduler may not fully
-      // idle promptly; the create call completes within these frames.
+      await tester.tap(find.byKey(const Key('apiary-save-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // The required-location error is shown, nothing was created, and we
+      // stayed on the form.
+      expect(
+        find.byKey(const Key('apiary-location-required-error')),
+        findsOneWidget,
+      );
+      expect(repo.created, isEmpty);
+      expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a create form with a location set saves successfully (#341); the map '
+    'picker is still collapsed by default (#252 layout)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = _FakeApiariesRepository();
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [],
+          repositoryOverride: repo,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The Apiaries tab now exposes an expandable Actions speed dial (#347),
+      // so open it first, then tap the primary "New apiary" action.
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('apiary-name-field')),
+        'Encosta Nova',
+      );
+      // Collapsed by default — the location controls only appear on expand.
+      expect(
+        find.byKey(const Key('apiary-location-picker')),
+        findsNothing,
+        reason: 'map picker must be collapsed by default so Save is reachable',
+      );
+      await _setLocationViaCurrentLocation(tester);
+
+      // Save by key. Bounded pumps (not pumpAndSettle): saving navigates to
+      // the list and shows a SnackBar (a 4s timer).
       await tester.tap(find.byKey(const Key('apiary-save-button')));
       await tester.pump(); // let _save() start (setState busy)
       await tester.pump(const Duration(milliseconds: 100)); // await create()
       await tester.pump(const Duration(milliseconds: 100)); // navigation frame
 
-      // The repository was asked to create exactly one apiary with the typed
-      // name, no location — the core guarantee this regression guard exists
-      // for (create-with-only-name+hives must succeed).
+      // Exactly one apiary created, carrying the location that was set.
       expect(repo.created, hasLength(1));
       expect(repo.created.single.name, 'Encosta Nova');
-      expect(repo.created.single.locationLon, isNull);
-      expect(repo.created.single.locationLat, isNull);
+      expect(repo.created.single.locationLon, -8.6109);
+      expect(repo.created.single.locationLat, 41.1496);
       // And it navigated away from the form (its Name field is gone).
       expect(find.byKey(const Key('apiary-name-field')), findsNothing);
     },
@@ -383,7 +659,9 @@ void main() {
       await tester.pumpWidget(_buildApp(apiaries: const []));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       // No location set initially.
@@ -488,6 +766,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('apiary-a1')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
       // Pump past the page-transition animation with a bounded duration
       // (not pumpAndSettle, which would wait forever on the busy spinner's
@@ -531,7 +811,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
@@ -564,7 +846,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
@@ -595,17 +879,27 @@ void main() {
 
         final repo = _FakeApiariesRepository(throwOnCreate: true);
         await tester.pumpWidget(
-          _buildApp(apiaries: const [], repositoryOverride: repo),
+          _buildApp(
+            apiaries: const [],
+            repositoryOverride: repo,
+            // Location is mandatory (#341) — set one so save reaches create().
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+            ),
+          ),
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
 
         await tester.enterText(
           find.byKey(const Key('apiary-name-field')),
           'Encosta Nova',
         );
+        await _setLocationViaCurrentLocation(tester);
         await tester.tap(find.byKey(const Key('apiary-save-button')));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
@@ -635,6 +929,10 @@ void main() {
           id: 'a1',
           name: 'Monte Alto',
           hiveCount: 4,
+          // Has a location so edit-mode save passes the mandatory-location
+          // check (#341) and reaches update().
+          locationLon: -8.6109,
+          locationLat: 41.1496,
         );
         final repo = _FakeApiariesRepository(
           existing: existingApiary,
@@ -646,6 +944,8 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
         await tester.pump(const Duration(milliseconds: 400));
@@ -688,6 +988,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('apiary-a1')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
@@ -723,6 +1025,8 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
         await tester.pump(const Duration(milliseconds: 400));

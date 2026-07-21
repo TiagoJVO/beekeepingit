@@ -305,8 +305,18 @@ func (f *apiariesFixture) timelineFor(t *testing.T, entityID string) []timelineR
 	return out
 }
 
+// putOp carries defaultTestPoint's coordinates (#341): location is now
+// mandatory on a `put` (offline create), so an apply of a location-less put
+// would violate the apiaries.location NOT NULL constraint. Every re-put for
+// the same id uses the same fixed point, so LWW/idempotency assertions still
+// see identical content. Tests that need a specific location use
+// putOpWithLocation; the one test that exercises the "put without location is
+// rejected" rule builds its op inline.
 func putOp(id, name string, hive int32, ts time.Time) api.Op {
-	data, _ := json.Marshal(map[string]any{"name": name, "hive_count": hive})
+	data, _ := json.Marshal(map[string]any{
+		"name": name, "hive_count": hive,
+		"location_lon": -8.6, "location_lat": 41.1,
+	})
 	return api.Op{Op: "put", EntityType: "apiary", ID: id, Data: data, UpdatedAt: ts}
 }
 
@@ -959,7 +969,7 @@ func TestApiariesSlice_SyncApply_OrgIsAlwaysTokenResolved_NeverClientSupplied(t 
 	// standing in for the token-resolved claims in production). apiaryData
 	// has no OrganizationID field, so json.Unmarshal silently drops the
 	// unknown key — the same outcome a real client's forged field would get.
-	forgedData := json.RawMessage(`{"name":"Forged Org Claim","hive_count":9,"organization_id":"` + devseed.OrganizationID + `"}`)
+	forgedData := json.RawMessage(`{"name":"Forged Org Claim","hive_count":9,"location_lon":-8.6,"location_lat":41.1,"organization_id":"` + devseed.OrganizationID + `"}`)
 	op := api.Op{Op: "put", EntityType: "apiary", ID: id, Data: forgedData, UpdatedAt: t0}
 	if got := f.applyAs(t, other, op); got.Results[0].Result != "applied" {
 		t.Fatalf("apply with forged organization_id result = %q, want applied", got.Results[0].Result)
@@ -1113,15 +1123,29 @@ func TestApiariesRest_ResponsesConformToOpenAPIContract(t *testing.T) {
 // small literal maps rather than typed structs, so a test can omit a field
 // (nil) versus send its zero value, exercising the same
 // present/absent distinction the handlers themselves make.
+// createBody defaults location to defaultTestPoint when the caller passes nil
+// (#341): location is now MANDATORY (FR-AP-7), so the many call sites that
+// only ever cared about name/hive_count and never location would otherwise
+// all 422. Passing an explicit *geoPointView still overrides it; the handful
+// of tests that specifically exercise the "no location" rule build their body
+// inline (without a location key) rather than via this helper.
 func createBody(id, name string, hiveCount *int32, loc *geoPointView) map[string]any {
 	body := map[string]any{"id": id, "name": name}
 	if hiveCount != nil {
 		body["hive_count"] = *hiveCount
 	}
-	if loc != nil {
-		body["location"] = loc
+	if loc == nil {
+		loc = defaultTestPoint()
 	}
+	body["location"] = loc
 	return body
+}
+
+// defaultTestPoint is the in-bounds mainland-Portugal point createBody/putOp
+// fall back to when a test doesn't care about the specific coordinates but a
+// location is now required (#341).
+func defaultTestPoint() *geoPointView {
+	return geoPoint(-8.6, 41.1)
 }
 
 // createBodyWithNotes layers a `notes` key onto createBody's result — kept
@@ -1237,37 +1261,29 @@ func TestApiariesRest_CreateReadUpdateDelete(t *testing.T) {
 	}
 }
 
-// TestApiariesRest_CreateWithoutLocation confirms the OpenAPI contract's
-// ApiaryCreate.required (only [id, name], NOT location) is honored: a
-// caller that omits location entirely gets a 201 with no `location` key in
-// the response (omitempty — the GeoPoint schema has no null variant).
-func TestApiariesRest_CreateWithoutLocation(t *testing.T) {
+// TestApiariesRest_CreateWithoutLocationRejected confirms location is now
+// MANDATORY on create (FR-AP-7, #341 — the product owner's directed
+// requirement change): a caller that omits location entirely gets a 422, not
+// a 201. This replaces the pre-#341 test that asserted the opposite (an
+// apiary could be created with only [id, name]).
+func TestApiariesRest_CreateWithoutLocationRejected(t *testing.T) {
 	f := newApiariesFixture(t)
-	id := uuid.NewString()
 
-	rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Encosta Sem Local", nil, nil))
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), `"location"`) {
-		t.Fatalf("create response unexpectedly contains a location key: %s", rec.Body.String())
-	}
-	var created apiaryView
-	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
-		t.Fatalf("decode create response: %v", err)
-	}
-	if created.HiveCount != 0 {
-		t.Fatalf("created apiary hive_count = %d, want 0 (schema default)", created.HiveCount)
+	// Built inline, NOT via createBody (which now injects a default location):
+	// the whole point is to send a body with no location key at all.
+	body := map[string]any{"id": uuid.NewString(), "name": "Encosta Sem Local"}
+	rec := f.do(t, http.MethodPost, "/v1/apiaries", body)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("create-without-location status = %d, want 422, body = %s", rec.Code, rec.Body.String())
 	}
 }
 
-// TestApiariesRest_UpdateLocation_ExplicitNullClearsIt confirms sending
-// `"location": null` on PATCH (a defensive case beyond what the GeoPoint
-// schema itself specifies — it has no null variant, so this is undefined by
-// the contract, not a documented clear-location signal) does not panic and
-// results in an apiary with no location, matching how create-without-location
-// behaves.
-func TestApiariesRest_UpdateLocation_ExplicitNullClearsIt(t *testing.T) {
+// TestApiariesRest_UpdateLocation_ExplicitNullRejected confirms location is
+// mandatory (FR-AP-7, #341): a PATCH that tries to CLEAR location by sending
+// `"location": null` is now rejected with a 422 rather than nulling the
+// (NOT NULL) column. This replaces the pre-#341 test that asserted the
+// opposite (explicit null cleared the location).
+func TestApiariesRest_UpdateLocation_ExplicitNullRejected(t *testing.T) {
 	f := newApiariesFixture(t)
 	id := uuid.NewString()
 	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(id, "Foo", nil, geoPoint(-8.6, 41.1))); rec.Code != http.StatusCreated {
@@ -1275,15 +1291,14 @@ func TestApiariesRest_UpdateLocation_ExplicitNullClearsIt(t *testing.T) {
 	}
 
 	rec := f.do(t, http.MethodPatch, "/v1/apiaries/"+id, map[string]any{"location": nil})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("clear-location PATCH status = %d, want 422, body = %s", rec.Code, rec.Body.String())
 	}
-	var updated apiaryView
-	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
-		t.Fatalf("decode update response: %v", err)
-	}
-	if updated.Location != nil {
-		t.Fatalf("updated apiary location = %+v, want nil (cleared)", updated.Location)
+
+	// The stored location is untouched — the rejected PATCH changed nothing.
+	got := f.getApiary(t, id)
+	if got.Location == nil || got.Location.Coordinates != [2]float64{-8.6, 41.1} {
+		t.Fatalf("location after rejected clear = %+v, want unchanged [-8.6, 41.1]", got.Location)
 	}
 }
 
@@ -1297,7 +1312,8 @@ func TestApiariesRest_CreateValidation_RejectsBadInput(t *testing.T) {
 		name string
 		body map[string]any
 	}{
-		{"missing id", map[string]any{"name": "Foo"}},
+		{"missing id", map[string]any{"name": "Foo", "location": geoPoint(-8.6, 41.1)}},
+		{"missing location", map[string]any{"id": uuid.NewString(), "name": "Foo"}},
 		{"empty name", createBody(uuid.NewString(), "", nil, nil)},
 		{"name too long", createBody(uuid.NewString(), strings.Repeat("x", 201), nil, nil)},
 		{"negative hive_count", createBody(uuid.NewString(), "Foo", int32Ptr(-1), nil)},
@@ -1931,22 +1947,24 @@ func TestApiariesSlice_Location_SyncApplyPatchMovesPin(t *testing.T) {
 	}
 }
 
-// TestApiariesSlice_Location_SyncApplyPutWithoutLocationClearsIt confirms a
-// full `put` (offline create/replace) that omits location results in NO
-// stored location — matching how `put` already treats an absent `notes` as
-// "clear it" (mergeOp's doc comment: location/place_label follow the same
-// full-replace convention as notes, not hive's "absent ⇒ preserve" rule).
-func TestApiariesSlice_Location_SyncApplyPutWithoutLocationClearsIt(t *testing.T) {
+// TestApiariesSlice_Location_SyncApplyPutWithoutLocationRejected confirms a
+// full `put` (offline create/replace) that omits location is REJECTED by
+// validate (#341, FR-AP-7 — the product owner's directed change: location is
+// mandatory). This replaces the pre-#341 test that asserted a location-less
+// put simply cleared the location; the offline create/sync path now enforces
+// the requirement so no location-less apiary can be synced.
+func TestApiariesSlice_Location_SyncApplyPutWithoutLocationRejected(t *testing.T) {
 	f := newApiariesFixture(t)
 	id := uuid.NewString()
 	t0 := time.Now().UTC().Truncate(time.Millisecond)
 
-	if got := f.apply(t, putOp(id, "Sem Localização", 0, t0)); got.Results[0].Result != "applied" {
-		t.Fatalf("create result = %+v, want applied", got.Results[0])
-	}
-	created := f.getApiary(t, id)
-	if created.Location != nil {
-		t.Fatalf("created apiary location = %+v, want nil (put omitted it)", created.Location)
+	// A put carrying name but no location_lon/location_lat — built inline, not
+	// via putOp (which now always includes a location).
+	data, _ := json.Marshal(map[string]any{"name": "Sem Localização"})
+	op := api.Op{Op: "put", EntityType: "apiary", ID: id, Data: data, UpdatedAt: t0}
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", api.Batch{Ops: []api.Op{op}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("validate put-without-location status = %d, want 422, body = %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -2268,25 +2286,12 @@ func TestApiariesRest_Distance_MissingOrCrossOrgApiaryIs404(t *testing.T) {
 	}
 }
 
-// TestApiariesRest_Distance_NoLocationIs404 covers apiaries with no stored
-// location: there is no distance resource to report, so this is a 404 (not a
-// 422/409) matching the "no location" cases above.
-func TestApiariesRest_Distance_NoLocationIs404(t *testing.T) {
-	f := newApiariesFixture(t)
-	locatedID := uuid.NewString()
-	unlocatedID := uuid.NewString()
-	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(locatedID, "Porto", nil, geoPoint(-8.6109, 41.1496))); rec.Code != http.StatusCreated {
-		t.Fatalf("create located apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
-	}
-	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(unlocatedID, "Sem Local", nil, nil)); rec.Code != http.StatusCreated {
-		t.Fatalf("create unlocated apiary status = %d, want 201, body = %s", rec.Code, rec.Body.String())
-	}
-
-	rec := f.do(t, http.MethodGet, "/v1/apiaries/"+locatedID+"/distance?to="+unlocatedID, nil)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("distance to unlocated apiary status = %d, want 404, body = %s", rec.Code, rec.Body.String())
-	}
-}
+// Note (#341): the pre-#341 TestApiariesRest_Distance_NoLocationIs404 was
+// removed here — location is now mandatory (FR-AP-7), so an apiary with no
+// stored location can no longer be created through the API, making its
+// "located vs unlocated distance is 404" scenario unreachable. The distance
+// query's own defensive has_locations handling (queries/apiaries.sql) is
+// unchanged.
 
 // TestApiariesRest_Distance_ResponseConformsToOpenAPIContract validates the
 // 200 response body against the Distance schema (contracts/openapi/
@@ -2370,37 +2375,13 @@ func TestApiariesRest_ListNear_OrdersByDistanceAscending(t *testing.T) {
 	}
 }
 
-// TestApiariesRest_ListNear_ApiaryWithoutLocationSortsLastWithNullDistance
-// confirms an apiary missing a location still appears in a `near` list
-// (rather than being silently dropped) with a null distance_m, sorted after
-// every apiary that does have a distance.
-func TestApiariesRest_ListNear_ApiaryWithoutLocationSortsLastWithNullDistance(t *testing.T) {
-	f := newApiariesFixture(t)
-	const refLon, refLat = -8.6291, 41.1579
-
-	withLoc := uuid.NewString()
-	withoutLoc := uuid.NewString()
-	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(withLoc, "Has location", nil, geoPoint(refLon, refLat))); rec.Code != http.StatusCreated {
-		t.Fatalf("create withLoc status = %d, want 201, body = %s", rec.Code, rec.Body.String())
-	}
-	if rec := f.do(t, http.MethodPost, "/v1/apiaries", createBody(withoutLoc, "No location", nil, nil)); rec.Code != http.StatusCreated {
-		t.Fatalf("create withoutLoc status = %d, want 201, body = %s", rec.Code, rec.Body.String())
-	}
-
-	list := f.listApiariesNear(t, refLon, refLat)
-	if len(list.Data) != 2 {
-		t.Fatalf("near list = %+v, want 2 rows", list.Data)
-	}
-	if list.Data[0].ID != withLoc || list.Data[1].ID != withoutLoc {
-		t.Fatalf("near list order = [%s, %s], want [withLoc, withoutLoc] (no-location sorts last)", list.Data[0].ID, list.Data[1].ID)
-	}
-	if list.Data[0].DistanceM == nil {
-		t.Fatalf("apiary with location has nil distance_m, want a value")
-	}
-	if list.Data[1].DistanceM != nil {
-		t.Fatalf("apiary without location distance_m = %v, want nil", *list.Data[1].DistanceM)
-	}
-}
+// Note (#341): the pre-#341
+// TestApiariesRest_ListNear_ApiaryWithoutLocationSortsLastWithNullDistance was
+// removed here — location is now mandatory (FR-AP-7), so an apiary with no
+// location can no longer be created through the API, making the "no-location
+// row sorts last with a null distance_m" scenario unreachable. The proximity
+// query's own NULLS LAST / null-distance handling (queries/apiaries.sql) is
+// unchanged.
 
 // TestApiariesRest_List_WithoutNear_OmitsDistance confirms distance_m is
 // only populated on a `near`-ordered list (contract: "only on proximity

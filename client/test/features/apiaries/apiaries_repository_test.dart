@@ -550,6 +550,51 @@ void main() {
       },
     );
 
+    test(
+      'create() without a hiveCount writes NO counter row (#346, D-20: no '
+      'counter set at creation; hive reads 0 via the COALESCE default)',
+      () async {
+        final id = await repo.create(name: 'Sem Contador');
+
+        expect(
+          store.counterRows.where((r) => r['apiary_id'] == id),
+          isEmpty,
+          reason: 'the create form no longer sets any counter',
+        );
+        final apiary = await repo.getById(id);
+        expect(apiary!.hiveCount, 0);
+      },
+    );
+
+    test('setCounter() inserts a new typed row, then upserts (never a second '
+        'row for the same type) (#346)', () async {
+      final id = await repo.create(name: 'Encosta');
+
+      await repo.setCounter(id, 'super', 4);
+      expect(
+        store.counterRows.where(
+          (r) => r['apiary_id'] == id && r['counter_type'] == 'super',
+        ),
+        hasLength(1),
+      );
+
+      await repo.setCounter(id, 'super', 9);
+      final superRows = store.counterRows.where(
+        (r) => r['apiary_id'] == id && r['counter_type'] == 'super',
+      );
+      expect(superRows, hasLength(1), reason: 'upsert, not a second row');
+      expect(superRows.single['value'], 9);
+    });
+
+    test('setCounter() drives the hive counter the same way (generic write '
+        'path over the known set)', () async {
+      final id = await repo.create(name: 'Encosta');
+
+      await repo.setCounter(id, 'hive', 12);
+
+      expect((await repo.getById(id))!.hiveCount, 12);
+    });
+
     test('watchCountersFor() emits typed rows, newest-per-type, known types '
         'first', () async {
       final id = await repo.create(name: 'Encosta', hiveCount: 2);

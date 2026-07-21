@@ -40,6 +40,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get addApiary => 'Adicionar apiário';
 
   @override
+  String get actionsMenuLabel => 'Ações';
+
+  @override
   String hiveCountValue(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -50,6 +53,40 @@ class AppLocalizationsPt extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String superCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count alças',
+      one: '1 alça',
+      zero: 'Sem alças',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeHiveLabel => 'Colmeias';
+
+  @override
+  String get counterTypeSuperLabel => 'Alças';
+
+  @override
+  String get apiaryAddCounterAction => 'Adicionar contador';
+
+  @override
+  String get apiaryAddCounterTitle => 'Adicionar um contador';
+
+  @override
+  String get apiaryNoCountersToAdd =>
+      'Já existem contadores de todos os tipos.';
+
+  @override
+  String get counterDecrementLabel => 'Diminuir';
+
+  @override
+  String get counterIncrementLabel => 'Aumentar';
 
   @override
   String get newApiaryTitle => 'Novo apiário';
@@ -546,6 +583,10 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get apiaryFormLocationNotSet =>
       'Sem localização definida — toque no mapa para colocar um alfinete';
+
+  @override
+  String get apiaryLocationRequired =>
+      'Defina a localização do apiário antes de guardar.';
 
   @override
   String get apiaryMapPickerLabel =>
@@ -1312,4 +1353,17 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get historyFieldApiary => 'Apiário';
+
+  @override
+  String get discardChangesTitle => 'Descartar alterações?';
+
+  @override
+  String get discardChangesMessage =>
+      'Tem alterações por guardar. Se sair agora, serão perdidas.';
+
+  @override
+  String get discardChangesConfirmAction => 'Descartar';
+
+  @override
+  String get discardChangesCancelAction => 'Continuar a editar';
 }

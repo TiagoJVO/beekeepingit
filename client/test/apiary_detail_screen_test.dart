@@ -65,6 +65,29 @@ class _NoopLocalStore implements LocalStoreEngine {
   Future<void> clear() async {}
 }
 
+/// Records `setCounter()` calls from the detail screen's counters section
+/// (#346): editing a counter card's value or adding a new counter both write
+/// through this method. Overrides only what the counters section touches.
+class _FakeApiariesRepository extends ApiariesRepository {
+  _FakeApiariesRepository() : super(_NoopLocalStore());
+
+  final List<({String apiaryId, String counterType, int value})> counterWrites =
+      [];
+
+  @override
+  Future<void> setCounter(
+    String apiaryId,
+    String counterType,
+    int value,
+  ) async {
+    counterWrites.add((
+      apiaryId: apiaryId,
+      counterType: counterType,
+      value: value,
+    ));
+  }
+}
+
 /// Records `create()` calls from the apiary detail page's own contextual
 /// "New todo" FAB (#52, FR-UX-2) — mirrors
 /// todo_quick_create_sheet_test.dart's own `_FakeTodosRepository`.
@@ -110,6 +133,7 @@ Widget _buildApp({
   required List<Apiary> apiaries,
   Map<String, List<ApiaryCounter>> counters = const {},
   TodosRepository? todosRepository,
+  ApiariesRepository? apiariesRepository,
 }) {
   return ProviderScope(
     overrides: [
@@ -117,6 +141,15 @@ Widget _buildApp({
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
       if (todosRepository != null)
         todosRepositoryProvider.overrideWith((ref) async => todosRepository),
+      // The counters section (#346) writes counter edits/adds through
+      // apiariesRepositoryProvider. Left un-overridden it's the real,
+      // never-resolving PowerSync-backed repo (fine for the read-only badge
+      // tests, which never tap an editor); the edit/add tests pass a fake
+      // here to record setCounter() without a backend.
+      if (apiariesRepository != null)
+        apiariesRepositoryProvider.overrideWith(
+          (ref) async => apiariesRepository,
+        ),
       // The detail screen watches apiaryByIdProvider (HIGH finding: a
       // narrow per-id family provider, not the whole-org
       // apiariesStreamProvider) — overridden here the same way
@@ -268,6 +301,10 @@ void main() {
     await tester.tap(find.byKey(const Key('apiary-a1')));
     await tester.pumpAndSettle();
 
+    // The edit action lives inside the single "Actions" speed dial now
+    // (#347) — expand it first, then tap the revealed edit option.
+    await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('apiary-detail-edit-button')), findsOneWidget);
     await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
     // Pump past the page-transition animation in bounded steps (not
@@ -403,6 +440,186 @@ void main() {
     },
   );
 
+  // --- Counter management: edit + add (#346, FR-AP-7, D-20) ---
+
+  group('counter editing + add (#346)', () {
+    testWidgets(
+      'tapping the hive card opens the inline editor and saving writes the '
+      'value through setCounter(hive) (#346 AC: counters editable on detail)',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            apiariesRepository: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        // No editor until a card is tapped.
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsNothing,
+        );
+
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+
+        // Editor opens pre-filled with the current value.
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('apiary-counter-edit-field')),
+          findsOneWidget,
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('apiary-counter-edit-field')),
+          '12',
+        );
+        await tester.tap(find.byKey(const Key('apiary-counter-save')));
+        await tester.pumpAndSettle();
+
+        expect(repo.counterWrites, hasLength(1));
+        expect(repo.counterWrites.single.apiaryId, 'a1');
+        expect(repo.counterWrites.single.counterType, 'hive');
+        expect(repo.counterWrites.single.value, 12);
+        // Editor closes after saving.
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'the +/- stepper adjusts the draft value before saving (gloves-friendly)',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            apiariesRepository: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+
+        // From 3: +1 twice = 5, then save.
+        await tester.tap(find.byKey(const Key('apiary-counter-increment')));
+        await tester.tap(find.byKey(const Key('apiary-counter-increment')));
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('apiary-counter-save')));
+        await tester.pumpAndSettle();
+
+        expect(repo.counterWrites.single.value, 5);
+      },
+    );
+
+    testWidgets(
+      'the add-counter action lets the user pick a known type (Supers) and set '
+      'its value; the write goes through setCounter(super) (#346 AC)',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            apiariesRepository: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        // Supers has no row yet, so the add-counter action is present.
+        expect(
+          find.byKey(const Key('apiary-detail-add-counter-button')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-counter-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // The picker offers Supers.
+        expect(
+          find.byKey(const Key('apiary-add-counter-option-super')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const Key('apiary-add-counter-option-super')),
+        );
+        await tester.pumpAndSettle();
+
+        // The editor opens for the picked type at 0; set a value and save.
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsOneWidget,
+        );
+        await tester.enterText(
+          find.byKey(const Key('apiary-counter-edit-field')),
+          '4',
+        );
+        await tester.tap(find.byKey(const Key('apiary-counter-save')));
+        await tester.pumpAndSettle();
+
+        expect(repo.counterWrites, hasLength(1));
+        expect(repo.counterWrites.single.counterType, 'super');
+        expect(repo.counterWrites.single.value, 4);
+      },
+    );
+
+    testWidgets(
+      'a known non-hive counter with a row renders its own tappable card, and '
+      'the add-counter action disappears (UNIQUE respected — no second super)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            counters: const {
+              'a1': [
+                ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 3),
+                ApiaryCounter(apiaryId: 'a1', counterType: 'super', value: 6),
+              ],
+            },
+            apiariesRepository: _FakeApiariesRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-detail-counter-super')),
+          findsOneWidget,
+        );
+        expect(find.text('6 supers'), findsOneWidget);
+        // Every known type now has a row (hive + super), so nothing is addable.
+        expect(
+          find.byKey(const Key('apiary-detail-add-counter-button')),
+          findsNothing,
+        );
+      },
+    );
+  });
+
   // --- Error state (HIGH #4: no test previously drove the error: branch) ---
 
   testWidgets(
@@ -449,12 +666,12 @@ void main() {
     },
   );
 
-  // --- Quick-create-todo FAB (#52, FR-TD-1, FR-UX-1, FR-UX-2) ---
+  // --- Consolidated "Actions" speed dial (#347, FR-UX-1, FR-UX-2) ---
 
-  group('add-todo FAB (#52)', () {
+  group('actions speed dial (#347)', () {
     testWidgets(
-      'coexists with the existing add-activity and edit FABs (all three '
-      'render together)',
+      'a single "Actions" control replaces the stacked FABs — the three '
+      'options are hidden until it is expanded, and collapse cleanly again',
       (tester) async {
         await tester.pumpWidget(
           _buildApp(
@@ -468,24 +685,94 @@ void main() {
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
 
+        // Collapsed: only the single Actions toggle shows; none of the
+        // scope's options are in the tree.
         expect(
-          find.byKey(const Key('apiary-detail-add-todo-button')),
+          find.byKey(const Key('actions-speed-dial-toggle')),
           findsOneWidget,
         );
+        expect(find.text('Actions'), findsOneWidget);
+        for (final key in const [
+          'apiary-detail-add-todo-button',
+          'apiary-detail-add-activity-button',
+          'apiary-detail-edit-button',
+        ]) {
+          expect(find.byKey(Key(key)), findsNothing);
+        }
+
+        // Expand: all three scope-appropriate options are revealed.
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        for (final key in const [
+          'apiary-detail-add-todo-button',
+          'apiary-detail-add-activity-button',
+          'apiary-detail-edit-button',
+        ]) {
+          expect(find.byKey(Key(key)), findsOneWidget);
+        }
+
+        // Collapse again: the options are gone, the toggle remains.
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         expect(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
+          find.byKey(const Key('actions-speed-dial-toggle')),
           findsOneWidget,
         );
         expect(
           find.byKey(const Key('apiary-detail-edit-button')),
-          findsOneWidget,
+          findsNothing,
         );
       },
     );
 
     testWidgets(
-      'tapping it opens the quick-create sheet pre-filled with this apiary '
-      '(FR-UX-2 contextual create)',
+      'the Actions toggle announces its expanded/collapsed state to screen '
+      'readers (D-18 accessibility)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        final toggle = find.byKey(const Key('actions-speed-dial-toggle'));
+        // Collapsed: a button named "Actions" that advertises an expandable
+        // state, currently not expanded.
+        expect(
+          tester.getSemantics(toggle),
+          isSemantics(
+            isButton: true,
+            label: 'Actions',
+            hasExpandedState: true,
+            isExpanded: false,
+          ),
+        );
+
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+
+        // Expanded: the same node now reports the expanded state.
+        expect(
+          tester.getSemantics(toggle),
+          isSemantics(hasExpandedState: true, isExpanded: true),
+        );
+
+        // Dispose within the test body — the end-of-test handle-leak check
+        // runs before addTearDown callbacks would.
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'tapping the add-todo option opens the quick-create sheet pre-filled '
+      'with this apiary (FR-UX-2 contextual create)',
       (tester) async {
         final repo = _FakeTodosRepository();
         await tester.pumpWidget(
@@ -499,6 +786,8 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-todo-button')),
@@ -542,6 +831,8 @@ void main() {
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
 
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );

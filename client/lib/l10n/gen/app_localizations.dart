@@ -152,11 +152,65 @@ abstract class AppLocalizations {
   /// **'Add apiary'**
   String get addApiary;
 
+  /// Label for the single expandable quick-actions button (FR-UX-2) that, when tapped, reveals the contextual actions available on the current screen; also its screen-reader name, whose expanded/collapsed state is announced.
+  ///
+  /// In en, this message translates to:
+  /// **'Actions'**
+  String get actionsMenuLabel;
+
   /// Hive count subtitle on a list row
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}'**
   String hiveCountValue(int count);
+
+  /// Supers counter value badge on the apiary detail screen (#346, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No supers} =1{1 super} other{{count} supers}}'**
+  String superCountValue(int count);
+
+  /// The name of the hive counter type, used by the detail screen's add-counter picker and inline value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Hives'**
+  String get counterTypeHiveLabel;
+
+  /// The name of the supers counter type, used by the detail screen's add-counter picker and inline value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Supers'**
+  String get counterTypeSuperLabel;
+
+  /// Button on the apiary detail screen that opens the add-counter type picker (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Add counter'**
+  String get apiaryAddCounterAction;
+
+  /// Title of the add-counter type picker sheet on the apiary detail screen (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Add a counter'**
+  String get apiaryAddCounterTitle;
+
+  /// Empty state in the add-counter picker when the apiary already has a counter of every known type (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Every counter type is already here.'**
+  String get apiaryNoCountersToAdd;
+
+  /// Accessibility label for the minus button in the inline counter value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Decrease'**
+  String get counterDecrementLabel;
+
+  /// Accessibility label for the plus button in the inline counter value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Increase'**
+  String get counterIncrementLabel;
 
   /// Create form app bar title
   ///
@@ -997,6 +1051,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No location set — tap the map to place a pin'**
   String get apiaryFormLocationNotSet;
+
+  /// Validation error on the apiary form when the user tries to save without a location — location is mandatory (FR-AP-7, #341)
+  ///
+  /// In en, this message translates to:
+  /// **'Set the apiary\'s location before saving.'**
+  String get apiaryLocationRequired;
 
   /// Semantics label for the embedded map-pin picker on the apiary form (#252)
   ///
@@ -2309,6 +2369,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Apiary'**
   String get historyFieldApiary;
+
+  /// Title of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345, FR-UX-1/FR-UX-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Discard changes?'**
+  String get discardChangesTitle;
+
+  /// Body of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'You have unsaved changes. If you leave now, they will be lost.'**
+  String get discardChangesMessage;
+
+  /// Confirm action in the discard-changes dialog: leave the screen and lose unsaved edits (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'Discard'**
+  String get discardChangesConfirmAction;
+
+  /// Cancel action in the discard-changes dialog: stay on the screen, keeping unsaved edits (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'Keep editing'**
+  String get discardChangesCancelAction;
 }
 
 class _AppLocalizationsDelegate

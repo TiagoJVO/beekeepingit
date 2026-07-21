@@ -566,6 +566,37 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 ---
 
+## D-28 — Pre-launch OpenAPI breaking change accepted: apiary `location` required on `POST /apiaries`
+
+- **Decision (product owner, 2026-07-21):** apiary **`location` is now mandatory at every layer**
+  — client create/edit form validation, offline sync-apply validation, the OpenAPI
+  `ApiaryCreate.required` list, REST service validation, and a DB `NOT NULL` constraint
+  (`00008_apiary_location_not_null.sql`) — per **FR-AP-7** (see its refined entry in
+  `functional-requirements.md`) and **#341**. This **supersedes** the walking-skeleton-era
+  "location optional" stance the original `00003_add_apiary_location.sql` migration and
+  `ApiaryCreate` schema assumed, and is distinct from #252's unrelated free-text `place_label`
+  search field.
+- **Resulting breaking change accepted, not deferred:** marking `location` required on
+  `POST /apiaries` is a breaking OpenAPI change (`oasdiff`'s
+  `request-property-became-required`), which the CI breaking-change gate (`taskfiles/openapi.yml`
+  `openapi:breaking-diff`, ADR-0003 §1/§5) flags by design. The product owner confirmed
+  **2026-07-21** that shipping it now is acceptable: the app is **pre-launch** — there are **no
+  clients** consuming the API yet, and the cluster and databases are recreated rather than
+  migrated — so a breaking change here has no real-world blast radius. The gate itself is **not**
+  disabled; the specific change is recorded as a sanctioned exception in
+  [`contracts/openapi/.oasdiff-ignore`](../contracts/openapi/.oasdiff-ignore) — an
+  `oasdiff` `--err-ignore` file, one sanctioned change per line, each citing its issue/decision —
+  so every _other_ breaking change still fails CI.
+- **Not yet covered by an ADR:** ADR-0003 doesn't itself define a "pre-launch breaking changes are
+  OK" carve-out (its versioning conventions in §5 assume a shipped client base); this decision is
+  the carve-out, recorded here rather than misattributed to existing ADR text.
+- **Revisit before GA:** once real clients exist, this exception (and the `.oasdiff-ignore`
+  pattern generally) must be revisited — either removed once no longer relevant, or replaced by
+  proper `/v2` versioning per ADR-0003 §5 if a similar change is ever needed post-launch.
+- **Touches:** FR-AP-7, ADR-0003 (§1 contract-first CI gate, §5 versioning), #341.
+
+---
+
 ## Open Spikes
 
 - **SP-1** — ✅ **RESOLVED (2026-07-01) → PowerSync** (self-hosted Open Edition). Head-to-head +

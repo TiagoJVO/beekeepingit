@@ -38,11 +38,18 @@ import (
 )
 
 const (
-	// counterTypeHive is the only known counter type today (#256 AC 1: "New
+	// counterTypeHive is the always-present counter type (#256 AC 1: "New
 	// apiary_counters table... counter_type from a known set (initially
 	// hive)"). A future type is added by appending a new const here and to
 	// knownCounterTypes below — no apiaries-table migration, per the AC.
 	counterTypeHive = "hive"
+	// counterTypeSuper (Portuguese "alças") is the second known countable
+	// (#346, D-20 names "nucs, supers, queens" as examples; supers is the one
+	// the Melargil prototype's apiary detail already surfaces). Its addition
+	// is exactly the "code-only append to the known set" D-20 promises — a
+	// const here + a knownCounterTypes entry, mirrored in the client's
+	// counter_types.dart, with no schema migration.
+	counterTypeSuper = "super"
 )
 
 // knownCounterTypes is the extensible set counter_type is validated against
@@ -50,7 +57,8 @@ const (
 // with no apiaries-table migration"). validateCounterOp (sync.go) rejects
 // anything outside this set with the standard RFC 9457 error format.
 var knownCounterTypes = map[string]bool{
-	counterTypeHive: true,
+	counterTypeHive:  true,
+	counterTypeSuper: true,
 }
 
 // isKnownCounterType reports whether t is in the known, server-validated set

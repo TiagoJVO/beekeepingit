@@ -181,6 +181,81 @@ async function login(page: Page) {
   await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible({ timeout: 30_000 });
 }
 
+/**
+ * Sets the apiary form's (now mandatory) location — #341, FR-AP-7.
+ *
+ * Two things about the current form make this non-obvious:
+ *
+ * 1. The picker is **collapsed by default** (apiary_form_screen.dart's
+ *    `_mapPickerExpanded`) to keep a fresh create form dense — not to protect
+ *    Save, which is pinned outside the scroll view — so the map and its
+ *    controls don't exist until "Set on map" is tapped.
+ *
+ * 2. The map surface is a `Semantics(label: …)` wrapper around `FlutterMap`
+ *    (`_LocationPicker`), and it is NOT reachable via `getByLabel`. Dumping
+ *    the semantics tree shows that wrapper merges with everything under it
+ *    into a single **leaf** node (childCount 0) whose label is the picker
+ *    label AND the Esri attribution, concatenated. Flutter web renders a
+ *    tappable leaf as `role="button"` and writes the label as DOM **text**
+ *    (`SemanticButton` → `LabelRepresentation.domText`), never as an
+ *    `aria-label` attribute — `aria-label` is only used for nodes that have
+ *    children. So `getByLabel("Map: tap to place the apiary's pin")` matches
+ *    nothing and waits out the whole test budget (the failure this replaced).
+ *    Match the role plus a regex on the accessible name instead — regex, not
+ *    an exact string, because of the concatenated attribution.
+ *
+ * The map tap is the interaction we want to exercise (it's what the widget
+ * tests drive), and Playwright dispatches real mouse events at the point, so
+ * flutter_map's own tap recognizer resolves the LatLng exactly as a user tap
+ * would. Headless canvas gesture handling is the one part of this flow that
+ * can't be verified off CI (no Docker/k3d locally), so "Use current location"
+ * — the form's other location affordance, and the one the widget tests'
+ * `_setLocationViaCurrentLocation` helper uses — backs it up; playwright
+ * .config.ts grants the geolocation permission and pins a fixed coordinate so
+ * that path needs no prompt. Either way we assert the location really is set
+ * before returning, since `_save` silently refuses (showing
+ * `apiaryLocationRequired`) without one and every later step would then fail
+ * for a confusing reason.
+ */
+async function setApiaryLocation(page: Page) {
+  await page.getByText("Set on map", { exact: true }).click();
+  // Flutter also mirrors the status text into a transient
+  // <flt-announcement-polite aria-live="polite"> node, so a bare
+  // getByText(/Location set:/) resolves to two elements and trips Playwright's
+  // strict mode. The real semantics label is a <span>; the announcer is not,
+  // so scoping to span picks the durable one (.first() guards against nesting).
+  const locationSet = page
+    .locator("span")
+    .filter({ hasText: /Location set:/ })
+    .first();
+
+  await page
+    .getByRole("button", { name: /Map: tap to place the apiary/ })
+    .click({ position: { x: 120, y: 110 }, timeout: 20_000 })
+    .catch(() => {});
+  // flutter_map debounces a plain tap behind its double-tap-disambiguation
+  // timer before invoking MapOptions.onTap, so give the status line a moment
+  // to flip before deciding the tap didn't take.
+  await locationSet.waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
+  if (!(await locationSet.isVisible().catch(() => false))) {
+    await page.getByText("Use current location", { exact: true }).click();
+  }
+  await expect(locationSet).toBeVisible({ timeout: 20_000 });
+
+  // Deliberately leave the picker EXPANDED. This used to collapse it via
+  // "Hide map" purely to get Save back above the fold: Save was the last child
+  // of the form's scroll view, and a Flutter-web semantics click does NOT
+  // scroll the Flutter scrollable to reach an off-screen target (the DOM
+  // semantics node is an absolutely-positioned mirror, so
+  // scrollIntoViewIfNeeded moves the page, not the form) — the symptom was a
+  // silent no-op: Save clicked, no validation error, still parked on
+  // "New apiary". Since location became mandatory (#341) every creation has to
+  // expand the picker, so that workaround was hiding a real defect. Save now
+  // lives in a pinned action bar outside the scroll view (FR-UX-1, D-18), and
+  // saving with the map still open is exactly what this test must guard.
+  await expect(page.getByText("Save", { exact: true })).toBeVisible();
+}
+
 test("login → create → offline edit → sync", async ({ page, context, browser }) => {
   // Capture the OIDC access token from the app's own requests (the provider
   // disallows direct grant, so we don't mint one out-of-band). Also stashed at
@@ -197,12 +272,21 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await login(page);
 
   // ── Create an apiary ──────────────────────────────────────────────────
+  // The apiaries tab's quick actions are now consolidated behind a single
+  // expandable "Actions" FAB (#347, FR-UX-1/FR-UX-2) rather than a
+  // standalone "Add apiary" FAB — tap it to reveal the speed-dial options
+  // (ActionsSpeedDial, core/widgets/actions_speed_dial.dart), then pick
+  // "Add apiary" from the expanded list. Its accessible name stays
+  // "Actions" (l10n.actionsMenuLabel) whether collapsed or expanded — only
+  // its `expanded` semantics flag and icon change — so a single locator
+  // works for the tap.
+  await page.getByRole("button", { name: "Actions" }).click();
   await page.getByRole("button", { name: "Add apiary" }).click();
   await enableSemantics(page);
   await page.getByLabel("Name").click();
   await page.keyboard.type(apiaryName);
-  await page.getByLabel("Number of hives").click();
-  await page.keyboard.type("0");
+  // The create form no longer has a hive/counter field (#346, D-20): counters
+  // are set on the detail screen after creation, not here.
   await page.getByLabel("Notes").click();
   // Same Flutter-web dropped-keystroke workaround as the hive-count edit
   // below: observed in CI dropping a variable-length prefix ("South " gone
@@ -212,20 +296,34 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.press("Delete");
   await page.keyboard.press("Backspace");
   await page.keyboard.type(apiaryNotes, { delay: 80 });
+  // Location is now MANDATORY (#341, FR-AP-7): the form can't be saved without
+  // one.
+  await setApiaryLocation(page);
   await page.getByText("Save", { exact: true }).click();
 
   await expect(page.getByText(apiaryName)).toBeVisible();
 
   // ── Go offline and edit ───────────────────────────────────────────────
-  // Tapping the list row now opens the read-only detail screen (FR-AP-7,
-  // #32) rather than the edit form directly — reach the form via its edit
-  // action.
+  // Counters are now edited on the detail screen (#346, D-20), not the form:
+  // tapping the list row opens the detail screen, whose hive counter card is
+  // tappable and opens an inline value editor. The apiary was created with no
+  // counter, so the card reads "No hives" until we set it.
   await context.setOffline(true);
   await page.getByText(apiaryName).click();
   await enableSemantics(page);
-  await page.getByRole("button", { name: "Edit apiary" }).click();
+  // Open the hive counter's inline editor by tapping its card.
+  await page.getByText("No hives").click();
   await enableSemantics(page);
-  const hives = page.getByLabel("Number of hives");
+  // `exact` matters here: Playwright's getByLabel is substring + case-
+  // insensitive by default, and the counter CARD next to the editor reads
+  // "No hives" — which contains "hives". The card happens to expose its text
+  // as DOM text rather than an aria-label (merged leaf → domText), so it isn't
+  // actually a label match today, but pinning the exact accessible name keeps
+  // this from turning into a strict-mode violation on any future card that
+  // does carry an aria-label. The editor's own field is the only aria-label
+  // "Hives" (InputDecoration.labelText → the semantics label Flutter web puts
+  // on the <input>).
+  const hives = page.getByLabel("Hives", { exact: true });
   await hives.click();
   // Clear the field reliably before typing (Flutter web can drop the first
   // keystroke after a select-all), then type digit-by-digit.
@@ -235,16 +333,15 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.type("12", { delay: 80 });
   await page.getByText("Save", { exact: true }).click();
 
-  // The edit is applied locally while offline (local-first, FR-OF-1). Saving
-  // the edit form now returns to the read-only detail screen (FR-AP-7, #32 —
-  // the form's `_save` routes to /apiaries/:id, not back to the list), so the
-  // fresh value shows on the detail hive-count badge, not a list row. Assert
-  // it there — no navigation, so this stays valid while still offline.
+  // The edit is applied locally while offline (local-first, FR-OF-1). The
+  // inline editor closes and the hive-count badge on the same detail screen
+  // now reads the fresh value — no navigation, so this stays valid while
+  // still offline.
   await expect(apiaryDetailHiveCount(page)).toContainText("12 hives");
 
-  // The edit-form round-trip must not clobber the notes (the form re-saves
-  // them with notesProvided — apiaries_repository.dart's update): still shown
-  // on the detail screen the save returned to.
+  // Editing a counter never touches the apiary's notes (a counter write is
+  // its own `apiary_counter` op, #346) — the create's notes are still shown
+  // on the detail screen.
   await expect(page.getByText(apiaryNotes)).toBeVisible();
 
   // ── Reconnect → the queued change syncs ───────────────────────────────

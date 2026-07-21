@@ -44,12 +44,16 @@ class _FakeDeviceLocationService implements DeviceLocationService {
 /// Mirrors widget_test.dart's onboarding-gate stubs (profile/organization
 /// already complete) so these tests reach the apiaries tab directly.
 class _CompleteProfileController extends ProfileController {
+  _CompleteProfileController({this.locale = 'en'});
+
+  final String locale;
+
   @override
   Future<Profile> build() async => Profile(
     id: 'test-user',
     name: 'Test User',
     email: 'test@example.com',
-    locale: 'en',
+    locale: locale,
     profileComplete: true,
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
@@ -94,6 +98,7 @@ const _semLocal = Apiary(id: 'a3', name: 'Sem Local', hiveCount: 2);
 Widget _buildApp(
   List<Apiary> apiaries, {
   DeviceLocationService? locationService,
+  String profileLocale = 'en',
 }) {
   return ProviderScope(
     overrides: [
@@ -103,7 +108,12 @@ Widget _buildApp(
         locationService ??
             const _FakeDeviceLocationService(DeviceLocationServicesDisabled()),
       ),
-      profileProvider.overrideWith(_CompleteProfileController.new),
+      // The stored profile locale now drives the app's UI language (#340),
+      // so a test exercising PT formatting sets it here rather than forcing
+      // the device locale.
+      profileProvider.overrideWith(
+        () => _CompleteProfileController(locale: profileLocale),
+      ),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
     child: const BeekeepingitApp(),
@@ -115,13 +125,14 @@ Widget _buildApp(
 Future<void> _goToMap(
   WidgetTester tester, {
   DeviceLocationService? locationService,
+  String profileLocale = 'en',
 }) async {
   await tester.pumpWidget(
-    _buildApp([
-      _serraNorte,
-      _valeDasEguas,
-      _semLocal,
-    ], locationService: locationService),
+    _buildApp(
+      [_serraNorte, _valeDasEguas, _semLocal],
+      locationService: locationService,
+      profileLocale: profileLocale,
+    ),
   );
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
@@ -176,6 +187,58 @@ void main() {
       );
       // The unlocated apiary must not produce a marker or throw.
       expect(find.byKey(Key('apiary-marker-${_semLocal.id}')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'each located apiary marker surfaces its name as a visible label (#344, FR-AP-3)',
+    (tester) async {
+      await _goToMap(tester);
+
+      // Each located apiary's name renders as a visible on-map label, keyed
+      // per apiary so the two markers are distinguishable at a glance (the
+      // bug: the name was only in the Semantics label, never drawn).
+      expect(
+        find.byKey(Key('apiary-marker-name-${_serraNorte.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(Key('apiary-marker-name-${_valeDasEguas.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key('apiary-marker-name-${_serraNorte.id}')),
+          matching: find.text(_serraNorte.name),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key('apiary-marker-name-${_valeDasEguas.id}')),
+          matching: find.text(_valeDasEguas.name),
+        ),
+        findsOneWidget,
+      );
+      // The unlocated apiary has no marker, hence no name label.
+      expect(
+        find.byKey(Key('apiary-marker-name-${_semLocal.id}')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'the apiary marker keeps exposing name + hive count to screen readers (#344)',
+    (tester) async {
+      await _goToMap(tester);
+
+      final handle = tester.ensureSemantics();
+      expect(
+        find.bySemanticsLabel('${_serraNorte.name}, ${_serraNorte.hiveCount}'),
+        findsOneWidget,
+      );
+      handle.dispose();
     },
   );
 
@@ -609,21 +672,18 @@ void main() {
       'the measure result uses a comma decimal separator in Portuguese, not '
       'a hardcoded period',
       (tester) async {
-        // Forcing the platform locale (rather than wrapping ApiaryMapScreen
-        // in its own standalone MaterialApp) reuses the full app/_goToMap
-        // harness every other test in this file relies on — the map's
-        // camera-fit position for these two markers is only verified
-        // tap-reachable at THIS harness's viewport (a standalone
+        // Driving the locale through the stored profile (rather than
+        // wrapping ApiaryMapScreen in its own standalone MaterialApp) reuses
+        // the full app/_goToMap harness every other test in this file relies
+        // on — the map's camera-fit position for these two markers is only
+        // verified tap-reachable at THIS harness's viewport (a standalone
         // MaterialApp(home: Scaffold(body: ApiaryMapScreen())) fits the
         // markers differently at the default 800x600 test viewport, close
         // enough to the bottom measure/attribution overlay that the first
-        // tap lands on the overlay instead of the marker underneath).
-        tester.platformDispatcher.localeTestValue = const Locale('pt');
-        tester.platformDispatcher.localesTestValue = const [Locale('pt')];
-        addTearDown(tester.platformDispatcher.clearLocaleTestValue);
-        addTearDown(tester.platformDispatcher.clearLocalesTestValue);
-
-        await _goToMap(tester);
+        // tap lands on the overlay instead of the marker underneath). Since
+        // #340 the profile locale — not the device locale — drives the app's
+        // UI language, so setting it here also exercises that wiring.
+        await _goToMap(tester, profileLocale: 'pt');
 
         await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
         await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));

@@ -261,7 +261,10 @@ components:
 
     ApiaryCreate:
       type: object
-      description: Create payload. `id` is client-supplied (offline UUID); no `organization_id`.
+      description: >-
+        Create payload. `id` is client-supplied (offline UUID); no `organization_id`.
+        `location` is REQUIRED (FR-AP-7, #341 — the product owner's directed change:
+        an apiary can never be created without coordinates).
       properties:
         id:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
@@ -285,7 +288,7 @@ components:
           type: [string, "null"]
           maxLength: 10000
           description: Optional free-text notes (FR-AP-8).
-      required: [id, name]
+      required: [id, name, location]
 
     ApiaryUpdate:
       type: object
