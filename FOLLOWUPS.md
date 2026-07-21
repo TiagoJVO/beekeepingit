@@ -33,21 +33,12 @@ Phases 0–4 shipped in #330 (image-automation removed; `infra/gitops/` split in
   `apps/staging/beekeepingit-helmrelease.yaml` still pins `pwa.image.tag: staging-manual`; it
   switches automatically when the first `-rc` release's tag-bump PR sets the version and is merged
   (Phase 6). Don't hand-edit it to a non-existent tag before then.
-- **Harden `main`'s required status checks** (deferred from the Phase-6 discussion; not a deploy
-  blocker). `main` currently requires only `ci`, `k3d cluster + helm test`, `helm lint & template
-dry-run`, and the PR-title check (strict). These run but are **not** required, so a red one
-  wouldn't block a merge:
-  - `security-scan` — `trivy (dependencies + secrets)` + `govulncheck (Go modules)`: stable
-    contexts that run on every PR, so safe to add to the required set directly (leave out
-    `trivy (IaC / misconfig)`, which is report-only by design).
-  - `build-publish`'s image build+scan — matrixed (`build <component>`), a dynamic/skippable
-    context; add a small aggregator job (`needs: [build]`, one stable context) before requiring it.
-  - `contracts-ci` — path-filtered on its trigger (`contracts/openapi/**`), so it can't be required
-    as-is (a skipped-because-not-triggered required check leaves PRs pending); would need the
-    always-run + check-relevance-inside pattern helm-e2e uses first.
-  - Low stakes under D-27: merge-to-`main` images are artifacts (dev-only `latest`, overwritten),
-    and the deployable path (`release-deploy.yml`) already gates each publish behind lint/test/scan,
-    prod behind the `production` approval, and behind the human merging the tag-bump PR.
+- **Harden `main`'s required status checks** — tracked in **#368**; the remaining step is the
+  repo-settings change itself (admin action). The in-repo prerequisites are done: `build-publish`
+  now exposes the stable `build & scan images` aggregator and `contracts-ci` always runs. Add
+  `build & scan images`, `OpenAPI breaking-change gate (oasdiff)`, `trivy (dependencies + secrets)`
+  and `govulncheck (Go modules)` to the required set once those contexts have reported once on
+  `main` (leave out `trivy (IaC / misconfig)`, which is report-only by design).
 - **Observability is intentionally not deployed anywhere** (dev, staging, or a future prod) — a
   deliberate choice, not a gap to revisit.
 - Minor, not blocking: the per-environment PWA URLs in `release-deploy.yml`'s `publish-client` job
