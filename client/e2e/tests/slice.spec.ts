@@ -240,6 +240,16 @@ async function setApiaryLocation(page: Page) {
     await page.getByText("Use current location", { exact: true }).click();
   }
   await expect(locationSet).toBeVisible({ timeout: 20_000 });
+
+  // Collapse the picker again before returning. The form starts it collapsed
+  // specifically so the primary Save action stays above the fold; leaving the
+  // map expanded pushes Save off-screen, and a Flutter-web semantics click
+  // does NOT scroll the Flutter scrollable to reach it (the DOM semantics node
+  // is an absolutely-positioned mirror, so scrollIntoViewIfNeeded moves the
+  // page, not the form). The observed symptom was a silent no-op: Save clicked,
+  // no validation error, still parked on "New apiary".
+  await page.getByText("Hide map", { exact: true }).click();
+  await expect(page.getByText("Save", { exact: true })).toBeVisible();
 }
 
 test("login → create → offline edit → sync", async ({ page, context, browser }) => {
