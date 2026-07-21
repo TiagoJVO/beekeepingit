@@ -250,8 +250,11 @@ in [ADR-0014](../adr/0014-cicd-pipeline.md) §4): a published Release makes CI b
 version's images and open a tag-bump **PR** against the GitOps manifests; a human merges it and Flux
 reconciles. Flux stays **read-only** — no image-automation controllers, no standing git-write
 credential. `-rc` releases target `staging`; un-suffixed releases target `prod` behind the
-`production` GitHub Environment's approval. `dev` is out of this path (CI can't reach a local
-cluster) and stays a manual `helm ... -f environments/dev.yaml` loop.
+`production-gate` GitHub Environment's approval. `dev` is out of this path (CI can't reach a local
+cluster) and stays a manual `helm ... -f environments/dev.yaml` loop. The `-gate` environments only
+record "approved to publish" — the plain `staging`/`production` environments on this repo instead
+record the real deploy, created by `beekeepingit-gitops`'s `notify-deploy` workflow when the
+tag-bump PR actually merges (ADR-0018 addendum).
 
 ## Not yet covered here
 
