@@ -138,7 +138,10 @@ class _JourneyDetailBody extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              JourneyStatsSection(journeyId: journey.id),
+              JourneyStatsSection(
+                journeyId: journey.id,
+                mainActivityType: journey.mainActivityType,
+              ),
               const SizedBox(height: 14),
               _JourneyApiariesSection(journey: journey),
             ],
