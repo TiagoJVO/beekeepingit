@@ -201,11 +201,8 @@ class ApiariesRepository {
   /// (powersync_connector.dart's `_toOp`) and the owning service audits under
   /// `entity_type = 'apiary_counter'` (FR-HIS). Callers are responsible for
   /// only ever setting a [counterType] from [knownCounterTypes].
-  Future<void> setCounter(
-    String apiaryId,
-    String counterType,
-    int value,
-  ) => _upsertCounter(apiaryId, counterType, value);
+  Future<void> setCounter(String apiaryId, String counterType, int value) =>
+      _upsertCounter(apiaryId, counterType, value);
 
   /// Updates the given fields of an existing apiary. `notes`/`placeLabel`
   /// use a present-vs-absent sentinel via [notesProvided]/[placeLabelProvided]

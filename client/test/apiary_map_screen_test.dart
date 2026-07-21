@@ -128,11 +128,11 @@ Future<void> _goToMap(
   String profileLocale = 'en',
 }) async {
   await tester.pumpWidget(
-    _buildApp([
-      _serraNorte,
-      _valeDasEguas,
-      _semLocal,
-    ], locationService: locationService, profileLocale: profileLocale),
+    _buildApp(
+      [_serraNorte, _valeDasEguas, _semLocal],
+      locationService: locationService,
+      profileLocale: profileLocale,
+    ),
   );
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiaries-view-map-button')));

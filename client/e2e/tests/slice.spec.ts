@@ -197,6 +197,15 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await login(page);
 
   // ── Create an apiary ──────────────────────────────────────────────────
+  // The apiaries tab's quick actions are now consolidated behind a single
+  // expandable "Actions" FAB (#347, FR-UX-1/FR-UX-2) rather than a
+  // standalone "Add apiary" FAB — tap it to reveal the speed-dial options
+  // (ActionsSpeedDial, core/widgets/actions_speed_dial.dart), then pick
+  // "Add apiary" from the expanded list. Its accessible name stays
+  // "Actions" (l10n.actionsMenuLabel) whether collapsed or expanded — only
+  // its `expanded` semantics flag and icon change — so a single locator
+  // works for the tap.
+  await page.getByRole("button", { name: "Actions" }).click();
   await page.getByRole("button", { name: "Add apiary" }).click();
   await enableSemantics(page);
   await page.getByLabel("Name").click();

@@ -86,9 +86,7 @@ void main() {
       expect(find.text('Definições da conta'), findsNothing);
 
       // Change the preferred language — no restart, no re-pumpWidget.
-      await container
-          .read(profileProvider.notifier)
-          .submit(locale: 'pt');
+      await container.read(profileProvider.notifier).submit(locale: 'pt');
       await tester.pumpAndSettle();
 
       // The tree is now Portuguese.
@@ -97,26 +95,28 @@ void main() {
     },
   );
 
-  test('resolves a supported code to a Locale, else null (system fallback)',
-      () async {
-    Future<Locale?> resolve(String code) async {
-      final container = ProviderContainer(
-        overrides: [
-          profileProvider.overrideWith(
-            () => _FakeProfileController(_profile(locale: code)),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      // Let the async profile build settle before reading the derived locale.
-      await container.read(profileProvider.future);
-      return container.read(localeProvider);
-    }
+  test(
+    'resolves a supported code to a Locale, else null (system fallback)',
+    () async {
+      Future<Locale?> resolve(String code) async {
+        final container = ProviderContainer(
+          overrides: [
+            profileProvider.overrideWith(
+              () => _FakeProfileController(_profile(locale: code)),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        // Let the async profile build settle before reading the derived locale.
+        await container.read(profileProvider.future);
+        return container.read(localeProvider);
+      }
 
-    expect(await resolve('pt'), const Locale('pt'));
-    expect(await resolve('en'), const Locale('en'));
-    // Unset or unsupported → null so MaterialApp uses the device locale.
-    expect(await resolve(''), isNull);
-    expect(await resolve('xx'), isNull);
-  });
+      expect(await resolve('pt'), const Locale('pt'));
+      expect(await resolve('en'), const Locale('en'));
+      // Unset or unsupported → null so MaterialApp uses the device locale.
+      expect(await resolve(''), isNull);
+      expect(await resolve('xx'), isNull);
+    },
+  );
 }

@@ -550,19 +550,21 @@ void main() {
       },
     );
 
-    test('create() without a hiveCount writes NO counter row (#346, D-20: no '
-        'counter set at creation; hive reads 0 via the COALESCE default)',
-        () async {
-      final id = await repo.create(name: 'Sem Contador');
+    test(
+      'create() without a hiveCount writes NO counter row (#346, D-20: no '
+      'counter set at creation; hive reads 0 via the COALESCE default)',
+      () async {
+        final id = await repo.create(name: 'Sem Contador');
 
-      expect(
-        store.counterRows.where((r) => r['apiary_id'] == id),
-        isEmpty,
-        reason: 'the create form no longer sets any counter',
-      );
-      final apiary = await repo.getById(id);
-      expect(apiary!.hiveCount, 0);
-    });
+        expect(
+          store.counterRows.where((r) => r['apiary_id'] == id),
+          isEmpty,
+          reason: 'the create form no longer sets any counter',
+        );
+        final apiary = await repo.getById(id);
+        expect(apiary!.hiveCount, 0);
+      },
+    );
 
     test('setCounter() inserts a new typed row, then upserts (never a second '
         'row for the same type) (#346)', () async {

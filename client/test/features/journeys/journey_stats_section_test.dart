@@ -162,8 +162,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('journey-stats-apiaries-visited')),
-          findsOneWidget);
+      expect(
+        find.byKey(const Key('journey-stats-apiaries-visited')),
+        findsOneWidget,
+      );
       for (final key in harvestOnlyKeys) {
         expect(find.byKey(key), findsOneWidget);
       }
@@ -187,8 +189,10 @@ void main() {
         await tester.pumpAndSettle();
 
         // Universal progress metrics remain.
-        expect(find.byKey(const Key('journey-stats-apiaries-visited')),
-            findsOneWidget);
+        expect(
+          find.byKey(const Key('journey-stats-apiaries-visited')),
+          findsOneWidget,
+        );
         expect(find.byKey(const Key('journey-stats-missing')), findsOneWidget);
 
         // No harvest aggregation tiles, and none of their values leak.
