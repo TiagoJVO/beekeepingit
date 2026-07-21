@@ -158,6 +158,7 @@
   "apiaryFormLocationPermissionDenied": "Acesso à localização negado — ainda pode colocar um alfinete no mapa.",
   "apiaryFormLocationSet": "Localização definida: {lat}, {lon}",
   "apiaryFormLocationNotSet": "Sem localização definida — toque no mapa para colocar um alfinete",
+  "apiaryLocationRequired": "Defina a localização do apiário antes de guardar.",
   "apiaryMapPickerLabel": "Mapa: toque para colocar o alfinete do apiário",
   "apiaryDistanceValue": "a {distanceKm} km",
   "deleteApiaryConfirmTitle": "Eliminar apiário?",

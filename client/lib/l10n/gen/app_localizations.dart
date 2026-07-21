@@ -1046,6 +1046,12 @@ abstract class AppLocalizations {
   /// **'No location set — tap the map to place a pin'**
   String get apiaryFormLocationNotSet;
 
+  /// Validation error on the apiary form when the user tries to save without a location — location is mandatory (FR-AP-7, #341)
+  ///
+  /// In en, this message translates to:
+  /// **'Set the apiary\'s location before saving.'**
+  String get apiaryLocationRequired;
+
   /// Semantics label for the embedded map-pin picker on the apiary form (#252)
   ///
   /// In en, this message translates to:

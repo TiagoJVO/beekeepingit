@@ -582,6 +582,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Sem localização definida — toque no mapa para colocar um alfinete';
 
   @override
+  String get apiaryLocationRequired =>
+      'Defina a localização do apiário antes de guardar.';
+
+  @override
   String get apiaryMapPickerLabel =>
       'Mapa: toque para colocar o alfinete do apiário';
 

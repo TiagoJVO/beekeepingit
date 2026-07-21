@@ -221,6 +221,15 @@ func validateApiaryOp(i int, op Op) []problem.FieldError {
 	if op.Op == "put" && (data.Name == nil || *data.Name == "") {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.name", Code: "required", Message: "name is required"})
 	}
+	// Location is mandatory on a put/offline-create (FR-AP-7, #341 — the
+	// product owner's directed requirement change): a full put must carry
+	// both coordinates, mirroring the REST path's validateCreate and the DB
+	// NOT NULL constraint (00008_apiary_location_not_null.sql). A patch is
+	// exempt — it never clears location (mergeOp only ever SETS it when both
+	// coordinates are present), so it can't violate the NOT NULL invariant.
+	if op.Op == "put" && (data.LocationLon == nil || data.LocationLat == nil) {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.location", Code: "required", Message: "location is required"})
+	}
 	if data.Name != nil && len(*data.Name) > 200 {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.name", Code: "too_long", Message: "name must be at most 200 characters"})
 	}

@@ -34,16 +34,15 @@ const _pickerFocusedZoom = 13.0;
 ///
 /// The map picker is **collapsed by default** ([_mapPickerExpanded]) — it
 /// expands inline only when the user taps "Set on map", or automatically
-/// when editing an apiary that already has a location. Location is entirely
-/// optional (#252 AC: editable and clearable), so the primary Save action
-/// must never be pushed below the fold or obscured by an always-on 220px
-/// map in the scrollable form: the walking-skeleton e2e creates an apiary
-/// with only name+hives (never touching location), and an always-embedded
-/// map crowded/collided with the Save button in the constrained CI viewport
-/// (the map's own gesture region also competes with the form's scroll). A
-/// compact summary + on-demand expansion keeps the default create form
-/// short and Save immediately reachable, while still offering the embedded
-/// map picker when wanted.
+/// when editing an apiary that already has a location. Location is now
+/// **mandatory** (FR-AP-7, #341 — the product owner's directed requirement
+/// change): the form cannot be saved without one (see [_save]'s
+/// [_locationError] check). The picker is still collapsed by default so the
+/// primary Save action is never pushed below the fold or obscured by an
+/// always-on 220px map in the scrollable form (the map's own gesture region
+/// also competes with the form's scroll); a compact summary + on-demand
+/// expansion keeps the create form short and Save reachable while still
+/// offering the embedded map picker.
 class ApiaryFormScreen extends ConsumerStatefulWidget {
   const ApiaryFormScreen({this.apiaryId, super.key});
 
@@ -67,6 +66,14 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
   /// location" action, and the "clear location" action.
   ll.LatLng? _location;
   bool _locationPermissionDenied = false;
+
+  /// Set to the localized "location is required" message when the user tries
+  /// to save without a location (FR-AP-7, #341 — location is mandatory).
+  /// Cleared as soon as a location is set (map tap / use-current-location) so
+  /// the error never lingers past the fix. Manual rather than a
+  /// [TextFormField] validator because the location isn't a text field — it's
+  /// a map pin held in [_location] outside the [Form]'s field tree.
+  String? _locationError;
 
   /// Whether the inline map picker is expanded. Collapsed by default (keeps
   /// the primary Save action reachable — see the class doc comment); the
@@ -150,6 +157,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
         case DeviceLocationAvailable(:final lon, :final lat):
           _location = ll.LatLng(lat, lon);
           _locationPermissionDenied = false;
+          _locationError = null;
           // Reveal the pin that was just set so the user can confirm/adjust it.
           _mapPickerExpanded = true;
         default:
@@ -162,6 +170,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
     setState(() {
       _location = point;
       _locationPermissionDenied = false;
+      _locationError = null;
     });
   }
 
@@ -171,8 +180,15 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
       setState(() => _mapPickerExpanded = !_mapPickerExpanded);
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
     final l10n = AppLocalizations.of(context);
+    final formOk = _formKey.currentState!.validate();
+    // Location is mandatory (FR-AP-7, #341): an apiary cannot be saved without
+    // one. The map pin lives in [_location], outside the Form's field tree, so
+    // it's validated here rather than via a TextFormField validator — surfaced
+    // as [_locationError] next to the location section.
+    final locationOk = _location != null;
+    setState(() => _locationError = locationOk ? null : l10n.apiaryLocationRequired);
+    if (!formOk || !locationOk) return;
     // The shell's Scaffold (not this screen's, which navigates away right
     // after) owns the messenger the toast should surface on — grabbed via
     // the root navigator's context before the local-first write completes
@@ -343,6 +359,24 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                               ?.copyWith(
                                 color: Theme.of(context).colorScheme.error,
                               ),
+                        ),
+                      ],
+                      // Location-required validation error (FR-AP-7, #341):
+                      // shown when the user tries to save without a location.
+                      // liveRegion so a screen reader announces it when it
+                      // appears (WCAG 2.2 AA).
+                      if (_locationError != null) ...[
+                        const SizedBox(height: 4),
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            _locationError!,
+                            key: const Key('apiary-location-required-error'),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                          ),
                         ),
                       ],
                       // Location capture is COLLAPSED by default: only a single

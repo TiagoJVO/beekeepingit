@@ -754,6 +754,10 @@
   "@apiaryFormLocationNotSet": {
     "description": "Status text on the apiary form's map-pin picker when no location is set yet (#252)"
   },
+  "apiaryLocationRequired": "Set the apiary's location before saving.",
+  "@apiaryLocationRequired": {
+    "description": "Validation error on the apiary form when the user tries to save without a location — location is mandatory (FR-AP-7, #341)"
+  },
   "apiaryMapPickerLabel": "Map: tap to place the apiary's pin",
   "@apiaryMapPickerLabel": {
     "description": "Semantics label for the embedded map-pin picker on the apiary form (#252)"

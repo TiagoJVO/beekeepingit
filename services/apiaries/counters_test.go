@@ -411,7 +411,9 @@ func TestApiariesSlice_CounterOp_History_FirstWriteIsACreateBaseline(t *testing.
 
 	// An apiary op with NO hive_count key — the new client's create shape
 	// (its local apiaries table no longer has the column).
-	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova"})
+	// location is mandatory on a put (#341), so the create op carries one even
+	// though these tests only care about the counter rows.
+	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova", "location_lon": -8.6, "location_lat": 41.1})
 	create := api.Op{Op: "put", EntityType: "apiary", ID: apiaryID, Data: createData, UpdatedAt: t0}
 	if got := f.apply(t, create); got.Results[0].Result != "applied" {
 		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)
@@ -465,7 +467,9 @@ func TestApiariesSlice_CounterOp_SuperType_KnownFirstClassAndAuditedSeparately(t
 	t0 := time.Now().UTC().Truncate(time.Millisecond)
 
 	// A hive-less apiary create (the new client's shape) — no counter rows yet.
-	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova"})
+	// location is mandatory on a put (#341), so the create op carries one even
+	// though these tests only care about the counter rows.
+	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova", "location_lon": -8.6, "location_lat": 41.1})
 	create := api.Op{Op: "put", EntityType: "apiary", ID: apiaryID, Data: createData, UpdatedAt: t0}
 	if got := f.apply(t, create); got.Results[0].Result != "applied" {
 		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)

@@ -8,9 +8,26 @@ package api
 // table-driven tests in geo_test.go.
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
+
+// hasFieldError reports whether errs contains a FieldError for the given
+// dotted field path with the given code — the shared assertion the
+// location-required tests below use.
+func hasFieldError(errs []problem.FieldError, field, code string) bool {
+	for _, e := range errs {
+		if e.Field == field && e.Code == code {
+			return true
+		}
+	}
+	return false
+}
 
 func TestParseNear(t *testing.T) {
 	tests := []struct {
@@ -198,4 +215,68 @@ func TestMergeOp_Delete(t *testing.T) {
 	if !got.deletedAt.Time.Equal(ts) {
 		t.Fatalf("mergeOp(delete) deletedAt.Time = %v, want %v (op.UpdatedAt)", got.deletedAt.Time, ts)
 	}
+}
+
+// validPoint is a well-formed in-bounds GeoJSON point used by the
+// location-required tests below (mainland Portugal, matching the dev-seed
+// region).
+func validPoint() *geoPointInput {
+	return &geoPointInput{Type: "Point", Coordinates: []float64{-8.6, 41.1}}
+}
+
+// TestValidateCreate_LocationRequired is #341's REST-path unit guard: location
+// is now mandatory on create (FR-AP-7), so a body without one is rejected with
+// a field-level `location`/`required` error, while a body carrying a valid
+// point is not.
+func TestValidateCreate_LocationRequired(t *testing.T) {
+	t.Run("missing location is rejected", func(t *testing.T) {
+		_, errs := validateCreate(apiaryCreateRequest{ID: uuid.NewString(), Name: "Encosta Nova"})
+		if !hasFieldError(errs, "location", "required") {
+			t.Fatalf("validateCreate(no location) errs = %+v, want a location/required error", errs)
+		}
+	})
+	t.Run("valid location passes the location check", func(t *testing.T) {
+		_, errs := validateCreate(apiaryCreateRequest{ID: uuid.NewString(), Name: "Encosta Nova", Location: validPoint()})
+		if hasFieldError(errs, "location", "required") {
+			t.Fatalf("validateCreate(with location) errs = %+v, want no location/required error", errs)
+		}
+	})
+}
+
+// TestValidateApiaryOp_PutLocationRequired is #341's sync-apply (offline
+// create) unit guard: a full `put` must carry both coordinates, so a put
+// without location is rejected, a put with a partial/whole location passes the
+// location-required check, and a `patch` (which never clears location) is
+// exempt.
+func TestValidateApiaryOp_PutLocationRequired(t *testing.T) {
+	mustData := func(m map[string]any) json.RawMessage {
+		b, err := json.Marshal(m)
+		if err != nil {
+			t.Fatalf("marshal op data: %v", err)
+		}
+		return b
+	}
+	ts := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	t.Run("put without location is rejected", func(t *testing.T) {
+		op := Op{Op: "put", EntityType: "apiary", ID: uuid.NewString(), UpdatedAt: ts,
+			Data: mustData(map[string]any{"name": "Encosta Nova"})}
+		if errs := validateApiaryOp(0, op); !hasFieldError(errs, "ops[0].data.location", "required") {
+			t.Fatalf("validateApiaryOp(put, no location) errs = %+v, want a location/required error", errs)
+		}
+	})
+	t.Run("put with location passes the location check", func(t *testing.T) {
+		op := Op{Op: "put", EntityType: "apiary", ID: uuid.NewString(), UpdatedAt: ts,
+			Data: mustData(map[string]any{"name": "Encosta Nova", "location_lon": -8.6, "location_lat": 41.1})}
+		if errs := validateApiaryOp(0, op); hasFieldError(errs, "ops[0].data.location", "required") {
+			t.Fatalf("validateApiaryOp(put, with location) errs = %+v, want no location/required error", errs)
+		}
+	})
+	t.Run("patch without location is exempt", func(t *testing.T) {
+		op := Op{Op: "patch", EntityType: "apiary", ID: uuid.NewString(), UpdatedAt: ts,
+			Data: mustData(map[string]any{"name": "Renamed"})}
+		if errs := validateApiaryOp(0, op); hasFieldError(errs, "ops[0].data.location", "required") {
+			t.Fatalf("validateApiaryOp(patch, no location) errs = %+v, want no location/required error", errs)
+		}
+	})
 }

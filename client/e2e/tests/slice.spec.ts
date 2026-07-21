@@ -212,6 +212,14 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.press("Delete");
   await page.keyboard.press("Backspace");
   await page.keyboard.type(apiaryNotes, { delay: 80 });
+  // Location is now MANDATORY (#341, FR-AP-7): the form can't be saved without
+  // one. Expand the collapsed map picker and tap it to drop a pin (the same
+  // tap-to-place interaction the widget tests exercise) — deterministic and,
+  // unlike "Use current location", needs no geolocation permission grant.
+  await page.getByText("Set on map", { exact: true }).click();
+  await page
+    .getByLabel("Map: tap to place the apiary's pin")
+    .click({ position: { x: 120, y: 110 } });
   await page.getByText("Save", { exact: true }).click();
 
   await expect(page.getByText(apiaryName)).toBeVisible();

@@ -578,6 +578,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'No location set — tap the map to place a pin';
 
   @override
+  String get apiaryLocationRequired =>
+      'Set the apiary\'s location before saving.';
+
+  @override
   String get apiaryMapPickerLabel => 'Map: tap to place the apiary\'s pin';
 
   @override
