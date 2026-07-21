@@ -7,6 +7,7 @@ import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
 import '../../theming/brand_theme.dart';
 import '../../theming/brand_widgets.dart';
+import '../activities/activity_types.dart';
 import 'journey_stats.dart';
 import 'journeys_repository.dart';
 
@@ -24,10 +25,24 @@ import 'journeys_repository.dart';
 /// itself — a plain `ConsumerWidget` keyed only by [journeyId] so #48 can
 /// drop it into a larger scrollable column exactly like
 /// apiary_detail_screen.dart embeds `_ApiaryActivitiesSection`.
+///
+/// The displayed metrics ADAPT to the journey's [mainActivityType] (#342,
+/// FR-JO-3): every journey shows the universal progress metrics (apiaries
+/// visited vs. planned, and how much is still missing — FR-JO-1), but the
+/// harvest-only aggregations (hives harvested per D-2, honey collected, média
+/// alças/colmeia) render ONLY for a harvest journey — they'd be meaningless on
+/// a feeding/treatment/generic journey, whose activities carry no honey/supers
+/// attributes. The caller already holds the journey (journey_detail_screen),
+/// so the type is passed in rather than re-watched here.
 class JourneyStatsSection extends ConsumerWidget {
-  const JourneyStatsSection({required this.journeyId, super.key});
+  const JourneyStatsSection({
+    required this.journeyId,
+    required this.mainActivityType,
+    super.key,
+  });
 
   final String journeyId;
+  final String mainActivityType;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -62,7 +77,10 @@ class JourneyStatsSection extends ConsumerWidget {
               key: const Key('journey-stats-error'),
               style: TextStyle(color: theme.colorScheme.error),
             ),
-            data: (stats) => _JourneyStatsBody(stats: stats),
+            data: (stats) => _JourneyStatsBody(
+              stats: stats,
+              mainActivityType: mainActivityType,
+            ),
           ),
         ],
       ),
@@ -71,14 +89,24 @@ class JourneyStatsSection extends ConsumerWidget {
 }
 
 class _JourneyStatsBody extends StatelessWidget {
-  const _JourneyStatsBody({required this.stats});
+  const _JourneyStatsBody({
+    required this.stats,
+    required this.mainActivityType,
+  });
 
   final JourneyStats stats;
+  final String mainActivityType;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final locale = LocaleFormatting.of(context);
+
+    // D-2 harvest aggregations (hives harvested, honey collected, média
+    // alças/colmeia) only make sense for a harvest journey — a feeding/
+    // treatment/generic journey's activities carry no honey/supers attributes,
+    // so summing them would only ever show a meaningless 0 (#342, FR-JO-3).
+    final isHarvest = mainActivityType == activityTypeHarvest;
 
     final averageSupersText = stats.averageSupersPerHive == null
         ? l10n.journeyStatsAverageSupersNoData
@@ -99,23 +127,25 @@ class _JourneyStatsBody extends StatelessWidget {
               ),
               label: l10n.journeyStatsApiariesVisitedLabel,
             ),
-            _StatTile(
-              statKey: 'hives-harvested',
-              value: '${stats.hivesHarvested}',
-              label: l10n.journeyStatsHivesHarvestedLabel,
-            ),
-            _StatTile(
-              statKey: 'honey-collected',
-              value: l10n.journeyStatsHoneyCollectedValue(
-                locale.decimal(stats.honeyCollectedKg),
+            if (isHarvest) ...[
+              _StatTile(
+                statKey: 'hives-harvested',
+                value: '${stats.hivesHarvested}',
+                label: l10n.journeyStatsHivesHarvestedLabel,
               ),
-              label: l10n.journeyStatsHoneyCollectedLabel,
-            ),
-            _StatTile(
-              statKey: 'average-supers',
-              value: averageSupersText,
-              label: l10n.journeyStatsAverageSupersLabel,
-            ),
+              _StatTile(
+                statKey: 'honey-collected',
+                value: l10n.journeyStatsHoneyCollectedValue(
+                  locale.decimal(stats.honeyCollectedKg),
+                ),
+                label: l10n.journeyStatsHoneyCollectedLabel,
+              ),
+              _StatTile(
+                statKey: 'average-supers',
+                value: averageSupersText,
+                label: l10n.journeyStatsAverageSupersLabel,
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 12),
