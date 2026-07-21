@@ -1229,6 +1229,56 @@ void main() {
       },
     );
 
+    testWidgets(
+      'inline create: the main activity type is locked to the activity being '
+      'registered so a mismatched-type journey cannot be created (#343, '
+      'FR-JO-4, D-21)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository();
+        await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-create-new-option')),
+        );
+        await tester.pumpAndSettle();
+
+        // The type field is present, shows the activity's own type, but is
+        // locked (disabled) — the user has no way to pick a different type.
+        final typeField = tester.widget<DropdownButtonFormField<String>>(
+          find.byKey(
+            const Key('journey-quick-create-main-activity-type-field'),
+          ),
+        );
+        expect(
+          typeField.onChanged,
+          isNull,
+          reason: 'the main activity type must be locked on inline create',
+        );
+
+        // Creating the journey still works and carries the matching type.
+        await tester.enterText(
+          find.byKey(const Key('journey-quick-create-name-field')),
+          'Matched Journey',
+        );
+        await tester.tap(
+          find.byKey(const Key('journey-quick-create-save-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(journeysRepo.created, hasLength(1));
+        expect(journeysRepo.created.single.mainActivityType, 'harvest');
+      },
+    );
+
     testWidgets('inline create: canceling the quick-create sheet leaves the '
         'attachment unchanged', (tester) async {
       tester.view.physicalSize = const Size(1200, 2400);
