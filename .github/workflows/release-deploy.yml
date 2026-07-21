@@ -3,8 +3,9 @@
 # promotion event, routed by its tag:
 #
 #   - tag contains `-rc` (e.g. v1.2.3-rc1) -> STAGING (fast, no approval gate)
-#   - tag has no `-rc`  (e.g. v1.2.3)       -> PROD, gated behind the `production`
-#                                              GitHub Environment's required reviewer
+#   - tag has no `-rc`  (e.g. v1.2.3)       -> PROD, gated behind the
+#                                              `production-gate` GitHub Environment's
+#                                              required reviewer
 #
 # CI builds + publishes that version's complete image set — every buildable Go
 # service AND the PWA (compiled with the *target* environment's OIDC/gateway URLs,
@@ -15,11 +16,22 @@
 # PAT can only open a PR against the GitOps repo — it can't push to that repo's
 # branch-protected `main`, nor touch this repo.
 #
-# Gating: a single `approve` job references `environment:` (staging -> auto-created
-# and ungated; prod -> the required-reviewer gate), so a prod release takes ONE
-# approval rather than one per service. The scan runs inside each publish job
-# (build -> load -> Trivy -> push), so a failing scan blocks the push even after
-# approval. `open-pr` runs only once every image is published.
+# Gating: a single `approve` job references `environment:` (staging-gate ->
+# auto-created and ungated; prod -> production-gate's required-reviewer gate), so
+# a prod release takes ONE approval rather than one per service. The scan runs
+# inside each publish job (build -> load -> Trivy -> push), so a failing scan
+# blocks the push even after approval. `open-pr` runs only once every image is
+# published.
+#
+# The `-gate` suffix keeps this repo's Deployments page free for the *real*
+# deploy record: `staging`/`production` (no `-gate`) are left unprotected here so
+# beekeepingit-gitops's notify-deploy workflow can create a deployment on THIS
+# repo under that plain name when its tag-bump PR actually merges to `main` —
+# the moment Flux picks up the change, not the moment this release was approved
+# to publish. Without the split, the approval-gate environment and the real
+# deploy-record environment would be the same name, and the Deployments page
+# would show "deployed" the instant a release was approved, before the GitOps PR
+# was even opened, let alone merged.
 name: release-deploy
 
 on:
@@ -45,8 +57,8 @@ jobs:
           set -euo pipefail
           if [ -z "$TAG" ]; then echo "::error::release has no tag_name"; exit 1; fi
           case "$TAG" in
-            *-rc*) target=staging; environment=staging ;;
-            *) target=prod; environment=production ;;
+            *-rc*) target=staging; environment=staging-gate ;;
+            *) target=prod; environment=production-gate ;;
           esac
           echo "target=$target" >> "$GITHUB_OUTPUT"
           echo "environment=$environment" >> "$GITHUB_OUTPUT"
@@ -89,10 +101,12 @@ jobs:
             echo "No buildable Go services yet — nothing to release."
           fi
 
-  # The single environment gate. staging -> `staging` (auto-created, no protection
-  # rules = runs immediately). prod -> `production` (waits for the required
-  # reviewer). Everything downstream `needs: approve`, so one approval releases the
-  # whole prod publish, not one per matrixed service.
+  # The single environment gate. staging -> `staging-gate` (auto-created, no
+  # protection rules = runs immediately). prod -> `production-gate` (waits for the
+  # required reviewer). Everything downstream `needs: approve`, so one approval
+  # releases the whole prod publish, not one per matrixed service. Note this is
+  # a *different* environment from the plain `staging`/`production` names — see
+  # the file header comment for why.
   approve:
     name: approve ${{ needs.route.outputs.target }} publish
     needs: route

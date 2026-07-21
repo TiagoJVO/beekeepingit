@@ -537,11 +537,17 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 - **Decision (user, 2026-07-19):** deployments are driven by **published GitHub Releases**, not by
   Flux image-automation watching the registry. A release tag suffixed `-rc` (e.g. `v1.2.3-rc1`)
-  targets **staging**; an un-suffixed tag (`v1.2.3`) targets **prod**, gated behind the `production`
-  GitHub Environment's required-reviewer approval. CI builds and tags the image set for that exact
-  release version and opens a small tag-bump **pull request** against the GitOps state; a human
-  merges it and Flux (unchanged, still read-only) reconciles. No component ever holds a standing
-  git-write credential, and the flow works within `main`'s existing PR-only branch protection.
+  targets **staging**; an un-suffixed tag (`v1.2.3`) targets **prod**, gated behind the
+  `production-gate` GitHub Environment's required-reviewer approval. CI builds and tags the image
+  set for that exact release version and opens a small tag-bump **pull request** against the
+  GitOps state; a human merges it and Flux (unchanged, still read-only) reconciles. No component
+  ever holds a standing git-write credential, and the flow works within `main`'s existing PR-only
+  branch protection.
+- **Amendment (user, 2026-07-21):** the approval-gate environments were renamed
+  `staging-gate`/`production-gate` (from `staging`/`production`), freeing the plain
+  `staging`/`production` environment names for the beekeepingit-gitops repo's `notify-deploy`
+  workflow to record the _actual_ deploy (when its tag-bump PR merges), not the release approval —
+  see ADR-0018's addendum.
 - **Why image-automation was dropped:** Flux's `image-automation-controller` requires a **standing
   git-write credential** (a deploy key) to auto-commit tag bumps to `main` — rejected by the user. A
   direct-push-after-approval variant is also **impossible on this repo**: `main` requires PRs, and
