@@ -218,7 +218,15 @@ async function login(page: Page) {
  */
 async function setApiaryLocation(page: Page) {
   await page.getByText("Set on map", { exact: true }).click();
-  const locationSet = page.getByText(/Location set:/);
+  // Flutter also mirrors the status text into a transient
+  // <flt-announcement-polite aria-live="polite"> node, so a bare
+  // getByText(/Location set:/) resolves to two elements and trips Playwright's
+  // strict mode. The real semantics label is a <span>; the announcer is not,
+  // so scoping to span picks the durable one (.first() guards against nesting).
+  const locationSet = page
+    .locator("span")
+    .filter({ hasText: /Location set:/ })
+    .first();
 
   await page
     .getByRole("button", { name: /Map: tap to place the apiary/ })
