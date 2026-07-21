@@ -246,6 +246,157 @@ Future<void> _setLocationViaCurrentLocation(WidgetTester tester) async {
 }
 
 void main() {
+  group('the primary actions stay reachable with the map picker expanded '
+      '(FR-UX-1, D-18, #341 regression)', () {
+    // The defect this guards: #341 made location mandatory, so every apiary
+    // creation has to expand the 220px map picker — and back when Save was
+    // the last child of the form's scroll view, that pushed it below the
+    // fold on a short viewport, behind a map whose gesture region swallows
+    // the drag that would scroll it back. CI reproduced exactly this: a
+    // fully valid form (name + notes + "Location set: …"), Save clicked,
+    // silent no-op, still parked on "New apiary". Save now lives in a pinned
+    // action bar OUTSIDE the scroll view, so these tests deliberately never
+    // scroll it into view before tapping it — `ensureVisible` is used only
+    // for the in-form location controls, which legitimately scroll.
+    const shortViewport = Size(400, 640);
+
+    testWidgets(
+      'Save is on-screen and actually saves while the picker is expanded, at '
+      'a short viewport and scrolled to the bottom of the form',
+      (tester) async {
+        tester.view.physicalSize = shortViewport;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            repositoryOverride: repo,
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationAvailable(lon: -8.0, lat: 39.5),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          'Encosta Nova',
+        );
+        await tester.pump();
+
+        // Expand the picker and set a location — exactly what a real
+        // creation now has to do. Both controls live inside the scroll view,
+        // so they're scrolled into view first; that also leaves the form
+        // scrolled away from the top, which is the state Save has to survive.
+        final toggle = find.byKey(const Key('apiary-toggle-map-button'));
+        await tester.ensureVisible(toggle);
+        await tester.pumpAndSettle();
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+
+        final useCurrent = find.byKey(
+          const Key('apiary-use-current-location-button'),
+        );
+        await tester.ensureVisible(useCurrent);
+        await tester.pumpAndSettle();
+        await tester.tap(useCurrent);
+        await tester.pumpAndSettle();
+
+        // The picker is expanded and the location is set — the exact state
+        // that used to strand the user.
+        expect(find.byKey(const Key('apiary-location-picker')), findsOneWidget);
+        expect(find.text('Location set: 39.50000, -8.00000'), findsOneWidget);
+
+        // Save is fully inside the viewport…
+        final save = find.byKey(const Key('apiary-save-button'));
+        final saveRect = tester.getRect(save);
+        final screen = Offset.zero & tester.view.physicalSize;
+        expect(
+          screen.contains(saveRect.topLeft) &&
+              screen.contains(saveRect.bottomRight - const Offset(1, 1)),
+          isTrue,
+          reason:
+              'Save must be fully on-screen with the map picker expanded; '
+              'it rendered at $saveRect on a $shortViewport viewport',
+        );
+        // …still a gloves-friendly target (D-18)…
+        expectMinTapTarget(tester, save);
+        // …and a tap at its rendered position really reaches the handler —
+        // NO ensureVisible/scrolling first, which is the whole point.
+        await tester.tap(save);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          repo.created,
+          hasLength(1),
+          reason:
+              'tapping Save with the picker expanded must create the '
+              'apiary, not silently no-op',
+        );
+        expect(repo.created.single.locationLat, 39.5);
+        expect(repo.created.single.locationLon, -8.0);
+        // And it left the form.
+        expect(find.byKey(const Key('apiary-name-field')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the pinned Save keeps its semantics label and the location-required '
+      'error still surfaces from it',
+      (tester) async {
+        tester.view.physicalSize = shortViewport;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(apiaries: const [], repositoryOverride: repo),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          'Encosta Nova',
+        );
+        final toggle = find.byKey(const Key('apiary-toggle-map-button'));
+        await tester.ensureVisible(toggle);
+        await tester.pumpAndSettle();
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+
+        expectHasSemanticsLabel(tester, const Key('apiary-save-button'));
+
+        // Saving with the picker expanded but no pin still surfaces the
+        // mandatory-location error (#341) rather than doing nothing.
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final error = find.byKey(const Key('apiary-location-required-error'));
+        await tester.ensureVisible(error);
+        await tester.pumpAndSettle();
+        expect(error, findsOneWidget);
+        expect(repo.created, isEmpty);
+      },
+    );
+  });
+
   testWidgets(
     'the create form has NO hive/counter field (#346, D-20: counters are '
     'managed on the detail screen, not set at creation)',

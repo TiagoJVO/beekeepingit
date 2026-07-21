@@ -38,12 +38,20 @@ const _pickerFocusedZoom = 13.0;
 /// when editing an apiary that already has a location. Location is now
 /// **mandatory** (FR-AP-7, #341 — the product owner's directed requirement
 /// change): the form cannot be saved without one (see [_save]'s
-/// [_locationError] check). The picker is still collapsed by default so the
-/// primary Save action is never pushed below the fold or obscured by an
-/// always-on 220px map in the scrollable form (the map's own gesture region
-/// also competes with the form's scroll); a compact summary + on-demand
-/// expansion keeps the create form short and Save reachable while still
-/// offering the embedded map picker.
+/// [_locationError] check).
+///
+/// Collapsing the picker by default is purely a **density** choice: a fresh
+/// create form reads as a short list of fields instead of opening on a 220px
+/// map whose gesture region competes with the form's own scroll. It is NOT
+/// what keeps Save reachable — Save (and, in edit mode, Delete) live in a
+/// pinned action bar **outside** the scroll view (see [build]), so they stay
+/// visible and tappable at any scroll offset, with the picker expanded, on
+/// any viewport height. That pinning is the fix for the regression #341
+/// created: once location became mandatory every creation had to expand the
+/// picker, which — back when the actions were the last children of the
+/// scrollable [Form] — pushed Save below the fold behind the map's
+/// scroll-swallowing gesture region, leaving a valid form with no reachable
+/// Save and no error explaining why (FR-UX-1, D-18).
 class ApiaryFormScreen extends ConsumerStatefulWidget {
   const ApiaryFormScreen({this.apiaryId, super.key});
 
@@ -77,10 +85,11 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
   /// a map pin held in [_location] outside the [Form]'s field tree.
   String? _locationError;
 
-  /// Whether the inline map picker is expanded. Collapsed by default (keeps
-  /// the primary Save action reachable — see the class doc comment); the
-  /// user expands it via "Set on map", and it auto-expands when editing an
-  /// apiary that already has a location so the existing pin is visible.
+  /// Whether the inline map picker is expanded. Collapsed by default for
+  /// form density, not for Save's reachability — the actions are pinned
+  /// outside the scroll view (see the class doc comment). The user expands
+  /// it via "Set on map", and it auto-expands when editing an apiary that
+  /// already has a location so the existing pin is visible.
   bool _mapPickerExpanded = false;
 
   @override
@@ -325,165 +334,220 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
           : Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Form(
-                    key: _formKey,
-                    // Any field edit arms the unsaved-changes guard (#345);
-                    // edits outside the field tree (the map pin) call
-                    // markUnsavedChanges directly.
-                    onChanged: markUnsavedChanges,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        TextFormField(
-                          key: const Key('apiary-name-field'),
-                          controller: _nameController,
-                          autofocus: !widget.isEdit,
-                          decoration: InputDecoration(
-                            labelText: l10n.apiaryNameLabel,
-                          ),
-                          validator: (v) => (v == null || v.trim().isEmpty)
-                              ? l10n.apiaryNameRequired
-                              : null,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          key: const Key('apiary-place-label-field'),
-                          controller: _placeLabelController,
-                          textInputAction: TextInputAction.next,
-                          maxLength: 200,
-                          decoration: InputDecoration(
-                            labelText: l10n.apiaryPlaceLabelLabel,
-                            hintText: l10n.apiaryPlaceLabelHint,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          l10n.apiaryLocationSectionLabel,
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
-                        const SizedBox(height: 4),
-                        Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            _location == null
-                                ? l10n.apiaryFormLocationNotSet
-                                : l10n.apiaryFormLocationSet(
-                                    _location!.latitude.toStringAsFixed(5),
-                                    _location!.longitude.toStringAsFixed(5),
-                                  ),
-                            key: const Key('apiary-location-status'),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                        if (_locationPermissionDenied) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            l10n.apiaryFormLocationPermissionDenied,
-                            key: const Key('apiary-location-permission-denied'),
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.error,
+                // The fields scroll, the actions stay pinned — the same
+                // structure journey_quick_create_sheet.dart /
+                // todo_quick_create_sheet.dart already use, and the fix for
+                // the #341 regression described in the class doc comment.
+                // A single scroll view around EVERYTHING put Save last, below
+                // a mandatory 220px map picker whose gesture region swallows
+                // the drag that would scroll it back into view; on a short
+                // viewport that left a fully valid form with an unreachable
+                // Save and no error. Keeping the actions outside the
+                // scrollable makes them reachable at any scroll offset,
+                // picker state, viewport height, or text scale.
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                        child: Form(
+                          key: _formKey,
+                          // Any field edit arms the unsaved-changes guard (#345);
+                          // edits outside the field tree (the map pin) call
+                          // markUnsavedChanges directly.
+                          onChanged: markUnsavedChanges,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              TextFormField(
+                                key: const Key('apiary-name-field'),
+                                controller: _nameController,
+                                autofocus: !widget.isEdit,
+                                decoration: InputDecoration(
+                                  labelText: l10n.apiaryNameLabel,
                                 ),
-                          ),
-                        ],
-                        // Location-required validation error (FR-AP-7, #341):
-                        // shown when the user tries to save without a location.
-                        // liveRegion so a screen reader announces it when it
-                        // appears (WCAG 2.2 AA).
-                        if (_locationError != null) ...[
-                          const SizedBox(height: 4),
-                          Semantics(
-                            liveRegion: true,
-                            child: Text(
-                              _locationError!,
-                              key: const Key('apiary-location-required-error'),
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(context).colorScheme.error,
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                    ? l10n.apiaryNameRequired
+                                    : null,
+                              ),
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                key: const Key('apiary-place-label-field'),
+                                controller: _placeLabelController,
+                                textInputAction: TextInputAction.next,
+                                maxLength: 200,
+                                decoration: InputDecoration(
+                                  labelText: l10n.apiaryPlaceLabelLabel,
+                                  hintText: l10n.apiaryPlaceLabelHint,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                l10n.apiaryLocationSectionLabel,
+                                style: Theme.of(context).textTheme.labelLarge,
+                              ),
+                              const SizedBox(height: 4),
+                              Semantics(
+                                liveRegion: true,
+                                child: Text(
+                                  _location == null
+                                      ? l10n.apiaryFormLocationNotSet
+                                      : l10n.apiaryFormLocationSet(
+                                          _location!.latitude.toStringAsFixed(
+                                            5,
+                                          ),
+                                          _location!.longitude.toStringAsFixed(
+                                            5,
+                                          ),
+                                        ),
+                                  key: const Key('apiary-location-status'),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                              if (_locationPermissionDenied) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  l10n.apiaryFormLocationPermissionDenied,
+                                  key: const Key(
+                                    'apiary-location-permission-denied',
                                   ),
-                            ),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
+                                ),
+                              ],
+                              // Location-required validation error (FR-AP-7, #341):
+                              // shown when the user tries to save without a location.
+                              // liveRegion so a screen reader announces it when it
+                              // appears (WCAG 2.2 AA).
+                              if (_locationError != null) ...[
+                                const SizedBox(height: 4),
+                                Semantics(
+                                  liveRegion: true,
+                                  child: Text(
+                                    _locationError!,
+                                    key: const Key(
+                                      'apiary-location-required-error',
+                                    ),
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                              // Location capture is COLLAPSED by default: only a
+                              // single compact "set on map" toggle shows until the
+                              // user opts in. This is a density choice — a fresh
+                              // create form reads as a short list of fields rather
+                              // than opening on an always-on 220px map whose gesture
+                              // region competes with the form's scroll. Save no
+                              // longer depends on it: the actions are pinned below
+                              // this scroll view, so expanding the picker can't push
+                              // them out of reach. When expanded, the full picker +
+                              // "use current location" + "clear" appear.
+                              const SizedBox(height: 8),
+                              SecondaryActionButton(
+                                key: const Key('apiary-toggle-map-button'),
+                                label: _mapPickerExpanded
+                                    ? l10n.apiaryHideMapAction
+                                    : l10n.apiarySetOnMapAction,
+                                icon: _mapPickerExpanded
+                                    ? Icons.expand_less
+                                    : Icons.map_outlined,
+                                onPressed: _toggleMapPicker,
+                              ),
+                              if (_mapPickerExpanded) ...[
+                                const SizedBox(height: 8),
+                                _LocationPicker(
+                                  location: _location,
+                                  onTap: _onMapTap,
+                                ),
+                                const SizedBox(height: 8),
+                                SecondaryActionButton(
+                                  key: const Key(
+                                    'apiary-use-current-location-button',
+                                  ),
+                                  label: l10n.apiaryUseCurrentLocationAction,
+                                  icon: Icons.my_location,
+                                  onPressed: _useCurrentLocation,
+                                ),
+                                if (_location != null) ...[
+                                  const SizedBox(height: 8),
+                                  SecondaryActionButton(
+                                    key: const Key(
+                                      'apiary-clear-location-button',
+                                    ),
+                                    label: l10n.apiaryLocationClearAction,
+                                    icon: Icons.location_off_outlined,
+                                    onPressed: _clearLocation,
+                                  ),
+                                ],
+                              ],
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                key: const Key('apiary-notes-field'),
+                                controller: _notesController,
+                                minLines: 3,
+                                maxLines: 6,
+                                maxLength: 10000,
+                                textInputAction: TextInputAction.newline,
+                                decoration: InputDecoration(
+                                  labelText: l10n.apiaryNotesLabel,
+                                  hintText: l10n.apiaryNotesHint,
+                                  alignLabelWithHint: true,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                        // Location capture is COLLAPSED by default: only a single
-                        // compact "set on map" toggle shows until the user opts
-                        // in. This keeps the primary Save action reachable in a
-                        // fresh create form — an always-on 220px map + its
-                        // control buttons used to push Save below the fold and
-                        // collide with it in a constrained viewport (the
-                        // regression the walking-skeleton e2e caught). When
-                        // expanded, the full picker + "use current location" +
-                        // "clear" appear.
-                        const SizedBox(height: 8),
-                        SecondaryActionButton(
-                          key: const Key('apiary-toggle-map-button'),
-                          label: _mapPickerExpanded
-                              ? l10n.apiaryHideMapAction
-                              : l10n.apiarySetOnMapAction,
-                          icon: _mapPickerExpanded
-                              ? Icons.expand_less
-                              : Icons.map_outlined,
-                          onPressed: _toggleMapPicker,
                         ),
-                        if (_mapPickerExpanded) ...[
-                          const SizedBox(height: 8),
-                          _LocationPicker(
-                            location: _location,
-                            onTap: _onMapTap,
-                          ),
-                          const SizedBox(height: 8),
-                          SecondaryActionButton(
-                            key: const Key(
-                              'apiary-use-current-location-button',
-                            ),
-                            label: l10n.apiaryUseCurrentLocationAction,
-                            icon: Icons.my_location,
-                            onPressed: _useCurrentLocation,
-                          ),
-                          if (_location != null) ...[
-                            const SizedBox(height: 8),
-                            SecondaryActionButton(
-                              key: const Key('apiary-clear-location-button'),
-                              label: l10n.apiaryLocationClearAction,
-                              icon: Icons.location_off_outlined,
-                              onPressed: _clearLocation,
-                            ),
-                          ],
-                        ],
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          key: const Key('apiary-notes-field'),
-                          controller: _notesController,
-                          minLines: 3,
-                          maxLines: 6,
-                          maxLength: 10000,
-                          textInputAction: TextInputAction.newline,
-                          decoration: InputDecoration(
-                            labelText: l10n.apiaryNotesLabel,
-                            hintText: l10n.apiaryNotesHint,
-                            alignLabelWithHint: true,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        PrimaryActionButton(
-                          key: const Key('apiary-save-button'),
-                          label: l10n.saveButton,
-                          onPressed: _save,
-                        ),
-                        if (widget.isEdit) ...[
-                          const SizedBox(height: 12),
-                          SecondaryActionButton(
-                            key: const Key('apiary-delete-button'),
-                            label: l10n.deleteApiary,
-                            icon: Icons.delete_outline,
-                            destructive: true,
-                            onPressed: _confirmDelete,
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
-                  ),
+                    // Pinned action bar. SafeArea (bottom only — the top is
+                    // the scroll view's) keeps it clear of the home
+                    // indicator / browser chrome. Delete is pinned alongside
+                    // Save rather than left at the end of the scrollable
+                    // content: the same map gesture region that used to trap
+                    // Save would trap it too, and it's already protected
+                    // against a gloved mis-tap by its confirmation dialog
+                    // (#255). Both keep the shared field-action sizing
+                    // (56px tall, well over the 44x44 floor — D-18, FR-UX-1)
+                    // and their own semantics labels.
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            PrimaryActionButton(
+                              key: const Key('apiary-save-button'),
+                              label: l10n.saveButton,
+                              onPressed: _save,
+                            ),
+                            if (widget.isEdit) ...[
+                              const SizedBox(height: 12),
+                              SecondaryActionButton(
+                                key: const Key('apiary-delete-button'),
+                                label: l10n.deleteApiary,
+                                icon: Icons.delete_outline,
+                                destructive: true,
+                                onPressed: _confirmDelete,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

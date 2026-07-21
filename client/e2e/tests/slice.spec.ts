@@ -187,8 +187,9 @@ async function login(page: Page) {
  * Two things about the current form make this non-obvious:
  *
  * 1. The picker is **collapsed by default** (apiary_form_screen.dart's
- *    `_mapPickerExpanded`) so the primary Save action stays above the fold, so
- *    the map and its controls don't exist until "Set on map" is tapped.
+ *    `_mapPickerExpanded`) to keep a fresh create form dense — not to protect
+ *    Save, which is pinned outside the scroll view — so the map and its
+ *    controls don't exist until "Set on map" is tapped.
  *
  * 2. The map surface is a `Semantics(label: …)` wrapper around `FlutterMap`
  *    (`_LocationPicker`), and it is NOT reachable via `getByLabel`. Dumping
@@ -241,14 +242,17 @@ async function setApiaryLocation(page: Page) {
   }
   await expect(locationSet).toBeVisible({ timeout: 20_000 });
 
-  // Collapse the picker again before returning. The form starts it collapsed
-  // specifically so the primary Save action stays above the fold; leaving the
-  // map expanded pushes Save off-screen, and a Flutter-web semantics click
-  // does NOT scroll the Flutter scrollable to reach it (the DOM semantics node
-  // is an absolutely-positioned mirror, so scrollIntoViewIfNeeded moves the
-  // page, not the form). The observed symptom was a silent no-op: Save clicked,
-  // no validation error, still parked on "New apiary".
-  await page.getByText("Hide map", { exact: true }).click();
+  // Deliberately leave the picker EXPANDED. This used to collapse it via
+  // "Hide map" purely to get Save back above the fold: Save was the last child
+  // of the form's scroll view, and a Flutter-web semantics click does NOT
+  // scroll the Flutter scrollable to reach an off-screen target (the DOM
+  // semantics node is an absolutely-positioned mirror, so
+  // scrollIntoViewIfNeeded moves the page, not the form) — the symptom was a
+  // silent no-op: Save clicked, no validation error, still parked on
+  // "New apiary". Since location became mandatory (#341) every creation has to
+  // expand the picker, so that workaround was hiding a real defect. Save now
+  // lives in a pinned action bar outside the scroll view (FR-UX-1, D-18), and
+  // saving with the map still open is exactly what this test must guard.
   await expect(page.getByText("Save", { exact: true })).toBeVisible();
 }
 
