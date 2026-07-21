@@ -41,6 +41,10 @@
   "@addApiary": {
     "description": "Floating action button to create an apiary"
   },
+  "actionsMenuLabel": "Actions",
+  "@actionsMenuLabel": {
+    "description": "Label for the single expandable quick-actions button (FR-UX-2) that, when tapped, reveals the contextual actions available on the current screen; also its screen-reader name, whose expanded/collapsed state is announced."
+  },
   "hiveCountValue": "{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}",
   "@hiveCountValue": {
     "description": "Hive count subtitle on a list row",

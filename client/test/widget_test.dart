@@ -118,7 +118,9 @@ void main() {
     expect(find.text('Apiaries'), findsWidgets);
     expect(find.text('Serra Norte'), findsOneWidget);
     expect(find.text('3 hives'), findsOneWidget);
-    expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+    // The Apiaries tab's quick actions are consolidated behind the single
+    // "Actions" speed dial now (#347).
+    expect(find.byKey(const Key('actions-speed-dial-toggle')), findsOneWidget);
   });
 
   testWidgets('empty local data shows the empty state', (tester) async {

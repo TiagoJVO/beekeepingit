@@ -191,8 +191,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Push into the Apiaries branch's detail/form stack.
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      // Push into the Apiaries branch's detail/form stack. The Apiaries tab's
+      // two quick actions live behind the single "Actions" speed dial now
+      // (#347) — expand it, then pick "New apiary".
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
 
@@ -218,15 +222,24 @@ void main() {
   );
 
   testWidgets(
-    'the FAB shows the Apiaries-tab label and navigates to the new-apiary form',
+    'the Apiaries "Actions" speed dial expands to the new-apiary option, which '
+    'navigates to the new-apiary form (#347)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+      // Collapsed: a single "Actions" control, not the raw quick-add FABs.
+      expect(
+        find.byKey(const Key('actions-speed-dial-toggle')),
+        findsOneWidget,
+      );
+      expect(find.text('Actions'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
       expect(find.text('Add apiary'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
@@ -235,27 +248,31 @@ void main() {
   );
 
   testWidgets(
-    'the FAB hides while the apiaries map view is showing, and returns when back on the list (#35)',
+    'the Actions control hides while the apiaries map view is showing, and returns when back on the list (#35)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+      expect(
+        find.byKey(const Key('actions-speed-dial-toggle')),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('shell-fab')), findsNothing);
-      // The secondary "New todo" FAB (#52) is suppressed alongside the
-      // primary — both live in the same _ShellFab return, not two
-      // independently-suppressed widgets.
-      expect(find.byKey(const Key('shell-fab-secondary')), findsNothing);
+      // The whole Actions control is suppressed on the map view — the toggle
+      // and every option it would reveal live in the same _ShellFab return.
+      expect(find.byKey(const Key('actions-speed-dial-toggle')), findsNothing);
+      expect(find.byKey(const Key('shell-fab-new-todo')), findsNothing);
 
       await tester.tap(find.byKey(const Key('apiaries-view-list-button')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('shell-fab')), findsOneWidget);
-      expect(find.byKey(const Key('shell-fab-secondary')), findsOneWidget);
+      expect(
+        find.byKey(const Key('actions-speed-dial-toggle')),
+        findsOneWidget,
+      );
     },
   );
 
@@ -278,6 +295,11 @@ void main() {
           findsNothing,
           reason: '$route tab should not show the contextual FAB',
         );
+        expect(
+          find.byKey(const Key('actions-speed-dial-toggle')),
+          findsNothing,
+          reason: '$route tab should not show the Actions control',
+        );
       }
     },
   );
@@ -291,9 +313,11 @@ void main() {
     await tester.tap(find.byKey(const Key('shell-tab-journeys')));
     await tester.pumpAndSettle();
 
+    // A single action → rendered as a direct FAB (no "Actions" speed dial),
+    // and no second action exists on Journeys — only Apiaries has one (#52).
     expect(find.byKey(const Key('shell-fab')), findsOneWidget);
-    // No secondary action on Journeys — only Apiaries has one (#52).
-    expect(find.byKey(const Key('shell-fab-secondary')), findsNothing);
+    expect(find.byKey(const Key('actions-speed-dial-toggle')), findsNothing);
+    expect(find.byKey(const Key('shell-fab-new-todo')), findsNothing);
   });
 
   group('quick-create todo FAB (#52, FR-TD-1, FR-UX-1, FR-UX-2)', () {
@@ -306,7 +330,7 @@ void main() {
 
       expect(find.byKey(const Key('shell-fab')), findsOneWidget);
       expect(find.text('New todo'), findsOneWidget);
-      expect(find.byKey(const Key('shell-fab-secondary')), findsNothing);
+      expect(find.byKey(const Key('actions-speed-dial-toggle')), findsNothing);
     });
 
     testWidgets('tapping the Todos tab FAB opens the quick-create sheet, '
@@ -330,27 +354,36 @@ void main() {
     });
 
     testWidgets(
-      'the Apiaries tab shows BOTH its primary "Add apiary" FAB and a '
-      'secondary "New todo" FAB (#52)',
+      'the Apiaries tab "Actions" speed dial reveals BOTH its "Add apiary" '
+      'and "New todo" options when expanded (#52, #347)',
       (tester) async {
         await tester.pumpWidget(_buildShellApp());
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('shell-fab')), findsOneWidget);
+        // Collapsed: neither option is in the tree yet.
+        expect(find.byKey(const Key('shell-fab-new-apiary')), findsNothing);
+        expect(find.byKey(const Key('shell-fab-new-todo')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('shell-fab-new-apiary')), findsOneWidget);
         expect(find.text('Add apiary'), findsOneWidget);
-        expect(find.byKey(const Key('shell-fab-secondary')), findsOneWidget);
+        expect(find.byKey(const Key('shell-fab-new-todo')), findsOneWidget);
         expect(find.text('New todo'), findsOneWidget);
       },
     );
 
     testWidgets(
-      'the primary "Add apiary" FAB still navigates to the new-apiary form '
+      'the "Add apiary" option still navigates to the new-apiary form '
       'unchanged (regression guard)',
       (tester) async {
         await tester.pumpWidget(_buildShellApp());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
 
         expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
@@ -359,13 +392,15 @@ void main() {
     );
 
     testWidgets(
-      'tapping the Apiaries tab secondary FAB opens the quick-create sheet, '
-      'with no pre-filled apiary',
+      'tapping the Apiaries tab "New todo" option opens the quick-create '
+      'sheet, with no pre-filled apiary',
       (tester) async {
         await tester.pumpWidget(_buildShellApp());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('shell-fab-secondary')));
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-todo')));
         await tester.pumpAndSettle();
 
         expect(
@@ -388,7 +423,9 @@ void main() {
 
       expect(find.byKey(const Key('shell-back-button')), findsNothing);
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('shell-back-button')), findsOneWidget);

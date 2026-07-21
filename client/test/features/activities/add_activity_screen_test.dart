@@ -253,6 +253,10 @@ Future<void> _openAddActivityForm(
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiary-a1')));
   await tester.pumpAndSettle();
+  // Add-activity now lives behind the single "Actions" speed dial (#347) —
+  // expand it before tapping the revealed option.
+  await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiary-detail-add-activity-button')));
   await tester.pumpAndSettle();
 }
@@ -266,6 +270,10 @@ void main() {
       await tester.tap(find.byKey(const Key('apiary-a1')));
       await tester.pumpAndSettle();
 
+      // The add-activity entry point is one of the "Actions" speed dial's
+      // scope options (#347) — revealed once the control is expanded.
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('apiary-detail-add-activity-button')),
         findsOneWidget,
@@ -461,6 +469,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );
@@ -499,6 +509,8 @@ void main() {
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -539,6 +551,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );
@@ -578,6 +592,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );
@@ -614,6 +630,8 @@ void main() {
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -676,6 +694,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );
@@ -714,6 +734,8 @@ void main() {
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -805,6 +827,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );
@@ -844,6 +868,8 @@ void main() {
       await tester.pumpWidget(_buildApp(repo: repo));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -891,6 +917,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -943,6 +971,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -1007,6 +1037,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );
@@ -1054,6 +1086,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -1121,6 +1155,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );
@@ -1175,6 +1211,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),

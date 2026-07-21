@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/sync/powersync_schema.dart';
+import '../../core/widgets/actions_speed_dial.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
@@ -73,46 +74,40 @@ class ApiaryDetailScreen extends ConsumerWidget {
           return _ApiaryDetailBody(apiary: apiary);
         },
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Contextual quick-create-todo entry point (#52, FR-UX-2): needs
-          // the apiary's own NAME (for the sheet's read-only "For {name}"
-          // chip), so — unlike its two siblings below, which only need
-          // [apiaryId] and render regardless of load state — this one only
-          // appears once the apiary has actually loaded.
-          if (apiary != null) ...[
-            FloatingActionButton.extended(
+      // A single "Actions" control (#347, FR-UX-1/FR-UX-2) that expands to the
+      // actions valid for this apiary, replacing the previous stack of three
+      // FABs. The options are built for the current scope: the add-todo option
+      // needs the apiary's own NAME (for the sheet's read-only "For {name}"
+      // chip), so it only joins the list once the apiary has actually loaded —
+      // unlike add-activity/edit, which only need [apiaryId].
+      floatingActionButton: ActionsSpeedDial(
+        actions: [
+          // Contextual quick-create-todo entry point (#52, FR-UX-2).
+          if (apiary != null)
+            SpeedDialAction(
               key: const Key('apiary-detail-add-todo-button'),
-              heroTag: 'apiary-detail-add-todo-button',
+              label: l10n.addTodo,
+              icon: Icons.task_alt_outlined,
               onPressed: () => showTodoQuickCreateSheet(
                 context,
                 initialApiaryId: apiary.id,
                 initialApiaryName: apiary.name,
               ),
-              icon: const Icon(Icons.task_alt_outlined),
-              label: Text(l10n.addTodo),
             ),
-            const SizedBox(height: 12),
-          ],
-          // Add-activity entry point (#39, FR-AC-2): the natural place to
-          // log an activity is right where the apiary itself already is.
-          // Only the add flow — the activities LIST is #42/#43's scope.
-          FloatingActionButton.extended(
+          // Add-activity entry point (#39, FR-AC-2): the natural place to log
+          // an activity is right where the apiary itself already is. Only the
+          // add flow — the activities LIST is #42/#43's scope.
+          SpeedDialAction(
             key: const Key('apiary-detail-add-activity-button'),
-            heroTag: 'apiary-detail-add-activity-button',
+            label: l10n.addActivityAction,
+            icon: Icons.event_note_outlined,
             onPressed: () => context.go('/apiaries/$apiaryId/activities/new'),
-            icon: const Icon(Icons.event_note_outlined),
-            label: Text(l10n.addActivityAction),
           ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
+          SpeedDialAction(
             key: const Key('apiary-detail-edit-button'),
-            heroTag: 'apiary-detail-edit-button',
+            label: l10n.editApiaryAction,
+            icon: Icons.edit_outlined,
             onPressed: () => context.go('/apiaries/$apiaryId/edit'),
-            icon: const Icon(Icons.edit_outlined),
-            label: Text(l10n.editApiaryAction),
           ),
         ],
       ),
@@ -493,8 +488,7 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
         if (_editingType != null) ...[
           const SizedBox(height: 12),
           _CounterEditor(
-            typeLabel:
-                counterTypeLabel(l10n, _editingType!) ?? _editingType!,
+            typeLabel: counterTypeLabel(l10n, _editingType!) ?? _editingType!,
             controller: _valueController,
             saving: _saving,
             onDecrement: () => setState(() => _bumpBy(-1)),
@@ -528,11 +522,7 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
 /// visual shape of the original hive-count badge, now a button that opens the
 /// inline value editor. 44x44 minimum tap target (D-18, gloves-friendly).
 class _CounterCard extends StatelessWidget {
-  const _CounterCard({
-    required this.label,
-    required this.onTap,
-    super.key,
-  });
+  const _CounterCard({required this.label, required this.onTap, super.key});
 
   final String label;
   final VoidCallback onTap;
@@ -650,10 +640,7 @@ class _CounterEditor extends StatelessWidget {
                 fontSize: 18,
                 color: brand.onHeroSurface,
               ),
-              decoration: InputDecoration(
-                labelText: typeLabel,
-                isDense: true,
-              ),
+              decoration: InputDecoration(labelText: typeLabel, isDense: true),
             ),
           ),
           IconButton(

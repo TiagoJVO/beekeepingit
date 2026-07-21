@@ -40,6 +40,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addApiary => 'Add apiary';
 
   @override
+  String get actionsMenuLabel => 'Actions';
+
+  @override
   String hiveCountValue(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,

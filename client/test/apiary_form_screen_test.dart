@@ -253,7 +253,9 @@ void main() {
       await tester.pumpWidget(_buildApp(apiaries: const []));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       // The form is on-screen (its name field exists) but the old inline
@@ -287,7 +289,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const Key('apiary-name-field')),
@@ -312,7 +316,9 @@ void main() {
       await tester.pumpWidget(_buildApp(apiaries: const []));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('apiary-notes-field')), findsOneWidget);
@@ -340,7 +346,9 @@ void main() {
       await tester.pumpWidget(_buildApp(apiaries: const []));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       // Place label field accepts free text (#252 AC: optional free-text
@@ -404,7 +412,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -455,7 +465,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      // The Apiaries tab now exposes an expandable Actions speed dial (#347),
+      // so open it first, then tap the primary "New apiary" action.
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -494,7 +508,9 @@ void main() {
       await tester.pumpWidget(_buildApp(apiaries: const []));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
       // No location set initially.
@@ -599,6 +615,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('apiary-a1')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
       // Pump past the page-transition animation with a bounded duration
       // (not pumpAndSettle, which would wait forever on the busy spinner's
@@ -642,7 +660,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
@@ -675,7 +695,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
         await tester.pumpAndSettle();
@@ -717,7 +739,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
         await tester.pumpAndSettle();
 
         await tester.enterText(
@@ -770,6 +794,8 @@ void main() {
 
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
@@ -811,6 +837,8 @@ void main() {
 
       await tester.tap(find.byKey(const Key('apiary-a1')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
@@ -846,6 +874,8 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
         await tester.pump(const Duration(milliseconds: 400));
