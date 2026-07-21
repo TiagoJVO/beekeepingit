@@ -219,6 +219,55 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
 
+  # Stable, always-reporting roll-up of the matrixed `build` job above, so the image
+  # build + scan can be a REQUIRED status check on `main` (#368, D-27). The matrix
+  # produces one context per affected component (`build client`, `build services-sync`,
+  # …) — dynamic names that vary per PR and vanish entirely when nothing is affected, so
+  # none of them can be named in branch protection. This job is the one fixed context.
+  #
+  # Two rules make it safe to require:
+  #   * `if: always()` — a `needs:` job is itself SKIPPED when an upstream is skipped, and
+  #     a skipped REQUIRED check leaves a PR "Expected" forever. `always()` guarantees this
+  #     job runs (and therefore reports a conclusion) on every PR/push.
+  #   * the results are evaluated EXPLICITLY below rather than implied by `needs:`, because
+  #     with `always()` GitHub no longer fails this job when an upstream failed.
+  #
+  # `build` is legitimately skipped when `detect` finds no affected component (the matrix is
+  # path-gated), so `skipped` must PASS; `failure`/`cancelled` must FAIL. `detect` itself has
+  # no `if:` and so never legitimately skips — anything other than `success` there means the
+  # matrix never got the chance to run, which must NOT be reported as green.
+  build-images:
+    name: build & scan images
+    needs: [detect, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the build matrix to have passed (or legitimately skipped)
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+          echo "detect=${DETECT_RESULT} build=${BUILD_RESULT}"
+
+          if [ "$DETECT_RESULT" != "success" ]; then
+            echo "::error::component detection did not succeed (${DETECT_RESULT}) — the build matrix never ran"
+            exit 1
+          fi
+
+          case "$BUILD_RESULT" in
+            success)
+              echo "All affected components built and scanned clean."
+              ;;
+            skipped)
+              echo "No affected buildable component for this change — nothing to build or scan."
+              ;;
+            *)
+              echo "::error::image build/scan did not pass (${BUILD_RESULT})"
+              exit 1
+              ;;
+          esac
+
   # ---------------------------------------------------------------------------------------------
   # PLACEHOLDER — NOT part of the M0 pipeline (AC #6). macOS runners for native iOS builds are
   # added only at M5 by EPIC-15 (platform rollout PWA → Android → iOS, D-10). Kept disabled so the
