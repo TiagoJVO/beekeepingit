@@ -275,6 +275,46 @@ Future<void> _pumpBounded(WidgetTester tester) async {
   }
 }
 
+/// Drives the REAL `showDatePicker` calendar dialog (#370): opens the picker
+/// from [fieldKey], taps [day] in the month grid, and confirms with the
+/// dialog's own `MaterialLocalizations`-provided confirm label (no hardcoded
+/// English string).
+///
+/// Deliberately generic in [fieldKey] so the identical pattern can be reused
+/// for `add_activity_screen.dart`'s `occurredAt` field, which is the same
+/// shape and is likewise not UI-driven in its own tests yet (#370's note).
+///
+/// Determinism: `showDatePicker`'s `initialDate` decides WHICH month the grid
+/// opens on, and both screens default it to `DateTime.now()` when the field
+/// is empty. So callers must drive this from an already-set date (an edit
+/// form pre-filled via `getById`) rather than an empty field — otherwise the
+/// day tapped here lands in whatever month "today" happens to be and the test
+/// drifts/goes flaky near month boundaries.
+Future<void> _pickDayInDatePicker(
+  WidgetTester tester, {
+  required Key fieldKey,
+  required int day,
+}) async {
+  await tester.tap(find.byKey(fieldKey));
+  await tester.pumpAndSettle();
+
+  expect(find.byType(DatePickerDialog), findsOneWidget);
+  final materialL10n = MaterialLocalizations.of(
+    tester.element(find.byType(DatePickerDialog)),
+  );
+
+  await tester.tap(
+    find.descendant(
+      of: find.byType(DatePickerDialog),
+      matching: find.text('$day'),
+    ),
+  );
+  await tester.pumpAndSettle();
+
+  await tester.tap(find.widgetWithText(TextButton, materialL10n.okButtonLabel));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('create (#293, FR-TD-1)', () {
     testWidgets('saving without a title is blocked', (tester) async {
@@ -500,6 +540,44 @@ void main() {
         await _pumpBounded(tester);
 
         expect(repo.updated.single.dueDate, isNull);
+        expect(repo.updated.single.assigneeId, 'm1');
+        expect(repo.updated.single.apiaryId, 'a1');
+      },
+    );
+
+    testWidgets(
+      'picking a new due date through the real showDatePicker UI displays it '
+      'and resubmits it (#370)',
+      (tester) async {
+        final repo = _FakeTodosRepository(
+          // Pins the picker's `initialDate` (and therefore the month the grid
+          // opens on) to August 2026 — see _pickDayInDatePicker's note on
+          // determinism.
+          existing: existingTodo(
+            dueDate: '2026-08-01',
+            assigneeId: 'm1',
+            apiaryId: 'a1',
+          ),
+        );
+        await _goToEditForm(tester, repo: repo);
+        expect(find.text('Aug 1, 2026'), findsOneWidget);
+
+        await _pickDayInDatePicker(
+          tester,
+          fieldKey: const Key('todo-due-date-field'),
+          day: 15,
+        );
+
+        // Displayed on the field...
+        expect(find.text('Aug 15, 2026'), findsOneWidget);
+        expect(find.text('Aug 1, 2026'), findsNothing);
+
+        // ...and persisted through save.
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        await _pumpBounded(tester);
+
+        expect(repo.updated, hasLength(1));
+        expect(repo.updated.single.dueDate, '2026-08-15');
         expect(repo.updated.single.assigneeId, 'm1');
         expect(repo.updated.single.apiaryId, 'a1');
       },
