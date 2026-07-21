@@ -1,10 +1,20 @@
 # Breaking-change gate for OpenAPI contracts (#153; NFR-TST-1, ADR-0003 §8/§11).
 #
-# Path-filtered: only runs when contracts/openapi/** changes. OpenAPI lint runs unconditionally
-# as part of `task ci` (see ci.yml, taskfiles/openapi.yml) — this workflow adds the one check
-# that needs two refs to compare: it diffs each changed service spec (bundled, so cross-file
-# $refs resolve) between the base ref and HEAD with oasdiff, and fails if a breaking change is
-# found, so a `/v1` break can't merge silently (ADR-0003 §8).
+# OpenAPI lint runs unconditionally as part of `task ci` (see ci.yml, taskfiles/openapi.yml) —
+# this workflow adds the one check that needs two refs to compare: it diffs each changed service
+# spec (bundled, so cross-file $refs resolve) between the base ref and HEAD with oasdiff, and
+# fails if a breaking change is found, so a `/v1` break can't merge silently (ADR-0003 §8).
+# Sanctioned, product-owner-confirmed exceptions are listed in contracts/openapi/.oasdiff-ignore
+# and passed to oasdiff as `--err-ignore` by the task (D-28).
+#
+# Like helm-e2e.yml, this is designed to be a REQUIRED status check on `main`, so the job runs on
+# EVERY PR/push — the trigger carries NO path filter (#368). It used to be filtered on
+# `contracts/openapi/**`, which is fine for an optional check but fatal for a required one: a PR
+# that doesn't touch the specs would never start the job, its required "Expected" status would
+# never report, and it would block merging forever. Path-relevance is instead checked INSIDE the
+# job (dorny/paths-filter): on an irrelevant PR the toolchain setup and the diff are skipped —
+# not absent — so the check reports success in seconds. A PR that DOES touch the specs runs the
+# exact same gate as before; the strictness is unchanged.
 #
 # Base-ref resolution mirrors build-publish.yml's `detect` job (PR base for PRs, previous tip
 # for pushes, falling back to the parent commit on a branch's first push).
@@ -12,10 +22,8 @@ name: contracts-ci
 
 on:
   pull_request:
-    paths: ["contracts/openapi/**"]
   push:
     branches: [main]
-    paths: ["contracts/openapi/**"]
 
 permissions:
   contents: read
@@ -29,10 +37,24 @@ jobs:
         with:
           fetch-depth: 0 # full history: need the base commit to diff against
 
+      # Same always-run + relevance-inside pattern as helm-e2e.yml. The workflow file itself
+      # is in the filter so a change to this gate exercises it (the task then reports "no
+      # service spec changed" and exits 0 — cheap, but it proves the job still runs).
+      - name: Check for relevant changes
+        id: changes
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        with:
+          filters: |
+            contracts:
+              - 'contracts/openapi/**'
+              - '.github/workflows/contracts-ci.yml'
+
       - name: Set up toolchains from mise.toml
+        if: steps.changes.outputs.contracts == 'true'
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
       - name: Resolve base ref and run the breaking-change diff
+        if: steps.changes.outputs.contracts == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -55,3 +77,7 @@ jobs:
           fi
 
           task openapi:breaking-diff BASE="$base"
+
+      - name: No contract changes — nothing to diff
+        if: steps.changes.outputs.contracts != 'true'
+        run: echo "contracts/openapi/** untouched by this change — breaking-change gate not applicable."
