@@ -24,6 +24,10 @@ import (
 
 const counterTypeHive = "hive"
 
+// counterTypeSuper mirrors api.counterTypeSuper (#346, D-20) for these
+// package-main tests, matching counterTypeHive's own local-const convention.
+const counterTypeSuper = "super"
+
 // counterOp builds an entityTypeApiaryCounter op (api/sync.go's counterData
 // wire shape) for the tests below — the counter-table counterpart of
 // main_test.go's putOp/patchHive, but keyed by apiary_id+counter_type rather
@@ -441,6 +445,81 @@ func TestApiariesSlice_CounterOp_History_FirstWriteIsACreateBaseline(t *testing.
 	}
 	if a := f.getApiary(t, apiaryID); a.HiveCount != 5 {
 		t.Fatalf("hive_count after counter create = %d, want 5", a.HiveCount)
+	}
+}
+
+// TestApiariesSlice_CounterOp_SuperType_KnownFirstClassAndAuditedSeparately
+// is #346's server-side AC: `super` (D-20's "supers" example) is now a KNOWN
+// counter type, so a super counter op is accepted (not rejected like an
+// unknown type), stored as its OWN row keyed by (apiary_id, counter_type)
+// alongside the hive counter (never colliding with it — the UNIQUE key is the
+// pair, not just apiary_id), and history-audited under entity_type=
+// apiary_counter with a baseline keyed by its own type. This is the whole of
+// what the "code-only append to the known set" (D-20) had to buy on the
+// server: no new apply/validate/audit code, just the const + set entry in
+// counters.go — this test proves the existing generic machinery now carries
+// it.
+func TestApiariesSlice_CounterOp_SuperType_KnownFirstClassAndAuditedSeparately(t *testing.T) {
+	f := newApiariesFixture(t)
+	apiaryID := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	// A hive-less apiary create (the new client's shape) — no counter rows yet.
+	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova"})
+	create := api.Op{Op: "put", EntityType: "apiary", ID: apiaryID, Data: createData, UpdatedAt: t0}
+	if got := f.apply(t, create); got.Results[0].Result != "applied" {
+		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)
+	}
+
+	// A super counter op is ACCEPTED (proving `super` is in the known set —
+	// an unknown type is rejected by TestApiariesSlice_CounterOp_Validate
+	// RejectsUnknownCounterType).
+	if got := f.apply(t, counterOp(apiaryID, counterTypeSuper, 6, t0.Add(time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("super counter op result = %q, want applied", got.Results[0].Result)
+	}
+	// It landed as its own row; hive still reads 0 (no hive row) — the two
+	// types coexist, keyed by (apiary_id, counter_type).
+	rows := f.countersFor(t, apiaryID) // ordered by counter_type
+	if len(rows) != 1 || rows[0].CounterType != "super" || rows[0].Value != 6 {
+		t.Fatalf("counters after super op = %+v, want exactly [{super 6}]", rows)
+	}
+	if a := f.getApiary(t, apiaryID); a.HiveCount != 0 {
+		t.Fatalf("hive_count with only a super row = %d, want 0 (unaffected)", a.HiveCount)
+	}
+
+	// Adding a hive counter now yields two independent rows (no collision).
+	if got := f.apply(t, counterOp(apiaryID, counterTypeHive, 4, t0.Add(2*time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("hive counter op result = %q, want applied", got.Results[0].Result)
+	}
+	rows = f.countersFor(t, apiaryID)
+	if len(rows) != 2 || rows[0].CounterType != "hive" || rows[0].Value != 4 ||
+		rows[1].CounterType != "super" || rows[1].Value != 6 {
+		t.Fatalf("counters after hive+super = %+v, want [{hive 4},{super 6}]", rows)
+	}
+
+	// The super write audited under entity_type=apiary_counter as a create
+	// baseline keyed by its own type (not "hive").
+	audit := f.counterAuditLogFor(t, apiaryID)
+	var superCreate *auditRow
+	for i := range audit {
+		if audit[i].ChangeType == "create" {
+			var change map[string]any
+			if err := json.Unmarshal(audit[i].Change, &change); err == nil {
+				if _, ok := change["super"]; ok {
+					superCreate = &audit[i]
+				}
+			}
+		}
+	}
+	if superCreate == nil {
+		t.Fatalf("no apiary_counter create audit row keyed by 'super' found in %+v", audit)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(superCreate.Change, &change); err != nil {
+		t.Fatalf("unmarshal super create change: %v", err)
+	}
+	if change["super"] != float64(6) {
+		t.Fatalf("super create change = %+v, want {super: 6} baseline", change)
 	}
 }
 

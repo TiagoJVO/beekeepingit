@@ -89,7 +89,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
   @override
   Future<String> create({
     required String name,
-    required int hiveCount,
+    int? hiveCount,
     String? notes,
     String? placeLabel,
     double? locationLon,
@@ -100,7 +100,9 @@ class _FakeApiariesRepository extends ApiariesRepository {
       Apiary(
         id: 'fake-${created.length}',
         name: name,
-        hiveCount: hiveCount,
+        // The form no longer sets a counter (#346): create omits hiveCount,
+        // so the created apiary starts with none (hive count reads 0).
+        hiveCount: hiveCount ?? 0,
         notes: notes,
         placeLabel: placeLabel,
         locationLon: locationLon,
@@ -233,6 +235,57 @@ Widget _buildApp({
 }
 
 void main() {
+  testWidgets(
+    'the create form has NO hive/counter field (#346, D-20: counters are '
+    'managed on the detail screen, not set at creation)',
+    (tester) async {
+      await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
+
+      // The form is on-screen (its name field exists) but the old inline
+      // hive field is gone entirely.
+      expect(find.byKey(const Key('apiary-name-field')), findsOneWidget);
+      expect(find.byKey(const Key('apiary-hive-field')), findsNothing);
+      expect(find.text('Number of hives'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'saving a create form never sets a counter — create() is called without a '
+    'hiveCount (#346)',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final repo = _FakeApiariesRepository();
+      await tester.pumpWidget(
+        _buildApp(apiaries: const [], repositoryOverride: repo),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell-fab')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('apiary-name-field')),
+        'Encosta Nova',
+      );
+      await tester.tap(find.byKey(const Key('apiary-save-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(repo.created, hasLength(1));
+      // The fake records hiveCount ?? 0; the create form passes null, so the
+      // recorded apiary reads 0 hives (no counter row would be written).
+      expect(repo.created.single.hiveCount, 0);
+    },
+  );
+
   testWidgets(
     'the create form has a notes field that accepts free text (FR-AP-8, #196)',
     (tester) async {

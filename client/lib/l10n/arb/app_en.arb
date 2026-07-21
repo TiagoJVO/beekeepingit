@@ -50,6 +50,43 @@
       }
     }
   },
+  "superCountValue": "{count, plural, =0{No supers} =1{1 super} other{{count} supers}}",
+  "@superCountValue": {
+    "description": "Supers counter value badge on the apiary detail screen (#346, D-20)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "counterTypeHiveLabel": "Hives",
+  "@counterTypeHiveLabel": {
+    "description": "The name of the hive counter type, used by the detail screen's add-counter picker and inline value editor (#346)"
+  },
+  "counterTypeSuperLabel": "Supers",
+  "@counterTypeSuperLabel": {
+    "description": "The name of the supers counter type, used by the detail screen's add-counter picker and inline value editor (#346)"
+  },
+  "apiaryAddCounterAction": "Add counter",
+  "@apiaryAddCounterAction": {
+    "description": "Button on the apiary detail screen that opens the add-counter type picker (#346)"
+  },
+  "apiaryAddCounterTitle": "Add a counter",
+  "@apiaryAddCounterTitle": {
+    "description": "Title of the add-counter type picker sheet on the apiary detail screen (#346)"
+  },
+  "apiaryNoCountersToAdd": "Every counter type is already here.",
+  "@apiaryNoCountersToAdd": {
+    "description": "Empty state in the add-counter picker when the apiary already has a counter of every known type (#346)"
+  },
+  "counterDecrementLabel": "Decrease",
+  "@counterDecrementLabel": {
+    "description": "Accessibility label for the minus button in the inline counter value editor (#346)"
+  },
+  "counterIncrementLabel": "Increase",
+  "@counterIncrementLabel": {
+    "description": "Accessibility label for the plus button in the inline counter value editor (#346)"
+  },
   "newApiaryTitle": "New apiary",
   "@newApiaryTitle": {
     "description": "Create form app bar title"

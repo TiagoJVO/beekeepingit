@@ -158,6 +158,54 @@ abstract class AppLocalizations {
   /// **'{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}'**
   String hiveCountValue(int count);
 
+  /// Supers counter value badge on the apiary detail screen (#346, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No supers} =1{1 super} other{{count} supers}}'**
+  String superCountValue(int count);
+
+  /// The name of the hive counter type, used by the detail screen's add-counter picker and inline value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Hives'**
+  String get counterTypeHiveLabel;
+
+  /// The name of the supers counter type, used by the detail screen's add-counter picker and inline value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Supers'**
+  String get counterTypeSuperLabel;
+
+  /// Button on the apiary detail screen that opens the add-counter type picker (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Add counter'**
+  String get apiaryAddCounterAction;
+
+  /// Title of the add-counter type picker sheet on the apiary detail screen (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Add a counter'**
+  String get apiaryAddCounterTitle;
+
+  /// Empty state in the add-counter picker when the apiary already has a counter of every known type (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Every counter type is already here.'**
+  String get apiaryNoCountersToAdd;
+
+  /// Accessibility label for the minus button in the inline counter value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Decrease'**
+  String get counterDecrementLabel;
+
+  /// Accessibility label for the plus button in the inline counter value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Increase'**
+  String get counterIncrementLabel;
+
   /// Create form app bar title
   ///
   /// In en, this message translates to:

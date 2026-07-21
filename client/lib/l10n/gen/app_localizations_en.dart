@@ -52,6 +52,39 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String superCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count supers',
+      one: '1 super',
+      zero: 'No supers',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeHiveLabel => 'Hives';
+
+  @override
+  String get counterTypeSuperLabel => 'Supers';
+
+  @override
+  String get apiaryAddCounterAction => 'Add counter';
+
+  @override
+  String get apiaryAddCounterTitle => 'Add a counter';
+
+  @override
+  String get apiaryNoCountersToAdd => 'Every counter type is already here.';
+
+  @override
+  String get counterDecrementLabel => 'Decrease';
+
+  @override
+  String get counterIncrementLabel => 'Increase';
+
+  @override
   String get newApiaryTitle => 'New apiary';
 
   @override

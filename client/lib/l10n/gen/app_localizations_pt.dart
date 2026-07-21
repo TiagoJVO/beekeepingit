@@ -52,6 +52,40 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String superCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count alças',
+      one: '1 alça',
+      zero: 'Sem alças',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeHiveLabel => 'Colmeias';
+
+  @override
+  String get counterTypeSuperLabel => 'Alças';
+
+  @override
+  String get apiaryAddCounterAction => 'Adicionar contador';
+
+  @override
+  String get apiaryAddCounterTitle => 'Adicionar um contador';
+
+  @override
+  String get apiaryNoCountersToAdd =>
+      'Já existem contadores de todos os tipos.';
+
+  @override
+  String get counterDecrementLabel => 'Diminuir';
+
+  @override
+  String get counterIncrementLabel => 'Aumentar';
+
+  @override
   String get newApiaryTitle => 'Novo apiário';
 
   @override

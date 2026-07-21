@@ -201,8 +201,8 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await enableSemantics(page);
   await page.getByLabel("Name").click();
   await page.keyboard.type(apiaryName);
-  await page.getByLabel("Number of hives").click();
-  await page.keyboard.type("0");
+  // The create form no longer has a hive/counter field (#346, D-20): counters
+  // are set on the detail screen after creation, not here.
   await page.getByLabel("Notes").click();
   // Same Flutter-web dropped-keystroke workaround as the hive-count edit
   // below: observed in CI dropping a variable-length prefix ("South " gone
@@ -217,15 +217,17 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await expect(page.getByText(apiaryName)).toBeVisible();
 
   // ── Go offline and edit ───────────────────────────────────────────────
-  // Tapping the list row now opens the read-only detail screen (FR-AP-7,
-  // #32) rather than the edit form directly — reach the form via its edit
-  // action.
+  // Counters are now edited on the detail screen (#346, D-20), not the form:
+  // tapping the list row opens the detail screen, whose hive counter card is
+  // tappable and opens an inline value editor. The apiary was created with no
+  // counter, so the card reads "No hives" until we set it.
   await context.setOffline(true);
   await page.getByText(apiaryName).click();
   await enableSemantics(page);
-  await page.getByRole("button", { name: "Edit apiary" }).click();
+  // Open the hive counter's inline editor by tapping its card.
+  await page.getByText("No hives").click();
   await enableSemantics(page);
-  const hives = page.getByLabel("Number of hives");
+  const hives = page.getByLabel("Hives");
   await hives.click();
   // Clear the field reliably before typing (Flutter web can drop the first
   // keystroke after a select-all), then type digit-by-digit.
@@ -235,16 +237,15 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.type("12", { delay: 80 });
   await page.getByText("Save", { exact: true }).click();
 
-  // The edit is applied locally while offline (local-first, FR-OF-1). Saving
-  // the edit form now returns to the read-only detail screen (FR-AP-7, #32 —
-  // the form's `_save` routes to /apiaries/:id, not back to the list), so the
-  // fresh value shows on the detail hive-count badge, not a list row. Assert
-  // it there — no navigation, so this stays valid while still offline.
+  // The edit is applied locally while offline (local-first, FR-OF-1). The
+  // inline editor closes and the hive-count badge on the same detail screen
+  // now reads the fresh value — no navigation, so this stays valid while
+  // still offline.
   await expect(apiaryDetailHiveCount(page)).toContainText("12 hives");
 
-  // The edit-form round-trip must not clobber the notes (the form re-saves
-  // them with notesProvided — apiaries_repository.dart's update): still shown
-  // on the detail screen the save returned to.
+  // Editing a counter never touches the apiary's notes (a counter write is
+  // its own `apiary_counter` op, #346) — the create's notes are still shown
+  // on the detail screen.
   await expect(page.getByText(apiaryNotes)).toBeVisible();
 
   // ── Reconnect → the queued change syncs ───────────────────────────────

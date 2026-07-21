@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -58,7 +57,6 @@ class ApiaryFormScreen extends ConsumerStatefulWidget {
 class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _hiveController = TextEditingController(text: '0');
   final _notesController = TextEditingController();
   final _placeLabelController = TextEditingController();
   bool _busy = false;
@@ -85,7 +83,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _hiveController.dispose();
     _notesController.dispose();
     _placeLabelController.dispose();
     super.dispose();
@@ -110,7 +107,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
       if (!mounted) return;
       if (existing != null) {
         _nameController.text = existing.name;
-        _hiveController.text = existing.hiveCount.toString();
         _notesController.text = existing.notes ?? '';
         _placeLabelController.text = existing.placeLabel ?? '';
         if (existing.hasLocation) {
@@ -190,14 +186,16 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
     try {
       final repo = await ref.read(apiariesRepositoryProvider.future);
       final name = _nameController.text.trim();
-      final hives = int.tryParse(_hiveController.text.trim()) ?? 0;
       final notes = _notesController.text.trim();
       final placeLabel = _placeLabelController.text.trim();
+      // The form no longer sets any counter (#346, D-20): hive count and
+      // every other counter type are managed on the detail screen, so create
+      // omits hiveCount ("no counter set at creation") and edit never touches
+      // the counter rows here.
       if (widget.isEdit) {
         await repo.update(
           widget.apiaryId!,
           name: name,
-          hiveCount: hives,
           notes: notes.isEmpty ? null : notes,
           notesProvided: true,
           placeLabel: placeLabel.isEmpty ? null : placeLabel,
@@ -211,7 +209,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
       } else {
         await repo.create(
           name: name,
-          hiveCount: hives,
           notes: notes.isEmpty ? null : notes,
           placeLabel: placeLabel.isEmpty ? null : placeLabel,
           locationLon: _location?.longitude,
@@ -306,24 +303,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen> {
                         validator: (v) => (v == null || v.trim().isEmpty)
                             ? l10n.apiaryNameRequired
                             : null,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        key: const Key('apiary-hive-field'),
-                        controller: _hiveController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: InputDecoration(
-                          labelText: l10n.hiveCountLabel,
-                        ),
-                        validator: (v) {
-                          final n = int.tryParse((v ?? '').trim());
-                          return (n == null || n < 0)
-                              ? l10n.hiveCountInvalid
-                              : null;
-                        },
                       ),
                       const SizedBox(height: 16),
                       TextFormField(
