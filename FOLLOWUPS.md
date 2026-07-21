@@ -54,25 +54,6 @@ dry-run`, and the PR-title check (strict). These run but are **not** required, s
   and each `infra/helm/beekeepingit/environments/*.yaml` overlay are two independently-maintained
   copies of the same values — no shared source yet. Worth a GitHub issue if it drifts.
 
-## Pin the primary action on the remaining full-screen forms (FR-UX-1, D-18)
-
-- **What**: `apiary_form_screen.dart` now keeps Save (and edit-mode Delete) in a pinned
-  action bar outside its scroll view, matching what
-  `journey_quick_create_sheet.dart` / `todo_quick_create_sheet.dart` already do. The other
-  full-screen forms still put their primary action as the last child of a
-  `SingleChildScrollView`: `activities/add_activity_screen.dart`,
-  `journeys/journey_form_screen.dart`, `todos/todo_form_screen.dart`.
-- **Why it wasn't done here**: none of them embeds a gesture-swallowing surface like the
-  apiary form's 220px `FlutterMap`, so their Save is merely below the fold, not
-  _unreachable_ — the user can still scroll to it. They do contain bounded, inner-scrollable
-  pickers (`apiary_multi_select_field.dart`, `todo_apiary_picker_field.dart`,
-  `todo_assignee_picker_field.dart`) that trap a drag started over them, so the hazard is
-  the same in kind, just milder. Converting three screens' layouts (and re-checking each
-  one's widget tests, several of which rely on tall viewports / `ensureVisible`) is more
-  than the small, safe consistency fix this branch could absorb.
-- **Where**: the three files above; pattern to copy is `apiary_form_screen.dart`'s `build`.
-- **Status**: pending — promote to a GitHub Issue if not picked up with the next UX pass.
-
 ## Not covered by an automated test: `todo_form_screen.dart`'s date picker
 
 - **What**: actually driving the real `showDatePicker` calendar UI to pick a
