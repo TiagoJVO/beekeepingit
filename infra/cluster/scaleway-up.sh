@@ -17,6 +17,24 @@
 #   CF_ZONE_ID        the zone's ID (Cloudflare dashboard -> the zone -> API section)
 #   STAGING_APP_HOST  e.g. beekeepingit-rc.melargil.pt
 #   STAGING_AUTH_HOST e.g. auth.beekeepingit-rc.melargil.pt
+#
+# Gotcha - a stale DNSSEC DS record at the registry silently blocks cert issuance.
+# Symptom: the cluster and app come up healthy and the HTTP-01 challenge shows
+# Presented=true, but the Certificate stays `pending` and `kubectl describe
+# challenge` reports the cert-manager self-check failing with
+# `lookup <host> on 10.32.0.10:53: server misbehaving` (10.32.0.10 = CoreDNS).
+# Not a cluster fault: if the registry publishes a DS whose key tag no longer
+# matches the DNSKEY Cloudflare signs with, every validating resolver (1.1.1.1,
+# 8.8.8.8, and CoreDNS's upstream) SERVFAILs, so the host resolves nowhere even
+# though the Cloudflare A records are correct. Diagnose: `dig <d> NS @8.8.8.8
+# +short` comes back empty, but `dig <d> SOA @1.1.1.1 +cd +short` (validation
+# disabled) and a query against the zone's Cloudflare NS both answer => DNSSEC
+# validation, not delegation; inspect the published DS with `dig <d> DS @1.1.1.1
+# +cd +short`. The fix is registrar-side only - the DS lives at the registry, and
+# nothing in Cloudflare or this cluster can remove it: drop the stale DS, or
+# replace it with the one shown under Cloudflare DNS > Settings > DNSSEC.
+# cert-manager then issues on its next retry. Note melargil.pt's Cloudflare zone
+# lives on a separate Cloudflare account, so CF_API_TOKEN must belong to it.
 set -euo pipefail
 
 cluster_name="${SCW_K8S_CLUSTER_NAME:-beekeepingit-staging}"
