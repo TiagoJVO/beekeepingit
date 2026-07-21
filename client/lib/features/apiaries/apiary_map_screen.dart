@@ -315,8 +315,11 @@ class _Map extends StatelessWidget {
               Marker(
                 key: Key('apiary-marker-${apiary.id}'),
                 point: ll.LatLng(apiary.locationLat!, apiary.locationLon!),
-                width: 56,
-                height: 56,
+                // Wider/taller than the bare 56x56 pin box so the persistent
+                // name label (#344) has room to render on its own chipped row
+                // beneath the icon without overflowing the marker's bounds.
+                width: 132,
+                height: 82,
                 child: _ApiaryPin(
                   apiary: apiary,
                   selected: _isSelected(apiary),
@@ -346,12 +349,17 @@ class _Map extends StatelessWidget {
   }
 }
 
-/// A single apiary marker: shows the hive count (per D-16's "pin markers per
-/// apiary (showing hive count)"), highlighted when part of the current
-/// tap-to-measure selection (#37 AC: the selection must be clear/usable).
-/// Tap selects/deselects for measuring; long-press opens the apiary detail
-/// (a plain tap navigating away would make the two-tap measure flow
-/// impossible to complete without leaving the map).
+/// A single apiary marker: shows the apiary **name** on a chipped label plus
+/// the hive count (per D-16's "pin markers per apiary (showing hive count)"),
+/// highlighted when part of the current tap-to-measure selection (#37 AC: the
+/// selection must be clear/usable). The name (#344, FR-AP-3) is drawn
+/// persistently — not merely tap-to-reveal — on an opaque surface chip so it
+/// stays legible over both the satellite (default) and streets tile layers
+/// (D-16); it was previously present only in the [Semantics] label, so
+/// on-map apiaries could not be told apart. Tap selects/deselects for
+/// measuring; long-press opens the apiary detail (a plain tap navigating away
+/// would make the two-tap measure flow impossible to complete without leaving
+/// the map).
 class _ApiaryPin extends StatelessWidget {
   const _ApiaryPin({
     required this.apiary,
@@ -374,6 +382,11 @@ class _ApiaryPin extends StatelessWidget {
     return Semantics(
       button: true,
       label: '${apiary.name}, ${apiary.hiveCount}',
+      // The name and count are already spoken via this explicit label; drop
+      // the (now visible) child Text nodes from the semantics tree so a
+      // screen reader announces the marker once, not the label plus each
+      // rendered string.
+      excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -400,6 +413,30 @@ class _ApiaryPin extends StatelessWidget {
               ),
             ),
             Icon(Icons.location_on, color: color, size: 26),
+            // Persistent name chip. Opaque surface fill (not a translucent
+            // wash) so the text keeps its contrast over satellite imagery;
+            // a matching outline in the selection color ties it to the pin
+            // when this apiary is part of the measure selection.
+            Container(
+              key: Key('apiary-marker-name-${apiary.id}'),
+              constraints: const BoxConstraints(maxWidth: 124),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: color, width: selected ? 2 : 1),
+              ),
+              child: Text(
+                apiary.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ],
         ),
       ),
