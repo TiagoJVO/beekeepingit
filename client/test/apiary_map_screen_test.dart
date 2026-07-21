@@ -191,6 +191,58 @@ void main() {
   );
 
   testWidgets(
+    'each located apiary marker surfaces its name as a visible label (#344, FR-AP-3)',
+    (tester) async {
+      await _goToMap(tester);
+
+      // Each located apiary's name renders as a visible on-map label, keyed
+      // per apiary so the two markers are distinguishable at a glance (the
+      // bug: the name was only in the Semantics label, never drawn).
+      expect(
+        find.byKey(Key('apiary-marker-name-${_serraNorte.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(Key('apiary-marker-name-${_valeDasEguas.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key('apiary-marker-name-${_serraNorte.id}')),
+          matching: find.text(_serraNorte.name),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key('apiary-marker-name-${_valeDasEguas.id}')),
+          matching: find.text(_valeDasEguas.name),
+        ),
+        findsOneWidget,
+      );
+      // The unlocated apiary has no marker, hence no name label.
+      expect(
+        find.byKey(Key('apiary-marker-name-${_semLocal.id}')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'the apiary marker keeps exposing name + hive count to screen readers (#344)',
+    (tester) async {
+      await _goToMap(tester);
+
+      final handle = tester.ensureSemantics();
+      expect(
+        find.bySemanticsLabel('${_serraNorte.name}, ${_serraNorte.hiveCount}'),
+        findsOneWidget,
+      );
+      handle.dispose();
+    },
+  );
+
+  testWidgets(
     'the empty case (no located apiaries) shows the empty state, not an error',
     (tester) async {
       await tester.pumpWidget(_buildApp([_semLocal]));
