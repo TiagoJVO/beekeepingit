@@ -12,13 +12,13 @@ replace github.com/TiagoJVO/beekeepingit/services/servicetemplate => ../servicet
 
 require (
 	github.com/TiagoJVO/beekeepingit/services/servicetemplate v0.0.0-00010101000000-000000000000
+	github.com/TiagoJVO/beekeepingit/services/shared v0.0.0-20260705151231-aba1357e5333
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 )
 
 require (
-	github.com/TiagoJVO/beekeepingit/services/shared v0.0.0-20260705151231-aba1357e5333 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.19.0 // indirect
@@ -53,9 +53,10 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.81.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
