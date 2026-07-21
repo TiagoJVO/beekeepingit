@@ -301,6 +301,10 @@ void main() {
     await tester.tap(find.byKey(const Key('apiary-a1')));
     await tester.pumpAndSettle();
 
+    // The edit action lives inside the single "Actions" speed dial now
+    // (#347) — expand it first, then tap the revealed edit option.
+    await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('apiary-detail-edit-button')), findsOneWidget);
     await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
     // Pump past the page-transition animation in bounded steps (not
@@ -446,7 +450,9 @@ void main() {
         final repo = _FakeApiariesRepository();
         await tester.pumpWidget(
           _buildApp(
-            apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
             apiariesRepository: repo,
           ),
         );
@@ -469,7 +475,10 @@ void main() {
           find.byKey(const Key('apiary-detail-counter-editor')),
           findsOneWidget,
         );
-        expect(find.byKey(const Key('apiary-counter-edit-field')), findsOneWidget);
+        expect(
+          find.byKey(const Key('apiary-counter-edit-field')),
+          findsOneWidget,
+        );
 
         await tester.enterText(
           find.byKey(const Key('apiary-counter-edit-field')),
@@ -496,7 +505,9 @@ void main() {
         final repo = _FakeApiariesRepository();
         await tester.pumpWidget(
           _buildApp(
-            apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
             apiariesRepository: repo,
           ),
         );
@@ -525,7 +536,9 @@ void main() {
         final repo = _FakeApiariesRepository();
         await tester.pumpWidget(
           _buildApp(
-            apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
             apiariesRepository: repo,
           ),
         );
@@ -577,7 +590,9 @@ void main() {
       (tester) async {
         await tester.pumpWidget(
           _buildApp(
-            apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
             counters: const {
               'a1': [
                 ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 3),
@@ -651,12 +666,12 @@ void main() {
     },
   );
 
-  // --- Quick-create-todo FAB (#52, FR-TD-1, FR-UX-1, FR-UX-2) ---
+  // --- Consolidated "Actions" speed dial (#347, FR-UX-1, FR-UX-2) ---
 
-  group('add-todo FAB (#52)', () {
+  group('actions speed dial (#347)', () {
     testWidgets(
-      'coexists with the existing add-activity and edit FABs (all three '
-      'render together)',
+      'a single "Actions" control replaces the stacked FABs — the three '
+      'options are hidden until it is expanded, and collapse cleanly again',
       (tester) async {
         await tester.pumpWidget(
           _buildApp(
@@ -670,24 +685,94 @@ void main() {
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
 
+        // Collapsed: only the single Actions toggle shows; none of the
+        // scope's options are in the tree.
         expect(
-          find.byKey(const Key('apiary-detail-add-todo-button')),
+          find.byKey(const Key('actions-speed-dial-toggle')),
           findsOneWidget,
         );
+        expect(find.text('Actions'), findsOneWidget);
+        for (final key in const [
+          'apiary-detail-add-todo-button',
+          'apiary-detail-add-activity-button',
+          'apiary-detail-edit-button',
+        ]) {
+          expect(find.byKey(Key(key)), findsNothing);
+        }
+
+        // Expand: all three scope-appropriate options are revealed.
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        for (final key in const [
+          'apiary-detail-add-todo-button',
+          'apiary-detail-add-activity-button',
+          'apiary-detail-edit-button',
+        ]) {
+          expect(find.byKey(Key(key)), findsOneWidget);
+        }
+
+        // Collapse again: the options are gone, the toggle remains.
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         expect(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
+          find.byKey(const Key('actions-speed-dial-toggle')),
           findsOneWidget,
         );
         expect(
           find.byKey(const Key('apiary-detail-edit-button')),
-          findsOneWidget,
+          findsNothing,
         );
       },
     );
 
     testWidgets(
-      'tapping it opens the quick-create sheet pre-filled with this apiary '
-      '(FR-UX-2 contextual create)',
+      'the Actions toggle announces its expanded/collapsed state to screen '
+      'readers (D-18 accessibility)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        final toggle = find.byKey(const Key('actions-speed-dial-toggle'));
+        // Collapsed: a button named "Actions" that advertises an expandable
+        // state, currently not expanded.
+        expect(
+          tester.getSemantics(toggle),
+          isSemantics(
+            isButton: true,
+            label: 'Actions',
+            hasExpandedState: true,
+            isExpanded: false,
+          ),
+        );
+
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+
+        // Expanded: the same node now reports the expanded state.
+        expect(
+          tester.getSemantics(toggle),
+          isSemantics(hasExpandedState: true, isExpanded: true),
+        );
+
+        // Dispose within the test body — the end-of-test handle-leak check
+        // runs before addTearDown callbacks would.
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'tapping the add-todo option opens the quick-create sheet pre-filled '
+      'with this apiary (FR-UX-2 contextual create)',
       (tester) async {
         final repo = _FakeTodosRepository();
         await tester.pumpWidget(
@@ -701,6 +786,8 @@ void main() {
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-todo-button')),
@@ -744,6 +831,8 @@ void main() {
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
 
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
         );

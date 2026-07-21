@@ -9,6 +9,7 @@
   "apiariesEmpty": "Ainda não há apiários. Toque em “Adicionar apiário” para criar um.",
   "apiariesError": "Não foi possível carregar os apiários: {error}",
   "addApiary": "Adicionar apiário",
+  "actionsMenuLabel": "Ações",
   "hiveCountValue": "{count, plural, =0{Sem colmeias} =1{1 colmeia} other{{count} colmeias}}",
   "superCountValue": "{count, plural, =0{Sem alças} =1{1 alça} other{{count} alças}}",
   "counterTypeHiveLabel": "Colmeias",

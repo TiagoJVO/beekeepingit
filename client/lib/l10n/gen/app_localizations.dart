@@ -152,6 +152,12 @@ abstract class AppLocalizations {
   /// **'Add apiary'**
   String get addApiary;
 
+  /// Label for the single expandable quick-actions button (FR-UX-2) that, when tapped, reveals the contextual actions available on the current screen; also its screen-reader name, whose expanded/collapsed state is announced.
+  ///
+  /// In en, this message translates to:
+  /// **'Actions'**
+  String get actionsMenuLabel;
+
   /// Hive count subtitle on a list row
   ///
   /// In en, this message translates to:
