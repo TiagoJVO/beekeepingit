@@ -2369,6 +2369,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Apiary'**
   String get historyFieldApiary;
+
+  /// Title of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345, FR-UX-1/FR-UX-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Discard changes?'**
+  String get discardChangesTitle;
+
+  /// Body of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'You have unsaved changes. If you leave now, they will be lost.'**
+  String get discardChangesMessage;
+
+  /// Confirm action in the discard-changes dialog: leave the screen and lose unsaved edits (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'Discard'**
+  String get discardChangesConfirmAction;
+
+  /// Cancel action in the discard-changes dialog: stay on the screen, keeping unsaved edits (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'Keep editing'**
+  String get discardChangesCancelAction;
 }
 
 class _AppLocalizationsDelegate

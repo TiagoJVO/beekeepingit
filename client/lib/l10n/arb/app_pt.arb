@@ -563,5 +563,9 @@
   "historyFieldLocation": "Localização",
   "historyFieldActivityType": "Tipo de atividade",
   "historyFieldAttributes": "Detalhes",
-  "historyFieldApiary": "Apiário"
+  "historyFieldApiary": "Apiário",
+  "discardChangesTitle": "Descartar alterações?",
+  "discardChangesMessage": "Tem alterações por guardar. Se sair agora, serão perdidas.",
+  "discardChangesConfirmAction": "Descartar",
+  "discardChangesCancelAction": "Continuar a editar"
 }

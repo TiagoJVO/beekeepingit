@@ -1353,4 +1353,17 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get historyFieldApiary => 'Apiário';
+
+  @override
+  String get discardChangesTitle => 'Descartar alterações?';
+
+  @override
+  String get discardChangesMessage =>
+      'Tem alterações por guardar. Se sair agora, serão perdidas.';
+
+  @override
+  String get discardChangesConfirmAction => 'Descartar';
+
+  @override
+  String get discardChangesCancelAction => 'Continuar a editar';
 }

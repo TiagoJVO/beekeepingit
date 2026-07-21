@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/widgets/actions_speed_dial.dart';
 import '../core/widgets/tap_target.dart';
+import '../core/widgets/unsaved_changes.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/sync/sync_rejected_repository.dart';
 import '../features/todos/todo_quick_create_sheet.dart';
@@ -190,8 +191,8 @@ class AppShell extends ConsumerWidget {
       appBar: _ShellHeader(
         title: _titleFor(routeName, activeTab, l10n),
         onBack: canGoBack ? () => _popBranch() : null,
-        onSyncTap: () => context.go('/account'),
-        onAccountTap: () => context.go('/account'),
+        onSyncTap: () => _guardedGo(context, ref, '/account'),
+        onAccountTap: () => _guardedGo(context, ref, '/account'),
       ),
       body: Column(
         children: [
@@ -206,10 +207,7 @@ class AppShell extends ConsumerWidget {
       bottomNavigationBar: NavigationBar(
         key: const Key('shell-bottom-nav'),
         selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: (index) => navigationShell.goBranch(
-          index,
-          initialLocation: index == navigationShell.currentIndex,
-        ),
+        onDestinationSelected: (index) => _onSelectTab(context, ref, index),
         destinations: [
           for (final tab in tabs)
             NavigationDestination(
@@ -224,15 +222,58 @@ class AppShell extends ConsumerWidget {
   }
 
   // Pops the active branch's own Navigator (via the key StatefulShellRoute
-  // assigns each branch) back to its root — not the root GoRouter, since a
-  // shell branch's pushed pages live in a nested Navigator the root router
-  // doesn't directly control.
+  // assigns each branch) — not the root GoRouter, since a shell branch's
+  // pushed pages live in a nested Navigator the root router doesn't directly
+  // control. Uses `maybePop` (not `pop`) so a pushed edit/create screen's
+  // [PopScope] unsaved-changes guard (#345) is consulted — a plain `pop`
+  // bypasses PopScope and would discard edits silently. Read-only pushed
+  // screens have no PopScope, so `maybePop` just pops them as before.
   void _popBranch() {
     final navigatorKey = navigationShell
         .route
         .branches[navigationShell.currentIndex]
         .navigatorKey;
-    navigatorKey.currentState?.pop();
+    navigatorKey.currentState?.maybePop();
+  }
+
+  // Switching primary tabs (#345, FR-UX-2): two behaviors bundled here.
+  // (1) Scope reset — `initialLocation: true` always resets the target branch
+  // to its root, so a tab never carries over the previous session's scoped
+  // state (the product owner's directed change: a fresh tab, not wherever it
+  // was last left). (2) Unsaved-changes guard — a tab-switch is a
+  // `context.go`-style route change no PopScope sees, so if the current
+  // edit/create screen has pending edits, prompt confirm-discard first and
+  // only switch if the user confirms.
+  Future<void> _onSelectTab(
+    BuildContext context,
+    WidgetRef ref,
+    int index,
+  ) async {
+    if (!await _confirmLeaveIfDirty(context, ref)) return;
+    navigationShell.goBranch(index, initialLocation: true);
+  }
+
+  // Guards a header `context.go` (account/sync) the same way as a tab-switch:
+  // these too are route changes a PopScope never sees (#345).
+  Future<void> _guardedGo(
+    BuildContext context,
+    WidgetRef ref,
+    String location,
+  ) async {
+    if (!await _confirmLeaveIfDirty(context, ref)) return;
+    if (context.mounted) context.go(location);
+  }
+
+  // Returns whether it's OK to leave the current screen: true immediately when
+  // nothing is dirty (read-only screens never set the flag), otherwise prompts
+  // the confirm-discard dialog and clears the flag on confirmation (#345).
+  Future<bool> _confirmLeaveIfDirty(BuildContext context, WidgetRef ref) async {
+    if (!ref.read(unsavedChangesProvider)) return true;
+    final discard = await showDiscardChangesDialog(context);
+    if (discard) {
+      ref.read(unsavedChangesProvider.notifier).markClean();
+    }
+    return discard;
   }
 
   // Extracted out of build() (MEDIUM-7: oversized build()) — the two

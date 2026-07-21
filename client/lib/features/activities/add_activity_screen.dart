@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
+import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../journeys/journey_matching.dart';
 import '../journeys/journey_picker.dart';
@@ -54,7 +55,8 @@ class AddActivityScreen extends ConsumerStatefulWidget {
 /// [_AddActivityScreenState._journeyTouch]'s own doc comment.
 enum _JourneyTouch { none, deselected, selected }
 
-class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
+class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
+    with UnsavedChangesMixin {
   final _formKey = GlobalKey<FormState>();
 
   String _selectedType = activityTypeHarvest;
@@ -122,7 +124,11 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
   /// forever with no way out) and its "l10n/messenger only read inside the
   /// catch block" rule (looking one up during initState's synchronous
   /// portion, before the first await, throws).
-  Future<void> _loadExisting() async {
+  // Wrapped in [loadWithoutMarkingDirty] (#345) so pre-filling the adaptive
+  // form doesn't arm the unsaved-changes guard.
+  Future<void> _loadExisting() => loadWithoutMarkingDirty(_loadExistingInner);
+
+  Future<void> _loadExistingInner() async {
     setState(() => _busy = true);
     try {
       final repo = await ref.read(activitiesRepositoryProvider.future);
@@ -186,7 +192,12 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
-    if (picked != null) setState(() => _occurredAt = picked);
+    if (picked != null) {
+      setState(() => _occurredAt = picked);
+      // The date lives outside the Form's field tree — arm the guard directly
+      // (#345).
+      markUnsavedChanges();
+    }
   }
 
   /// Builds the per-[_selectedType] attribute bag — ONLY that type's own
@@ -366,11 +377,14 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
               if (effectiveId != null)
                 TextButton(
                   key: const Key('activity-journey-remove-button'),
-                  onPressed: () => setState(() {
-                    _journeyTouch = _JourneyTouch.deselected;
-                    _manualJourneyId = null;
-                    _manualJourneyNameFallback = null;
-                  }),
+                  onPressed: () {
+                    setState(() {
+                      _journeyTouch = _JourneyTouch.deselected;
+                      _manualJourneyId = null;
+                      _manualJourneyNameFallback = null;
+                    });
+                    markUnsavedChanges();
+                  },
                   child: Text(l10n.journeyAttachmentRemoveAction),
                 ),
             ],
@@ -414,6 +428,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
           _manualJourneyNameFallback = created.name;
         });
     }
+    // Changing the journey attachment lives outside the Form's field tree —
+    // arm the guard directly (#345).
+    markUnsavedChanges();
   }
 
   /// Saves via [ActivitiesRepository.create] (add) or
@@ -473,6 +490,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
         );
       }
       if (!mounted) return;
+      clearUnsavedChanges();
       context.go('/apiaries/${widget.apiaryId}');
       messenger.showSnackBar(SnackBar(content: Text(l10n.activitySaveSuccess)));
     } catch (e) {
@@ -506,6 +524,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
       final repo = await ref.read(activitiesRepositoryProvider.future);
       await repo.delete(widget.activityId!);
       if (!mounted) return;
+      clearUnsavedChanges();
       context.go('/apiaries/${widget.apiaryId}');
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.activityDeleteSuccess)),
@@ -526,97 +545,103 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    return _busy
-        ? const Center(child: CircularProgressIndicator())
-        : Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      DropdownButtonFormField<String>(
-                        key: const Key('activity-type-field'),
-                        initialValue: _selectedType,
-                        // isExpanded: a treatment-context/type option's
-                        // localized label (e.g. "Specific disease/condition")
-                        // can be longer than the field's intrinsic width —
-                        // without this the dropdown's internal Row overflows
-                        // rather than truncating/wrapping to the available
-                        // width.
-                        isExpanded: true,
-                        decoration: InputDecoration(
-                          labelText: l10n.activityTypeFieldLabel,
-                        ),
-                        items: [
-                          for (final type in knownActivityTypes)
-                            DropdownMenuItem(
-                              value: type,
-                              child: Text(
-                                activityTypeLabel(l10n, type) ?? type,
-                              ),
-                            ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              _selectedType = value;
-                              // A journey's main_activity_type is fixed — any
-                              // prior match/choice is invalid for the new
-                              // type, so the picker resets to auto-select
-                              // fresh against the new type (#46 AC's
-                              // matching rule).
-                              _journeyTouch = _JourneyTouch.none;
-                              _manualJourneyId = null;
-                              _manualJourneyNameFallback = null;
-                            });
-                          }
-                        },
-                      ),
-                      if (!widget.isEdit) ...[
-                        const SizedBox(height: 16),
-                        _journeyAttachmentSection(l10n),
-                      ],
-                      const SizedBox(height: 16),
-                      InkWell(
-                        key: const Key('activity-occurred-at-field'),
-                        onTap: _pickDate,
-                        child: InputDecorator(
+    return buildUnsavedChangesGuard(
+      child: _busy
+          ? const Center(child: CircularProgressIndicator())
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    // Any field edit arms the unsaved-changes guard (#345);
+                    // edits outside the field tree (date, journey attachment)
+                    // call markUnsavedChanges directly.
+                    onChanged: markUnsavedChanges,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        DropdownButtonFormField<String>(
+                          key: const Key('activity-type-field'),
+                          initialValue: _selectedType,
+                          // isExpanded: a treatment-context/type option's
+                          // localized label (e.g. "Specific disease/condition")
+                          // can be longer than the field's intrinsic width —
+                          // without this the dropdown's internal Row overflows
+                          // rather than truncating/wrapping to the available
+                          // width.
+                          isExpanded: true,
                           decoration: InputDecoration(
-                            labelText: l10n.activityOccurredAtLabel,
+                            labelText: l10n.activityTypeFieldLabel,
                           ),
-                          child: Text(
-                            LocaleFormatting.of(context).date(_occurredAt),
+                          items: [
+                            for (final type in knownActivityTypes)
+                              DropdownMenuItem(
+                                value: type,
+                                child: Text(
+                                  activityTypeLabel(l10n, type) ?? type,
+                                ),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() {
+                                _selectedType = value;
+                                // A journey's main_activity_type is fixed — any
+                                // prior match/choice is invalid for the new
+                                // type, so the picker resets to auto-select
+                                // fresh against the new type (#46 AC's
+                                // matching rule).
+                                _journeyTouch = _JourneyTouch.none;
+                                _manualJourneyId = null;
+                                _manualJourneyNameFallback = null;
+                              });
+                            }
+                          },
+                        ),
+                        if (!widget.isEdit) ...[
+                          const SizedBox(height: 16),
+                          _journeyAttachmentSection(l10n),
+                        ],
+                        const SizedBox(height: 16),
+                        InkWell(
+                          key: const Key('activity-occurred-at-field'),
+                          onTap: _pickDate,
+                          child: InputDecorator(
+                            decoration: InputDecoration(
+                              labelText: l10n.activityOccurredAtLabel,
+                            ),
+                            child: Text(
+                              LocaleFormatting.of(context).date(_occurredAt),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      ..._attributeFields(l10n),
-                      const SizedBox(height: 24),
-                      PrimaryActionButton(
-                        key: const Key('activity-save-button'),
-                        label: l10n.saveButton,
-                        onPressed: _save,
-                      ),
-                      if (widget.isEdit) ...[
-                        const SizedBox(height: 12),
-                        SecondaryActionButton(
-                          key: const Key('activity-delete-button'),
-                          label: l10n.deleteActivity,
-                          icon: Icons.delete_outline,
-                          destructive: true,
-                          onPressed: _confirmDelete,
+                        const SizedBox(height: 16),
+                        ..._attributeFields(l10n),
+                        const SizedBox(height: 24),
+                        PrimaryActionButton(
+                          key: const Key('activity-save-button'),
+                          label: l10n.saveButton,
+                          onPressed: _save,
                         ),
+                        if (widget.isEdit) ...[
+                          const SizedBox(height: 12),
+                          SecondaryActionButton(
+                            key: const Key('activity-delete-button'),
+                            label: l10n.deleteActivity,
+                            icon: Icons.delete_outline,
+                            destructive: true,
+                            onPressed: _confirmDelete,
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          );
+    );
   }
 
   /// The adaptive attribute-field list for [_selectedType] (#39 AC: "the

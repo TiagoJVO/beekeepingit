@@ -1846,5 +1846,21 @@
   "historyFieldApiary": "Apiary",
   "@historyFieldApiary": {
     "description": "Localized name of the activities.apiary_id column in a changed-fields list (#60)"
+  },
+  "discardChangesTitle": "Discard changes?",
+  "@discardChangesTitle": {
+    "description": "Title of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345, FR-UX-1/FR-UX-2)"
+  },
+  "discardChangesMessage": "You have unsaved changes. If you leave now, they will be lost.",
+  "@discardChangesMessage": {
+    "description": "Body of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345)"
+  },
+  "discardChangesConfirmAction": "Discard",
+  "@discardChangesConfirmAction": {
+    "description": "Confirm action in the discard-changes dialog: leave the screen and lose unsaved edits (#345)"
+  },
+  "discardChangesCancelAction": "Keep editing",
+  "@discardChangesCancelAction": {
+    "description": "Cancel action in the discard-changes dialog: stay on the screen, keeping unsaved edits (#345)"
   }
 }

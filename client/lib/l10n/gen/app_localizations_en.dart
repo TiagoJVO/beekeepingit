@@ -1345,4 +1345,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get historyFieldApiary => 'Apiary';
+
+  @override
+  String get discardChangesTitle => 'Discard changes?';
+
+  @override
+  String get discardChangesMessage =>
+      'You have unsaved changes. If you leave now, they will be lost.';
+
+  @override
+  String get discardChangesConfirmAction => 'Discard';
+
+  @override
+  String get discardChangesCancelAction => 'Keep editing';
 }
