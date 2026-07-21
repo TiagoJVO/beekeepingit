@@ -25,7 +25,8 @@ Phases 0–4 shipped in #330 (image-automation removed; `infra/gitops/` split in
   A records (DNS-only) → those IPs; (3) swap the nip.io / `.example` values for the real ones in the
   gitops repo's `apps/{staging,prod}/beekeepingit-helmrelease.yaml`, `environments/{staging,prod}.yaml`,
   and `release-deploy.yml`'s `publish-client` dart-defines. cert-manager stays HTTP-01 unless the
-  Cloudflare proxy is enabled.
+  Cloudflare proxy is enabled. The overlay and the dart-defines must be edited **in the same PR** —
+  `task repo:deploy-urls` (in `task ci`) fails when those two copies disagree (#369).
 - **Phase 6 — end-to-end verification** — bring staging up, cut `v0.0.1-rc1`, walk the whole chain
   (build → tag-bump PR → merge → Flux → real domain + trusted cert → login). First live exercise of
   the new pipeline.
@@ -50,9 +51,6 @@ dry-run`, and the PR-title check (strict). These run but are **not** required, s
     prod behind the `production` approval, and behind the human merging the tag-bump PR.
 - **Observability is intentionally not deployed anywhere** (dev, staging, or a future prod) — a
   deliberate choice, not a gap to revisit.
-- Minor, not blocking: the per-environment PWA URLs in `release-deploy.yml`'s `publish-client` job
-  and each `infra/helm/beekeepingit/environments/*.yaml` overlay are two independently-maintained
-  copies of the same values — no shared source yet. Worth a GitHub issue if it drifts.
 
 ## Not covered by an automated test: `todo_form_screen.dart`'s date picker
 
