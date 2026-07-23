@@ -237,14 +237,23 @@ func validateJourneyOp(i int, op Op) []problem.FieldError {
 			return errs
 		}
 	}
-	// name/main_activity_type are ALWAYS required, on both put and patch —
-	// the full-resubmit convention this file's doc comment describes.
+	// name/main_activity_type are required on put; a patch may omit either —
+	// PowerSync uploads only the columns that actually changed (a status-only
+	// "close journey" patch is the concrete case, #378), not always a full
+	// resubmit as this file's doc comment previously assumed. When present on
+	// either op kind they must still be well-formed.
 	if data.Name == nil || *data.Name == "" {
-		errs = append(errs, problem.FieldError{Field: prefix + ".data.name", Code: "required", Message: "name is required"})
+		if op.Op == "put" {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.name", Code: "required", Message: "name is required"})
+		}
 	} else if len(*data.Name) > maxNameLength {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.name", Code: "too_long", Message: fmt.Sprintf("name must be at most %d characters", maxNameLength)})
 	}
-	if data.MainActivityType == nil || !IsKnownMainActivityType(*data.MainActivityType) {
+	if data.MainActivityType == nil {
+		if op.Op == "put" {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.main_activity_type", Code: "required", Message: "main_activity_type is required"})
+		}
+	} else if !IsKnownMainActivityType(*data.MainActivityType) {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.main_activity_type", Code: "invalid", Message: fmt.Sprintf("main_activity_type must be one of the known activity types: %v", KnownMainActivityTypes())})
 	}
 	if data.Status != nil && !IsKnownStatus(*data.Status) {

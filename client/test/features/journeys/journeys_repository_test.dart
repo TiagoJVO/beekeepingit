@@ -71,6 +71,7 @@ class FakeLocalStore implements LocalStoreEngine {
     } else if (normalized.startsWith('UPDATE $journeysTable'.toUpperCase())) {
       // SET name = ?, main_activity_type = ?, status = ?, updated_at = ?
       // WHERE id = ?
+      journeysUpdateCalls++;
       final id = args[4];
       final row = rows.firstWhere((r) => r['id'] == id);
       row['name'] = args[0];
@@ -92,6 +93,11 @@ class FakeLocalStore implements LocalStoreEngine {
     }
     _notify();
   }
+
+  /// Count of UPDATE executions against the journeys table — used to assert
+  /// a no-op update()/close() genuinely performs no write (#378), not just
+  /// that the row's own fields happen to end up unchanged.
+  int journeysUpdateCalls = 0;
 
   @override
   Future<void> clear() async {
@@ -416,6 +422,26 @@ void main() {
       expect(journey!.name, 'New name');
       expect(journey.mainActivityType, 'feeding');
     });
+
+    test('with identical name/main_activity_type/status performs no '
+        'journeys-table write at all (#378 — a saved-but-unchanged edit must '
+        'not queue a sync op)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+
+      await repo.update(
+        id,
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+        apiaryIds: const ['a1'], // plan unchanged too
+      );
+
+      expect(store.journeysUpdateCalls, 0, reason: 'no write means no sync op');
+    });
   });
 
   group('JourneysRepository.close() (#45, D-21)', () {
@@ -438,6 +464,23 @@ void main() {
     test('is a no-op for an unknown id', () async {
       await repo.close('missing'); // must not throw
       expect(store.rows, isEmpty);
+    });
+
+    test('closing an already-closed journey performs no journeys-table write '
+        '(#378 — close() resubmits name/type unchanged, must not needlessly '
+        'queue a sync op on a repeat close)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+      await repo.close(id);
+      final callsAfterFirstClose = store.journeysUpdateCalls;
+      expect(callsAfterFirstClose, greaterThan(0));
+
+      await repo.close(id); // already closed
+
+      expect(store.journeysUpdateCalls, callsAfterFirstClose);
     });
   });
 

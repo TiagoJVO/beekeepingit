@@ -313,8 +313,15 @@ func validateActivityOp(i int, op Op, owned, ownedJourneys map[string]bool) []pr
 		}
 	}
 
+	// occurred_at is required on put; a patch may omit it — PowerSync
+	// uploads only the columns that actually changed, and a save that
+	// doesn't change the date (or changes only some other field) legitimately
+	// produces a patch without occurred_at (#378). When present on either op
+	// kind it must still be well-formed.
 	if data.OccurredAt == nil || *data.OccurredAt == "" {
-		errs = append(errs, problem.FieldError{Field: prefix + ".data.occurred_at", Code: "required", Message: "occurred_at is required"})
+		if op.Op == "put" {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.occurred_at", Code: "required", Message: "occurred_at is required"})
+		}
 	} else if _, err := time.Parse(dateLayout, *data.OccurredAt); err != nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.occurred_at", Code: "invalid", Message: "occurred_at must be a YYYY-MM-DD date"})
 	}
@@ -327,8 +334,14 @@ func validateActivityOp(i int, op Op, owned, ownedJourneys map[string]bool) []pr
 			attrsOK = false
 		}
 	}
+	// type is required on put; a patch may omit it for the same reason
+	// occurred_at may (#378) — PowerSync's column diff. Attribute-bag
+	// validation only runs when a type is actually present to validate
+	// against (unchanged from before).
 	if data.Type == nil || *data.Type == "" {
-		errs = append(errs, problem.FieldError{Field: prefix + ".data.type", Code: "required", Message: "type is required"})
+		if op.Op == "put" {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.type", Code: "required", Message: "type is required"})
+		}
 	} else if attrsOK {
 		for _, e := range ValidateActivity(*data.Type, attrs) {
 			errs = append(errs, problem.FieldError{Field: prefix + ".data." + e.Field, Code: e.Code, Message: e.Message})
@@ -630,8 +643,15 @@ func mergeActivityOp(current activityRowState, op Op, data activityData) (activi
 		current.deletedAt = pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
 		return current, nil
 	}
-	attrs := map[string]any{}
+	// attributes falls back to current.attributes when absent, exactly like
+	// apiaryID/typ/occurredAt below — a patch that doesn't carry attributes
+	// (PowerSync's column diff omits unchanged columns, #378) must not wipe
+	// them. Previously this always reset to an empty map absent an explicit
+	// data.Attributes, silently discarding the stored attribute bag on any
+	// patch that didn't happen to touch it.
+	attrs := current.attributes
 	if len(data.Attributes) > 0 {
+		attrs = map[string]any{}
 		if err := json.Unmarshal(data.Attributes, &attrs); err != nil {
 			return activityRowState{}, err
 		}

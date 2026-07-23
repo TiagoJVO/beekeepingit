@@ -920,6 +920,114 @@ func TestJourneysSync_ValidateThenApply_CreateWithPlanItems_Success(t *testing.T
 	}
 }
 
+// --- #378: name/main_activity_type are required on put, but a patch may
+// omit either — PowerSync uploads only the columns that actually changed,
+// and "close journey" is the concrete wire shape: {status: "closed"} alone
+// (the client resends nothing else, contrary to this file's previous
+// full-resubmit assumption) ---
+
+func journeyStatusPatchOp(id, status string) map[string]any {
+	return map[string]any{
+		"op": "patch", "entity_type": "journey", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"status": status},
+	}
+}
+
+// TestJourneysSync_Validate_AcceptsStatusOnlyPatch confirms the validate-side
+// fix directly against the real "close journey" wire shape.
+func TestJourneysSync_Validate_AcceptsStatusOnlyPatch(t *testing.T) {
+	f := newJourneysFixture(t)
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{
+		"ops": []any{journeyStatusPatchOp(uuid.NewString(), "closed")},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate (status-only patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysSync_Validate_RejectsPutWithoutNameOrType confirms name/
+// main_activity_type stay required on put — #378 only relaxes patch, a
+// fresh journey still needs both to have any content. Also pins the
+// nil-vs-unknown split for main_activity_type: absent must report
+// "required", not the misleading "invalid" the old shared nil-or-unknown
+// check produced.
+func TestJourneysSync_Validate_RejectsPutWithoutNameOrType(t *testing.T) {
+	f := newJourneysFixture(t)
+	bad := map[string]any{
+		"op": "put", "entity_type": "journey", "id": uuid.NewString(),
+		"updated_at": "2026-07-16T10:00:00Z", "data": map[string]any{},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{bad}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("validate status = %d, want 422 (name/main_activity_type required on put), body = %s", rec.Code, rec.Body.String())
+	}
+	var problem struct {
+		Errors []struct {
+			Field string `json:"field"`
+			Code  string `json:"code"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem response: %v", err)
+	}
+	foundNameRequired, foundTypeRequired := false, false
+	for _, e := range problem.Errors {
+		if e.Field == "ops[0].data.name" && e.Code == "required" {
+			foundNameRequired = true
+		}
+		if e.Field == "ops[0].data.main_activity_type" && e.Code == "required" {
+			foundTypeRequired = true
+		}
+	}
+	if !foundNameRequired {
+		t.Fatalf("problem errors = %+v, want a required error on ops[0].data.name", problem.Errors)
+	}
+	if !foundTypeRequired {
+		t.Fatalf("problem errors = %+v, want a required (not invalid) error on ops[0].data.main_activity_type when absent", problem.Errors)
+	}
+}
+
+// TestJourneysSync_Apply_StatusOnlyPatchClosesWithoutTouchingName is the
+// apply-side proof: a status-only patch against an existing journey closes
+// it and leaves name/main_activity_type exactly as stored (mergeJourneyOp
+// already merged correctly — this pins that the validate relaxation didn't
+// change apply's own behavior).
+func TestJourneysSync_Apply_StatusOnlyPatchClosesWithoutTouchingName(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	create := map[string]any{"ops": []any{journeyPutOp(journeyID, "cenad", "treatment")}}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", create); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	batch := map[string]any{"ops": []any{journeyStatusPatchOp(journeyID, "closed")}}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch); rec.Code != http.StatusOK {
+		t.Fatalf("validate (status-only patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetJourney(context.Background(), sqlcgen.GetJourneyParams{
+		OrganizationID: devseedOrg(), ID: pgtype.UUID{Bytes: uuid.MustParse(journeyID), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetJourney: %v", err)
+	}
+	if row.Status != "closed" {
+		t.Fatalf("status after status-only patch = %q, want closed", row.Status)
+	}
+	if row.Name != "cenad" {
+		t.Fatalf("name after status-only patch = %q, want unchanged %q", row.Name, "cenad")
+	}
+	if row.MainActivityType != "treatment" {
+		t.Fatalf("main_activity_type after status-only patch = %q, want unchanged %q", row.MainActivityType, "treatment")
+	}
+}
+
 func TestJourneysSync_Validate_RejectsCrossOrgApiaryId(t *testing.T) {
 	foreignApiaryID := uuid.NewString()
 	f := newJourneysFixture(t) // no known apiary ids

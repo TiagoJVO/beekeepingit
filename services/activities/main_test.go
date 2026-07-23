@@ -974,6 +974,91 @@ func TestActivitiesSync_ValidateThenApply_CreateActivity_Success(t *testing.T) {
 	}
 }
 
+// --- #378: a patch may omit occurred_at/type/attributes (PowerSync uploads
+// only the columns that actually changed — an edit that doesn't touch a
+// given field legitimately produces a patch without it), unlike this file's
+// previous full-resubmit assumption ---
+
+// TestActivitiesSync_ValidateAcceptsPartialPatch confirms the validate-side
+// fix directly: a patch carrying no data at all, and a patch carrying only
+// occurred_at, are both accepted (only `put` still requires occurred_at/type).
+func TestActivitiesSync_ValidateAcceptsPartialPatch(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	empty := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T10:00:00Z", "data": map[string]any{},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{empty}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate (empty patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	occurredOnly := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"occurred_at": "2026-07-17"},
+	}
+	rec = f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{occurredOnly}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate (occurred_at-only patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestActivitiesSync_Apply_PatchWithoutAttributesPreservesAttributes is the
+// concrete regression this issue exists for: mergeActivityOp used to reset
+// `attributes` to an empty map whenever a patch's data.Attributes was absent,
+// silently wiping the stored attribute bag on any edit that didn't happen to
+// touch it (e.g. an occurred_at-only patch). A patch that omits attributes
+// must preserve them.
+func TestActivitiesSync_Apply_PatchWithoutAttributesPreservesAttributes(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	create := syncOp(id, apiaryID) // attributes: {"notes": "queued offline"}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{create}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patch := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T12:00:00Z",
+		"data":       map[string]any{"occurred_at": "2026-07-18"}, // no attributes key at all
+	}
+	batch := map[string]any{"ops": []any{patch}}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch); rec.Code != http.StatusOK {
+		t.Fatalf("validate (occurred_at-only patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if row.OccurredAt.Time.Format("2006-01-02") != "2026-07-18" {
+		t.Fatalf("occurred_at after patch = %v, want 2026-07-18 (the patch's own change must still apply)", row.OccurredAt.Time)
+	}
+	var attrs map[string]any
+	if err := json.Unmarshal(row.Attributes, &attrs); err != nil {
+		t.Fatalf("unmarshal attributes: %v", err)
+	}
+	if attrs["notes"] != "queued offline" {
+		t.Fatalf("attributes after occurred_at-only patch = %+v, want unchanged {notes: queued offline} (must not be wiped)", attrs)
+	}
+	if row.Type != api.TypeGeneric {
+		t.Fatalf("type after occurred_at-only patch = %q, want unchanged %q", row.Type, api.TypeGeneric)
+	}
+}
+
 // TestActivitiesSync_Apply_NonCanonicalCaseApiaryIdStillApplies is the
 // regression guard for the review finding that resolveApiaryOwnership keyed
 // `owned` by the RAW, unnormalized client string, while applyActivityOp
