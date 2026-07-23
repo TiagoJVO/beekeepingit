@@ -1,6 +1,7 @@
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/todos/todo_apiary_picker_field.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,6 +46,7 @@ class _HarnessState extends State<_Harness> {
         ),
       ],
       child: MaterialApp(
+        theme: AppTheme.light(),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
@@ -162,6 +164,23 @@ void main() {
           find.text('No apiaries yet — add one from the Apiaries tab first.'),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'the selected row icon uses the accent (tertiary) color, not the '
+      'muted secondary color that reads as disabled (#381)',
+      (tester) async {
+        await tester.pumpWidget(_Harness(initial: 'a1', onChanged: (_) {}));
+        await tester.pumpAndSettle();
+
+        final scheme = AppTheme.light().colorScheme;
+        final selectedIcon = _trailingIcon(
+          tester,
+          const Key('todo-apiary-option-a1'),
+        );
+        expect(selectedIcon.color, scheme.tertiary);
+        expect(selectedIcon.color, isNot(scheme.secondary));
       },
     );
 

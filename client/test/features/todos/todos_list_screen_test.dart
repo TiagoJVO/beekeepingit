@@ -74,6 +74,11 @@ Widget _buildApp({required List<Todo> todos}) {
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
       todosStreamProvider.overrideWith((ref) => Stream.value(todos)),
+      // The full create form's assignee picker (#293, reachable from the
+      // FAB since #389 retired #52's quick-create sheet) watches
+      // memberNamesProvider — overridden so it doesn't attempt a real
+      // fetch.
+      memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
@@ -92,9 +97,9 @@ Future<void> _openTodosTab(
 }
 
 /// A no-op [LocalStoreEngine] — [_FakeTodosRepository] overrides every
-/// method the quick-create sheet touches, so the superclass's store is
-/// never actually used. Mirrors todo_quick_create_sheet_test.dart's own
-/// identical fixture (kept file-private per this suite's own convention).
+/// method the full create form touches, so the superclass's store is never
+/// actually used. Mirrors todo_form_screen_test.dart's own identical
+/// fixture (kept file-private per this suite's own convention).
 class _NoopLocalStore implements LocalStoreEngine {
   @override
   Stream<List<Map<String, Object?>>> watch(
@@ -121,12 +126,12 @@ class _NoopLocalStore implements LocalStoreEngine {
 /// offline-first AC) — unlike the read-only fixed lists [_buildApp] above
 /// overrides [todosStreamProvider] with directly, this one drives
 /// [watchAll] off its own in-memory list, so a `create()` call (from the
-/// quick-create sheet's save button) is immediately reflected back through
-/// the SAME [todosStreamProvider]/[todosViewModelProvider] chain the real
-/// app uses — proving the new todo appears in the list without a real
-/// PowerSync round-trip, exactly like the local-first write path it mirrors
-/// (todos_repository.dart's own doc: every write is queued for sync, but
-/// visible locally immediately).
+/// full create form's save button, #389) is immediately reflected back
+/// through the SAME [todosStreamProvider]/[todosViewModelProvider] chain
+/// the real app uses — proving the new todo appears in the list without a
+/// real PowerSync round-trip, exactly like the local-first write path it
+/// mirrors (todos_repository.dart's own doc: every write is queued for
+/// sync, but visible locally immediately).
 class _FakeTodosRepository extends TodosRepository {
   _FakeTodosRepository() : super(_NoopLocalStore());
 
@@ -169,6 +174,11 @@ Widget _buildAppWithRepo({required _FakeTodosRepository repo}) {
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
       todosRepositoryProvider.overrideWith((ref) async => repo),
+      // The full create form's assignee picker (#293, reachable from the
+      // FAB since #389 retired #52's quick-create sheet) watches
+      // memberNamesProvider — overridden so it doesn't attempt a real
+      // fetch, matching this file's own `todoByIdProvider` test above.
+      memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
@@ -561,7 +571,7 @@ void main() {
     });
   });
 
-  group('quick-create (#52, FR-TD-1, FR-UX-1)', () {
+  group('create (#52/#389, FR-TD-1, FR-UX-1)', () {
     testWidgets('the Todos tab shows a FAB labeled "New todo"', (tester) async {
       await _openTodosTab(tester, todos: const []);
 
@@ -569,21 +579,20 @@ void main() {
       expect(find.text('New todo'), findsOneWidget);
     });
 
-    testWidgets('tapping the FAB opens the quick-create sheet', (tester) async {
+    testWidgets('tapping the FAB routes to the full create form (#389)', (
+      tester,
+    ) async {
       await _openTodosTab(tester, todos: const []);
 
       await tester.tap(find.byKey(const Key('shell-fab')));
       await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('todo-quick-create-title-field')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('todo-title-field')), findsOneWidget);
     });
 
     testWidgets(
-      'completing create makes the new todo appear in the list immediately '
-      '(offline/local-store AC)',
+      'completing create through the full form makes the new todo appear '
+      'back in the list immediately (offline/local-store AC)',
       (tester) async {
         final repo = _FakeTodosRepository();
         await tester.pumpWidget(_buildAppWithRepo(repo: repo));
@@ -594,12 +603,30 @@ void main() {
         await tester.tap(find.byKey(const Key('shell-fab')));
         await tester.pumpAndSettle();
         await tester.enterText(
-          find.byKey(const Key('todo-quick-create-title-field')),
+          find.byKey(const Key('todo-title-field')),
           'Inspect hive 3',
         );
-        await tester.tap(
-          find.byKey(const Key('todo-quick-create-save-button')),
-        );
+        await tester.pump();
+        // The full form's content exceeds the default 800x600 test
+        // viewport (todo_form_screen_test.dart's own note) — scroll the
+        // save button into view rather than resizing the viewport, since
+        // this suite's other tests share the same default size.
+        await tester.ensureVisible(find.byKey(const Key('todo-save-button')));
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        // Not pumpAndSettle: a successful save navigates to the new todo's
+        // own detail route, whose `todoByIdProvider` watch never resolves
+        // in this PowerSync-less environment (this fake repository doesn't
+        // override `watchById`) — mirrors todo_form_screen_test.dart's own
+        // documented `_pumpBounded` workaround.
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        // The shell's own back button pops from the detail route back to
+        // the list — independent of the detail screen's own (still
+        // loading) data watch, same as the header-back test elsewhere in
+        // this suite.
+        await tester.tap(find.byKey(const Key('shell-back-button')));
         await tester.pumpAndSettle();
 
         expect(find.byKey(const Key('todo-fake-0')), findsOneWidget);

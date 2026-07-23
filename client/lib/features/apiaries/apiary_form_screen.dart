@@ -335,9 +335,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
                 // The fields scroll, the actions stay pinned — the same
-                // structure journey_quick_create_sheet.dart /
-                // todo_quick_create_sheet.dart already use, and the fix for
-                // the #341 regression described in the class doc comment.
+                // structure journey_quick_create_sheet.dart already uses,
+                // and the fix for the #341 regression described in the
+                // class doc comment.
                 // A single scroll view around EVERYTHING put Save last, below
                 // a mandatory 220px map picker whose gesture region swallows
                 // the drag that would scroll it back into view; on a short
