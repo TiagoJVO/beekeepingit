@@ -586,6 +586,33 @@ void main() {
       expect(superRows.single['value'], 9);
     });
 
+    test(
+      'setCounter() with the unchanged value performs no write at all '
+      '(#378 — a saved-but-unchanged counter must not queue a sync op)',
+      () async {
+        final id = await repo.create(name: 'Encosta');
+        await repo.setCounter(id, 'super', 4);
+        final rowIdBefore = store.counterRows.firstWhere(
+          (r) => r['apiary_id'] == id && r['counter_type'] == 'super',
+        )['id'];
+        final updatedAtBefore = store.counterRows.firstWhere(
+          (r) => r['apiary_id'] == id && r['counter_type'] == 'super',
+        )['updated_at'];
+
+        await repo.setCounter(id, 'super', 4); // same value again
+
+        final row = store.counterRows.firstWhere(
+          (r) => r['apiary_id'] == id && r['counter_type'] == 'super',
+        );
+        expect(row['id'], rowIdBefore, reason: 'no new/replaced row');
+        expect(
+          row['updated_at'],
+          updatedAtBefore,
+          reason: 'updated_at must not bump — no write means no sync op',
+        );
+      },
+    );
+
     test('setCounter() drives the hive counter the same way (generic write '
         'path over the known set)', () async {
       final id = await repo.create(name: 'Encosta');

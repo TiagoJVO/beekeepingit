@@ -176,11 +176,27 @@ class JourneysRepository {
     required List<String> apiaryIds,
   }) async {
     final now = _nowIso();
-    await _store.execute(
-      'UPDATE $journeysTable SET name = ?, main_activity_type = ?, status = ?, updated_at = ? '
-      'WHERE id = ?',
-      [name, mainActivityType, status, now, id],
-    );
+    // #378: skip the journeys-table write when name/main_activity_type/
+    // status haven't actually changed (e.g. [close] re-closing an
+    // already-closed journey, or an edit form saved without changes) —
+    // otherwise this still bumps updated_at, queuing a sync op whose
+    // diffed payload carries only the changed columns (PowerSync uploads a
+    // column diff, not always this full row), which the server used to
+    // reject outright ("name is required", "main_activity_type... invalid").
+    // The plan-item diffing below is already change-scoped and unaffected.
+    final current = await getById(id);
+    final journeyRowChanged =
+        current == null ||
+        current.name != name ||
+        current.mainActivityType != mainActivityType ||
+        current.status != status;
+    if (journeyRowChanged) {
+      await _store.execute(
+        'UPDATE $journeysTable SET name = ?, main_activity_type = ?, status = ?, updated_at = ? '
+        'WHERE id = ?',
+        [name, mainActivityType, status, now, id],
+      );
+    }
 
     final existing = await _store.getAll(
       'SELECT id, apiary_id FROM $journeyPlanItemsTable WHERE journey_id = ?',

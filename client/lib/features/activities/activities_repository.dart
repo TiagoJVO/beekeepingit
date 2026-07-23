@@ -173,11 +173,25 @@ class ActivitiesRepository {
     required String type,
     required String occurredAt,
     required Map<String, dynamic> attributes,
-  }) {
-    return _store.execute(
+  }) async {
+    // #378: skip the write entirely when nothing actually changed (e.g.
+    // opening the edit form and saving without touching anything) —
+    // otherwise this still bumps updated_at, queuing a sync op whose diffed
+    // payload carries only the changed columns (PowerSync uploads a column
+    // diff, not always this full row), which the server used to reject
+    // outright ("occurred_at is required", "type is required").
+    final current = await getById(id);
+    final encodedAttributes = jsonEncode(attributes);
+    if (current != null &&
+        current.type == type &&
+        current.occurredAt == occurredAt &&
+        jsonEncode(current.attributes) == encodedAttributes) {
+      return;
+    }
+    await _store.execute(
       'UPDATE $activitiesTable SET type = ?, occurred_at = ?, attributes = ?, updated_at = ? '
       'WHERE id = ?',
-      [type, occurredAt, jsonEncode(attributes), _nowIso(), id],
+      [type, occurredAt, encodedAttributes, _nowIso(), id],
     );
   }
 
