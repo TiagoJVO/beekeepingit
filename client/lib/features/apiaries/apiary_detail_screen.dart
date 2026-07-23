@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/widgets/actions_speed_dial.dart';
 import '../../core/widgets/tap_target.dart';
+import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_theme.dart';
@@ -370,6 +371,11 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
   final _valueController = TextEditingController();
   bool _saving = false;
 
+  /// The stored value at the moment the editor opened — the baseline
+  /// [_maybeCloseEditor] compares the draft against to decide whether
+  /// collapsing needs a discard confirmation (#393).
+  int _openedValue = 0;
+
   @override
   void dispose() {
     _valueController.dispose();
@@ -380,10 +386,27 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
     setState(() {
       _editingType = counterType;
       _valueController.text = '$currentValue';
+      _openedValue = currentValue;
     });
   }
 
   void _closeEditor() => setState(() => _editingType = null);
+
+  /// Tapping the same counter card again while its editor is open collapses
+  /// it (#393) — mirroring the card's role as the editor's own toggle rather
+  /// than a one-way "open" action. Prompts for confirmation only when the
+  /// draft actually differs from the value the editor opened with; an
+  /// unchanged draft (or the freshly-opened add-counter case, whose
+  /// [_openedValue] is 0) collapses immediately.
+  Future<void> _maybeCloseEditor() async {
+    if (_saving) return;
+    if (_draftValue == _openedValue) {
+      _closeEditor();
+      return;
+    }
+    final discard = await showDiscardChangesDialog(context);
+    if (discard && mounted) _closeEditor();
+  }
 
   int get _draftValue {
     final n = int.tryParse(_valueController.text.trim()) ?? 0;
@@ -470,7 +493,9 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
             _CounterCard(
               key: const Key('apiary-detail-hive-count'),
               label: l10n.hiveCountValue(apiary.hiveCount),
-              onTap: () => _openEditor(counterTypeHive, apiary.hiveCount),
+              onTap: () => _editingType == counterTypeHive
+                  ? _maybeCloseEditor()
+                  : _openEditor(counterTypeHive, apiary.hiveCount),
             ),
             for (final counter in others)
               _CounterCard(
@@ -480,7 +505,9 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
                   counter.counterType,
                   counter.value,
                 )!,
-                onTap: () => _openEditor(counter.counterType, counter.value),
+                onTap: () => _editingType == counter.counterType
+                    ? _maybeCloseEditor()
+                    : _openEditor(counter.counterType, counter.value),
               ),
           ],
         ),
@@ -493,7 +520,6 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
             onDecrement: () => setState(() => _bumpBy(-1)),
             onIncrement: () => setState(() => _bumpBy(1)),
             onSave: _save,
-            onCancel: _closeEditor,
           ),
         ],
         if (addable.isNotEmpty) ...[
@@ -579,7 +605,6 @@ class _CounterEditor extends StatelessWidget {
     required this.onDecrement,
     required this.onIncrement,
     required this.onSave,
-    required this.onCancel,
   });
 
   final String typeLabel;
@@ -588,7 +613,6 @@ class _CounterEditor extends StatelessWidget {
   final VoidCallback onDecrement;
   final VoidCallback onIncrement;
   final VoidCallback onSave;
-  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -626,20 +650,42 @@ class _CounterEditor extends StatelessWidget {
           ),
           SizedBox(
             width: 64,
-            child: TextField(
-              key: const Key('apiary-counter-edit-field'),
-              controller: controller,
-              enabled: !saving,
-              textAlign: TextAlign.center,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: TextStyle(
-                fontFamily: AppTheme.bodyFontFamily,
-                fontWeight: FontWeight.w700,
-                fontSize: 18,
-                color: brand.onHeroSurface,
+            // The type name already renders at the row's left (#393) — a
+            // second, redundant floating label on this 64px field truncates
+            // unreadably ("Hi..."). `InputDecoration.labelText` combined with
+            // `floatingLabelBehavior: never` looked like the fix (keep the
+            // label out of view but still reachable via
+            // `InputDecoration.labelText`'s semantics), but it isn't: once
+            // the field holds text — which it always does here, since
+            // [_CountersSectionState._openEditor] pre-fills it with the
+            // current value, even "0" — InputDecorator's `_shouldShowLabel`
+            // goes false (never-floating + non-empty content), which drives
+            // the label's `AnimatedOpacity` to 0. An opacity-0 subtree is
+            // EXCLUDED from the semantics tree by default in Flutter unless
+            // `alwaysIncludeSemantics` is set (not exposed via
+            // `InputDecoration`) — so the accessible name silently vanished
+            // the moment the editor opened, which is exactly what timed out
+            // the e2e's `getByLabel("Hives")` on PR #400 (#393 regression).
+            // An explicit [Semantics] label sidesteps InputDecorator's
+            // visibility-linked semantics entirely: it stays on the merged
+            // node regardless of what the (now label-less) decoration paints.
+            child: Semantics(
+              label: typeLabel,
+              child: TextField(
+                key: const Key('apiary-counter-edit-field'),
+                controller: controller,
+                enabled: !saving,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                style: TextStyle(
+                  fontFamily: AppTheme.bodyFontFamily,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  color: brand.onHeroSurface,
+                ),
+                decoration: const InputDecoration(isDense: true),
               ),
-              decoration: InputDecoration(labelText: typeLabel, isDense: true),
             ),
           ),
           IconButton(
