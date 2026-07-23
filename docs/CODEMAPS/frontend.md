@@ -20,7 +20,7 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
 StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per-tab FAB config
   in `_fabConfigByTab`, generalized #52 to a primary + optional secondary tonal FAB, an
   `onPressed(context)` action rather than only a route — Apiaries tab: primary "Add apiary"
-  + secondary "New todo" opening todo_quick_create_sheet.dart, no pre-filled apiary)
+  + secondary "New todo" routing to /todos/new (#389), no pre-filled apiary)
   ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ live (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
@@ -48,9 +48,9 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   │       │                             audit_log/sync_conflict_log tables, REST fallback when the
   │       │                             device has no slice; capped preview → "view all" opens the
   │       │                             history route; superseded LWW losses shown inline)
-  │       └ (FAB, not a route)          add-todo FAB on ApiaryDetailScreen (#52, FR-UX-2) opens
-  │                                     features/todos/todo_quick_create_sheet.dart pre-filled
-  │                                     with this apiary (read-only chip, no apiary picker)
+  │       └ (FAB, not a route)          add-todo FAB on ApiaryDetailScreen (#52/#389, FR-UX-2)
+  │                                     routes to /todos/new?apiaryId=..., pre-selecting this
+  │                                     apiary in the full form's own picker
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
   │                        activity list, same filters + apiary label per row)
   ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45/#47; org-wide
@@ -68,10 +68,11 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   ├ /todos                 TodosListScreen        features/todos      ◄ live (#53; org-wide
   │   │                    todo list — status/priority/due-date filters (combinable), sortable
   │   │                    by due date/priority/status, distinguishes open/overdue/done; own
-  │   │                    FAB (#52) opens todo_quick_create_sheet.dart, no pre-filled apiary;
+  │   │                    FAB (#52/#389) routes to /todos/new, no pre-filled apiary;
   │   │                    row tap → detail (#293))
-  │   ├ new                TodoFormScreen         features/todos (#293; standalone create route —
-  │   │                    direct nav/deep-link only, distinct from #52's quick-create sheet)
+  │   ├ new                TodoFormScreen         features/todos (#293/#389; the ONLY create
+  │   │                    entry point now — every FAB routes here, `?apiaryId=` optionally
+  │   │                    pre-selects the apiary picker)
   │   └ :id                TodoDetailScreen       features/todos (#293, FR-TD-1; every field
   │       │                read-only incl. resolved assignee/apiary names — todo_display.dart's
   │       │                `todoAssigneeLabel`/`todoApiaryLabel`; complete/reopen toggle in place;

@@ -53,6 +53,31 @@ void main() {
     expect(find.byKey(const Key('needs-fix-empty')), findsOneWidget);
   });
 
+  testWidgets(
+    'tapping Dismiss twice while the first dismiss is still in flight only '
+    'issues one delete (#380)',
+    (tester) async {
+      final store = _FakeRejectedStore([
+        _row(id: 'r1'),
+      ], executeDelay: const Duration(milliseconds: 50));
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('needs-fix-dismiss-r1')));
+      await tester.pump();
+      // Second tap lands while the first DELETE is still in flight.
+      await tester.tap(
+        find.byKey(const Key('needs-fix-dismiss-r1')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+
+      await tester.pumpAndSettle();
+      expect(store.executeCalls, 1);
+      expect(find.byKey(const Key('needs-fix-r1')), findsNothing);
+    },
+  );
+
   testWidgets('Fix deep-links to the offending apiary\'s edit screen', (
     tester,
   ) async {
@@ -128,10 +153,16 @@ Map<String, Object?> _row({
 /// shapes [SyncRejectedRepository] issues: the watch SELECT (list + count) and
 /// the DELETE-by-id. Re-emits watches on every delete so the list updates live.
 class _FakeRejectedStore implements LocalStoreEngine {
-  _FakeRejectedStore(this.rows);
+  _FakeRejectedStore(this.rows, {this.executeDelay});
 
   final List<Map<String, Object?>> rows;
   final _changes = StreamController<void>.broadcast();
+
+  /// Artificial delay before [execute] applies its mutation — lets a test
+  /// simulate a slow dismiss and tap twice before the first call resolves
+  /// (#380's double-dismiss regression guard).
+  final Duration? executeDelay;
+  int executeCalls = 0;
 
   @override
   Stream<List<Map<String, Object?>>> watch(
@@ -150,7 +181,9 @@ class _FakeRejectedStore implements LocalStoreEngine {
 
   @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
+    executeCalls++;
     if (sql.trim().toUpperCase().startsWith('DELETE FROM SYNC_REJECTED_OPS')) {
+      if (executeDelay != null) await Future<void>.delayed(executeDelay!);
       rows.removeWhere((r) => r['id'] == args[0]);
       _changes.add(null);
     } else {

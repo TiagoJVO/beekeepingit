@@ -6,7 +6,6 @@ import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
-import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -39,10 +38,10 @@ class _ExistingOrganizationController extends OrganizationController {
   );
 }
 
-/// A no-op [LocalStoreEngine] — [_FakeTodosRepository] overrides every
-/// method the quick-create sheet touches, so the superclass's store is
-/// never actually used. Mirrors todo_quick_create_sheet_test.dart's/
-/// add_activity_screen_test.dart's own identical fixture.
+/// A no-op [LocalStoreEngine] — [_FakeApiariesRepository] overrides every
+/// method the counters section touches, so the superclass's store is never
+/// actually used. Mirrors add_activity_screen_test.dart's own identical
+/// fixture.
 class _NoopLocalStore implements LocalStoreEngine {
   @override
   Stream<List<Map<String, Object?>>> watch(
@@ -88,28 +87,6 @@ class _FakeApiariesRepository extends ApiariesRepository {
   }
 }
 
-/// Records `create()` calls from the apiary detail page's own contextual
-/// "New todo" FAB (#52, FR-UX-2) — mirrors
-/// todo_quick_create_sheet_test.dart's own `_FakeTodosRepository`.
-class _FakeTodosRepository extends TodosRepository {
-  _FakeTodosRepository() : super(_NoopLocalStore());
-
-  final List<({String title, String? apiaryId})> created = [];
-
-  @override
-  Future<String> create({
-    required String title,
-    required String priority,
-    String? description,
-    String? dueDate,
-    String? assigneeId,
-    String? apiaryId,
-  }) async {
-    created.add((title: title, apiaryId: apiaryId));
-    return 'fake-${created.length - 1}';
-  }
-}
-
 /// Builds the full app (real router/shell included) as an authenticated,
 /// onboarded user with a fixed local apiaries list — the detail screen
 /// (#32) reads from the same apiariesStreamProvider the list screen does,
@@ -126,21 +103,18 @@ class _FakeTodosRepository extends TodosRepository {
 /// spinner rather than the loaded field — expected and asserted on, not a
 /// bug in the screen under test.
 ///
-/// [todosRepository] is only needed by the #52 add-todo FAB tests below — a
-/// real (un-overridden) todosRepositoryProvider would otherwise hang on the
-/// never-resolving PowerSync chain the moment that FAB's sheet is saved.
+/// The add-todo FAB test below only asserts navigation to the full form
+/// (#389) — it never saves, so unlike the retired #52 quick-create sheet's
+/// own tests, no `todosRepositoryProvider` override is needed here.
 Widget _buildApp({
   required List<Apiary> apiaries,
   Map<String, List<ApiaryCounter>> counters = const {},
-  TodosRepository? todosRepository,
   ApiariesRepository? apiariesRepository,
 }) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
-      if (todosRepository != null)
-        todosRepositoryProvider.overrideWith((ref) async => todosRepository),
       // The counters section (#346) writes counter edits/adds through
       // apiariesRepositoryProvider. Left un-overridden it's the real,
       // never-resolving PowerSync-backed repo (fine for the read-only badge
@@ -597,6 +571,12 @@ void main() {
               'a1': [
                 ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 3),
                 ApiaryCounter(apiaryId: 'a1', counterType: 'super', value: 6),
+                ApiaryCounter(
+                  apiaryId: 'a1',
+                  counterType: 'empty_hive',
+                  value: 1,
+                ),
+                ApiaryCounter(apiaryId: 'a1', counterType: 'swarm', value: 2),
               ],
             },
             apiariesRepository: _FakeApiariesRepository(),
@@ -611,10 +591,88 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('6 supers'), findsOneWidget);
-        // Every known type now has a row (hive + super), so nothing is addable.
+        // Every known type now has a row (hive + super + empty_hive + swarm),
+        // so nothing is addable.
         expect(
           find.byKey(const Key('apiary-detail-add-counter-button')),
           findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'empty-hive and swarm counters render their own tappable cards with '
+      'localized labels (#392)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            counters: const {
+              'a1': [
+                ApiaryCounter(
+                  apiaryId: 'a1',
+                  counterType: 'empty_hive',
+                  value: 1,
+                ),
+                ApiaryCounter(apiaryId: 'a1', counterType: 'swarm', value: 2),
+              ],
+            },
+            apiariesRepository: _FakeApiariesRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-detail-counter-empty_hive')),
+          findsOneWidget,
+        );
+        expect(find.text('1 empty hive'), findsOneWidget);
+        expect(
+          find.byKey(const Key('apiary-detail-counter-swarm')),
+          findsOneWidget,
+        );
+        expect(find.text('2 swarms'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the add-counter picker offers empty hives and swarms once hive and '
+      'super rows already exist (#392)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            counters: const {
+              'a1': [
+                ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 3),
+                ApiaryCounter(apiaryId: 'a1', counterType: 'super', value: 6),
+              ],
+            },
+            apiariesRepository: _FakeApiariesRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-counter-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-add-counter-option-empty_hive')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('apiary-add-counter-option-swarm')),
+          findsOneWidget,
         );
       },
     );
@@ -770,50 +828,32 @@ void main() {
       },
     );
 
-    testWidgets(
-      'tapping the add-todo option opens the quick-create sheet pre-filled '
-      'with this apiary (FR-UX-2 contextual create)',
-      (tester) async {
-        final repo = _FakeTodosRepository();
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [
-              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
-            ],
-            todosRepository: repo,
-          ),
-        );
-        await tester.pumpAndSettle();
+    testWidgets('tapping the add-todo option routes to the full create form, '
+        'pre-selecting this apiary (#389, FR-UX-2 contextual create)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-todo-button')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-detail-add-todo-button')));
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('todo-quick-create-apiary-chip')),
-          findsOneWidget,
-        );
-        expect(find.textContaining('Serra Norte'), findsWidgets);
-
-        await tester.enterText(
-          find.byKey(const Key('todo-quick-create-title-field')),
-          'Check queen',
-        );
-        await tester.tap(
-          find.byKey(const Key('todo-quick-create-save-button')),
-        );
-        await tester.pumpAndSettle();
-
-        expect(repo.created, hasLength(1));
-        expect(repo.created.single.title, 'Check queen');
-        expect(repo.created.single.apiaryId, 'a1');
-      },
-    );
+      // The full form (#293), not #52's now-retired quick-create sheet —
+      // its apiary picker shows this apiary already selected, resolved
+      // from the route's own `?apiaryId=a1` (app_router.dart's `todoNew`
+      // builder).
+      expect(find.byKey(const Key('todo-title-field')), findsOneWidget);
+      expect(find.text('New todo'), findsWidgets);
+      expect(find.text('Serra Norte'), findsOneWidget);
+    });
 
     testWidgets(
       'the existing add-activity FAB still navigates as before (regression '
