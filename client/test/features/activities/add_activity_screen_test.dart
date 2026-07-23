@@ -58,11 +58,18 @@ class _CreatedActivity {
 }
 
 class _UpdatedActivity {
-  _UpdatedActivity(this.id, this.type, this.occurredAt, this.attributes);
+  _UpdatedActivity(
+    this.id,
+    this.type,
+    this.occurredAt,
+    this.attributes,
+    this.journeyId,
+  );
   final String id;
   final String type;
   final String occurredAt;
   final Map<String, dynamic> attributes;
+  final String? journeyId;
 }
 
 /// Records `create()`/`update()`/`delete()` calls so the save/edit/delete
@@ -117,9 +124,10 @@ class _FakeActivitiesRepository extends ActivitiesRepository {
     required String type,
     required String occurredAt,
     required Map<String, dynamic> attributes,
+    required String? journeyId,
   }) async {
     if (throwOnUpdate) throw Exception('boom-update');
-    updated.add(_UpdatedActivity(id, type, occurredAt, attributes));
+    updated.add(_UpdatedActivity(id, type, occurredAt, attributes, journeyId));
   }
 
   @override
@@ -789,9 +797,10 @@ void main() {
   /// .byType(AppShell)))` pattern for asserting/driving navigation directly.
   Future<void> goToEditForm(
     WidgetTester tester,
-    _FakeActivitiesRepository repo,
-  ) async {
-    await tester.pumpWidget(_buildApp(repo: repo));
+    _FakeActivitiesRepository repo, {
+    _FakeJourneysRepository? journeysRepo,
+  }) async {
+    await tester.pumpWidget(_buildApp(repo: repo, journeysRepo: journeysRepo));
     await tester.pumpAndSettle();
     final router = GoRouter.of(tester.element(find.byType(AppShell)));
     router.go('/apiaries/a1/activities/act1/edit');
@@ -1887,6 +1896,282 @@ void main() {
         );
       },
     );
+
+    group('journey attachment on edit (#387)', () {
+      const existingHarvestWithJourney = Activity(
+        id: 'act1',
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 5},
+        journeyId: 'j1',
+      );
+
+      testWidgets(
+        'renders the stored journey — NOT an auto-match — even when a '
+        'DIFFERENT journey would otherwise be the auto-selected candidate',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [otherOpenJourney], // deliberately NOT the stored journey
+            journeysById: {'j1': openJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          expect(find.text('Spring Harvest Round'), findsOneWidget);
+          expect(find.text('Second Harvest Round'), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'picking a different journey shows the relink confirm dialog at '
+        'save time; cancel keeps the original link untouched',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney, otherOpenJourney],
+            journeysById: {'j1': openJourney, 'j2': otherOpenJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+          await tester.pumpAndSettle();
+          expect(find.text('Second Harvest Round'), findsOneWidget);
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-journey-relink-confirm-dialog')),
+            findsOneWidget,
+          );
+          expect(repo.updated, isEmpty);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-relink-confirm-cancel')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-journey-relink-confirm-dialog')),
+            findsNothing,
+          );
+          expect(repo.updated, isEmpty);
+        },
+      );
+
+      testWidgets(
+        'confirming a relink calls update() with the new journey_id',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney, otherOpenJourney],
+            journeysById: {'j1': openJourney, 'j2': otherOpenJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+          await tester.pumpAndSettle();
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('activity-journey-relink-confirm-confirm')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.pump(const Duration(milliseconds: 100));
+
+          expect(repo.updated, hasLength(1));
+          expect(repo.updated.single.journeyId, 'j2');
+        },
+      );
+
+      testWidgets(
+        'removing the journey attachment on edit shows the relink dialog '
+        '(journey -> no journey) and saves journey_id as null',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney],
+            journeysById: {'j1': openJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-remove-button')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('No journey attached'), findsOneWidget);
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-journey-relink-confirm-dialog')),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const Key('activity-journey-relink-confirm-confirm')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.pump(const Duration(milliseconds: 100));
+
+          expect(repo.updated, hasLength(1));
+          expect(repo.updated.single.journeyId, isNull);
+        },
+      );
+
+      testWidgets(
+        're-linking to a closed journey on edit shows the closed-journey '
+        'confirm dialog',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney, closedJourney],
+            journeysById: {'j1': openJourney, 'j3': closedJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('journey-picker-show-hidden-toggle')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('journey-picker-option-j3')));
+          await tester.pumpAndSettle();
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-closed-journey-confirm-dialog')),
+            findsOneWidget,
+          );
+          expect(repo.updated, isEmpty);
+        },
+      );
+
+      testWidgets(
+        'switching the activity type on edit detaches the stored journey '
+        '(no auto-match surprises, #387 design)',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney],
+            journeysById: {'j1': openJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          expect(find.text('Spring Harvest Round'), findsOneWidget);
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Generic').last);
+          await tester.pumpAndSettle();
+
+          expect(find.text('Spring Harvest Round'), findsNothing);
+          expect(find.text('No journey attached'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'saving without changing the journey attachment does not show the '
+        'relink dialog',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney],
+            journeysById: {'j1': openJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.pump(const Duration(milliseconds: 100));
+
+          expect(repo.updated, hasLength(1));
+          expect(repo.updated.single.journeyId, 'j1');
+        },
+      );
+    });
   });
 
   // --- Delete (#41, FR-AC-4) ---

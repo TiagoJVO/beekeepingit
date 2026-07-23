@@ -216,7 +216,7 @@ func createActivity(pool *pgxpool.Pool, verifier *ApiaryVerifier, journeyVerifie
 				return fmt.Errorf("insert activity: %w", err)
 			}
 
-			want := activityRowState{apiaryID: apiaryID.String(), typ: body.Type, occurredAt: body.OccurredAt, attributes: attrs}
+			want := activityRowState{apiaryID: apiaryID.String(), typ: body.Type, occurredAt: body.OccurredAt, attributes: attrs, journeyID: journeyIDStringFromPtr(journeyID)}
 			if err := writeActivityAuditLogTx(r.Context(), q, org, userID, id, history.ChangeCreate, now, activityRowState{}, want); err != nil {
 				return fmt.Errorf("write audit log: %w", err)
 			}
@@ -307,7 +307,12 @@ func updateActivity(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFu
 
 			var currentAttrs map[string]any
 			_ = json.Unmarshal(current.Attributes, &currentAttrs)
-			before := activityRowState{apiaryID: uuidString(current.ApiaryID), typ: current.Type, occurredAt: current.OccurredAt.Time.Format(dateLayout), attributes: currentAttrs}
+			// journeyID (#387): REST's updateActivity never CHANGES journey_id
+			// (still immutable on this path by design — #387's own
+			// asymmetry note), but before/want must still reflect the row's
+			// TRUE current link, not a blank default, so the audit_log
+			// baseline this handler writes stays accurate.
+			before := activityRowState{apiaryID: uuidString(current.ApiaryID), typ: current.Type, occurredAt: current.OccurredAt.Time.Format(dateLayout), attributes: currentAttrs, journeyID: journeyIDString(current.JourneyID)}
 
 			apiaryIDParam := current.ApiaryID
 			want = before
@@ -439,7 +444,7 @@ func deleteActivity(pool *pgxpool.Pool) http.HandlerFunc {
 
 			var currentAttrs map[string]any
 			_ = json.Unmarshal(current.Attributes, &currentAttrs)
-			before := activityRowState{apiaryID: uuidString(current.ApiaryID), typ: current.Type, occurredAt: current.OccurredAt.Time.Format(dateLayout), attributes: currentAttrs}
+			before := activityRowState{apiaryID: uuidString(current.ApiaryID), typ: current.Type, occurredAt: current.OccurredAt.Time.Format(dateLayout), attributes: currentAttrs, journeyID: journeyIDString(current.JourneyID)}
 			if err := writeActivityAuditLogTx(r.Context(), q, org, userID, id, history.ChangeDelete, now, before, activityRowState{}); err != nil {
 				return fmt.Errorf("write audit log: %w", err)
 			}
@@ -564,6 +569,44 @@ func journeyIDPtr(id pgtype.UUID) *string {
 	return &s
 }
 
+// journeyIDString converts a nullable pgtype.UUID journey_id column to the
+// activityRowState/audit convention (#387): "" means no journey attached,
+// otherwise the canonical UUID string.
+func journeyIDString(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	return uuidString(id)
+}
+
+// journeyIDStringFromPtr is journeyIDString's *uuid.UUID counterpart (#387),
+// for call sites that already parsed a request's journey_id into a
+// *uuid.UUID (createActivity, applyActivityOp's materializing branch)
+// rather than reading it back off a stored row.
+func journeyIDStringFromPtr(id *uuid.UUID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
+}
+
+// journeyIDParamFromString is journeyIDString's inverse (#387) — used by
+// applyActivityOp's LWW-update branch, where mergeActivityOp has already
+// computed the desired activityRowState.journeyID as a plain string and it
+// must be re-encoded as the pgtype.UUID param UpdateActivitySync expects.
+// "" (no journey) maps to an invalid/NULL pgtype.UUID, exactly like
+// journeyIDParam's own nil-*uuid.UUID case.
+func journeyIDParamFromString(s string) (pgtype.UUID, error) {
+	if s == "" {
+		return pgtype.UUID{}, nil
+	}
+	parsed, err := uuid.Parse(s)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return pgtype.UUID{Bytes: parsed, Valid: true}, nil
+}
+
 // attributesEqual compares two decoded attribute maps for the idempotent-
 // replay content check — a shallow-enough comparison since every attribute
 // value is a JSON scalar (string/number/bool), never a nested
@@ -593,7 +636,12 @@ type activityRowState struct {
 	typ        string
 	occurredAt string
 	attributes map[string]any
-	deletedAt  pgtype.Timestamptz
+	// journeyID (#387): "" means no journey attached, otherwise the
+	// canonical UUID string — participates in LWW compare/audit/conflict
+	// like every other mutable column, closing the silent-drop gap this
+	// issue's own warning describes.
+	journeyID string
+	deletedAt pgtype.Timestamptz
 }
 
 // fields projects the content columns history.ComputeChange diffs —
@@ -608,17 +656,18 @@ func (a activityRowState) fields() map[string]any {
 		"type":        a.typ,
 		"occurred_at": a.occurredAt,
 		"attributes":  a.attributes,
+		"journey_id":  a.journeyID,
 	}
 }
 
 // sameAs reports whether a and b represent the identical row content,
 // INCLUDING tombstone state — sync.go's applyActivityOp LWW compare (#40/
-// #41, mirrors apiaries' rowState.sameAs) uses this to distinguish an
+// #41/#387, mirrors apiaries' rowState.sameAs) uses this to distinguish an
 // idempotent re-send (no domain change, no conflict log entry) from a
 // genuine LWW loss.
 func (a activityRowState) sameAs(b activityRowState) bool {
 	return a.apiaryID == b.apiaryID && a.typ == b.typ && a.occurredAt == b.occurredAt &&
-		attributesEqual(a.attributes, b.attributes) && a.deletedAt.Valid == b.deletedAt.Valid
+		attributesEqual(a.attributes, b.attributes) && a.journeyID == b.journeyID && a.deletedAt.Valid == b.deletedAt.Valid
 }
 
 // writeActivityAuditLogTx appends one history.md §3 row for a REST create,

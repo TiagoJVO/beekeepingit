@@ -71,12 +71,13 @@ class Activity {
 /// write-back (FR-TEN-2: "each activity is recorded against the user who
 /// performed it"), never from client-supplied data, so a spoofed attribution
 /// is not even representable on the wire. `journey_id` (D-21/#46) IS written
-/// by [create] (optionally — see its own doc) now that the activity-form
-/// picker exists; it is set once at creation and never changed by [update]
-/// (mirrors `services/activities/api/write.go`'s updateActivity, which
-/// likewise never touches it — the server enforces this too, so a client
-/// that somehow tried to change it on PATCH would have the field silently
-/// ignored server-side).
+/// by [create] (optionally — see its own doc) — and, as of #387, [update]
+/// too: linking/moving/removing an activity's journey on edit is now a
+/// supported action (add_activity_screen.dart's journey attachment section
+/// renders in edit mode, not just create). This reverses the immutability
+/// this class used to document: the sync-side server change (#387,
+/// services/activities/api/sync.go's mergeActivityOp) had to ship FIRST, or
+/// a queued journey_id change would have been silently dropped.
 ///
 /// `apiary_id` is likewise never written by [update] (#40): the edit UI
 /// never exposes moving an activity to a different apiary, so every local
@@ -159,39 +160,52 @@ class ActivitiesRepository {
         .map((rows) => rows.isEmpty ? null : _fromRow(rows.first));
   }
 
-  /// Updates an existing activity's type/date/attributes (#40, FR-AC-3).
-  /// [attributes] must already be the exact per-[type] attribute bag,
-  /// validated client-side the same way [create]'s callers do (D-12) — the
-  /// edit form always resubmits the COMPLETE current state (never a sparse
-  /// per-field diff), so this always sets every mutable column in one SQL
-  /// UPDATE — matching services/activities/api/sync.go's own "put/patch are
-  /// both a full resubmit" convention for this table (mergeActivityOp's doc
-  /// comment). apiary_id is deliberately excluded from the SET clause (this
-  /// class's own doc comment).
+  /// Updates an existing activity's type/date/attributes/journey (#40/#387,
+  /// FR-AC-3). [attributes] must already be the exact per-[type] attribute
+  /// bag, validated client-side the same way [create]'s callers do (D-12) —
+  /// the edit form always resubmits the COMPLETE current state (never a
+  /// sparse per-field diff), so this always sets every mutable column in one
+  /// SQL UPDATE — matching services/activities/api/sync.go's own "put/patch
+  /// are both a full resubmit" convention for this table (mergeActivityOp's
+  /// doc comment). apiary_id is deliberately excluded from the SET clause
+  /// (this class's own doc comment) — the edit UI never exposes moving an
+  /// activity to a different apiary. [journeyId] IS included, always
+  /// (#387) — required, not optional, for the same reason journeys_repository
+  /// .dart's own `update`'s `defaultAttributes` param is required: an
+  /// omitted value here would silently WIPE the stored link on every save
+  /// rather than preserve it, so every caller must explicitly pass the
+  /// journey attachment section's current effective selection (null for "no
+  /// journey", same as [create]'s own convention).
   Future<void> update(
     String id, {
     required String type,
     required String occurredAt,
     required Map<String, dynamic> attributes,
+    required String? journeyId,
   }) async {
     // #378: skip the write entirely when nothing actually changed (e.g.
     // opening the edit form and saving without touching anything) —
     // otherwise this still bumps updated_at, queuing a sync op whose diffed
     // payload carries only the changed columns (PowerSync uploads a column
     // diff, not always this full row), which the server used to reject
-    // outright ("occurred_at is required", "type is required").
+    // outright ("occurred_at is required", "type is required"). journeyId
+    // (#387) participates in this no-op check too — a journey-only change
+    // must not be masked by unchanged type/occurred_at/attributes, and vice
+    // versa an unchanged journey must not force a write when nothing else
+    // changed either.
     final current = await getById(id);
     final encodedAttributes = jsonEncode(attributes);
     if (current != null &&
         current.type == type &&
         current.occurredAt == occurredAt &&
+        current.journeyId == journeyId &&
         jsonEncode(current.attributes) == encodedAttributes) {
       return;
     }
     await _store.execute(
-      'UPDATE $activitiesTable SET type = ?, occurred_at = ?, attributes = ?, updated_at = ? '
+      'UPDATE $activitiesTable SET type = ?, occurred_at = ?, attributes = ?, journey_id = ?, updated_at = ? '
       'WHERE id = ?',
-      [type, occurredAt, encodedAttributes, _nowIso(), id],
+      [type, occurredAt, encodedAttributes, journeyId, _nowIso(), id],
     );
   }
 

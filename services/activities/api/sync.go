@@ -115,6 +115,29 @@ func checkBatchSize(w http.ResponseWriter, r *http.Request, batch Batch) bool {
 	return false
 }
 
+// journeyIDKeyPresent reports whether raw's top-level JSON object actually
+// carries a `"journey_id"` key at all — regardless of its value, INCLUDING
+// an explicit `null` (#387's tri-state wire semantics). This is the ONLY way
+// to distinguish "the client didn't touch this column" (key absent —
+// PowerSync's patch opData carries only changed columns) from "the client
+// explicitly cleared it" (key present, value `null`): both unmarshal
+// activityData.JourneyID (a `*string`) to the SAME nil pointer, so that
+// field alone can never tell the two apart. Same tri-state concept
+// journeys' #385 default_attributes handles, though that field's
+// json.RawMessage type lets a plain length check do the job — journey_id's
+// `*string` wire type needs this explicit map-based presence check instead.
+func journeyIDKeyPresent(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return false
+	}
+	_, present := m["journey_id"]
+	return present
+}
+
 // resolveApiaryOwnership verifies every DISTINCT, well-formed apiary_id in
 // the batch up front — **de-duplicated** (HIGH/MEDIUM review fix: N ops
 // against the same apiary cost exactly ONE upstream call, not N) and
@@ -561,7 +584,7 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned, ownedJourne
 		}); err != nil {
 			return OpResult{}, err
 		}
-		want := activityRowState{apiaryID: apiaryID.String(), typ: *data.Type, occurredAt: *data.OccurredAt, attributes: attrs}
+		want := activityRowState{apiaryID: apiaryID.String(), typ: *data.Type, occurredAt: *data.OccurredAt, attributes: attrs, journeyID: journeyIDStringFromPtr(journeyID)}
 		if err := writeActivityAuditLog(ctx, q, org, userID, op, history.ChangeCreate, activityRowState{}, want); err != nil {
 			return OpResult{}, err
 		}
@@ -573,9 +596,14 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned, ownedJourne
 	current := activityRowState{
 		apiaryID: uuidString(existing.ApiaryID), typ: existing.Type,
 		occurredAt: existing.OccurredAt.Time.Format(dateLayout), attributes: existingAttrs,
+		journeyID: journeyIDString(existing.JourneyID),
 		deletedAt: existing.DeletedAt,
 	}
-	want, err := mergeActivityOp(current, op, data)
+	// journey_id's tri-state presence (#387, journeyIDKeyPresent's own doc
+	// comment) — delete ops carry no data at all, so there is no key to
+	// detect there; mergeActivityOp's own delete branch never consults it.
+	journeyIDPresent := op.Op != "delete" && journeyIDKeyPresent(op.Data)
+	want, err := mergeActivityOp(current, op, data, journeyIDPresent)
 	if err != nil {
 		return OpResult{}, err
 	}
@@ -594,12 +622,17 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned, ownedJourne
 		if err != nil {
 			return OpResult{}, err
 		}
+		wantJourneyID, err := journeyIDParamFromString(want.journeyID)
+		if err != nil {
+			return OpResult{}, err
+		}
 		if err := q.UpdateActivitySync(ctx, sqlcgen.UpdateActivitySyncParams{
 			OrganizationID: org, ID: pgID,
 			ApiaryID:   pgtype.UUID{Bytes: apiaryUUID, Valid: true},
 			Type:       want.typ,
 			OccurredAt: pgtype.Date{Time: occurredAtParsed, Valid: true},
 			Attributes: wantAttrsJSON,
+			JourneyID:  wantJourneyID,
 			UpdatedAt:  incomingTS,
 			DeletedAt:  want.deletedAt,
 		}); err != nil {
@@ -628,7 +661,7 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned, ownedJourne
 }
 
 // mergeActivityOp computes the row an op would produce, given the current
-// stored state (#40/#41, mirrors apiaries' mergeOp). delete sets the
+// stored state (#40/#41/#387, mirrors apiaries' mergeOp). delete sets the
 // tombstone and otherwise leaves the row's content untouched (§4.5). put
 // and patch are both a FULL resubmit of type/occurred_at/attributes
 // (validateActivityOp's doc comment — activities' edit form always sends
@@ -638,7 +671,18 @@ func applyActivityOp(ctx context.Context, q *sqlcgen.Queries, owned, ownedJourne
 // put is a full replace and so implicitly UNDELETES (mirrors apiaries' own
 // "put" convention — a fresh create/resend represents the row's live
 // content), while patch preserves whatever current.deletedAt already was.
-func mergeActivityOp(current activityRowState, op Op, data activityData) (activityRowState, error) {
+//
+// journeyID (#387) is the one column with GENUINE tri-state wire semantics
+// (journeyIDKeyPresent's own doc comment) — journeyIDPresent (the caller's
+// pre-computed presence check over the RAW op.Data, since data.JourneyID's
+// *string can't distinguish absent from explicit null) drives it: key
+// present with a UUID re-links; key present as `null` clears; key absent on
+// a PATCH keeps current.journeyID (an edit that doesn't touch the
+// attachment — the common case); key absent on a PUT clears too — a full
+// resubmit that doesn't mention journey_id represents "this activity has no
+// journey", exactly matching create's own convention (a create body with no
+// journey_id inserts NULL, write.go's createActivity).
+func mergeActivityOp(current activityRowState, op Op, data activityData, journeyIDPresent bool) (activityRowState, error) {
 	if op.Op == "delete" {
 		current.deletedAt = pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
 		return current, nil
@@ -661,6 +705,7 @@ func mergeActivityOp(current activityRowState, op Op, data activityData) (activi
 		typ:        current.typ,
 		occurredAt: current.occurredAt,
 		attributes: attrs,
+		journeyID:  current.journeyID,
 		deletedAt:  current.deletedAt,
 	}
 	if data.ApiaryID != nil {
@@ -671,6 +716,20 @@ func mergeActivityOp(current activityRowState, op Op, data activityData) (activi
 	}
 	if data.OccurredAt != nil {
 		want.occurredAt = *data.OccurredAt
+	}
+	switch {
+	case journeyIDPresent && data.JourneyID != nil:
+		parsed, err := uuid.Parse(*data.JourneyID)
+		if err != nil {
+			return activityRowState{}, err
+		}
+		want.journeyID = parsed.String()
+	case journeyIDPresent: // present, value null -> explicit clear
+		want.journeyID = ""
+	case op.Op == "put": // absent on a full resubmit -> clear (create's own convention)
+		want.journeyID = ""
+	default: // absent on a patch -> keep the stored link untouched
+		want.journeyID = current.journeyID
 	}
 	if op.Op == "put" {
 		want.deletedAt = pgtype.Timestamptz{}
@@ -724,6 +783,7 @@ func logActivityConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUI
 		"apiary_id":   uuidString(stored.ApiaryID),
 		"type":        stored.Type,
 		"occurred_at": stored.OccurredAt.Time.Format(dateLayout),
+		"journey_id":  journeyIDPtr(stored.JourneyID),
 		"updated_at":  stored.UpdatedAt.Time,
 		"deleted_at":  timePtr(stored.DeletedAt),
 	})
