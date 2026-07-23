@@ -1256,23 +1256,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get addTodo => 'Nova tarefa';
 
   @override
-  String get todoQuickCreateTitle => 'Nova tarefa';
-
-  @override
-  String get todoDueDateLabel => 'Prazo';
-
-  @override
-  String todoQuickCreateForApiary(String apiaryName) {
-    return 'Para $apiaryName';
-  }
-
-  @override
-  String get todoQuickCreateCancelAction => 'Cancelar';
-
-  @override
-  String get todoCreatedConfirmation => 'Tarefa criada';
-
-  @override
   String get newTodoTitle => 'Nova tarefa';
 
   @override

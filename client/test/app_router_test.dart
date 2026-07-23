@@ -6,8 +6,10 @@ import 'package:beekeepingit_client/features/activities/activities_repository.da
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
+import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -212,4 +214,61 @@ void main() {
 
     expect(find.byKey(const Key('journey-stats-filter-bar')), findsOneWidget);
   });
+
+  testWidgets(
+    '/todos/new?apiaryId=a1 builds TodoFormScreen with that apiary already '
+    'selected (#389, preserving the create-from-apiary flow #52\'s '
+    'quick-create sheet used to carry)',
+    (tester) async {
+      // The full form's content exceeds the default 800x600 test viewport
+      // (todo_form_screen_test.dart's own note).
+      tester.view.physicalSize = const Size(1200, 3600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            isAuthenticatedProvider.overrideWithValue(true),
+            deviceLocationServiceProvider.overrideWithValue(
+              const FakeDeviceLocationService(),
+            ),
+            apiariesStreamProvider.overrideWith(
+              (ref) => Stream.value(const [
+                Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4),
+              ]),
+            ),
+            todosStreamProvider.overrideWith(
+              (ref) => Stream.value(const <Todo>[]),
+            ),
+            // Kept hermetic (#44's own convention) — the form's assignee
+            // picker would otherwise attempt a real fetch.
+            memberNamesProvider.overrideWith(
+              (ref) async => const <String, String>{},
+            ),
+            profileProvider.overrideWith(() => _FixedProfileController(true)),
+            organizationProvider.overrideWith(
+              () => _FixedOrganizationController(true),
+            ),
+          ],
+          child: const BeekeepingitApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final router = GoRouter.of(tester.element(find.byType(AppShell)));
+      router.go('/todos/new?apiaryId=a1');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('todo-title-field')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('todo-apiary-option-a1')),
+          matching: find.byIcon(Icons.radio_button_checked),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 }
