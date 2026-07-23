@@ -324,7 +324,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'new',
                     name: 'todoNew',
-                    builder: (context, state) => const TodoFormScreen(),
+                    // ?apiaryId= (#389) preserves the create-from-apiary
+                    // flow that used to go through #52's quick-create
+                    // sheet — see apiary_detail_screen.dart's own "New
+                    // todo" action, which now routes here instead of
+                    // opening that sheet.
+                    builder: (context, state) => TodoFormScreen(
+                      initialApiaryId: state.uri.queryParameters['apiaryId'],
+                    ),
                   ),
                   // Todo detail (#293, FR-TD-1, FR-HIS-1): every field,
                   // read-only, plus a complete/reopen toggle — reached by
