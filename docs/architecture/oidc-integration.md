@@ -64,12 +64,16 @@ profile (name/locale) during onboarding (FR-ONB-1), so it does **not** depend on
 claims; add a `locale` scope mapping only if IdP-sourced locale is later wanted (NFR-I18N) —
 optional.
 
-> **`email_verified` caveat (security).** Authentik's default email mapping hardcodes
-> `email_verified: true` (cosmetic). The invitation accept-on-login gate ([auth.md §8.7](auth.md))
-> checks it; with **registration disabled** and admin/invite-provisioned accounts, the
-> registration-disabled stance is the **actual** control. Real verification (a mapping reflecting
-> true state) + **password reset/recovery** flow + SMTP are **EPIC-14** ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)).
-> Documented — not silently weakened.
+> **`email_verified` is REAL state since #361** ([auth.md §8.10](auth.md), ADR-0019). Authentik's
+> built-in email mapping hardcodes the claim (`true` before upstream 2025.10, `false` on the
+> pinned 2026.5.4 — either way cosmetic; the hardcoded `false` also meant the invitation
+> accept-on-login gate ([auth.md §8.7](auth.md)) could never fire live). The provider now uses a
+> **custom scope mapping** emitting the `email_verified` **user attribute**, which a login-time
+> email-verification stage in the authentication flow sets on completion of the emailed one-time
+> link; an email change through the user-settings flow resets it. Registration stays disabled
+> (defense in depth). **Password reset/recovery** flow remains **EPIC-14**
+> ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) — SMTP, its prerequisite, is now in
+> place (`AUTHENTIK_EMAIL__*` from the umbrella's config Secret; dev/CI: the `mailpit` sink).
 
 ## 6. Backend contract (Go services)
 
@@ -125,12 +129,17 @@ optional.
   (delivered via `blueprints.configMaps` → worker file-discovery). Set
   `authentik.existingSecret.secretName: beekeepingit-authentik-config`.
 - **Gateway** — `auth.` host → `authentik-server:80`; `app.` host routes unchanged bar the rename.
-- **Blueprint** — provider + application + `platform-operator` group + seed user (validated to apply
+- **Blueprint** — provider + application + `platform-operator` group + seed users (validated to apply
   clean). `version: 1`, timedelta validities, **object-list `redirect_uris`** with `matching_mode: regex`.
+  Since #361 it also declares the custom `email` scope mapping (real `email_verified`), the
+  login-time email-verification stages/policies, and the email-change-resets-verification policy —
+  see [auth.md §8.10](auth.md).
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
-  `redirect_uris` object form, the `email_verified` mapping.
+  `redirect_uris` object form, the `email_verified` mapping (now blueprint-owned, #361 — a version
+  bump must not resurrect the managed built-in on the provider), the default authentication /
+  user-settings flows' stage-binding shapes the #361 entries splice into.
 - **CI** — `helm-e2e`: timeout 20→30m, install `--timeout` →15m, apply the Authentik `HelmRelease`
   - `rollout status` before `helm test`; `helm test` hook curls `/-/health/ready/`. `helm-ci`: swap
     the `codecentric` repo add for the `authentik` repo where a lint/template needs it.
