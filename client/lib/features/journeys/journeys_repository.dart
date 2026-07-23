@@ -211,18 +211,36 @@ class JourneysRepository {
     required Map<String, dynamic> defaultAttributes,
   }) async {
     final now = _nowIso();
-    await _store.execute(
-      'UPDATE $journeysTable SET name = ?, main_activity_type = ?, status = ?, default_attributes = ?, updated_at = ? '
-      'WHERE id = ?',
-      [
-        name,
-        mainActivityType,
-        status,
-        _encodeDefaultAttributes(defaultAttributes),
-        now,
-        id,
-      ],
+    // #378: skip the journeys-table write when name/main_activity_type/
+    // status/default_attributes haven't actually changed (e.g. [close]
+    // re-closing an already-closed journey, or an edit form saved without
+    // changes) — otherwise this still bumps updated_at, queuing a sync op
+    // whose diffed payload carries only the changed columns (PowerSync
+    // uploads a column diff, not always this full row), which the server
+    // used to reject outright ("name is required", "main_activity_type...
+    // invalid"). The plan-item diffing below is already change-scoped and
+    // unaffected. default_attributes (#385) is compared via its encoded
+    // form (mirrors activities_repository.dart's own #378 fix for
+    // `attributes`) since Map equality is reference-based, not
+    // content-based.
+    final current = await getById(id);
+    final encodedDefaultAttributes = _encodeDefaultAttributes(
+      defaultAttributes,
     );
+    final journeyRowChanged =
+        current == null ||
+        current.name != name ||
+        current.mainActivityType != mainActivityType ||
+        current.status != status ||
+        _encodeDefaultAttributes(current.defaultAttributes) !=
+            encodedDefaultAttributes;
+    if (journeyRowChanged) {
+      await _store.execute(
+        'UPDATE $journeysTable SET name = ?, main_activity_type = ?, status = ?, default_attributes = ?, updated_at = ? '
+        'WHERE id = ?',
+        [name, mainActivityType, status, encodedDefaultAttributes, now, id],
+      );
+    }
 
     final existing = await _store.getAll(
       'SELECT id, apiary_id FROM $journeyPlanItemsTable WHERE journey_id = ?',

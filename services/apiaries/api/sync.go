@@ -309,8 +309,16 @@ func validateCounterOp(i int, op Op) []problem.FieldError {
 	} else if !isKnownCounterType(*data.CounterType) {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.counter_type", Code: "invalid", Message: "counter_type must be one of the known counter types"})
 	}
+	// value is required on put (a fresh row needs a value); a patch may omit
+	// it — PowerSync uploads only the columns that actually changed, and a
+	// save that doesn't change the value (or changes only, say, an unrelated
+	// column bundled in the same row) legitimately produces a value-less
+	// patch. applyCounterOp treats a value-less patch as an idempotent no-op
+	// rather than a rejection (#378).
 	if data.Value == nil {
-		errs = append(errs, problem.FieldError{Field: prefix + ".data.value", Code: "required", Message: "value is required"})
+		if op.Op == "put" {
+			errs = append(errs, problem.FieldError{Field: prefix + ".data.value", Code: "required", Message: "value is required"})
+		}
 	} else if *data.Value < 0 {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.value", Code: "out_of_range", Message: "value must be >= 0"})
 	}
@@ -541,17 +549,30 @@ func applyCounterOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, us
 			return OpResult{}, err
 		}
 	}
-	// validateOp already guarantees these are non-nil/well-formed by the time
-	// apply runs (validate-first, sync.md §6.2) — applyBatch never reaches
-	// apply on a batch that failed validate.
+	// validateCounterOp guarantees apiary_id/counter_type are non-nil/
+	// well-formed by the time apply runs (validate-first, sync.md §6.2) for
+	// EVERY op kind — they're the op's identity, always present regardless
+	// of put vs patch. These guards are still defense in depth (#378): a
+	// nil here would otherwise panic the service on deref.
+	if data.ApiaryID == nil || data.CounterType == nil {
+		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+	}
 	apiaryID, err := uuid.Parse(*data.ApiaryID)
 	if err != nil {
 		return OpResult{}, err
 	}
 	pgApiaryID := pgtype.UUID{Bytes: apiaryID, Valid: true}
 	counterType := *data.CounterType
-	incomingValue := *data.Value
 	incomingTS := pgtype.Timestamptz{Time: op.UpdatedAt, Valid: true}
+
+	// value is optional on a patch (#378 — see validateCounterOp): a
+	// value-less patch carries nothing for this apply to act on, so it's a
+	// no-op rather than a write. This can only happen for op.Op == "patch";
+	// validateCounterOp requires value on put.
+	if data.Value == nil {
+		return OpResult{ID: op.ID, Op: op.Op, Result: resultApplied}, nil
+	}
+	incomingValue := *data.Value
 
 	// Tenancy guard (FR-TEN-2, CRITICAL fix): the client-supplied apiary_id
 	// must actually belong to the caller's org BEFORE any counter data is
