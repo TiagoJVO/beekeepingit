@@ -190,6 +190,8 @@ void main() {
           hivesHarvested: 6,
           honeyCollectedKg: 9,
           averageSupersPerHive: 2,
+          hivesWorked: 6,
+          hivesPlanned: 20,
         ),
       );
 
