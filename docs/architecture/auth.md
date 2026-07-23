@@ -435,7 +435,8 @@ sequenceDiagram
 
 The remaining open items in [Q-AUTH](../../requirements/open-questions.md) (beyond the D-7 mechanism)
 are settled by **using the provider's built-in flows** plus the token policy above — **no custom auth
-build**. Under Authentik, **email verification + SMTP are built (#361, §8.10)**;
+build**. Under Authentik, **email verification + SMTP (#361, §8.10) and self-service registration
+(#366, §8.11) are built**;
 recovery/password-reset remains **provider flow config in EPIC-14**; the fixed contract values are in
 [oidc-integration.md §5, §7](oidc-integration.md#7-client-contract-flutter-web-pwa):
 
@@ -443,7 +444,7 @@ recovery/password-reset remains **provider flow config in EPIC-14**; the fixed c
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Email verification**        | **Built (#361, §8.10):** a login-time **email stage** in the authentication flow gates unverified, non-superuser users on an emailed one-time link; completion stamps the `email_verified` user attribute, and a **custom scope mapping** emits that genuine state as the `email_verified` claim (replacing the built-in's hardcoded constant — `true` before Authentik 2025.10, `false` since, either way cosmetic). SMTP is wired via `AUTHENTIK_EMAIL__*` (dev/CI: the Mailpit sink; prod: a real relay, credentials as infra config). App flows gate on `email_verified` (§3.4) — it now means something. |
 | **Password reset**            | An **Authentik recovery flow** (self-service, email link) — **not built in v1**; provisioned in EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) with SMTP. No recovery flow ships by default.                                                                                                                                                                                                                                                                                                                                                                                             |
-| **Registration**              | Credential auth via the provider; **registration is disabled** (no app-bound enrollment flow). **First login** triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on.                                                                                                                                                                                                                                                                                                                           |
+| **Registration**              | **Built (#366, §8.11):** self-service username/email/password **enrollment flow** at the provider, linked from the login page. A fresh registration is held **unverified** on an emailed one-time link (§8.10's machinery) — no session, and no invitation match, before inbox control is proven; "registration disabled" is no longer the control, the **real `email_verified` signal is**. **First login** (unchanged) triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on.                 |
 | **Account / password change** | The client links out to Authentik's user settings — **`OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings`** (a config value, not a derived path), replacing Keycloak's `/account` console.                                                                                                                                                                                                                                                                                                                                                                                         |
 | **Access-token lifetime**     | **short, ≈ 15 min** (limits exposure; forces refresh). Blueprint validity **`minutes=15`** (Django-timedelta string). _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | **Refresh / SSO session**     | **≈ 30 days** (field convenience). Blueprint validity **`days=30`**. _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -494,7 +495,7 @@ security review). The middleware here is also the **producer** of the `organizat
 | **PowerSync disconnect on logout**              | Same `logout()` invalidates [`powerSyncProvider`](../../client/lib/core/sync/powersync_service.dart) (its existing `onDispose` already calls `disconnect()`+`close()`) so a second user on shared hardware doesn't see stale replicated rows before the next sync                                                                                                                                                                                                                                                                                                  |
 | **Defensive local-session sweep**               | `logout()` clears all local session-storage keys (PKCE verifier, OAuth state, tokens), not just the refresh token, covering an abandoned mid-flow login                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **`platform-operator` group**                   | The Authentik **blueprint** ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)) declares a `platform-operator` **group** — unassigned, ops-only, per §3.3 (**not** an app role, and **not** literal `admin`/`user` roles — see the AC note below)                                                                                                                                                                                                                           |
-| **Email verification (mapping)**                | ~~Cosmetic default mapping~~ → **real state since #361 (§8.10)**: a custom scope mapping emits the `email_verified` **user attribute** the login-time verification flow sets; registration stays disabled (defense in depth, no longer the only control)                                                                                                                                                                                                                                                                                                           |
+| **Email verification (mapping)**                | ~~Cosmetic default mapping~~ → **real state since #361 (§8.10)**: a custom scope mapping emits the `email_verified` **user attribute** the login-time verification flow sets; self-service registration (since #366, §8.11) reuses the same stages, so the attribute's only writer stays the restored-flow-token stamp                                                                                                                                                                                                                                             |
 | **Token lifetimes (blueprint validities)**      | Provider validity **`minutes=15`** (access) / **`days=30`** (refresh) in the blueprint (Django-timedelta strings) — the §7 proposed defaults, now concrete values; still subject to EPIC-14 security sign-off                                                                                                                                                                                                                                                                                                                                                      |
 | **Branding (narrow scope)**                     | Blueprint application title/branding; a custom login-flow theme is **out of scope** (design-owned effort, follow-up if needed)                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | **TLS to the IdP**                              | Local k3d dev serves the auth host over HTTPS at the gateway (`auth.beekeepingit.local:8443`, self-signed); some redirect URIs still allow plain `http://localhost` for dev. Trusted-CA TLS is EPIC-14                                                                                                                                                                                                                                                                                                                                                             |
@@ -679,8 +680,11 @@ makes the claim mean something and revives that gate.
   attribute junk fails closed. The Go side already parsed the claim fail-closed
   (`servicetemplate/authn`); `TestMiddleware_EmailVerifiedClaim_FailsClosed` now pins that a
   missing/non-boolean claim parses as unverified.
-- **Verification happens at login, for existing accounts.** Registration is disabled and accounts
-  are invite/admin-provisioned, so verification can't ride an enrollment flow. Instead the default
+- **Verification happens at login, for existing accounts.** When #361 shipped, registration was
+  disabled and accounts were invite/admin-provisioned, so verification couldn't ride an enrollment
+  flow. (#366 has since added a self-service enrollment flow that **rides these same stages** —
+  §8.11 — and this login-time gate doubles as its abandoned-registration recovery path: the next
+  login attempt re-sends a fresh link.) Instead the default
   authentication flow gains an **email stage** (order 40) + **user_write stage** (order 45), both
   policy-gated at stage time: an unverified, non-superuser login is held on an emailed one-time
   link (Authentik's built-in account-confirmation template, 30-min token), and the write stage
@@ -760,6 +764,91 @@ makes the claim mean something and revives that gate.
     (still verified, no re-verification email). A workflow step additionally
     delivers a probe message through Authentik's configured Django email path (`ak shell` in the
     worker) and asserts Mailpit received it, isolating SMTP wiring from flow logic.
+
+## 8.11 As built (#366) — self-service registration (verified-email gated)
+
+Completes the registration story for users who don't use Google federation (FR-ONB-1/2/3,
+FR-AU-1, NFR-SEC-1, NFR-I18N-1, NFR-TST-1): sign up with username/email/password at the IdP,
+prove inbox control, then onboard exactly like any first sign-in. §7's "Registration" row is
+updated accordingly — "registration disabled" is **no longer the control**; the control is the
+**real `email_verified` signal** #361 built (§8.10): nothing issues a session, and nothing
+matches an invitation, before the emailed one-time link is used.
+
+- **Enrollment flow, config-as-code.** The blueprint
+  ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml))
+  declares flow `beekeepingit-enrollment` (designation `enrollment`, `require_unauthenticated`):
+  a prompt stage (username / email / password / repeat, with a **length-only ≥ 12** password
+  policy — deterministic static rule; HIBP/zxcvbn deliberately off, and the final strength
+  policy is EPIC-14 [#15](https://github.com/TiagoJVO/beekeepingit/issues/15) security-review
+  scope) → `user_write` in `always_create` mode → the **same email stage** as §8.10's login-time
+  verification (safe to share: at the pinned 2026.5.4 each send mints a flow token whose
+  identifier embeds a fresh uuid4, so enrollment and login-time links never collide) → the
+  **same policy-gated `user_write` stamp** (`attributes.email_verified: true` only on
+  restored-flow-token proof) → the default user-login stage (session behavior identical to a
+  normal login). Surfaced by setting the default identification stage's `enrollment_flow`: the
+  login page renders "Need an account? Sign up.", and at 2026.5.4 that link **preserves the
+  executor's stored `?next`** (`reverse_with_qs`), so a registration started from the app's
+  OIDC redirect finishes **back in the app**, straight into onboarding — the client keeps its
+  single sign-in action and only its login copy changed (pointing new users at that link).
+- **Unverified at creation, guaranteed.** The prompt stage's declared field list is the write
+  boundary: the prompt serializer only admits declared `field_key`s, and `user_write` blocks
+  `groups`/`pk` writes and discards unknown keys (both source-verified at the pinned version).
+  No declared field is an `attributes.*` key, so a registrant cannot inject
+  `attributes.email_verified` (the #170 shape at enrollment); the upn policy strips it
+  defensively anyway. The account is created **active but unverified** — deliberately not the
+  upstream example's inactive-until-verified: an abandoned registration self-heals through
+  §8.10's login-time gate (the next login re-sends a link) instead of dead-ending an account
+  that can neither log in nor re-register with no recovery flow built yet (EPIC-14 #15). The
+  session gate is the email stages, not `is_active` — both paths hold until the link is used.
+- **`sub` assignment — closes [oidc-integration.md §4](oidc-integration.md)'s
+  forward-requirement.** An expression policy on the enrollment `user_write` binding assigns
+  `attributes.upn = uuid4()` at creation (the provider's `sub_mode: user_upn` reads it). Fail
+  closed: a policy error skips `user_write`, so no account is ever created without a `upn`.
+  (Relying on Authentik's silent `user.uuid` fallback instead would let a later admin-set `upn`
+  change the user's `sub` and orphan their app identity.)
+- **Collision posture (AC 2).** Duplicate **usernames** are rejected by the prompt's `username`
+  field type — the account-existence signal that leaks is Authentik's own default for the field,
+  accepted as-is. Duplicate **emails** are allowed (also the upstream default; adding a
+  uniqueness policy would only create a NEW existence signal): the result is a second, unrelated
+  account that can never produce a verified session without inbox control, and — with account
+  linking not built ([#364](https://github.com/TiagoJVO/beekeepingit/issues/364)) — it never
+  links to or merges with the original. E2e-pinned (below), including that the original account
+  stays untouched. Known upstream caveat, watch-listed in [oidc-integration.md §8](oidc-integration.md):
+  with duplicate emails, identification by email resolves first-match; accounts registered here
+  always have a unique username to identify by.
+- **Onboarding unchanged (AC 4).** After verification, the ordinary first-sign-in path takes
+  over: `identity` creates the profile row on first sight (FR-ONB-1), and the org gate
+  auto-claims a pending invitation for the now-verified address (FR-ONB-3, §8.7) or routes to
+  org creation (FR-ONB-2; creator becomes `admin`, D-3). **No Go service or app-flow code
+  changed for #366** — deliberate: the gates already keyed on the real claim. Org-creation
+  policy for self-registered users is deliberately NOT restricted (spike
+  [#362](https://github.com/TiagoJVO/beekeepingit/issues/362) exists but does not block this).
+- **i18n (NFR-I18N-1) — same limitation class as §8.10's email finding.** Prompt
+  labels/placeholders and flow titles are DB strings Authentik renders without a gettext
+  lookup, and the flow executor UI's own strings translate only into the shipped **web**
+  catalogs — which at the pinned 2026.5.4 include `pt-BR` but **no `pt-PT`** — so the
+  registration screens render in English for a pt-PT browser today (tracked with the email
+  limitation, [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check on version
+  bumps). The verification email is §8.10's stage (msgid subject; English-rendering limitation
+  documented there). The app's own screens (login copy, onboarding) are fully EN/PT via
+  gen-l10n.
+- **A11y (D-18).** The registration UI is Authentik's flow executor (PatternFly) — the same
+  surface as §8.10's verification pages; its conformance is upstream's, documented as the
+  accepted posture rather than re-audited per release. The app-side change is copy-only (no new
+  tap targets; the login screen's single 56px primary action stands).
+- **Tests (NFR-TST-1).** Live e2e
+  ([`client/e2e/tests/registration.spec.ts`](../../client/e2e/tests/registration.spec.ts), run
+  by `helm-e2e.yml` with the Mailpit port-forward; shared plumbing extracted to
+  `client/e2e/tests/helpers.ts`): **(1)** register with no invitation → held at the email stage
+  → a pre-created pending invitation stays `pending` and a plain login attempt with the new
+  credentials is also held (and re-sends a link — the recovery path, proven live) → the emailed
+  link completes enrollment → the id_token carries the real `email_verified: true` → profile
+  onboarding → the invitation is auto-claimed (`role: user`, asserted from both the user's and
+  the admin's side); **(2)** register → verify → full onboarding to a **new** organization →
+  `role: admin` (D-3); **(3)** register with an existing account's email → distinct `sub`,
+  `GET /v1/organizations/me` 404 (nothing inherited), and the original account still logs in
+  unchanged (same `sub`, no forced re-verification). Go tests are unchanged (no service code
+  touched); the #170 invitation-gate suites keep pinning the server side.
 
 ## 9. Acceptance-criteria traceability (#109)
 
