@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -115,6 +117,54 @@ void main() {
       await tester.pump();
       expect(tapped, isTrue);
     });
+
+    testWidgets(
+      'tapping twice while an async onPressed is in flight only invokes it '
+      'once, self-disabling without the caller passing busy (#380)',
+      (tester) async {
+        var invocations = 0;
+        final completer = Completer<void>();
+        await tester.pumpWidget(
+          _host(
+            PrimaryActionButton(
+              key: const Key('primary'),
+              label: 'Save',
+              onPressed: () async {
+                invocations++;
+                await completer.future;
+              },
+            ),
+          ),
+        );
+
+        await tester.tap(find.byKey(const Key('primary')));
+        await tester.pump();
+        // Self-disabled while in flight — but NOT the busy spinner, since the
+        // caller never passed busy: a handler that opens a confirm dialog
+        // and awaits the user's choice is legitimately "in flight" for as
+        // long as the user takes to decide, and a spinner during that wait
+        // would misleadingly suggest network activity (and would never let
+        // pumpAndSettle converge in a widget test).
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        final button = tester.widget<FilledButton>(find.byType(FilledButton));
+        expect(button.onPressed, isNull);
+        await tester.tap(find.byKey(const Key('primary')), warnIfMissed: false);
+        await tester.pump();
+        expect(invocations, 1);
+
+        completer.complete();
+        await tester.pumpAndSettle();
+        expect(invocations, 1);
+        // Re-enabled once the handler completes.
+        final reEnabled = tester.widget<FilledButton>(
+          find.byType(FilledButton),
+        );
+        expect(reEnabled.onPressed, isNotNull);
+        await tester.tap(find.byKey(const Key('primary')), warnIfMissed: false);
+        await tester.pump();
+        expect(invocations, 2);
+      },
+    );
   });
 
   group('SecondaryActionButton (#79, #80)', () {
@@ -171,5 +221,48 @@ void main() {
 
       expectHasSemanticsLabel(tester, const Key('secondary'));
     });
+
+    testWidgets(
+      'tapping twice while an async onPressed is in flight only invokes it '
+      'once, self-disabling without the caller passing busy (#380)',
+      (tester) async {
+        var invocations = 0;
+        final completer = Completer<void>();
+        await tester.pumpWidget(
+          _host(
+            SecondaryActionButton(
+              key: const Key('secondary'),
+              label: 'Delete',
+              onPressed: () async {
+                invocations++;
+                await completer.future;
+              },
+            ),
+          ),
+        );
+
+        await tester.tap(find.byKey(const Key('secondary')));
+        await tester.pump();
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        final button = tester.widget<OutlinedButton>(
+          find.byType(OutlinedButton),
+        );
+        expect(button.onPressed, isNull);
+        await tester.tap(
+          find.byKey(const Key('secondary')),
+          warnIfMissed: false,
+        );
+        await tester.pump();
+        expect(invocations, 1);
+
+        completer.complete();
+        await tester.pumpAndSettle();
+        expect(invocations, 1);
+        final reEnabled = tester.widget<OutlinedButton>(
+          find.byType(OutlinedButton),
+        );
+        expect(reEnabled.onPressed, isNotNull);
+      },
+    );
   });
 }

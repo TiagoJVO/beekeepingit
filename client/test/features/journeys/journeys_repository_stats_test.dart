@@ -20,6 +20,14 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakeStatsStore implements LocalStoreEngine {
   final List<Map<String, Object?>> planRows = [];
   final List<Map<String, Object?>> activityRows = [];
+
+  /// Mirrors `apiaries.apiary_counters` rows (#391) — seeded directly like
+  /// [planRows]/[activityRows]. Multiple rows for the same apiary_id +
+  /// counter_type model the brief optimistic-sync window
+  /// apiaries_repository.dart's own `_hiveCountSubquery` handles via
+  /// `ORDER BY updated_at DESC LIMIT 1`; [_select] applies the same
+  /// newest-wins rule when resolving the `hive_count` branch.
+  final List<Map<String, Object?>> counterRows = [];
   final _watchController = StreamController<void>.broadcast();
 
   void notifyChanged() => _watchController.add(null);
@@ -60,13 +68,15 @@ class _FakeStatsStore implements LocalStoreEngine {
   Future<void> clear() async {
     planRows.clear();
     activityRows.clear();
+    counterRows.clear();
     notifyChanged();
   }
 
   /// Interprets exactly [JourneysRepository]'s `_statsSql` UNION shape: the
   /// `journey_id` filter is args[0] for the plan branch, args[1] for the
-  /// activity branch (both always equal in practice, matching the
-  /// repository's own `[journeyId, journeyId]` call).
+  /// activity branch, args[2] for the hive_count branch (all three always
+  /// equal in practice, matching the repository's own
+  /// `[journeyId, journeyId, journeyId]` call).
   List<Map<String, Object?>> _select(String sql, List<Object?> args) {
     final normalized = sql.toUpperCase();
     if (!normalized.contains('UNION ALL')) {
@@ -75,7 +85,9 @@ class _FakeStatsStore implements LocalStoreEngine {
       );
     }
     final journeyId = args[0];
-    final planMatches = planRows.where((r) => r['journey_id'] == journeyId);
+    final planMatches = planRows
+        .where((r) => r['journey_id'] == journeyId)
+        .toList();
     final activityMatches = activityRows.where(
       (r) => r['journey_id'] == journeyId,
     );
@@ -86,6 +98,7 @@ class _FakeStatsStore implements LocalStoreEngine {
           'apiary_id': r['apiary_id'],
           'type': null,
           'attributes': null,
+          'value': null,
         },
       for (final r in activityMatches)
         {
@@ -93,8 +106,35 @@ class _FakeStatsStore implements LocalStoreEngine {
           'apiary_id': r['apiary_id'],
           'type': r['type'],
           'attributes': r['attributes'],
+          'value': null,
+        },
+      for (final r in planMatches)
+        {
+          'source': 'hive_count',
+          'apiary_id': r['apiary_id'],
+          'type': null,
+          'attributes': null,
+          'value': _newestCounterValue(r['apiary_id']),
         },
     ];
+  }
+
+  /// Newest-row-wins resolution for one apiary's `hive` counter (mirrors
+  /// apiaries_repository.dart's own `_hiveCountSubquery` — the real SQL
+  /// correlated subquery this fake stands in for) — null when the apiary has
+  /// no counter row at all, matching the real subquery's NULL result.
+  Object? _newestCounterValue(Object? apiaryId) {
+    final matches = counterRows.where(
+      (r) => r['apiary_id'] == apiaryId && r['counter_type'] == 'hive',
+    );
+    if (matches.isEmpty) return null;
+    final newest = matches.reduce(
+      (a, b) =>
+          (a['updated_at'] as String).compareTo(b['updated_at'] as String) >= 0
+          ? a
+          : b,
+    );
+    return newest['value'];
   }
 
   void dispose() => _watchController.close();
@@ -133,6 +173,20 @@ void main() {
       'apiary_id': apiaryId,
       'type': type,
       'attributes': attributes == null ? null : jsonEncode(attributes),
+    });
+  }
+
+  void seedCounter({
+    required String apiaryId,
+    required int value,
+    String updatedAt = '2026-06-01T00:00:00Z',
+  }) {
+    store.counterRows.add({
+      'id': 'counter-${store.counterRows.length}',
+      'apiary_id': apiaryId,
+      'counter_type': 'hive',
+      'value': value,
+      'updated_at': updatedAt,
     });
   }
 
@@ -372,5 +426,99 @@ void main() {
         expect(emissions.last.apiariesMissing, 1);
       },
     );
+  });
+
+  group('JourneysRepository — hive-level completion (#391)', () {
+    test('the extended UNION picks up hive counters for the planned '
+        'apiaries', () async {
+      seedPlanItem('j1', 'a1');
+      seedPlanItem('j1', 'a2');
+      seedCounter(apiaryId: 'a1', value: 10);
+      seedCounter(apiaryId: 'a2', value: 6);
+
+      final stats = await repo.getStats('j1');
+
+      expect(stats.hivesPlanned, 16);
+    });
+
+    test('hivesWorked sums hives_involved across every activity type '
+        'attributed to the journey, not just harvest', () async {
+      seedPlanItem('j1', 'a1');
+      seedActivity(
+        journeyId: 'j1',
+        apiaryId: 'a1',
+        type: 'harvest',
+        attributes: {'honey_supers': 4, 'hives_involved': 2, 'honey_kg': 8},
+      );
+      seedActivity(
+        journeyId: 'j1',
+        apiaryId: 'a1',
+        type: 'feeding',
+        attributes: {'feed_type': 'Xarope 1:1', 'hives_involved': 3},
+      );
+      seedActivity(
+        journeyId: 'j1',
+        apiaryId: 'a1',
+        type: 'treatment',
+        attributes: {'treatment_context': 'preventive', 'hives_involved': 5},
+      );
+
+      final stats = await repo.getStats('j1');
+
+      expect(stats.hivesWorked, 10);
+      // hivesHarvested stays harvest-only (D-2), unchanged by #391.
+      expect(stats.hivesHarvested, 2);
+    });
+
+    test('hivesPlanned is null when the journey has planned apiaries but '
+        'none has a hive counter row yet', () async {
+      seedPlanItem('j1', 'a1');
+
+      final stats = await repo.getStats('j1');
+
+      expect(stats.hivesPlanned, isNull);
+    });
+
+    test('the newest counter row wins when an apiary has more than one '
+        '(the brief optimistic-sync window, mirrors '
+        'apiaries_repository.dart\'s own hive-count resolution)', () async {
+      seedPlanItem('j1', 'a1');
+      seedCounter(apiaryId: 'a1', value: 3, updatedAt: '2026-06-01T00:00:00Z');
+      seedCounter(apiaryId: 'a1', value: 9, updatedAt: '2026-06-02T00:00:00Z');
+
+      final stats = await repo.getStats('j1');
+
+      expect(stats.hivesPlanned, 9);
+    });
+
+    test('a counter for an apiary no longer in the plan does not count '
+        'toward hivesPlanned', () async {
+      seedPlanItem('j1', 'a1');
+      seedCounter(apiaryId: 'a1', value: 4);
+      seedCounter(apiaryId: 'a-not-planned', value: 100);
+
+      final stats = await repo.getStats('j1');
+
+      expect(stats.hivesPlanned, 4);
+    });
+
+    test('a counter edit re-fires watchStats (the SAME single combined '
+        'query invalidates on a write to apiary_counters too)', () async {
+      seedPlanItem('j1', 'a1');
+      seedCounter(apiaryId: 'a1', value: 4);
+
+      final emissions = <JourneyStats>[];
+      final sub = repo.watchStats('j1').listen(emissions.add);
+      await Future<void>.delayed(Duration.zero);
+
+      seedCounter(apiaryId: 'a1', value: 12, updatedAt: '2026-06-05T00:00:00Z');
+      store.notifyChanged();
+      await Future<void>.delayed(Duration.zero);
+
+      await sub.cancel();
+
+      expect(emissions.first.hivesPlanned, 4);
+      expect(emissions.last.hivesPlanned, 12);
+    });
   });
 }
