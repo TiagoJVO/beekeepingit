@@ -1051,6 +1051,87 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get journeyStatsHivesWorkedLabel => 'Hives worked';
+
+  @override
+  String journeyStatsHivesWorkedValue(int worked, String planned) {
+    return '$worked/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesWorkedNoData => '—';
+
+  @override
+  String get journeyStatsMoreAction => 'More stats';
+
+  @override
+  String get journeyStatsDetailTitle => 'More stats';
+
+  @override
+  String get journeyStatsDetailFilterAll => 'All';
+
+  @override
+  String get journeyStatsDetailFilterVisited => 'Visited';
+
+  @override
+  String get journeyStatsDetailFilterNotVisited => 'Not visited';
+
+  @override
+  String get journeyStatsDetailSortLabel => 'Sort by';
+
+  @override
+  String get journeyStatsDetailSortName => 'Name';
+
+  @override
+  String get journeyStatsDetailSortKgPerHive => 'Kg/hive';
+
+  @override
+  String get journeyStatsDetailSortSupersPerHive => 'Supers/hive';
+
+  @override
+  String get journeyStatsDetailSortFeedAmount => 'Feed amount';
+
+  @override
+  String get journeyStatsDetailSortHivesInvolved => 'Hives involved';
+
+  @override
+  String get journeyStatsDetailEmpty => 'No apiaries match the current filter.';
+
+  @override
+  String get journeyStatsDetailHiveCountLabel => 'Hives';
+
+  @override
+  String get journeyStatsDetailHoneyKgLabel => 'Honey (kg)';
+
+  @override
+  String get journeyStatsDetailSupersLabel => 'Supers';
+
+  @override
+  String get journeyStatsDetailKgPerHiveLabel => 'Kg/hive';
+
+  @override
+  String get journeyStatsDetailSupersPerHiveLabel => 'Supers/hive';
+
+  @override
+  String get journeyStatsDetailFeedAmountLabel => 'Feed amount';
+
+  @override
+  String get journeyStatsDetailHivesInvolvedLabel => 'Hives involved';
+
+  @override
+  String get journeyStatsDetailNoDataValue => '—';
+
+  @override
+  String journeyStatsDetailFeedingSummary(String amount) {
+    return 'Total feed amount: $amount';
+  }
+
+  @override
+  String journeyStatsDetailTreatedSummary(int treated, int planned) {
+    return '$treated/$planned apiaries treated';
+  }
+
+  @override
   String get journeyDetailTitle => 'Journey';
 
   @override

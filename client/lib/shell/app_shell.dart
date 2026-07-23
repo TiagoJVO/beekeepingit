@@ -353,6 +353,7 @@ class AppShell extends ConsumerWidget {
       'journeyNew' => l10n.newJourneyTitle,
       'journeyDetail' => l10n.journeyDetailTitle,
       'journeyEdit' => l10n.editJourneyTitle,
+      'journeyStats' => l10n.journeyStatsDetailTitle,
       'todoNew' => l10n.newTodoTitle,
       'todoDetail' => l10n.todoDetailTitle,
       'todoEdit' => l10n.editTodoTitle,
