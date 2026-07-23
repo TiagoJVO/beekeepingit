@@ -21,6 +21,15 @@ abstract interface class AuthPlatform {
   String? readSession(String key);
   void writeSession(String key, String value);
   void removeSession(String key);
+
+  /// Durable (survives browser restart) storage — `localStorage` on web
+  /// (#390). Used for the refresh + id token so a closed/reopened browser
+  /// still has a session to restore, unlike [readSession]/[writeSession]'s
+  /// per-tab `sessionStorage`, which the PKCE `code_verifier`/`state` stay on
+  /// (intentionally ephemeral, single-flow — see auth_controller.dart).
+  String? readLocal(String key);
+  void writeLocal(String key, String value);
+  void removeLocal(String key);
 }
 
 /// Constructs the platform implementation for the current target.

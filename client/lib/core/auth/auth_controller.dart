@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:openid_client/openid_client.dart';
 
 import '../config/app_config.dart';
+import '../storage/local_prefs.dart';
 import '../sync/local_store.dart';
 import '../sync/powersync_service.dart';
 import 'auth_platform.dart';
@@ -15,6 +16,16 @@ const _kVerifier = 'bk.pkce_verifier';
 const _kState = 'bk.oauth_state';
 const _kRefresh = 'bk.refresh_token';
 const _kIdToken = 'bk.id_token';
+
+/// Bounds OIDC discovery + the refresh-token grant during boot session
+/// restore ([AuthController.build]) so a slow/dead link doesn't park the user
+/// on a hanging screen (#390) — a [TimeoutException] is not an
+/// [OpenIdException], so it falls into the same offline-grace branch as a
+/// network/DNS failure. Deliberately NOT applied to [AuthController.login] —
+/// that user-initiated flow already surfaces failures via [loginErrorProvider]
+/// and a bounded timeout there would just add an artificial delay before the
+/// (already-fast) real failure surfaces.
+const _kAuthNetworkTimeout = Duration(seconds: 5);
 
 /// Cached OIDC discovery: fetches the provider's `.well-known` document once
 /// (its endpoints — authorize, token, end-session, JWKS — are read from here,
@@ -41,13 +52,20 @@ final oidcIssuerProvider = FutureProvider<Issuer>((ref) {
   return Issuer.discover(Uri.parse(AppConfig.oidcIssuer));
 }, retry: (retryCount, error) => null);
 
-/// A logged-in session (OIDC tokens). Tokens live in per-tab session storage —
-/// acceptable for the dev/CI skeleton; a hardened BFF/httpOnly-cookie flow is a
-/// later concern (auth.md, EPIC-14).
+/// A logged-in session (OIDC tokens). The refresh + id token live in durable
+/// `localStorage` (survives a browser restart, #390) — acceptable for the
+/// dev/CI skeleton; a hardened BFF/httpOnly-cookie flow is a later concern
+/// (auth.md, EPIC-14).
 ///
 /// [idToken] is retained (not just access/refresh) because RP-initiated logout
 /// needs it as the `id_token_hint` for the provider's `end_session_endpoint`
 /// (docs/architecture/oidc-integration.md §7).
+///
+/// A restored-but-unrefreshable session (offline boot, #390) is represented
+/// by an empty [accessToken] with [isExpired] forced true by construction — a
+/// "stale placeholder" ([AuthController._staleSession]) that lets the app
+/// open into the local-data shell while [AuthController.accessToken] retries
+/// the refresh lazily on each call.
 class AuthSession {
   const AuthSession({
     required this.accessToken,
@@ -119,13 +137,27 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     AuthPlatform? platform,
     http.Client? httpClient,
     Future<LocalStoreEngine> Function()? clearLocalStore,
+    LocalPrefs? localPrefs,
+    Duration? authNetworkTimeout,
   }) : _injectedPlatform = platform,
        _http = httpClient,
-       _injectedLocalStore = clearLocalStore;
+       _injectedLocalStore = clearLocalStore,
+       _injectedLocalPrefs = localPrefs,
+       _authNetworkTimeout = authNetworkTimeout ?? _kAuthNetworkTimeout;
 
   final AuthPlatform? _injectedPlatform;
   AuthPlatform? _platform;
   final Future<LocalStoreEngine> Function()? _injectedLocalStore;
+  final LocalPrefs? _injectedLocalPrefs;
+  LocalPrefs? _prefs;
+
+  /// Test-only seam (defaults to [_kAuthNetworkTimeout]) so the boot
+  /// discovery/refresh timeout path (#390) can be exercised with a short
+  /// duration instead of the real 5s.
+  final Duration _authNetworkTimeout;
+
+  LocalPrefs _localPrefs() =>
+      _prefs ??= _injectedLocalPrefs ?? createLocalPrefs();
 
   /// Injected only in tests; production lets `openid_client` create its own
   /// per-request client. Not closed here — a `MockClient` needs none and a
@@ -151,9 +183,37 @@ class AuthController extends AsyncNotifier<AuthSession?> {
         platform.replaceLocation(uri.replace(queryParameters: {}));
         return session;
       }
-      final refresh = platform.readSession(_kRefresh);
+      // Durable storage (localStorage, #390) is the primary source; a
+      // one-time migration fallback restores (and rewrites) a refresh token
+      // still sitting in the pre-#390 sessionStorage location so an existing
+      // session isn't silently dropped by the storage move.
+      final refresh = _readLocalWithMigration(platform, _kRefresh);
       if (refresh != null) {
-        return await _refresh(platform, refresh);
+        try {
+          return await _refresh(
+            platform,
+            refresh,
+            timeout: _authNetworkTimeout,
+          );
+        } on Exception catch (e, st) {
+          // _refresh() already handles a genuine provider rejection
+          // (OpenIdException) internally — wiping the stored tokens and
+          // returning null — so anything that reaches here is a network/
+          // discovery/timeout failure while restoring the session on boot.
+          // The refresh token itself was never rejected: keep the app usable
+          // against local PowerSync data (a stale placeholder session,
+          // expired by construction so the next accessToken() call retries
+          // the refresh) rather than bouncing an offline beekeeper to
+          // /login just because they lack signal right now (#390).
+          developer.log(
+            'build(): session restore failed (offline?) — falling back to '
+            'a stale local session so the shell stays reachable',
+            name: 'auth',
+            error: e,
+            stackTrace: st,
+          );
+          return _staleSession(platform, refresh);
+        }
       }
     } catch (e, st) {
       // Deliberately catch-all (not narrowed to Exception): the non-web
@@ -170,6 +230,39 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       );
     }
     return null;
+  }
+
+  /// A restored-but-unrefreshable session (#390): an expired-by-construction
+  /// placeholder carrying the stored refresh token (so `accessToken()`
+  /// retries the refresh lazily on the next call) and an **empty**
+  /// [AuthSession.accessToken] — `isAuthenticatedProvider` only checks for a
+  /// non-null session, so this is enough to unblock the router into the
+  /// local-data shell, and `accessToken()` is guarded to hand back `null`
+  /// (never this empty string) as the bearer token while it stays
+  /// unrefreshed.
+  AuthSession _staleSession(AuthPlatform platform, String refreshToken) {
+    final idToken = _readLocalWithMigration(platform, _kIdToken) ?? '';
+    return AuthSession(
+      accessToken: '',
+      refreshToken: refreshToken,
+      idToken: idToken,
+      expiresAt: DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+
+  /// Reads [key] from durable local storage, falling back to (and migrating
+  /// from) the old per-tab sessionStorage location the refresh/id token used
+  /// before #390 — so an existing logged-in session isn't silently dropped by
+  /// the sessionStorage→localStorage move on the first boot after upgrade.
+  String? _readLocalWithMigration(AuthPlatform platform, String key) {
+    final local = platform.readLocal(key);
+    if (local != null) return local;
+    final legacy = platform.readSession(key);
+    if (legacy != null) {
+      platform.writeLocal(key, legacy);
+      platform.removeSession(key);
+    }
+    return legacy;
   }
 
   /// Starts login by redirecting the browser to the provider's authorize
@@ -337,6 +430,9 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// Defensive sweep of every local-storage key this controller ever writes —
   /// not just the refresh/id token — so an abandoned mid-flow login (PKCE
   /// verifier/state written but never exchanged) can't leave stale entries.
+  /// Also purges the onboarding gate's cached profile/organization snapshot
+  /// (#390, `core/storage/local_prefs.dart`) so a second user on the same
+  /// shared browser never sees a prior user's cached onboarding state.
   ///
   /// Swallows `UnsupportedError` from the non-web stub [AuthPlatform] (widget
   /// tests run on the VM, where `_platform` is a working object but every
@@ -345,15 +441,19 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// non-web handling.
   void _clearLocalSession() {
     final platform = _platform;
-    if (platform == null) return;
-    try {
-      platform.removeSession(_kVerifier);
-      platform.removeSession(_kState);
-      platform.removeSession(_kRefresh);
-      platform.removeSession(_kIdToken);
-    } on UnsupportedError {
-      // Non-web target: there is no real session storage to clear.
+    if (platform != null) {
+      try {
+        platform.removeSession(_kVerifier);
+        platform.removeSession(_kState);
+        platform.removeLocal(_kRefresh);
+        platform.removeLocal(_kIdToken);
+      } on UnsupportedError {
+        // Non-web target: there is no real session storage to clear.
+      }
     }
+    final prefs = _localPrefs();
+    prefs.remove(kProfileCacheKey);
+    prefs.remove(kOrganizationCacheKey);
   }
 
   /// A valid access token, refreshed if within 30s of expiry, or null when
@@ -381,7 +481,12 @@ class AuthController extends AsyncNotifier<AuthSession?> {
         error: e,
         stackTrace: st,
       );
-      return session.accessToken;
+      // A "stale placeholder" session (offline boot restore, #390 —
+      // AuthController._staleSession) carries an empty accessToken: hand
+      // back null rather than that empty string, so callers never send a
+      // bogus `Authorization: Bearer ` header. A genuinely-expired-but-once-
+      // real token is still worth retrying the request with.
+      return session.accessToken.isEmpty ? null : session.accessToken;
     }
   }
 
@@ -416,32 +521,46 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     return _persist(platform, token);
   }
 
+  /// [timeout], when given, bounds discovery + the token fetch together (only
+  /// passed by [build]'s boot-time restore path, #390 — see
+  /// `_kAuthNetworkTimeout`'s own doc comment). `accessToken()`'s lazy
+  /// mid-session refresh calls this unbounded, matching its pre-#390
+  /// behavior — a stale access token is already being handed back to the
+  /// caller in that path regardless of how long the retry takes.
   Future<AuthSession?> _refresh(
     AuthPlatform platform,
-    String refreshToken,
-  ) async {
+    String refreshToken, {
+    Duration? timeout,
+  }) async {
     try {
-      final issuer = await _issuer();
-      final idToken = platform.readSession(_kIdToken);
-      final credential = _client(
-        issuer,
-      ).createCredential(refreshToken: refreshToken, idToken: idToken);
-      final token = await credential.getTokenResponse(true);
+      Future<TokenResponse> fetchToken() async {
+        final issuer = await _issuer();
+        final idToken = _readLocalWithMigration(platform, _kIdToken);
+        final credential = _client(
+          issuer,
+        ).createCredential(refreshToken: refreshToken, idToken: idToken);
+        return credential.getTokenResponse(true);
+      }
+
+      final token = timeout == null
+          ? await fetchToken()
+          : await fetchToken().timeout(timeout);
       return _persist(platform, token);
     } on OpenIdException {
       // A genuine rejection (invalid_grant/expired) from the provider — the
       // refresh token itself is no longer good, so it's safe (and correct)
       // to drop the persisted session and resolve to logged-out rather than
       // looping.
-      platform.removeSession(_kRefresh);
-      platform.removeSession(_kIdToken);
+      platform.removeLocal(_kRefresh);
+      platform.removeLocal(_kIdToken);
       return null;
     }
-    // Any other failure (network/discovery timeout, DNS failure, etc. while
-    // offline) intentionally propagates rather than being swallowed here:
-    // the refresh token was never actually rejected, so wiping it would
-    // strand an offline beekeeper — they'd have to log in again even once
-    // signal returns. Callers (accessToken()/build()) decide how to degrade.
+    // Any other failure (network/discovery timeout, DNS failure, a
+    // TimeoutException from [timeout] above, etc. while offline)
+    // intentionally propagates rather than being swallowed here: the refresh
+    // token was never actually rejected, so wiping it would strand an
+    // offline beekeeper — they'd have to log in again even once signal
+    // returns. Callers (accessToken()/build()) decide how to degrade.
   }
 
   AuthSession? _persist(AuthPlatform platform, TokenResponse token) {
@@ -453,22 +572,24 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // stored one so a refresh that doesn't re-issue it keeps the session alive.
     final effectiveRefresh = refresh.isNotEmpty
         ? refresh
-        : (platform.readSession(_kRefresh) ?? '');
+        : (platform.readLocal(_kRefresh) ?? '');
     // Read `id_token` off the raw response (not the typed `.idToken` getter,
     // which throws when absent): a refresh often omits it, so fall back to the
     // previously-stored value to keep it available for RP-initiated logout.
     final rawIdToken = token['id_token'] as String?;
     final idToken = (rawIdToken != null && rawIdToken.isNotEmpty)
         ? rawIdToken
-        : (platform.readSession(_kIdToken) ?? '');
+        : (platform.readLocal(_kIdToken) ?? '');
     final expiresAt =
         token.expiresAt ??
         DateTime.now().add(token.expiresIn ?? const Duration(minutes: 5));
 
+    // Durable storage (localStorage, #390) so the session survives a
+    // browser restart — see AuthPlatform.readLocal/writeLocal's own doc.
     if (effectiveRefresh.isNotEmpty) {
-      platform.writeSession(_kRefresh, effectiveRefresh);
+      platform.writeLocal(_kRefresh, effectiveRefresh);
     }
-    if (idToken.isNotEmpty) platform.writeSession(_kIdToken, idToken);
+    if (idToken.isNotEmpty) platform.writeLocal(_kIdToken, idToken);
     return AuthSession(
       accessToken: access,
       refreshToken: effectiveRefresh,
