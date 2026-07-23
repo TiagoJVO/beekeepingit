@@ -40,7 +40,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
   # Direct dev dependency so tests can fake GeolocatorPlatform.instance
   # (apiary_map_screen_test.dart, #34) — otherwise only a transitive dep of
   # geolocator.
