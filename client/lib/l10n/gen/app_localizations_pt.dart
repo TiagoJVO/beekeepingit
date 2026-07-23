@@ -73,6 +73,36 @@ class AppLocalizationsPt extends AppLocalizations {
   String get counterTypeSuperLabel => 'Alças';
 
   @override
+  String emptyHiveCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count colmeias vazias',
+      one: '1 colmeia vazia',
+      zero: 'Sem colmeias vazias',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String swarmCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count enxames',
+      one: '1 enxame',
+      zero: 'Sem enxames',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeEmptyHiveLabel => 'Colmeias vazias';
+
+  @override
+  String get counterTypeSwarmLabel => 'Enxames';
+
+  @override
   String get apiaryAddCounterAction => 'Adicionar contador';
 
   @override

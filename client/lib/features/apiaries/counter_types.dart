@@ -18,10 +18,24 @@ const counterTypeHive = 'hive';
 /// only once a row exists, so it is offerable in the add picker until then.
 const counterTypeSuper = 'super';
 
+/// Empty (broodless) hives — a hive box present at the apiary with no active
+/// colony (#392).
+const counterTypeEmptyHive = 'empty_hive';
+
+/// Swarms captured/hived (Portuguese "enxames") — distinct from
+/// [counterTypeHive]: a swarm is a captured colony not yet established as a
+/// counted hive (#392).
+const counterTypeSwarm = 'swarm';
+
 /// Ordered as the detail screen renders them: hive first — it ALWAYS
 /// displays (0 when no counter row exists, #256 AC); every other known type
 /// renders only when a row exists for the apiary.
-const knownCounterTypes = [counterTypeHive, counterTypeSuper];
+const knownCounterTypes = [
+  counterTypeHive,
+  counterTypeSuper,
+  counterTypeEmptyHive,
+  counterTypeSwarm,
+];
 
 /// The localized display string for one counter's value, or null for a type
 /// this client version has no label for (an unknown/newer type replicated
@@ -37,6 +51,8 @@ String? counterValueLabel(
   return switch (counterType) {
     counterTypeHive => l10n.hiveCountValue(value),
     counterTypeSuper => l10n.superCountValue(value),
+    counterTypeEmptyHive => l10n.emptyHiveCountValue(value),
+    counterTypeSwarm => l10n.swarmCountValue(value),
     _ => null,
   };
 }
@@ -51,6 +67,8 @@ String? counterTypeLabel(AppLocalizations l10n, String counterType) {
   return switch (counterType) {
     counterTypeHive => l10n.counterTypeHiveLabel,
     counterTypeSuper => l10n.counterTypeSuperLabel,
+    counterTypeEmptyHive => l10n.counterTypeEmptyHiveLabel,
+    counterTypeSwarm => l10n.counterTypeSwarmLabel,
     _ => null,
   };
 }

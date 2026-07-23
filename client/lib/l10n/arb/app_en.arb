@@ -71,6 +71,32 @@
   "@counterTypeSuperLabel": {
     "description": "The name of the supers counter type, used by the detail screen's add-counter picker and inline value editor (#346)"
   },
+  "emptyHiveCountValue": "{count, plural, =0{No empty hives} =1{1 empty hive} other{{count} empty hives}}",
+  "@emptyHiveCountValue": {
+    "description": "Empty-hive counter value badge on the apiary detail screen (#392)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "swarmCountValue": "{count, plural, =0{No swarms} =1{1 swarm} other{{count} swarms}}",
+  "@swarmCountValue": {
+    "description": "Swarm counter value badge on the apiary detail screen (#392)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "counterTypeEmptyHiveLabel": "Empty hives",
+  "@counterTypeEmptyHiveLabel": {
+    "description": "The name of the empty-hive counter type, used by the detail screen's add-counter picker and inline value editor (#392)"
+  },
+  "counterTypeSwarmLabel": "Swarms",
+  "@counterTypeSwarmLabel": {
+    "description": "The name of the swarm counter type, used by the detail screen's add-counter picker and inline value editor (#392)"
+  },
   "apiaryAddCounterAction": "Add counter",
   "@apiaryAddCounterAction": {
     "description": "Button on the apiary detail screen that opens the add-counter type picker (#346)"
