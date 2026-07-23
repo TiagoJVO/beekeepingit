@@ -25,6 +25,18 @@ The server-side apply semantics (LWW, conflict log, idempotency, tombstones) and
 the sync coordinator are additionally covered by fast **Go integration tests**
 (`services/apiaries`, `services/sync`) that run in CI without a browser.
 
+A second spec, **`tests/verification.spec.ts`** (#361, NFR-SEC-1), covers the
+login-time email-verification flow end to end: unverified login held at the
+IdP's email stage → one-time link read from the **Mailpit** sink's API → real
+`email_verified: true` claim → the **invitation accept-on-login** path
+(FR-ONB-3/#170: an admin-created invitation stays `pending` while the login is
+held and is auto-claimed once verified) → and an email change through
+Authentik's real user-settings flow executor **resetting** verification (the
+next login re-verifies the new address). It needs a **fresh blueprint-seeded
+stack** plus `E2E_MAILPIT_URL` (helm-e2e.yml port-forwards the sink and sets
+it) and self-skips when the env is absent; its tests are order-dependent
+within the file.
+
 The fresh-client **notes** assertion doubles as the regression guard for the
 PowerSync sync-rules column list
 (`infra/helm/beekeepingit/charts/powersync/values.yaml`): the
