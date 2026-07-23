@@ -592,10 +592,9 @@ void main() {
       () async {
         final id = await repo.create(name: 'Encosta');
         await repo.setCounter(id, 'super', 4);
-        final rowIdBefore = store.counterRows
-            .firstWhere(
-              (r) => r['apiary_id'] == id && r['counter_type'] == 'super',
-            )['id'];
+        final rowIdBefore = store.counterRows.firstWhere(
+          (r) => r['apiary_id'] == id && r['counter_type'] == 'super',
+        )['id'];
         final updatedAtBefore = store.counterRows.firstWhere(
           (r) => r['apiary_id'] == id && r['counter_type'] == 'super',
         )['updated_at'];
