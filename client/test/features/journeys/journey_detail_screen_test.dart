@@ -3,6 +3,7 @@ import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/history/history_repository.dart';
 import 'package:beekeepingit_client/features/journeys/journey_stats.dart';
 import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
@@ -142,6 +143,24 @@ Widget _buildApp({
       ),
       journeysRepositoryProvider.overrideWith(
         (ref) async => _FakeJourneysRepository(journey),
+      ),
+      // The #384 journey-scoped activity route renders the same
+      // ActivityDetailScreen the apiaries branch does, which watches this
+      // per-id family provider directly (not activitiesByJourneyProvider,
+      // already overridden above) and embeds HistorySection (#60) — both
+      // left un-overridden would hang on their real, never-resolving
+      // repository chains in this offline test environment. Mirrors
+      // activity_detail_screen_test.dart's own identical overrides.
+      activityByIdProvider.overrideWith(
+        (ref, id) => Stream.value(
+          activities.cast<Activity?>().firstWhere(
+            (a) => a!.id == id,
+            orElse: () => null,
+          ),
+        ),
+      ),
+      entityHistoryProvider.overrideWith(
+        (ref, target) => Stream.value(const <HistoryEntry>[]),
       ),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
@@ -326,6 +345,78 @@ void main() {
         );
       },
     );
+
+    group('journey-scoped activity navigation (#384)', () {
+      testWidgets(
+        'tapping an activity from the journey detail screen stays on the '
+        'Journeys tab and its own branch, and the shell back button returns '
+        'to the journey rather than the apiary',
+        (tester) async {
+          await _openDetail(
+            tester,
+            plannedApiaryIds: const ['a1'],
+            activities: [_activity(id: 'act1', apiaryId: 'a1')],
+          );
+
+          // The activity tile sits below the fold on this fixture's card
+          // layout — a bare tap() resolves to an off-screen coordinate and
+          // silently misses (mirrors activity_detail_screen_test.dart's own
+          // `_tapDelete` note), so scroll it into view first.
+          final activityTile = find.byKey(const Key('activity-act1'));
+          await tester.ensureVisible(activityTile);
+          await tester.pumpAndSettle();
+          await tester.tap(activityTile);
+          await tester.pumpAndSettle();
+
+          final router = GoRouter.of(tester.element(find.byType(AppShell)));
+          expect(
+            router.routeInformationProvider.value.uri.toString(),
+            '/journeys/j1/activities/act1?apiaryId=a1',
+          );
+          expect(
+            find.byKey(const Key('activity-detail-header')),
+            findsOneWidget,
+          );
+          // Still the Journeys tab (index 2 in AppShell.tabs), not bounced
+          // into the Apiaries branch.
+          final nav = tester.widget<NavigationBar>(
+            find.byKey(const Key('shell-bottom-nav')),
+          );
+          expect(nav.selectedIndex, 2);
+
+          await tester.tap(find.byKey(const Key('shell-back-button')));
+          await tester.pumpAndSettle();
+
+          // Asserting on .path (not the full uri string): popping the
+          // branch's own Navigator leaves the now-current match's own path
+          // segments, but go_router carries the popped location's query
+          // component along rather than clearing it (a pre-existing
+          // framework quirk, not specific to this route) — so the bar can
+          // still briefly show a stray `?apiaryId=a1`. Harmless (this screen
+          // never reads that param) and orthogonal to the #384 fix itself,
+          // which is that Back lands on the journey at all, not the apiary.
+          expect(
+            router.routeInformationProvider.value.uri.path,
+            '/journeys/j1',
+          );
+          expect(
+            find.byKey(const Key('journey-detail-header')),
+            findsOneWidget,
+          );
+        },
+      );
+
+      // Regression coverage for the *default* (non-journey) tap path — that
+      // the shared _ActivityTile still lands on the apiaries-branch route
+      // when `detailLocationBuilder` is unset — already exists end-to-end at
+      // activity_detail_screen_test.dart:167 ("tapping a row in the main
+      // all-apiaries Activities tab opens the detail"): it taps an activity
+      // tile reached via the Activities tab (the same shared tile, unmodified
+      // default `detailLocationBuilder`), asserts the detail renders, and
+      // asserts the shell back button returns to the *apiary* detail (proof
+      // of the apiaries-branch route, not just a URL string). No separate
+      // test added here to avoid duplicating that coverage.
+    });
 
     group(
       'accessibility (D-18, docs/design/accessibility-field-ux-checklist.md)',

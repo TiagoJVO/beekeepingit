@@ -302,6 +302,29 @@ final routerProvider = Provider<GoRouter>((ref) {
                           journeyId: state.pathParameters['id']!,
                         ),
                       ),
+                      // Journey-scoped activity detail (#384): the SAME
+                      // ActivityDetailScreen the apiaries-branch route above
+                      // renders, reached instead from within a journey's own
+                      // stack — a tap from journey_detail_screen.dart's
+                      // embedded ActivityListView goes here rather than
+                      // crossing into the apiaries branch (that tab would
+                      // otherwise silently steal focus, and the shell's Back
+                      // would land on the apiary instead of the journey).
+                      // apiaryId travels as a query parameter (not a path
+                      // segment — this route's own identity is journey-
+                      // scoped) so the page still deep-links/reloads without
+                      // needing a live lookup first. Edit/delete/history stay
+                      // reachable only via the apiaries-branch route (its own
+                      // doc comment) — this route exists purely so Back has
+                      // somewhere correct to return to.
+                      GoRoute(
+                        path: 'activities/:activityId',
+                        name: 'journeyActivityDetail',
+                        builder: (context, state) => ActivityDetailScreen(
+                          apiaryId: state.uri.queryParameters['apiaryId'] ?? '',
+                          activityId: state.pathParameters['activityId']!,
+                        ),
+                      ),
                     ],
                   ),
                 ],
