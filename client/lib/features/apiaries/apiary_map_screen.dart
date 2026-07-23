@@ -310,16 +310,24 @@ class _Map extends StatelessWidget {
           ),
         },
         MarkerLayer(
+          // Counter-rotate every marker to the map's own rotation (#383) —
+          // otherwise a two-finger map rotate tilts the apiary pins and the
+          // user-location pin right along with the tiles, when a marker is a
+          // fixed-orientation icon/label, not map content, and must stay
+          // upright regardless of camera bearing.
+          rotate: true,
           markers: [
             for (final apiary in apiaries)
               Marker(
                 key: Key('apiary-marker-${apiary.id}'),
                 point: ll.LatLng(apiary.locationLat!, apiary.locationLon!),
-                // Wider/taller than the bare 56x56 pin box so the persistent
-                // name label (#344) has room to render on its own chipped row
-                // beneath the icon without overflowing the marker's bounds.
+                // Wider than the bare 56px pin so the persistent name label
+                // (#344) has room to render on its own chipped row beneath
+                // the icon without overflowing the marker's bounds. Height
+                // shrunk from 82 (#383): the hive-count badge that used to
+                // sit above the icon is gone.
                 width: 132,
-                height: 82,
+                height: 60,
                 child: _ApiaryPin(
                   apiary: apiary,
                   selected: _isSelected(apiary),
@@ -349,10 +357,13 @@ class _Map extends StatelessWidget {
   }
 }
 
-/// A single apiary marker: shows the apiary **name** on a chipped label plus
-/// the hive count (per D-16's "pin markers per apiary (showing hive count)"),
-/// highlighted when part of the current tap-to-measure selection (#37 AC: the
-/// selection must be clear/usable). The name (#344, FR-AP-3) is drawn
+/// A single apiary marker: shows the apiary **name** on a chipped label
+/// below the pin icon, highlighted when part of the current tap-to-measure
+/// selection (#37 AC: the selection must be clear/usable). The hive count is
+/// no longer painted on the pin itself (#383 — it cluttered the map and
+/// rotated awkwardly with the camera); it stays reachable via the
+/// [Semantics] label and the apiary detail screen the pin long-presses to.
+/// The name (#344, FR-AP-3) is drawn
 /// persistently — not merely tap-to-reveal — on an opaque surface chip so it
 /// stays legible over both the satellite (default) and streets tile layers
 /// (D-16); it was previously present only in the [Semantics] label, so
@@ -395,23 +406,6 @@ class _ApiaryPin extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(12),
-                border: selected
-                    ? Border.all(color: theme.colorScheme.onSurface, width: 2)
-                    : null,
-              ),
-              child: Text(
-                '${apiary.hiveCount}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onPrimary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
             Icon(Icons.location_on, color: color, size: 26),
             // Persistent name chip. Opaque surface fill (not a translucent
             // wash) so the text keeps its contrast over satellite imagery;
