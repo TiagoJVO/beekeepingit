@@ -1814,6 +1814,33 @@ abstract class AppLocalizations {
   /// **'Add anyway'**
   String get closedJourneyConfirmAddAction;
 
+  /// Title of the confirm-to-proceed dialog shown when saving an EDITED activity whose journey attachment differs from the one it was loaded with (#387)
+  ///
+  /// In en, this message translates to:
+  /// **'Change journey attachment?'**
+  String get journeyRelinkConfirmTitle;
+
+  /// Body of the journey-relink confirm dialog, naming both the old and new journey (#387) — either may be the localized "No journey" string (journeyPickerNoneOption) rather than a real journey name
+  ///
+  /// In en, this message translates to:
+  /// **'This activity will move from \"{oldJourneyName}\" to \"{newJourneyName}\".'**
+  String journeyRelinkConfirmMessage(
+    String oldJourneyName,
+    String newJourneyName,
+  );
+
+  /// Cancel action in the journey-relink confirm dialog — stays on the form, the activity's journey attachment is left unchanged (#387)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get journeyRelinkConfirmCancelAction;
+
+  /// Confirm action in the journey-relink confirm dialog — proceeds with saving the activity's new journey attachment (#387)
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get journeyRelinkConfirmConfirmAction;
+
   /// Heading above the journey stats section (#49, FR-JO-1) — apiaries visited, hives harvested, honey collected, média alças/colmeia
   ///
   /// In en, this message translates to:

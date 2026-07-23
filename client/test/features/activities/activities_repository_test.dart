@@ -64,9 +64,9 @@ class FakeLocalStore implements LocalStoreEngine {
       });
     } else if (normalized.startsWith('UPDATE ACTIVITIES')) {
       // update()'s SET type = ?, occurred_at = ?, attributes = ?,
-      // updated_at = ? WHERE id = ?
+      // journey_id = ?, updated_at = ? WHERE id = ? (#387 added journey_id)
       executeCalls++;
-      final id = args[4];
+      final id = args[5];
       final i = rows.indexWhere((r) => r['id'] == id);
       if (i != -1) {
         rows[i] = {
@@ -74,7 +74,8 @@ class FakeLocalStore implements LocalStoreEngine {
           'type': args[0],
           'occurred_at': args[1],
           'attributes': args[2],
-          'updated_at': args[3],
+          'journey_id': args[3],
+          'updated_at': args[4],
         };
       }
     } else {
@@ -182,6 +183,7 @@ void main() {
         type: 'harvest',
         occurredAt: '2026-06-01',
         attributes: {'honey_supers': 4},
+        journeyId: null,
       );
 
       expect(store.executeCalls, 0, reason: 'no write means no sync op');
@@ -201,12 +203,100 @@ void main() {
         type: 'harvest',
         occurredAt: '2026-06-02', // only the date changed
         attributes: {'honey_supers': 4},
+        journeyId: null,
       );
 
       expect(store.executeCalls, 1);
       final row = store.rows.single;
       expect(row['occurred_at'], '2026-06-02');
       expect(jsonDecode(row['attributes'] as String), {'honey_supers': 4});
+    });
+
+    test(
+      'a journey_id-only change (attach) still writes exactly once '
+      '(#387: must not be masked by unchanged type/occurred_at/attributes)',
+      () async {
+        final id = await repo.create(
+          apiaryId: 'a1',
+          type: 'harvest',
+          occurredAt: '2026-06-01',
+          attributes: {'honey_supers': 4},
+        );
+
+        await repo.update(
+          id,
+          type: 'harvest',
+          occurredAt: '2026-06-01',
+          attributes: {'honey_supers': 4},
+          journeyId: 'j1',
+        );
+
+        expect(store.executeCalls, 1);
+        expect(store.rows.single['journey_id'], 'j1');
+      },
+    );
+
+    test('an unchanged journey_id ALSO performs no write when nothing else '
+        'changed (#387: the no-op check covers journey_id too)', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j1',
+      );
+
+      await repo.update(
+        id,
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j1',
+      );
+
+      expect(store.executeCalls, 0, reason: 'no write means no sync op');
+    });
+
+    test('journeyId: null clears a previously-attached journey', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j1',
+      );
+
+      await repo.update(
+        id,
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: null,
+      );
+
+      expect(store.executeCalls, 1);
+      expect(store.rows.single['journey_id'], isNull);
+      expect((await repo.getById(id))!.journeyId, isNull);
+    });
+
+    test('journeyId re-links to a different journey', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j1',
+      );
+
+      await repo.update(
+        id,
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j2',
+      );
+
+      expect((await repo.getById(id))!.journeyId, 'j2');
     });
   });
 

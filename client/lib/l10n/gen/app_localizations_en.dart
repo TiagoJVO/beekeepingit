@@ -1061,6 +1061,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get closedJourneyConfirmAddAction => 'Add anyway';
 
   @override
+  String get journeyRelinkConfirmTitle => 'Change journey attachment?';
+
+  @override
+  String journeyRelinkConfirmMessage(
+    String oldJourneyName,
+    String newJourneyName,
+  ) {
+    return 'This activity will move from \"$oldJourneyName\" to \"$newJourneyName\".';
+  }
+
+  @override
+  String get journeyRelinkConfirmCancelAction => 'Cancel';
+
+  @override
+  String get journeyRelinkConfirmConfirmAction => 'Confirm';
+
+  @override
   String get journeyStatsSectionTitle => 'Journey stats';
 
   @override

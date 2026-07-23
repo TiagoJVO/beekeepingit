@@ -63,19 +63,23 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   DateTime _occurredAt = DateTime.now();
   bool _busy = false;
 
-  // --- Journey attachment (#46, FR-JO-1, D-21) — create-time only, see the
-  // section below and journeyIdToSave in _save(). Not shown/editable in edit
-  // mode: journey_id is immutable after creation (activities_repository.dart's
-  // own doc comment, mirroring the server's updateActivity), and the AC only
-  // covers "when logging an activity".
+  // --- Journey attachment (#46/#387, FR-JO-1, D-21) — rendered in BOTH
+  // create and edit mode as of #387: linking/moving/removing an activity's
+  // journey on edit is a supported action (activities_repository.dart's own
+  // doc comment on why journey_id is no longer immutable there).
   //
   // _journeyTouch tracks whether the user has EXPLICITLY interacted with the
-  // picker for the CURRENT _selectedType — while `none`, the effective
-  // selection is always re-derived from the live matching query (auto-select/
-  // auto-match-miss); once the user deselects or picks/creates a journey,
-  // that explicit choice sticks until the activity type changes again (a
-  // type change invalidates any prior match/choice, since a journey's
-  // main_activity_type must match — see the type dropdown's onChanged).
+  // picker for the CURRENT _selectedType — while `none` (create mode's
+  // initial state), the effective selection is always re-derived from the
+  // live matching query (auto-select/auto-match-miss); once the user
+  // deselects or picks/creates a journey, that explicit choice sticks until
+  // the activity type changes again (a type change invalidates any prior
+  // match/choice, since a journey's main_activity_type must match — see the
+  // type dropdown's onChanged). Edit mode's INITIAL state is never `none` —
+  // _loadExistingInner sets it to `selected`/`deselected` directly from the
+  // activity's STORED journey_id, never an auto-match (#387 design: "no
+  // auto-match surprises on edit" — the stored link only ever changes via an
+  // explicit user action).
   _JourneyTouch _journeyTouch = _JourneyTouch.none;
   String? _manualJourneyId;
   // Only set right after an inline create (journey_quick_create_sheet.dart) —
@@ -83,6 +87,20 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   // (journeyMatchesProvider) necessarily catches up with the just-written
   // row, so the "attached to" summary never shows a raw id/blank in between.
   String? _manualJourneyNameFallback;
+  // The activity's journey_id AND the loaded journey's own name at the
+  // moment _loadExistingInner ran (#387, edit mode only — stays null for a
+  // brand-new activity) — a STABLE snapshot, unlike _manualJourneyNameFallback
+  // (which the picker/type-change flows reset as the user interacts).
+  // [_originalJourneyId] is _save()'s diff baseline for "did the user
+  // actually change the attachment" (only then does the relink confirm
+  // dialog show); [_originalJourneyName] is the display fallback for a
+  // stored journey that [_journeyAttachmentSection]'s live matching query no
+  // longer surfaces (closed since, or the journey's own type/plan changed
+  // out from under it) — showing its name rather than a blank, since the
+  // link itself is still very much there until the user explicitly changes
+  // it.
+  String? _originalJourneyId;
+  String? _originalJourneyName;
   List<Journey> _lastKnownJourneyMatches = const [];
   // The id of the journey [_applyJourneyDefaults] last ran for (#386) — a
   // create-only prefill-once guard: an auto-selected journey's defaults are
@@ -148,6 +166,21 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
         _selectedType = existing.type;
         _occurredAt = DateTime.tryParse(existing.occurredAt) ?? DateTime.now();
         _populateFromAttributes(existing.type, existing.attributes);
+        // #387: reflect the STORED journey link, never an auto-match — see
+        // _journeyTouch's own doc comment.
+        _originalJourneyId = existing.journeyId;
+        _manualJourneyId = existing.journeyId;
+        _journeyTouch = existing.journeyId != null
+            ? _JourneyTouch.selected
+            : _JourneyTouch.deselected;
+        if (existing.journeyId != null) {
+          final journeysRepo = await ref.read(
+            journeysRepositoryProvider.future,
+          );
+          final journey = await journeysRepo.getById(existing.journeyId!);
+          if (!mounted) return;
+          _originalJourneyName = journey?.name;
+        }
       }
     } catch (e) {
       if (!mounted) return;
@@ -341,12 +374,16 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
     }
   }
 
-  /// The #46 activity-form journey picker section (AC: auto-select,
-  /// deselect, switch, inline create, closed-hidden-by-default) — only
-  /// rendered for a NEW activity (this method is only called when
-  /// `!widget.isEdit`, see [build]). Caches the live query's current result
-  /// in [_lastKnownJourneyMatches] so [_effectiveJourneyId]/[_save] (called
-  /// from a button press, not from build) can read the same data
+  /// The #46/#387 activity-form journey picker section (AC: auto-select,
+  /// deselect, switch, inline create, closed-hidden-by-default) — rendered
+  /// in BOTH create and edit mode as of #387 (see [build]). In edit mode
+  /// [_journeyTouch] is never `none` at rest (set from the stored link by
+  /// `_loadExistingInner`), so the auto-select prefill block below simply
+  /// never fires there — the section instead reflects whatever the user
+  /// explicitly picks (or the untouched stored link). Caches the live
+  /// query's current result in [_lastKnownJourneyMatches] so
+  /// [_effectiveJourneyId]/[_save] (called from a button press, not from
+  /// build) can read the same data
   /// synchronously.
   Widget _journeyAttachmentSection(AppLocalizations l10n) {
     final theme = Theme.of(context);
@@ -378,9 +415,22 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
             }
           }
         }
+        // Display fallback chain (#387's edit-mode addition): prefer a
+        // match resolved from the live query; else the inline-create race
+        // fallback; else — the effective selection is still the ORIGINALLY
+        // loaded journey (edit mode, untouched) but that journey no longer
+        // surfaces in `matches` (closed since, or its own type/plan changed
+        // out from under it) — its name, loaded once at edit-open, rather
+        // than a blank "No journey attached" for a link that is still very
+        // much there.
         final displayName =
             effectiveJourney?.name ??
-            (effectiveId == null ? null : _manualJourneyNameFallback);
+            (effectiveId == null
+                ? null
+                : (_manualJourneyNameFallback ??
+                      (effectiveId == _originalJourneyId
+                          ? _originalJourneyName
+                          : null)));
         final autoSelectedHint =
             _journeyTouch == _JourneyTouch.none && effectiveId != null;
 
@@ -517,34 +567,49 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   /// own precedent: one "saved"/"couldn't save" message covers create and
   /// update alike).
   ///
-  /// #46/D-21: on create, resolves the effective journey selection and — if
-  /// it points at a CLOSED journey — shows the AC's explicit
+  /// #46/#387/D-21: resolves the effective journey selection in BOTH modes
+  /// and — if it points at a CLOSED journey — shows the AC's explicit
   /// confirm-to-proceed warning before writing anything; canceling leaves
   /// the form open with nothing saved. The closed-status check is a FRESH
   /// read ([JourneysRepository.getById], not the cached matches list) so it
-  /// can never act on stale data.
+  /// can never act on stale data. On EDIT specifically, when the effective
+  /// selection differs from the journey the activity was loaded with
+  /// ([_originalJourneyId]), a SECOND confirm ([JourneyRelinkConfirmDialog])
+  /// names both the old and new journey before the write — #387's own AC
+  /// that a link/move/remove is always an explicit, confirmed action, never
+  /// a silent side effect of an unrelated field edit.
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
 
-    String? journeyIdToSave;
-    if (!widget.isEdit) {
-      journeyIdToSave = _effectiveJourneyId();
-      if (journeyIdToSave != null) {
-        final journeysRepo = await ref.read(journeysRepositoryProvider.future);
-        final journey = await journeysRepo.getById(journeyIdToSave);
+    final journeyIdToSave = _effectiveJourneyId();
+    Journey? targetJourney;
+    if (journeyIdToSave != null) {
+      final journeysRepo = await ref.read(journeysRepositoryProvider.future);
+      targetJourney = await journeysRepo.getById(journeyIdToSave);
+      if (!mounted) return;
+      if (targetJourney != null && !targetJourney.isOpen) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (_) =>
+              ClosedJourneyConfirmDialog(journeyName: targetJourney!.name),
+        );
         if (!mounted) return;
-        if (journey != null && !journey.isOpen) {
-          final confirmed = await showDialog<bool>(
-            context: context,
-            builder: (_) =>
-                ClosedJourneyConfirmDialog(journeyName: journey.name),
-          );
-          if (!mounted) return;
-          if (confirmed != true) return;
-        }
+        if (confirmed != true) return;
       }
+    }
+
+    if (widget.isEdit && journeyIdToSave != _originalJourneyId) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => JourneyRelinkConfirmDialog(
+          oldJourneyName: _originalJourneyName,
+          newJourneyName: targetJourney?.name,
+        ),
+      );
+      if (!mounted) return;
+      if (confirmed != true) return;
     }
 
     setState(() => _busy = true);
@@ -556,6 +621,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           type: _selectedType,
           occurredAt: _isoDate(_occurredAt),
           attributes: _buildAttributes(),
+          journeyId: journeyIdToSave,
         );
       } else {
         await repo.create(
@@ -665,12 +731,18 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
                             if (value != null) {
                               setState(() {
                                 _selectedType = value;
-                                // A journey's main_activity_type is fixed — any
-                                // prior match/choice is invalid for the new
-                                // type, so the picker resets to auto-select
+                                // A journey's main_activity_type is fixed —
+                                // any prior match/choice is invalid for the
+                                // new type. Create mode resets to auto-select
                                 // fresh against the new type (#46 AC's
-                                // matching rule).
-                                _journeyTouch = _JourneyTouch.none;
+                                // matching rule); edit mode instead DETACHES
+                                // (#387 design: "no auto-match surprises on
+                                // edit" — the stored link only ever changes
+                                // via an explicit user action, never an
+                                // automatic re-match after a type change).
+                                _journeyTouch = widget.isEdit
+                                    ? _JourneyTouch.deselected
+                                    : _JourneyTouch.none;
                                 _manualJourneyId = null;
                                 _manualJourneyNameFallback = null;
                                 // #386: the fresh auto-match for the new
@@ -682,10 +754,8 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
                             }
                           },
                         ),
-                        if (!widget.isEdit) ...[
-                          const SizedBox(height: 16),
-                          _journeyAttachmentSection(l10n),
-                        ],
+                        const SizedBox(height: 16),
+                        _journeyAttachmentSection(l10n),
                         const SizedBox(height: 16),
                         InkWell(
                           key: const Key('activity-occurred-at-field'),
@@ -1042,6 +1112,70 @@ class ClosedJourneyConfirmDialog extends StatelessWidget {
           ),
           onPressed: () => Navigator.of(context).pop(true),
           child: Text(l10n.closedJourneyConfirmAddAction),
+        ),
+      ],
+    );
+  }
+}
+
+/// The #387 AC's explicit confirm-to-proceed warning shown before saving an
+/// EDITED activity whose effective journey attachment differs from the one
+/// it was loaded with (any of the three transitions: no-journey→journey,
+/// journey→no-journey, journey→different-journey) — mirrors
+/// [ClosedJourneyConfirmDialog]'s own shape (danger styling via the theme's
+/// error color, [kMinTapTarget] tap targets, cancel/dismiss is always a
+/// no-op — here, "stay on the form, nothing saved, the old link is intact").
+/// Pulled out as its own public widget for the same testability reason
+/// [ClosedJourneyConfirmDialog] is.
+class JourneyRelinkConfirmDialog extends StatelessWidget {
+  const JourneyRelinkConfirmDialog({
+    required this.oldJourneyName,
+    required this.newJourneyName,
+    super.key,
+  });
+
+  /// The journey the activity currently belongs to, or null for "no
+  /// journey" — rendered via [AppLocalizations.journeyPickerNoneOption]
+  /// (the same "No journey" string the picker itself already uses) rather
+  /// than a bespoke string for this one dialog.
+  final String? oldJourneyName;
+
+  /// The journey it would belong to after saving, or null for "no journey"
+  /// (removing the attachment) — same null-rendering convention as
+  /// [oldJourneyName].
+  final String? newJourneyName;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return AlertDialog(
+      key: const Key('activity-journey-relink-confirm-dialog'),
+      icon: Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+      title: Text(l10n.journeyRelinkConfirmTitle),
+      content: Text(
+        l10n.journeyRelinkConfirmMessage(
+          oldJourneyName ?? l10n.journeyPickerNoneOption,
+          newJourneyName ?? l10n.journeyPickerNoneOption,
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('activity-journey-relink-confirm-cancel'),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+          ),
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(l10n.journeyRelinkConfirmCancelAction),
+        ),
+        TextButton(
+          key: const Key('activity-journey-relink-confirm-confirm'),
+          style: TextButton.styleFrom(
+            foregroundColor: theme.colorScheme.error,
+            minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+          ),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text(l10n.journeyRelinkConfirmConfirmAction),
         ),
       ],
     );

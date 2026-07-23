@@ -1069,6 +1069,23 @@ class AppLocalizationsPt extends AppLocalizations {
   String get closedJourneyConfirmAddAction => 'Adicionar mesmo assim';
 
   @override
+  String get journeyRelinkConfirmTitle => 'Alterar a jornada associada?';
+
+  @override
+  String journeyRelinkConfirmMessage(
+    String oldJourneyName,
+    String newJourneyName,
+  ) {
+    return 'Esta atividade vai passar de \"$oldJourneyName\" para \"$newJourneyName\".';
+  }
+
+  @override
+  String get journeyRelinkConfirmCancelAction => 'Cancelar';
+
+  @override
+  String get journeyRelinkConfirmConfirmAction => 'Confirmar';
+
+  @override
   String get journeyStatsSectionTitle => 'Estatísticas da jornada';
 
   @override
