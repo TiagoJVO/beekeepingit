@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/TiagoJVO/beekeepingit/services/shared v0.0.0-20260705151231-aba1357e5333
-	github.com/coreos/go-oidc/v3 v3.19.0
+	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/google/uuid v1.6.0
