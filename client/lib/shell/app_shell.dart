@@ -349,6 +349,9 @@ class AppShell extends ConsumerWidget {
       'apiaryEdit' => l10n.editApiaryTitle,
       'activityNew' => l10n.newActivityTitle,
       'activityDetail' => l10n.activityDetailTitle,
+      // #384: the journey-scoped activity detail route renders the same
+      // ActivityDetailScreen as 'activityDetail' above — same title.
+      'journeyActivityDetail' => l10n.activityDetailTitle,
       'activityEdit' => l10n.editActivityTitle,
       'journeyNew' => l10n.newJourneyTitle,
       'journeyDetail' => l10n.journeyDetailTitle,
