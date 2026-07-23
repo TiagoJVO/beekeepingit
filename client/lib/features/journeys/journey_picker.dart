@@ -226,7 +226,7 @@ class _NoJourneyTile extends StatelessWidget {
           rowKey: const Key('journey-picker-none-option'),
           icon: selected ? Icons.radio_button_checked : Icons.radio_button_off,
           iconColor: selected
-              ? theme.colorScheme.secondary
+              ? theme.colorScheme.tertiary
               : theme.colorScheme.onSurfaceVariant,
           title: l10n.journeyPickerNoneOption,
           onTap: onTap,
@@ -249,7 +249,6 @@ class _PickerRow extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.onTap,
-    this.titleColor,
     this.trailing,
   });
 
@@ -257,7 +256,6 @@ class _PickerRow extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final String title;
-  final Color? titleColor;
   final Widget? trailing;
   final VoidCallback onTap;
 
@@ -285,7 +283,7 @@ class _PickerRow extends StatelessWidget {
                       fontFamily: AppTheme.bodyFontFamily,
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
-                      color: titleColor ?? scheme.onSurface,
+                      color: scheme.onSurface,
                     ),
                   ),
                 ),
@@ -327,7 +325,7 @@ class _JourneyTile extends StatelessWidget {
           rowKey: Key('journey-picker-option-${journey.id}'),
           icon: selected ? Icons.radio_button_checked : Icons.radio_button_off,
           iconColor: selected
-              ? theme.colorScheme.secondary
+              ? theme.colorScheme.tertiary
               : theme.colorScheme.onSurfaceVariant,
           title: journey.name,
           trailing: closed
@@ -378,9 +376,8 @@ class _CreateJourneyTile extends StatelessWidget {
         child: _PickerRow(
           rowKey: const Key('journey-picker-create-new-option'),
           icon: Icons.add_circle_outline,
-          iconColor: theme.colorScheme.secondary,
+          iconColor: theme.colorScheme.tertiary,
           title: l10n.journeyPickerCreateNewAction,
-          titleColor: theme.colorScheme.secondary,
           onTap: onTap,
         ),
       ),

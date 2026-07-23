@@ -7,6 +7,7 @@ import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
+import 'package:beekeepingit_client/theming/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -257,6 +258,28 @@ void main() {
       expect(repo.created, isEmpty);
       expect(find.text('Select at least one apiary'), findsOneWidget);
     });
+
+    testWidgets(
+      'a selected apiary checkbox uses the accent (tertiary) color, not the '
+      'muted secondary color that reads as disabled (#381)',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
+
+        await tester.tap(find.byKey(const Key('journey-apiary-option-a1')));
+        await tester.pumpAndSettle();
+
+        final scheme = AppTheme.light().colorScheme;
+        final icon = tester.widget<Icon>(
+          find.descendant(
+            of: find.byKey(const Key('journey-apiary-option-a1')),
+            matching: find.byIcon(Icons.check_box),
+          ),
+        );
+        expect(icon.color, scheme.tertiary);
+        expect(icon.color, isNot(scheme.secondary));
+      },
+    );
 
     testWidgets(
       'a valid create calls create() with the name/type/selected apiaries',
