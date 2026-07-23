@@ -1,5 +1,14 @@
-import { test, expect, Page, Browser, BrowserContext, APIRequestContext } from "@playwright/test";
-import { readIdTokenClaims, submitIdpCredentials } from "./helpers";
+import { test, expect } from "@playwright/test";
+import {
+  apiJson,
+  countMessagesTo,
+  expectLoginCompleted,
+  invitationStatus,
+  loginAndCaptureToken,
+  MAILPIT_URL,
+  pollForVerificationLink,
+  submitIdpCredentials,
+} from "./helpers";
 
 /**
  * Email-verification flow e2e (#361, NFR-SEC-1, NFR-TST-1).
@@ -42,9 +51,9 @@ import { readIdTokenClaims, submitIdpCredentials } from "./helpers";
  * test having verified the seed user.
  */
 
-const MAILPIT_URL = process.env.E2E_MAILPIT_URL ?? "";
+// (The Mailpit/link/invitation/token helpers this spec introduced moved to
+// ./helpers.ts when registration.spec.ts (#366) grew the same needs.)
 const AUTH_ORIGIN = process.env.E2E_AUTH_ORIGIN ?? "https://auth.beekeepingit.local:8443";
-const API_URL = process.env.E2E_API_URL ?? "";
 const UNVERIFIED_USER =
   process.env.E2E_UNVERIFIED_USER ?? "unverified.beekeeper@beekeepingit.local";
 const UNVERIFIED_PASS = process.env.E2E_UNVERIFIED_PASS ?? "dev-password123";
@@ -56,131 +65,6 @@ const ADMIN_PASS = process.env.E2E_PASS ?? "dev-password123";
 // The address the (rejected) email-change attempt targets. Never a real
 // inbox — dev/CI mail all lands in the Mailpit sink.
 const CHANGED_EMAIL = "changed.beekeeper@beekeepingit.local";
-
-// Extracts the one-time verification link for `recipient` from the Mailpit
-// API. The message body is the built-in account-confirmation template whose
-// text part carries the bare flow URL on its own line. (The body renders in
-// English regardless of user locale on the pinned Authentik 2026.5.4 — see
-// the blueprint's i18n note — so no locale-sensitive matching is needed.)
-async function pollForVerificationLink(
-  request: APIRequestContext,
-  recipient: string,
-): Promise<string> {
-  const deadline = Date.now() + 90_000;
-  for (;;) {
-    const list = await request
-      .get(`${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${recipient}`)}`)
-      .catch(() => null);
-    if (list?.ok()) {
-      const body = (await list.json()) as { messages?: Array<{ ID: string }> };
-      const newest = body.messages?.[0];
-      if (newest) {
-        const full = await request.get(`${MAILPIT_URL}/api/v1/message/${newest.ID}`);
-        const text = ((await full.json()) as { Text?: string }).Text ?? "";
-        const match = text.match(/https?:\/\/[^\s"<>]+/);
-        if (match) return match[0];
-      }
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`no verification email for ${recipient} arrived in Mailpit`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-  }
-}
-
-async function countMessagesTo(request: APIRequestContext, recipient: string): Promise<number> {
-  const list = await request.get(
-    `${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${recipient}`)}`,
-  );
-  const body = (await list.json()) as { messages?: unknown[] };
-  return body.messages?.length ?? 0;
-}
-
-// A login that completed lands the user back on the app origin — the
-// onboarding gate then routes by profile/org state (/profile for a fresh
-// user, /apiaries once the invitation below has joined them to the org).
-// Anything still on the auth host means the flow didn't finish.
-async function expectLoginCompleted(page: Page, expectedEmail: string) {
-  await page.waitForURL(/app\.beekeepingit\.local|\/profile/, { timeout: 60_000 });
-  const claims = await readIdTokenClaims(page);
-  expect(claims.email).toBe(expectedEmail);
-  expect(claims.email_verified).toBe(true);
-}
-
-/**
- * Runs an authenticated JSON call against the domain APIs from inside `page`
- * (which must be on the app origin): same-origin fetch, so it rides the
- * browser's host-resolver rules exactly like slice.spec.ts's serverApiary —
- * Playwright's Node-side `request` fixture would not resolve the dev
- * hostnames.
- */
-async function apiJson(
-  page: Page,
-  token: string,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; json: Record<string, unknown> }> {
-  return page.evaluate(
-    async ({ apiURL, token, method, path, body }) => {
-      const res = await fetch(`${apiURL}/v1${path}`, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-        },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      return { status: res.status, json };
-    },
-    { apiURL: API_URL, token, method, path, body },
-  );
-}
-
-/** The status of the org's invitation for `email`, via the admin's session. */
-async function invitationStatus(
-  adminPage: Page,
-  adminToken: string,
-  orgId: string,
-  email: string,
-): Promise<string | null> {
-  const { status, json } = await apiJson(
-    adminPage,
-    adminToken,
-    "GET",
-    `/organizations/${orgId}/invitations`,
-  );
-  if (status !== 200) return null;
-  const rows = (json.data ?? []) as Array<{ email: string; status: string }>;
-  return rows.find((row) => row.email === email)?.status ?? null;
-}
-
-/**
- * Logs `user` in through the real IdP flow in a fresh context and captures a
- * bearer token from the app's own API traffic (the provider disallows direct
- * grant, so a token is only obtainable from a real authenticated run — same
- * technique as slice.spec.ts). Caller closes the returned context.
- */
-async function loginAndCaptureToken(
-  browser: Browser,
-  user: string,
-  pass: string,
-): Promise<{ context: BrowserContext; page: Page; token: string }> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  let token = "";
-  page.on("request", (req) => {
-    const auth = req.headers()["authorization"];
-    if (auth?.startsWith("Bearer ") && req.url().includes("/v1/")) {
-      token = auth.slice("Bearer ".length);
-    }
-  });
-  await submitIdpCredentials(page, user, pass);
-  await page.waitForURL(/app\.beekeepingit\.local/, { timeout: 60_000 });
-  await expect.poll(() => token, { timeout: 30_000 }).not.toBe("");
-  return { context, page, token };
-}
 
 test.describe("email verification at login (#361)", () => {
   test.skip(

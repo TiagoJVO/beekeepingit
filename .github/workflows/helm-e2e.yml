@@ -51,7 +51,10 @@ jobs:
     # review): the verification spec grew an invitation round-trip (one extra
     # admin login) and a second test (two more logins) pinning the rejected
     # email-change control — a few more minutes worst-case on a cold stack.
-    timeout-minutes: 50
+    # Bumped 50 -> 60 (#366): the registration spec adds three ordered tests
+    # (five registrations/verifications plus ~six full OIDC logins and two
+    # in-app onboardings) on top of the existing suite.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -447,15 +450,17 @@ jobs:
             /application/o/beekeepingit/.well-known/openid-configuration
 
       # The verification-flow e2e (#361, client/e2e/tests/verification.spec.ts)
-      # reads the emailed one-time link out of Mailpit's API, which is
-      # deliberately in-cluster-only (no gateway route). kubectl port-forward
+      # and the registration e2e (#366, registration.spec.ts) read the emailed
+      # one-time links out of Mailpit's API, which is deliberately
+      # in-cluster-only (no gateway route). kubectl port-forward
       # bridges it to the runner — the tunnel rides the kube API, not pod
       # networking, so NetworkPolicy doesn't apply; the background process
       # outlives this step for the Playwright run below. E2E_MAILPIT_URL is
-      # also that spec's opt-in switch: it needs THIS job's fresh
+      # also those specs' opt-in switch: they need THIS job's fresh
       # blueprint-seeded state (the unverified seed user must still be
-      # unverified), so it self-skips anywhere the env is absent.
-      - name: Port-forward Mailpit for the verification e2e
+      # unverified; registration creates its own per-run accounts), so they
+      # self-skip anywhere the env is absent.
+      - name: Port-forward Mailpit for the verification/registration e2e
         if: steps.changes.outputs.e2e == 'true'
         run: |
           kubectl -n beekeepingit-dev port-forward svc/mailpit 8025:8025 \
@@ -484,8 +489,9 @@ jobs:
         if: steps.changes.outputs.e2e == 'true'
         working-directory: client/e2e
         env:
-          # Opts in the verification-flow spec (#361) — see the port-forward
-          # step above. The walking-skeleton spec ignores it.
+          # Opts in the verification-flow (#361) and registration (#366)
+          # specs — see the port-forward step above. The walking-skeleton
+          # spec ignores it.
           E2E_MAILPIT_URL: http://localhost:8025
         run: npm test
 
