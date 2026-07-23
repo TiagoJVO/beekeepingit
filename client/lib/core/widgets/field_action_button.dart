@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 /// Shared field-first, gloves-friendly action buttons (FR-UX-1, FR-AX-1, #79,
@@ -21,7 +23,22 @@ const double kFieldActionButtonHeight = 56;
 /// inline spinner in place of the icon/label rather than disabling+hiding
 /// it, so the button's position and size don't jump while a request is in
 /// flight.
-class PrimaryActionButton extends StatelessWidget {
+///
+/// Self-guarding against multi-click (#380): while [onPressed] is running
+/// (its returned [Future], if any, hasn't completed yet), the button
+/// disables itself so a second tap can never invoke it again — a caller does
+/// NOT need its own re-entrancy guard to prevent a double-tap from stacking
+/// two calls. This disables the button but does NOT by itself show the busy
+/// spinner: [onPressed] handlers that open a confirmation dialog and await
+/// the user's choice (e.g. a delete flow) are legitimately "in flight" for
+/// as long as the user takes to decide, and a spinner during that wait would
+/// misleadingly suggest network activity where there is none (and, in a
+/// widget test, an indeterminate `CircularProgressIndicator` never lets
+/// `pumpAndSettle` converge). Pass [busy] explicitly for the sub-span that
+/// really is async I/O (mirrors every existing call site's own pattern of
+/// flipping a local `_busy`/`_saving` flag around the actual repository
+/// call, e.g. after a confirm dialog resolves).
+class PrimaryActionButton extends StatefulWidget {
   const PrimaryActionButton({
     required this.label,
     required this.onPressed,
@@ -38,12 +55,15 @@ class PrimaryActionButton extends StatelessWidget {
   /// Optional leading icon — omitted while [busy].
   final IconData? icon;
 
-  /// Null while disabled (e.g. mid-submit with [busy] already true).
-  final VoidCallback? onPressed;
+  /// Null while disabled (e.g. mid-submit with [busy] already true). May
+  /// return a [Future] — the button disables itself (re-entrancy guard, not
+  /// necessarily the spinner — see the class doc) for its duration.
+  final FutureOr<void> Function()? onPressed;
 
   /// Shows a small inline spinner instead of [icon]/[label] and disables the
   /// button, without changing its footprint (no tap-target-size regression
-  /// while busy).
+  /// while busy). Caller-driven — see the class doc for why this is kept
+  /// separate from the button's own tap-in-flight tracking.
   final bool busy;
 
   /// Whether the button stretches to fill its parent's width (the common
@@ -59,36 +79,56 @@ class PrimaryActionButton extends StatelessWidget {
   final String? semanticsLabel;
 
   @override
+  State<PrimaryActionButton> createState() => _PrimaryActionButtonState();
+}
+
+class _PrimaryActionButtonState extends State<PrimaryActionButton> {
+  bool _inFlight = false;
+
+  Future<void> _handlePressed() async {
+    if (_inFlight) return;
+    setState(() => _inFlight = true);
+    try {
+      await widget.onPressed!();
+    } finally {
+      if (mounted) setState(() => _inFlight = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final child = busy
+    final disabled = widget.onPressed == null || widget.busy || _inFlight;
+    final child = widget.busy
         ? const SizedBox(
             width: 24,
             height: 24,
             child: CircularProgressIndicator(strokeWidth: 2),
           )
-        : Text(label);
+        : Text(widget.label);
 
-    final minimumSize = fullWidth
+    final minimumSize = widget.fullWidth
         ? const Size.fromHeight(kFieldActionButtonHeight)
         : const Size(kFieldActionButtonHeight, kFieldActionButtonHeight);
 
-    final button = icon == null || busy
+    final onPressed = disabled ? null : _handlePressed;
+
+    final button = widget.icon == null || widget.busy
         ? FilledButton(
             style: FilledButton.styleFrom(minimumSize: minimumSize),
-            onPressed: busy ? null : onPressed,
+            onPressed: onPressed,
             child: child,
           )
         : FilledButton.icon(
             style: FilledButton.styleFrom(minimumSize: minimumSize),
             onPressed: onPressed,
-            icon: Icon(icon),
+            icon: Icon(widget.icon),
             label: child,
           );
 
     return Semantics(
       button: true,
       enabled: onPressed != null,
-      label: semanticsLabel ?? label,
+      label: widget.semanticsLabel ?? widget.label,
       child: ExcludeSemantics(child: button),
     );
   }
@@ -98,7 +138,11 @@ class PrimaryActionButton extends StatelessWidget {
 /// now, change password) — outlined, full width, [kFieldActionButtonHeight]
 /// tall, matching [PrimaryActionButton]'s footprint so the two read as the
 /// same tap-target family.
-class SecondaryActionButton extends StatelessWidget {
+///
+/// Self-guarding against multi-click the same way as [PrimaryActionButton]
+/// — see its class doc for why disabling and the busy spinner are kept
+/// independent.
+class SecondaryActionButton extends StatefulWidget {
   const SecondaryActionButton({
     required this.label,
     required this.onPressed,
@@ -111,7 +155,11 @@ class SecondaryActionButton extends StatelessWidget {
 
   final String label;
   final IconData? icon;
-  final VoidCallback? onPressed;
+
+  /// May return a [Future] — the button disables itself (re-entrancy guard)
+  /// for its duration. See [PrimaryActionButton.onPressed]'s doc for why
+  /// this doesn't by itself drive the busy spinner.
+  final FutureOr<void> Function()? onPressed;
 
   /// Same busy-spinner behavior as [PrimaryActionButton.busy].
   final bool busy;
@@ -122,39 +170,55 @@ class SecondaryActionButton extends StatelessWidget {
   final String? semanticsLabel;
 
   @override
+  State<SecondaryActionButton> createState() => _SecondaryActionButtonState();
+}
+
+class _SecondaryActionButtonState extends State<SecondaryActionButton> {
+  bool _inFlight = false;
+
+  Future<void> _handlePressed() async {
+    if (_inFlight) return;
+    setState(() => _inFlight = true);
+    try {
+      await widget.onPressed!();
+    } finally {
+      if (mounted) setState(() => _inFlight = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final disabled = widget.onPressed == null || widget.busy || _inFlight;
     final errorColor = Theme.of(context).colorScheme.error;
     final style = OutlinedButton.styleFrom(
       minimumSize: const Size.fromHeight(kFieldActionButtonHeight),
-      foregroundColor: destructive ? errorColor : null,
-      side: destructive ? BorderSide(color: errorColor) : null,
+      foregroundColor: widget.destructive ? errorColor : null,
+      side: widget.destructive ? BorderSide(color: errorColor) : null,
     );
 
-    final child = busy
+    final child = widget.busy
         ? const SizedBox(
             width: 20,
             height: 20,
             child: CircularProgressIndicator(strokeWidth: 2),
           )
-        : Text(label);
+        : Text(widget.label);
 
-    final button = icon == null || busy
-        ? OutlinedButton(
-            style: style,
-            onPressed: busy ? null : onPressed,
-            child: child,
-          )
+    final onPressed = disabled ? null : _handlePressed;
+
+    final button = widget.icon == null || widget.busy
+        ? OutlinedButton(style: style, onPressed: onPressed, child: child)
         : OutlinedButton.icon(
             style: style,
             onPressed: onPressed,
-            icon: Icon(icon),
+            icon: Icon(widget.icon),
             label: child,
           );
 
     return Semantics(
       button: true,
-      enabled: onPressed != null && !busy,
-      label: semanticsLabel ?? label,
+      enabled: onPressed != null,
+      label: widget.semanticsLabel ?? widget.label,
       child: ExcludeSemantics(child: button),
     );
   }

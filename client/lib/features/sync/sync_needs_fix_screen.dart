@@ -61,13 +61,26 @@ class SyncNeedsFixScreen extends ConsumerWidget {
   }
 }
 
-class _RejectedTile extends ConsumerWidget {
+class _RejectedTile extends ConsumerStatefulWidget {
   const _RejectedTile({required this.op});
 
   final RejectedOp op;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_RejectedTile> createState() => _RejectedTileState();
+}
+
+class _RejectedTileState extends ConsumerState<_RejectedTile> {
+  /// Guards against a double-tap firing [_dismiss] twice while the first
+  /// call is still in flight (#380) — this row isn't built from the shared
+  /// [PrimaryActionButton]/[SecondaryActionButton] family (a plain
+  /// [TextButton], to keep this compact dismiss/fix row layout), so it needs
+  /// its own local in-flight guard rather than inheriting theirs.
+  bool _dismissing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final op = widget.op;
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
 
@@ -114,7 +127,7 @@ class _RejectedTile extends ConsumerWidget {
               children: [
                 TextButton(
                   key: Key('needs-fix-dismiss-${op.id}'),
-                  onPressed: () => _dismiss(ref),
+                  onPressed: _dismissing ? null : _dismiss,
                   child: Text(l10n.syncNeedsFixDismissAction),
                 ),
                 const SizedBox(width: 4),
@@ -135,8 +148,14 @@ class _RejectedTile extends ConsumerWidget {
     );
   }
 
-  Future<void> _dismiss(WidgetRef ref) async {
-    final repo = await ref.read(syncRejectedRepositoryProvider.future);
-    await repo.dismiss(op.id);
+  Future<void> _dismiss() async {
+    if (_dismissing) return;
+    setState(() => _dismissing = true);
+    try {
+      final repo = await ref.read(syncRejectedRepositoryProvider.future);
+      await repo.dismiss(widget.op.id);
+    } finally {
+      if (mounted) setState(() => _dismissing = false);
+    }
   }
 }
