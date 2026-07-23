@@ -1,0 +1,68 @@
+{{- if .Values.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mailpit.fullname" . }}
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: mailpit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mailpit
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      # Partial hardening only, mirroring charts/powersync's stance: axllent/mailpit
+      # is a third-party image with no in-repo Dockerfile, so
+      # `runAsNonRoot`/`readOnlyRootFilesystem` stay deferred (issue #89's constraint)
+      # rather than risking an unverified silent crash-loop; the parts safe
+      # regardless of the image's internals are applied.
+      containers:
+        - name: mailpit
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: smtp
+              containerPort: {{ .Values.smtpPort }}
+            - name: http
+              containerPort: {{ .Values.httpPort }}
+          env:
+            - name: MP_SMTP_BIND_ADDR
+              value: "0.0.0.0:{{ .Values.smtpPort }}"
+            - name: MP_UI_BIND_ADDR
+              value: "0.0.0.0:{{ .Values.httpPort }}"
+            # In-memory only — captured dev/CI mail is ephemeral by design; a
+            # bounded ring buffer keeps a long-lived dev cluster from growing.
+            - name: MP_MAX_MESSAGES
+              value: {{ .Values.maxMessages | quote }}
+          # Mailpit's own health endpoints; without probes a crashed listener
+          # still reports Ready (same rationale as charts/powersync's probes).
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: {{ .Values.httpPort }}
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: {{ .Values.httpPort }}
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: {{ .Values.httpPort }}
+            periodSeconds: 5
+          resources:
+            {{- index .Values.global.resources .Values.resourceTier | toYaml | nindent 12 }}
+{{- end }}

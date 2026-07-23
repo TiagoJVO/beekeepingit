@@ -11,9 +11,10 @@ description: >-
   (the beekeepingit-gitops repo's `apps/dev/authentik-helmrelease.yaml`) — not nested here — since Flux's
   GitRepository-sourced charts don't recursively resolve a subchart's own vendored
   dependency. See ADR-0012 (pattern) and ADR-0016 (the Keycloak→Authentik swap) plus the
-  frozen contract in docs/architecture/oidc-integration.md. Production hardening (real
-  email_verified mapping, recovery/password-reset, SMTP, external/CNPG Postgres, security
-  review) stays EPIC-14 (#15).
+  frozen contract in docs/architecture/oidc-integration.md. The real email_verified scope
+  mapping, the login-time email-verification flow, and SMTP wiring landed with #361
+  (ADR-0019); remaining production hardening (recovery/password-reset, external/CNPG
+  Postgres, security review) stays EPIC-14 (#15).
 type: application
 version: 0.1.0
 # Aligned with the pinned upstream Authentik chart/app version validated end-to-end

@@ -16,9 +16,50 @@ entries:
       email: test.beekeeper@beekeepingit.local
       is_active: true
       path: users
-      attributes: { upn: "11111111-1111-4111-8111-111111111111" } # sub_mode=user_upn => sub = this UUID (devseed pins it)
+      # upn: sub_mode=user_upn => sub = this UUID (devseed pins it).
+      # email_verified: seeded VERIFIED (#361) — this is a dev/CI-provisioned trusted
+      # account (the address isn't a real inbox), and the walking-skeleton e2e's login
+      # must not detour through the verification email stage below. Seeding the
+      # attribute is also the documented escape hatch for ops-provisioned accounts
+      # whose address was verified out-of-band.
+      attributes: { upn: "11111111-1111-4111-8111-111111111111", email_verified: true }
       groups: [!KeyOf group-platform-operator]
       password: dev-password123
+  # Second dev/CI seed user, deliberately UNVERIFIED (#361): the verification-flow
+  # e2e (client/e2e/tests/verification.spec.ts) logs in as this user, expects the
+  # email stage to gate the login, completes it via the Mailpit-captured link, and
+  # asserts the id_token then carries email_verified=true. No group, no org
+  # membership (devseed doesn't know it) — after verifying it lands on onboarding.
+  - model: authentik_core.user
+    id: user-unverified-beekeeper
+    identifiers: { username: unverified.beekeeper@beekeepingit.local }
+    attrs:
+      username: unverified.beekeeper@beekeepingit.local
+      name: Unverified Beekeeper
+      email: unverified.beekeeper@beekeepingit.local
+      is_active: true
+      path: users
+      attributes: { upn: "22222222-2222-4222-8222-222222222222" }
+      password: dev-password123
+  # Custom `email` scope mapping (#361, NFR-SEC-1): emits the user's GENUINE
+  # verification state instead of the built-in managed mapping's hardcoded value.
+  # Note the built-in hardcodes `email_verified: False` on the pinned 2026.5.4
+  # (changed from `True` in Authentik 2025.10) — either constant is cosmetic; this
+  # mapping reads the `email_verified` user attribute that the verification flow
+  # below sets on completion. The strict `is True` check fails closed on any
+  # non-boolean junk an attribute could hold.
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-email-verified
+    identifiers: { name: "BeekeepingIT OAuth Mapping: OpenID 'email' (real email_verified)" }
+    attrs:
+      name: "BeekeepingIT OAuth Mapping: OpenID 'email' (real email_verified)"
+      scope_name: email
+      description: "Email address"
+      expression: |
+        return {
+            "email": request.user.email,
+            "email_verified": request.user.attributes.get("email_verified", False) is True,
+        }
   - model: authentik_providers_oauth2.oauth2provider
     id: provider-beekeepingit
     identifiers: { name: beekeepingit-pwa }
@@ -60,10 +101,9 @@ entries:
             authentik_providers_oauth2.scopemapping,
             [managed, goauthentik.io/providers/oauth2/scope-profile],
           ]
-        - !Find [
-            authentik_providers_oauth2.scopemapping,
-            [managed, goauthentik.io/providers/oauth2/scope-email],
-          ]
+        # The custom mapping above, NOT the managed scope-email built-in — the
+        # built-in's email_verified is a hardcoded constant (#361, NFR-SEC-1).
+        - !KeyOf scope-email-verified
         - !Find [
             authentik_providers_oauth2.scopemapping,
             [managed, goauthentik.io/providers/oauth2/scope-offline_access],
@@ -95,3 +135,160 @@ entries:
   - model: authentik_flows.flow
     identifiers: { slug: default-authentication-flow }
     attrs: { title: "Sign in" }
+
+  # --- Email verification at login (#361, NFR-SEC-1, NFR-I18N-1) ---
+  # Existing accounts are invite/admin-provisioned (registration disabled), so
+  # verification can't ride an enrollment flow — it's injected into the
+  # authentication flow instead: an unverified, non-superuser login is gated on an
+  # email stage (one-time link, sent to the account's address), and a user_write
+  # stage right after it stamps `attributes.email_verified: true` — the exact
+  # attribute the custom scope mapping above emits. Binding orders 40/45 slot
+  # between the default flow's mfa-validation (30) and user-login (100).
+  #
+  # i18n (NFR-I18N-1): the subject "Account Confirmation" is deliberately the
+  # exact gettext msgid from Authentik's catalogs (pt_PT: "Confirmação de Conta")
+  # so it stays translatable — a custom subject string would bypass translation
+  # entirely. KNOWN LIMITATION, verified in the authentik source at the pinned
+  # 2026.5.4: flow-triggered mail is translated per the REQUEST's negotiated
+  # language, not the recipient's saved locale — stages/email/stage.py renders
+  # with language=pending_user.locale(request), and core/models.py User.locale()
+  # returns request.LANGUAGE_CODE whenever a request is present (the
+  # attributes.settings.locale fallback only applies to non-request sends) — and
+  # pt-PT can never negotiate: Django's default LANGUAGES has no pt-pt entry (so
+  # an Accept-Language: pt-PT request activates plain "pt") while authentik ships
+  # a pt_PT catalog but no "pt" one. Net effect: verification emails render in
+  # English today regardless of user locale; the msgid subject keeps translation
+  # engaged the moment an upstream fix (or a LANGUAGES override) lands. See
+  # auth.md §8.10's limitation note.
+  - model: authentik_stages_email.emailstage
+    id: stage-email-verification
+    identifiers: { name: beekeepingit-email-verification }
+    attrs:
+      name: beekeepingit-email-verification
+      # Connection comes from the AUTHENTIK_EMAIL__* env (templates/config-secret.yaml)
+      # — dev/CI: the Mailpit sink; staging/prod: a real relay whose credentials are
+      # infra configuration, never in git (NFR-SEC-1).
+      use_global_settings: true
+      template: email/account_confirmation.html
+      subject: Account Confirmation
+      token_expiry: minutes=30
+      # If an account was provisioned inactive, proving inbox control activates it.
+      activate_user_on_success: true
+  - model: authentik_stages_user_write.userwritestage
+    id: stage-email-verification-write
+    identifiers: { name: beekeepingit-email-verification-write }
+    attrs:
+      name: beekeepingit-email-verification-write
+      user_creation_mode: never_create
+  # Runs the email stage only for an unverified, non-superuser pending user.
+  # Superuser bypass = operator-lockout guard: a broken SMTP path must never lock
+  # akadmin out of the admin UI (superusers never log into the PWA, so their
+  # cosmetically-false claim is irrelevant). On a policy ERROR the binding's
+  # default failure_result (false) skips the stage — the login proceeds but the
+  # claim stays false: fail-closed for the claim, fail-open only for the login.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-needs-email-verification
+    identifiers: { name: beekeepingit-needs-email-verification }
+    attrs:
+      expression: |
+        flow_plan = request.context.get("flow_plan")
+        if not flow_plan:
+            return False
+        user = flow_plan.context.get("pending_user")
+        if not user or not user.pk or user.is_superuser:
+            return False
+        return user.attributes.get("email_verified", False) is not True
+  # Marks the address verified — but ONLY when the plan carries the proof the
+  # emailed one-time link was actually used: `is_restored` is the FlowToken the
+  # executor restores the plan from when the link is opened, and the email stage
+  # itself already denies a token/user mismatch. Without that evidence (e.g. the
+  # email stage was skipped by an evaluation error) nothing is written — the
+  # attribute can never be set by merely reaching this point in the flow.
+  # Injecting via prompt_data is the documented user_write contract; no prompt
+  # stage participates in this flow, so nothing user-supplied is merged. The
+  # write is MERGED into any existing prompt_data (setdefault + key assignment),
+  # never assigned over it — assignment would silently discard whatever a
+  # future stage placed in the plan (review finding on #361).
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-mark-email-verified
+    identifiers: { name: beekeepingit-mark-email-verified }
+    attrs:
+      expression: |
+        flow_plan = request.context.get("flow_plan")
+        if not flow_plan:
+            return False
+        user = flow_plan.context.get("pending_user")
+        if not user or not user.pk or user.is_superuser:
+            return False
+        if user.attributes.get("email_verified", False) is True:
+            return False
+        restore_token = flow_plan.context.get("is_restored")
+        if not restore_token or restore_token.user != user:
+            return False
+        prompt_data = flow_plan.context.setdefault("prompt_data", {})
+        prompt_data["attributes.email_verified"] = True
+        return True
+  # evaluate_on_plan: false + re_evaluate_policies: true on both bindings: at plan
+  # time (flow start) there is no pending_user yet — identification only sets it
+  # mid-execution — so the policies must run at stage time (same flags as
+  # Authentik's own conditional-stage examples).
+  - model: authentik_flows.flowstagebinding
+    id: binding-auth-email-verification
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      stage: !KeyOf stage-email-verification
+      order: 40
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_flows.flowstagebinding
+    id: binding-auth-email-verification-write
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      stage: !KeyOf stage-email-verification-write
+      order: 45
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-needs-email-verification
+      target: !KeyOf binding-auth-email-verification
+      order: 0
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-mark-email-verified
+      target: !KeyOf binding-auth-email-verification-write
+      order: 0
+
+  # --- Self-service email change is DISABLED (#361) — the #170 shape one layer down ---
+  # A verified user re-pointing their OWN IdP email at a victim's pending
+  # invitation while keeping email_verified=true is blocked one level EARLIER
+  # than any reset-on-change policy could act: the default user-settings flow's
+  # own validation policy (default-user-settings-authorization) rejects an email
+  # change with "Not allowed to change email address." unless
+  # Tenant.default_user_change_email is enabled — and on the pinned Authentik
+  # 2026.5.4 that setting defaults to FALSE (authentik/tenants/models.py lines
+  # 64–66). The e2e proves the rejection live (verification.spec.ts drives the
+  # real flow executor and asserts the error), so a version bump that flips the
+  # default goes red instead of silently opening the path.
+  #
+  # This file deliberately carries NO entry pinning that setting: the Tenant
+  # model subclasses InternallyManagedMixin, which blueprints/v1/importer.py's
+  # is_model_allowed EXCLUDES from blueprint management (verified at 2026.5.4),
+  # the field does not exist on authentik_brands.brand, and no AUTHENTIK_* env
+  # configures it — the version pin + the live e2e + the oidc-integration.md §8
+  # watch-list ARE the pin.
+  #
+  # An earlier revision of this branch carried a "reset email_verified on email
+  # change" expression policy on the user-settings flow's write binding
+  # (upstream binding identifiers verified against
+  # blueprints/default/flow-default-user-settings-flow.yaml @ version/2026.5.4
+  # lines 144–148: order 100). It was removed as DEAD config: the prompt stage's
+  # validation rejects any email change before the write stage could ever see a
+  # different address, so the policy could never fire. If
+  # default_user_change_email is EVER deliberately enabled, that reset policy
+  # becomes mandatory again — recover it from git history (PR #411) and
+  # re-verify the binding identifiers against the then-current version first.
+  # Admin-driven email changes (admin API/UI) bypass the settings flow and do
+  # NOT reset verification — an accepted operator-trust boundary (auth.md §8.10).

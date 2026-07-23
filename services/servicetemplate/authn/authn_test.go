@@ -150,6 +150,51 @@ func TestMiddleware_ValidToken_PopulatesClaims(t *testing.T) {
 	}
 }
 
+// TestMiddleware_EmailVerifiedClaim_FailsClosed pins the #361 contract on the
+// consumer side: EmailVerified must be false unless the token carries a
+// literal boolean true `email_verified` claim. The invitation accept-on-login
+// gate (organizations, #170) trusts this field, so a token with the claim
+// missing, or present as a non-boolean ("true", 1, null — shapes a
+// misconfigured IdP mapping could emit), must parse as UNVERIFIED rather than
+// accidentally truthy.
+func TestMiddleware_EmailVerifiedClaim_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra map[string]any
+	}{
+		{name: "claim missing", extra: map[string]any{"email": "beekeeper@example.com"}},
+		{name: "string true", extra: map[string]any{"email": "beekeeper@example.com", "email_verified": "true"}},
+		{name: "numeric 1", extra: map[string]any{"email": "beekeeper@example.com", "email_verified": 1}},
+		{name: "null", extra: map[string]any{"email": "beekeeper@example.com", "email_verified": nil}},
+		{name: "boolean false", extra: map[string]any{"email": "beekeeper@example.com", "email_verified": false}},
+	}
+
+	idp := newTestIDP(t)
+	priv, pub := generateKey(t, "key-1")
+	idp.addKey(pub)
+	mw := newMiddleware(t, idp.srv.URL)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			token := mintToken(t, priv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), tc.extra)
+
+			var claims authn.Claims
+			rec := doRequest(mw, protectedHandler(&claims), "Bearer "+token)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (an odd email_verified shape must not reject the token, only fail the flag closed), body = %s",
+					rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if claims.EmailVerified {
+				t.Errorf("EmailVerified = true, want false (fail closed) for %s", tc.name)
+			}
+			if claims.Email != "beekeeper@example.com" {
+				t.Errorf("Email = %q, want beekeeper@example.com (email itself still parses)", claims.Email)
+			}
+		})
+	}
+}
+
 func TestMiddleware_ExpiredToken_Rejected(t *testing.T) {
 	idp := newTestIDP(t)
 	priv, pub := generateKey(t, "key-1")

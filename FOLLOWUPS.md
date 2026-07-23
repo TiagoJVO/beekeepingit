@@ -7,13 +7,6 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## Before merge: `github-deployments-config` branch (ADR-0018 addendum)
-
-- **`DEPLOY_NOTIFY_TOKEN` secret must be created before `notify-deploy.yml` will work** —
-  a fine-grained PAT scoped to `TiagoJVO/beekeepingit` only, **Deployments: Read and write**
-  permission, set as a repo secret on `beekeepingit-gitops`
-  (`gh secret set DEPLOY_NOTIFY_TOKEN --repo TiagoJVO/beekeepingit-gitops`). Can't be created by
-  an agent (requires the GitHub UI). Until it's set, `notify-deploy.yml` runs on every tag-bump
-  merge but fails at the `gh api` step — the tag-bump/Flux-reconcile path itself is unaffected.
-  Where: `beekeepingit-gitops`'s `notify-deploy` PR (branch `add-notify-deploy-workflow`),
-  ADR-0018 addendum.
+_(empty — nothing pending; the `DEPLOY_NOTIFY_TOKEN` entry's owning PRs (#375 here,
+beekeepingit-gitops#5) have merged, so the remaining manual secret-creation step was promoted to
+[#413](https://github.com/TiagoJVO/beekeepingit/issues/413) per this ledger's sweep rule.)_
