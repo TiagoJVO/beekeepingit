@@ -40,10 +40,16 @@ class _NoopLocalStore implements LocalStoreEngine {
 }
 
 class _CreatedJourney {
-  _CreatedJourney(this.name, this.mainActivityType, this.apiaryIds);
+  _CreatedJourney(
+    this.name,
+    this.mainActivityType,
+    this.apiaryIds,
+    this.defaultAttributes,
+  );
   final String name;
   final String mainActivityType;
   final List<String> apiaryIds;
+  final Map<String, dynamic> defaultAttributes;
 }
 
 class _UpdatedJourney {
@@ -53,12 +59,14 @@ class _UpdatedJourney {
     this.mainActivityType,
     this.status,
     this.apiaryIds,
+    this.defaultAttributes,
   );
   final String id;
   final String name;
   final String mainActivityType;
   final String status;
   final List<String> apiaryIds;
+  final Map<String, dynamic> defaultAttributes;
 }
 
 /// Records create()/update()/close()/delete() calls so the form's flows can
@@ -100,9 +108,12 @@ class _FakeJourneysRepository extends JourneysRepository {
     required String name,
     required String mainActivityType,
     required List<String> apiaryIds,
+    Map<String, dynamic> defaultAttributes = const {},
   }) async {
     if (throwOnCreate) throw Exception('boom-create');
-    created.add(_CreatedJourney(name, mainActivityType, apiaryIds));
+    created.add(
+      _CreatedJourney(name, mainActivityType, apiaryIds, defaultAttributes),
+    );
     return 'fake-${created.length - 1}';
   }
 
@@ -113,9 +124,19 @@ class _FakeJourneysRepository extends JourneysRepository {
     required String mainActivityType,
     required String status,
     required List<String> apiaryIds,
+    required Map<String, dynamic> defaultAttributes,
   }) async {
     if (throwOnUpdate) throw Exception('boom-update');
-    updated.add(_UpdatedJourney(id, name, mainActivityType, status, apiaryIds));
+    updated.add(
+      _UpdatedJourney(
+        id,
+        name,
+        mainActivityType,
+        status,
+        apiaryIds,
+        defaultAttributes,
+      ),
+    );
   }
 
   @override
@@ -327,13 +348,110 @@ void main() {
     );
   });
 
+  group('default attributes section (#385)', () {
+    testWidgets(
+      'the harvest (default type) create form shows the lot/batch field, '
+      'and a valid create includes it',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
+
+        expect(
+          find.byKey(const Key('journey-default-lot-batch-field')),
+          findsOneWidget,
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          'Journey',
+        );
+        await tester.tap(find.byKey(const Key('journey-apiary-option-a1')));
+        await tester.enterText(
+          find.byKey(const Key('journey-default-lot-batch-field')),
+          'LOTE-2026-07',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.created.single.defaultAttributes, {
+          'lot_batch': 'LOTE-2026-07',
+        });
+      },
+    );
+
+    testWidgets('switching the main activity type swaps the defaults '
+        'fields shown', (tester) async {
+      final repo = _FakeJourneysRepository();
+      await _openNewJourneyForm(tester, repo: repo);
+
+      expect(
+        find.byKey(const Key('journey-default-lot-batch-field')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('journey-main-activity-type-field')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Feeding').last);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('journey-default-lot-batch-field')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('journey-default-feed-type-field')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('switching the main activity type clears previously-entered '
+        'defaults (#385: the old type\'s keys are invalid for the new type)', (
+      tester,
+    ) async {
+      final repo = _FakeJourneysRepository();
+      await _openNewJourneyForm(tester, repo: repo);
+
+      await tester.enterText(
+        find.byKey(const Key('journey-default-lot-batch-field')),
+        'LOTE-2026-07',
+      );
+      await tester.pumpAndSettle();
+
+      // Switch away, then back to harvest.
+      await tester.tap(
+        find.byKey(const Key('journey-main-activity-type-field')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Feeding').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('journey-main-activity-type-field')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Honey harvest').last);
+      await tester.pumpAndSettle();
+
+      final lotBatchField = tester.widget<TextFormField>(
+        find.byKey(const Key('journey-default-lot-batch-field')),
+      );
+      expect(lotBatchField.controller!.text, isEmpty);
+    });
+  });
+
   group('edit (#45, FR-JO-4, D-21)', () {
-    Journey existingJourney({String status = journeyStatusOpen}) => Journey(
+    Journey existingJourney({
+      String status = journeyStatusOpen,
+      Map<String, dynamic> defaultAttributes = const {},
+    }) => Journey(
       id: 'j1',
       name: 'Existing Journey',
       mainActivityType: 'feeding',
       status: status,
       apiaryIds: const ['a1'],
+      defaultAttributes: defaultAttributes,
     );
 
     /// Reaches the edit form by pushing its route directly (mirrors
@@ -367,6 +485,37 @@ void main() {
       expect(find.byKey(const Key('journey-delete-button')), findsOneWidget);
       // An open journey shows the close action.
       expect(find.byKey(const Key('journey-close-button')), findsOneWidget);
+    });
+
+    testWidgets('pre-fills the defaults section from the journey\'s stored '
+        'default_attributes (#385)', (tester) async {
+      final repo = _FakeJourneysRepository(
+        existing: existingJourney(
+          defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+        ),
+      );
+      await goToEditForm(tester, repo);
+
+      expect(find.text('Xarope 1:1'), findsOneWidget);
+    });
+
+    testWidgets('an edit that resubmits the name unchanged still resubmits the '
+        'existing default_attributes unchanged (never silently wiped)', (
+      tester,
+    ) async {
+      final repo = _FakeJourneysRepository(
+        existing: existingJourney(
+          defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+        ),
+      );
+      await goToEditForm(tester, repo);
+
+      await tester.tap(find.byKey(const Key('journey-save-button')));
+      await tester.pumpAndSettle();
+
+      expect(repo.updated.single.defaultAttributes, {
+        'feed_type': 'Xarope 1:1',
+      });
     });
 
     testWidgets('a closed journey does not show the close action again', (

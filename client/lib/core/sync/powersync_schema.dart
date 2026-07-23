@@ -214,12 +214,17 @@ const appSchema = Schema([
   // status, matching the owning service's shape
   // (services/journeys/store/migrations/00001_create_journeys.sql).
   // `status` mirrors `type`'s extensible-string convention (open|closed
-  // known today).
+  // known today). `default_attributes` (#385) is a JSON-encoded object
+  // (same [Column.text]-holds-JSON convention as [activitiesTable]'s own
+  // `attributes` above — PowerSync's local schema has no native JSON column
+  // type) of optional subtype attribute defaults for activities attached to
+  // this journey; NULL/absent means "no defaults set".
   Table(journeysTable, [
     Column.text('organization_id'),
     Column.text('name'),
     Column.text('main_activity_type'),
     Column.text('status'),
+    Column.text('default_attributes'),
     Column.text('created_at'),
     Column.text('updated_at'),
   ]),

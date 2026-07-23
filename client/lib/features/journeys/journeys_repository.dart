@@ -40,6 +40,7 @@ class Journey {
     required this.status,
     this.organizationId,
     this.apiaryIds = const [],
+    this.defaultAttributes = const {},
   });
 
   final String id;
@@ -48,6 +49,14 @@ class Journey {
   final String status;
   final String? organizationId;
   final List<String> apiaryIds;
+
+  /// Journey-level subtype attribute defaults (#385) — e.g. a Treatment
+  /// journey's `treatment_context`/`treatment_type`/`disease`, a Feeding
+  /// journey's `feed_type` — that prefill an attached activity's own
+  /// attributes on create (the separate prefill issue). Empty (never null)
+  /// when the journey has none set, mirroring [Activity.attributes]'s own
+  /// "empty map, not null" convention.
+  final Map<String, dynamic> defaultAttributes;
 
   bool get isOpen => status == journeyStatusOpen;
 }
@@ -80,10 +89,14 @@ class JourneysRepository {
   /// Creates a journey with [apiaryIds] as its initial plan (FR-JO-4) —
   /// always starts **open** (D-21). [apiaryIds] may be empty: a journey can
   /// be created first and apiaries added to its plan later via [update].
+  /// [defaultAttributes] (#385) is entirely optional — an empty/omitted map
+  /// stores NULL, never an empty-object JSON literal (mirrors
+  /// [_encodeDefaultAttributes]'s own doc comment).
   Future<String> create({
     required String name,
     required String mainActivityType,
     required List<String> apiaryIds,
+    Map<String, dynamic> defaultAttributes = const {},
   }) async {
     final id = _uuid.v4();
     final now = _nowIso();
@@ -94,15 +107,30 @@ class JourneysRepository {
     // parent exists by the time a plan-item op applies.
     await _store.execute(
       'INSERT INTO $journeysTable '
-      '(id, name, main_activity_type, status, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?)',
-      [id, name, mainActivityType, journeyStatusOpen, now, now],
+      '(id, name, main_activity_type, status, default_attributes, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        name,
+        mainActivityType,
+        journeyStatusOpen,
+        _encodeDefaultAttributes(defaultAttributes),
+        now,
+        now,
+      ],
     );
     for (final apiaryId in apiaryIds) {
       await _insertPlanItem(id, apiaryId, now);
     }
     return id;
   }
+
+  /// JSON-encodes [defaultAttributes] for storage, or `null` (SQL NULL) when
+  /// empty — mirrors the server's own NULL-means-no-defaults convention
+  /// (services/journeys/store/migrations/00003_add_journey_default_attributes.sql)
+  /// rather than ever storing the 2-byte `{}` literal for "no defaults".
+  String? _encodeDefaultAttributes(Map<String, dynamic> defaultAttributes) =>
+      defaultAttributes.isEmpty ? null : jsonEncode(defaultAttributes);
 
   Future<void> _insertPlanItem(String journeyId, String apiaryId, String now) {
     return _store.execute(
@@ -117,7 +145,7 @@ class JourneysRepository {
   /// `getById`. Used by the edit form's initial load.
   Future<Journey?> getById(String id) async {
     final row = await _store.getOptional(
-      'SELECT id, organization_id, name, main_activity_type, status '
+      'SELECT id, organization_id, name, main_activity_type, status, default_attributes '
       'FROM $journeysTable WHERE id = ?',
       [id],
     );
@@ -146,7 +174,7 @@ class JourneysRepository {
   Stream<Journey?> watchById(String id) {
     return _store
         .watch(
-          'SELECT id, organization_id, name, main_activity_type, status '
+          'SELECT id, organization_id, name, main_activity_type, status, default_attributes '
           'FROM $journeysTable WHERE id = ?',
           [id],
         )
@@ -167,18 +195,32 @@ class JourneysRepository {
   /// [status] is always sent (mirrors [create]'s own "open" convention) —
   /// callers that only want to close a journey use [close], which reads the
   /// current state and resubmits it unchanged except for `status`.
+  /// [defaultAttributes] (#385) is REQUIRED, not optional, precisely because
+  /// this is a full-resubmit write (this method's own doc comment) — an
+  /// omitted value would silently WIPE the journey's stored defaults rather
+  /// than preserve them, so every caller must explicitly decide what to
+  /// send (the edit form's freshly-edited state, or — [close]'s case — the
+  /// journey's own already-loaded value, unchanged).
   Future<void> update(
     String id, {
     required String name,
     required String mainActivityType,
     required String status,
     required List<String> apiaryIds,
+    required Map<String, dynamic> defaultAttributes,
   }) async {
     final now = _nowIso();
     await _store.execute(
-      'UPDATE $journeysTable SET name = ?, main_activity_type = ?, status = ?, updated_at = ? '
+      'UPDATE $journeysTable SET name = ?, main_activity_type = ?, status = ?, default_attributes = ?, updated_at = ? '
       'WHERE id = ?',
-      [name, mainActivityType, status, now, id],
+      [
+        name,
+        mainActivityType,
+        status,
+        _encodeDefaultAttributes(defaultAttributes),
+        now,
+        id,
+      ],
     );
 
     final existing = await _store.getAll(
@@ -220,6 +262,7 @@ class JourneysRepository {
       mainActivityType: journey.mainActivityType,
       status: journeyStatusClosed,
       apiaryIds: journey.apiaryIds,
+      defaultAttributes: journey.defaultAttributes,
     );
   }
 
@@ -243,7 +286,7 @@ class JourneysRepository {
     if (organizationId == null) return Stream.value(const []);
     return _store
         .watch(
-          'SELECT id, organization_id, name, main_activity_type, status '
+          'SELECT id, organization_id, name, main_activity_type, status, default_attributes '
           'FROM $journeysTable '
           'WHERE organization_id = ? OR organization_id IS NULL '
           'ORDER BY created_at DESC',
@@ -271,7 +314,7 @@ class JourneysRepository {
     if (organizationId == null) return Stream.value(const []);
     return _store
         .watch(
-          'SELECT j.id, j.organization_id, j.name, j.main_activity_type, j.status '
+          'SELECT j.id, j.organization_id, j.name, j.main_activity_type, j.status, j.default_attributes '
           'FROM $journeysTable j '
           'JOIN $journeyPlanItemsTable p ON p.journey_id = j.id '
           'WHERE (j.organization_id = ? OR j.organization_id IS NULL) '
@@ -411,7 +454,16 @@ class JourneysRepository {
     mainActivityType: r['main_activity_type'] as String,
     status: r['status'] as String,
     apiaryIds: apiaryIds,
+    defaultAttributes: _decodeDefaultAttributes(
+      r['default_attributes'] as String?,
+    ),
   );
+
+  /// Decodes a stored `default_attributes` JSON-text column back to a map —
+  /// `null` (no defaults set) decodes to an empty map, mirroring
+  /// [Journey.defaultAttributes]'s own "empty, never null" doc comment.
+  Map<String, dynamic> _decodeDefaultAttributes(String? raw) =>
+      raw == null ? const {} : (jsonDecode(raw) as Map<String, dynamic>);
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
 }

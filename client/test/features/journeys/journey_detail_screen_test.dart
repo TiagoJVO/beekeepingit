@@ -199,7 +199,35 @@ void main() {
       expect(find.text('Open'), findsOneWidget);
       expect(find.byKey(const Key('journey-stats-section')), findsOneWidget);
       expect(find.text('1/2'), findsOneWidget);
+      // No default_attributes set — the summary line is not rendered (#385).
+      expect(
+        find.byKey(const Key('journey-detail-default-attributes')),
+        findsNothing,
+      );
     });
+
+    testWidgets(
+      'shows the journey\'s default_attributes as a muted summary line '
+      '(#385)',
+      (tester) async {
+        await _openDetail(
+          tester,
+          journey: const Journey(
+            id: 'j1',
+            name: 'Colheita de Primavera',
+            mainActivityType: 'harvest',
+            status: journeyStatusOpen,
+            defaultAttributes: {'lot_batch': 'LOTE-2026-07'},
+          ),
+        );
+
+        expect(
+          find.byKey(const Key('journey-detail-default-attributes')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('LOTE-2026-07'), findsOneWidget);
+      },
+    );
 
     testWidgets(
       'lists a visited apiary with its attributed activities, and keeps a '

@@ -885,6 +885,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get journeyDefaultAttributesSectionLabel => 'Defaults for activities';
+
+  @override
+  String get journeyDefaultsNotSetOption => 'Not set';
+
+  @override
   String journeyLoadError(String error) {
     return 'Couldn\'t load the journey: $error';
   }
@@ -1055,6 +1061,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get editJourneyAction => 'Edit journey';
+
+  @override
+  String journeyDetailDefaultAttributesLabel(String values) {
+    return 'Defaults: $values';
+  }
 
   @override
   String get journeyDetailApiariesTitle => 'Apiaries';

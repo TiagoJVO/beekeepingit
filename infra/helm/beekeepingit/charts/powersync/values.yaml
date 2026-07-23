@@ -156,7 +156,7 @@ syncConfig:
         # local schema, or an added column silently stays NULL on devices
         # that didn't write it locally (the #196/#33 incident this file's own
         # header comment already documents for apiaries.apiaries).
-        - SELECT id, organization_id, name, main_activity_type, status, created_at, updated_at
+        - SELECT id, organization_id, name, main_activity_type, status, default_attributes, created_at, updated_at
           FROM journeys.journeys WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
         - SELECT id, organization_id, journey_id, apiary_id, created_at
           FROM journeys.journey_plan_items WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
