@@ -597,6 +597,12 @@ void main() {
               'a1': [
                 ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 3),
                 ApiaryCounter(apiaryId: 'a1', counterType: 'super', value: 6),
+                ApiaryCounter(
+                  apiaryId: 'a1',
+                  counterType: 'empty_hive',
+                  value: 1,
+                ),
+                ApiaryCounter(apiaryId: 'a1', counterType: 'swarm', value: 2),
               ],
             },
             apiariesRepository: _FakeApiariesRepository(),
@@ -611,10 +617,88 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('6 supers'), findsOneWidget);
-        // Every known type now has a row (hive + super), so nothing is addable.
+        // Every known type now has a row (hive + super + empty_hive + swarm),
+        // so nothing is addable.
         expect(
           find.byKey(const Key('apiary-detail-add-counter-button')),
           findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'empty-hive and swarm counters render their own tappable cards with '
+      'localized labels (#392)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            counters: const {
+              'a1': [
+                ApiaryCounter(
+                  apiaryId: 'a1',
+                  counterType: 'empty_hive',
+                  value: 1,
+                ),
+                ApiaryCounter(apiaryId: 'a1', counterType: 'swarm', value: 2),
+              ],
+            },
+            apiariesRepository: _FakeApiariesRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-detail-counter-empty_hive')),
+          findsOneWidget,
+        );
+        expect(find.text('1 empty hive'), findsOneWidget);
+        expect(
+          find.byKey(const Key('apiary-detail-counter-swarm')),
+          findsOneWidget,
+        );
+        expect(find.text('2 swarms'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the add-counter picker offers empty hives and swarms once hive and '
+      'super rows already exist (#392)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            counters: const {
+              'a1': [
+                ApiaryCounter(apiaryId: 'a1', counterType: 'hive', value: 3),
+                ApiaryCounter(apiaryId: 'a1', counterType: 'super', value: 6),
+              ],
+            },
+            apiariesRepository: _FakeApiariesRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-counter-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-add-counter-option-empty_hive')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('apiary-add-counter-option-swarm')),
+          findsOneWidget,
         );
       },
     );

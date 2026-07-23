@@ -182,6 +182,30 @@ abstract class AppLocalizations {
   /// **'Supers'**
   String get counterTypeSuperLabel;
 
+  /// Empty-hive counter value badge on the apiary detail screen (#392)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No empty hives} =1{1 empty hive} other{{count} empty hives}}'**
+  String emptyHiveCountValue(int count);
+
+  /// Swarm counter value badge on the apiary detail screen (#392)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No swarms} =1{1 swarm} other{{count} swarms}}'**
+  String swarmCountValue(int count);
+
+  /// The name of the empty-hive counter type, used by the detail screen's add-counter picker and inline value editor (#392)
+  ///
+  /// In en, this message translates to:
+  /// **'Empty hives'**
+  String get counterTypeEmptyHiveLabel;
+
+  /// The name of the swarm counter type, used by the detail screen's add-counter picker and inline value editor (#392)
+  ///
+  /// In en, this message translates to:
+  /// **'Swarms'**
+  String get counterTypeSwarmLabel;
+
   /// Button on the apiary detail screen that opens the add-counter type picker (#346)
   ///
   /// In en, this message translates to:
