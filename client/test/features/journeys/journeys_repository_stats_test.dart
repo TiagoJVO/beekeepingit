@@ -368,46 +368,43 @@ void main() {
       expect(after.honeyCollectedKg, 9);
     });
 
-    test(
-      're-attributing an activity to a different journey (#387: editing '
-      'journey_id) moves it out of the old journey\'s stats and into the '
-      'new one\'s — attribution is by the STORED journey_id, D-21',
-      () async {
-        seedPlanItem('j1', 'a1');
-        seedPlanItem('j2', 'a2');
-        seedActivity(
-          journeyId: 'j1',
-          apiaryId: 'a1',
-          type: 'harvest',
-          attributes: {'honey_supers': 6, 'hives_involved': 3, 'honey_kg': 9},
-          id: 'moved-activity',
-        );
+    test('re-attributing an activity to a different journey (#387: editing '
+        'journey_id) moves it out of the old journey\'s stats and into the '
+        'new one\'s — attribution is by the STORED journey_id, D-21', () async {
+      seedPlanItem('j1', 'a1');
+      seedPlanItem('j2', 'a2');
+      seedActivity(
+        journeyId: 'j1',
+        apiaryId: 'a1',
+        type: 'harvest',
+        attributes: {'honey_supers': 6, 'hives_involved': 3, 'honey_kg': 9},
+        id: 'moved-activity',
+      );
 
-        final j1Before = await repo.getStats('j1');
-        final j2Before = await repo.getStats('j2');
-        expect(j1Before.hivesHarvested, 3);
-        expect(j2Before.hivesHarvested, 0);
+      final j1Before = await repo.getStats('j1');
+      final j2Before = await repo.getStats('j2');
+      expect(j1Before.hivesHarvested, 3);
+      expect(j2Before.hivesHarvested, 0);
 
-        // Simulate the #387 re-link: the SAME activity id, now stored under
-        // journey_id j2 (apiary_id/attributes carried over unchanged, only
-        // journey_id moved — mirrors ActivitiesRepository.update's own
-        // journey_id-only-change shape).
-        store.activityRows.removeWhere((r) => r['id'] == 'moved-activity');
-        seedActivity(
-          journeyId: 'j2',
-          apiaryId: 'a1',
-          type: 'harvest',
-          attributes: {'honey_supers': 6, 'hives_involved': 3, 'honey_kg': 9},
-          id: 'moved-activity',
-        );
+      // Simulate the #387 re-link: the SAME activity id, now stored under
+      // journey_id j2 (apiary_id/attributes carried over unchanged, only
+      // journey_id moved — mirrors ActivitiesRepository.update's own
+      // journey_id-only-change shape).
+      store.activityRows.removeWhere((r) => r['id'] == 'moved-activity');
+      seedActivity(
+        journeyId: 'j2',
+        apiaryId: 'a1',
+        type: 'harvest',
+        attributes: {'honey_supers': 6, 'hives_involved': 3, 'honey_kg': 9},
+        id: 'moved-activity',
+      );
 
-        final j1After = await repo.getStats('j1');
-        final j2After = await repo.getStats('j2');
-        expect(j1After.hivesHarvested, 0);
-        expect(j2After.hivesHarvested, 3);
-        expect(j2After.honeyCollectedKg, 9);
-      },
-    );
+      final j1After = await repo.getStats('j1');
+      final j2After = await repo.getStats('j2');
+      expect(j1After.hivesHarvested, 0);
+      expect(j2After.hivesHarvested, 3);
+      expect(j2After.honeyCollectedKg, 9);
+    });
   });
 
   group('JourneysRepository.watchStats() (#49) live recompute', () {
