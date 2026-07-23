@@ -462,6 +462,23 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixCounterLabel => 'Alteração de nº de colmeias';
 
   @override
+  String get syncNeedsFixActivityLabel => 'Alteração de atividade';
+
+  @override
+  String get syncNeedsFixJourneyLabel => 'Alteração de jornada';
+
+  @override
+  String get syncNeedsFixJourneyPlanLabel => 'Alteração do plano da jornada';
+
+  @override
+  String get syncNeedsFixTodoLabel => 'Alteração de tarefa';
+
+  @override
+  String syncNeedsFixTitleWithName(String label, String name) {
+    return '$label · $name';
+  }
+
+  @override
   String get syncNeedsFixGenericProblem =>
       'Esta alteração foi rejeitada e precisa da sua atenção.';
 
@@ -487,6 +504,17 @@ class AppLocalizationsPt extends AppLocalizations {
       other: '$count alterações por sincronizar.',
       one: '1 alteração por sincronizar.',
       zero: 'Tudo sincronizado.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String accountSyncNeedsFixStatus(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count alterações foram rejeitadas e precisam de correção.',
+      one: '1 alteração foi rejeitada e precisa de correção.',
     );
     return '$_temp0';
   }
@@ -579,6 +607,27 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiaryMapAttributionOsm => '© Colaboradores do OpenStreetMap';
+
+  @override
+  String get apiaryMapRulerToggleAction => 'Medir distância';
+
+  @override
+  String get apiaryMapMeasureFromMyLocation => 'Usar a minha localização';
+
+  @override
+  String apiaryMapInfoOpenTodos(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tarefas em aberto',
+      one: '1 tarefa em aberto',
+      zero: 'Nenhuma tarefa em aberto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get apiaryMapInfoViewApiary => 'Ver apiário';
 
   @override
   String get apiaryPlaceLabelLabel => 'Nome do local';

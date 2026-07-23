@@ -824,6 +824,36 @@ abstract class AppLocalizations {
   /// **'Hive count change'**
   String get syncNeedsFixCounterLabel;
 
+  /// Needs-fix list row title for a rejected activity write (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity change'**
+  String get syncNeedsFixActivityLabel;
+
+  /// Needs-fix list row title for a rejected journey write (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey change'**
+  String get syncNeedsFixJourneyLabel;
+
+  /// Needs-fix list row title for a rejected journey plan item write (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey plan change'**
+  String get syncNeedsFixJourneyPlanLabel;
+
+  /// Needs-fix list row title for a rejected todo write (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo change'**
+  String get syncNeedsFixTodoLabel;
+
+  /// Needs-fix list row title combined with the record's own display name (its name/title/type field, read from the rejected op's stored payload) when one is available (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'{label} · {name}'**
+  String syncNeedsFixTitleWithName(String label, String name);
+
   /// Needs-fix list row fallback message when the server returned no field-level detail
   ///
   /// In en, this message translates to:
@@ -854,11 +884,17 @@ abstract class AppLocalizations {
   /// **'Status: {status}'**
   String accountSyncStatusLabel(String status);
 
-  /// Pending-change count line on the account screen (#58)
+  /// Pending-change count line on the account screen (#58). Only shown when there are no rejected offline writes awaiting a fix — see accountSyncNeedsFixStatus (#379)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{Everything is synced.} =1{1 change waiting to sync.} other{{count} changes waiting to sync.}}'**
   String accountSyncPendingCount(int count);
+
+  /// Account screen sync-section status line shown INSTEAD OF accountSyncPendingCount whenever there are rejected offline writes awaiting a fix (D-12 notify-and-fix, #379) — replaces the misleading "Everything is synced." line the dead-letter queue could otherwise show alongside a non-zero needs-fix count
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 change was rejected and needs fixing.} other{{count} changes were rejected and need fixing.}}'**
+  String accountSyncNeedsFixStatus(int count);
 
   /// Manual sync trigger button on the account screen — the prototype's “Sincronizar agora” (#58, sync.md §7.1 manual override)
   ///
@@ -1015,6 +1051,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'© OpenStreetMap contributors'**
   String get apiaryMapAttributionOsm;
+
+  /// Tooltip/semantics label for the ruler toggle that switches the map between apiary-info (tap opens a quick info sheet) and tap-to-measure modes (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'Measure distance'**
+  String get apiaryMapRulerToggleAction;
+
+  /// Chip/button shown in the measure overlay (ruler ON, current location available, not yet selected) that adds the user's current location as one of the two measurement endpoints (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'Use my location'**
+  String get apiaryMapMeasureFromMyLocation;
+
+  /// Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No open todos} one{1 open todo} other{{count} open todos}}'**
+  String apiaryMapInfoOpenTodos(int count);
+
+  /// Action on the map's apiary info sheet that navigates to the full apiary detail screen (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'View apiary'**
+  String get apiaryMapInfoViewApiary;
 
   /// Optional free-text place name field label on the apiary form, and its label on the detail screen (#252, e.g. "Montargil")
   ///

@@ -11,6 +11,7 @@ import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
+import 'apiary_map_info_sheet.dart';
 
 /// Default map center/zoom when there's no better signal yet (no apiaries,
 /// no user location) — mainland Portugal, since the Melargil prototype and
@@ -35,6 +36,16 @@ enum MapLayer { satellite, streets }
 /// whatever layer was last selected, exactly like the tap-to-measure
 /// selection already does.
 final mapLayerProvider = StateProvider<MapLayer>((ref) => MapLayer.satellite);
+
+/// Whether the map is in tap-to-measure ("ruler") mode (#388). Same
+/// session-scoped [StateProvider] pattern as [mapLayerProvider] — survives
+/// list<->map [IndexedStack] switches, resets on a fresh app session. OFF by
+/// default: before #388, the ruler flow was permanently on, so a plain tap
+/// on a pin could never do anything else (opening the apiary required a
+/// non-discoverable long-press). With the ruler off, a tap instead opens the
+/// apiary info sheet ([showApiaryMapInfoSheet]); toggling this ON restores
+/// the tap-two-pins measuring flow.
+final mapRulerModeProvider = StateProvider<bool>((ref) => false);
 
 /// The apiary map view (#34, FR-AP-3) plus the tap-to-measure distance
 /// overlay (#37, FR-AP-5, D-15). Renders a marker per apiary that has a
@@ -70,12 +81,14 @@ class ApiaryMapScreen extends ConsumerStatefulWidget {
 class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
   final _mapController = MapController();
 
-  /// The tap-to-measure selection (D-15's "tap two pins"): at most two
-  /// apiary ids, in tap order. A third tap on a different apiary is treated
-  /// as starting a fresh selection with that apiary (rather than being
-  /// ignored) — simple, predictable, matches the Melargil prototype's
-  /// single-slot-then-second-slot flow.
-  final List<Apiary> _selected = [];
+  /// The tap-to-measure selection (D-15's "tap two pins", generalized by
+  /// #388 to allow the user's own location as an endpoint): at most two
+  /// [_MeasureEndpoint]s, in tap order. A third tap on a different apiary is
+  /// treated as starting a fresh selection with that apiary (rather than
+  /// being ignored) — simple, predictable, matches the Melargil prototype's
+  /// single-slot-then-second-slot flow. Only meaningful while
+  /// [mapRulerModeProvider] is ON — see [_onApiaryTap].
+  final List<_MeasureEndpoint> _selected = [];
 
   @override
   void dispose() {
@@ -83,8 +96,18 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
     super.dispose();
   }
 
+  /// Ruler OFF (default, #388): a pin tap opens the info sheet — the
+  /// selection flow below never runs, so there's nothing non-discoverable
+  /// left needing a long-press. Ruler ON: the pre-#388 tap-to-select flow,
+  /// now over [_MeasureEndpoint] rather than a bare [Apiary].
   void _onApiaryTap(Apiary apiary) {
-    if (_selected.length == 1 && _selected.first.id == apiary.id) {
+    if (!ref.read(mapRulerModeProvider)) {
+      showApiaryMapInfoSheet(context, apiary: apiary);
+      return;
+    }
+    final tapped = _ApiaryEndpoint(apiary);
+    final sole = _selected.length == 1 ? _selected.first : null;
+    if (sole is _ApiaryEndpoint && sole.apiary.id == apiary.id) {
       // Tapping the sole selected apiary again clears the selection.
       setState(_selected.clear);
       return;
@@ -93,22 +116,51 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
       if (_selected.length >= 2) {
         _selected
           ..clear()
-          ..add(apiary);
-      } else if (_selected.length == 1) {
-        _selected.add(apiary);
+          ..add(tapped);
       } else {
-        _selected.add(apiary);
+        _selected.add(tapped);
+      }
+    });
+  }
+
+  /// "Use my location" (#388): inserts the current device location as a
+  /// measurement endpoint, occupying one of the two selection slots exactly
+  /// like tapping an apiary pin does — a no-op if it's already selected (the
+  /// overlay hides the chip in that case anyway, this just guards against a
+  /// stray extra call).
+  void _addUserLocation(ll.LatLng point) {
+    if (_selected.any((s) => s is _UserEndpoint)) return;
+    final endpoint = _UserEndpoint(point);
+    setState(() {
+      if (_selected.length >= 2) {
+        _selected
+          ..clear()
+          ..add(endpoint);
+      } else {
+        _selected.add(endpoint);
       }
     });
   }
 
   void _clearSelection() => setState(_selected.clear);
 
+  /// Toggling the ruler OFF clears any in-progress selection (#388 design
+  /// step 6/test plan #7) — a stale two-apiary (or apiary+location)
+  /// selection left over from ruler mode has no meaning once tapping a pin
+  /// goes back to opening the info sheet.
+  void _setRulerMode(bool enabled) {
+    ref.read(mapRulerModeProvider.notifier).state = enabled;
+    if (!enabled) {
+      setState(_selected.clear);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final apiariesAsync = ref.watch(apiariesStreamProvider);
     final mapLayer = ref.watch(mapLayerProvider);
+    final rulerMode = ref.watch(mapRulerModeProvider);
     // CRITICAL fix: share the SAME cached device-location fetch
     // apiaries_list_screen.dart's proximity-ordering banner already uses
     // (core/geo/device_location.dart's deviceLocationProvider) instead of
@@ -188,10 +240,17 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
             Positioned(
               top: 12,
               right: 12,
-              child: _MapLayerToggle(
-                layer: mapLayer,
-                onChanged: (layer) =>
-                    ref.read(mapLayerProvider.notifier).state = layer,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _MapLayerToggle(
+                    layer: mapLayer,
+                    onChanged: (layer) =>
+                        ref.read(mapLayerProvider.notifier).state = layer,
+                  ),
+                  const SizedBox(height: 8),
+                  _MapRulerToggle(active: rulerMode, onChanged: _setRulerMode),
+                ],
               ),
             ),
             // Attribution rides directly above the measure overlay in the
@@ -218,12 +277,21 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
                     key: const Key('apiary-map-attribution'),
                     layer: mapLayer,
                   ),
-                  const SizedBox(height: 6),
-                  _MeasureOverlay(
-                    key: const Key('apiary-map-measure-overlay'),
-                    selected: _selected,
-                    onClear: _clearSelection,
-                  ),
+                  // The measure overlay (and its "tap two apiaries" banner)
+                  // only renders while the ruler is ON (#388) — off by
+                  // default, a plain tap opens the info sheet instead, and
+                  // this permanent bottom banner would be a misleading
+                  // holdover from the old always-on measuring flow.
+                  if (rulerMode) ...[
+                    const SizedBox(height: 6),
+                    _MeasureOverlay(
+                      key: const Key('apiary-map-measure-overlay'),
+                      selected: _selected,
+                      onClear: _clearSelection,
+                      userLocation: userLocation,
+                      onUseMyLocation: () => _addUserLocation(userLocation!),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -232,6 +300,50 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
       },
     );
   }
+}
+
+/// One endpoint of the tap-to-measure selection (#388): either an apiary
+/// pin ([_ApiaryEndpoint]) or the user's own current location
+/// ([_UserEndpoint]) — generalized from the pre-#388 bare `List<Apiary>` so
+/// "measure from my location" can occupy a selection slot exactly like an
+/// apiary does, without [_MeasureOverlay]/[haversineDistanceKm] needing to
+/// know which kind of endpoint it's looking at.
+sealed class _MeasureEndpoint {
+  const _MeasureEndpoint();
+
+  double get lat;
+  double get lon;
+
+  /// The name shown in the selection hint/result text (#388 design: "the
+  /// apiary's name, or l10n.apiaryMapUserLocationLabel ... for
+  /// _UserEndpoint").
+  String displayName(AppLocalizations l10n);
+}
+
+class _ApiaryEndpoint extends _MeasureEndpoint {
+  const _ApiaryEndpoint(this.apiary);
+
+  final Apiary apiary;
+
+  @override
+  double get lat => apiary.locationLat!;
+  @override
+  double get lon => apiary.locationLon!;
+  @override
+  String displayName(AppLocalizations l10n) => apiary.name;
+}
+
+class _UserEndpoint extends _MeasureEndpoint {
+  const _UserEndpoint(this.point);
+
+  final ll.LatLng point;
+
+  @override
+  double get lat => point.latitude;
+  @override
+  double get lon => point.longitude;
+  @override
+  String displayName(AppLocalizations l10n) => l10n.apiaryMapUserLocationLabel;
 }
 
 class _Map extends StatelessWidget {
@@ -249,7 +361,7 @@ class _Map extends StatelessWidget {
 
   final MapController controller;
   final List<Apiary> apiaries;
-  final List<Apiary> selected;
+  final List<_MeasureEndpoint> selected;
   final ll.LatLng? userLocation;
   final String userLocationLabel;
   final MapLayer layer;
@@ -267,7 +379,8 @@ class _Map extends StatelessWidget {
     if (userLocation != null) userLocation!,
   ];
 
-  bool _isSelected(Apiary a) => selected.any((s) => s.id == a.id);
+  bool _isSelected(Apiary a) =>
+      selected.any((s) => s is _ApiaryEndpoint && s.apiary.id == a.id);
 
   @override
   Widget build(BuildContext context) {
@@ -580,6 +693,39 @@ class _MapLayerToggleSegment extends StatelessWidget {
   }
 }
 
+/// The ruler (tap-to-measure) mode toggle (#388) — placed directly under
+/// [_MapLayerToggle] in the same top-right corner, wrapping a single
+/// [_MapLayerToggleSegment] (reused verbatim for the identical
+/// gloves-friendly shape/semantics/tap-target) in its own [Material] rather
+/// than sharing [_MapLayerToggle]'s: this toggle is a plain on/off switch,
+/// not a same-slot pick-one-of-N segmented control, so it doesn't belong
+/// inside that other widget's own [Column]/[Semantics] container.
+class _MapRulerToggle extends StatelessWidget {
+  const _MapRulerToggle({required this.active, required this.onChanged});
+
+  final bool active;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(12),
+      child: _MapLayerToggleSegment(
+        itemKey: const Key('apiary-map-ruler-toggle'),
+        icon: Icons.straighten_outlined,
+        selectedIcon: Icons.straighten,
+        tooltip: l10n.apiaryMapRulerToggleAction,
+        selected: active,
+        onTap: () => onChanged(!active),
+      ),
+    );
+  }
+}
+
 /// Attribution for the active tile source (#257 AC: "Proper attribution
 /// overlay for the active tile source"). Esri's terms require "Powered by
 /// Esri" plus source credits for World Imagery; OSM's require
@@ -648,19 +794,27 @@ class _InfoBanner extends StatelessWidget {
   }
 }
 
-/// The tap-to-measure result/hint card (#37, D-15). Shows the running
-/// selection state hint until two apiaries are picked, then the computed
-/// haversine distance in km plus a clear action to reset (#37 AC: "the
-/// selection mechanism ... is clear and usable").
+/// The tap-to-measure result/hint card (#37, D-15; only shown while the
+/// ruler is ON, #388). Shows the running selection state hint until two
+/// endpoints are picked, then the computed haversine distance in km plus a
+/// clear action to reset (#37 AC: "the selection mechanism ... is clear and
+/// usable"). [userLocation] gates the "Use my location" chip (#388): shown
+/// only when a location is actually available and not already selected —
+/// when it's null (denied/disabled/unavailable), apiary-to-apiary measuring
+/// still works exactly as before, just without that shortcut.
 class _MeasureOverlay extends StatelessWidget {
   const _MeasureOverlay({
     super.key,
     required this.selected,
     required this.onClear,
+    required this.userLocation,
+    required this.onUseMyLocation,
   });
 
-  final List<Apiary> selected;
+  final List<_MeasureEndpoint> selected;
   final VoidCallback onClear;
+  final ll.LatLng? userLocation;
+  final VoidCallback onUseMyLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -671,19 +825,21 @@ class _MeasureOverlay extends StatelessWidget {
     if (selected.length < 2) {
       text = selected.isEmpty
           ? l10n.apiaryMapMeasureHintSelectFirst
-          : l10n.apiaryMapMeasureHintSelectSecond(selected.first.name);
+          : l10n.apiaryMapMeasureHintSelectSecond(
+              selected.first.displayName(l10n),
+            );
     } else {
       final from = selected[0];
       final to = selected[1];
       final km = haversineDistanceKm(
-        lat1: from.locationLat!,
-        lon1: from.locationLon!,
-        lat2: to.locationLat!,
-        lon2: to.locationLon!,
+        lat1: from.lat,
+        lon1: from.lon,
+        lat2: to.lat,
+        lon2: to.lon,
       );
       text = l10n.apiaryMapMeasureResult(
-        from.name,
-        to.name,
+        from.displayName(l10n),
+        to.displayName(l10n),
         // Locale-aware formatting (MEDIUM finding — was locale-unaware
         // km.toStringAsFixed(2)), matching apiaries_list_screen.dart's own
         // per-row distance display (LocaleFormatting.decimal, NFR-I18N-1):
@@ -692,6 +848,9 @@ class _MeasureOverlay extends StatelessWidget {
       );
     }
 
+    final showUseMyLocation =
+        userLocation != null && !selected.any((s) => s is _UserEndpoint);
+
     return Material(
       key: const Key('apiary-map-measure-text'),
       color: theme.colorScheme.surface,
@@ -699,19 +858,43 @@ class _MeasureOverlay extends StatelessWidget {
       elevation: 3,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.straighten, size: 20, color: theme.colorScheme.primary),
-            const SizedBox(width: 10),
-            Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
-            if (selected.isNotEmpty)
-              TextButton(
-                key: const Key('apiary-map-measure-clear'),
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+            Row(
+              children: [
+                Icon(
+                  Icons.straighten,
+                  size: 20,
+                  color: theme.colorScheme.primary,
                 ),
-                onPressed: onClear,
-                child: Text(l10n.apiaryMapMeasureClear),
+                const SizedBox(width: 10),
+                Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
+                if (selected.isNotEmpty)
+                  TextButton(
+                    key: const Key('apiary-map-measure-clear'),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+                    ),
+                    onPressed: onClear,
+                    child: Text(l10n.apiaryMapMeasureClear),
+                  ),
+              ],
+            ),
+            if (showUseMyLocation)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: ActionChip(
+                  key: const Key('apiary-map-measure-from-me'),
+                  avatar: Icon(
+                    Icons.my_location,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  label: Text(l10n.apiaryMapMeasureFromMyLocation),
+                  onPressed: onUseMyLocation,
+                ),
               ),
           ],
         ),

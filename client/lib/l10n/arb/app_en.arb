@@ -569,6 +569,34 @@
   "@syncNeedsFixCounterLabel": {
     "description": "Needs-fix list row title for a rejected apiary hive-counter write (#256)"
   },
+  "syncNeedsFixActivityLabel": "Activity change",
+  "@syncNeedsFixActivityLabel": {
+    "description": "Needs-fix list row title for a rejected activity write (#379)"
+  },
+  "syncNeedsFixJourneyLabel": "Journey change",
+  "@syncNeedsFixJourneyLabel": {
+    "description": "Needs-fix list row title for a rejected journey write (#379)"
+  },
+  "syncNeedsFixJourneyPlanLabel": "Journey plan change",
+  "@syncNeedsFixJourneyPlanLabel": {
+    "description": "Needs-fix list row title for a rejected journey plan item write (#379)"
+  },
+  "syncNeedsFixTodoLabel": "Todo change",
+  "@syncNeedsFixTodoLabel": {
+    "description": "Needs-fix list row title for a rejected todo write (#379)"
+  },
+  "syncNeedsFixTitleWithName": "{label} · {name}",
+  "@syncNeedsFixTitleWithName": {
+    "description": "Needs-fix list row title combined with the record's own display name (its name/title/type field, read from the rejected op's stored payload) when one is available (#379)",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "syncNeedsFixGenericProblem": "This change was rejected and needs your attention.",
   "@syncNeedsFixGenericProblem": {
     "description": "Needs-fix list row fallback message when the server returned no field-level detail"
@@ -596,7 +624,16 @@
   },
   "accountSyncPendingCount": "{count, plural, =0{Everything is synced.} =1{1 change waiting to sync.} other{{count} changes waiting to sync.}}",
   "@accountSyncPendingCount": {
-    "description": "Pending-change count line on the account screen (#58)",
+    "description": "Pending-change count line on the account screen (#58). Only shown when there are no rejected offline writes awaiting a fix — see accountSyncNeedsFixStatus (#379)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "accountSyncNeedsFixStatus": "{count, plural, =1{1 change was rejected and needs fixing.} other{{count} changes were rejected and need fixing.}}",
+  "@accountSyncNeedsFixStatus": {
+    "description": "Account screen sync-section status line shown INSTEAD OF accountSyncPendingCount whenever there are rejected offline writes awaiting a fix (D-12 notify-and-fix, #379) — replaces the misleading \"Everything is synced.\" line the dead-letter queue could otherwise show alongside a non-zero needs-fix count",
     "placeholders": {
       "count": {
         "type": "int"
@@ -735,6 +772,27 @@
   "apiaryMapAttributionOsm": "© OpenStreetMap contributors",
   "@apiaryMapAttributionOsm": {
     "description": "Attribution overlay text shown when the streets (OSM) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by the OSM tile usage policy)"
+  },
+  "apiaryMapRulerToggleAction": "Measure distance",
+  "@apiaryMapRulerToggleAction": {
+    "description": "Tooltip/semantics label for the ruler toggle that switches the map between apiary-info (tap opens a quick info sheet) and tap-to-measure modes (#388)"
+  },
+  "apiaryMapMeasureFromMyLocation": "Use my location",
+  "@apiaryMapMeasureFromMyLocation": {
+    "description": "Chip/button shown in the measure overlay (ruler ON, current location available, not yet selected) that adds the user's current location as one of the two measurement endpoints (#388)"
+  },
+  "apiaryMapInfoOpenTodos": "{count, plural, =0{No open todos} one{1 open todo} other{{count} open todos}}",
+  "@apiaryMapInfoOpenTodos": {
+    "description": "Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "apiaryMapInfoViewApiary": "View apiary",
+  "@apiaryMapInfoViewApiary": {
+    "description": "Action on the map's apiary info sheet that navigates to the full apiary detail screen (#388)"
   },
   "apiaryPlaceLabelLabel": "Place label",
   "@apiaryPlaceLabelLabel": {

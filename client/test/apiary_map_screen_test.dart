@@ -6,6 +6,7 @@ import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiary_map_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -99,6 +100,7 @@ Widget _buildApp(
   List<Apiary> apiaries, {
   DeviceLocationService? locationService,
   String profileLocale = 'en',
+  List<Todo>? todos,
 }) {
   return ProviderScope(
     overrides: [
@@ -115,6 +117,10 @@ Widget _buildApp(
         () => _CompleteProfileController(locale: profileLocale),
       ),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
+      // Only overridden when a test actually cares about the apiary info
+      // sheet's open-todo count (#388) — defaults to empty so every other
+      // test in this file (none of which touch todos) is unaffected.
+      todosStreamProvider.overrideWith((ref) => Stream.value(todos ?? [])),
     ],
     child: const BeekeepingitApp(),
   );
@@ -126,16 +132,26 @@ Future<void> _goToMap(
   WidgetTester tester, {
   DeviceLocationService? locationService,
   String profileLocale = 'en',
+  List<Todo>? todos,
 }) async {
   await tester.pumpWidget(
     _buildApp(
       [_serraNorte, _valeDasEguas, _semLocal],
       locationService: locationService,
       profileLocale: profileLocale,
+      todos: todos,
     ),
   );
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+  await tester.pumpAndSettle();
+}
+
+/// Enables the ruler (tap-to-measure) mode via the toggle added by #388 — OFF
+/// is now the default, so every test that exercises the old always-on
+/// measuring flow must explicitly opt in first.
+Future<void> _enableRuler(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('apiary-map-ruler-toggle')));
   await tester.pumpAndSettle();
 }
 
@@ -291,6 +307,7 @@ void main() {
     'tap-to-select-two-then-measure: selecting two apiaries shows the haversine distance',
     (tester) async {
       await _goToMap(tester);
+      await _enableRuler(tester);
 
       // Before any selection: the hint invites tapping two apiaries.
       expect(
@@ -324,6 +341,7 @@ void main() {
     tester,
   ) async {
     await _goToMap(tester);
+    await _enableRuler(tester);
 
     await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
     await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
@@ -342,6 +360,7 @@ void main() {
     tester,
   ) async {
     await _goToMap(tester);
+    await _enableRuler(tester);
 
     await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
     expect(
@@ -546,6 +565,10 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
 
         await _goToMap(tester);
+        // The measure card (and its layout-affecting hint text) only
+        // renders while the ruler is ON (#388) — this test's whole premise
+        // (attribution sits clear of the measure card) only applies then.
+        await _enableRuler(tester);
 
         final attribution = tester.getRect(
           find.byKey(const Key('apiary-map-attribution-text')),
@@ -684,6 +707,7 @@ void main() {
         // #340 the profile locale — not the device locale — drives the app's
         // UI language, so setting it here also exercises that wiring.
         await _goToMap(tester, profileLocale: 'pt');
+        await _enableRuler(tester);
 
         await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
         await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
@@ -772,5 +796,203 @@ void main() {
         );
       },
     );
+  });
+
+  group('ruler toggle + apiary info sheet (#388)', () {
+    testWidgets(
+      'the ruler is off by default: no measure card renders on the map',
+      (tester) async {
+        await _goToMap(tester);
+
+        expect(find.byKey(const Key('apiary-map-measure-text')), findsNothing);
+        expect(
+          find.byKey(const Key('apiary-map-measure-overlay')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'the ruler toggle meets the min tap target and has a semantics label',
+      (tester) async {
+        await _goToMap(tester);
+
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-map-ruler-toggle')),
+        );
+        expectHasSemanticsLabel(tester, const Key('apiary-map-ruler-toggle'));
+      },
+    );
+
+    testWidgets(
+      'tapping a pin with the ruler off opens the info sheet with the '
+      'apiary name and open-todo count',
+      (tester) async {
+        await _goToMap(
+          tester,
+          todos: const [
+            Todo(
+              id: 't1',
+              title: 'Check hives',
+              priority: 'medium',
+              status: 'open',
+              apiaryId: 'a1',
+            ),
+            Todo(
+              id: 't2',
+              title: 'Add super',
+              priority: 'low',
+              status: 'open',
+              apiaryId: 'a1',
+            ),
+            Todo(
+              id: 't3',
+              title: 'Already done',
+              priority: 'low',
+              status: 'done',
+              apiaryId: 'a1',
+            ),
+            Todo(
+              id: 't4',
+              title: 'Different apiary',
+              priority: 'low',
+              status: 'open',
+              apiaryId: 'a2',
+            ),
+          ],
+        );
+
+        await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+
+        final sheet = find.byKey(const Key('apiary-map-info-sheet'));
+        expect(sheet, findsOneWidget);
+        expect(
+          find.descendant(of: sheet, matching: find.text(_serraNorte.name)),
+          findsOneWidget,
+        );
+        // 2 open ('t1', 't2') + 1 done ('t3', excluded) for a1; the a2 todo
+        // ('t4') must not be counted against a1.
+        expect(find.text('2 open todos'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "tapping the info sheet's view button navigates to the apiary's "
+      'detail route',
+      (tester) async {
+        await _goToMap(tester);
+
+        await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+        expect(find.byKey(const Key('apiary-map-info-sheet')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('apiary-map-info-view-button')));
+        // Not pumpAndSettle: dismissing the modal sheet and navigating away
+        // in the same tap stacks the sheet's own dismiss transition with the
+        // route change, which never fully quiesces within pumpAndSettle's
+        // budget — the same class of issue _longPressMarker's own doc
+        // comment describes for the map's residual gesture animation. A
+        // couple of fixed pumps are enough for both to take effect.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        final router = GoRouter.of(tester.element(find.byType(AppShell)));
+        expect(
+          router.routeInformationProvider.value.uri.toString(),
+          '/apiaries/a1',
+        );
+      },
+    );
+
+    testWidgets(
+      'ruler on + location available: "Use my location" measures from the '
+      'current position',
+      (tester) async {
+        await _goToMap(
+          tester,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        );
+        await _enableRuler(tester);
+
+        expect(
+          find.byKey(const Key('apiary-map-measure-from-me')),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(const Key('apiary-map-measure-from-me')));
+        await tester.pumpAndSettle();
+
+        // The chip disappears once a user-location endpoint is selected —
+        // it's already occupying one of the two slots.
+        expect(
+          find.byKey(const Key('apiary-map-measure-from-me')),
+          findsNothing,
+        );
+        expect(
+          find.text('Selected You. Tap another apiary to measure.'),
+          findsOneWidget,
+        );
+
+        await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
+
+        final km = haversineDistanceKm(
+          lat1: 41.1496,
+          lon1: -8.6109,
+          lat2: _valeDasEguas.locationLat!,
+          lon2: _valeDasEguas.locationLon!,
+        );
+        final enFormatted = intl.NumberFormat.decimalPatternDigits(
+          locale: 'en',
+          decimalDigits: 2,
+        ).format(km);
+        expect(
+          find.textContaining('You to ${_valeDasEguas.name}: $enFormatted'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('ruler on + location unavailable: no "use my location" chip, '
+        'apiary-to-apiary measuring still works', (tester) async {
+      // Default fake location service reports services disabled.
+      await _goToMap(tester);
+      await _enableRuler(tester);
+
+      expect(find.byKey(const Key('apiary-map-measure-from-me')), findsNothing);
+
+      await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+      await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
+
+      expect(
+        find.textContaining('Serra Norte to Vale das Éguas: 47.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('toggling the ruler off clears an in-progress selection', (
+      tester,
+    ) async {
+      await _goToMap(tester);
+      await _enableRuler(tester);
+
+      await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+      expect(
+        find.text('Selected Serra Norte. Tap another apiary to measure.'),
+        findsOneWidget,
+      );
+
+      // Off then back on: the selection must not survive the round trip.
+      await tester.tap(find.byKey(const Key('apiary-map-ruler-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-map-ruler-toggle')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Tap two apiaries to measure the distance between them.'),
+        findsOneWidget,
+      );
+    });
   });
 }
