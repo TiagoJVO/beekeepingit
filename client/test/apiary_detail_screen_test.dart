@@ -500,6 +500,40 @@ void main() {
     );
 
     testWidgets(
+      'the number field never paints a floating label duplicating the '
+      'card\'s own type name, while keeping it as the accessible label '
+      '(#393)',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            apiariesRepository: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+
+        final field = tester.widget<TextField>(
+          find.byKey(const Key('apiary-counter-edit-field')),
+        );
+        expect(
+          field.decoration?.floatingLabelBehavior,
+          FloatingLabelBehavior.never,
+        );
+        // The e2e suite's own getByLabel("Hives") relies on this staying the
+        // accessible label even though it never paints.
+        expect(field.decoration?.labelText, isNotNull);
+      },
+    );
+
+    testWidgets(
       'the +/- stepper adjusts the draft value before saving (gloves-friendly)',
       (tester) async {
         final repo = _FakeApiariesRepository();
@@ -526,6 +560,93 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(repo.counterWrites.single.value, 5);
+      },
+    );
+
+    testWidgets(
+      'tapping the counter card again with an unchanged draft collapses the '
+      'editor without a confirmation prompt (#393)',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            apiariesRepository: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('discard-changes-dialog')), findsNothing);
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsNothing,
+        );
+        expect(repo.counterWrites, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'tapping the counter card again with a changed draft prompts before '
+      'discarding, and cancel keeps the editor open (#393)',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            apiariesRepository: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-counter-increment')));
+        await tester.pump();
+
+        // Tap the card again — the draft (4) differs from the opened value
+        // (3), so a confirmation prompt appears instead of collapsing.
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('discard-changes-dialog')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('discard-changes-cancel')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsOneWidget,
+        );
+        expect(find.text('4'), findsOneWidget);
+
+        // Tap again, this time confirm — the editor collapses and the draft
+        // is discarded (no write).
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('discard-changes-confirm')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsNothing,
+        );
+        expect(repo.counterWrites, isEmpty);
       },
     );
 

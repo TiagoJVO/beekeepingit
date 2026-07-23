@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/widgets/actions_speed_dial.dart';
 import '../../core/widgets/tap_target.dart';
+import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_theme.dart';
@@ -371,6 +372,11 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
   final _valueController = TextEditingController();
   bool _saving = false;
 
+  /// The stored value at the moment the editor opened — the baseline
+  /// [_maybeCloseEditor] compares the draft against to decide whether
+  /// collapsing needs a discard confirmation (#393).
+  int _openedValue = 0;
+
   @override
   void dispose() {
     _valueController.dispose();
@@ -381,10 +387,27 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
     setState(() {
       _editingType = counterType;
       _valueController.text = '$currentValue';
+      _openedValue = currentValue;
     });
   }
 
   void _closeEditor() => setState(() => _editingType = null);
+
+  /// Tapping the same counter card again while its editor is open collapses
+  /// it (#393) — mirroring the card's role as the editor's own toggle rather
+  /// than a one-way "open" action. Prompts for confirmation only when the
+  /// draft actually differs from the value the editor opened with; an
+  /// unchanged draft (or the freshly-opened add-counter case, whose
+  /// [_openedValue] is 0) collapses immediately.
+  Future<void> _maybeCloseEditor() async {
+    if (_saving) return;
+    if (_draftValue == _openedValue) {
+      _closeEditor();
+      return;
+    }
+    final discard = await showDiscardChangesDialog(context);
+    if (discard && mounted) _closeEditor();
+  }
 
   int get _draftValue {
     final n = int.tryParse(_valueController.text.trim()) ?? 0;
@@ -471,7 +494,9 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
             _CounterCard(
               key: const Key('apiary-detail-hive-count'),
               label: l10n.hiveCountValue(apiary.hiveCount),
-              onTap: () => _openEditor(counterTypeHive, apiary.hiveCount),
+              onTap: () => _editingType == counterTypeHive
+                  ? _maybeCloseEditor()
+                  : _openEditor(counterTypeHive, apiary.hiveCount),
             ),
             for (final counter in others)
               _CounterCard(
@@ -481,7 +506,9 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
                   counter.counterType,
                   counter.value,
                 )!,
-                onTap: () => _openEditor(counter.counterType, counter.value),
+                onTap: () => _editingType == counter.counterType
+                    ? _maybeCloseEditor()
+                    : _openEditor(counter.counterType, counter.value),
               ),
           ],
         ),
@@ -494,7 +521,6 @@ class _CountersSectionState extends ConsumerState<_CountersSection> {
             onDecrement: () => setState(() => _bumpBy(-1)),
             onIncrement: () => setState(() => _bumpBy(1)),
             onSave: _save,
-            onCancel: _closeEditor,
           ),
         ],
         if (addable.isNotEmpty) ...[
@@ -580,7 +606,6 @@ class _CounterEditor extends StatelessWidget {
     required this.onDecrement,
     required this.onIncrement,
     required this.onSave,
-    required this.onCancel,
   });
 
   final String typeLabel;
@@ -589,7 +614,6 @@ class _CounterEditor extends StatelessWidget {
   final VoidCallback onDecrement;
   final VoidCallback onIncrement;
   final VoidCallback onSave;
-  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -640,7 +664,18 @@ class _CounterEditor extends StatelessWidget {
                 fontSize: 18,
                 color: brand.onHeroSurface,
               ),
-              decoration: InputDecoration(labelText: typeLabel, isDense: true),
+              decoration: InputDecoration(
+                labelText: typeLabel,
+                isDense: true,
+                // The type name already renders at the row's left (#393) —
+                // the floating label here is redundant and, over this 64px
+                // field, truncates unreadably. Keep labelText itself (not
+                // hint) so it still reaches screen readers and getByLabel-
+                // style lookups (client/e2e/tests/slice.spec.ts's own
+                // getByLabel("Hives")); it just never paints, since the
+                // field always holds text (the draft value) once mounted.
+                floatingLabelBehavior: FloatingLabelBehavior.never,
+              ),
             ),
           ),
           IconButton(
