@@ -165,8 +165,7 @@ class _JourneyQuickCreateSheetState
         // viewport, and a single scroll view around EVERYTHING would push
         // Save/Cancel below the fold where a user in the field can't reach
         // them. Keeping the actions outside the scrollable keeps them
-        // reachable at any screen size, text scale, or future field count —
-        // the same structure todo_quick_create_sheet.dart uses.
+        // reachable at any screen size, text scale, or future field count.
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -301,6 +301,7 @@ class _JourneyApiariesSection extends ConsumerWidget {
               style: TextStyle(color: theme.colorScheme.error),
             ),
             data: (activities) => _ApiaryEntries(
+              journeyId: journey.id,
               plannedApiaryIds: plannedApiaryIds,
               activities: activities,
               apiaryNames: apiaryNames,
@@ -318,11 +319,13 @@ class _JourneyApiariesSection extends ConsumerWidget {
 /// seen-ids guard against a duplicate entry when an id appears in both.
 class _ApiaryEntries extends StatelessWidget {
   const _ApiaryEntries({
+    required this.journeyId,
     required this.plannedApiaryIds,
     required this.activities,
     required this.apiaryNames,
   });
 
+  final String journeyId;
   final List<String> plannedApiaryIds;
   final List<Activity> activities;
   final Map<String, String> apiaryNames;
@@ -355,6 +358,7 @@ class _ApiaryEntries extends StatelessWidget {
       children: [
         for (final apiaryId in apiaryIds) ...[
           _ApiaryCard(
+            journeyId: journeyId,
             apiaryId: apiaryId,
             // A raw internal id would leak into user-facing text if this
             // apiary isn't in the currently-loaded list (deleted since, or
@@ -382,12 +386,14 @@ class _ApiaryEntries extends StatelessWidget {
 /// an activity list (there's nothing to list yet).
 class _ApiaryCard extends StatelessWidget {
   const _ApiaryCard({
+    required this.journeyId,
     required this.apiaryId,
     required this.apiaryName,
     required this.isPlanned,
     required this.activities,
   });
 
+  final String journeyId;
   final String apiaryId;
   final String apiaryName;
   final bool isPlanned;
@@ -445,6 +451,13 @@ class _ApiaryCard extends StatelessWidget {
               // state.
               emptyText: '',
               shrinkWrap: true,
+              // #384: keep a tap on this journey's own activity inside the
+              // Journeys branch (see ActivityListView's own doc comment) —
+              // apiaryId travels as a query parameter for
+              // journeyActivityDetail's own route (app_router.dart).
+              detailLocationBuilder: (activity) =>
+                  '/journeys/$journeyId/activities/${activity.id}'
+                  '?apiaryId=${activity.apiaryId}',
             ),
           ] else ...[
             const SizedBox(height: 4),

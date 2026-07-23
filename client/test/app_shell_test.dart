@@ -6,6 +6,7 @@ import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
+import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
@@ -100,6 +101,13 @@ Widget _buildShellApp({
       // place of the old ComingSoonScreen placeholder — same rationale as
       // the activities/journeys overrides above.
       todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
+      // The full todo create/edit form's assignee picker (#293, now also
+      // reachable from the FAB flows below since #389 retired #52's
+      // quick-create sheet) watches memberNamesProvider — overridden so
+      // opening it in these shell-focused tests doesn't attempt a real
+      // fetch, matching todo_form_screen_test.dart's/
+      // apiary_detail_screen_test.dart's own convention.
+      memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
       syncStatusProvider.overrideWithValue(
@@ -464,7 +472,7 @@ void main() {
     expect(find.byKey(const Key('shell-fab-new-todo')), findsNothing);
   });
 
-  group('quick-create todo FAB (#52, FR-TD-1, FR-UX-1, FR-UX-2)', () {
+  group('create-todo FAB (#52/#389, FR-TD-1, FR-UX-1, FR-UX-2)', () {
     testWidgets('the Todos tab shows its own "New todo" FAB', (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
@@ -477,25 +485,34 @@ void main() {
       expect(find.byKey(const Key('actions-speed-dial-toggle')), findsNothing);
     });
 
-    testWidgets('tapping the Todos tab FAB opens the quick-create sheet, '
-        'with no pre-filled apiary', (tester) async {
-      await tester.pumpWidget(_buildShellApp());
-      await tester.pumpAndSettle();
+    testWidgets(
+      'tapping the Todos tab FAB routes to the full create form (#389), '
+      'with no apiary pre-selected',
+      (tester) async {
+        await tester.pumpWidget(_buildShellApp());
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('shell-tab-todos')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('shell-fab')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-tab-todos')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab')));
+        await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('todo-quick-create-title-field')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('todo-quick-create-apiary-chip')),
-        findsNothing,
-      );
-    });
+        expect(find.byKey(const Key('todo-title-field')), findsOneWidget);
+        // The header title, from the pushed `todoNew` route (canGoBack is
+        // now true, so the FAB itself — which also says "New todo" — is
+        // gone, per _ShellFab's own doc comment).
+        expect(find.text('New todo'), findsOneWidget);
+        // "No apiary" (todo-apiary-option-none) renders selected — the
+        // apiary picker's own default when no `?apiaryId=` was passed.
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('todo-apiary-option-none')),
+            matching: find.byIcon(Icons.radio_button_checked),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets(
       'the Apiaries tab "Actions" speed dial reveals BOTH its "Add apiary" '
@@ -536,8 +553,8 @@ void main() {
     );
 
     testWidgets(
-      'tapping the Apiaries tab "New todo" option opens the quick-create '
-      'sheet, with no pre-filled apiary',
+      'tapping the Apiaries tab "New todo" option routes to the full create '
+      'form (#389), with no apiary pre-selected',
       (tester) async {
         await tester.pumpWidget(_buildShellApp());
         await tester.pumpAndSettle();
@@ -547,13 +564,19 @@ void main() {
         await tester.tap(find.byKey(const Key('shell-fab-new-todo')));
         await tester.pumpAndSettle();
 
+        expect(find.byKey(const Key('todo-title-field')), findsOneWidget);
+        // The header title, from the pushed `todoNew` route (canGoBack is
+        // now true, so the FAB itself — which also says "New todo" — is
+        // gone, per _ShellFab's own doc comment).
+        expect(find.text('New todo'), findsOneWidget);
+        // "No apiary" (todo-apiary-option-none) renders selected — the
+        // apiary picker's own default when no `?apiaryId=` was passed.
         expect(
-          find.byKey(const Key('todo-quick-create-title-field')),
+          find.descendant(
+            of: find.byKey(const Key('todo-apiary-option-none')),
+            matching: find.byIcon(Icons.radio_button_checked),
+          ),
           findsOneWidget,
-        );
-        expect(
-          find.byKey(const Key('todo-quick-create-apiary-chip')),
-          findsNothing,
         );
       },
     );

@@ -11,6 +11,7 @@ import 'package:beekeepingit_client/features/organization/organization_repositor
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
+import 'package:beekeepingit_client/theming/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1265,6 +1266,43 @@ void main() {
 
         expect(repo.created, hasLength(1));
         expect(repo.created.single.journeyId, 'new-journey-0');
+      },
+    );
+
+    testWidgets(
+      'the "Create a new journey" row uses the accent (tertiary) color, not '
+      'the muted secondary color that reads as disabled (#381)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await _openAddActivityForm(tester);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+
+        final scheme = AppTheme.light().colorScheme;
+        final createNewOption = find.byKey(
+          const Key('journey-picker-create-new-option'),
+        );
+        final icon = tester.widget<Icon>(
+          find.descendant(
+            of: createNewOption,
+            matching: find.byIcon(Icons.add_circle_outline),
+          ),
+        );
+        expect(icon.color, scheme.tertiary);
+        expect(icon.color, isNot(scheme.secondary));
+
+        final title = tester.widget<Text>(
+          find.descendant(of: createNewOption, matching: find.byType(Text)),
+        );
+        expect(title.style?.color, scheme.onSurface);
+        expect(title.style?.color, isNot(scheme.secondary));
       },
     );
 

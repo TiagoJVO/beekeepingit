@@ -7,19 +7,19 @@ import '../core/widgets/tap_target.dart';
 import '../core/widgets/unsaved_changes.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
 import '../features/sync/sync_rejected_repository.dart';
-import '../features/todos/todo_quick_create_sheet.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../theming/brand_tokens.dart';
 import 'sync_status.dart';
 
 /// One quick-action's config (FR-UX-2), fed to the shell's [ActionsSpeedDial].
 /// [onPressed] takes the [BuildContext] rather than being a bare [VoidCallback]
-/// so an action can either navigate (`context.go(...)`) OR open a bottom sheet
-/// (`showTodoQuickCreateSheet(context)`, #52) from the same config shape,
-/// instead of the config carrying a route string that only navigation-based
-/// actions can use. Hero tagging and expanded/collapsed styling are the speed
-/// dial's own concern now (#347), so this no longer carries a hero tag or a
-/// tonal flag.
+/// so every action shares the same `context.go(...)`-navigation shape — #389
+/// retired the one action that used to instead open a bottom sheet
+/// (`showTodoQuickCreateSheet`, #52's quick-create), so this could in
+/// principle collapse to a bare route string now, but keeping the
+/// `BuildContext`-taking shape avoids a second config type for one field.
+/// Hero tagging and expanded/collapsed styling are the speed dial's own
+/// concern now (#347), so this no longer carries a hero tag or a tonal flag.
 class _FabAction {
   const _FabAction({
     required this.key,
@@ -64,7 +64,7 @@ const _fabConfigByTab = <String, _FabConfig>{
       key: Key('shell-fab-new-todo'),
       label: _todoFabLabel,
       icon: Icons.task_alt_outlined,
-      onPressed: _openTodoQuickCreate,
+      onPressed: _openNewTodo,
     ),
   ),
   // Journeys (#45): unlike Activities (whose create entry point lives on the
@@ -86,7 +86,7 @@ const _fabConfigByTab = <String, _FabConfig>{
       key: Key('shell-fab'),
       label: _todoFabLabel,
       icon: Icons.task_alt_outlined,
-      onPressed: _openTodoQuickCreate,
+      onPressed: _openNewTodo,
     ),
   ),
 };
@@ -98,14 +98,13 @@ String _todoFabLabel(AppLocalizations l10n) => l10n.addTodo;
 void _openNewApiary(BuildContext context) => context.go('/apiaries/new');
 void _openNewJourney(BuildContext context) => context.go('/journeys/new');
 
-/// No `initialApiaryId` (#52) — both entry points wired to this (the
-/// Apiaries tab's secondary FAB, the Todos tab's own primary FAB) sit at a
-/// tab ROOT, not on a specific apiary, unlike the apiary detail page's own
-/// contextual "New todo" action (apiary_detail_screen.dart), which passes
-/// one.
-void _openTodoQuickCreate(BuildContext context) {
-  showTodoQuickCreateSheet(context);
-}
+/// Routes to the full create form (#389, replacing #52's quick-create
+/// sheet) — no `?apiaryId=` query param, since both entry points wired to
+/// this (the Apiaries tab's secondary FAB, the Todos tab's own primary FAB)
+/// sit at a tab ROOT, not on a specific apiary, unlike the apiary detail
+/// page's own contextual "New todo" action (apiary_detail_screen.dart),
+/// which passes one.
+void _openNewTodo(BuildContext context) => context.go('/todos/new');
 
 /// The persistent app shell (FR-UX-2, #197): a 5-tab bottom nav wrapping a
 /// [StatefulShellRoute] (one navigation stack per tab, per go_router's
@@ -350,10 +349,14 @@ class AppShell extends ConsumerWidget {
       'apiaryEdit' => l10n.editApiaryTitle,
       'activityNew' => l10n.newActivityTitle,
       'activityDetail' => l10n.activityDetailTitle,
+      // #384: the journey-scoped activity detail route renders the same
+      // ActivityDetailScreen as 'activityDetail' above — same title.
+      'journeyActivityDetail' => l10n.activityDetailTitle,
       'activityEdit' => l10n.editActivityTitle,
       'journeyNew' => l10n.newJourneyTitle,
       'journeyDetail' => l10n.journeyDetailTitle,
       'journeyEdit' => l10n.editJourneyTitle,
+      'journeyStats' => l10n.journeyStatsDetailTitle,
       'todoNew' => l10n.newTodoTitle,
       'todoDetail' => l10n.todoDetailTitle,
       'todoEdit' => l10n.editTodoTitle,

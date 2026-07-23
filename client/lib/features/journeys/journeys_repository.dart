@@ -8,6 +8,7 @@ import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
 import '../activities/activity_types.dart';
+import '../apiaries/counter_types.dart';
 import '../organization/organization_repository.dart';
 import 'journey_stats.dart';
 import 'journey_status.dart';
@@ -329,19 +330,24 @@ class JourneysRepository {
   /// [watchStats]'s doc for the query shape; this is its one-shot
   /// counterpart, mirroring [getById]/[watchById]'s existing split.
   Future<JourneyStats> getStats(String journeyId) async {
-    final rows = await _store.getAll(_statsSql, [journeyId, journeyId]);
+    final rows = await _store.getAll(_statsSql, [
+      journeyId,
+      journeyId,
+      journeyId,
+    ]);
     return _statsFromRows(rows);
   }
 
-  /// Live [JourneyStats] for one journey (#49, FR-JO-1, D-2, D-21) — apiaries
-  /// visited vs. planned, hives harvested, honey collected, and média
-  /// alças/colmeia, recomputed whenever a plan item or an activity is
-  /// added/edited/deleted/re-attributed (a plain write to either table
-  /// re-triggers this watch — PowerSync/sqlite_async auto-detect a watched
-  /// query's source tables via `EXPLAIN QUERY PLAN`, so ONE UNION query
-  /// spanning [journeyPlanItemsTable] AND [activitiesTable] is enough to
-  /// invalidate on writes to either, no manual multi-stream combination
-  /// needed).
+  /// Live [JourneyStats] for one journey (#49, FR-JO-1, D-2, D-21, #391) —
+  /// apiaries visited vs. planned, hives harvested, honey collected, média
+  /// alças/colmeia, and hive-level completion, recomputed whenever a plan
+  /// item, an activity, or a planned apiary's hive counter is
+  /// added/edited/deleted (a plain write to any of the three re-triggers
+  /// this watch — PowerSync/sqlite_async auto-detect a watched query's
+  /// source tables via `EXPLAIN QUERY PLAN`, so ONE UNION query spanning
+  /// [journeyPlanItemsTable], [activitiesTable], AND [apiaryCountersTable]
+  /// is enough to invalidate on writes to any of the three, no manual
+  /// multi-stream combination needed).
   ///
   /// Every attribution is by the activity's STORED `journey_id` column (D-21
   /// — "supersedes Q-JOUR" per this issue's own note): this is NOT a live
@@ -353,55 +359,96 @@ class JourneysRepository {
   /// shift (by design: "planned vs. done" is always against the live plan;
   /// the harvest sums are always against the immutable per-activity link).
   ///
-  /// [_statsFromRows] does the row-shape parsing (single query, two row
+  /// [_statsFromRows] does the row-shape parsing (single query, three row
   /// "kinds" via a `source` discriminator column); [computeJourneyStats]
   /// (journey_stats.dart) does the actual arithmetic, kept dependency-free
   /// and independently unit-tested.
   Stream<JourneyStats> watchStats(String journeyId) {
-    return _store.watch(_statsSql, [journeyId, journeyId]).map(_statsFromRows);
+    return _store
+        .watch(_statsSql, [journeyId, journeyId, journeyId])
+        .map(_statsFromRows);
   }
 
-  /// One UNION query touching both [journeyPlanItemsTable] (the plan) and
+  /// One UNION query touching [journeyPlanItemsTable] (the plan),
   /// [activitiesTable] (every activity attributed to this journey by its
-  /// stored `journey_id`) — kept as a single statement specifically so
-  /// [watchStats]'s live query invalidates on a write to EITHER table (see
-  /// its own doc). The `source` column tells [_statsFromRows] which branch a
-  /// row came from; `type`/`attributes` are NULL on the `plan` branch (a
-  /// plan item has neither).
+  /// stored `journey_id`), AND [apiaryCountersTable] (#391: the planned
+  /// apiaries' `hive` counters, the denominator for hive-level completion) —
+  /// kept as a single statement specifically so [watchStats]'s live query
+  /// invalidates on a write to ANY of the three tables (see its own doc): a
+  /// hive-counter edit re-fires the same watch a plan/activity write already
+  /// does. The `source` column tells [_statsFromRows] which branch a row
+  /// came from; `type`/`attributes` are NULL outside the `activity` branch,
+  /// `value` is NULL outside the `hive_count` branch.
+  ///
+  /// The `hive_count` branch is driven by [journeyPlanItemsTable] (one row
+  /// per CURRENTLY planned apiary, never per counter row) with a correlated
+  /// subquery for `value` — the exact same `ORDER BY updated_at DESC LIMIT
+  /// 1` newest-row-wins shape as apiaries_repository.dart's own
+  /// `_hiveCountSubquery`, so the brief optimistic-sync window where a
+  /// locally-created counter row and its server-authoritative replacement
+  /// coexist never double-counts a planned apiary's hive count here either.
+  /// `value` is NULL (not 0) when the apiary has no hive counter row at all
+  /// — [_statsFromRows] keeps that apiary out of the resulting map entirely,
+  /// which is what lets [JourneyStats.hivesPlanned] distinguish "no counter
+  /// data yet" from "some planned apiaries have 0 hives".
   static const _statsSql =
-      "SELECT 'plan' AS source, apiary_id, NULL AS type, NULL AS attributes "
+      "SELECT 'plan' AS source, apiary_id, NULL AS type, NULL AS attributes, "
+      'NULL AS value '
       'FROM $journeyPlanItemsTable WHERE journey_id = ? '
       'UNION ALL '
-      "SELECT 'activity' AS source, apiary_id, type, attributes "
-      'FROM $activitiesTable WHERE journey_id = ?';
+      "SELECT 'activity' AS source, apiary_id, type, attributes, NULL AS value "
+      'FROM $activitiesTable WHERE journey_id = ? '
+      'UNION ALL '
+      "SELECT 'hive_count' AS source, p.apiary_id AS apiary_id, NULL AS type, "
+      'NULL AS attributes, '
+      '(SELECT hc.value FROM $apiaryCountersTable hc '
+      'WHERE hc.apiary_id = p.apiary_id AND hc.counter_type = \'$counterTypeHive\' '
+      'ORDER BY hc.updated_at DESC LIMIT 1) AS value '
+      'FROM $journeyPlanItemsTable p WHERE p.journey_id = ?';
 
   /// Splits [_statsSql]'s combined row set back into the plan-item apiary
   /// ids, the set of apiary ids with ANY attributed activity (regardless of
   /// type — an apiary counts as "visited" the same way the Melargil
-  /// prototype's own `statsJornada` does, docs/design/prototype.md), and
-  /// every HARVEST-type activity's numeric attributes (D-2: only harvest
-  /// activities feed the hive/honey/supers sums) — then hands all three to
-  /// [computeJourneyStats] for the arithmetic.
+  /// prototype's own `statsJornada` does, docs/design/prototype.md), every
+  /// HARVEST-type activity's numeric attributes (D-2: only harvest
+  /// activities feed the hive/honey/supers sums), every activity's own
+  /// `hives_involved` regardless of type (#391: [JourneyStats.hivesWorked]'s
+  /// input — harvest/feeding/treatment all carry it), and the planned
+  /// apiaries' hive counter values (#391: [JourneyStats.hivesPlanned]'s
+  /// input) — then hands all of it to [computeJourneyStats] for the
+  /// arithmetic.
   JourneyStats _statsFromRows(List<Map<String, Object?>> rows) {
     final plannedApiaryIds = <String>[];
     final visitedApiaryIds = <String>{};
     final harvestTotals = <HarvestActivityTotals>[];
+    final activityHivesInvolved = <int?>[];
+    final plannedApiaryHiveCounts = <String, int>{};
 
     for (final row in rows) {
+      final source = row['source'];
       final apiaryId = row['apiary_id'] as String;
-      if (row['source'] == 'plan') {
+      if (source == 'plan') {
         plannedApiaryIds.add(apiaryId);
         continue;
       }
+      if (source == 'hive_count') {
+        final value = (row['value'] as num?)?.toInt();
+        if (value != null) plannedApiaryHiveCounts[apiaryId] = value;
+        continue;
+      }
+
+      // source == 'activity'
       visitedApiaryIds.add(apiaryId);
-      if (row['type'] != activityTypeHarvest) continue;
       final rawAttributes = row['attributes'] as String?;
       final attrs = rawAttributes == null
           ? const <String, dynamic>{}
           : (jsonDecode(rawAttributes) as Map<String, dynamic>);
+      final hivesInvolved = (attrs['hives_involved'] as num?)?.toInt();
+      activityHivesInvolved.add(hivesInvolved);
+      if (row['type'] != activityTypeHarvest) continue;
       harvestTotals.add(
         HarvestActivityTotals(
-          hivesInvolved: (attrs['hives_involved'] as num?)?.toInt(),
+          hivesInvolved: hivesInvolved,
           honeyKg: attrs['honey_kg'] as num?,
           honeySupers: (attrs['honey_supers'] as num?)?.toInt(),
         ),
@@ -412,6 +459,8 @@ class JourneysRepository {
       plannedApiaryIds: plannedApiaryIds,
       visitedApiaryIds: visitedApiaryIds,
       harvestTotals: harvestTotals,
+      activityHivesInvolved: activityHivesInvolved,
+      plannedApiaryHiveCounts: plannedApiaryHiveCounts,
     );
   }
 
