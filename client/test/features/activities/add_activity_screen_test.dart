@@ -130,10 +130,16 @@ class _FakeActivitiesRepository extends ActivitiesRepository {
 }
 
 class _CreatedJourney {
-  _CreatedJourney(this.name, this.mainActivityType, this.apiaryIds);
+  _CreatedJourney(
+    this.name,
+    this.mainActivityType,
+    this.apiaryIds, [
+    this.defaultAttributes = const {},
+  ]);
   final String name;
   final String mainActivityType;
   final List<String> apiaryIds;
+  final Map<String, dynamic> defaultAttributes;
 }
 
 /// A [JourneysRepository] fake for the #46 journey-picker section on the
@@ -179,7 +185,9 @@ class _FakeJourneysRepository extends JourneysRepository {
     Map<String, dynamic> defaultAttributes = const {},
   }) async {
     if (throwOnCreate) throw Exception('boom-journey-create');
-    created.add(_CreatedJourney(name, mainActivityType, apiaryIds));
+    created.add(
+      _CreatedJourney(name, mainActivityType, apiaryIds, defaultAttributes),
+    );
     return 'new-journey-${created.length - 1}';
   }
 }
@@ -1458,6 +1466,264 @@ void main() {
         expect(find.text('Spring Harvest Round'), findsOneWidget);
       },
     );
+
+    group('prefill from journey defaults (#386)', () {
+      testWidgets(
+        'auto-select: an auto-selected journey\'s defaults fill empty '
+        'attribute fields',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final treatmentJourney = const Journey(
+            id: 'jt1',
+            name: 'Spring Treatment',
+            mainActivityType: 'treatment',
+            status: journeyStatusOpen,
+            defaultAttributes: {
+              'treatment_context': 'disease_specific',
+              'treatment_type': 'Apivar/amitraz',
+              'disease': 'Varroose',
+            },
+          );
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [treatmentJourney],
+          );
+          await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Treatment').last);
+          await tester.pumpAndSettle();
+
+          expect(find.text('Specific disease/condition'), findsOneWidget);
+          expect(find.text('Apivar/amitraz'), findsOneWidget);
+          expect(find.text('Varroose'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'a field the user already set is NOT overwritten by a subsequent '
+        'pick (non-clobber rule)',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeyWithDefaults = const Journey(
+            id: 'jd1',
+            name: 'Batch Journey',
+            mainActivityType: 'harvest',
+            status: journeyStatusOpen,
+            defaultAttributes: {'lot_batch': 'LOTE-2026-07'},
+          );
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [journeyWithDefaults],
+          );
+          await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+          // Auto-select already prefilled lot_batch from the default — the
+          // user now types over it explicitly.
+          expect(
+            tester
+                .widget<TextFormField>(
+                  find.byKey(const Key('activity-lot-batch-field')),
+                )
+                .controller!
+                .text,
+            'LOTE-2026-07',
+          );
+          await tester.enterText(
+            find.byKey(const Key('activity-lot-batch-field')),
+            'USER-ENTERED',
+          );
+          await tester.pumpAndSettle();
+
+          // Explicitly re-pick the SAME journey via the picker — exercises
+          // the explicit-pick prefill trigger, not just auto-select.
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('journey-picker-option-jd1')));
+          await tester.pumpAndSettle();
+
+          expect(
+            tester
+                .widget<TextFormField>(
+                  find.byKey(const Key('activity-lot-batch-field')),
+                )
+                .controller!
+                .text,
+            'USER-ENTERED',
+            reason: 'a non-empty field must never be clobbered by a default',
+          );
+        },
+      );
+
+      testWidgets(
+        'inline create: the quick-created journey\'s defaults prefill '
+        'immediately, without waiting for the live query',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          // Empty matches: journeysById stays empty too (built from `matches`
+          // at construction, _FakeJourneysRepository's own doc comment) — a
+          // getById(newlyCreatedId) call would return null, proving the
+          // prefill can't be coming from a re-read of the store; it must be
+          // the quick-create sheet's own returned record.
+          final journeysRepo = _FakeJourneysRepository();
+          await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('journey-picker-create-new-option')),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(
+            find.byKey(const Key('journey-quick-create-name-field')),
+            'Fresh Harvest Journey',
+          );
+          await tester.enterText(
+            find.byKey(const Key('journey-default-lot-batch-field')),
+            'NEWLOT-01',
+          );
+          await tester.tap(
+            find.byKey(const Key('journey-quick-create-save-button')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(journeysRepo.created.single.defaultAttributes, {
+            'lot_batch': 'NEWLOT-01',
+          });
+          expect(
+            tester
+                .widget<TextFormField>(
+                  find.byKey(const Key('activity-lot-batch-field')),
+                )
+                .controller!
+                .text,
+            'NEWLOT-01',
+          );
+        },
+      );
+
+      testWidgets('the occurred_at date is untouched by a prefill', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        // InputDecoration renders its OWN label as a Text descendant too
+        // (alongside the actual date value), so this filters it out by
+        // content rather than assuming a fixed widget count/order.
+        String? dateText() {
+          final l10n = AppLocalizations.of(
+            tester.element(find.byKey(const Key('activity-occurred-at-field'))),
+          );
+          return tester
+              .widgetList<Text>(
+                find.descendant(
+                  of: find.byKey(const Key('activity-occurred-at-field')),
+                  matching: find.byType(Text),
+                ),
+              )
+              .map((t) => t.data)
+              .firstWhere(
+                (d) => d != null && d != l10n.activityOccurredAtLabel,
+              );
+        }
+
+        final journeyWithDefaults = const Journey(
+          id: 'jd1',
+          name: 'Batch Journey',
+          mainActivityType: 'harvest',
+          status: journeyStatusOpen,
+          defaultAttributes: {'lot_batch': 'LOTE-2026-07'},
+        );
+        final journeysRepo = _FakeJourneysRepository(
+          matches: [journeyWithDefaults],
+        );
+        await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+        final beforeDate = dateText();
+
+        // Trigger the explicit-pick prefill path (re-picking the SAME
+        // auto-matched journey) within this SAME session/build — #386's
+        // prefill runs here.
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-picker-option-jd1')));
+        await tester.pumpAndSettle();
+        final afterDate = dateText();
+
+        expect(afterDate, beforeDate);
+      });
+
+      testWidgets(
+        'switching activity type then back re-runs prefill for the new '
+        'match',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeyWithDefaults = const Journey(
+            id: 'jd1',
+            name: 'Batch Journey',
+            mainActivityType: 'harvest',
+            status: journeyStatusOpen,
+            defaultAttributes: {'lot_batch': 'LOTE-2026-07'},
+          );
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [journeyWithDefaults],
+          );
+          await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+          // Auto-select already prefilled lot_batch — clear it, to prove
+          // the NEXT prefill (after the round trip below) is a fresh run,
+          // not a leftover value.
+          await tester.enterText(
+            find.byKey(const Key('activity-lot-batch-field')),
+            '',
+          );
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Feeding').last);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Honey harvest').last);
+          await tester.pumpAndSettle();
+
+          expect(
+            tester
+                .widget<TextFormField>(
+                  find.byKey(const Key('activity-lot-batch-field')),
+                )
+                .controller!
+                .text,
+            'LOTE-2026-07',
+          );
+        },
+      );
+    });
   });
 
   group('edit mode (#40, FR-AC-3)', () {

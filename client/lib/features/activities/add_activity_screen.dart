@@ -84,6 +84,16 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   // row, so the "attached to" summary never shows a raw id/blank in between.
   String? _manualJourneyNameFallback;
   List<Journey> _lastKnownJourneyMatches = const [];
+  // The id of the journey [_applyJourneyDefaults] last ran for (#386) — a
+  // create-only prefill-once guard: an auto-selected journey's defaults are
+  // applied the first time it becomes effective, then never re-applied on a
+  // later rebuild of the SAME journey (prefill only fills blanks, so a
+  // re-run would be harmless, but skipping it avoids redundant work every
+  // build). Reset to null whenever the effective journey could change to a
+  // DIFFERENT one that should get its own fresh prefill: an activity-type
+  // change (the auto-match resets entirely) or an explicit pick/inline
+  // create (set directly to the new id there instead).
+  String? _lastPrefilledJourneyId;
 
   // One controller per possible attribute key across every type (#38's
   // FR-AC-1 schema) — only the ones relevant to [_selectedType] are shown
@@ -173,6 +183,41 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
         _hivesInvolvedController.text = _numText(attrs['hives_involved']);
     }
     _notesController.text = (attrs['notes'] as String?) ?? '';
+  }
+
+  /// Prefills EMPTY attribute fields from [defaults] — a journey's own
+  /// `default_attributes` (#385) — when an activity being CREATED attaches
+  /// to it (#386). The non-clobber rule (normative): for each key, apply it
+  /// ONLY when the target field is currently empty (a text controller with
+  /// `text.trim().isEmpty`, a dropdown state variable that is `null`) —
+  /// never overwrite non-empty user input, never clear a field because the
+  /// journey lacks a default, never touch [_occurredAt]. Mirrors
+  /// [_populateFromAttributes]'s key mapping, but guarded per-field instead
+  /// of an unconditional overwrite (that method's edit-load use is
+  /// deliberately unconditional; this one is not). Ignores unknown keys and
+  /// any key that isn't part of the CURRENT [_selectedType]'s own schema
+  /// (defensive: a journey's defaults could predate a later journey-type
+  /// edit, or belong to a different type's key set entirely) — generic has
+  /// no subtype defaults, so it matches no case below and this is a no-op,
+  /// mirroring [_populateFromAttributes]'s identical no-`default:` shape.
+  /// One [setState] at the end, not per-field.
+  void _applyJourneyDefaults(Map<String, dynamic> defaults) {
+    if (defaults.isEmpty) return;
+    setState(() {
+      switch (_selectedType) {
+        case activityTypeTreatment:
+          _treatmentContext ??= defaults['treatment_context'] as String?;
+          _treatmentType ??= defaults['treatment_type'] as String?;
+          _disease ??= defaults['disease'] as String?;
+        case activityTypeFeeding:
+          _feedType ??= defaults['feed_type'] as String?;
+        case activityTypeHarvest:
+          if (_lotBatchController.text.trim().isEmpty) {
+            final lotBatch = defaults['lot_batch'] as String?;
+            if (lotBatch != null) _lotBatchController.text = lotBatch;
+          }
+      }
+    });
   }
 
   String _numText(dynamic value) {
@@ -339,6 +384,25 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
         final autoSelectedHint =
             _journeyTouch == _JourneyTouch.none && effectiveId != null;
 
+        // Auto-select prefill (#386): the auto-selected journey is only
+        // known here, inside this build branch — track _lastPrefilledJourneyId
+        // so this runs (and applies defaults) exactly once per newly
+        // auto-selected journey, never on every rebuild of the same one,
+        // and never while the user has explicitly touched the picker (that
+        // path prefills itself, in _openJourneyPicker). Scheduled via
+        // addPostFrameCallback since a state mutation must never happen
+        // synchronously during build.
+        if (_journeyTouch == _JourneyTouch.none &&
+            effectiveJourney != null &&
+            effectiveJourney.id != _lastPrefilledJourneyId) {
+          final journeyToPrefill = effectiveJourney;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _lastPrefilledJourneyId = journeyToPrefill.id;
+            _applyJourneyDefaults(journeyToPrefill.defaultAttributes);
+          });
+        }
+
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -415,6 +479,14 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           _manualJourneyId = journeyId;
           _manualJourneyNameFallback = null;
         });
+        // #386: prefill from the picked journey's defaults — a FRESH read
+        // (mirrors _save's own closed-check fresh read above), not the
+        // cached matches list, so this never acts on stale data.
+        final journeysRepo = await ref.read(journeysRepositoryProvider.future);
+        final journey = await journeysRepo.getById(journeyId);
+        if (!mounted) return;
+        _lastPrefilledJourneyId = journeyId;
+        if (journey != null) _applyJourneyDefaults(journey.defaultAttributes);
       case JourneyPickerCreateNew():
         final created = await showJourneyQuickCreateSheet(
           context,
@@ -427,6 +499,11 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           _manualJourneyId = created.id;
           _manualJourneyNameFallback = created.name;
         });
+        // #386: the sheet already returns the defaults it just saved (#385)
+        // — apply them directly rather than re-reading the store, sidestepping
+        // the same store-lag race the name fallback above already documents.
+        _lastPrefilledJourneyId = created.id;
+        _applyJourneyDefaults(created.defaultAttributes);
     }
     // Changing the journey attachment lives outside the Form's field tree —
     // arm the guard directly (#345).
@@ -596,6 +673,11 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
                                 _journeyTouch = _JourneyTouch.none;
                                 _manualJourneyId = null;
                                 _manualJourneyNameFallback = null;
+                                // #386: the fresh auto-match for the new
+                                // type must get its own prefill — even if
+                                // it happens to re-select the SAME journey
+                                // id a prior type once matched.
+                                _lastPrefilledJourneyId = null;
                               });
                             }
                           },
