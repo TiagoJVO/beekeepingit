@@ -176,6 +176,7 @@ class _FakeJourneysRepository extends JourneysRepository {
     required String name,
     required String mainActivityType,
     required List<String> apiaryIds,
+    Map<String, dynamic> defaultAttributes = const {},
   }) async {
     if (throwOnCreate) throw Exception('boom-journey-create');
     created.add(_CreatedJourney(name, mainActivityType, apiaryIds));

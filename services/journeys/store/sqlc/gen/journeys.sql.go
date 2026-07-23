@@ -12,7 +12,7 @@ import (
 )
 
 const getJourney = `-- name: GetJourney :one
-SELECT id, organization_id, name, main_activity_type, status,
+SELECT id, organization_id, name, main_activity_type, status, default_attributes,
        created_at, updated_at, recorded_at, deleted_at
 FROM journeys.journeys
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
@@ -34,6 +34,7 @@ func (q *Queries) GetJourney(ctx context.Context, arg GetJourneyParams) (Journey
 		&i.Name,
 		&i.MainActivityType,
 		&i.Status,
+		&i.DefaultAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -43,7 +44,7 @@ func (q *Queries) GetJourney(ctx context.Context, arg GetJourneyParams) (Journey
 }
 
 const getJourneyForUpdate = `-- name: GetJourneyForUpdate :one
-SELECT id, organization_id, name, main_activity_type, status,
+SELECT id, organization_id, name, main_activity_type, status, default_attributes,
        created_at, updated_at, recorded_at, deleted_at
 FROM journeys.journeys
 WHERE organization_id = $1 AND id = $2
@@ -68,6 +69,7 @@ func (q *Queries) GetJourneyForUpdate(ctx context.Context, arg GetJourneyForUpda
 		&i.Name,
 		&i.MainActivityType,
 		&i.Status,
+		&i.DefaultAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -177,19 +179,20 @@ func (q *Queries) InsertConflict(ctx context.Context, arg InsertConflictParams) 
 
 const insertJourney = `-- name: InsertJourney :one
 INSERT INTO journeys.journeys
-    (id, organization_id, name, main_activity_type, status, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, organization_id, name, main_activity_type, status,
+    (id, organization_id, name, main_activity_type, status, default_attributes, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, organization_id, name, main_activity_type, status, default_attributes,
           created_at, updated_at, recorded_at, deleted_at
 `
 
 type InsertJourneyParams struct {
-	ID               pgtype.UUID        `json:"id"`
-	OrganizationID   pgtype.UUID        `json:"organization_id"`
-	Name             string             `json:"name"`
-	MainActivityType string             `json:"main_activity_type"`
-	Status           string             `json:"status"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID                pgtype.UUID        `json:"id"`
+	OrganizationID    pgtype.UUID        `json:"organization_id"`
+	Name              string             `json:"name"`
+	MainActivityType  string             `json:"main_activity_type"`
+	Status            string             `json:"status"`
+	DefaultAttributes []byte             `json:"default_attributes"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Creates one journey row, org-scoped (FR-TEN-2, FR-JO-4). status defaults to
@@ -203,6 +206,7 @@ func (q *Queries) InsertJourney(ctx context.Context, arg InsertJourneyParams) (J
 		arg.Name,
 		arg.MainActivityType,
 		arg.Status,
+		arg.DefaultAttributes,
 		arg.UpdatedAt,
 	)
 	var i JourneysJourney
@@ -212,6 +216,7 @@ func (q *Queries) InsertJourney(ctx context.Context, arg InsertJourneyParams) (J
 		&i.Name,
 		&i.MainActivityType,
 		&i.Status,
+		&i.DefaultAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -349,7 +354,7 @@ func (q *Queries) ListJourneyPlanItemsByJourney(ctx context.Context, arg ListJou
 }
 
 const listJourneysByOrg = `-- name: ListJourneysByOrg :many
-SELECT id, organization_id, name, main_activity_type, status,
+SELECT id, organization_id, name, main_activity_type, status, default_attributes,
        created_at, updated_at, recorded_at, deleted_at
 FROM journeys.journeys
 WHERE organization_id = $1
@@ -393,6 +398,7 @@ func (q *Queries) ListJourneysByOrg(ctx context.Context, arg ListJourneysByOrgPa
 			&i.Name,
 			&i.MainActivityType,
 			&i.Status,
+			&i.DefaultAttributes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RecordedAt,
@@ -460,24 +466,25 @@ func (q *Queries) SoftDeleteJourneyPlanItem(ctx context.Context, arg SoftDeleteJ
 
 const updateJourney = `-- name: UpdateJourney :one
 UPDATE journeys.journeys
-SET name = $3, main_activity_type = $4, status = $5, updated_at = $6, recorded_at = now()
+SET name = $3, main_activity_type = $4, status = $5, default_attributes = $6, updated_at = $7, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, main_activity_type, status,
+RETURNING id, organization_id, name, main_activity_type, status, default_attributes,
           created_at, updated_at, recorded_at, deleted_at
 `
 
 type UpdateJourneyParams struct {
-	OrganizationID   pgtype.UUID        `json:"organization_id"`
-	ID               pgtype.UUID        `json:"id"`
-	Name             string             `json:"name"`
-	MainActivityType string             `json:"main_activity_type"`
-	Status           string             `json:"status"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	OrganizationID    pgtype.UUID        `json:"organization_id"`
+	ID                pgtype.UUID        `json:"id"`
+	Name              string             `json:"name"`
+	MainActivityType  string             `json:"main_activity_type"`
+	Status            string             `json:"status"`
+	DefaultAttributes []byte             `json:"default_attributes"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 // REST update (PATCH /v1/journeys/{id}): the caller computes the full desired
 // row first (matching sync.go's mergeJourneyOp pattern), so this always sets
-// every mutable column.
+// every mutable column, INCLUDING default_attributes.
 func (q *Queries) UpdateJourney(ctx context.Context, arg UpdateJourneyParams) (JourneysJourney, error) {
 	row := q.db.QueryRow(ctx, updateJourney,
 		arg.OrganizationID,
@@ -485,6 +492,7 @@ func (q *Queries) UpdateJourney(ctx context.Context, arg UpdateJourneyParams) (J
 		arg.Name,
 		arg.MainActivityType,
 		arg.Status,
+		arg.DefaultAttributes,
 		arg.UpdatedAt,
 	)
 	var i JourneysJourney
@@ -494,6 +502,7 @@ func (q *Queries) UpdateJourney(ctx context.Context, arg UpdateJourneyParams) (J
 		&i.Name,
 		&i.MainActivityType,
 		&i.Status,
+		&i.DefaultAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
@@ -504,24 +513,25 @@ func (q *Queries) UpdateJourney(ctx context.Context, arg UpdateJourneyParams) (J
 
 const updateJourneySync = `-- name: UpdateJourneySync :exec
 UPDATE journeys.journeys
-SET name = $3, main_activity_type = $4, status = $5, updated_at = $6, deleted_at = $7, recorded_at = now()
+SET name = $3, main_activity_type = $4, status = $5, default_attributes = $6, updated_at = $7, deleted_at = $8, recorded_at = now()
 WHERE organization_id = $1 AND id = $2
 `
 
 type UpdateJourneySyncParams struct {
-	OrganizationID   pgtype.UUID        `json:"organization_id"`
-	ID               pgtype.UUID        `json:"id"`
-	Name             string             `json:"name"`
-	MainActivityType string             `json:"main_activity_type"`
-	Status           string             `json:"status"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	OrganizationID    pgtype.UUID        `json:"organization_id"`
+	ID                pgtype.UUID        `json:"id"`
+	Name              string             `json:"name"`
+	MainActivityType  string             `json:"main_activity_type"`
+	Status            string             `json:"status"`
+	DefaultAttributes []byte             `json:"default_attributes"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // Sync-apply put/patch/delete: sets every mutable column, INCLUDING
 // deleted_at (a tombstone is just another LWW-compared field, mirrors
-// activities' UpdateActivitySync) — the caller (applyJourneyOp's
-// mergeJourneyOp) computes the full desired row first.
+// activities' UpdateActivitySync) and default_attributes — the caller
+// (applyJourneyOp's mergeJourneyOp) computes the full desired row first.
 func (q *Queries) UpdateJourneySync(ctx context.Context, arg UpdateJourneySyncParams) error {
 	_, err := q.db.Exec(ctx, updateJourneySync,
 		arg.OrganizationID,
@@ -529,6 +539,7 @@ func (q *Queries) UpdateJourneySync(ctx context.Context, arg UpdateJourneySyncPa
 		arg.Name,
 		arg.MainActivityType,
 		arg.Status,
+		arg.DefaultAttributes,
 		arg.UpdatedAt,
 		arg.DeletedAt,
 	)

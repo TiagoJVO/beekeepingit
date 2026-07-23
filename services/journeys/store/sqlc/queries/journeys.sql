@@ -4,15 +4,15 @@
 -- comparisons) still pass it so this query never depends on the column
 -- default alone.
 INSERT INTO journeys.journeys
-    (id, organization_id, name, main_activity_type, status, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, organization_id, name, main_activity_type, status,
+    (id, organization_id, name, main_activity_type, status, default_attributes, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, organization_id, name, main_activity_type, status, default_attributes,
           created_at, updated_at, recorded_at, deleted_at;
 
 -- name: GetJourney :one
 -- Org-scoped single-row read (never a client-supplied organization_id —
 -- api/common.go's requireOrg pattern, mirrored from activities).
-SELECT id, organization_id, name, main_activity_type, status,
+SELECT id, organization_id, name, main_activity_type, status, default_attributes,
        created_at, updated_at, recorded_at, deleted_at
 FROM journeys.journeys
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
@@ -22,7 +22,7 @@ WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 -- the REST update/delete transaction and the sync-apply LWW compare — no
 -- deleted_at filter, callers explicitly check the returned row's deleted_at
 -- (mirrors activities' GetActivityForUpdate).
-SELECT id, organization_id, name, main_activity_type, status,
+SELECT id, organization_id, name, main_activity_type, status, default_attributes,
        created_at, updated_at, recorded_at, deleted_at
 FROM journeys.journeys
 WHERE organization_id = $1 AND id = $2
@@ -32,7 +32,7 @@ FOR UPDATE;
 -- Org-wide, live rows, newest first (#45's minimal list screen; #47 adds
 -- filters later) — keyset-paginated on (created_at, id) since created_at is
 -- not unique. Pass a null cursor pair for the first page.
-SELECT id, organization_id, name, main_activity_type, status,
+SELECT id, organization_id, name, main_activity_type, status, default_attributes,
        created_at, updated_at, recorded_at, deleted_at
 FROM journeys.journeys
 WHERE organization_id = $1
@@ -48,20 +48,22 @@ LIMIT $2;
 -- name: UpdateJourney :one
 -- REST update (PATCH /v1/journeys/{id}): the caller computes the full desired
 -- row first (matching sync.go's mergeJourneyOp pattern), so this always sets
--- every mutable column.
+-- every mutable column, INCLUDING default_attributes (absent-on-PATCH keeps
+-- the caller's already-loaded value — write.go's updateJourney computes it,
+-- matching status's optionality convention).
 UPDATE journeys.journeys
-SET name = $3, main_activity_type = $4, status = $5, updated_at = $6, recorded_at = now()
+SET name = $3, main_activity_type = $4, status = $5, default_attributes = $6, updated_at = $7, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, main_activity_type, status,
+RETURNING id, organization_id, name, main_activity_type, status, default_attributes,
           created_at, updated_at, recorded_at, deleted_at;
 
 -- name: UpdateJourneySync :exec
 -- Sync-apply put/patch/delete: sets every mutable column, INCLUDING
 -- deleted_at (a tombstone is just another LWW-compared field, mirrors
--- activities' UpdateActivitySync) — the caller (applyJourneyOp's
--- mergeJourneyOp) computes the full desired row first.
+-- activities' UpdateActivitySync) and default_attributes — the caller
+-- (applyJourneyOp's mergeJourneyOp) computes the full desired row first.
 UPDATE journeys.journeys
-SET name = $3, main_activity_type = $4, status = $5, updated_at = $6, deleted_at = $7, recorded_at = now()
+SET name = $3, main_activity_type = $4, status = $5, default_attributes = $6, updated_at = $7, deleted_at = $8, recorded_at = now()
 WHERE organization_id = $1 AND id = $2;
 
 -- name: SoftDeleteJourney :execrows

@@ -75,10 +75,20 @@ type Batch struct {
 // preserves the row's current status (an edit that doesn't touch it — the
 // common case, since the client's "close journey" action is the only UI
 // affordance that ever sets it).
+// DefaultAttributes (#385) follows the SAME absent-keeps-current convention
+// as Status: for a row that already exists, absent on EITHER put or patch
+// preserves the row's current default_attributes unchanged; only when
+// materializing a brand-new row (applyJourneyOp's "missing" branch, an
+// offline create arriving for the first time) does absent mean "no
+// defaults" (NULL), exactly like Status falls back to StatusOpen only in
+// that same branch. Present must be a JSON object
+// (validateJourneyOp/validateDefaultAttributes) and replaces wholesale —
+// there is no partial-key-merge semantics.
 type journeyData struct {
-	Name             *string `json:"name"`
-	MainActivityType *string `json:"main_activity_type"`
-	Status           *string `json:"status"`
+	Name              *string         `json:"name"`
+	MainActivityType  *string         `json:"main_activity_type"`
+	Status            *string         `json:"status"`
+	DefaultAttributes json.RawMessage `json:"default_attributes"`
 }
 
 // journeyPlanItemData is the sync wire shape for an entityTypeJourneyPlanItem
@@ -259,6 +269,9 @@ func validateJourneyOp(i int, op Op) []problem.FieldError {
 	if data.Status != nil && !IsKnownStatus(*data.Status) {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.status", Code: "invalid", Message: fmt.Sprintf("status must be one of %v", []string{StatusOpen, StatusClosed})})
 	}
+	for _, e := range validateDefaultAttributes(data.DefaultAttributes) {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.default_attributes", Code: e.Code, Message: e.Message})
+	}
 	return errs
 }
 
@@ -413,13 +426,14 @@ func applyJourneyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, us
 		if data.Status != nil {
 			status = *data.Status
 		}
+		defaultAttributesBytes, defaultAttributesMap := normalizeDefaultAttributes(data.DefaultAttributes)
 		if _, err := q.InsertJourney(ctx, sqlcgen.InsertJourneyParams{
 			ID: pgID, OrganizationID: org, Name: *data.Name, MainActivityType: *data.MainActivityType,
-			Status: status, UpdatedAt: incomingTS,
+			Status: status, DefaultAttributes: defaultAttributesBytes, UpdatedAt: incomingTS,
 		}); err != nil {
 			return OpResult{}, err
 		}
-		want := journeyRowState{name: *data.Name, mainActivityType: *data.MainActivityType, status: status}
+		want := journeyRowState{name: *data.Name, mainActivityType: *data.MainActivityType, status: status, defaultAttributes: defaultAttributesMap}
 		if err := writeJourneyAuditLog(ctx, q, org, userID, op, history.ChangeCreate, journeyRowState{}, want); err != nil {
 			return OpResult{}, err
 		}
@@ -430,17 +444,24 @@ func applyJourneyOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, us
 	if err != nil {
 		return OpResult{}, err
 	}
+	var currentDefaultAttributes map[string]any
+	_ = json.Unmarshal(existing.DefaultAttributes, &currentDefaultAttributes)
 	current := journeyRowState{
 		name: existing.Name, mainActivityType: existing.MainActivityType, status: existing.Status,
-		apiaryIDs: sortedStrings(currentApiaryIDsList), deletedAt: existing.DeletedAt,
+		apiaryIDs: sortedStrings(currentApiaryIDsList), defaultAttributes: currentDefaultAttributes, deletedAt: existing.DeletedAt,
 	}
 	want := mergeJourneyOp(current, op, data)
 
 	// Strictly-newer incoming wins (sync.md §4.1).
 	if op.UpdatedAt.After(existing.UpdatedAt.Time) {
+		wantDefaultAttributesBytes, err := marshalDefaultAttributes(want.defaultAttributes)
+		if err != nil {
+			logging.FromContext(ctx).ErrorContext(ctx, "marshal journey default_attributes failed", slog.Any("error", err))
+			return OpResult{}, err
+		}
 		if err := q.UpdateJourneySync(ctx, sqlcgen.UpdateJourneySyncParams{
 			OrganizationID: org, ID: pgID, Name: want.name, MainActivityType: want.mainActivityType,
-			Status: want.status, UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
+			Status: want.status, DefaultAttributes: wantDefaultAttributesBytes, UpdatedAt: incomingTS, DeletedAt: want.deletedAt,
 		}); err != nil {
 			return OpResult{}, err
 		}
@@ -480,7 +501,7 @@ func mergeJourneyOp(current journeyRowState, op Op, data journeyData) journeyRow
 	}
 	want := journeyRowState{
 		name: current.name, mainActivityType: current.mainActivityType, status: current.status,
-		apiaryIDs: current.apiaryIDs, deletedAt: current.deletedAt,
+		apiaryIDs: current.apiaryIDs, defaultAttributes: current.defaultAttributes, deletedAt: current.deletedAt,
 	}
 	if data.Name != nil {
 		want.name = *data.Name
@@ -490,6 +511,9 @@ func mergeJourneyOp(current journeyRowState, op Op, data journeyData) journeyRow
 	}
 	if data.Status != nil {
 		want.status = *data.Status
+	}
+	if len(data.DefaultAttributes) > 0 {
+		_, want.defaultAttributes = normalizeDefaultAttributes(data.DefaultAttributes)
 	}
 	if op.Op == "put" {
 		// A full replace implicitly UNDELETES — mirrors activities'/apiaries'
@@ -743,11 +767,14 @@ func writeJourneyPlanAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtyp
 // logJourneyConflict preserves a rejected retried-id resend (history.md §6
 // "LWW losers are not lost") — mirrors activities'/apiaries' logConflict.
 func logJourneyConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, stored sqlcgen.JourneysJourney) error {
+	var storedDefaultAttributes map[string]any
+	_ = json.Unmarshal(stored.DefaultAttributes, &storedDefaultAttributes)
 	winning, err := json.Marshal(map[string]any{
 		"id":                 uuidString(stored.ID),
 		"name":               stored.Name,
 		"main_activity_type": stored.MainActivityType,
 		"status":             stored.Status,
+		"default_attributes": storedDefaultAttributes,
 		"updated_at":         stored.UpdatedAt.Time,
 		"deleted_at":         timePtr(stored.DeletedAt),
 	})

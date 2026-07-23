@@ -93,6 +93,11 @@ class _JourneyDetailBody extends StatelessWidget {
         journey.mainActivityType;
     final statusLabel =
         journeyStatusLabel(l10n, journey.status) ?? journey.status;
+    final defaultAttributesSummary = _defaultAttributesSummary(
+      l10n,
+      journey.mainActivityType,
+      journey.defaultAttributes,
+    );
 
     return Center(
       child: ConstrainedBox(
@@ -134,6 +139,19 @@ class _JourneyDetailBody extends StatelessWidget {
                         ),
                       ],
                     ),
+                    // Journey-level subtype attribute defaults (#385) — only
+                    // rendered when the journey actually has any set.
+                    if (defaultAttributesSummary != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        defaultAttributesSummary,
+                        key: const Key('journey-detail-default-attributes'),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: brand.onHeroSurfaceMuted,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -150,6 +168,39 @@ class _JourneyDetailBody extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The muted "Defaults: Apivar/amitraz · Varroose" summary line under the
+/// [HeroCard]'s type label (#385) — one value per set default key, in the
+/// same per-type field order journey_default_attributes_section.dart shows
+/// them, skipping any key with no value set. Returns null (caller skips
+/// rendering the line) when the journey has no defaults at all, or its
+/// `main_activity_type` carries none (generic).
+String? _defaultAttributesSummary(
+  AppLocalizations l10n,
+  String mainActivityType,
+  Map<String, dynamic> defaultAttributes,
+) {
+  final values = <String>[];
+  switch (mainActivityType) {
+    case activityTypeTreatment:
+      final context = defaultAttributes['treatment_context'] as String?;
+      if (context != null) {
+        values.add(treatmentContextLabel(l10n, context) ?? context);
+      }
+      final type = defaultAttributes['treatment_type'] as String?;
+      if (type != null) values.add(type);
+      final disease = defaultAttributes['disease'] as String?;
+      if (disease != null) values.add(disease);
+    case activityTypeFeeding:
+      final feedType = defaultAttributes['feed_type'] as String?;
+      if (feedType != null) values.add(feedType);
+    case activityTypeHarvest:
+      final lotBatch = defaultAttributes['lot_batch'] as String?;
+      if (lotBatch != null && lotBatch.isNotEmpty) values.add(lotBatch);
+  }
+  if (values.isEmpty) return null;
+  return l10n.journeyDetailDefaultAttributesLabel(values.join(' · '));
 }
 
 /// Open/closed pill sitting ON the plum [HeroCard] — styled exactly like

@@ -23,6 +23,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -107,6 +108,45 @@ const maxNameLength = 200
 // ownership-verification cost), generous for any real organization's apiary
 // count.
 const maxApiaryIDsPerJourney = 500
+
+// maxDefaultAttributesBytes bounds a journey's default_attributes JSON blob
+// (#385) — the raw wire bytes, checked before any parsing. Generous for a
+// handful of short subtype-attribute keys/values (treatment_context,
+// treatment_type, disease, feed_type, lot_batch — activity_attributes.dart's
+// known keys), matching the defensive-cap convention maxApiaryIDsPerJourney
+// documents above.
+const maxDefaultAttributesBytes = 8192
+
+// validateDefaultAttributes validates the SHAPE only of a journey's
+// default_attributes field (#385's design decision: journeys validates
+// shallow — JSON object, size-bounded — and does NOT deep-validate keys/
+// values against the per-type activity attribute schema, which lives in
+// services/activities and must not be imported here, this file's package
+// doc's hand-kept-mirror rule). Absent/empty is always valid (defaults are
+// entirely optional). A present value must decode to a JSON object; `null`
+// is treated the same as absent (mirrors activities' own attributes
+// validation, write.go's `err != nil || attrs == nil` check).
+func validateDefaultAttributes(raw json.RawMessage) []problem.FieldError {
+	if len(raw) == 0 {
+		return nil
+	}
+	if len(raw) > maxDefaultAttributesBytes {
+		return []problem.FieldError{{
+			Field:   "default_attributes",
+			Code:    "too_long",
+			Message: fmt.Sprintf("default_attributes must be at most %d bytes", maxDefaultAttributesBytes),
+		}}
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
+		return []problem.FieldError{{
+			Field:   "default_attributes",
+			Code:    "invalid",
+			Message: "default_attributes must be a JSON object",
+		}}
+	}
+	return nil
+}
 
 // validateJourneyFields validates the shared create/update field set — name,
 // main_activity_type, and the apiary_ids list's SHAPE (well-formed UUIDs, no
