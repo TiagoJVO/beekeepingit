@@ -581,6 +581,27 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiaryMapAttributionOsm => '© Colaboradores do OpenStreetMap';
 
   @override
+  String get apiaryMapRulerToggleAction => 'Medir distância';
+
+  @override
+  String get apiaryMapMeasureFromMyLocation => 'Usar a minha localização';
+
+  @override
+  String apiaryMapInfoOpenTodos(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tarefas em aberto',
+      one: '1 tarefa em aberto',
+      zero: 'Nenhuma tarefa em aberto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get apiaryMapInfoViewApiary => 'Ver apiário';
+
+  @override
   String get apiaryPlaceLabelLabel => 'Nome do local';
 
   @override
