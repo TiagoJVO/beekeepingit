@@ -1562,6 +1562,18 @@ abstract class AppLocalizations {
   /// **'{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}'**
   String journeyApiariesSelectedCount(int count);
 
+  /// Section header on the journey create/edit form and quick-create sheet above the optional subtype attribute defaults (#385)
+  ///
+  /// In en, this message translates to:
+  /// **'Defaults for activities'**
+  String get journeyDefaultAttributesSectionLabel;
+
+  /// Dropdown option that clears an optional journey default-attribute field (#385)
+  ///
+  /// In en, this message translates to:
+  /// **'Not set'**
+  String get journeyDefaultsNotSetOption;
+
   /// Error toast when loading an existing journey for editing throws (#45)
   ///
   /// In en, this message translates to:
@@ -1987,6 +1999,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit journey'**
   String get editJourneyAction;
+
+  /// Muted summary line under the type label on the journey detail page's hero card, listing the journey's set subtype attribute defaults (#385) — e.g. "Defaults: Apivar/amitraz · Varroose"; not rendered at all when the journey has none set
+  ///
+  /// In en, this message translates to:
+  /// **'Defaults: {values}'**
+  String journeyDetailDefaultAttributesLabel(String values);
 
   /// Section heading above the journey detail page's per-apiary list (#48, FR-JO-3)
   ///

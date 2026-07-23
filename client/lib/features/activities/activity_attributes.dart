@@ -167,6 +167,28 @@ List<ActivityAttributeError> validateActivityAttributes(
   return errors;
 }
 
+/// Validates a JOURNEY's `default_attributes` (#385) against [type]'s
+/// schema — same rules [validateActivityAttributes] applies to a real
+/// activity's attributes, EXCEPT a journey's defaults are always entirely
+/// optional (a journey may specify a treatment's context without also
+/// committing to its type/disease yet), so every `required`-coded error is
+/// dropped. Vocabulary/type/length/range errors on whatever IS present are
+/// still surfaced — a malformed or unknown-for-this-type default is still a
+/// real problem, just not a REQUIRED one. Mirrors the server's identically
+/// shallow validation split (services/journeys/api/types.go's
+/// validateDefaultAttributes does shape-only checks; this is the client-side
+/// deep-validation counterpart the server deliberately doesn't do, since it
+/// must not import this per-type schema — #385's design doc).
+List<ActivityAttributeError> validateJourneyDefaultAttributes(
+  String type,
+  Map<String, dynamic> attrs,
+) {
+  return validateActivityAttributes(
+    type,
+    attrs,
+  ).where((e) => e.code != 'required').toList();
+}
+
 ActivityAttributeError? _validateAttr(
   _AttrSpec spec,
   String type,

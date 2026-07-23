@@ -10,6 +10,7 @@ import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 import 'apiary_multi_select_field.dart';
+import 'journey_default_attributes_section.dart';
 import 'journey_status.dart';
 import 'journeys_repository.dart';
 
@@ -49,6 +50,10 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
   bool _busy = false;
   String? _apiaryIdsError;
 
+  // Journey-level subtype attribute defaults (#385) — see
+  // journey_default_attributes_section.dart's own doc comment.
+  final _defaultAttributes = JourneyDefaultAttributesController();
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +63,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
   @override
   void dispose() {
     _nameController.dispose();
+    _defaultAttributes.dispose();
     super.dispose();
   }
 
@@ -80,6 +86,10 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
         _mainActivityType = existing.mainActivityType;
         _status = existing.status;
         _apiaryIds = existing.apiaryIds.toSet();
+        _defaultAttributes.populate(
+          existing.mainActivityType,
+          existing.defaultAttributes,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -109,6 +119,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
     try {
       final repo = await ref.read(journeysRepositoryProvider.future);
       final name = _nameController.text.trim();
+      final defaultAttributes = _defaultAttributes.build(_mainActivityType);
       if (widget.isEdit) {
         await repo.update(
           widget.journeyId!,
@@ -116,12 +127,14 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
           mainActivityType: _mainActivityType,
           status: _status,
           apiaryIds: _apiaryIds.toList(),
+          defaultAttributes: defaultAttributes,
         );
       } else {
         await repo.create(
           name: name,
           mainActivityType: _mainActivityType,
           apiaryIds: _apiaryIds.toList(),
+          defaultAttributes: defaultAttributes,
         );
       }
       if (!mounted) return;
@@ -264,10 +277,22 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
                       ],
                       onChanged: (value) {
                         if (value != null) {
-                          setState(() => _mainActivityType = value);
+                          setState(() {
+                            _mainActivityType = value;
+                            // A different main_activity_type invalidates the
+                            // old type's default-attribute keys (#385's own
+                            // design decision) — reset rather than carry
+                            // stale/mismatched values forward.
+                            _defaultAttributes.reset();
+                          });
                         }
                       },
                     ),
+                  ),
+                  JourneyDefaultAttributesSection(
+                    type: _mainActivityType,
+                    controller: _defaultAttributes,
+                    onChanged: () => setState(() {}),
                   ),
                   const SizedBox(height: BrandDimens.gapField),
                   ApiaryMultiSelectField(

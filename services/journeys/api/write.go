@@ -58,11 +58,19 @@ const maxCreateBodyBytes = 256 << 10 // 256 KiB
 // doc comment) — every one is verified against the caller's org before
 // anything is written. A brand-new journey always starts `status: "open"`
 // (D-21) — there is no client-supplied status on create.
+// DefaultAttributes (#385) is an OPTIONAL journey-level bag of subtype
+// attribute defaults (e.g. a Treatment journey's treatment_context/
+// treatment_type/disease) that later prefill an attached activity's own
+// attributes — validated shallow here (types.go's validateDefaultAttributes:
+// must be a JSON object, size-bounded) and NEVER deep-checked against the
+// per-type activity attribute schema (that lives in services/activities;
+// this service must not import it, package doc's hand-kept-mirror rule).
 type journeyCreateRequest struct {
-	ID               string   `json:"id"`
-	Name             string   `json:"name"`
-	MainActivityType string   `json:"main_activity_type"`
-	ApiaryIDs        []string `json:"apiary_ids"`
+	ID                string          `json:"id"`
+	Name              string          `json:"name"`
+	MainActivityType  string          `json:"main_activity_type"`
+	ApiaryIDs         []string        `json:"apiary_ids"`
+	DefaultAttributes json.RawMessage `json:"default_attributes"`
 }
 
 // journeyUpdateRequest is the PATCH /v1/journeys/{id} request body (#45,
@@ -73,25 +81,40 @@ type journeyCreateRequest struct {
 // journey's current status unchanged"; present must be a known status
 // (types.go's IsKnownStatus) — this is D-21's "close a journey" action,
 // riding the same PATCH rather than a dedicated endpoint.
+// DefaultAttributes on PATCH: ABSENT from the request body (the JSON key
+// itself missing, leaving this field's zero value — a nil/empty
+// json.RawMessage) means "leave the journey's stored defaults unchanged",
+// mirroring Status's optionality convention above. PRESENT (any valid JSON
+// object, including `{}`) REPLACES the stored defaults wholesale — there is
+// no partial-key-merge semantics here, matching apiary_ids'/attributes'
+// full-resubmit convention elsewhere in this codebase. A literal JSON
+// `null` is rejected by validateDefaultAttributes as an invalid shape
+// (never means "clear the defaults") — there is no client affordance for
+// clearing today; changing the journey's main_activity_type in the UI
+// already clears the section client-side before it's ever submitted.
 type journeyUpdateRequest struct {
-	Name             string   `json:"name"`
-	MainActivityType string   `json:"main_activity_type"`
-	ApiaryIDs        []string `json:"apiary_ids"`
-	Status           *string  `json:"status"`
+	Name              string          `json:"name"`
+	MainActivityType  string          `json:"main_activity_type"`
+	ApiaryIDs         []string        `json:"apiary_ids"`
+	Status            *string         `json:"status"`
+	DefaultAttributes json.RawMessage `json:"default_attributes"`
 }
 
 // journeyDTO is the client-facing journey shape. apiary_ids reflects the
 // journey's CURRENT live plan (journeys.journey_plan_items rows with
 // deleted_at IS NULL), sorted for a deterministic wire order.
+// default_attributes decodes to nil (wire: JSON null) when the journey has
+// none set.
 type journeyDTO struct {
-	ID               string    `json:"id"`
-	OrganizationID   string    `json:"organization_id"`
-	Name             string    `json:"name"`
-	MainActivityType string    `json:"main_activity_type"`
-	Status           string    `json:"status"`
-	ApiaryIDs        []string  `json:"apiary_ids"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                string         `json:"id"`
+	OrganizationID    string         `json:"organization_id"`
+	Name              string         `json:"name"`
+	MainActivityType  string         `json:"main_activity_type"`
+	Status            string         `json:"status"`
+	ApiaryIDs         []string       `json:"apiary_ids"`
+	DefaultAttributes map[string]any `json:"default_attributes"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
 }
 
 // Router returns the client-facing /v1/journeys surface: read, create,
@@ -169,6 +192,7 @@ func createJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 		}
 		apiaryIDs, moreErrs := validateJourneyFields(body.Name, body.MainActivityType, body.ApiaryIDs)
 		fieldErrs = append(fieldErrs, moreErrs...)
+		fieldErrs = append(fieldErrs, validateDefaultAttributes(body.DefaultAttributes)...)
 		if len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
 			return
@@ -195,13 +219,15 @@ func createJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 		nowTS := pgtype.Timestamptz{Time: now, Valid: true}
 		pgID := pgtype.UUID{Bytes: id, Valid: true}
 		apiaryIDStrings := uuidStrings(apiaryIDs)
+		defaultAttributesBytes, defaultAttributesMap := normalizeDefaultAttributes(body.DefaultAttributes)
 
 		var row sqlcgen.JourneysJourney
 		err = withTx(r.Context(), pool, func(_ pgx.Tx, q *sqlcgen.Queries) error {
 			var insertErr error
 			row, insertErr = q.InsertJourney(r.Context(), sqlcgen.InsertJourneyParams{
 				ID: pgID, OrganizationID: org, Name: body.Name,
-				MainActivityType: body.MainActivityType, Status: StatusOpen, UpdatedAt: nowTS,
+				MainActivityType: body.MainActivityType, Status: StatusOpen,
+				DefaultAttributes: defaultAttributesBytes, UpdatedAt: nowTS,
 			})
 			if isUniqueViolation(insertErr) {
 				// Idempotency (the client-generated id is the natural anchor,
@@ -209,7 +235,7 @@ func createJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 				// with the same id and the same content returns the original
 				// result unchanged; a genuinely different payload reusing the
 				// same id is a real conflict.
-				respondIdempotentCreateOrConflict(r.Context(), w, r, sqlcgen.New(pool), org, id, body.Name, body.MainActivityType, apiaryIDStrings)
+				respondIdempotentCreateOrConflict(r.Context(), w, r, sqlcgen.New(pool), org, id, body.Name, body.MainActivityType, apiaryIDStrings, defaultAttributesMap)
 				return errResponseWritten
 			}
 			if insertErr != nil {
@@ -225,7 +251,7 @@ func createJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 				}
 			}
 
-			want := journeyRowState{name: body.Name, mainActivityType: body.MainActivityType, status: StatusOpen, apiaryIDs: sortedStrings(apiaryIDStrings)}
+			want := journeyRowState{name: body.Name, mainActivityType: body.MainActivityType, status: StatusOpen, apiaryIDs: sortedStrings(apiaryIDStrings), defaultAttributes: defaultAttributesMap}
 			if err := writeJourneyAuditLogTx(r.Context(), q, org, userID, id, history.ChangeCreate, now, journeyRowState{}, want); err != nil {
 				return fmt.Errorf("write audit log: %w", err)
 			}
@@ -269,7 +295,7 @@ func unownedApiaryFieldErrors(apiaryIDs []uuid.UUID, owned map[string]bool) []pr
 // belongs to a different org (existing row simply not found under org
 // scope) ⇒ 409. Mirrors activities'/apiaries' write.go helper of the same
 // name/shape.
-func respondIdempotentCreateOrConflict(ctx context.Context, w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, org pgtype.UUID, id uuid.UUID, name, mainActivityType string, apiaryIDs []string) {
+func respondIdempotentCreateOrConflict(ctx context.Context, w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries, org pgtype.UUID, id uuid.UUID, name, mainActivityType string, apiaryIDs []string, defaultAttributes map[string]any) {
 	pgID := pgtype.UUID{Bytes: id, Valid: true}
 	existing, err := q.GetJourney(ctx, sqlcgen.GetJourneyParams{OrganizationID: org, ID: pgID})
 	if err != nil {
@@ -282,7 +308,10 @@ func respondIdempotentCreateOrConflict(ctx context.Context, w http.ResponseWrite
 		return
 	}
 	sameApiaryIDs := stringSetsEqual(existingApiaryIDs, apiaryIDs)
-	if existing.Name != name || existing.MainActivityType != mainActivityType || existing.Status != StatusOpen || !sameApiaryIDs {
+	var existingDefaultAttributes map[string]any
+	_ = json.Unmarshal(existing.DefaultAttributes, &existingDefaultAttributes)
+	if existing.Name != name || existing.MainActivityType != mainActivityType || existing.Status != StatusOpen ||
+		!sameApiaryIDs || !defaultAttributesEqual(existingDefaultAttributes, defaultAttributes) {
 		problem.Write(w, r, problem.Conflict("a journey with this id already exists with different content"))
 		return
 	}
@@ -312,6 +341,7 @@ func updateJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 		if body.Status != nil && !IsKnownStatus(*body.Status) {
 			fieldErrs = append(fieldErrs, problem.FieldError{Field: "status", Code: "invalid", Message: fmt.Sprintf("status must be one of %v", []string{StatusOpen, StatusClosed})})
 		}
+		fieldErrs = append(fieldErrs, validateDefaultAttributes(body.DefaultAttributes)...)
 		if len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
 			return
@@ -359,11 +389,20 @@ func updateJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 				currentApiaryIDs = append(currentApiaryIDs, uuidString(item.ApiaryID))
 			}
 
-			before := journeyRowState{name: current.Name, mainActivityType: current.MainActivityType, status: current.Status, apiaryIDs: sortedStrings(currentApiaryIDs)}
+			var currentDefaultAttributes map[string]any
+			_ = json.Unmarshal(current.DefaultAttributes, &currentDefaultAttributes)
+			before := journeyRowState{name: current.Name, mainActivityType: current.MainActivityType, status: current.Status, apiaryIDs: sortedStrings(currentApiaryIDs), defaultAttributes: currentDefaultAttributes}
 
 			newStatus := current.Status
 			if body.Status != nil {
 				newStatus = *body.Status
+			}
+			// Absent default_attributes on PATCH keeps the stored value
+			// (journeyUpdateRequest's doc comment); present replaces it
+			// wholesale.
+			newDefaultAttributesBytes, newDefaultAttributesMap := current.DefaultAttributes, currentDefaultAttributes
+			if len(body.DefaultAttributes) > 0 {
+				newDefaultAttributesBytes, newDefaultAttributesMap = normalizeDefaultAttributes(body.DefaultAttributes)
 			}
 
 			now := time.Now().UTC()
@@ -397,14 +436,14 @@ func updateJourney(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.HandlerFun
 
 			updated, err = q.UpdateJourney(r.Context(), sqlcgen.UpdateJourneyParams{
 				OrganizationID: org, ID: pgID, Name: body.Name, MainActivityType: body.MainActivityType,
-				Status: newStatus, UpdatedAt: nowTS,
+				Status: newStatus, DefaultAttributes: newDefaultAttributesBytes, UpdatedAt: nowTS,
 			})
 			if err != nil {
 				return fmt.Errorf("update journey: %w", err)
 			}
 
 			resultIDs = uuidStrings(apiaryIDs)
-			want = journeyRowState{name: body.Name, mainActivityType: body.MainActivityType, status: newStatus, apiaryIDs: sortedStrings(resultIDs)}
+			want = journeyRowState{name: body.Name, mainActivityType: body.MainActivityType, status: newStatus, apiaryIDs: sortedStrings(resultIDs), defaultAttributes: newDefaultAttributesMap}
 			if err := writeJourneyAuditLogTx(r.Context(), q, org, userID, id, history.ChangeUpdate, now, before, want); err != nil {
 				return fmt.Errorf("write audit log: %w", err)
 			}
@@ -466,7 +505,9 @@ func deleteJourney(pool *pgxpool.Pool) http.HandlerFunc {
 			if err != nil {
 				return fmt.Errorf("list journey plan items: %w", err)
 			}
-			before := journeyRowState{name: current.Name, mainActivityType: current.MainActivityType, status: current.Status, apiaryIDs: sortedStrings(apiaryIDs)}
+			var currentDefaultAttributes map[string]any
+			_ = json.Unmarshal(current.DefaultAttributes, &currentDefaultAttributes)
+			before := journeyRowState{name: current.Name, mainActivityType: current.MainActivityType, status: current.Status, apiaryIDs: sortedStrings(apiaryIDs), defaultAttributes: currentDefaultAttributes}
 			if err := writeJourneyAuditLogTx(r.Context(), q, org, userID, id, history.ChangeDelete, now, before, journeyRowState{}); err != nil {
 				return fmt.Errorf("write audit log: %w", err)
 			}
@@ -485,16 +526,66 @@ func deleteJourney(pool *pgxpool.Pool) http.HandlerFunc {
 }
 
 func toJourneyDTO(row sqlcgen.JourneysJourney, apiaryIDs []string) journeyDTO {
+	var defaultAttributes map[string]any
+	_ = json.Unmarshal(row.DefaultAttributes, &defaultAttributes)
 	return journeyDTO{
-		ID:               uuidString(row.ID),
-		OrganizationID:   uuidString(row.OrganizationID),
-		Name:             row.Name,
-		MainActivityType: row.MainActivityType,
-		Status:           row.Status,
-		ApiaryIDs:        sortedStrings(apiaryIDs),
-		CreatedAt:        row.CreatedAt.Time,
-		UpdatedAt:        row.UpdatedAt.Time,
+		ID:                uuidString(row.ID),
+		OrganizationID:    uuidString(row.OrganizationID),
+		Name:              row.Name,
+		MainActivityType:  row.MainActivityType,
+		Status:            row.Status,
+		ApiaryIDs:         sortedStrings(apiaryIDs),
+		DefaultAttributes: defaultAttributes,
+		CreatedAt:         row.CreatedAt.Time,
+		UpdatedAt:         row.UpdatedAt.Time,
 	}
+}
+
+// normalizeDefaultAttributes converts a request's already-validated (via
+// validateDefaultAttributes) default_attributes raw JSON into the two shapes
+// callers need: the exact bytes to store in the JSONB column (nil ⇒ SQL
+// NULL when absent) and the decoded map for journeyRowState's audit-diff
+// projection. Absent (len 0) means "no defaults" — never call this with an
+// unvalidated raw payload that might be a literal `null` or non-object (both
+// rejected earlier by validateDefaultAttributes).
+func normalizeDefaultAttributes(raw json.RawMessage) (stored []byte, decoded map[string]any) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	_ = json.Unmarshal(raw, &decoded)
+	return []byte(raw), decoded
+}
+
+// marshalDefaultAttributes is normalizeDefaultAttributes' inverse — used by
+// sync.go's applyJourneyOp where the "want" state is already a decoded map
+// (mergeJourneyOp's output) and must be re-encoded for the JSONB column. A
+// nil map (no defaults) marshals to a nil byte slice (SQL NULL), NOT the
+// 4-byte JSON literal "null" `json.Marshal` would otherwise produce for a
+// nil map — the NULL-means-no-defaults convention this whole feature relies
+// on (migration 00003's doc comment).
+func marshalDefaultAttributes(m map[string]any) ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+	return json.Marshal(m)
+}
+
+// defaultAttributesEqual compares two decoded default-attribute maps for the
+// idempotent-replay content check — mirrors activities' write.go
+// attributesEqual (same shallow-scalar-values rationale: every default
+// attribute value is a JSON scalar, per activity_attributes.dart's known
+// subtype keys).
+func defaultAttributesEqual(a, b map[string]any) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		bv, ok := b[k]
+		if !ok || fmt.Sprintf("%v", v) != fmt.Sprintf("%v", bv) {
+			return false
+		}
+	}
+	return true
 }
 
 // currentApiaryIDs reads a journey's current LIVE plan as a plain string
@@ -554,11 +645,12 @@ func stringSetsEqual(a, b []string) bool {
 // mergeJourneyOp) — mirrors activities' shared activityRowState, serving
 // both write.go's REST handlers and sync.go's applyJourneyOp.
 type journeyRowState struct {
-	name             string
-	mainActivityType string
-	status           string
-	apiaryIDs        []string // always kept sorted (sortedStrings) by every constructor
-	deletedAt        pgtype.Timestamptz
+	name              string
+	mainActivityType  string
+	status            string
+	apiaryIDs         []string // always kept sorted (sortedStrings) by every constructor
+	defaultAttributes map[string]any
+	deletedAt         pgtype.Timestamptz
 }
 
 // fields projects the content columns history.ComputeChange diffs —
@@ -573,6 +665,7 @@ func (j journeyRowState) fields() map[string]any {
 		"main_activity_type": j.mainActivityType,
 		"status":             j.status,
 		"apiary_ids":         j.apiaryIDs,
+		"default_attributes": j.defaultAttributes,
 	}
 }
 
@@ -583,7 +676,8 @@ func (j journeyRowState) fields() map[string]any {
 func (j journeyRowState) sameAs(other journeyRowState) bool {
 	if j.name != other.name || j.mainActivityType != other.mainActivityType ||
 		j.status != other.status || j.deletedAt.Valid != other.deletedAt.Valid ||
-		len(j.apiaryIDs) != len(other.apiaryIDs) {
+		len(j.apiaryIDs) != len(other.apiaryIDs) ||
+		!defaultAttributesEqual(j.defaultAttributes, other.defaultAttributes) {
 		return false
 	}
 	for i := range j.apiaryIDs {

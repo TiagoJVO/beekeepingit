@@ -913,6 +913,13 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get journeyDefaultAttributesSectionLabel =>
+      'Predefinições para atividades';
+
+  @override
+  String get journeyDefaultsNotSetOption => 'Não definido';
+
+  @override
   String journeyLoadError(String error) {
     return 'Não foi possível carregar a jornada: $error';
   }
@@ -1165,6 +1172,11 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get editJourneyAction => 'Editar jornada';
+
+  @override
+  String journeyDetailDefaultAttributesLabel(String values) {
+    return 'Predefinições: $values';
+  }
 
   @override
   String get journeyDetailApiariesTitle => 'Apiários';
