@@ -61,6 +61,19 @@ authentik:
   enabled: true
   # No workload of its own (just the config/Postgres Secrets + blueprint ConfigMap)
   # — Authentik itself is a separate Flux HelmRelease, see ADR-0012/ADR-0016.
+  # Outbound email (SMTP, #361): the subchart's `email:` defaults point at the
+  # mailpit sink below — override per environment for a real relay (see
+  # charts/authentik/values.yaml; credentials are never values, see the
+  # config-secret template's lookup of beekeepingit-authentik-email-credentials).
+
+# Dev/CI SMTP sink capturing Authentik's outbound email (#361, ADR-0019) — the
+# verification flow is exercisable end-to-end with zero risk of dev/CI mail
+# reaching real inboxes. Staging keeps it (no real relay/domain mailbox exists
+# yet — melargil.pt testers read verification mail via
+# `kubectl port-forward svc/mailpit 8025`); prod disables it and must configure
+# a real relay (environments/prod.yaml).
+mailpit:
+  enabled: true
 
 minio:
   enabled: true

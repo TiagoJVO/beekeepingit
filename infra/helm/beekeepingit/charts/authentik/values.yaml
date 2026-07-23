@@ -19,6 +19,22 @@ blueprintFile: beekeepingit.blueprint.yaml
 # non-secret email is a stable default here.
 bootstrapEmail: admin@beekeepingit.local
 
+# Outbound email (SMTP) connection for Authentik (#361, NFR-SEC-1) — rendered as
+# AUTHENTIK_EMAIL__* keys into the config Secret (templates/config-secret.yaml),
+# which the upstream chart env-mounts wholesale on server + worker. These are the
+# NON-secret connection facts only; relay credentials live exclusively in the
+# out-of-band `beekeepingit-authentik-email-credentials` Secret (merged via
+# `lookup` when present — see the template's comment). Defaults point at the
+# umbrella's Mailpit dev/CI sink (charts/mailpit); staging keeps the sink until a
+# real relay/domain exists, prod overrides in environments/prod.yaml.
+email:
+  host: mailpit
+  port: 1025
+  from: no-reply@beekeepingit.local
+  useTls: false
+  useSsl: false
+  timeout: 10
+
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.
 global:

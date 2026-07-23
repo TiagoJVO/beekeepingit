@@ -317,6 +317,36 @@ edges:
     port: 9000
     egressOnly: true
 
+  # --- Mailpit dev/CI SMTP sink (#361, charts/mailpit) ---
+  # Authentik (server AND worker — flow email sends run as worker tasks, admin
+  # test-sends from the server) delivers outbound email to the sink's SMTP port,
+  # and CI's outbound-email smoke reads the message API by exec-ing curl inside
+  # the authentik-server pod (helm-e2e.yml). Both edges are `ingressOnly`: the
+  # authentik pods are EXCLUDED from default-deny (see _helpers.tpl), so only
+  # the mailpit-side ingress allow is needed — an egress policy matching the
+  # excluded authentik pods would whitelist-strangle their internal traffic
+  # (the exact PR #224 failure). The `from` selector deliberately matches every
+  # authentik-named pod (server, worker, and the umbrella's own ready-test hook
+  # pod); broader `from` matching on an allow rule is harmless.
+  - name: authentik-to-mailpit-smtp
+    from: { app.kubernetes.io/name: authentik }
+    to: { app.kubernetes.io/name: mailpit }
+    port: 1025
+    ingressOnly: true
+  - name: authentik-to-mailpit-api
+    from: { app.kubernetes.io/name: authentik }
+    to: { app.kubernetes.io/name: mailpit }
+    port: 8025
+    ingressOnly: true
+  # `helm test` hook (charts/mailpit/templates/tests/ready-test.yaml) — probes
+  # Mailpit's /readyz. Both hook pod and sink pod carry the same
+  # name=mailpit label, so this one edge covers the hook's egress AND the
+  # sink's ingress under default-deny (the sink itself needs no egress).
+  - name: mailpit-ready-test-to-mailpit
+    from: { app.kubernetes.io/name: mailpit }
+    to: { app.kubernetes.io/name: mailpit }
+    port: 8025
+
   # --- Postgres (charts/postgres) ---
   # sync does NOT connect directly (services/values.yaml sync.db.enabled: false).
   # `to: { cnpgCluster: true }` is a marker the template resolves to the real
