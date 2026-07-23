@@ -1033,7 +1033,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get journeyStatsAverageSupersLabel => 'Média alças/colmeia';
+  String get journeyStatsAverageSupersLabel => 'Avg. supers/hive';
 
   @override
   String get journeyStatsAverageSupersNoData => 'No data yet';

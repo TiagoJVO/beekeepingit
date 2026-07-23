@@ -1784,10 +1784,10 @@ abstract class AppLocalizations {
   /// **'{kg} kg'**
   String journeyStatsHoneyCollectedValue(String kg);
 
-  /// Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49) — kept in Portuguese per the prototype/AC's own naming (docs/design/prototype.md's Q-JOUR answer, this issue's own AC wording), not translated to an English equivalent
+  /// Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49). Localized like every other stat label (#382) — previously left in Portuguese by mistake.
   ///
   /// In en, this message translates to:
-  /// **'Média alças/colmeia'**
+  /// **'Avg. supers/hive'**
   String get journeyStatsAverageSupersLabel;
 
   /// Shown instead of a number on the média alças/colmeia stat card when there is no hive-count denominator yet — zero harvest activities, or every one has a null/zero hives_involved (#49, NFR-TST-1's no-divide-by-zero case)

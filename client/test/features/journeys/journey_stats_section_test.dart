@@ -132,6 +132,30 @@ void main() {
       );
     });
 
+    testWidgets('renders the average-supers-per-hive label in English when the '
+        'locale is en, not the Portuguese prototype wording (#382)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildSection(
+          journeyId: 'j1',
+          stats: Stream.value(
+            const JourneyStats(
+              apiariesPlanned: 2,
+              apiariesVisited: 2,
+              hivesHarvested: 10,
+              honeyCollectedKg: 12,
+              averageSupersPerHive: 2,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Avg. supers/hive'), findsOneWidget);
+      expect(find.text('Média alças/colmeia'), findsNothing);
+    });
+
     // #342, FR-JO-3, D-2: the harvest-only aggregation tiles (hives
     // harvested, honey collected, média alças/colmeia) must appear ONLY on a
     // harvest journey; every journey type still shows the universal progress
