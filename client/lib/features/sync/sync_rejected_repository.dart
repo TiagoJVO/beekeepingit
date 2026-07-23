@@ -22,17 +22,32 @@ class RejectedOp {
     required this.errorCode,
     required this.fieldErrors,
     required this.detail,
+    this.displayName,
+    this.journeyId,
   });
 
   /// The dead-letter row id — the handle the "Dismiss" action deletes by.
+  /// For every entity type EXCEPT `apiary_counter` this is also the queued
+  /// op's own id (powersync_connector.dart's `_toOp`), which
+  /// [fixApiaryId] happens to duplicate for those types — see that field's
+  /// own doc.
   final String id;
 
-  /// `apiary` | `apiary_counter` — drives the entity label the list shows.
+  /// `apiary` | `apiary_counter` | `activity` | `journey` |
+  /// `journey_plan_item` | `todo` (powersync_schema.dart's entity-type
+  /// constants) — drives both the entity label and the "Fix" deep-link the
+  /// list row shows (#379).
   final String entityType;
 
-  /// The apiary the "Fix" action deep-links to (`/apiaries/<id>/edit`): the
-  /// apiary id for an `apiary` rejection, the owning apiary's id for an
-  /// `apiary_counter` one (powersync_schema.dart's `fix_apiary_id`).
+  /// Despite its name (kept for backward compatibility with the dead-letter
+  /// row's `fix_apiary_id` column, still literally an apiary id for the two
+  /// apiary-owned entity types), this is the id the "Fix" action deep-links
+  /// with: the owning apiary's id for `apiary`/`apiary_counter`, or the op's
+  /// own row id for every other entity type (powersync_connector.dart's
+  /// `_fixApiaryIdFor` returns the op's own id for anything but a counter) —
+  /// i.e. the journey id for a `journey` rejection, the todo id for a `todo`
+  /// one. NOT useful for `journey_plan_item` (whose own id is the plan-item
+  /// row, not the journey) — see [journeyId] for that case instead.
   final String fixApiaryId;
 
   /// `put` | `patch` | `delete`.
@@ -55,6 +70,22 @@ class RejectedOp {
   /// generic localized message then).
   String get primaryMessage =>
       fieldErrors.isNotEmpty ? fieldErrors.first : detail;
+
+  /// The record's own name/title, read from the rejected op's stored
+  /// `payload` (#379, fix plan item 4): `name` for a journey (and apiary),
+  /// `title` for a todo, `type` for an activity. Null when the payload
+  /// carried no such field (or, for `journey_plan_item`, never — a plan item
+  /// has no name of its own) — the needs-fix row then shows just the plain
+  /// entity label.
+  final String? displayName;
+
+  /// The owning journey's id, read from a `journey_plan_item` rejection's
+  /// stored payload (`data.journey_id`) — used to route that entity type's
+  /// "Fix" action to the journey detail screen, since [fixApiaryId] for this
+  /// entity type is the plan item's own (not useful) row id. Null for every
+  /// other entity type, and null if the payload is missing/malformed or
+  /// predates this field (a pre-existing dead-letter row).
+  final String? journeyId;
 }
 
 /// Reads and dismisses rejected-op dead-letter rows against the local store
@@ -67,7 +98,7 @@ class SyncRejectedRepository {
   final LocalStoreEngine _store;
 
   static const _columns =
-      'id, entity_type, fix_apiary_id, op, error_code, error_detail';
+      'id, entity_type, fix_apiary_id, op, error_code, error_detail, payload';
 
   /// Live list of pending rejections, newest first.
   Stream<List<RejectedOp>> watchAll() {
@@ -94,15 +125,55 @@ class SyncRejectedRepository {
 
   RejectedOp _fromRow(Map<String, Object?> r) {
     final parsed = _parseDetail(r['error_detail'] as String?);
+    final entityType = r['entity_type'] as String;
+    final payloadData = _parsePayloadData(r['payload'] as String?);
     return RejectedOp(
       id: r['id'] as String,
-      entityType: r['entity_type'] as String,
+      entityType: entityType,
       fixApiaryId: r['fix_apiary_id'] as String,
       op: r['op'] as String,
       errorCode: r['error_code'] as String? ?? '',
       fieldErrors: parsed.$1,
       detail: parsed.$2,
+      displayName: _displayNameFor(entityType, payloadData),
+      journeyId: payloadData?['journey_id'] as String?,
     );
+  }
+
+  /// Reads the op's own `data` (the record's field values at rejection time)
+  /// out of the connector's stored `payload` column — the full JSON-encoded
+  /// wire op (powersync_connector.dart's `_toOp` shape:
+  /// `{op, entity_type, id, data, updated_at}`), so the interesting fields
+  /// live one level down under `data`. Tolerant of a missing/malformed
+  /// value, matching [_parseDetail]'s own best-effort parsing — a
+  /// pre-existing dead-letter row from before this column was read, or any
+  /// unexpected shape, just yields no display name/journey id rather than
+  /// throwing.
+  Map<String, dynamic>? _parsePayloadData(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      return json['data'] as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The record's own name/title for the needs-fix row (#379, fix plan item
+  /// 4): `name` for a journey or apiary, `title` for a todo, `type` for an
+  /// activity. `journey_plan_item` has no name of its own, so it's excluded
+  /// (falls through to null). Only ever returns a non-empty [String] — a
+  /// missing/wrong-typed/blank field yields null, so the caller can treat
+  /// "has a display name" as a simple null check.
+  String? _displayNameFor(String entityType, Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final value = switch (entityType) {
+      apiaryEntityType || journeyEntityType => data['name'],
+      todoEntityType => data['title'],
+      activityEntityType => data['type'],
+      _ => null,
+    };
+    return (value is String && value.isNotEmpty) ? value : null;
   }
 
   /// Parses the connector's stored `error_detail` JSON

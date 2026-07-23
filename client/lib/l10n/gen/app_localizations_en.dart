@@ -458,6 +458,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixCounterLabel => 'Hive count change';
 
   @override
+  String get syncNeedsFixActivityLabel => 'Activity change';
+
+  @override
+  String get syncNeedsFixJourneyLabel => 'Journey change';
+
+  @override
+  String get syncNeedsFixJourneyPlanLabel => 'Journey plan change';
+
+  @override
+  String get syncNeedsFixTodoLabel => 'Todo change';
+
+  @override
+  String syncNeedsFixTitleWithName(String label, String name) {
+    return '$label · $name';
+  }
+
+  @override
   String get syncNeedsFixGenericProblem =>
       'This change was rejected and needs your attention.';
 
@@ -483,6 +500,17 @@ class AppLocalizationsEn extends AppLocalizations {
       other: '$count changes waiting to sync.',
       one: '1 change waiting to sync.',
       zero: 'Everything is synced.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String accountSyncNeedsFixStatus(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes were rejected and need fixing.',
+      one: '1 change was rejected and needs fixing.',
     );
     return '$_temp0';
   }

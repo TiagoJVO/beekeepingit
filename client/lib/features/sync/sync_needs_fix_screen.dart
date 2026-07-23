@@ -17,6 +17,18 @@ import 'sync_rejected_repository.dart';
 /// clear-on-success); Dismiss is for edits the user decides to abandon.
 ///
 /// Mirrors `apiaries_list_screen.dart`'s AsyncValue-driven list + empty state.
+///
+/// **Fix routing (#379):** apiary/apiary_counter rejections deep-link to the
+/// apiary edit screen (unchanged); journey/todo rejections deep-link to their
+/// OWN edit screen (`op.fixApiaryId` doubles as their own id for every
+/// non-counter entity type — see `RejectedOp.fixApiaryId`'s doc);
+/// journey_plan_item has no edit screen of its own, so it routes to the
+/// owning journey's detail screen (`op.journeyId`, read from the rejected
+/// op's payload) with a `/journeys` fallback if that's unavailable; activity
+/// routes to the Activities tab root rather than attempting the two-id
+/// `activityEdit` route (`:id` + `:activityId`), which would need a local
+/// lookup this screen doesn't have a reliable source for once the local
+/// activity row may itself be gone — see [_navigateToFix].
 class SyncNeedsFixScreen extends ConsumerWidget {
   const SyncNeedsFixScreen({super.key});
 
@@ -86,8 +98,16 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
 
     final entityLabel = switch (op.entityType) {
       apiaryCounterEntityType => l10n.syncNeedsFixCounterLabel,
+      activityEntityType => l10n.syncNeedsFixActivityLabel,
+      journeyEntityType => l10n.syncNeedsFixJourneyLabel,
+      journeyPlanItemEntityType => l10n.syncNeedsFixJourneyPlanLabel,
+      todoEntityType => l10n.syncNeedsFixTodoLabel,
+      // apiaryEntityType, and the fallback for anything unrecognized.
       _ => l10n.syncNeedsFixApiaryLabel,
     };
+    final title = op.displayName == null
+        ? entityLabel
+        : l10n.syncNeedsFixTitleWithName(entityLabel, op.displayName!);
     final message = op.primaryMessage.isNotEmpty
         ? op.primaryMessage
         : l10n.syncNeedsFixGenericProblem;
@@ -113,7 +133,7 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(entityLabel, style: theme.textTheme.titleSmall),
+                      Text(title, style: theme.textTheme.titleSmall),
                       const SizedBox(height: 2),
                       Text(message, style: theme.textTheme.bodyMedium),
                     ],
@@ -133,10 +153,7 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
                 const SizedBox(width: 4),
                 FilledButton.tonalIcon(
                   key: Key('needs-fix-fix-${op.id}'),
-                  onPressed: () => context.goNamed(
-                    'apiaryEdit',
-                    pathParameters: {'id': op.fixApiaryId},
-                  ),
+                  onPressed: () => _navigateToFix(context, op),
                   icon: const Icon(Icons.edit_outlined, size: 18),
                   label: Text(l10n.syncNeedsFixFixAction),
                 ),
@@ -157,5 +174,42 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
     } finally {
       if (mounted) setState(() => _dismissing = false);
     }
+  }
+}
+
+/// Where the "Fix" action sends each entity type (#379's fix plan item 5 —
+/// see [SyncNeedsFixScreen]'s own class doc for the full rationale). Extracted
+/// as a top-level function (not a method) so the routing decision itself is
+/// easy to reason about independent of the tile's widget state.
+void _navigateToFix(BuildContext context, RejectedOp op) {
+  switch (op.entityType) {
+    case journeyEntityType:
+      // fixApiaryId doubles as the journey's own id for this entity type
+      // (RejectedOp.fixApiaryId's doc).
+      context.goNamed('journeyEdit', pathParameters: {'id': op.fixApiaryId});
+    case journeyPlanItemEntityType:
+      final journeyId = op.journeyId;
+      if (journeyId == null) {
+        // No edit screen of its own, and the owning journey id wasn't
+        // available (a pre-existing dead-letter row, or a malformed
+        // payload) — land on the Journeys tab rather than a dead end.
+        context.go('/journeys');
+      } else {
+        context.goNamed('journeyDetail', pathParameters: {'id': journeyId});
+      }
+    case todoEntityType:
+      // fixApiaryId doubles as the todo's own id for this entity type too.
+      context.goNamed('todoEdit', pathParameters: {'id': op.fixApiaryId});
+    case activityEntityType:
+      // activityEdit needs BOTH the owning apiary id and the activity id —
+      // this screen has no reliable local source for the former once the
+      // activity row may itself be gone (the "simplest robust first cut"
+      // the fix plan calls for). The Activities tab lets the user find and
+      // fix the record themselves.
+      context.go('/activities');
+    default:
+      // apiaryEntityType and apiaryCounterEntityType: unchanged behavior —
+      // fixApiaryId is the owning apiary's id for both.
+      context.goNamed('apiaryEdit', pathParameters: {'id': op.fixApiaryId});
   }
 }

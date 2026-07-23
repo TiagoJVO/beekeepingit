@@ -196,6 +196,7 @@ class AppShell extends ConsumerWidget {
       body: Column(
         children: [
           const _OfflineBanner(),
+          const _NeedsFixBanner(),
           Expanded(child: navigationShell),
         ],
       ),
@@ -275,12 +276,23 @@ class AppShell extends ConsumerWidget {
     return discard;
   }
 
-  // Extracted out of build() (MEDIUM-7: oversized build()) — the two
-  // one-shot toast listeners are a self-contained concern (D-12
-  // notify-and-fix) that doesn't need to sit inline in the widget-building
-  // method. `ref.listen` (not `ref.watch`) means neither provider changing
-  // triggers a rebuild — only the SnackBar callback fires — so this doesn't
-  // reintroduce HIGH-4's "watched too high up the tree" problem either way.
+  // Extracted out of build() (MEDIUM-7: oversized build()) — a self-contained
+  // concern that doesn't need to sit inline in the widget-building method.
+  // `ref.listen` (not `ref.watch`) means the provider changing doesn't trigger
+  // a rebuild — only the SnackBar callback fires — so this doesn't reintroduce
+  // HIGH-4's "watched too high up the tree" problem.
+  //
+  // #379: the rejected-write notice used to also live here, as a one-shot
+  // SnackBar with a "Fix" action. Two bugs with that: (1) nothing ever hid it
+  // once the rejection was resolved — a SnackBar with an action doesn't
+  // auto-dismiss under accessible navigation, and it has no link to
+  // [syncNeedsFixCountProvider] — so it could outlive the dead-letter row it
+  // was about; (2) its "Fix" closure captured this build's context, which goes
+  // stale once the user navigates to /account or /sync-needs-fix (both
+  // top-level routes outside this shell), silently no-oping the action from
+  // most screens. [_NeedsFixBanner] below replaces it: state-driven off the
+  // same count, so it appears/disappears with the dead-letter queue itself,
+  // and its own Fix button uses its own (always-current) build context.
   void _listenForSyncToasts(
     BuildContext context,
     WidgetRef ref,
@@ -298,27 +310,6 @@ class AppShell extends ConsumerWidget {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(l10n.syncSupersededNotice)));
-    });
-
-    // Non-blocking notice when an offline write was permanently rejected
-    // (sync.md §8, D-12 notify-and-fix): a toast with a "Fix" action routing
-    // to the needs-fix list, where the user opens the offending record,
-    // corrects it and re-saves. The edit itself is retained in the local
-    // dead-letter (syncRejectedOpsProvider) — this is just the one-shot
-    // notification, and the account-button badge is the persistent
-    // affordance.
-    ref.listen(rejectedNotificationProvider, (previous, next) {
-      final change = next.value;
-      if (change == null) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.syncRejectedNotice),
-          action: SnackBarAction(
-            label: l10n.syncNeedsFixFixAction,
-            onPressed: () => context.go('/sync-needs-fix'),
-          ),
-        ),
-      );
     });
   }
 
@@ -571,6 +562,56 @@ class _OfflineBanner extends ConsumerWidget {
                   : l10n.offlineBannerMessage(status.pendingCount),
               style: const TextStyle(color: BrandTokens.cream, fontSize: 13),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A [ConsumerWidget] (HIGH-4, matching [_OfflineBanner]'s own rationale)
+/// that watches [syncNeedsFixCountProvider] itself and renders nothing while
+/// the count is 0 — so it **auto-appears** the moment an offline write is
+/// rejected and **auto-clears** the moment the last one is fixed or
+/// dismissed, with no event stream involved (#379: replaces the one-shot
+/// SnackBar in [AppShell._listenForSyncToasts] — see that method's doc for
+/// the two bugs this fixes). Always mounted while visible, as part of the
+/// shell body rather than a transient overlay, so its own Fix button's
+/// [BuildContext] is never stale the way the toast's captured one went once
+/// the user navigated away from the shell.
+class _NeedsFixBanner extends ConsumerWidget {
+  const _NeedsFixBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final needsFixCount = ref.watch(syncNeedsFixCountProvider).value ?? 0;
+    if (needsFixCount == 0) return const SizedBox.shrink();
+
+    final l10n = AppLocalizations.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    // Same plum/cream banner treatment as [_OfflineBanner] (#243's verified
+    // contrast), with the error color reserved for the icon — this is a
+    // "needs your attention" notice, not a connectivity status.
+    return Container(
+      key: const Key('shell-needs-fix-banner'),
+      width: double.infinity,
+      color: BrandTokens.plum800,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(Icons.sync_problem_outlined, size: 18, color: colorScheme.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l10n.syncRejectedNotice,
+              style: const TextStyle(color: BrandTokens.cream, fontSize: 13),
+            ),
+          ),
+          TextButton(
+            key: const Key('shell-needs-fix-banner-fix'),
+            onPressed: () => context.go('/sync-needs-fix'),
+            style: TextButton.styleFrom(foregroundColor: BrandTokens.honey),
+            child: Text(l10n.syncNeedsFixFixAction),
           ),
         ],
       ),

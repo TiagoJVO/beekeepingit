@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
@@ -57,6 +58,53 @@ class _ExistingOrganizationController extends OrganizationController {
   );
 }
 
+/// An always-empty [LocalStoreEngine] fake backing [syncRejectedRepositoryProvider]
+/// in these shell tests — so navigating into `/sync-needs-fix` (the needs-fix
+/// banner's own Fix action, #379) resolves to a real, renderable screen
+/// (its empty state) rather than hanging on a real, never-configured
+/// PowerSync database the way an unoverridden provider chain would.
+/// [syncNeedsFixCountProvider] is overridden independently (see
+/// `_buildShellApp`'s own `needsFixCount`/`needsFixCountStream`) — the two
+/// aren't wired together here since these tests only care that the badge/
+/// banner react to a count and that the Fix action lands somewhere real, not
+/// that the two providers agree on a specific number.
+class _EmptyRejectedStore implements LocalStoreEngine {
+  const _EmptyRejectedStore();
+
+  @override
+  Stream<List<Map<String, Object?>>> watch(
+    String sql, [
+    List<Object?> args = const [],
+  ]) {
+    final isCount = sql.toUpperCase().contains('COUNT(*)');
+    return Stream.value(
+      isCount
+          ? [
+              {'c': 0},
+            ]
+          : const [],
+    );
+  }
+
+  @override
+  Future<void> execute(String sql, [List<Object?> args = const []]) async {}
+
+  @override
+  Future<Map<String, Object?>?> getOptional(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => null;
+
+  @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
+
+  @override
+  Future<void> clear() async {}
+}
+
 /// Builds the full app (shell included) as an authenticated, onboarded user —
 /// the app shell (FR-UX-2, #197) only appears once onboarding is done, so
 /// every shell test needs the same auth/profile/org stubbing as
@@ -74,6 +122,11 @@ Widget _buildShellApp({
   Stream<SupersededChange>? supersededChanges,
   Stream<RejectedChange>? rejectedChanges,
   int needsFixCount = 0,
+  // Overrides the fixed needsFixCount value with a live stream a test can
+  // push multiple values through after the initial pump (#379: the
+  // needs-fix banner's own auto-clear regression guard needs a 1-then-0
+  // transition, which a one-shot needsFixCount can't express).
+  Stream<int>? needsFixCountStream,
 }) {
   return ProviderScope(
     overrides: [
@@ -127,7 +180,13 @@ Widget _buildShellApp({
         (ref) => rejectedChanges ?? const Stream.empty(),
       ),
       syncNeedsFixCountProvider.overrideWith(
-        (ref) => Stream.value(needsFixCount),
+        (ref) => needsFixCountStream ?? Stream.value(needsFixCount),
+      ),
+      // See _EmptyRejectedStore's own doc: makes /sync-needs-fix (the needs-
+      // fix banner's Fix destination, #379) a renderable real screen in
+      // these shell tests instead of hanging on a real PowerSync database.
+      syncRejectedRepositoryProvider.overrideWith(
+        (ref) async => SyncRejectedRepository(const _EmptyRejectedStore()),
       ),
     ],
     child: const BeekeepingitApp(),
@@ -797,30 +856,74 @@ void main() {
     },
   );
 
-  testWidgets('a rejected change surfaces a notify-and-fix toast with a Fix '
-      'action (D-12, #256/#260)', (tester) async {
-    final controller = StreamController<RejectedChange>();
-    addTearDown(controller.close);
+  group('needs-fix banner (#379: replaces the one-shot rejected-change toast — '
+      'see app_shell.dart\'s _listenForSyncToasts doc for why)', () {
+    testWidgets('is hidden when nothing needs fixing', (tester) async {
+      await tester.pumpWidget(_buildShellApp(needsFixCount: 0));
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(_buildShellApp(rejectedChanges: controller.stream));
-    await tester.pumpAndSettle();
+      expect(find.byKey(const Key('shell-needs-fix-banner')), findsNothing);
+    });
 
-    controller.add(
-      const RejectedChange(
-        entityType: 'apiary_counter',
-        entityId: 'apiary-1',
-        errorCode: 'validation.failed',
-      ),
+    testWidgets(
+      'shows the rejected-changes notice when something needs fixing',
+      (tester) async {
+        await tester.pumpWidget(_buildShellApp(needsFixCount: 2));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('shell-needs-fix-banner')), findsOneWidget);
+        expect(
+          find.text('One of your changes was rejected and needs fixing.'),
+          findsOneWidget,
+        );
+      },
     );
-    await tester.pump(); // deliver the ref.listen callback
-    await tester.pump(); // let the SnackBar animate in
 
-    expect(
-      find.text('One of your changes was rejected and needs fixing.'),
-      findsOneWidget,
+    testWidgets(
+      'auto-clears the moment the count drops to zero — no reload needed '
+      '(#379\'s stale-banner regression: the old toast never hid itself '
+      'on its own)',
+      (tester) async {
+        final controller = StreamController<int>();
+        addTearDown(controller.close);
+        controller.add(1);
+
+        await tester.pumpWidget(
+          _buildShellApp(needsFixCountStream: controller.stream),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('shell-needs-fix-banner')), findsOneWidget);
+
+        controller.add(0);
+        await tester.pump();
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('shell-needs-fix-banner')), findsNothing);
+      },
     );
-    // Carries the "Fix" action that routes into the needs-fix flow.
-    expect(find.widgetWithText(SnackBarAction, 'Fix'), findsOneWidget);
+
+    testWidgets(
+      'tapping the banner\'s Fix action navigates to the needs-fix list '
+      'from a non-default tab (#379: the old toast\'s Fix action captured '
+      'the tab-active-at-toast-time context and went stale off it)',
+      (tester) async {
+        await tester.pumpWidget(_buildShellApp(needsFixCount: 1));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('shell-tab-journeys')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('shell-needs-fix-banner')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('shell-needs-fix-banner-fix')));
+        await tester.pumpAndSettle();
+
+        // Left the shell entirely, landed on the standalone needs-fix
+        // screen (its own empty state here — the fake repository backing
+        // it in this harness has no rows).
+        expect(find.byKey(const Key('shell-bottom-nav')), findsNothing);
+        expect(find.byKey(const Key('needs-fix-empty')), findsOneWidget);
+      },
+    );
   });
 
   testWidgets('the account button is badged with the needs-fix count', (
