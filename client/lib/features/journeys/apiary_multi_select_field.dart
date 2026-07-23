@@ -200,7 +200,7 @@ class _ApiaryCheckTile extends StatelessWidget {
                           ? Icons.check_box
                           : Icons.check_box_outline_blank,
                       color: selected
-                          ? theme.colorScheme.secondary
+                          ? theme.colorScheme.tertiary
                           : theme.colorScheme.onSurfaceVariant,
                     ),
                   ],

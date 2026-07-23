@@ -186,7 +186,7 @@ class _TodoOptionTile extends StatelessWidget {
                           ? Icons.radio_button_checked
                           : Icons.radio_button_unchecked,
                       color: selected
-                          ? theme.colorScheme.secondary
+                          ? theme.colorScheme.tertiary
                           : theme.colorScheme.onSurfaceVariant,
                     ),
                   ],
