@@ -145,12 +145,21 @@ entries:
   # attribute the custom scope mapping above emits. Binding orders 40/45 slot
   # between the default flow's mfa-validation (30) and user-login (100).
   #
-  # i18n (NFR-I18N-1): the built-in account-confirmation template is rendered in
-  # the pending user's locale (Authentik ships full pt_PT + en catalogs for it),
-  # and the subject "Account Confirmation" is deliberately the exact gettext msgid
-  # from that catalog so it localizes too ("Confirmação de Conta") — a custom
-  # subject string would bypass translation. Locale source: the user's
-  # attributes.settings.locale, falling back to the request's Accept-Language.
+  # i18n (NFR-I18N-1): the subject "Account Confirmation" is deliberately the
+  # exact gettext msgid from Authentik's catalogs (pt_PT: "Confirmação de Conta")
+  # so it stays translatable — a custom subject string would bypass translation
+  # entirely. KNOWN LIMITATION, verified in the authentik source at the pinned
+  # 2026.5.4: flow-triggered mail is translated per the REQUEST's negotiated
+  # language, not the recipient's saved locale — stages/email/stage.py renders
+  # with language=pending_user.locale(request), and core/models.py User.locale()
+  # returns request.LANGUAGE_CODE whenever a request is present (the
+  # attributes.settings.locale fallback only applies to non-request sends) — and
+  # pt-PT can never negotiate: Django's default LANGUAGES has no pt-pt entry (so
+  # an Accept-Language: pt-PT request activates plain "pt") while authentik ships
+  # a pt_PT catalog but no "pt" one. Net effect: verification emails render in
+  # English today regardless of user locale; the msgid subject keeps translation
+  # engaged the moment an upstream fix (or a LANGUAGES override) lands. See
+  # auth.md §8.10's limitation note.
   - model: authentik_stages_email.emailstage
     id: stage-email-verification
     identifiers: { name: beekeepingit-email-verification }
@@ -196,7 +205,11 @@ entries:
   # email stage was skipped by an evaluation error) nothing is written — the
   # attribute can never be set by merely reaching this point in the flow.
   # Injecting via prompt_data is the documented user_write contract; no prompt
-  # stage participates in this flow, so nothing user-supplied is merged.
+  # stage participates in this flow, so nothing user-supplied is merged. The
+  # write is MERGED into any existing prompt_data (setdefault + key assignment),
+  # never assigned over it — assignment would silently discard whatever a
+  # future stage placed in the plan (review finding on #361; the email-change
+  # policy below already merged for the same reason).
   - model: authentik_policies_expression.expressionpolicy
     id: policy-mark-email-verified
     identifiers: { name: beekeepingit-mark-email-verified }
@@ -213,7 +226,8 @@ entries:
         restore_token = flow_plan.context.get("is_restored")
         if not restore_token or restore_token.user != user:
             return False
-        flow_plan.context["prompt_data"] = {"attributes.email_verified": True}
+        prompt_data = flow_plan.context.setdefault("prompt_data", {})
+        prompt_data["attributes.email_verified"] = True
         return True
   # evaluate_on_plan: false + re_evaluate_policies: true on both bindings: at plan
   # time (flow start) there is no pending_user yet — identification only sets it
@@ -275,9 +289,18 @@ entries:
         if new_email is not None and new_email != user.email:
             prompt_data["attributes.email_verified"] = False
         return True
-  # The default user-settings flow's own user_write binding (identifiers match the
-  # upstream default blueprint's), redeclared to attach the policy above and to
-  # evaluate it at stage time — prompt_data doesn't exist at plan time.
+  # The default user-settings flow's own user_write binding, redeclared to attach
+  # the policy above and to evaluate it at stage time — prompt_data doesn't exist
+  # at plan time. The identifiers MUST match the upstream binding's exactly:
+  # blueprints upsert on an identifier miss, so a wrong order here would silently
+  # CREATE a second binding of the same stage instead of updating the real one,
+  # and whether the reset policy then fires would be undefined. Verified against
+  # the pinned Authentik 2026.5.4's own shipped blueprint —
+  # blueprints/default/flow-default-user-settings-flow.yaml (tag version/2026.5.4,
+  # lines 144–148) binds default-user-settings-write to the flow at exactly
+  # order: 100 — so this entry UPDATES that binding. Re-verify that file on every
+  # Authentik version bump (oidc-integration.md §8 watch-list); the email-change
+  # e2e (client/e2e/tests/verification.spec.ts) fails live if this drifts.
   - model: authentik_flows.flowstagebinding
     id: binding-user-settings-write
     identifiers:
