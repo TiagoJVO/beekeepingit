@@ -719,29 +719,33 @@ void main() {
     );
   });
 
-  group('theme-token pin styling (MEDIUM finding)', () {
-    testWidgets('the apiary pin hive-count badge derives its style from '
-        'theme.textTheme, not a hardcoded TextStyle', (tester) async {
+  group('marker rotation + badge (#383)', () {
+    testWidgets('apiary pins no longer render the hive-count badge', (
+      tester,
+    ) async {
       await _goToMap(tester);
 
       final markerFinder = find.byKey(Key('apiary-marker-${_serraNorte.id}'));
-      final theme = Theme.of(tester.element(markerFinder));
-      final countText = tester.widget<Text>(
+      expect(
         find.descendant(
           of: markerFinder,
           matching: find.text('${_serraNorte.hiveCount}'),
         ),
-      );
-
-      expect(
-        countText.style,
-        theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onPrimary,
-          fontWeight: FontWeight.bold,
-        ),
+        findsNothing,
       );
     });
 
+    testWidgets('markers counter-rotate to stay upright as the map rotates', (
+      tester,
+    ) async {
+      await _goToMap(tester);
+
+      final layer = tester.widget<MarkerLayer>(find.byType(MarkerLayer));
+      expect(layer.rotate, isTrue);
+    });
+  });
+
+  group('theme-token pin styling (MEDIUM finding)', () {
     testWidgets(
       'the user-location pin label derives its style from theme.textTheme, '
       'not a hardcoded TextStyle',
