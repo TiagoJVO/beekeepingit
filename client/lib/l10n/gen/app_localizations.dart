@@ -104,10 +104,10 @@ abstract class AppLocalizations {
   /// **'BeekeepingIT'**
   String get appTitle;
 
-  /// Text above the login button
+  /// Text above the login button. Mentions account creation (#366): the sign-up entry point is the identity provider's own login page (its "Sign up" link starts the enrollment flow with the OIDC redirect context preserved), so the app deliberately keeps a single auth action and points new users at it
   ///
   /// In en, this message translates to:
-  /// **'Sign in to manage your apiaries.'**
+  /// **'Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.'**
   String get loginPrompt;
 
   /// Primary login action — starts the OIDC redirect to the identity provider
