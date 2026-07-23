@@ -13,7 +13,6 @@ import '../../theming/brand_widgets.dart';
 import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
 import '../history/history_section.dart';
-import '../todos/todo_quick_create_sheet.dart';
 import 'apiaries_repository.dart';
 import 'counter_types.dart';
 
@@ -46,10 +45,11 @@ class ApiaryDetailScreen extends ConsumerWidget {
     // existing per-id pattern -- overridable in widget tests the same way.
     final apiaryAsync = ref.watch(apiaryByIdProvider(apiaryId));
     // Read directly (not just inside the `data:` branch below) so the
-    // add-todo FAB — the only one of the three that needs the apiary's own
-    // NAME, not just its id (#52, FR-UX-2) — can gate its own presence on
-    // the apiary actually being loaded, without touching the other two
-    // FABs' existing unconditional-render behavior.
+    // add-todo FAB can gate its own presence on the apiary actually having
+    // loaded (#389 kept this gate as-is even though the full form's own
+    // apiary picker no longer needs the NAME up front the way #52's
+    // quick-create sheet's read-only chip did), without touching the other
+    // two FABs' existing unconditional-render behavior.
     final apiary = apiaryAsync.value;
 
     return Scaffold(
@@ -77,22 +77,21 @@ class ApiaryDetailScreen extends ConsumerWidget {
       // A single "Actions" control (#347, FR-UX-1/FR-UX-2) that expands to the
       // actions valid for this apiary, replacing the previous stack of three
       // FABs. The options are built for the current scope: the add-todo option
-      // needs the apiary's own NAME (for the sheet's read-only "For {name}"
-      // chip), so it only joins the list once the apiary has actually loaded —
-      // unlike add-activity/edit, which only need [apiaryId].
+      // only joins the list once the apiary has actually loaded — unlike
+      // add-activity/edit, which only need [apiaryId].
       floatingActionButton: ActionsSpeedDial(
         actions: [
-          // Contextual quick-create-todo entry point (#52, FR-UX-2).
+          // Contextual create-todo entry point (#52, FR-UX-2) — routes to
+          // the full create form pre-selecting this apiary via
+          // `?apiaryId=` (#389, replacing the old quick-create sheet, whose
+          // read-only "For {name}" chip this apiary picker prefill now
+          // supersedes).
           if (apiary != null)
             SpeedDialAction(
               key: const Key('apiary-detail-add-todo-button'),
               label: l10n.addTodo,
               icon: Icons.task_alt_outlined,
-              onPressed: () => showTodoQuickCreateSheet(
-                context,
-                initialApiaryId: apiary.id,
-                initialApiaryName: apiary.name,
-              ),
+              onPressed: () => context.go('/todos/new?apiaryId=${apiary.id}'),
             ),
           // Add-activity entry point (#39, FR-AC-2): the natural place to log
           // an activity is right where the apiary itself already is. Only the

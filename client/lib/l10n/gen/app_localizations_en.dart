@@ -1166,23 +1166,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addTodo => 'New todo';
 
   @override
-  String get todoQuickCreateTitle => 'New todo';
-
-  @override
-  String get todoDueDateLabel => 'Due date';
-
-  @override
-  String todoQuickCreateForApiary(String apiaryName) {
-    return 'For $apiaryName';
-  }
-
-  @override
-  String get todoQuickCreateCancelAction => 'Cancel';
-
-  @override
-  String get todoCreatedConfirmation => 'Todo created';
-
-  @override
   String get newTodoTitle => 'New todo';
 
   @override
