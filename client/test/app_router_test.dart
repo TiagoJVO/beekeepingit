@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:beekeepingit_client/app.dart';
+import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
@@ -15,8 +19,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'widget_test.dart' show FakeDeviceLocationService;
+
+/// A no-op [LocalPrefs] fake used to seed the onboarding gate's offline
+/// cache (#390) — mirrors auth_controller_test.dart's own `FakeLocalPrefs`.
+class _FakeLocalPrefs implements LocalPrefs {
+  final Map<String, String> _store = {};
+
+  @override
+  String? read(String key) => _store[key];
+
+  @override
+  void write(String key, String value) => _store[key] = value;
+
+  @override
+  void remove(String key) => _store.remove(key);
+}
 
 /// A no-op controller that reports a fixed completeness, so the router's
 /// redirect logic can be exercised without a real ApiClient/network call.
@@ -169,6 +190,86 @@ void main() {
 
       expect(find.byKey(const Key('account-name-field')), findsOneWidget);
       expect(find.text('Apiaries'), findsNothing);
+    },
+  );
+
+  // #390: a previously-onboarded user must not be bounced to /profile or
+  // /organization/new just because the REST fetch fails offline — the
+  // repositories' own cache (ProfileRepository.fetch()/
+  // OrganizationRepository.fetchMine()) should serve the last-known-good
+  // snapshot instead, so the router's gate resolves the same way it would
+  // online. Unlike `_buildApp` above (which overrides profileProvider/
+  // organizationProvider directly with fixed controllers, bypassing the
+  // repositories entirely), this drives the REAL ProfileController/
+  // OrganizationController against a throwing ApiClient, to prove the
+  // cache fallback itself — not just the router's handling of an
+  // already-resolved value.
+  testWidgets(
+    'a previously-onboarded user reaches the apiaries home when the profile/'
+    'organization fetch fails offline but a cached snapshot exists (#390)',
+    (tester) async {
+      final cache = _FakeLocalPrefs()
+        ..write(
+          kProfileCacheKey,
+          jsonEncode({
+            'id': 'u1',
+            'name': 'Ana',
+            'email': 'ana@example.com',
+            'locale': 'en',
+            'profile_complete': true,
+            'created_at': '2026-01-01T00:00:00.000Z',
+            'updated_at': '2026-01-01T00:00:00.000Z',
+          }),
+        )
+        ..write(
+          kOrganizationCacheKey,
+          jsonEncode({
+            'id': 'org-1',
+            'name': 'Dev Apiary Co.',
+            'address': '',
+            'created_by': 'u1',
+            'role': 'admin',
+            'created_at': '2026-01-01T00:00:00.000Z',
+            'updated_at': '2026-01-01T00:00:00.000Z',
+          }),
+        );
+      final throwingClient = MockClient((req) async {
+        throw http.ClientException('Failed host lookup');
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            isAuthenticatedProvider.overrideWithValue(true),
+            deviceLocationServiceProvider.overrideWithValue(
+              const FakeDeviceLocationService(),
+            ),
+            apiariesStreamProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
+            apiClientProvider.overrideWith(
+              (ref) => ApiClient(ref, httpClient: throwingClient),
+            ),
+            profileRepositoryProvider.overrideWith(
+              (ref) =>
+                  ProfileRepository(ref.watch(apiClientProvider), prefs: cache),
+            ),
+            organizationRepositoryProvider.overrideWith(
+              (ref) => OrganizationRepository(
+                ref.watch(apiClientProvider),
+                prefs: cache,
+              ),
+            ),
+          ],
+          child: const BeekeepingitApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Apiaries'), findsWidgets);
+      expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
+      expect(find.byKey(const Key('profile-name-field')), findsNothing);
+      expect(find.byKey(const Key('organization-name-field')), findsNothing);
     },
   );
 

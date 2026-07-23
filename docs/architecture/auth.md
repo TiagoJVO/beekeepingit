@@ -394,6 +394,9 @@ The grace window is a **local UX affordance, not server authorization.** Queued 
   membership and **rejects** unauthorized pushes (notify-and-fix, FR-OF-2). This trade-off is
   explicit and acceptable for a field-first app.
 - Tokens live **only** in the secure enclave; a compromised device is the threat model EPIC-14 owns.
+  (Today, ahead of that EPIC-14 hardening: the refresh/id token persist in browser `localStorage`,
+  not yet a secure enclave — an accepted interim trade-off for the offline-first boot flow, #390,
+  oidc-integration.md §7.)
 - **The local-data replica is bounded separately from the token grace window:** losing org
   membership also **purges the on-device local store** (not just the cached token) at the next
   app start or reconnect — [sync.md §3.5](sync.md#35-local-data-lifecycle--purge-on-logout--membership-loss-125)
