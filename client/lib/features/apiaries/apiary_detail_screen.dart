@@ -651,30 +651,41 @@ class _CounterEditor extends StatelessWidget {
           ),
           SizedBox(
             width: 64,
-            child: TextField(
-              key: const Key('apiary-counter-edit-field'),
-              controller: controller,
-              enabled: !saving,
-              textAlign: TextAlign.center,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              style: TextStyle(
-                fontFamily: AppTheme.bodyFontFamily,
-                fontWeight: FontWeight.w700,
-                fontSize: 18,
-                color: brand.onHeroSurface,
-              ),
-              decoration: InputDecoration(
-                labelText: typeLabel,
-                isDense: true,
-                // The type name already renders at the row's left (#393) —
-                // the floating label here is redundant and, over this 64px
-                // field, truncates unreadably. Keep labelText itself (not
-                // hint) so it still reaches screen readers and getByLabel-
-                // style lookups (client/e2e/tests/slice.spec.ts's own
-                // getByLabel("Hives")); it just never paints, since the
-                // field always holds text (the draft value) once mounted.
-                floatingLabelBehavior: FloatingLabelBehavior.never,
+            // The type name already renders at the row's left (#393) — a
+            // second, redundant floating label on this 64px field truncates
+            // unreadably ("Hi..."). `InputDecoration.labelText` combined with
+            // `floatingLabelBehavior: never` looked like the fix (keep the
+            // label out of view but still reachable via
+            // `InputDecoration.labelText`'s semantics), but it isn't: once
+            // the field holds text — which it always does here, since
+            // [_CountersSectionState._openEditor] pre-fills it with the
+            // current value, even "0" — InputDecorator's `_shouldShowLabel`
+            // goes false (never-floating + non-empty content), which drives
+            // the label's `AnimatedOpacity` to 0. An opacity-0 subtree is
+            // EXCLUDED from the semantics tree by default in Flutter unless
+            // `alwaysIncludeSemantics` is set (not exposed via
+            // `InputDecoration`) — so the accessible name silently vanished
+            // the moment the editor opened, which is exactly what timed out
+            // the e2e's `getByLabel("Hives")` on PR #400 (#393 regression).
+            // An explicit [Semantics] label sidesteps InputDecorator's
+            // visibility-linked semantics entirely: it stays on the merged
+            // node regardless of what the (now label-less) decoration paints.
+            child: Semantics(
+              label: typeLabel,
+              child: TextField(
+                key: const Key('apiary-counter-edit-field'),
+                controller: controller,
+                enabled: !saving,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                style: TextStyle(
+                  fontFamily: AppTheme.bodyFontFamily,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  color: brand.onHeroSurface,
+                ),
+                decoration: const InputDecoration(isDense: true),
               ),
             ),
           ),

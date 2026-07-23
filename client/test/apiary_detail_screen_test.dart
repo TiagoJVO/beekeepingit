@@ -502,7 +502,10 @@ void main() {
     testWidgets(
       'the number field never paints a floating label duplicating the '
       'card\'s own type name, while keeping it as the accessible label '
-      '(#393)',
+      '(#393; fixed post-#400: an explicit Semantics wrapper carries the '
+      'label now, not InputDecoration.labelText, since that painted-label '
+      'mechanism silently drops out of the semantics tree once the field '
+      'has content — see the COLD-state semantics test below)',
       (tester) async {
         final repo = _FakeApiariesRepository();
         await tester.pumpWidget(
@@ -523,13 +526,81 @@ void main() {
         final field = tester.widget<TextField>(
           find.byKey(const Key('apiary-counter-edit-field')),
         );
+        // No painted label at all now (not merely hidden-but-present): the
+        // decoration carries no labelText, so there is nothing for
+        // InputDecorator to ever float or truncate.
+        expect(field.decoration?.labelText, isNull);
+
+        // The accessible name comes from the explicit Semantics wrapper
+        // around the field instead, which — unlike a labelText tied to
+        // InputDecorator's visibility-linked AnimatedOpacity — survives
+        // regardless of the field's content.
         expect(
-          field.decoration?.floatingLabelBehavior,
-          FloatingLabelBehavior.never,
+          find.byWidgetPredicate(
+            (w) => w is Semantics && w.properties.label == 'Hives',
+          ),
+          findsOneWidget,
         );
-        // The e2e suite's own getByLabel("Hives") relies on this staying the
-        // accessible label even though it never paints.
-        expect(field.decoration?.labelText, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'tapping the hive card from a COLD state (nothing previously open) '
+      'exposes "Hives" on the number field\'s actual SEMANTICS tree — the '
+      'e2e suite\'s getByLabel("Hives") reads the real accessibility DOM, '
+      'not the widget\'s decoration property, and a regression here is '
+      'exactly what timed out CI on PR #400 (#393)',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        final repo = _FakeApiariesRepository();
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 0),
+            ],
+            apiariesRepository: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+
+        // Cold state: no editor open for any counter yet — this is the exact
+        // gap the pre-existing #393 tests never covered (they all tapped the
+        // SAME hive card twice in a row within one test run, so the "does the
+        // very first tap on a fully-closed editor actually work" path was
+        // never isolated on its own).
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsNothing,
+        );
+
+        await tester.tap(find.byKey(const Key('apiary-detail-hive-count')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-detail-counter-editor')),
+          findsOneWidget,
+        );
+
+        final fieldSemantics = tester.getSemantics(
+          find.byKey(const Key('apiary-counter-edit-field')),
+        );
+        expect(
+          fieldSemantics.label,
+          contains('Hives'),
+          reason:
+              'the field must carry "Hives" as its accessible label even '
+              'though the field is pre-filled with "0" (currentValue) and '
+              'floatingLabelBehavior is never — an opacity-hidden label is '
+              'excluded from the semantics tree by default in Flutter, which '
+              'is exactly what silently dropped the label here',
+        );
+
+        // Dispose within the test body — the end-of-test handle-leak check
+        // runs before addTearDown callbacks would (matches the Actions-toggle
+        // semantics test above).
+        handle.dispose();
       },
     );
 
