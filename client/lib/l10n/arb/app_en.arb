@@ -1410,6 +1410,127 @@
       }
     }
   },
+  "journeyStatsHivesWorkedLabel": "Hives worked",
+  "@journeyStatsHivesWorkedLabel": {
+    "description": "Stat card label for hive-level completion (#391): Σ hives_involved across the journey's activities of every type vs. the total hive count of the currently-planned apiaries"
+  },
+  "journeyStatsHivesWorkedValue": "{worked}/{planned}",
+  "@journeyStatsHivesWorkedValue": {
+    "description": "Value on the hives-worked stat card (#391), e.g. \"12/40\" — planned is already the localized \"no data\" placeholder or a plain number by the time it reaches this template",
+    "placeholders": {
+      "worked": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsHivesWorkedNoData": "—",
+  "@journeyStatsHivesWorkedNoData": {
+    "description": "Placeholder standing in for the hives-planned denominator (#391) when none of the journey's currently-planned apiaries has a hive counter row yet — a genuine \"no data\" state, never a fake 0"
+  },
+  "journeyStatsMoreAction": "More stats",
+  "@journeyStatsMoreAction": {
+    "description": "Button at the foot of the #49 stats section that opens the #391 per-apiary breakdown screen"
+  },
+  "journeyStatsDetailTitle": "More stats",
+  "@journeyStatsDetailTitle": {
+    "description": "Shell app bar title for the #391 per-apiary breakdown route (/journeys/:id/stats)"
+  },
+  "journeyStatsDetailFilterAll": "All",
+  "@journeyStatsDetailFilterAll": {
+    "description": "The #391 breakdown screen's visited-filter segment showing every apiary in the journey's scope"
+  },
+  "journeyStatsDetailFilterVisited": "Visited",
+  "@journeyStatsDetailFilterVisited": {
+    "description": "The #391 breakdown screen's visited-filter segment showing only visited apiaries"
+  },
+  "journeyStatsDetailFilterNotVisited": "Not visited",
+  "@journeyStatsDetailFilterNotVisited": {
+    "description": "The #391 breakdown screen's visited-filter segment showing only apiaries with no attributed activity yet"
+  },
+  "journeyStatsDetailSortLabel": "Sort by",
+  "@journeyStatsDetailSortLabel": {
+    "description": "Label on the #391 breakdown screen's sort field"
+  },
+  "journeyStatsDetailSortName": "Name",
+  "@journeyStatsDetailSortName": {
+    "description": "The #391 breakdown screen's sort option: alphabetical by apiary name (always offered, every journey type)"
+  },
+  "journeyStatsDetailSortKgPerHive": "Kg/hive",
+  "@journeyStatsDetailSortKgPerHive": {
+    "description": "The #391 breakdown screen's sort option for a harvest journey: kg of honey per hive, descending, nulls last"
+  },
+  "journeyStatsDetailSortSupersPerHive": "Supers/hive",
+  "@journeyStatsDetailSortSupersPerHive": {
+    "description": "The #391 breakdown screen's sort option for a harvest journey: honey supers per hive, descending, nulls last"
+  },
+  "journeyStatsDetailSortFeedAmount": "Feed amount",
+  "@journeyStatsDetailSortFeedAmount": {
+    "description": "The #391 breakdown screen's sort option for a feeding journey: total feed amount, descending"
+  },
+  "journeyStatsDetailSortHivesInvolved": "Hives involved",
+  "@journeyStatsDetailSortHivesInvolved": {
+    "description": "The #391 breakdown screen's sort option for a treatment journey: hives involved in treatment, descending"
+  },
+  "journeyStatsDetailEmpty": "No apiaries match the current filter.",
+  "@journeyStatsDetailEmpty": {
+    "description": "The #391 breakdown screen's empty state when the visited/not-visited filter matches nothing"
+  },
+  "journeyStatsDetailHiveCountLabel": "Hives",
+  "@journeyStatsDetailHiveCountLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's current hive count"
+  },
+  "journeyStatsDetailHoneyKgLabel": "Honey (kg)",
+  "@journeyStatsDetailHoneyKgLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's Σ honey_kg (harvest journeys)"
+  },
+  "journeyStatsDetailSupersLabel": "Supers",
+  "@journeyStatsDetailSupersLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's Σ honey_supers (harvest journeys)"
+  },
+  "journeyStatsDetailKgPerHiveLabel": "Kg/hive",
+  "@journeyStatsDetailKgPerHiveLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's own kg-of-honey-per-hive average (harvest journeys)"
+  },
+  "journeyStatsDetailSupersPerHiveLabel": "Supers/hive",
+  "@journeyStatsDetailSupersPerHiveLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's own supers-per-hive average (harvest journeys)"
+  },
+  "journeyStatsDetailFeedAmountLabel": "Feed amount",
+  "@journeyStatsDetailFeedAmountLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's Σ feed_amount (feeding journeys)"
+  },
+  "journeyStatsDetailHivesInvolvedLabel": "Hives involved",
+  "@journeyStatsDetailHivesInvolvedLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's Σ hives_involved across treatment activities (treatment journeys)"
+  },
+  "journeyStatsDetailNoDataValue": "—",
+  "@journeyStatsDetailNoDataValue": {
+    "description": "Placeholder for a per-apiary card's kg/hive or supers/hive metric (#391) when the apiary has no hive-count denominator yet — never a fake 0"
+  },
+  "journeyStatsDetailFeedingSummary": "Total feed amount: {amount}",
+  "@journeyStatsDetailFeedingSummary": {
+    "description": "The #391 breakdown screen's header summary row for a feeding journey: Σ feed_amount across every apiary",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsDetailTreatedSummary": "{treated}/{planned} apiaries treated",
+  "@journeyStatsDetailTreatedSummary": {
+    "description": "The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity",
+    "placeholders": {
+      "treated": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "int"
+      }
+    }
+  },
   "journeyDetailTitle": "Journey",
   "@journeyDetailTitle": {
     "description": "Shell app bar title for the journey detail route (#48, FR-JO-3) — a generic, not per-instance, title mirroring apiaryDetailTitle/activityDetailTitle's own convention; the specific journey's name renders in the page body itself"
@@ -1567,31 +1688,6 @@
   "addTodo": "New todo",
   "@addTodo": {
     "description": "Floating action button label to quick-create a todo (#52, FR-TD-1) — shown on the Todos tab's own FAB, the Apiaries tab's secondary FAB, and the apiary detail page's add-todo action"
-  },
-  "todoQuickCreateTitle": "New todo",
-  "@todoQuickCreateTitle": {
-    "description": "Heading of the quick-create bottom sheet (#52, FR-TD-1, FR-UX-1)"
-  },
-  "todoDueDateLabel": "Due date",
-  "@todoDueDateLabel": {
-    "description": "Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)"
-  },
-  "todoQuickCreateForApiary": "For {apiaryName}",
-  "@todoQuickCreateForApiary": {
-    "description": "Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.",
-    "placeholders": {
-      "apiaryName": {
-        "type": "String"
-      }
-    }
-  },
-  "todoQuickCreateCancelAction": "Cancel",
-  "@todoQuickCreateCancelAction": {
-    "description": "Cancel button on the quick-create sheet — discards the in-progress todo without creating it (#52)"
-  },
-  "todoCreatedConfirmation": "Todo created",
-  "@todoCreatedConfirmation": {
-    "description": "Success toast shown after a quick-created todo saves (#52)"
   },
   "newTodoTitle": "New todo",
   "@newTodoTitle": {

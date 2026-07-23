@@ -1802,6 +1802,156 @@ abstract class AppLocalizations {
   /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
   String journeyStatsMissingLabel(int count);
 
+  /// Stat card label for hive-level completion (#391): Σ hives_involved across the journey's activities of every type vs. the total hive count of the currently-planned apiaries
+  ///
+  /// In en, this message translates to:
+  /// **'Hives worked'**
+  String get journeyStatsHivesWorkedLabel;
+
+  /// Value on the hives-worked stat card (#391), e.g. "12/40" — planned is already the localized "no data" placeholder or a plain number by the time it reaches this template
+  ///
+  /// In en, this message translates to:
+  /// **'{worked}/{planned}'**
+  String journeyStatsHivesWorkedValue(int worked, String planned);
+
+  /// Placeholder standing in for the hives-planned denominator (#391) when none of the journey's currently-planned apiaries has a hive counter row yet — a genuine "no data" state, never a fake 0
+  ///
+  /// In en, this message translates to:
+  /// **'—'**
+  String get journeyStatsHivesWorkedNoData;
+
+  /// Button at the foot of the #49 stats section that opens the #391 per-apiary breakdown screen
+  ///
+  /// In en, this message translates to:
+  /// **'More stats'**
+  String get journeyStatsMoreAction;
+
+  /// Shell app bar title for the #391 per-apiary breakdown route (/journeys/:id/stats)
+  ///
+  /// In en, this message translates to:
+  /// **'More stats'**
+  String get journeyStatsDetailTitle;
+
+  /// The #391 breakdown screen's visited-filter segment showing every apiary in the journey's scope
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get journeyStatsDetailFilterAll;
+
+  /// The #391 breakdown screen's visited-filter segment showing only visited apiaries
+  ///
+  /// In en, this message translates to:
+  /// **'Visited'**
+  String get journeyStatsDetailFilterVisited;
+
+  /// The #391 breakdown screen's visited-filter segment showing only apiaries with no attributed activity yet
+  ///
+  /// In en, this message translates to:
+  /// **'Not visited'**
+  String get journeyStatsDetailFilterNotVisited;
+
+  /// Label on the #391 breakdown screen's sort field
+  ///
+  /// In en, this message translates to:
+  /// **'Sort by'**
+  String get journeyStatsDetailSortLabel;
+
+  /// The #391 breakdown screen's sort option: alphabetical by apiary name (always offered, every journey type)
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get journeyStatsDetailSortName;
+
+  /// The #391 breakdown screen's sort option for a harvest journey: kg of honey per hive, descending, nulls last
+  ///
+  /// In en, this message translates to:
+  /// **'Kg/hive'**
+  String get journeyStatsDetailSortKgPerHive;
+
+  /// The #391 breakdown screen's sort option for a harvest journey: honey supers per hive, descending, nulls last
+  ///
+  /// In en, this message translates to:
+  /// **'Supers/hive'**
+  String get journeyStatsDetailSortSupersPerHive;
+
+  /// The #391 breakdown screen's sort option for a feeding journey: total feed amount, descending
+  ///
+  /// In en, this message translates to:
+  /// **'Feed amount'**
+  String get journeyStatsDetailSortFeedAmount;
+
+  /// The #391 breakdown screen's sort option for a treatment journey: hives involved in treatment, descending
+  ///
+  /// In en, this message translates to:
+  /// **'Hives involved'**
+  String get journeyStatsDetailSortHivesInvolved;
+
+  /// The #391 breakdown screen's empty state when the visited/not-visited filter matches nothing
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries match the current filter.'**
+  String get journeyStatsDetailEmpty;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's current hive count
+  ///
+  /// In en, this message translates to:
+  /// **'Hives'**
+  String get journeyStatsDetailHiveCountLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's Σ honey_kg (harvest journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Honey (kg)'**
+  String get journeyStatsDetailHoneyKgLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's Σ honey_supers (harvest journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Supers'**
+  String get journeyStatsDetailSupersLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's own kg-of-honey-per-hive average (harvest journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Kg/hive'**
+  String get journeyStatsDetailKgPerHiveLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's own supers-per-hive average (harvest journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Supers/hive'**
+  String get journeyStatsDetailSupersPerHiveLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's Σ feed_amount (feeding journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Feed amount'**
+  String get journeyStatsDetailFeedAmountLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's Σ hives_involved across treatment activities (treatment journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Hives involved'**
+  String get journeyStatsDetailHivesInvolvedLabel;
+
+  /// Placeholder for a per-apiary card's kg/hive or supers/hive metric (#391) when the apiary has no hive-count denominator yet — never a fake 0
+  ///
+  /// In en, this message translates to:
+  /// **'—'**
+  String get journeyStatsDetailNoDataValue;
+
+  /// The #391 breakdown screen's header summary row for a feeding journey: Σ feed_amount across every apiary
+  ///
+  /// In en, this message translates to:
+  /// **'Total feed amount: {amount}'**
+  String journeyStatsDetailFeedingSummary(String amount);
+
+  /// The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity
+  ///
+  /// In en, this message translates to:
+  /// **'{treated}/{planned} apiaries treated'**
+  String journeyStatsDetailTreatedSummary(int treated, int planned);
+
   /// Shell app bar title for the journey detail route (#48, FR-JO-3) — a generic, not per-instance, title mirroring apiaryDetailTitle/activityDetailTitle's own convention; the specific journey's name renders in the page body itself
   ///
   /// In en, this message translates to:
@@ -2023,36 +2173,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'New todo'**
   String get addTodo;
-
-  /// Heading of the quick-create bottom sheet (#52, FR-TD-1, FR-UX-1)
-  ///
-  /// In en, this message translates to:
-  /// **'New todo'**
-  String get todoQuickCreateTitle;
-
-  /// Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)
-  ///
-  /// In en, this message translates to:
-  /// **'Due date'**
-  String get todoDueDateLabel;
-
-  /// Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.
-  ///
-  /// In en, this message translates to:
-  /// **'For {apiaryName}'**
-  String todoQuickCreateForApiary(String apiaryName);
-
-  /// Cancel button on the quick-create sheet — discards the in-progress todo without creating it (#52)
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel'**
-  String get todoQuickCreateCancelAction;
-
-  /// Success toast shown after a quick-created todo saves (#52)
-  ///
-  /// In en, this message translates to:
-  /// **'Todo created'**
-  String get todoCreatedConfirmation;
 
   /// Header title for the standalone todo-create route (#293) — reachable by direct navigation/deep-linking, distinct from #52's own quick-create sheet
   ///

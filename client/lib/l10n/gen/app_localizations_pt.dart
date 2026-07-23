@@ -1058,6 +1058,88 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get journeyStatsHivesWorkedLabel => 'Colmeias trabalhadas (total)';
+
+  @override
+  String journeyStatsHivesWorkedValue(int worked, String planned) {
+    return '$worked/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesWorkedNoData => '—';
+
+  @override
+  String get journeyStatsMoreAction => 'Mais estatísticas';
+
+  @override
+  String get journeyStatsDetailTitle => 'Mais estatísticas';
+
+  @override
+  String get journeyStatsDetailFilterAll => 'Todos';
+
+  @override
+  String get journeyStatsDetailFilterVisited => 'Visitados';
+
+  @override
+  String get journeyStatsDetailFilterNotVisited => 'Não visitados';
+
+  @override
+  String get journeyStatsDetailSortLabel => 'Ordenar por';
+
+  @override
+  String get journeyStatsDetailSortName => 'Nome';
+
+  @override
+  String get journeyStatsDetailSortKgPerHive => 'Kg/colmeia';
+
+  @override
+  String get journeyStatsDetailSortSupersPerHive => 'Alças/colmeia';
+
+  @override
+  String get journeyStatsDetailSortFeedAmount => 'Quantidade de alimento';
+
+  @override
+  String get journeyStatsDetailSortHivesInvolved => 'Colmeias envolvidas';
+
+  @override
+  String get journeyStatsDetailEmpty =>
+      'Nenhum apiário corresponde ao filtro atual.';
+
+  @override
+  String get journeyStatsDetailHiveCountLabel => 'Colmeias';
+
+  @override
+  String get journeyStatsDetailHoneyKgLabel => 'Mel (kg)';
+
+  @override
+  String get journeyStatsDetailSupersLabel => 'Alças';
+
+  @override
+  String get journeyStatsDetailKgPerHiveLabel => 'Kg/colmeia';
+
+  @override
+  String get journeyStatsDetailSupersPerHiveLabel => 'Alças/colmeia';
+
+  @override
+  String get journeyStatsDetailFeedAmountLabel => 'Quantidade de alimento';
+
+  @override
+  String get journeyStatsDetailHivesInvolvedLabel => 'Colmeias envolvidas';
+
+  @override
+  String get journeyStatsDetailNoDataValue => '—';
+
+  @override
+  String journeyStatsDetailFeedingSummary(String amount) {
+    return 'Quantidade total de alimento: $amount';
+  }
+
+  @override
+  String journeyStatsDetailTreatedSummary(int treated, int planned) {
+    return '$treated/$planned apiários tratados';
+  }
+
+  @override
   String get journeyDetailTitle => 'Jornada';
 
   @override
@@ -1172,23 +1254,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get addTodo => 'Nova tarefa';
-
-  @override
-  String get todoQuickCreateTitle => 'Nova tarefa';
-
-  @override
-  String get todoDueDateLabel => 'Prazo';
-
-  @override
-  String todoQuickCreateForApiary(String apiaryName) {
-    return 'Para $apiaryName';
-  }
-
-  @override
-  String get todoQuickCreateCancelAction => 'Cancelar';
-
-  @override
-  String get todoCreatedConfirmation => 'Tarefa criada';
 
   @override
   String get newTodoTitle => 'Nova tarefa';
