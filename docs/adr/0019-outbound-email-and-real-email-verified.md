@@ -42,9 +42,15 @@ into the **authentication flow** (config-as-code in the blueprint): an email sta
 unverified, non-superuser login on an emailed one-time link; a user_write stage stamps the
 attribute — gated on the plan's restored-flow-token evidence (`is_restored`), so completion of
 the emailed link is the **only** path to the attribute. Superusers bypass (operator lockout
-guard). An email **change** through the user-settings flow **resets** the attribute (else a
-verified user could re-point their address at a victim's and keep the claim — the #170
-privilege-escalation shape one layer down).
+guard). Self-service email **changes are disabled** (`Tenant.default_user_change_email`, upstream
+default `false` at 2026.5.4 — the review's live e2e found the settings flow rejects the change
+outright), which closes the #170 privilege-escalation shape one layer down (a verified user
+re-pointing their address at a victim's while keeping the claim) at the source; the setting is
+not blueprint-manageable, so the pin is the version pin + the e2e asserting the rejection
+(auth.md §8.10). A reset-on-change policy shipped in an earlier revision was removed as dead
+config — it sat behind a validation that rejects the change first — and becomes mandatory again
+only if that setting is ever deliberately enabled. Admin-driven email changes bypass the settings
+flow and do not reset verification: an accepted operator-trust boundary.
 
 _Rejected — standalone/portal-triggered verification flow:_ nothing would ever prompt
 invite-provisioned users to run it, so invited users would stay unverified forever and the

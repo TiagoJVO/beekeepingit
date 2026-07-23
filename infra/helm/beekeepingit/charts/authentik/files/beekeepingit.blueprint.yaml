@@ -208,8 +208,7 @@ entries:
   # stage participates in this flow, so nothing user-supplied is merged. The
   # write is MERGED into any existing prompt_data (setdefault + key assignment),
   # never assigned over it — assignment would silently discard whatever a
-  # future stage placed in the plan (review finding on #361; the email-change
-  # policy below already merged for the same reason).
+  # future stage placed in the plan (review finding on #361).
   - model: authentik_policies_expression.expressionpolicy
     id: policy-mark-email-verified
     identifiers: { name: beekeepingit-mark-email-verified }
@@ -262,56 +261,34 @@ entries:
       target: !KeyOf binding-auth-email-verification-write
       order: 0
 
-  # --- Email change resets verification (#361) ---
-  # Authentik's default user-settings flow lets a user edit their own email
-  # (brand default_user_change_email). Left alone, a verified attacker could
-  # verify their OWN address once, then self-change their IdP email to a victim's
-  # and keep email_verified=true — the same unauthorized-org-join shape #170
-  # closed for the profile email, reopened one layer down. This policy rides the
-  # default flow's own user_write binding (redeclared below to re-evaluate at
-  # stage time) and forces `email_verified: false` into the write whenever the
-  # submitted email differs from the current one — the next login then re-runs
-  # the verification stage for the new address. On a policy ERROR the write is
-  # skipped entirely (nothing changes — fail closed).
-  - model: authentik_policies_expression.expressionpolicy
-    id: policy-email-change-resets-verification
-    identifiers: { name: beekeepingit-email-change-resets-verification }
-    attrs:
-      expression: |
-        flow_plan = request.context.get("flow_plan")
-        if not flow_plan:
-            return True
-        prompt_data = flow_plan.context.get("prompt_data")
-        if not isinstance(prompt_data, dict):
-            return True
-        user = flow_plan.context.get("pending_user") or request.user
-        new_email = prompt_data.get("email")
-        if new_email is not None and new_email != user.email:
-            prompt_data["attributes.email_verified"] = False
-        return True
-  # The default user-settings flow's own user_write binding, redeclared to attach
-  # the policy above and to evaluate it at stage time — prompt_data doesn't exist
-  # at plan time. The identifiers MUST match the upstream binding's exactly:
-  # blueprints upsert on an identifier miss, so a wrong order here would silently
-  # CREATE a second binding of the same stage instead of updating the real one,
-  # and whether the reset policy then fires would be undefined. Verified against
-  # the pinned Authentik 2026.5.4's own shipped blueprint —
-  # blueprints/default/flow-default-user-settings-flow.yaml (tag version/2026.5.4,
-  # lines 144–148) binds default-user-settings-write to the flow at exactly
-  # order: 100 — so this entry UPDATES that binding. Re-verify that file on every
-  # Authentik version bump (oidc-integration.md §8 watch-list); the email-change
-  # e2e (client/e2e/tests/verification.spec.ts) fails live if this drifts.
-  - model: authentik_flows.flowstagebinding
-    id: binding-user-settings-write
-    identifiers:
-      target: !Find [authentik_flows.flow, [slug, default-user-settings-flow]]
-      stage: !Find [authentik_stages_user_write.userwritestage, [name, default-user-settings-write]]
-      order: 100
-    attrs:
-      evaluate_on_plan: false
-      re_evaluate_policies: true
-  - model: authentik_policies.policybinding
-    identifiers:
-      policy: !KeyOf policy-email-change-resets-verification
-      target: !KeyOf binding-user-settings-write
-      order: 0
+  # --- Self-service email change is DISABLED (#361) — the #170 shape one layer down ---
+  # A verified user re-pointing their OWN IdP email at a victim's pending
+  # invitation while keeping email_verified=true is blocked one level EARLIER
+  # than any reset-on-change policy could act: the default user-settings flow's
+  # own validation policy (default-user-settings-authorization) rejects an email
+  # change with "Not allowed to change email address." unless
+  # Tenant.default_user_change_email is enabled — and on the pinned Authentik
+  # 2026.5.4 that setting defaults to FALSE (authentik/tenants/models.py lines
+  # 64–66). The e2e proves the rejection live (verification.spec.ts drives the
+  # real flow executor and asserts the error), so a version bump that flips the
+  # default goes red instead of silently opening the path.
+  #
+  # This file deliberately carries NO entry pinning that setting: the Tenant
+  # model subclasses InternallyManagedMixin, which blueprints/v1/importer.py's
+  # is_model_allowed EXCLUDES from blueprint management (verified at 2026.5.4),
+  # the field does not exist on authentik_brands.brand, and no AUTHENTIK_* env
+  # configures it — the version pin + the live e2e + the oidc-integration.md §8
+  # watch-list ARE the pin.
+  #
+  # An earlier revision of this branch carried a "reset email_verified on email
+  # change" expression policy on the user-settings flow's write binding
+  # (upstream binding identifiers verified against
+  # blueprints/default/flow-default-user-settings-flow.yaml @ version/2026.5.4
+  # lines 144–148: order 100). It was removed as DEAD config: the prompt stage's
+  # validation rejects any email change before the write stage could ever see a
+  # different address, so the policy could never fire. If
+  # default_user_change_email is EVER deliberately enabled, that reset policy
+  # becomes mandatory again — recover it from git history (PR #411) and
+  # re-verify the binding identifiers against the then-current version first.
+  # Admin-driven email changes (admin API/UI) bypass the settings flow and do
+  # NOT reset verification — an accepted operator-trust boundary (auth.md §8.10).

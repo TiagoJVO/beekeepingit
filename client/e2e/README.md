@@ -30,9 +30,11 @@ login-time email-verification flow end to end: unverified login held at the
 IdP's email stage → one-time link read from the **Mailpit** sink's API → real
 `email_verified: true` claim → the **invitation accept-on-login** path
 (FR-ONB-3/#170: an admin-created invitation stays `pending` while the login is
-held and is auto-claimed once verified) → and an email change through
-Authentik's real user-settings flow executor **resetting** verification (the
-next login re-verifies the new address). It needs a **fresh blueprint-seeded
+held and is auto-claimed once verified) → and an email-change attempt through
+Authentik's real user-settings flow executor being **rejected**
+(`default_user_change_email` is off — the upstream default at the pinned
+version and not blueprint-pinnable, so this assertion is the live pin on the
+control that closes the #170 shape). It needs a **fresh blueprint-seeded
 stack** plus `E2E_MAILPIT_URL` (helm-e2e.yml port-forwards the sink and sets
 it) and self-skips when the env is absent; its tests are order-dependent
 within the file.

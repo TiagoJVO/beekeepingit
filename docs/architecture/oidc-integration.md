@@ -70,8 +70,9 @@ optional.
 > accept-on-login gate ([auth.md §8.7](auth.md)) could never fire live). The provider now uses a
 > **custom scope mapping** emitting the `email_verified` **user attribute**, which a login-time
 > email-verification stage in the authentication flow sets on completion of the emailed one-time
-> link; an email change through the user-settings flow resets it. Registration stays disabled
-> (defense in depth). **Password reset/recovery** flow remains **EPIC-14**
+> link; self-service email changes are **disabled** (`default_user_change_email` false — upstream
+> default at 2026.5.4, e2e-pinned; [auth.md §8.10](auth.md)), so a verified address cannot be
+> self-re-pointed. Registration stays disabled (defense in depth). **Password reset/recovery** flow remains **EPIC-14**
 > ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) — SMTP, its prerequisite, is now in
 > place (`AUTHENTIK_EMAIL__*` from the umbrella's config Secret; dev/CI: the `mailpit` sink).
 
@@ -131,22 +132,26 @@ optional.
 - **Gateway** — `auth.` host → `authentik-server:80`; `app.` host routes unchanged bar the rename.
 - **Blueprint** — provider + application + `platform-operator` group + seed users (validated to apply
   clean). `version: 1`, timedelta validities, **object-list `redirect_uris`** with `matching_mode: regex`.
-  Since #361 it also declares the custom `email` scope mapping (real `email_verified`), the
-  login-time email-verification stages/policies, and the email-change-resets-verification policy —
-  see [auth.md §8.10](auth.md).
+  Since #361 it also declares the custom `email` scope mapping (real `email_verified`) and the
+  login-time email-verification stages/policies; self-service email change stays disabled by the
+  upstream `default_user_change_email` default, deliberately NOT a blueprint entry (the Tenant
+  model is not blueprint-manageable) — see [auth.md §8.10](auth.md).
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
   `redirect_uris` object form, the `email_verified` mapping (now blueprint-owned, #361 — a version
-  bump must not resurrect the managed built-in on the provider), the default authentication /
-  user-settings flows' stage-binding shapes the #361 entries splice into — the blueprint's
-  redeclared user-settings **write binding must keep byte-matching upstream's identifiers**
-  (`blueprints/default/flow-default-user-settings-flow.yaml` at `version/2026.5.4`, lines
-  144–148: `order: 100` — verified 2026-07; a mismatch silently upserts a duplicate binding
-  instead of updating the real one; the email-change e2e in
-  `client/e2e/tests/verification.spec.ts` catches it live) — and flow-email localization
-  (2026.5.4 renders flow-triggered mail per the request's negotiated language and can never reach
-  the shipped `pt_PT` catalog — [auth.md §8.10](auth.md),
+  bump must not resurrect the managed built-in on the provider), the default authentication
+  flow's stage-binding shape the #361 entries splice into, **`default_user_change_email` staying
+  disabled** (upstream `Tenant` default `false` at 2026.5.4, `tenants/models.py` lines 64–66 —
+  not blueprint-pinnable, the Tenant model is `InternallyManagedMixin`-excluded from blueprint
+  management, so the pin is the version pin + the e2e in
+  `client/e2e/tests/verification.spec.ts` asserting the email-change rejection live; if a bump
+  flips the default or ops ever enable it deliberately, a reset-on-change policy on the
+  user-settings write binding becomes **mandatory** — recover it from PR #411 history and
+  re-verify the binding identifiers, which at 2026.5.4 were
+  `flow-default-user-settings-flow.yaml` lines 144–148: `order: 100`) — and flow-email
+  localization (2026.5.4 renders flow-triggered mail per the request's negotiated language and
+  can never reach the shipped `pt_PT` catalog — [auth.md §8.10](auth.md),
   [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check whether a bump fixes
   `User.locale()`'s in-request ordering or adds a negotiable `pt-pt`).
 - **CI** — `helm-e2e`: timeout 20→30m, install `--timeout` →15m, apply the Authentik `HelmRelease`

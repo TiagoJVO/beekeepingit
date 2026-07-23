@@ -19,10 +19,17 @@ import { readIdTokenClaims, submitIdpCredentials } from "./helpers";
  *      the first authenticated `GET /v1/organizations/me` once verified,
  *   6. the verified state PERSISTS: a second, fresh login goes straight
  *      through with no new verification email,
- *   7. changing the email through Authentik's own user-settings flow RESETS
- *      verification: the next login is re-gated on a fresh emailed link sent
- *      to the NEW address (the #170-shape guard one layer down — see the
- *      blueprint's email-change policy).
+ *   7. SELF-SERVICE EMAIL CHANGE IS DISABLED: a verified user's attempt to
+ *      change their own email through Authentik's real user-settings flow is
+ *      rejected ("Not allowed to change email address." —
+ *      Tenant.default_user_change_email defaults to false on the pinned
+ *      2026.5.4), which closes the #170-shape attack (re-pointing one's own
+ *      verified address at a victim's pending invitation) one level EARLIER
+ *      than any reset-on-change policy could. This test is the live pin on
+ *      that control: the setting is not blueprint-manageable (the Tenant
+ *      model is InternallyManagedMixin-excluded — see the blueprint's
+ *      comment), so a version bump that flips the default turns this red
+ *      instead of silently opening the path.
  *
  * Requires a fresh, blueprint-seeded stack (the unverified seed user must
  * still be unverified) plus the Mailpit API reachable from the runner —
@@ -46,7 +53,7 @@ const UNVERIFIED_PASS = process.env.E2E_UNVERIFIED_PASS ?? "dev-password123";
 // defaults as slice.spec.ts's login.
 const ADMIN_USER = process.env.E2E_USER ?? "test.beekeeper@beekeepingit.local";
 const ADMIN_PASS = process.env.E2E_PASS ?? "dev-password123";
-// The address the email-change test moves the seed user to. Never a real
+// The address the (rejected) email-change attempt targets. Never a real
 // inbox — dev/CI mail all lands in the Mailpit sink.
 const CHANGED_EMAIL = "changed.beekeeper@beekeepingit.local";
 
@@ -305,102 +312,112 @@ test.describe("email verification at login (#361)", () => {
     }
   });
 
-  test("changing the email via the user-settings flow resets verification; the next login re-verifies the NEW address", async ({
+  test("self-service email change via the user-settings flow is rejected; the verified claim survives untouched", async ({
     page,
     request,
     browser,
   }) => {
-    // Two full OIDC logins plus a Mailpit poll and the settings-flow call.
+    // Two full OIDC logins plus the settings-flow executor calls.
     test.setTimeout(360_000);
 
     // ── Login as the (now verified, from the test above) seed user ─────────
     await submitIdpCredentials(page, UNVERIFIED_USER, UNVERIFIED_PASS);
     await expectLoginCompleted(page, UNVERIFIED_USER);
 
-    // ── Change the email through the REAL user-settings flow ───────────────
+    // ── Attempt an email change through the REAL user-settings flow ────────
     // Drive Authentik's own flow executor for default-user-settings-flow via
     // its JSON API from the authenticated browser session — the exact executor
     // path the /if/user/#/settings UI posts to (same session cookie + CSRF
-    // header the SPA would send), minus the brittle shadow-DOM driving. This
-    // exercises the blueprint's redeclared user_write binding for real: if its
-    // identifiers ever drift from upstream's (a silently upserted duplicate
-    // binding), the reset below stops firing and this test goes red.
+    // header the SPA would send), minus the brittle shadow-DOM driving.
+    //
+    // Expected: REJECTED. Tenant.default_user_change_email defaults to false
+    // on the pinned 2026.5.4, so the flow's own validation policy
+    // (default-user-settings-authorization) refuses any email change — the
+    // control that closes the #170-shape attack (see the blueprint's
+    // "Self-service email change is DISABLED" section for why this cannot be
+    // pinned in the blueprint itself; this assertion IS the pin). To prove
+    // the rejection is specifically about the email — not a broken flow — a
+    // second submit with the email left unchanged must complete.
     await page.goto(`${AUTH_ORIGIN}/if/user/`, { waitUntil: "domcontentloaded" });
     const flow = await page.evaluate(
       async ({ newEmail }) => {
-        const executor = "/api/v3/flows/executor/default-user-settings-flow/?query=";
-        const start = await fetch(executor, { headers: { Accept: "application/json" } });
-        const challenge = (await start.json()) as {
+        type Challenge = {
           component?: string;
           fields?: Array<{ field_key: string; initial_value?: string }>;
+          response_errors?: Record<string, Array<{ string: string; code: string }>>;
         };
+        const executor = "/api/v3/flows/executor/default-user-settings-flow/?query=";
+        const start = await fetch(executor, { headers: { Accept: "application/json" } });
+        const challenge = (await start.json()) as Challenge;
         if (challenge.component !== "ak-stage-prompt") {
-          return { step: "start", result: challenge };
+          return {
+            step: "start",
+            changeAttempt: challenge,
+            unchangedSubmit: null as Challenge | null,
+          };
         }
         // Echo every prompt field's server-provided initial value (username,
-        // name, locale) and override only the email — the same submission the
-        // settings UI would make.
-        const body: Record<string, unknown> = { component: "ak-stage-prompt" };
-        for (const field of challenge.fields ?? []) {
-          body[field.field_key] = field.initial_value ?? "";
-        }
-        body["email"] = newEmail;
-        const csrf = document.cookie.match(/authentik_csrf=([^;]+)/)?.[1] ?? "";
-        const post = await fetch(executor, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-            "X-authentik-CSRF": csrf,
-          },
-          body: JSON.stringify(body),
-        });
-        return { step: "submit", result: (await post.json()) as { component?: string } };
+        // name, locale) — the same submission the settings UI would make.
+        const fromFields = (): Record<string, unknown> => {
+          const body: Record<string, unknown> = { component: "ak-stage-prompt" };
+          for (const field of challenge.fields ?? []) {
+            body[field.field_key] = field.initial_value ?? "";
+          }
+          return body;
+        };
+        const csrf = () => document.cookie.match(/authentik_csrf=([^;]+)/)?.[1] ?? "";
+        const submit = async (body: Record<string, unknown>): Promise<Challenge> => {
+          const post = await fetch(executor, {
+            method: "POST",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              "X-authentik-CSRF": csrf(),
+            },
+            body: JSON.stringify(body),
+          });
+          return (await post.json()) as Challenge;
+        };
+
+        // 1) The email-change attempt — must be rejected.
+        const changeAttempt = await submit({ ...fromFields(), email: newEmail });
+        // 2) The same submit with the email untouched — must complete, so the
+        //    rejection above is attributable to the email change alone.
+        const unchangedSubmit: Challenge | null = await submit(fromFields());
+        return { step: "submit", changeAttempt, unchangedSubmit };
       },
       { newEmail: CHANGED_EMAIL },
     );
-    // A completed flow answers with the redirect pseudo-stage; anything else
-    // (validation errors, access denied, a re-served prompt) is surfaced whole.
-    expect(flow.result.component, `user-settings flow ended on ${JSON.stringify(flow)}`).toBe(
-      "xak-flow-redirect",
-    );
 
-    // Baseline before the re-gated login: nothing has ever been mailed to the
-    // new address (fresh stack) — so an arrival below is attributable to the
-    // login re-triggering the verification stage.
-    const baseline = await countMessagesTo(request, CHANGED_EMAIL);
+    // The change attempt is re-served the prompt with the exact policy error.
+    expect(
+      flow.changeAttempt.component,
+      `email-change attempt ended on ${JSON.stringify(flow)}`,
+    ).toBe("ak-stage-prompt");
+    const errors = flow.changeAttempt.response_errors?.["non_field_errors"] ?? [];
+    expect(
+      errors.some((e) => /not allowed to change email/i.test(e.string)),
+      `expected the email-change rejection error, got ${JSON.stringify(flow.changeAttempt)}`,
+    ).toBe(true);
+    // The email-unchanged submit sails through — the flow itself works.
+    expect(
+      flow.unchangedSubmit?.component,
+      `email-unchanged submit ended on ${JSON.stringify(flow.unchangedSubmit)}`,
+    ).toBe("xak-flow-redirect");
 
-    // ── A fresh login is re-gated: the email change reset verification ─────
+    // No verification email was triggered for the attempted address.
+    expect(await countMessagesTo(request, CHANGED_EMAIL)).toBe(0);
+
+    // ── A fresh login is untouched: still verified, no re-verification ─────
+    const before = await countMessagesTo(request, UNVERIFIED_USER);
     const secondContext = await browser.newContext();
     const secondPage = await secondContext.newPage();
     try {
       await submitIdpCredentials(secondPage, UNVERIFIED_USER, UNVERIFIED_PASS);
-      await expect(secondPage).toHaveURL(/auth\.beekeepingit\.local/, { timeout: 30_000 });
-
-      // The verification email goes to the NEW address — the reset really
-      // re-targeted the changed email, not a stale copy of the old one.
-      const link = await pollForVerificationLink(request, CHANGED_EMAIL);
-      expect(link).toContain("auth.beekeepingit.local");
-      expect(await countMessagesTo(request, CHANGED_EMAIL)).toBeGreaterThan(baseline);
-
-      // Still held until the link is used.
-      expect(secondPage.url()).toMatch(/auth\.beekeepingit\.local/);
-
-      // ── Completing the link re-verifies; the claim carries the NEW email ──
-      await secondPage.goto(link);
-      const continueButton = secondPage.getByRole("button", {
-        name: /continue|confirm|authorize|next/i,
-      });
-      if (
-        await continueButton
-          .first()
-          .waitFor({ state: "visible", timeout: 15_000 })
-          .then(() => true)
-          .catch(() => false)
-      ) {
-        await continueButton.first().click();
-      }
-      await expectLoginCompleted(secondPage, CHANGED_EMAIL);
+      // Straight through — no email stage, claim still the ORIGINAL address,
+      // still verified.
+      await expectLoginCompleted(secondPage, UNVERIFIED_USER);
+      expect(await countMessagesTo(request, UNVERIFIED_USER)).toBe(before);
     } finally {
       await secondContext.close();
     }

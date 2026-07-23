@@ -688,18 +688,27 @@ makes the claim mean something and revives that gate.
   flow-token evidence (`is_restored`) that the link was actually used, so no partial failure can
   mark an address verified without inbox control. Superusers bypass the stage (operator-lockout
   guard if SMTP is down; they never log into the PWA).
-- **Email change resets verification.** Authentik's default user-settings flow lets users edit
-  their own email; unguarded, a verified attacker could re-point their address at a victim's and
-  keep the verified claim — the #170 shape one layer down. A policy on that flow's user_write
-  binding forces `email_verified: false` into any write whose submitted email differs from the
-  current one; the next login re-verifies the new address. The redeclared binding's identifiers
-  are **verified against upstream 2026.5.4's own shipped blueprint**
-  (`blueprints/default/flow-default-user-settings-flow.yaml`, tag `version/2026.5.4`, lines
-  144–148: the write stage binds at exactly `order: 100`), so the blueprint updates the real
-  binding rather than silently upserting a duplicate — re-verify on every version bump
-  ([oidc-integration.md §8](oidc-integration.md) watch-list). The reset is exercised live by the
-  e2e (below): an email change through the real flow executor, then a re-gated login that
-  re-verifies the new address.
+- **Self-service email change is disabled — the #170-shape guard.** A verified user re-pointing
+  their own IdP email at a victim's pending invitation while keeping `email_verified: true` (the
+  #170 shape one layer down) is blocked at the source: the default user-settings flow's own
+  validation policy rejects any email change ("Not allowed to change email address.") unless
+  `Tenant.default_user_change_email` is enabled, and on the pinned 2026.5.4 that setting
+  **defaults to false** (`authentik/tenants/models.py` lines 64–66 — found live by this PR's
+  e2e, whose email-change attempt was rejected by exactly this control). The setting **cannot be
+  pinned in the blueprint**: the Tenant model subclasses `InternallyManagedMixin`, which
+  `blueprints/v1/importer.py`'s `is_model_allowed` excludes from blueprint management; it exists
+  on neither the Brand model nor any `AUTHENTIK_*` env at this version. The pin is therefore the
+  **version pin + the live e2e** (which asserts the rejection through the real flow executor and
+  that a same-email submit still completes) + the [oidc-integration.md §8](oidc-integration.md)
+  watch-list. An earlier revision carried a reset-on-change policy on that flow's write binding
+  (upstream identifiers verified: order 100 at 2026.5.4); it was removed as dead config — the
+  validation rejects the change before the write stage could ever see a different address. If
+  `default_user_change_email` is ever deliberately enabled, that reset policy becomes mandatory
+  again (recover from PR #411 history; re-verify the binding identifiers first). **Accepted
+  operator-trust boundary:** admin-driven email changes (admin API/UI) bypass the settings flow
+  and do not reset verification — admins on this deployment are ops who could equally set the
+  attribute directly; re-provisioned addresses verified out-of-band follow the documented seeding
+  escape hatch.
 - **SMTP as config, secrets out of git (NFR-SEC-1).** The upstream Authentik chart env-mounts every
   key of the `beekeepingit-authentik-config` Secret, so the umbrella's authentik subchart now
   renders `AUTHENTIK_EMAIL__*` connection keys from per-environment values — no change to the
@@ -744,11 +753,13 @@ makes the claim mean something and revives that gate.
   the invitation accept-on-login path** (the seeded admin invites the unverified address up
   front; the invitation stays `pending` while the login is held, and is auto-claimed by the first
   verified `GET /v1/organizations/me`, which the same run asserts from both sides), and a second
-  spec **changes the email through Authentik's real user-settings flow executor** (session +
-  CSRF, the same API the settings UI posts to) and asserts the next login is re-gated on a fresh
-  link mailed to the NEW address, which re-verifies end to end. A workflow step additionally
-  delivers a probe message through Authentik's configured Django email path (`ak shell` in the
-  worker) and asserts Mailpit received it, isolating SMTP wiring from flow logic.
+  test **attempts an email change through Authentik's real user-settings flow executor** (session
+  - CSRF, the same API the settings UI posts to) and asserts it is **rejected** by the
+    `default_user_change_email` control while a same-email submit completes — the live pin on the
+    disabled-self-service-email-change control — and that a fresh login afterwards is untouched
+    (still verified, no re-verification email). A workflow step additionally
+    delivers a probe message through Authentik's configured Django email path (`ak shell` in the
+    worker) and asserts Mailpit received it, isolating SMTP wiring from flow logic.
 
 ## 9. Acceptance-criteria traceability (#109)
 

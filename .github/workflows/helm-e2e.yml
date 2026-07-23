@@ -49,8 +49,8 @@ jobs:
     # Bumped 40 -> 45 (#50) to preserve the same slack after the domain-service
     # readiness wait below grew by 5 minutes (900s). Bumped 45 -> 50 (#361
     # review): the verification spec grew an invitation round-trip (one extra
-    # admin login) and a second gated login for the email-change reset — a few
-    # more minutes worst-case on a cold stack.
+    # admin login) and a second test (two more logins) pinning the rejected
+    # email-change control — a few more minutes worst-case on a cold stack.
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
