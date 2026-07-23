@@ -139,7 +139,16 @@ optional.
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
   `redirect_uris` object form, the `email_verified` mapping (now blueprint-owned, #361 — a version
   bump must not resurrect the managed built-in on the provider), the default authentication /
-  user-settings flows' stage-binding shapes the #361 entries splice into.
+  user-settings flows' stage-binding shapes the #361 entries splice into — the blueprint's
+  redeclared user-settings **write binding must keep byte-matching upstream's identifiers**
+  (`blueprints/default/flow-default-user-settings-flow.yaml` at `version/2026.5.4`, lines
+  144–148: `order: 100` — verified 2026-07; a mismatch silently upserts a duplicate binding
+  instead of updating the real one; the email-change e2e in
+  `client/e2e/tests/verification.spec.ts` catches it live) — and flow-email localization
+  (2026.5.4 renders flow-triggered mail per the request's negotiated language and can never reach
+  the shipped `pt_PT` catalog — [auth.md §8.10](auth.md),
+  [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check whether a bump fixes
+  `User.locale()`'s in-request ordering or adds a negotiable `pt-pt`).
 - **CI** — `helm-e2e`: timeout 20→30m, install `--timeout` →15m, apply the Authentik `HelmRelease`
   - `rollout status` before `helm test`; `helm test` hook curls `/-/health/ready/`. `helm-ci`: swap
     the `codecentric` repo add for the `authentik` repo where a lint/template needs it.

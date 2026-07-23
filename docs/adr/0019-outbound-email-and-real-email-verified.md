@@ -68,13 +68,20 @@ relay/domain exists (testers read verification mail via `kubectl port-forward`);
 and must configure a relay. NetworkPolicy gained an `ingressOnly` edge kind for it (the sending
 Authentik pods are excluded from default-deny, so only the sink-side ingress allow may render).
 
-### 5. EN/PT via Authentik's built-in localization (NFR-I18N-1)
+### 5. EN/PT via Authentik's built-in localization (NFR-I18N-1) — EN-only in practice today
 
-The built-in account-confirmation template renders in the pending user's locale
-(`attributes.settings.locale` → request `Accept-Language`), and Authentik 2026.5.4 ships complete
-`en` and `pt_PT` catalogs for it; the stage subject is the catalog msgid `Account Confirmation`
-so it localizes too. _Limitation:_ the mail is Authentik-branded — custom BeekeepingIT templates
-would need volume mounts on the external HelmRelease; deferred until branding matters.
+Authentik 2026.5.4 ships complete `en` and `pt_PT` catalogs for the account-confirmation
+template, and the stage subject is deliberately the catalog msgid `Account Confirmation` so
+translation engages the moment it can. Source-verifying the pin (during the #361 review) showed
+flow-triggered mail cannot actually render `pt_PT` on 2026.5.4: sends translate per the
+request's negotiated language (`User.locale()` prefers `request.LANGUAGE_CODE` whenever a
+request is present), and `pt-PT` can never negotiate (Django's default `LANGUAGES` lacks
+`pt-pt`; Authentik ships `pt_PT` but no plain `pt` catalog) — so verification emails render in
+English regardless of user/browser locale until an upstream fix or a deployment-level
+`LANGUAGES` override. Recorded on the oidc-integration.md §8 watch-list; the msgid subject
+choice stands either way. _Limitation:_ the mail is also Authentik-branded — custom
+BeekeepingIT templates would need volume mounts on the external HelmRelease; deferred until
+branding matters.
 
 ## Consequences
 

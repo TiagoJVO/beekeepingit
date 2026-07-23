@@ -692,7 +692,14 @@ makes the claim mean something and revives that gate.
   their own email; unguarded, a verified attacker could re-point their address at a victim's and
   keep the verified claim — the #170 shape one layer down. A policy on that flow's user_write
   binding forces `email_verified: false` into any write whose submitted email differs from the
-  current one; the next login re-verifies the new address.
+  current one; the next login re-verifies the new address. The redeclared binding's identifiers
+  are **verified against upstream 2026.5.4's own shipped blueprint**
+  (`blueprints/default/flow-default-user-settings-flow.yaml`, tag `version/2026.5.4`, lines
+  144–148: the write stage binds at exactly `order: 100`), so the blueprint updates the real
+  binding rather than silently upserting a duplicate — re-verify on every version bump
+  ([oidc-integration.md §8](oidc-integration.md) watch-list). The reset is exercised live by the
+  e2e (below): an email change through the real flow executor, then a re-gated login that
+  re-verifies the new address.
 - **SMTP as config, secrets out of git (NFR-SEC-1).** The upstream Authentik chart env-mounts every
   key of the `beekeepingit-authentik-config` Secret, so the umbrella's authentik subchart now
   renders `AUTHENTIK_EMAIL__*` connection keys from per-environment values — no change to the
@@ -706,13 +713,23 @@ makes the claim mean something and revives that gate.
   prod disables it (`environments/prod.yaml`). NetworkPolicy grew an `ingressOnly` edge kind for
   it (Authentik's pods are excluded from default-deny, so only the sink-side ingress allow may
   render — the mirror of `egressOnly`).
-- **EN/PT email content (NFR-I18N-1).** The built-in account-confirmation template renders in the
-  pending user's locale (`attributes.settings.locale`, else the request's `Accept-Language`), and
-  Authentik 2026.5.4 ships complete `en` **and `pt_PT`** catalogs for it; the stage subject is
-  deliberately the catalog msgid `Account Confirmation` so it localizes too ("Confirmação de
-  Conta"). **Limitation (deliberate):** the mail is Authentik-branded, not BeekeepingIT-branded —
-  custom templates would have to be volume-mounted into the Authentik pods via the external
-  HelmRelease; deferred until branding matters.
+- **EN/PT email content (NFR-I18N-1) — English-only today; a verified upstream limitation.**
+  Authentik 2026.5.4 ships complete `en` **and `pt_PT`** catalogs for the account-confirmation
+  template, and the stage subject is deliberately the catalog msgid `Account Confirmation`
+  (pt_PT: "Confirmação de Conta") so translation engages the moment it can. But source-verifying
+  the pinned 2026.5.4 (during the #361 review) shows flow-triggered mail **cannot render pt_PT**:
+  the send translates per the **request's** negotiated language, not the recipient's saved locale
+  (`stages/email/stage.py` renders with `language=pending_user.locale(request)`, and
+  `core/models.py`'s `User.locale()` returns `request.LANGUAGE_CODE` whenever a request is
+  present — the `attributes.settings.locale` fallback only applies to non-request sends), and a
+  `pt-PT Accept-Language` can never negotiate to the shipped catalog (Django's default `LANGUAGES`
+  has `pt`/`pt-br` but no `pt-pt`; Authentik ships a `pt_PT` catalog but no plain `pt` one) — so
+  verification emails render in English regardless of browser or user locale. Fixing PT mail needs
+  an upstream fix or a `LANGUAGES` override in the deployment — tracked in
+  [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check on every version bump
+  (the msgid subject choice stands either way). **Limitation (deliberate):** the mail is also
+  Authentik-branded, not BeekeepingIT-branded — custom templates would have to be volume-mounted
+  into the Authentik pods via the external HelmRelease; deferred until branding matters.
 - **Seed users.** `test.beekeeper@…` is seeded **verified** (a dev/CI-provisioned trusted account;
   the walking-skeleton e2e login stays linear) — also the documented escape hatch for
   ops-provisioned, out-of-band-verified accounts. A second seed user `unverified.beekeeper@…`
@@ -721,12 +738,17 @@ makes the claim mean something and revives that gate.
   verified/unverified invitation-gate suites (`organizations/invitations_test.go`) — unchanged,
   still green, now backed by a claim that reflects reality. Live e2e (`helm-e2e.yml`): the
   walking-skeleton spec asserts the seed user's id_token carries `email_verified: true` (proof the
-  custom mapping applied); a new `verification.spec.ts` drives the full unverified journey —
-  login held at the email stage → link fetched from Mailpit's (port-forwarded) API → flow
-  completes → id_token claim true → a second fresh login sails through with no new email; and a
-  workflow step delivers a probe message through Authentik's configured Django email path
-  (`ak shell` in the worker) and asserts Mailpit received it, isolating SMTP wiring from flow
-  logic.
+  custom mapping applied); `verification.spec.ts` drives the full unverified journey — login held
+  at the email stage → link fetched from Mailpit's (port-forwarded) API → flow completes →
+  id_token claim true → a second fresh login sails through with no new email — **integrated with
+  the invitation accept-on-login path** (the seeded admin invites the unverified address up
+  front; the invitation stays `pending` while the login is held, and is auto-claimed by the first
+  verified `GET /v1/organizations/me`, which the same run asserts from both sides), and a second
+  spec **changes the email through Authentik's real user-settings flow executor** (session +
+  CSRF, the same API the settings UI posts to) and asserts the next login is re-gated on a fresh
+  link mailed to the NEW address, which re-verifies end to end. A workflow step additionally
+  delivers a probe message through Authentik's configured Django email path (`ak shell` in the
+  worker) and asserts Mailpit received it, isolating SMTP wiring from flow logic.
 
 ## 9. Acceptance-criteria traceability (#109)
 
