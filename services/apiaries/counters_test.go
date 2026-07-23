@@ -28,6 +28,13 @@ const counterTypeHive = "hive"
 // package-main tests, matching counterTypeHive's own local-const convention.
 const counterTypeSuper = "super"
 
+// counterTypeEmptyHive and counterTypeSwarm mirror api.counterTypeEmptyHive /
+// api.counterTypeSwarm (#392) for these package-main tests.
+const (
+	counterTypeEmptyHive = "empty_hive"
+	counterTypeSwarm     = "swarm"
+)
+
 // counterOp builds an entityTypeApiaryCounter op (api/sync.go's counterData
 // wire shape) for the tests below — the counter-table counterpart of
 // main_test.go's putOp/patchHive, but keyed by apiary_id+counter_type rather
@@ -594,6 +601,47 @@ func TestApiariesSlice_CounterOp_SuperType_KnownFirstClassAndAuditedSeparately(t
 	}
 	if change["super"] != float64(6) {
 		t.Fatalf("super create change = %+v, want {super: 6} baseline", change)
+	}
+}
+
+// TestApiariesSlice_CounterOp_NewTypes_KnownAndCoexist is #392's server-side
+// AC, mirroring TestApiariesSlice_CounterOp_SuperType_KnownFirstClassAndAuditedSeparately
+// for the two counter types added by #392: empty_hive and swarm are ACCEPTED
+// (not rejected like an unknown type — TestApiariesSlice_CounterOp_
+// ValidateRejectsUnknownCounterType already proves an actually-unknown type
+// still is), stored as their own rows keyed by (apiary_id, counter_type), and
+// coexist with hive/super without collision.
+func TestApiariesSlice_CounterOp_NewTypes_KnownAndCoexist(t *testing.T) {
+	f := newApiariesFixture(t)
+	apiaryID := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova", "location_lon": -8.6, "location_lat": 41.1})
+	create := api.Op{Op: "put", EntityType: "apiary", ID: apiaryID, Data: createData, UpdatedAt: t0}
+	if got := f.apply(t, create); got.Results[0].Result != "applied" {
+		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)
+	}
+
+	if got := f.apply(t, counterOp(apiaryID, counterTypeEmptyHive, 1, t0.Add(time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("empty_hive counter op result = %q, want applied", got.Results[0].Result)
+	}
+	if got := f.apply(t, counterOp(apiaryID, counterTypeSwarm, 2, t0.Add(2*time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("swarm counter op result = %q, want applied", got.Results[0].Result)
+	}
+	if got := f.apply(t, counterOp(apiaryID, counterTypeHive, 4, t0.Add(3*time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("hive counter op result = %q, want applied", got.Results[0].Result)
+	}
+
+	rows := f.countersFor(t, apiaryID) // ordered by counter_type
+	if len(rows) != 3 {
+		t.Fatalf("counters after empty_hive+swarm+hive = %+v, want exactly 3 rows (no collisions)", rows)
+	}
+	byType := map[string]int32{}
+	for _, r := range rows {
+		byType[r.CounterType] = r.Value
+	}
+	if byType[counterTypeEmptyHive] != 1 || byType[counterTypeSwarm] != 2 || byType[counterTypeHive] != 4 {
+		t.Fatalf("counters by type = %+v, want empty_hive=1 swarm=2 hive=4", byType)
 	}
 }
 

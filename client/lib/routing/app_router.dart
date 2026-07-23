@@ -16,6 +16,7 @@ import '../features/auth/login_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/journeys/journey_detail_screen.dart';
 import '../features/journeys/journey_form_screen.dart';
+import '../features/journeys/journey_stats_detail_screen.dart';
 import '../features/journeys/journeys_list_screen.dart';
 import '../features/members/members_screen.dart';
 import '../features/organization/organization_repository.dart';
@@ -302,6 +303,17 @@ final routerProvider = Provider<GoRouter>((ref) {
                           journeyId: state.pathParameters['id']!,
                         ),
                       ),
+                      // "More stats" per-apiary breakdown (#391) — a sibling
+                      // of `edit`, same nesting precedent (full path
+                      // `.../:id/stats`, reached from the #49 stats
+                      // section's own "More stats" button).
+                      GoRoute(
+                        path: 'stats',
+                        name: 'journeyStats',
+                        builder: (context, state) => JourneyStatsDetailScreen(
+                          journeyId: state.pathParameters['id']!,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -324,7 +336,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'new',
                     name: 'todoNew',
-                    builder: (context, state) => const TodoFormScreen(),
+                    // ?apiaryId= (#389) preserves the create-from-apiary
+                    // flow that used to go through #52's quick-create
+                    // sheet — see apiary_detail_screen.dart's own "New
+                    // todo" action, which now routes here instead of
+                    // opening that sheet.
+                    builder: (context, state) => TodoFormScreen(
+                      initialApiaryId: state.uri.queryParameters['apiaryId'],
+                    ),
                   ),
                   // Todo detail (#293, FR-TD-1, FR-HIS-1): every field,
                   // read-only, plus a complete/reopen toggle — reached by
