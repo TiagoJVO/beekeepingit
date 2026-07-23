@@ -93,11 +93,178 @@ void main() {
     // Landed on the apiaryEdit route for the owning apiary.
     expect(find.text('edit apiary-42'), findsOneWidget);
   });
+
+  group('entity labels (#379: everything but apiary_counter used to fall '
+      'through to "Apiary change")', () {
+    // One row per test (rather than all six in a single list) — a single
+    // ListView with all six rows overflows the default test viewport, and
+    // ListView.builder only builds what's actually laid out, so an
+    // off-screen row's text isn't in the tree to find at all (not merely
+    // hidden) without scrolling first.
+    for (final MapEntry(key: entityType, value: expectedLabel) in const {
+      'apiary': 'Apiary change',
+      'apiary_counter': 'Hive count change',
+      'activity': 'Activity change',
+      'journey': 'Journey change',
+      'journey_plan_item': 'Journey plan change',
+      'todo': 'Todo change',
+    }.entries) {
+      testWidgets('shows "$expectedLabel" for entityType "$entityType"', (
+        tester,
+      ) async {
+        final store = _FakeRejectedStore([
+          _row(id: 'r1', entityType: entityType),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text(expectedLabel), findsOneWidget);
+      });
+    }
+
+    testWidgets('an unrecognized entity type falls back to the apiary label '
+        '(preserves the previous safety-net behavior)', (tester) async {
+      final store = _FakeRejectedStore([
+        _row(id: 'r1', entityType: 'something_new'),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Apiary change'), findsOneWidget);
+    });
+  });
+
+  group('payload-derived display name (#379 fix plan item 4)', () {
+    testWidgets(
+      'shows the record\'s own name alongside the entity label when the '
+      'payload carries one',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'journey',
+            payload: '{"data":{"name":"Spring Round"}}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Journey change · Spring Round'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'falls back to the plain entity label when the payload carries no '
+      'name/title/type field',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(id: 'r1', entityType: 'journey', payload: '{"data":{}}'),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Journey change'), findsOneWidget);
+      },
+    );
+  });
+
+  group('per-entity Fix routing (#379 fix plan item 5)', () {
+    testWidgets('a journey rejection\'s Fix opens the journey edit screen', (
+      tester,
+    ) async {
+      final store = _FakeRejectedStore([
+        _row(id: 'r1', entityType: 'journey', fixApiaryId: 'journey-1'),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('needs-fix-fix-r1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('edit journey journey-1'), findsOneWidget);
+    });
+
+    testWidgets('a todo rejection\'s Fix opens the todo edit screen', (
+      tester,
+    ) async {
+      final store = _FakeRejectedStore([
+        _row(id: 'r1', entityType: 'todo', fixApiaryId: 'todo-1'),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('needs-fix-fix-r1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('edit todo todo-1'), findsOneWidget);
+    });
+
+    testWidgets(
+      'an activity rejection\'s Fix routes to the Activities tab root '
+      '(no two-id activityEdit deep-link)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(id: 'r1', entityType: 'activity', fixApiaryId: 'activity-1'),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('needs-fix-fix-r1')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('activities list'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a journey_plan_item rejection\'s Fix opens the owning journey\'s '
+      'detail screen, using journey_id from the payload',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'journey_plan_item',
+            fixApiaryId: 'plan-item-1',
+            payload: '{"data":{"journey_id":"journey-9"}}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('needs-fix-fix-r1')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('journey detail journey-9'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a journey_plan_item rejection with no journey_id in its payload '
+      'falls back to the Journeys tab root rather than a dead end',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'journey_plan_item',
+            fixApiaryId: 'plan-item-1',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('needs-fix-fix-r1')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('journeys list'), findsOneWidget);
+      },
+    );
+  });
 }
 
-/// Wraps [SyncNeedsFixScreen] in a router carrying the two routes its actions
-/// navigate to (`apiaryEdit`, `/account`), with the repository backed by the
-/// in-memory [store].
+/// Wraps [SyncNeedsFixScreen] in a router carrying every route its "Fix"
+/// action can navigate to per entity type (#379's fix plan item 5 — see
+/// `sync_needs_fix_screen.dart`'s `_navigateToFix`), plus `/account`, with
+/// the repository backed by the in-memory [store].
 Widget _harness(_FakeRejectedStore store) {
   final router = GoRouter(
     initialLocation: '/sync-needs-fix',
@@ -112,6 +279,37 @@ Widget _harness(_FakeRejectedStore store) {
         name: 'apiaryEdit',
         builder: (context, state) =>
             Scaffold(body: Text('edit ${state.pathParameters['id']}')),
+      ),
+      GoRoute(
+        path: '/journeys',
+        name: 'journeys',
+        builder: (context, state) =>
+            const Scaffold(body: Text('journeys list')),
+      ),
+      GoRoute(
+        path: '/journeys/:id',
+        name: 'journeyDetail',
+        builder: (context, state) => Scaffold(
+          body: Text('journey detail ${state.pathParameters['id']}'),
+        ),
+      ),
+      GoRoute(
+        path: '/journeys/:id/edit',
+        name: 'journeyEdit',
+        builder: (context, state) =>
+            Scaffold(body: Text('edit journey ${state.pathParameters['id']}')),
+      ),
+      GoRoute(
+        path: '/todos/:id/edit',
+        name: 'todoEdit',
+        builder: (context, state) =>
+            Scaffold(body: Text('edit todo ${state.pathParameters['id']}')),
+      ),
+      GoRoute(
+        path: '/activities',
+        name: 'activities',
+        builder: (context, state) =>
+            const Scaffold(body: Text('activities list')),
       ),
       GoRoute(
         path: '/account',
@@ -138,11 +336,13 @@ Map<String, Object?> _row({
   required String id,
   String entityType = 'apiary_counter',
   String fixApiaryId = 'apiary-1',
+  String? payload,
 }) => {
   'id': id,
   'entity_type': entityType,
   'fix_apiary_id': fixApiaryId,
   'op': 'patch',
+  'payload': payload ?? '{}',
   'error_code': 'validation.failed',
   'error_detail':
       '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',

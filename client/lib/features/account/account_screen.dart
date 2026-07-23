@@ -345,8 +345,18 @@ class _SyncSection extends ConsumerWidget {
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 4),
+        // #379: "Everything is synced." is a lie while the dead-letter queue
+        // is non-empty — PowerSync's own upload queue has already completed()
+        // a rejected op (handleUploadResponse retains it locally but still
+        // lets the transaction complete, so it doesn't wedge the queue), so
+        // pendingCount reads 0 even though there's a rejected write sitting
+        // right below needing the user's attention. Show the needs-fix count
+        // instead whenever there is one; the plain pending-count line only
+        // when there truly is nothing outstanding.
         Text(
-          l10n.accountSyncPendingCount(syncStatus.pendingCount),
+          needsFixCount > 0
+              ? l10n.accountSyncNeedsFixStatus(needsFixCount)
+              : l10n.accountSyncPendingCount(syncStatus.pendingCount),
           key: const Key('account-sync-pending-text'),
           style: Theme.of(context).textTheme.bodyMedium,
         ),
