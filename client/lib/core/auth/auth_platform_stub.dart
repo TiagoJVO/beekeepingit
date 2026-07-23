@@ -28,4 +28,13 @@ class _StubAuthPlatform implements AuthPlatform {
 
   @override
   void removeSession(String key) => _unsupported();
+
+  @override
+  String? readLocal(String key) => _unsupported();
+
+  @override
+  void writeLocal(String key, String value) => _unsupported();
+
+  @override
+  void removeLocal(String key) => _unsupported();
 }

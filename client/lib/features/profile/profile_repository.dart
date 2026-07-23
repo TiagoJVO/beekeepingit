@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/storage/local_prefs.dart';
 
 /// The authenticated caller's own profile
 /// (contracts/openapi/identity.openapi.yaml's Profile schema, FR-ONB-1).
@@ -66,14 +69,33 @@ class Profile {
 /// Reads/writes the caller's profile via `GET`/`PATCH /v1/profile`. GET
 /// lazily get-or-creates the row server-side on first login; PATCH is a
 /// partial update — only the fields passed are sent.
+///
+/// Caches the last-known-good [fetch] response in durable local storage
+/// (#390) so the onboarding gate (`routing/app_router.dart`) stays passable
+/// offline for a previously-onboarded user: [fetch] serves that cached
+/// snapshot when the request fails with [ApiNetworkException] rather than
+/// bouncing them to `/profile`; a genuine server response (200 or an
+/// [ApiException]) always wins over the cache.
 class ProfileRepository {
-  ProfileRepository(this._api);
+  ProfileRepository(this._api, {LocalPrefs? prefs})
+    : _prefs = prefs ?? createLocalPrefs();
 
   final ApiClient _api;
+  final LocalPrefs _prefs;
 
   Future<Profile> fetch() async {
-    final json = await _api.getJson('/profile');
-    return Profile.fromJson(json);
+    try {
+      final json = await _api.getJson('/profile');
+      _prefs.write(kProfileCacheKey, jsonEncode(json));
+      return Profile.fromJson(json);
+    } on ApiNetworkException {
+      final cached = _prefs.read(kProfileCacheKey);
+      // No cache (never fetched successfully before, or already cleared by
+      // logout) → nothing to fall back to; the network failure is the real,
+      // actionable answer, so rethrow rather than fabricating a profile.
+      if (cached == null) rethrow;
+      return Profile.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+    }
   }
 
   Future<Profile> update({String? name, String? email, String? locale}) async {
