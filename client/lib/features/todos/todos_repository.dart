@@ -313,3 +313,18 @@ final todosStreamProvider = StreamProvider.autoDispose<List<Todo>>((
   final org = await ref.watch(organizationProvider.future);
   yield* repo.watchAll(organizationId: org?.id);
 });
+
+/// Count of open (not done) todos associated with one apiary — derived from
+/// [todosStreamProvider] so it stays live/offline-first for free (#388, the
+/// map's per-apiary info sheet), rather than a bespoke SQL query. Cheap
+/// enough as a plain derivation: the org's whole todos list is already
+/// in memory for the Todos tab, and this just filters/counts it per apiary.
+final openTodoCountForApiaryProvider = Provider.autoDispose
+    .family<AsyncValue<int>, String>((ref, apiaryId) {
+      return ref
+          .watch(todosStreamProvider)
+          .whenData(
+            (todos) =>
+                todos.where((t) => t.apiaryId == apiaryId && !t.isDone).length,
+          );
+    });

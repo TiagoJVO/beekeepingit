@@ -736,6 +736,27 @@
   "@apiaryMapAttributionOsm": {
     "description": "Attribution overlay text shown when the streets (OSM) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by the OSM tile usage policy)"
   },
+  "apiaryMapRulerToggleAction": "Measure distance",
+  "@apiaryMapRulerToggleAction": {
+    "description": "Tooltip/semantics label for the ruler toggle that switches the map between apiary-info (tap opens a quick info sheet) and tap-to-measure modes (#388)"
+  },
+  "apiaryMapMeasureFromMyLocation": "Use my location",
+  "@apiaryMapMeasureFromMyLocation": {
+    "description": "Chip/button shown in the measure overlay (ruler ON, current location available, not yet selected) that adds the user's current location as one of the two measurement endpoints (#388)"
+  },
+  "apiaryMapInfoOpenTodos": "{count, plural, =0{No open todos} one{1 open todo} other{{count} open todos}}",
+  "@apiaryMapInfoOpenTodos": {
+    "description": "Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "apiaryMapInfoViewApiary": "View apiary",
+  "@apiaryMapInfoViewApiary": {
+    "description": "Action on the map's apiary info sheet that navigates to the full apiary detail screen (#388)"
+  },
   "apiaryPlaceLabelLabel": "Place label",
   "@apiaryPlaceLabelLabel": {
     "description": "Optional free-text place name field label on the apiary form, and its label on the detail screen (#252, e.g. \"Montargil\")"

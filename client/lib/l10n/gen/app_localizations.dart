@@ -1016,6 +1016,30 @@ abstract class AppLocalizations {
   /// **'© OpenStreetMap contributors'**
   String get apiaryMapAttributionOsm;
 
+  /// Tooltip/semantics label for the ruler toggle that switches the map between apiary-info (tap opens a quick info sheet) and tap-to-measure modes (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'Measure distance'**
+  String get apiaryMapRulerToggleAction;
+
+  /// Chip/button shown in the measure overlay (ruler ON, current location available, not yet selected) that adds the user's current location as one of the two measurement endpoints (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'Use my location'**
+  String get apiaryMapMeasureFromMyLocation;
+
+  /// Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No open todos} one{1 open todo} other{{count} open todos}}'**
+  String apiaryMapInfoOpenTodos(int count);
+
+  /// Action on the map's apiary info sheet that navigates to the full apiary detail screen (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'View apiary'**
+  String get apiaryMapInfoViewApiary;
+
   /// Optional free-text place name field label on the apiary form, and its label on the detail screen (#252, e.g. "Montargil")
   ///
   /// In en, this message translates to:
