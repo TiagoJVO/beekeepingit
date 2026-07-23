@@ -1367,9 +1367,9 @@
       }
     }
   },
-  "journeyStatsAverageSupersLabel": "Média alças/colmeia",
+  "journeyStatsAverageSupersLabel": "Avg. supers/hive",
   "@journeyStatsAverageSupersLabel": {
-    "description": "Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49) — kept in Portuguese per the prototype/AC's own naming (docs/design/prototype.md's Q-JOUR answer, this issue's own AC wording), not translated to an English equivalent"
+    "description": "Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49). Localized like every other stat label (#382) — previously left in Portuguese by mistake."
   },
   "journeyStatsAverageSupersNoData": "No data yet",
   "@journeyStatsAverageSupersNoData": {
