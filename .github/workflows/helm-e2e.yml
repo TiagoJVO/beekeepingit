@@ -361,10 +361,42 @@ jobs:
 
       # The AC: the postgres PostGIS smoke-query hook AND the authentik readiness hook run
       # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
-      # here too.
+      # here too (mailpit's readiness hook, #361, already does).
       - name: helm test (PostGIS smoke query + Authentik readiness)
         if: steps.changes.outputs.e2e == 'true'
         run: helm test beekeepingit --namespace beekeepingit-dev
+
+      # Outbound-email smoke (#361, NFR-SEC-1): prove the AUTHENTIK_EMAIL__* wiring
+      # actually DELIVERS, isolated from any flow logic — send one message through
+      # Authentik's configured Django email backend (`ak shell` in the worker: the
+      # exact config path the verification email stage uses) and assert Mailpit's
+      # API shows it. Both execs run inside the authentik pods (same
+      # NetworkPolicy-immune-over-kube-API trick as the discovery poll above; the
+      # pods' own path to mailpit:1025/:8025 is covered by the
+      # authentik-to-mailpit-* ingress allows, charts/networkpolicy).
+      - name: Verify outbound email (Authentik → Mailpit)
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          WORKER=$(kubectl -n beekeepingit-dev get pod \
+            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{.items[0].metadata.name}')
+          kubectl -n beekeepingit-dev exec "$WORKER" -- ak shell -c \
+            "from django.core.mail import send_mail; send_mail('helm-e2e smtp probe', 'outbound email works', None, ['probe@beekeepingit.local'])"
+          SERVER=$(kubectl -n beekeepingit-dev get pod \
+            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{.items[0].metadata.name}')
+          for i in $(seq 1 12); do
+            if kubectl -n beekeepingit-dev exec "$SERVER" -- \
+                 curl -sf http://mailpit:8025/api/v1/messages | grep -q "helm-e2e smtp probe"; then
+              echo "probe email delivered after ~$((i*5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::probe email never arrived in Mailpit"
+          exit 1
 
       # Node itself already came from "Set up toolchains from mise.toml" above
       # (mise.toml pins node = 22, the same toolchain local dev uses) — no
@@ -411,6 +443,31 @@ jobs:
           warm "OIDC discovery" auth.beekeepingit.local \
             /application/o/beekeepingit/.well-known/openid-configuration
 
+      # The verification-flow e2e (#361, client/e2e/tests/verification.spec.ts)
+      # reads the emailed one-time link out of Mailpit's API, which is
+      # deliberately in-cluster-only (no gateway route). kubectl port-forward
+      # bridges it to the runner — the tunnel rides the kube API, not pod
+      # networking, so NetworkPolicy doesn't apply; the background process
+      # outlives this step for the Playwright run below. E2E_MAILPIT_URL is
+      # also that spec's opt-in switch: it needs THIS job's fresh
+      # blueprint-seeded state (the unverified seed user must still be
+      # unverified), so it self-skips anywhere the env is absent.
+      - name: Port-forward Mailpit for the verification e2e
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          kubectl -n beekeepingit-dev port-forward svc/mailpit 8025:8025 \
+            >/tmp/mailpit-port-forward.log 2>&1 &
+          for _ in $(seq 1 15); do
+            if curl -sf http://localhost:8025/readyz >/dev/null 2>&1; then
+              echo "mailpit reachable on localhost:8025"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::mailpit port-forward never became reachable"
+          cat /tmp/mailpit-port-forward.log || true
+          exit 1
+
       # Runs the walking-skeleton spec (#23 §7.3, NFR-TST-1, #162) against the gateway
       # this job just brought up, over the same host:8443 -> in-cluster:443 k3d port
       # mapping local dev uses (k3d-config.yaml) — no port-forward needed. Defaults in
@@ -423,6 +480,10 @@ jobs:
       - name: Run the walking-skeleton e2e
         if: steps.changes.outputs.e2e == 'true'
         working-directory: client/e2e
+        env:
+          # Opts in the verification-flow spec (#361) — see the port-forward
+          # step above. The walking-skeleton spec ignores it.
+          E2E_MAILPIT_URL: http://localhost:8025
         run: npm test
 
       # Playwright's own trace/screenshot/HTML report (playwright.config.ts:
@@ -467,6 +528,10 @@ jobs:
           kubectl -n beekeepingit-dev logs deploy/beekeepingit-powersync --tail=300 || true
           kubectl -n beekeepingit-dev logs deploy/sync --tail=150 || true
           kubectl -n kube-system logs deploy/traefik --tail=150 || true
+          # Mailpit sink (#361): a red verification e2e usually means the email
+          # never arrived (SMTP wiring) or the flow never sent it (blueprint) —
+          # the sink's log + message count tells the two apart fast.
+          kubectl -n beekeepingit-dev logs deploy/beekeepingit-mailpit --tail=100 || true
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
           for d in identity organizations apiaries activities journeys todos sync pwa beekeepingit-powersync; do
