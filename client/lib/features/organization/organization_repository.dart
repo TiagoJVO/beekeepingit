@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/storage/local_prefs.dart';
 
 /// The caller's organization
 /// (contracts/openapi/organizations.openapi.yaml's Organization schema,
@@ -66,17 +69,33 @@ class Organization {
 /// PowerSync-mediated: organization creation is a one-off onboarding step
 /// (like profile), not a field-recorded, offline-first entity — there is
 /// nothing to sync until an org (and its replicated slice) exists.
+///
+/// Caches the last-known-good [fetchMine] response in durable local storage
+/// (#390) — see [ProfileRepository]'s own doc for the same rationale: the
+/// onboarding gate (`routing/app_router.dart`) stays passable offline for a
+/// previously-onboarded user, falling back to the cache only on
+/// [ApiNetworkException] (never on the 404 "no org yet" [ApiException] —
+/// that is a real, resolved answer, not a network failure).
 class OrganizationRepository {
-  OrganizationRepository(this._api);
+  OrganizationRepository(this._api, {LocalPrefs? prefs})
+    : _prefs = prefs ?? createLocalPrefs();
 
   final ApiClient _api;
+  final LocalPrefs _prefs;
   static const _uuid = Uuid();
 
   /// Fetches the caller's own organization, or throws [ApiException] (404)
   /// if they have none yet — the signal the org-completion gate probes for.
   Future<Organization> fetchMine() async {
-    final json = await _api.getJson('/organizations/me');
-    return Organization.fromJson(json);
+    try {
+      final json = await _api.getJson('/organizations/me');
+      _prefs.write(kOrganizationCacheKey, jsonEncode(json));
+      return Organization.fromJson(json);
+    } on ApiNetworkException {
+      final cached = _prefs.read(kOrganizationCacheKey);
+      if (cached == null) rethrow;
+      return Organization.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+    }
   }
 
   /// Creates an organization with the caller as its first admin (D-3). The

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/auth/auth_platform.dart';
+import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -39,7 +40,11 @@ Issuer fakeIssuer() => Issuer(
 );
 
 /// An in-memory [AuthPlatform] fake — no browser, no `package:web`, so these
-/// tests run on the VM like the rest of `client/test/`.
+/// tests run on the VM like the rest of `client/test/`. Models
+/// sessionStorage and localStorage as two genuinely separate maps (#390) so
+/// tests can exercise the sessionStorage→localStorage migration and prove a
+/// simulated "browser restart" (which wipes sessionStorage but not
+/// localStorage) still restores a session.
 class FakeAuthPlatform implements AuthPlatform {
   FakeAuthPlatform({Uri? initialUri})
     : currentUri = initialUri ?? Uri.parse('https://app.example/apiaries');
@@ -53,6 +58,7 @@ class FakeAuthPlatform implements AuthPlatform {
   String? assignedLocation;
   Uri? replacedUri;
   final Map<String, String> _session = {};
+  final Map<String, String> _local = {};
 
   @override
   void assignLocation(String url) => assignedLocation = url;
@@ -69,7 +75,42 @@ class FakeAuthPlatform implements AuthPlatform {
   @override
   void removeSession(String key) => _session.remove(key);
 
+  @override
+  String? readLocal(String key) => _local[key];
+
+  @override
+  void writeLocal(String key, String value) => _local[key] = value;
+
+  @override
+  void removeLocal(String key) => _local.remove(key);
+
   bool get hasAnySession => _session.isNotEmpty;
+  bool get hasAnyLocal => _local.isNotEmpty;
+
+  /// Simulates a full browser restart: sessionStorage is per-tab and wiped
+  /// (#390's reported bug), but localStorage — and thus anything already
+  /// migrated/persisted there — survives.
+  void simulateBrowserRestart({Uri? newUri}) {
+    _session.clear();
+    if (newUri != null) currentUri = newUri;
+  }
+}
+
+/// An in-memory [LocalPrefs] fake for the onboarding-cache-clearing
+/// assertions (#390) — mirrors [FakeAuthPlatform]'s role for session storage.
+class FakeLocalPrefs implements LocalPrefs {
+  final Map<String, String> _store = {};
+
+  @override
+  String? read(String key) => _store[key];
+
+  @override
+  void write(String key, String value) => _store[key] = value;
+
+  @override
+  void remove(String key) => _store.remove(key);
+
+  bool get isEmpty => _store.isEmpty;
 }
 
 /// A fake [LocalStoreEngine] so `logout()`'s local-data wipe (#125) can be
@@ -112,11 +153,15 @@ class FakeLocalStoreEngine implements LocalStoreEngine {
 /// [localStore], when given, is injected as `AuthController`'s
 /// `clearLocalStore` seam so `logout()`'s wipe (#125) can be asserted against
 /// a [FakeLocalStoreEngine] instead of the real `localStoreProvider` (which
-/// would need a real PowerSync database).
+/// would need a real PowerSync database). [localPrefs], when given, is
+/// injected so the onboarding-cache-clearing assertions (#390) can be made
+/// against a [FakeLocalPrefs] instead of the real (VM-stubbed, always-empty)
+/// `createLocalPrefs()`.
 Future<(ProviderContainer, FakeAuthPlatform, AuthController)>
 buildLoggedInContainer({
   required http.Client client,
   LocalStoreEngine? localStore,
+  LocalPrefs? localPrefs,
 }) async {
   final platform = FakeAuthPlatform(
     initialUri: Uri.parse(
@@ -126,7 +171,12 @@ buildLoggedInContainer({
   platform.writeSession('bk.oauth_state', 'seed-state');
   platform.writeSession('bk.pkce_verifier', 'seed-verifier');
 
-  final container = _container(platform, client, localStore: localStore);
+  final container = _container(
+    platform,
+    client,
+    localStore: localStore,
+    localPrefs: localPrefs,
+  );
   final session = await container.read(authControllerProvider.future);
   expect(
     session,
@@ -142,6 +192,8 @@ ProviderContainer _container(
   FakeAuthPlatform platform,
   http.Client client, {
   LocalStoreEngine? localStore,
+  LocalPrefs? localPrefs,
+  Duration? authNetworkTimeout,
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -152,6 +204,8 @@ ProviderContainer _container(
           platform: platform,
           httpClient: client,
           clearLocalStore: localStore == null ? null : () async => localStore,
+          localPrefs: localPrefs,
+          authNetworkTimeout: authNetworkTimeout,
         ),
       ),
     ],
@@ -297,8 +351,9 @@ void main() {
         expect(session!.accessToken, 'access-xyz');
         expect(session.refreshToken, 'refresh-xyz');
         expect(session.idToken, 'id-xyz');
-        expect(platform.readSession('bk.refresh_token'), 'refresh-xyz');
-        expect(platform.readSession('bk.id_token'), 'id-xyz');
+        // Durable storage (localStorage, #390) — not sessionStorage.
+        expect(platform.readLocal('bk.refresh_token'), 'refresh-xyz');
+        expect(platform.readLocal('bk.id_token'), 'id-xyz');
         // Callback params are stripped from the URL after exchange.
         expect(platform.replacedUri?.queryParameters, isEmpty);
         // Single-use PKCE artifacts are removed after the exchange.
@@ -363,7 +418,7 @@ void main() {
 
       final token = await notifier.accessToken();
       expect(token, 'refreshed-token');
-      expect(platform.readSession('bk.refresh_token'), 'refresh-2');
+      expect(platform.readLocal('bk.refresh_token'), 'refresh-2');
     });
   });
 
@@ -384,16 +439,24 @@ void main() {
           // Seed code-exchange: expire almost immediately to force a refresh.
           return _tokenResponse(req, refresh: 'revoked-refresh', expiresIn: 5);
         });
+        final localStore = FakeLocalStoreEngine();
         final (_, platform, notifier) = await buildLoggedInContainer(
           client: client,
+          localStore: localStore,
         );
 
         final token = await notifier.accessToken();
 
         expect(token, isNull);
         expect(notifier.state.value, isNull);
-        expect(platform.readSession('bk.refresh_token'), isNull);
-        expect(platform.readSession('bk.id_token'), isNull);
+        expect(platform.readLocal('bk.refresh_token'), isNull);
+        expect(platform.readLocal('bk.id_token'), isNull);
+        // #390 regression: a genuine provider rejection must NOT wipe the
+        // on-device PowerSync local store — that wipe stays exclusive to
+        // explicit logout()/membership-loss purge (auth_controller.dart's
+        // own `_refresh` note), so any queued offline writes survive a
+        // subsequent re-login.
+        expect(localStore.clearCalls, 0);
       },
     );
   });
@@ -424,8 +487,185 @@ void main() {
       // token is still handed back rather than null.
       expect(token, 'access-1');
       expect(notifier.state.value, isNotNull);
-      expect(platform.readSession('bk.refresh_token'), 'refresh-keep');
-      expect(platform.readSession('bk.id_token'), isNotEmpty);
+      expect(platform.readLocal('bk.refresh_token'), 'refresh-keep');
+      expect(platform.readLocal('bk.id_token'), isNotEmpty);
+    });
+  });
+
+  group('session restore on boot (build()) — offline-first auth (#390)', () {
+    test('restores the session from localStorage after a simulated browser '
+        'restart (sessionStorage wiped, localStorage survives)', () async {
+      // First "browser session": log in normally, which persists the
+      // refresh/id token to localStorage (auth_controller.dart's
+      // `_persist`).
+      final client = MockClient((req) async {
+        final body = Uri(query: req.body).queryParameters;
+        if (body['grant_type'] == 'refresh_token') {
+          return _tokenResponse(
+            req,
+            access: 'access-after-restart',
+            refresh: 'refresh-after-restart',
+          );
+        }
+        return _tokenResponse(req, refresh: 'refresh-before-restart');
+      });
+      final (container, platform, _) = await buildLoggedInContainer(
+        client: client,
+      );
+      expect(platform.readLocal('bk.refresh_token'), 'refresh-before-restart');
+
+      // Simulate the browser closing and reopening: sessionStorage (PKCE
+      // artifacts, and pre-#390 this would have held the tokens too) is
+      // wiped; localStorage is not. A fresh container/notifier stands in
+      // for the fresh page load — build() must re-run and restore.
+      platform.simulateBrowserRestart(
+        newUri: Uri.parse('https://app.example/apiaries'),
+      );
+      container.dispose();
+      final freshContainer = _container(platform, client);
+      addTearDown(freshContainer.dispose);
+
+      final restored = await freshContainer.read(authControllerProvider.future);
+
+      expect(restored, isNotNull);
+      expect(restored!.accessToken, 'access-after-restart');
+      expect(restored.refreshToken, 'refresh-after-restart');
+      expect(restored.isExpired, isFalse);
+    });
+
+    test(
+      'sessionStorage→localStorage migration: a refresh token left over from '
+      'before #390 is restored and rewritten to localStorage',
+      () async {
+        final platform = FakeAuthPlatform();
+        // Simulates a pre-#390 session: tokens were written to sessionStorage.
+        platform.writeSession('bk.refresh_token', 'legacy-refresh');
+        platform.writeSession('bk.id_token', 'legacy-id');
+        final client = MockClient(
+          (req) async => _tokenResponse(
+            req,
+            access: 'migrated-access',
+            refresh: 'migrated-refresh',
+          ),
+        );
+
+        final container = _container(platform, client);
+        addTearDown(container.dispose);
+        final session = await container.read(authControllerProvider.future);
+
+        expect(session, isNotNull);
+        expect(session!.accessToken, 'migrated-access');
+        // The legacy value migrated to localStorage...
+        expect(platform.readLocal('bk.refresh_token'), 'migrated-refresh');
+        // ...and no longer lives in sessionStorage.
+        expect(platform.readSession('bk.refresh_token'), isNull);
+      },
+    );
+
+    test(
+      'offline boot (network failure restoring the session) resolves to a '
+      'stale placeholder session, keeping the refresh token — not null',
+      () async {
+        final platform = FakeAuthPlatform();
+        platform.writeLocal('bk.refresh_token', 'refresh-offline');
+        platform.writeLocal('bk.id_token', 'id-offline');
+        final client = MockClient((req) async {
+          throw http.ClientException('Failed host lookup');
+        });
+
+        final container = _container(platform, client);
+        addTearDown(container.dispose);
+        final session = await container.read(authControllerProvider.future);
+
+        expect(session, isNotNull);
+        expect(session!.accessToken, isEmpty);
+        expect(session.refreshToken, 'refresh-offline');
+        expect(session.idToken, 'id-offline');
+        expect(session.isExpired, isTrue);
+        // The refresh token was never rejected — just unreachable — so it
+        // must be retained for the next accessToken() retry, not wiped.
+        expect(platform.readLocal('bk.refresh_token'), 'refresh-offline');
+
+        // accessToken() must not hand back the empty placeholder token as a
+        // bogus bearer token.
+        final notifier = container.read(authControllerProvider.notifier);
+        final token = await notifier.accessToken();
+        expect(token, isNull);
+      },
+    );
+
+    test('a provider rejection while restoring on boot clears the session and '
+        'resolves to null (re-login required)', () async {
+      final platform = FakeAuthPlatform();
+      platform.writeLocal('bk.refresh_token', 'revoked-refresh');
+      platform.writeLocal('bk.id_token', 'id-revoked');
+      final client = MockClient(
+        (req) async => http.Response(
+          jsonEncode({'error': 'invalid_grant'}),
+          400,
+          headers: {'content-type': 'application/json'},
+          request: req,
+        ),
+      );
+
+      final localStore = FakeLocalStoreEngine();
+      final container = ProviderContainer(
+        overrides: [
+          oidcIssuerProvider.overrideWith((ref) async => fakeIssuer()),
+          authControllerProvider.overrideWith(
+            () => AuthController(
+              platform: platform,
+              httpClient: client,
+              clearLocalStore: () async => localStore,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final session = await container.read(authControllerProvider.future);
+
+      expect(session, isNull);
+      expect(platform.readLocal('bk.refresh_token'), isNull);
+      expect(platform.readLocal('bk.id_token'), isNull);
+      // Rejection must not wipe the on-device PowerSync local store — that
+      // wipe stays exclusive to explicit logout()/membership-loss purge.
+      expect(localStore.clearCalls, 0);
+    });
+
+    test('a discovery/refresh hang during boot restore completes within the '
+        'bounded timeout, falling back to a stale session', () async {
+      final platform = FakeAuthPlatform();
+      platform.writeLocal('bk.refresh_token', 'refresh-slow-link');
+      final client = MockClient((req) async {
+        // Never resolves within the test's short injected timeout —
+        // stands in for a dead/very slow link during the refresh-token
+        // POST. Long enough to prove the boot path doesn't wait for it,
+        // short enough not to slow the suite down.
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        return _tokenResponse(req);
+      });
+
+      final container = _container(
+        platform,
+        client,
+        // A short injected timeout (test-only seam) stands in for the
+        // real 5s `_kAuthNetworkTimeout` so this test stays fast.
+        authNetworkTimeout: const Duration(milliseconds: 10),
+      );
+      addTearDown(container.dispose);
+
+      final stopwatch = Stopwatch()..start();
+      final session = await container.read(authControllerProvider.future);
+      stopwatch.stop();
+
+      expect(session, isNotNull);
+      expect(session!.accessToken, isEmpty);
+      expect(session.refreshToken, 'refresh-slow-link');
+      expect(session.isExpired, isTrue);
+      // Bounded well under the mock's 60ms delay — proves the timeout, not
+      // the mock's own completion, produced this result.
+      expect(stopwatch.elapsedMilliseconds, lessThan(50));
     });
   });
 
@@ -462,6 +702,9 @@ void main() {
 
         expect(notifier.state.value, isNull);
         expect(platform.hasAnySession, isFalse);
+        // #390: the refresh/id token now live in localStorage, not
+        // sessionStorage — logout must clear that store too.
+        expect(platform.hasAnyLocal, isFalse);
       },
     );
 
@@ -480,6 +723,28 @@ void main() {
         // complete the user ends up logged out locally (offline-degrade).
         expect(notifier.state.value, isNull);
         expect(platform.hasAnySession, isFalse);
+        expect(platform.hasAnyLocal, isFalse);
+      },
+    );
+
+    // #390: onboarding gate cache clearing — a second user on the same
+    // shared browser must never see a prior user's cached profile/org.
+    test(
+      'clears the onboarding cache (profile/organization snapshots)',
+      () async {
+        final prefs = FakeLocalPrefs();
+        prefs.write(kProfileCacheKey, '{"id":"prior-user"}');
+        prefs.write(kOrganizationCacheKey, '{"id":"prior-org"}');
+        final client = MockClient((req) async => _tokenResponse(req));
+        final (_, _, notifier) = await buildLoggedInContainer(
+          client: client,
+          localStore: FakeLocalStoreEngine(),
+          localPrefs: prefs,
+        );
+
+        await notifier.logout();
+
+        expect(prefs.isEmpty, isTrue);
       },
     );
 

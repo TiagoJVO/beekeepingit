@@ -94,6 +94,24 @@ optional.
   `id_token_hint` + `post_logout_redirect_uri` (clear local state **first** for offline-degrade);
   optional `revocation_endpoint`. Replaces the Keycloak refresh-token POST.
 - **Account (password change)** — `OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings` (a config value, not a derived path).
+- **Token storage & offline-first boot (#390)** — the refresh token + `id_token` persist in
+  **`localStorage`** (survives a browser restart); the PKCE `code_verifier`/`state` stay in
+  per-tab **`sessionStorage`** (ephemeral, single-flow — no reason to outlive the redirect). A
+  first boot after upgrading past #390 migrates a token still sitting in the old sessionStorage
+  location into localStorage rather than dropping the session. On boot, a stored session that
+  fails to refresh for a **network** reason (offline/DNS/timeout — discovery + the refresh-token
+  grant are bounded together by a 5s timeout, `_kAuthNetworkTimeout`) still resolves to a
+  **stale placeholder session** (empty access token, forced-expired) so the app opens into the
+  local-data shell against already-synced PowerSync data; only a provider-rejected refresh
+  (`OpenIdException`, e.g. `invalid_grant`/expired) clears the stored session and routes to
+  `/login` — and never wipes the on-device local store (that wipe stays exclusive to explicit
+  logout / membership-loss purge, sync.md §3.5). The onboarding gate's profile/organization
+  checks (`GET /v1/profile`, `GET /v1/organizations/me`) mirror this: each repository caches its
+  last-known-good response and serves it back on a network failure so a previously-onboarded
+  user isn't bounced to `/profile`/`/organization/new` while offline. `localStorage` is
+  XSS-readable — an accepted, documented trade-off for this offline-first PWA stage ahead of the
+  hardened BFF/httpOnly-cookie flow **EPIC-14** owns (auth.md §6.4/§6.5 describe that longer-term
+  design; this section describes what ships today).
 
 ## 8. Deployment (infra)
 
