@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../apiaries/apiaries_repository.dart';
 import '../journeys/journey_matching.dart';
 import '../journeys/journey_picker.dart';
 import '../journeys/journey_quick_create_sheet.dart';
@@ -131,7 +134,56 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   @override
   void initState() {
     super.initState();
-    if (widget.isEdit) _loadExisting();
+    if (widget.isEdit) {
+      _loadExisting();
+    } else {
+      _prefillHivesInvolved();
+    }
+  }
+
+  /// Create-mode default (#424, EPIC-17, FR-AC-2): seeds the shared
+  /// `hives_involved` field with the apiary's current hive count
+  /// ([Apiary.hiveCount], the #256 counter-derived value the detail screen
+  /// already shows) so a beekeeper doesn't retype the colony count they
+  /// almost always mean — field-testing feedback. Applies to every activity
+  /// type that carries the field (harvest/feeding/treatment).
+  ///
+  /// Guarantees, all deliberate:
+  /// - CREATE only — edit mode instead loads the activity's OWN stored value
+  ///   via [_populateFromAttributes] (this method is never called there).
+  /// - Seeds only an EMPTY field, never clobbering (the field is fully
+  ///   editable; the user's override is what [_buildAttributes] saves).
+  /// - An apiary with 0/unknown hives leaves the field blank rather than
+  ///   seeding a misleading "0".
+  /// - A lookup failure (or a since-deleted apiary) leaves the field empty —
+  ///   its pre-#424 behavior — and never blocks logging the activity.
+  ///
+  /// Wrapped in [loadWithoutMarkingDirty] (#345) so seeding a default doesn't
+  /// arm the unsaved-changes guard, mirroring [_loadExisting].
+  Future<void> _prefillHivesInvolved() =>
+      loadWithoutMarkingDirty(_prefillHivesInvolvedInner);
+
+  Future<void> _prefillHivesInvolvedInner() async {
+    try {
+      final repo = await ref.read(apiariesRepositoryProvider.future);
+      final apiary = await repo.getById(widget.apiaryId);
+      if (!mounted) return;
+      if (apiary == null || apiary.hiveCount <= 0) return;
+      if (_hivesInvolvedController.text.trim().isNotEmpty) return;
+      _hivesInvolvedController.text = apiary.hiveCount.toString();
+    } on Exception catch (e, st) {
+      // Non-critical: a failed apiary lookup must never block the form — the
+      // field simply stays empty, exactly as it was before #424. Narrowed to
+      // Exception (not a bare catch-all) so a genuine programming Error still
+      // surfaces loudly, and the transient failure is logged rather than
+      // silently swallowed (coding-standards.md's error-handling rule).
+      developer.log(
+        'hives_involved prefill skipped: apiary lookup failed',
+        name: 'activities',
+        error: e,
+        stackTrace: st,
+      );
+    }
   }
 
   @override
