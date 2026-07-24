@@ -137,13 +137,17 @@ entries:
     attrs: { title: "Sign in" }
 
   # --- Email verification at login (#361, NFR-SEC-1, NFR-I18N-1) ---
-  # Existing accounts are invite/admin-provisioned (registration disabled), so
-  # verification can't ride an enrollment flow — it's injected into the
-  # authentication flow instead: an unverified, non-superuser login is gated on an
-  # email stage (one-time link, sent to the account's address), and a user_write
-  # stage right after it stamps `attributes.email_verified: true` — the exact
-  # attribute the custom scope mapping above emits. Binding orders 40/45 slot
-  # between the default flow's mfa-validation (30) and user-login (100).
+  # Built when accounts were exclusively invite/admin-provisioned (registration
+  # disabled), so verification couldn't ride an enrollment flow — it's injected
+  # into the authentication flow instead: an unverified, non-superuser login is
+  # gated on an email stage (one-time link, sent to the account's address), and a
+  # user_write stage right after it stamps `attributes.email_verified: true` — the
+  # exact attribute the custom scope mapping above emits. Binding orders 40/45 slot
+  # between the default flow's mfa-validation (30) and user-login (100). Since
+  # #366 (self-service registration section below) this same gate doubles as the
+  # RECOVERY path for a registration abandoned before its emailed link was used:
+  # the next login attempt re-sends a fresh link. Both flows reuse these stage
+  # objects — keep them generic.
   #
   # i18n (NFR-I18N-1): the subject "Account Confirmation" is deliberately the
   # exact gettext msgid from Authentik's catalogs (pt_PT: "Confirmação de Conta")
@@ -292,3 +296,259 @@ entries:
   # re-verify the binding identifiers against the then-current version first.
   # Admin-driven email changes (admin API/UI) bypass the settings flow and do
   # NOT reset verification — an accepted operator-trust boundary (auth.md §8.10).
+
+  # --- Self-service registration (#366, FR-ONB-1/2/3, FR-AU-1, NFR-SEC-1) ---
+  # Username/email/password enrollment, config-as-code, surfaced as the login
+  # page's "Need an account? Sign up." link (the identification-stage update at
+  # the end of this section). The trust anchor is UNCHANGED from #361: no path
+  # issues a session — and therefore no token the app or the invitation
+  # accept-on-login gate would trust — before inbox control is proven via an
+  # emailed one-time link.
+  #
+  # A fresh registration is created ACTIVE but UNVERIFIED — deliberately NOT
+  # the upstream example's inactive-until-verified: an abandoned registration
+  # (verification link lost or expired past its 30 minutes) self-heals through
+  # the authentication flow's own email stage (order 40 above) on the next
+  # login attempt, instead of dead-ending an account that can neither log in
+  # (inactive) nor re-register (unique username) with no recovery flow built
+  # yet (EPIC-14 #15). The security outcome is identical either way: this
+  # flow's email stage (order 30 below) holds enrollment before user_login,
+  # and a direct login attempt is held by the authentication flow's stage.
+  #
+  # Write-safety (the #170 shape at enrollment): the prompt stage's declared
+  # field list IS the write boundary. The prompt serializer only admits
+  # declared field_keys (verified at 2026.5.4, stages/prompt/stage.py — extra
+  # JSON keys never reach prompt_data), and user_write additionally blocks
+  # groups/pk writes and discards unknown keys (stages/user_write/stage.py).
+  # No declared field is an `attributes.*` key, so a registrant cannot inject
+  # `attributes.email_verified` (or any other attribute): the attribute is
+  # only ever written by policy-mark-email-verified above, which demands the
+  # restored-flow-token proof. The upn policy below also strips any
+  # `attributes.email_verified` from prompt_data as defense in depth.
+  #
+  # Collisions (account-existence posture, #366 AC): `type: username` rejects
+  # a duplicate username at the form — the existence signal this leaks is
+  # Authentik's own default for that field type, accepted as-is. A duplicate
+  # EMAIL is allowed (also the upstream default — no uniqueness policy is
+  # added, so no NEW existence signal either): it creates a second, unrelated
+  # account that can never produce a verified session without inbox control,
+  # and no account linking/matching exists to merge it with the original
+  # (that's #364) — registering with an existing account's address grants
+  # nothing (e2e-pinned in client/e2e/tests/registration.spec.ts).
+  #
+  # i18n (NFR-I18N-1): prompt labels/placeholders and the flow title are DB
+  # strings Authentik renders as-is (no gettext lookup), and the flow
+  # executor's own UI strings ("Need an account? Sign up.", "Continue", ...)
+  # translate only into the web catalogs Authentik ships — which at the
+  # pinned 2026.5.4 include pt-BR but NOT pt-PT — so the registration screens
+  # render in English for a pt-PT browser today: the same limitation class as
+  # the verification email (auth.md §8.10/§8.11, #412; re-check on version
+  # bumps). The verification email itself is the SAME stage object as
+  # login-time verification (msgid subject — see its entry above).
+  - model: authentik_flows.flow
+    id: flow-enrollment
+    identifiers: { slug: beekeepingit-enrollment }
+    attrs:
+      name: beekeepingit-enrollment
+      # Untranslated DB string, like the authentication flow's "Sign in" above.
+      title: Create your account
+      designation: enrollment
+      # An already-authenticated user has no business re-enrolling.
+      authentication: require_unauthenticated
+  - model: authentik_stages_prompt.prompt
+    id: prompt-enrollment-username
+    identifiers: { name: beekeepingit-enrollment-field-username }
+    attrs:
+      name: beekeepingit-enrollment-field-username
+      field_key: username
+      label: Username
+      # `username` type = text + reject-duplicate-usernames (upstream default
+      # behavior; see the collision note above).
+      type: username
+      required: true
+      placeholder: Username
+      placeholder_expression: false
+      order: 0
+  - model: authentik_stages_prompt.prompt
+    id: prompt-enrollment-email
+    identifiers: { name: beekeepingit-enrollment-field-email }
+    attrs:
+      name: beekeepingit-enrollment-field-email
+      field_key: email
+      label: Email
+      type: email
+      required: true
+      placeholder: Email
+      placeholder_expression: false
+      order: 10
+  - model: authentik_stages_prompt.prompt
+    id: prompt-enrollment-password
+    identifiers: { name: beekeepingit-enrollment-field-password }
+    attrs:
+      name: beekeepingit-enrollment-field-password
+      field_key: password
+      label: Password
+      type: password
+      required: true
+      placeholder: Password
+      placeholder_expression: false
+      order: 20
+  - model: authentik_stages_prompt.prompt
+    id: prompt-enrollment-password-repeat
+    identifiers: { name: beekeepingit-enrollment-field-password-repeat }
+    attrs:
+      name: beekeepingit-enrollment-field-password-repeat
+      field_key: password_repeat
+      label: Password (repeat)
+      # Two `password`-type fields on one prompt stage triggers the stage's
+      # built-in equality validation. user_write has no `password_repeat`
+      # field/setter, so the value is discarded at write time — it never lands
+      # in attributes (verified at 2026.5.4, stages/user_write/stage.py).
+      type: password
+      required: true
+      placeholder: Password (repeat)
+      placeholder_expression: false
+      order: 30
+  # Length-only static rule (no composition classes, per current NIST-style
+  # guidance), deterministic and offline (HIBP/zxcvbn deliberately off: no
+  # external calls, no probabilistic scoring in CI). Exact strength policy is
+  # EPIC-14 (#15) security-review scope — this is the sane floor, not the
+  # final word.
+  - model: authentik_policies_password.passwordpolicy
+    id: policy-enrollment-password
+    identifiers: { name: beekeepingit-enrollment-password }
+    attrs:
+      name: beekeepingit-enrollment-password
+      password_field: password
+      check_static_rules: true
+      length_min: 12
+      error_message: Password must be at least 12 characters long.
+  - model: authentik_stages_prompt.promptstage
+    id: stage-enrollment-prompt
+    identifiers: { name: beekeepingit-enrollment-prompt }
+    attrs:
+      name: beekeepingit-enrollment-prompt
+      fields:
+        - !KeyOf prompt-enrollment-username
+        - !KeyOf prompt-enrollment-email
+        - !KeyOf prompt-enrollment-password
+        - !KeyOf prompt-enrollment-password-repeat
+      validation_policies:
+        - !KeyOf policy-enrollment-password
+  - model: authentik_stages_user_write.userwritestage
+    id: stage-enrollment-user-write
+    identifiers: { name: beekeepingit-enrollment-user-write }
+    attrs:
+      name: beekeepingit-enrollment-user-write
+      user_creation_mode: always_create
+      # Active-but-unverified, NOT the upstream example's inactive-until-
+      # verified — see the section comment for why (login-time self-healing;
+      # the session gate is the email stages, not is_active).
+      create_users_as_inactive: false
+  # Assigns the app-facing subject at creation: sub_mode=user_upn (provider
+  # above) reads `attributes.upn`, and oidc-integration.md §4 requires every
+  # self-service enrollment to assign a UUID upn per user (this policy closes
+  # that forward-requirement; the seed users' pinned upns above are the
+  # dev/CI analogue). Without it Authentik would silently fall back to
+  # user.uuid — functional, but an admin later setting a upn would CHANGE the
+  # user's sub and orphan their app identity. setdefault keeps any re-run
+  # idempotent; the pop strips a hypothetical email_verified injection as
+  # defense in depth (the prompt field list already makes it unreachable).
+  # On a policy ERROR the binding's default failure_result (false) SKIPS
+  # user_write: no user is created and enrollment fails — fail closed, never
+  # a upn-less account.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-enrollment-assign-upn
+    identifiers: { name: beekeepingit-enrollment-assign-upn }
+    attrs:
+      expression: |
+        from uuid import uuid4
+        flow_plan = request.context.get("flow_plan")
+        if not flow_plan:
+            return False
+        prompt_data = flow_plan.context.setdefault("prompt_data", {})
+        prompt_data.pop("attributes.email_verified", None)
+        prompt_data.setdefault("attributes.upn", str(uuid4()))
+        return True
+  # Stage order: prompt (10) → user_write/create (20, upn policy) → email
+  # verification (30, REUSED stage from #361 — safe to share across flows:
+  # at 2026.5.4 each send mints a FlowToken whose identifier embeds a fresh
+  # uuid4, so enrollment and login-time verification links never collide) →
+  # user_write/stamp (40, REUSED stage+policy — only writes
+  # `attributes.email_verified: true` on restored-flow-token proof, exactly
+  # as at login) → user_login (100, REUSED default stage so session behavior
+  # matches a normal login). The email stage at 30 is deliberately
+  # UNCONDITIONAL (no needs-verification policy): a fresh registration is
+  # unverified by definition, and if the stage were ever skipped by an
+  # evaluation error the account would simply stay unverified and be held at
+  # the authentication flow's own gate — fail closed either way.
+  - model: authentik_flows.flowstagebinding
+    id: binding-enrollment-prompt
+    identifiers:
+      target: !KeyOf flow-enrollment
+      stage: !KeyOf stage-enrollment-prompt
+      order: 10
+  - model: authentik_flows.flowstagebinding
+    id: binding-enrollment-user-write
+    identifiers:
+      target: !KeyOf flow-enrollment
+      stage: !KeyOf stage-enrollment-user-write
+      order: 20
+    attrs:
+      # Stage-time evaluation (same flags/rationale as the #361 bindings
+      # above): at plan time prompt_data doesn't exist yet, so the upn policy
+      # must run when the stage is reached.
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_flows.flowstagebinding
+    id: binding-enrollment-email
+    identifiers:
+      target: !KeyOf flow-enrollment
+      stage: !KeyOf stage-email-verification
+      order: 30
+  - model: authentik_flows.flowstagebinding
+    id: binding-enrollment-email-write
+    identifiers:
+      target: !KeyOf flow-enrollment
+      stage: !KeyOf stage-email-verification-write
+      order: 40
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-enrollment-assign-upn
+      target: !KeyOf binding-enrollment-user-write
+      order: 0
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-mark-email-verified
+      target: !KeyOf binding-enrollment-email-write
+      order: 0
+  - model: authentik_flows.flowstagebinding
+    id: binding-enrollment-user-login
+    identifiers:
+      target: !KeyOf flow-enrollment
+      stage:
+        !Find [authentik_stages_user_login.userloginstage, [name, default-authentication-login]]
+      order: 100
+  # Surfaces the flow: the identification stage renders "Need an account?
+  # Sign up." (inside the login card's pf-c-login__main-footer-band — NOT the
+  # pf-c-login__footer the brand CSS above hides), and at 2026.5.4 the link
+  # preserves the executor's stored ?next query (reverse_with_qs on
+  # SESSION_KEY_GET) — so a user who arrived via the app's OIDC authorize
+  # redirect flows register → emailed link → auto-login → straight back into
+  # the pending authorize request and lands in the app, no dead end at the
+  # IdP. `user_fields` MUST be restated here even though this entry only
+  # means to add enrollment_flow: the importer validates an update entry's
+  # own data, and IdentificationStageSerializer's cross-field validation
+  # rejects "no user fields and no source" — omitting it marks the WHOLE
+  # blueprint invalid and nothing in this file applies (found live: the CI
+  # bring-up's discovery 404, PR #414). The value pins upstream's default
+  # ([email, username], flow-default-authentication-flow.yaml @ 2026.5.4) —
+  # re-check on version bumps (oidc-integration.md §8 watch-list).
+  - model: authentik_stages_identification.identificationstage
+    identifiers: { name: default-authentication-identification }
+    attrs:
+      user_fields: [email, username]
+      enrollment_flow: !KeyOf flow-enrollment

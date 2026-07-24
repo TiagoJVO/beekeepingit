@@ -41,7 +41,11 @@ so a separate origin is free of cost here.
 - **Grant types** — `authorization_code`, `refresh_token`. **Set explicitly** — on Authentik 2026.5.x this defaults to `[]` (no grants), which rejects the authorize request with `invalid_request`.
 - **Token validity** — access **15m**, refresh **30d** (blueprint uses Django-timedelta strings: `minutes=15`, `days=30`).
 - **Redirect URIs** — `http://localhost:.*` (regex), `https://app\.beekeepingit\.local:8443/.*` (regex), **and** `https://app.beekeepingit.local:8443` (**strict**). The strict bare-origin entry is required because the PWA sends the bare origin as its `redirect_uri`, and Authentik derives **CORS**-allowed origins from `redirect_uris` — an `Origin` has no path, so the `…/.*` regex never matches it.
-- **Registration** — disabled (Authentik default; no enrollment flow bound to the app).
+- **Registration** — **self-service enrollment since #366** ([auth.md §8.11](auth.md)): blueprint
+  flow `beekeepingit-enrollment`, linked from the login page via the default identification
+  stage's `enrollment_flow`. Registrations are held **unverified** on an emailed one-time link
+  (the #361 machinery) and a UUID `upn` is assigned at creation (§4). The provider/client
+  contract above is unchanged — enrollment is IdP-side flow config.
 - **`platform-operator`** — an Authentik **group** (ops-only marker, **not** an app role); the app authZ path never reads it.
 
 ## 4. Subject & audience — the two claim decisions
@@ -51,8 +55,9 @@ so a separate origin is free of cost here.
   The **seed user's `upn` = `11111111-1111-4111-8111-111111111111`** (continuity: `oidc_sub`
   keeps its prior value). _Rejected: `user_email` (mutable PII as identity key); `user_uuid` /
   `hashed_user_id` (unpinnable / secret-key-derived → not reproducible)._
-  **Forward-requirement (not v1 work):** when real self-service enrollment is built, its flow
-  must assign a UUID `upn` per user.
+  **Forward-requirement — implemented by #366:** the self-service enrollment flow assigns a UUID
+  `upn` per user at creation (an expression policy on its `user_write` binding, fail closed: no
+  account is created without one — [auth.md §8.11](auth.md)).
 - **`aud` → services expect `beekeepingit-pwa`.** Authentik's default `aud` is the client id, so
   set **`OIDC_AUDIENCE=beekeepingit-pwa`** (no custom audience mapper). A stale value = silent 401s.
 
@@ -72,7 +77,9 @@ optional.
 > email-verification stage in the authentication flow sets on completion of the emailed one-time
 > link; self-service email changes are **disabled** (`default_user_change_email` false — upstream
 > default at 2026.5.4, e2e-pinned; [auth.md §8.10](auth.md)), so a verified address cannot be
-> self-re-pointed. Registration stays disabled (defense in depth). **Password reset/recovery** flow remains **EPIC-14**
+> self-re-pointed. Self-service **registration** (since #366, [auth.md §8.11](auth.md)) rides the
+> same machinery — a fresh registration is held on the emailed link and can never start verified.
+> **Password reset/recovery** flow remains **EPIC-14**
 > ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) — SMTP, its prerequisite, is now in
 > place (`AUTHENTIK_EMAIL__*` from the umbrella's config Secret; dev/CI: the `mailpit` sink).
 
@@ -135,7 +142,11 @@ optional.
   Since #361 it also declares the custom `email` scope mapping (real `email_verified`) and the
   login-time email-verification stages/policies; self-service email change stays disabled by the
   upstream `default_user_change_email` default, deliberately NOT a blueprint entry (the Tenant
-  model is not blueprint-manageable) — see [auth.md §8.10](auth.md).
+  model is not blueprint-manageable) — see [auth.md §8.10](auth.md). Since #366 it additionally
+  declares the self-service **enrollment flow** `beekeepingit-enrollment` (prompts + length-only
+  password policy, upn-assigning `user_write`, the reused email/stamp stages, the default
+  user-login stage) and links it from the default identification stage's `enrollment_flow` —
+  see [auth.md §8.11](auth.md).
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
@@ -149,11 +160,26 @@ optional.
   flips the default or ops ever enable it deliberately, a reset-on-change policy on the
   user-settings write binding becomes **mandatory** — recover it from PR #411 history and
   re-verify the binding identifiers, which at 2026.5.4 were
-  `flow-default-user-settings-flow.yaml` lines 144–148: `order: 100`) — and flow-email
+  `flow-default-user-settings-flow.yaml` lines 144–148: `order: 100`) — flow-email
   localization (2026.5.4 renders flow-triggered mail per the request's negotiated language and
   can never reach the shipped `pt_PT` catalog — [auth.md §8.10](auth.md),
   [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check whether a bump fixes
-  `User.locale()`'s in-request ordering or adds a negotiable `pt-pt`).
+  `User.locale()`'s in-request ordering or adds a negotiable `pt-pt`; the flow-executor **web**
+  catalogs similarly ship `pt-BR` but no `pt-PT`, so the enrollment UI renders English for a
+  pt-PT browser) — and the **enrollment-flow splice points (#366,
+  [auth.md §8.11](auth.md))**: the default identification stage's `enrollment_flow` link and
+  the reused `default-authentication-login` stage must survive a bump (the identification-stage
+  entry also **restates `user_fields: [email, username]`** — the importer validates an update
+  entry's own data and the stage serializer rejects "no user fields, no source" without it
+  (learned the hard way: omitting it marked the whole blueprint invalid, PR #414's discovery-404
+  CI failure), so an upstream change to the default `user_fields` must be mirrored there); the
+  email stage's
+  per-send uuid4-embedding flow-token identifiers must stay per-send (a regression to a shared
+  identifier would make concurrent enrollment/login-verification links clobber each other);
+  the prompt serializer admitting only declared fields plus `user_write`'s `groups`/`pk` deny
+  and unknown-key discard are the enrollment write-safety boundary (re-verify on bump, the #170
+  shape); and identification resolves duplicate emails first-match (accounts registered here
+  always have a unique username to identify by — re-check if `user_fields` ever changes).
 - **CI** — `helm-e2e`: timeout 20→30m, install `--timeout` →15m, apply the Authentik `HelmRelease`
   - `rollout status` before `helm test`; `helm test` hook curls `/-/health/ready/`. `helm-ci`: swap
     the `codecentric` repo add for the `authentik` repo where a lint/template needs it.

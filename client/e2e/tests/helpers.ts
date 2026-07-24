@@ -1,11 +1,21 @@
-import { Page } from "@playwright/test";
+import { APIRequestContext, Browser, BrowserContext, expect, Page } from "@playwright/test";
 
 /**
  * Shared e2e plumbing, extracted from slice.spec.ts (#361) so the
  * verification-flow spec can reuse the same Flutter-semantics bootstrap and
- * provider-agnostic IdP form driving without duplicating it. Behavior is
- * unchanged — see each function's original rationale below.
+ * provider-agnostic IdP form driving without duplicating it. The
+ * Mailpit/invitation/token helpers moved here from verification.spec.ts when
+ * the registration spec (#366) grew the same needs. Behavior is unchanged —
+ * see each function's original rationale below.
  */
+
+// Shared env — the same defaults the specs used before extraction. An empty
+// API_URL makes the in-page fetches relative (same-origin through the
+// gateway), which is the intended default; MAILPIT_URL doubles as the
+// verification/registration specs' opt-in switch (helm-e2e.yml port-forwards
+// the sink and sets it).
+export const MAILPIT_URL = process.env.E2E_MAILPIT_URL ?? "";
+export const API_URL = process.env.E2E_API_URL ?? "";
 
 export async function enableSemantics(page: Page) {
   // Flutter builds its semantics DOM (what Playwright selects against) only
@@ -157,4 +167,161 @@ export async function readIdTokenClaims(page: Page): Promise<Record<string, unkn
   const payload = idToken.split(".")[1];
   if (!payload) throw new Error("stored id_token is not a JWT");
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+}
+
+/** Every Mailpit message ID currently held for `recipient`, newest first. */
+export async function messageIdsTo(
+  request: APIRequestContext,
+  recipient: string,
+): Promise<string[]> {
+  const list = await request.get(
+    `${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${recipient}`)}`,
+  );
+  const body = (await list.json()) as { messages?: Array<{ ID: string }> };
+  return (body.messages ?? []).map((m) => m.ID);
+}
+
+// Extracts the one-time verification link for `recipient` from the Mailpit
+// API. The message body is the built-in account-confirmation template whose
+// text part carries the bare flow URL on its own line. (The body renders in
+// English regardless of user locale on the pinned Authentik 2026.5.4 — see
+// the blueprint's i18n note — so no locale-sensitive matching is needed.)
+//
+// Resolves the newest message NOT listed in `options.notIn`. When several
+// emails can exist for the same address (the registration spec's
+// duplicate-email scenario), callers MUST pass a `messageIdsTo` baseline
+// captured before triggering the send: a bare newest-message poll races the
+// SMTP delivery and can hand back a stale, already-consumed one-time link
+// (flow tokens are single-use — exactly the #366 e2e squatter failure).
+export async function pollForVerificationLink(
+  request: APIRequestContext,
+  recipient: string,
+  options?: { notIn?: readonly string[] },
+): Promise<string> {
+  const excluded = new Set(options?.notIn ?? []);
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    const list = await request
+      .get(`${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${recipient}`)}`)
+      .catch(() => null);
+    if (list?.ok()) {
+      const body = (await list.json()) as { messages?: Array<{ ID: string }> };
+      const newest = body.messages?.find((m) => !excluded.has(m.ID));
+      if (newest) {
+        const full = await request.get(`${MAILPIT_URL}/api/v1/message/${newest.ID}`);
+        const text = ((await full.json()) as { Text?: string }).Text ?? "";
+        const match = text.match(/https?:\/\/[^\s"<>]+/);
+        if (match) return match[0];
+      }
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`no fresh verification email for ${recipient} arrived in Mailpit`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+}
+
+export async function countMessagesTo(
+  request: APIRequestContext,
+  recipient: string,
+): Promise<number> {
+  const list = await request.get(
+    `${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${recipient}`)}`,
+  );
+  const body = (await list.json()) as { messages?: unknown[] };
+  return body.messages?.length ?? 0;
+}
+
+// The app ORIGIN, anchored. An unanchored /app\.beekeepingit\.local/ also
+// matches the IdP's own flow URLs: their ?next= embeds the app origin inside
+// the percent-encoded redirect_uri, whose dots stay literal — so a wait using
+// the unanchored form can "pass" while the page never left the auth host and
+// the failure then surfaces later as a confusing id_token-read timeout
+// (exactly the #366 registration e2e's squatter symptom).
+export const APP_ORIGIN_RE = /^https:\/\/app\.beekeepingit\.local/;
+
+// A login that completed lands the user back on the app origin — the
+// onboarding gate then routes by profile/org state (/profile for a fresh
+// user, /apiaries once onboarded/joined). Anything still on the auth host
+// means the flow didn't finish.
+export async function expectLoginCompleted(page: Page, expectedEmail: string) {
+  await page.waitForURL(APP_ORIGIN_RE, { timeout: 60_000 });
+  const claims = await readIdTokenClaims(page);
+  expect(claims.email).toBe(expectedEmail);
+  expect(claims.email_verified).toBe(true);
+}
+
+/**
+ * Runs an authenticated JSON call against the domain APIs from inside `page`
+ * (which must be on the app origin): same-origin fetch, so it rides the
+ * browser's host-resolver rules exactly like slice.spec.ts's serverApiary —
+ * Playwright's Node-side `request` fixture would not resolve the dev
+ * hostnames.
+ */
+export async function apiJson(
+  page: Page,
+  token: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; json: Record<string, unknown> }> {
+  return page.evaluate(
+    async ({ apiURL, token, method, path, body }) => {
+      const res = await fetch(`${apiURL}/v1${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      return { status: res.status, json };
+    },
+    { apiURL: API_URL, token, method, path, body },
+  );
+}
+
+/** The status of the org's invitation for `email`, via the admin's session. */
+export async function invitationStatus(
+  adminPage: Page,
+  adminToken: string,
+  orgId: string,
+  email: string,
+): Promise<string | null> {
+  const { status, json } = await apiJson(
+    adminPage,
+    adminToken,
+    "GET",
+    `/organizations/${orgId}/invitations`,
+  );
+  if (status !== 200) return null;
+  const rows = (json.data ?? []) as Array<{ email: string; status: string }>;
+  return rows.find((row) => row.email === email)?.status ?? null;
+}
+
+/**
+ * Logs `user` in through the real IdP flow in a fresh context and captures a
+ * bearer token from the app's own API traffic (the provider disallows direct
+ * grant, so a token is only obtainable from a real authenticated run — same
+ * technique as slice.spec.ts). Caller closes the returned context.
+ */
+export async function loginAndCaptureToken(
+  browser: Browser,
+  user: string,
+  pass: string,
+): Promise<{ context: BrowserContext; page: Page; token: string }> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  let token = "";
+  page.on("request", (req) => {
+    const auth = req.headers()["authorization"];
+    if (auth?.startsWith("Bearer ") && req.url().includes("/v1/")) {
+      token = auth.slice("Bearer ".length);
+    }
+  });
+  await submitIdpCredentials(page, user, pass);
+  await page.waitForURL(APP_ORIGIN_RE, { timeout: 60_000 });
+  await expect.poll(() => token, { timeout: 30_000 }).not.toBe("");
+  return { context, page, token };
 }
