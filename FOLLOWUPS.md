@@ -7,18 +7,8 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## Branch: cluster secrets/env loading + `cluster-ops.yml` (D-26/D-27)
-
-- [ ] **After merge — create the GitHub secrets/variables `cluster-ops.yml` needs** (manual,
-      GitHub UI/`gh` — an agent must not handle the values; see
-      `infra/README.md#secrets--remote-cluster-operations` for the full inventory + commands):
-      `SCW_ACCESS_KEY`/`SCW_SECRET_KEY`/`SCW_DEFAULT_PROJECT_ID`/`SCW_DEFAULT_ORGANIZATION_ID`,
-      `CF_API_TOKEN`/`CF_ZONE_ID` (optional), `AUTHENTIK_EMAIL_USERNAME`/`_PASSWORD` (optional) —
-      scoped to the `staging-gate`/`production-gate` environments — plus the non-secret
-      `APP_HOST`/`AUTH_HOST` environment variables. Until they exist, a `cluster-ops` dispatch
-      fails at the scripts' credentials pre-flight (by design, with a clear message). A first
-      real staging `up` run from the Actions tab is the end-to-end verification.
-
-_(previous sweep: the `DEPLOY_NOTIFY_TOKEN` entry's owning PRs (#375 here, beekeepingit-gitops#5)
-merged; its remaining manual step was promoted to
-[#413](https://github.com/TiagoJVO/beekeepingit/issues/413), which is still open.)_
+_(empty — nothing pending; PR #418's before-merge item (create the `cluster-ops.yml`
+secrets/variables) is done — the `staging-gate` set is in place. `production-gate` secrets are
+not owed here: prod is deferred until DR (`Q-DR`) + #90 land (D-26), and the fill-in steps live in
+`infra/README.md#secrets--remote-cluster-operations`. The `DEPLOY_NOTIFY_TOKEN` manual step remains
+tracked in [#413](https://github.com/TiagoJVO/beekeepingit/issues/413), still open.)_
