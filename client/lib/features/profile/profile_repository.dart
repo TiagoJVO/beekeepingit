@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -119,6 +120,18 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
 class ProfileController extends AsyncNotifier<Profile> {
   @override
   Future<Profile> build() {
+    // Logged out: stay pending (a never-completing future) WITHOUT touching
+    // the network. This provider has eager initializers that exist for other
+    // reasons — the router's redirect listens (app_router.dart) and
+    // localeProvider (core/l10n) — and without this gate each of them fires
+    // an unauthenticated 401 `GET /v1/profile` at boot, which Riverpod's
+    // default policy then retries ~10x (the "401 storm"). Gating here, in
+    // the one place the fetch originates, keeps every watcher safe by
+    // construction; the isAuthenticated watch re-runs build the moment a
+    // session appears, so login still fetches exactly as before.
+    if (!ref.watch(isAuthenticatedProvider)) {
+      return Completer<Profile>().future;
+    }
     return ref.watch(profileRepositoryProvider).fetch();
   }
 
