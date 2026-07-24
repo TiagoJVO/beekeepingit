@@ -1580,12 +1580,6 @@ abstract class AppLocalizations {
   /// **'Apiaries to visit'**
   String get journeyApiariesLabel;
 
-  /// Validation message when no apiary is selected for a journey's plan (#45)
-  ///
-  /// In en, this message translates to:
-  /// **'Select at least one apiary'**
-  String get journeyApiariesRequired;
-
   /// Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)
   ///
   /// In en, this message translates to:

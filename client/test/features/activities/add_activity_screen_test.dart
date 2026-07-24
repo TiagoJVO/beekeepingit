@@ -1399,6 +1399,47 @@ void main() {
     });
 
     testWidgets(
+      'inline create: deselecting the pre-filled apiary still saves — the '
+      'plan may be empty (D-30, #428, FR-JO-4)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository();
+        await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-create-new-option')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('journey-quick-create-name-field')),
+          'Empty-plan Journey',
+        );
+        // Deselect the pre-filled apiary (a1) so the plan is empty.
+        await tester.tap(find.byKey(const Key('journey-apiary-option-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-quick-create-save-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // The journey is created with an empty plan; the old at-least-one
+        // apiary gate no longer blocks the inline save.
+        expect(journeysRepo.created, hasLength(1));
+        expect(journeysRepo.created.single.name, 'Empty-plan Journey');
+        expect(journeysRepo.created.single.apiaryIds, isEmpty);
+      },
+    );
+
+    testWidgets(
       'inline create: a failing create() keeps the quick-create sheet open '
       'and shows an error, not an indefinite spinner',
       (tester) async {

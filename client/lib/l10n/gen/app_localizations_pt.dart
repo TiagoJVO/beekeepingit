@@ -923,9 +923,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get journeyApiariesLabel => 'Apiários a visitar';
 
   @override
-  String get journeyApiariesRequired => 'Selecione pelo menos um apiário';
-
-  @override
   String get journeyApiariesNoneAvailable =>
       'Ainda não há apiários — adicione um no separador Apiários primeiro.';
 

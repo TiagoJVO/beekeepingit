@@ -1212,10 +1212,6 @@
   "@journeyApiariesLabel": {
     "description": "Section label above the apiary multi-select picker on the journey create/edit form (#45, FR-JO-4)"
   },
-  "journeyApiariesRequired": "Select at least one apiary",
-  "@journeyApiariesRequired": {
-    "description": "Validation message when no apiary is selected for a journey's plan (#45)"
-  },
   "journeyApiariesNoneAvailable": "No apiaries yet — add one from the Apiaries tab first.",
   "@journeyApiariesNoneAvailable": {
     "description": "Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)"

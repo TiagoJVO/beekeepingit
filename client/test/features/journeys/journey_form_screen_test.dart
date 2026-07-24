@@ -264,21 +264,31 @@ void main() {
       expect(find.text('Name is required'), findsOneWidget);
     });
 
-    testWidgets('saving without any apiary selected is blocked (#45 AC: '
-        'the set of apiaries to visit)', (tester) async {
-      final repo = _FakeJourneysRepository();
-      await _openNewJourneyForm(tester, repo: repo);
+    testWidgets(
+      'saving with no apiary selected is allowed — the plan may be empty and '
+      'apiaries added later via edit (D-30, #428, FR-JO-4)',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
 
-      await tester.enterText(
-        find.byKey(const Key('journey-name-field')),
-        'Colheita de Primavera',
-      );
-      await tester.tap(find.byKey(const Key('journey-save-button')));
-      await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          'Colheita de Primavera',
+        );
+        // No apiary selected.
+        await tester.tap(find.byKey(const Key('journey-save-button')));
+        await tester.pumpAndSettle();
 
-      expect(repo.created, isEmpty);
-      expect(find.text('Select at least one apiary'), findsOneWidget);
-    });
+        // The journey is created with an empty plan; the old
+        // "Select at least one apiary" gate no longer blocks the save.
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.name, 'Colheita de Primavera');
+        expect(repo.created.single.apiaryIds, isEmpty);
+        expect(find.text('Select at least one apiary'), findsNothing);
+        // Navigated back to the list on success.
+        expect(find.byKey(const Key('journey-name-field')), findsNothing);
+      },
+    );
 
     testWidgets(
       'a selected apiary checkbox uses the accent (tertiary) color, not the '
