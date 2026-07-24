@@ -5,6 +5,7 @@ import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -160,6 +161,72 @@ void main() {
       final repo = _buildRepo(client: client, prefs: prefs);
 
       await expectLater(repo.fetchMine(), throwsA(isA<ApiException>()));
+    });
+  });
+
+  // Regression: every logged-out boot used to fire an unauthenticated
+  // `GET /v1/organizations/me` — retried ~10x by Riverpod's default policy
+  // (a "401 storm") — because eager watchers (the router's redirect listens,
+  // app.dart's membership-loss purge listener) initialize this provider
+  // before any session exists. OrganizationController.build now stays
+  // pending without fetching until authenticated (mirrors
+  // profile_repository_test.dart's same gate group).
+  group('organizationProvider — logged-out fetch gate', () {
+    late int requests;
+
+    ProviderContainer buildContainer(StateProvider<bool> authed) {
+      requests = 0;
+      final client = MockClient((req) async {
+        requests++;
+        return http.Response(
+          jsonEncode(_orgJson()),
+          200,
+          headers: {'content-type': 'application/json'},
+          request: req,
+        );
+      });
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(() => _FakeAuthController()),
+          isAuthenticatedProvider.overrideWith((ref) => ref.watch(authed)),
+          apiClientProvider.overrideWith(
+            (ref) => ApiClient(ref, httpClient: client),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test(
+      'initializing the provider while logged out fetches nothing',
+      () async {
+        final authed = StateProvider<bool>((_) => false);
+        final container = buildContainer(authed);
+
+        container.listen(organizationProvider, (_, __) {});
+        // Drain microtasks so any (wrongly) started fetch gets a chance to run.
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(requests, 0);
+        expect(container.read(organizationProvider).isLoading, isTrue);
+      },
+    );
+
+    test('the fetch fires once a session appears', () async {
+      final authed = StateProvider<bool>((_) => false);
+      final container = buildContainer(authed);
+
+      container.listen(organizationProvider, (_, __) {});
+      await Future<void>.delayed(Duration.zero);
+      expect(requests, 0, reason: 'still logged out — no fetch yet');
+
+      container.read(authed.notifier).state = true;
+      final org = await container.read(organizationProvider.future);
+
+      expect(org?.name, 'Serra Apiaries');
+      expect(requests, 1);
     });
   });
 }

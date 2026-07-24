@@ -211,25 +211,74 @@ jobs:
       # couldn't pull it. The pwa chart's pullPolicy is IfNotPresent and the tag
       # is unique per commit, so the imported copy is used as-is. Cluster name
       # is pinned in infra/cluster/k3d-config.yaml.
+      #
+      # `k3d image import` races saving the image tarball to the shared image
+      # volume against the node's own `ctr image import` exec — under I/O
+      # contention on a loaded CI runner, the exec can run first, log an
+      # internal `ERRO ... open /k3d/images/*.tar: no such file or directory`,
+      # and STILL exit 0 (the per-node failure doesn't propagate to the
+      # command's own exit code), silently leaving the image un-imported. The
+      # first visible symptom then isn't here — it's `ImagePullBackOff` several
+      # minutes later in "Wait for domain-service deployments", once kubelet
+      # tries to pull the (never-registry-pushed) tag and 404s. Verify the
+      # image actually landed in the node's containerd after each import and
+      # retry on a miss instead of trusting the exit code.
       - name: Import the PWA image into the cluster
         if: steps.changes.outputs.e2e == 'true'
         env:
           PWA_IMAGE: ${{ steps.pwa_image.outputs.repository }}:${{ steps.pwa_image.outputs.tag }}
-        run: k3d image import "$PWA_IMAGE" -c beekeeping
+        run: |
+          set -euo pipefail
+          node="$(docker ps --filter 'name=k3d-beekeeping-server-' --format '{{.Names}}' | head -n1)"
+          for attempt in 1 2 3; do
+            echo "k3d image import attempt ${attempt}/3: $PWA_IMAGE"
+            k3d image import "$PWA_IMAGE" -c beekeeping
+            if docker exec "$node" ctr -n k8s.io images ls -q | grep -qxF "$PWA_IMAGE"; then
+              echo "verified: $PWA_IMAGE present in $node's containerd"
+              exit 0
+            fi
+            echo "warning: $PWA_IMAGE missing from $node's containerd after attempt ${attempt} — retrying"
+            sleep 5
+          done
+          echo "::error::k3d image import never landed $PWA_IMAGE in $node's containerd after 3 attempts"
+          exit 1
 
       # Import the service images the same way (#245): they were built to the
       # local daemon, never pushed (PR builds don't publish), so the cluster's
       # containerd can't pull them — import each so pullPolicy: IfNotPresent
       # finds the imported copy. One `k3d image import` call takes all four.
+      # Same import-race hardening as the PWA import step above (see its
+      # comment) — SERVICE_IMAGES is a space-separated list, so verify each one
+      # landed before trusting the (otherwise unreliable) exit code.
       - name: Import the service images into the cluster
         if: steps.changes.outputs.e2e == 'true'
         env:
           SERVICE_IMAGES: ${{ steps.service_images.outputs.images }}
         run: |
-          # Intentional word-splitting: SERVICE_IMAGES is a space-separated list
-          # of image refs, each a separate argument to `k3d image import`.
-          # shellcheck disable=SC2086
-          k3d image import $SERVICE_IMAGES -c beekeeping
+          set -euo pipefail
+          node="$(docker ps --filter 'name=k3d-beekeeping-server-' --format '{{.Names}}' | head -n1)"
+          for attempt in 1 2 3; do
+            echo "k3d image import attempt ${attempt}/3: $SERVICE_IMAGES"
+            # Intentional word-splitting: SERVICE_IMAGES is a space-separated list
+            # of image refs, each a separate argument to `k3d image import`.
+            # shellcheck disable=SC2086
+            k3d image import $SERVICE_IMAGES -c beekeeping
+            missing=0
+            for image in $SERVICE_IMAGES; do
+              if ! docker exec "$node" ctr -n k8s.io images ls -q | grep -qxF "$image"; then
+                echo "warning: $image missing from $node's containerd after attempt ${attempt}"
+                missing=1
+              fi
+            done
+            if [ "$missing" -eq 0 ]; then
+              echo "verified: all service images present in $node's containerd"
+              exit 0
+            fi
+            echo "retrying after a race..."
+            sleep 5
+          done
+          echo "::error::k3d image import never landed all service image(s) in $node's containerd after 3 attempts"
+          exit 1
 
       # Install the packaged subchart snapshots under charts/*.tgz (see the chart's
       # README) — the umbrella's deps are all local file:// / vendored, so no chart

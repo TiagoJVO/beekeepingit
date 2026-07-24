@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -123,6 +124,14 @@ final organizationRepositoryProvider = Provider<OrganizationRepository>((ref) {
 class OrganizationController extends AsyncNotifier<Organization?> {
   @override
   Future<Organization?> build() async {
+    // Same logged-out gate as ProfileController.build (see its comment):
+    // stay pending without fetching so this provider's eager initializers
+    // (the router's redirect listens, app.dart's membership-loss purge
+    // listener) can't fire unauthenticated 401 `GET /v1/organizations/me`
+    // retry storms at boot; the watch re-runs build on login.
+    if (!ref.watch(isAuthenticatedProvider)) {
+      return Completer<Organization?>().future;
+    }
     final repo = ref.watch(organizationRepositoryProvider);
     try {
       return await repo.fetchMine();
