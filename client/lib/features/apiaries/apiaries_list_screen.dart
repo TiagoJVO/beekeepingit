@@ -100,8 +100,8 @@ final apiariesViewModelProvider = Provider<AsyncValue<ApiariesViewModel>>((
 /// nearest-first ordering track the user as they walk the yard. Kept
 /// deliberately coarse — ordering a short list doesn't need second-by-second
 /// precision, and a longer interval limits GPS/battery use; the timer is also
-/// fully suspended while the app is backgrounded (see
-/// [_ApiariesListScreenState.didChangeAppLifecycleState]).
+/// fully suspended while the app is backgrounded or this tab is offstage (see
+/// [_ApiariesListScreenState._reconcileRefreshTimer]).
 const Duration _locationRefreshInterval = Duration(seconds: 10);
 
 /// The home screen: the org's apiaries, read live from local SQLite (works
@@ -136,9 +136,9 @@ const Duration _locationRefreshInterval = Duration(seconds: 10);
 /// [Timer.periodic] ([_locationRefreshInterval]) silently re-acquires it so
 /// the distances/ordering track the user as they move, and a
 /// [RefreshIndicator] lets them pull-to-refresh on demand. The timer is a
-/// stateful resource (started in [State.initState], cancelled in
-/// [State.dispose], suspended while backgrounded), so this is a
-/// [ConsumerStatefulWidget] rather than the previous stateless
+/// stateful resource (started/stopped across the widget's lifecycle,
+/// suspended whenever polling wouldn't be useful — see [_reconcileRefreshTimer]),
+/// so this is a [ConsumerStatefulWidget] rather than the previous stateless
 /// [ConsumerWidget].
 class ApiariesListScreen extends ConsumerStatefulWidget {
   const ApiariesListScreen({super.key});
@@ -151,11 +151,23 @@ class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
     with WidgetsBindingObserver {
   Timer? _locationRefreshTimer;
 
+  // The periodic GPS refresh must only run when it's actually useful — the app
+  // is foregrounded AND this (the Apiaries) tab is the visible branch. This
+  // screen is the root of a StatefulShellRoute.indexedStack branch, so
+  // switching bottom-nav tabs does NOT dispose it: it stays mounted offstage,
+  // and without the visibility gate the timer would keep polling GPS on every
+  // other tab (battery drain, and contradicting the AC "while the list is
+  // visible"). Both conditions are tracked here and combined in [_shouldPoll].
+  bool _appForegrounded = true;
+  bool _tabVisible = true;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _startLocationRefreshTimer();
+    // The timer is (re)started from [didChangeDependencies], which runs right
+    // after this and is the first point the tab's visibility (via TickerMode)
+    // is readable — starting it here would miss a cold start on another tab.
   }
 
   @override
@@ -165,27 +177,57 @@ class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
     super.dispose();
   }
 
+  /// Track whether this tab is the visible branch of the app shell's
+  /// [StatefulShellRoute.indexedStack]. go_router disables [TickerMode] on the
+  /// offstage branches, so it doubles as a reliable "am I the foreground tab"
+  /// signal — and because it's an inherited value, this callback re-runs on
+  /// every tab switch, letting us suspend GPS polling while the user is on
+  /// another tab and resume (with a catch-up fetch) when they return
+  /// (#422 AC: "auto-refreshes about every 10s while the list is visible").
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tabVisible = TickerMode.of(context);
+    final becameVisible = tabVisible && !_tabVisible;
+    _tabVisible = tabVisible;
+    _reconcileRefreshTimer(catchUp: becameVisible);
+  }
+
   /// Suspend the periodic refresh while the app is backgrounded and resume it
   /// (with an immediate catch-up fetch) on return — a foreground gate so a
   /// pocketed, walked-away phone isn't polling GPS every ~10s (#422: "gate to
-  /// foreground/visible to limit battery use"; AC: "the timer is cancelled
-  /// when the screen is disposed/backgrounded").
+  /// foreground/visible to limit battery use"; AC: "cancelled when the screen
+  /// is disposed/backgrounded").
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.resumed:
-        _refreshLocation();
-        _startLocationRefreshTimer();
-      case AppLifecycleState.inactive:
-      case AppLifecycleState.paused:
-      case AppLifecycleState.hidden:
-      case AppLifecycleState.detached:
-        _stopLocationRefreshTimer();
+    final foregrounded = state == AppLifecycleState.resumed;
+    final becameForegrounded = foregrounded && !_appForegrounded;
+    _appForegrounded = foregrounded;
+    _reconcileRefreshTimer(catchUp: becameForegrounded);
+  }
+
+  /// Whether the periodic location refresh should currently be running: only
+  /// when the app is foregrounded AND this tab is the visible branch.
+  bool get _shouldPoll => _appForegrounded && _tabVisible;
+
+  /// Reconcile the timer with [_shouldPoll]: start it (optionally firing an
+  /// immediate [catchUp] fetch, when we've just become eligible again after a
+  /// gap on another tab or in the background) or stop it. Idempotent — safe to
+  /// call on any lifecycle/visibility change.
+  void _reconcileRefreshTimer({required bool catchUp}) {
+    if (_shouldPoll) {
+      if (catchUp) _refreshLocation();
+      _startLocationRefreshTimer();
+    } else {
+      _stopLocationRefreshTimer();
     }
   }
 
   void _startLocationRefreshTimer() {
-    _locationRefreshTimer?.cancel();
+    // Don't restart an already-running timer: [didChangeDependencies] can fire
+    // for unrelated inherited changes (theme, locale), and resetting the
+    // countdown each time would keep the ~10s tick from ever landing.
+    if (_locationRefreshTimer?.isActive ?? false) return;
     _locationRefreshTimer = Timer.periodic(
       _locationRefreshInterval,
       (_) => _refreshLocation(),

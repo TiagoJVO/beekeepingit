@@ -53,13 +53,28 @@ Widget _buildScreen({
   required List<Apiary> apiaries,
   DeviceLocation location = const DeviceLocationUnavailable(),
   DeviceLocationService? service,
+  ValueListenable<bool>? tabVisible,
 }) {
   final router = GoRouter(
     initialLocation: '/apiaries',
     routes: [
       GoRoute(
         path: '/apiaries',
-        builder: (context, state) => const Scaffold(body: ApiariesListScreen()),
+        // When [tabVisible] is supplied, wrap the screen in a toggleable
+        // [TickerMode] — exactly how StatefulShellRoute.indexedStack disables
+        // the ticker on offstage branches (go_router route.dart), the signal
+        // the screen gates its periodic refresh on (#422). Flipping the
+        // listenable simulates switching to/from the Apiaries tab.
+        builder: (context, state) {
+          const screen = Scaffold(body: ApiariesListScreen());
+          if (tabVisible == null) return screen;
+          return ValueListenableBuilder<bool>(
+            valueListenable: tabVisible,
+            builder: (context, visible, child) =>
+                TickerMode(enabled: visible, child: child!),
+            child: screen,
+          );
+        },
       ),
       GoRoute(
         path: '/apiaries/:id',
@@ -731,16 +746,16 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Initial (once-only) fetch: device is east, so East sorts first.
-        expect(service.callCount, 1);
+        // Device starts east, so East sorts first.
         expect(_cardTitles(tester), ['East', 'West']);
+        final fetchesBeforeTick = service.callCount;
 
         // The user walks west; the next ~10s tick must re-fetch and re-sort.
         service.result = const DeviceLocationAvailable(lon: -9.0, lat: 0.0);
         await tester.pump(const Duration(seconds: 11));
         await tester.pumpAndSettle();
 
-        expect(service.callCount, greaterThan(1));
+        expect(service.callCount, greaterThan(fetchesBeforeTick));
         expect(_cardTitles(tester), ['West', 'East']);
 
         // Dispose so the still-live periodic timer doesn't outlive the test.
@@ -761,15 +776,15 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(service.callCount, 1);
+        final fetchesBeforeDispose = service.callCount;
 
         // Tearing down the screen must cancel the timer in State.dispose —
         // if it didn't, flutter_test would itself fail the test for a pending
-        // timer, and the later tick would push callCount past 1.
+        // timer, and the later tick would push callCount up.
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 30));
 
-        expect(service.callCount, 1);
+        expect(service.callCount, fetchesBeforeDispose);
       },
     );
 
@@ -799,5 +814,101 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
     });
+
+    testWidgets(
+      'polling is suspended while the tab is offstage and resumes with a '
+      'catch-up fetch when it becomes visible again',
+      (tester) async {
+        final visible = ValueNotifier<bool>(true);
+        addTearDown(visible.dispose);
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+            tabVisible: visible,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch away from the Apiaries tab: its indexedStack branch goes
+        // offstage (TickerMode disabled). The screen stays mounted, but must
+        // stop polling — no new fetch, no matter how much time elapses.
+        visible.value = false;
+        await tester.pump();
+        final countWhileHidden = service.callCount;
+        await tester.pump(const Duration(seconds: 30));
+        expect(service.callCount, countWhileHidden);
+
+        // Return to the Apiaries tab: an immediate catch-up fetch, then the
+        // ~10s polling resumes.
+        visible.value = true;
+        await tester.pump();
+        expect(
+          service.callCount,
+          greaterThan(countWhileHidden),
+          reason: 'a catch-up fetch fires when the tab becomes visible',
+        );
+        final countAfterReturn = service.callCount;
+
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+        expect(
+          service.callCount,
+          greaterThan(countAfterReturn),
+          reason: 'the periodic timer resumed once the tab is visible again',
+        );
+
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets(
+      'polling stops when the app is backgrounded and resumes with a catch-up '
+      'fetch when it is foregrounded',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Background the app: the timer must stop firing.
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await tester.pump();
+        final countWhilePaused = service.callCount;
+        await tester.pump(const Duration(seconds: 30));
+        expect(service.callCount, countWhilePaused);
+
+        // Foreground again: an immediate catch-up fetch, then polling resumes.
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump();
+        expect(
+          service.callCount,
+          greaterThan(countWhilePaused),
+          reason: 'a catch-up fetch fires on foreground',
+        );
+        final countAfterResume = service.callCount;
+
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+        expect(
+          service.callCount,
+          greaterThan(countAfterResume),
+          reason: 'the periodic timer resumed once foregrounded',
+        );
+
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
   });
 }
