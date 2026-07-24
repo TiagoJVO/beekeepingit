@@ -169,18 +169,36 @@ export async function readIdTokenClaims(page: Page): Promise<Record<string, unkn
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
 }
 
+/** Every Mailpit message ID currently held for `recipient`, newest first. */
+export async function messageIdsTo(
+  request: APIRequestContext,
+  recipient: string,
+): Promise<string[]> {
+  const list = await request.get(
+    `${MAILPIT_URL}/api/v1/search?query=${encodeURIComponent(`to:${recipient}`)}`,
+  );
+  const body = (await list.json()) as { messages?: Array<{ ID: string }> };
+  return (body.messages ?? []).map((m) => m.ID);
+}
+
 // Extracts the one-time verification link for `recipient` from the Mailpit
 // API. The message body is the built-in account-confirmation template whose
 // text part carries the bare flow URL on its own line. (The body renders in
 // English regardless of user locale on the pinned Authentik 2026.5.4 — see
 // the blueprint's i18n note — so no locale-sensitive matching is needed.)
-// Always resolves the NEWEST message for the recipient, so callers that need
-// a specific email (e.g. the enrollment one, before a login attempt sends a
-// second) must poll before triggering more sends.
+//
+// Resolves the newest message NOT listed in `options.notIn`. When several
+// emails can exist for the same address (the registration spec's
+// duplicate-email scenario), callers MUST pass a `messageIdsTo` baseline
+// captured before triggering the send: a bare newest-message poll races the
+// SMTP delivery and can hand back a stale, already-consumed one-time link
+// (flow tokens are single-use — exactly the #366 e2e squatter failure).
 export async function pollForVerificationLink(
   request: APIRequestContext,
   recipient: string,
+  options?: { notIn?: readonly string[] },
 ): Promise<string> {
+  const excluded = new Set(options?.notIn ?? []);
   const deadline = Date.now() + 90_000;
   for (;;) {
     const list = await request
@@ -188,7 +206,7 @@ export async function pollForVerificationLink(
       .catch(() => null);
     if (list?.ok()) {
       const body = (await list.json()) as { messages?: Array<{ ID: string }> };
-      const newest = body.messages?.[0];
+      const newest = body.messages?.find((m) => !excluded.has(m.ID));
       if (newest) {
         const full = await request.get(`${MAILPIT_URL}/api/v1/message/${newest.ID}`);
         const text = ((await full.json()) as { Text?: string }).Text ?? "";
@@ -197,7 +215,7 @@ export async function pollForVerificationLink(
       }
     }
     if (Date.now() > deadline) {
-      throw new Error(`no verification email for ${recipient} arrived in Mailpit`);
+      throw new Error(`no fresh verification email for ${recipient} arrived in Mailpit`);
     }
     await new Promise((resolve) => setTimeout(resolve, 3_000));
   }
@@ -214,12 +232,20 @@ export async function countMessagesTo(
   return body.messages?.length ?? 0;
 }
 
+// The app ORIGIN, anchored. An unanchored /app\.beekeepingit\.local/ also
+// matches the IdP's own flow URLs: their ?next= embeds the app origin inside
+// the percent-encoded redirect_uri, whose dots stay literal — so a wait using
+// the unanchored form can "pass" while the page never left the auth host and
+// the failure then surfaces later as a confusing id_token-read timeout
+// (exactly the #366 registration e2e's squatter symptom).
+export const APP_ORIGIN_RE = /^https:\/\/app\.beekeepingit\.local/;
+
 // A login that completed lands the user back on the app origin — the
 // onboarding gate then routes by profile/org state (/profile for a fresh
 // user, /apiaries once onboarded/joined). Anything still on the auth host
 // means the flow didn't finish.
 export async function expectLoginCompleted(page: Page, expectedEmail: string) {
-  await page.waitForURL(/app\.beekeepingit\.local|\/profile/, { timeout: 60_000 });
+  await page.waitForURL(APP_ORIGIN_RE, { timeout: 60_000 });
   const claims = await readIdTokenClaims(page);
   expect(claims.email).toBe(expectedEmail);
   expect(claims.email_verified).toBe(true);
@@ -295,7 +321,7 @@ export async function loginAndCaptureToken(
     }
   });
   await submitIdpCredentials(page, user, pass);
-  await page.waitForURL(/app\.beekeepingit\.local/, { timeout: 60_000 });
+  await page.waitForURL(APP_ORIGIN_RE, { timeout: 60_000 });
   await expect.poll(() => token, { timeout: 30_000 }).not.toBe("");
   return { context, page, token };
 }

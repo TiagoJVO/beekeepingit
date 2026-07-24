@@ -8,11 +8,16 @@ import {
   invitationStatus,
   loginAndCaptureToken,
   MAILPIT_URL,
+  messageIdsTo,
   pollForVerificationLink,
   readIdTokenClaims,
   submitButton,
   submitIdpCredentials,
 } from "./helpers";
+
+// Anchored to the origin — see helpers.ts's APP_ORIGIN_RE note for why the
+// unanchored form is a trap (encoded redirect_uri substrings).
+const AUTH_ORIGIN_RE = /^https:\/\/auth\.beekeepingit\.local/;
 
 /**
  * Self-service registration e2e (#366, FR-ONB-1/2/3, FR-AU-1, NFR-SEC-1,
@@ -118,7 +123,7 @@ async function submitEnrollmentForm(page: Page, username: string, email: string)
  * the caller's Mailpit poll.
  */
 async function expectHeldAtEmailStage(page: Page) {
-  await expect(page).toHaveURL(/auth\.beekeepingit\.local/, { timeout: 30_000 });
+  await expect(page).toHaveURL(AUTH_ORIGIN_RE, { timeout: 30_000 });
   await expect(page.getByPlaceholder("Username", { exact: true })).toHaveCount(0, {
     timeout: 30_000,
   });
@@ -215,14 +220,18 @@ test.describe("self-service registration (#366)", () => {
       });
 
       // ── Register through the login page's Sign up link (AC 1) ─────────────
+      const inboxBefore = await messageIdsTo(request, INVITEE_EMAIL);
       await startSignUp(page);
       await submitEnrollmentForm(page, INVITEE_USERNAME, INVITEE_EMAIL);
       await expectHeldAtEmailStage(page);
 
       // The enrollment verification email arrives through the real SMTP path.
-      // Captured BEFORE the login attempt below sends a second one — the
-      // helper always returns the newest message for the address.
-      const enrollmentLink = await pollForVerificationLink(request, INVITEE_EMAIL);
+      // Captured BEFORE the login attempt below sends a second one, and
+      // baselined against the pre-registration inbox so a stale message can
+      // never be mistaken for it.
+      const enrollmentLink = await pollForVerificationLink(request, INVITEE_EMAIL, {
+        notIn: inboxBefore,
+      });
       expect(enrollmentLink).toContain("auth.beekeepingit.local");
       const emailsAfterEnrollment = await countMessagesTo(request, INVITEE_EMAIL);
 
@@ -240,7 +249,7 @@ test.describe("self-service registration (#366)", () => {
       try {
         const attemptPage = await attempt.newPage();
         await submitIdpCredentials(attemptPage, INVITEE_USERNAME, PASSWORD);
-        await expect(attemptPage).toHaveURL(/auth\.beekeepingit\.local/, { timeout: 30_000 });
+        await expect(attemptPage).toHaveURL(AUTH_ORIGIN_RE, { timeout: 30_000 });
         // The re-sent link is the self-heal proof (a fresh email for the
         // address, on top of the enrollment one).
         await expect
@@ -298,10 +307,11 @@ test.describe("self-service registration (#366)", () => {
     });
 
     // ── Register + verify (no invitation exists for this address) ─────────
+    const inboxBefore = await messageIdsTo(request, FOUNDER_EMAIL);
     await startSignUp(page);
     await submitEnrollmentForm(page, FOUNDER_USERNAME, FOUNDER_EMAIL);
     await expectHeldAtEmailStage(page);
-    const link = await pollForVerificationLink(request, FOUNDER_EMAIL);
+    const link = await pollForVerificationLink(request, FOUNDER_EMAIL, { notIn: inboxBefore });
     await completeViaEmailedLink(page, link, FOUNDER_EMAIL);
     expect((await readIdTokenClaims(page)).sub).toMatch(UUID_V4);
 
@@ -335,10 +345,13 @@ test.describe("self-service registration (#366)", () => {
     // ── Self-contained victim: register + verify a fresh account ──────────
     // (Not one of the earlier tests' users, so a CI retry in a fresh worker —
     // where this module's state is re-created — still holds.)
+    const victimInboxBefore = await messageIdsTo(request, VICTIM_EMAIL);
     await startSignUp(page);
     await submitEnrollmentForm(page, VICTIM_USERNAME, VICTIM_EMAIL);
     await expectHeldAtEmailStage(page);
-    const victimLink = await pollForVerificationLink(request, VICTIM_EMAIL);
+    const victimLink = await pollForVerificationLink(request, VICTIM_EMAIL, {
+      notIn: victimInboxBefore,
+    });
     await completeViaEmailedLink(page, victimLink, VICTIM_EMAIL);
     const victimSub = (await readIdTokenClaims(page)).sub as string;
     expect(victimSub).toMatch(UUID_V4);
@@ -357,6 +370,13 @@ test.describe("self-service registration (#366)", () => {
           squatterToken = auth.slice("Bearer ".length);
         }
       });
+      // Baseline the shared inbox BEFORE the squatter registers: the
+      // victim's earlier verification email sits in the same Mailpit
+      // mailbox, and its one-time link is already consumed — polling
+      // without the baseline raced the squatter's own (slower) delivery
+      // and grabbed that stale link, which restarts the flow at the IdP
+      // instead of completing it (the original red run's exact failure).
+      const sharedInboxBefore = await messageIdsTo(request, VICTIM_EMAIL);
       await startSignUp(squatterPage);
       await submitEnrollmentForm(squatterPage, SQUATTER_USERNAME, VICTIM_EMAIL);
       await expectHeldAtEmailStage(squatterPage);
@@ -365,7 +385,9 @@ test.describe("self-service registration (#366)", () => {
       // makes us the inbox owner for every address, so this deliberately
       // simulates the WORST case (the mail somehow reached the attacker).
       // Even then: a distinct, unlinked account — never the victim's.
-      const squatterLink = await pollForVerificationLink(request, VICTIM_EMAIL);
+      const squatterLink = await pollForVerificationLink(request, VICTIM_EMAIL, {
+        notIn: sharedInboxBefore,
+      });
       await completeViaEmailedLink(squatterPage, squatterLink, VICTIM_EMAIL);
       const squatterClaims = await readIdTokenClaims(squatterPage);
       expect(squatterClaims.sub).toMatch(UUID_V4);
