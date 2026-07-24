@@ -328,6 +328,14 @@ void main() {
             ],
           );
 
+          // The list now defaults to the "Open" status filter (#427, D-29),
+          // which excludes overdue rows — widen it to "All" so this row-
+          // rendering test can see the overdue badge it's asserting on.
+          await tester.tap(find.byKey(const Key('todo-filter-status-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('All').last);
+          await tester.pumpAndSettle();
+
           expect(find.text('Overdue'), findsOneWidget);
         });
 
@@ -345,6 +353,14 @@ void main() {
               ),
             ],
           );
+
+          // The list now defaults to the "Open" status filter (#427, D-29),
+          // which excludes done rows — widen it to "All" so this row-rendering
+          // test can see the completed todo it's asserting on.
+          await tester.tap(find.byKey(const Key('todo-filter-status-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('All').last);
+          await tester.pumpAndSettle();
 
           final titleText = tester.widget<Text>(
             find.descendant(

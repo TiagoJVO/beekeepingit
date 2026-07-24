@@ -193,14 +193,32 @@ Widget _buildShellApp({
   );
 }
 
+/// Pumps the shell and switches to the Apiaries tab. The app now opens on the
+/// Tasks tab by default (#427, D-29), but most of these shell tests exercise
+/// Apiaries-tab chrome (its "Actions" speed dial, list/map toggle, and the
+/// forms pushed from it), so they start by navigating there — the landing
+/// default itself is covered by its own test below and by app_router_test.dart.
+Future<void> _pumpShellOnApiaries(
+  WidgetTester tester, {
+  List<Apiary>? apiaries,
+}) async {
+  await tester.pumpWidget(_buildShellApp(apiaries: apiaries));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets(
-    'the bottom nav shows all 5 tabs with Apiaries selected by default',
+    'the bottom nav shows all 5 tabs in unchanged order with Tasks selected by '
+    'default (#427, D-29)',
     (tester) async {
       await tester.pumpWidget(_buildShellApp());
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
+      // Tab ORDER is unchanged (#427, D-29 only moved the landing target) —
+      // Apiaries still leads, Tasks is still the 4th tab (index 3).
       for (final route in [
         'apiaries',
         'activities',
@@ -213,7 +231,9 @@ void main() {
       final nav = tester.widget<NavigationBar>(
         find.byKey(const Key('shell-bottom-nav')),
       );
-      expect(nav.selectedIndex, 0);
+      // Tasks (the todos branch, 4th tab) is the landing selection now, not
+      // Apiaries.
+      expect(nav.selectedIndex, 3);
     },
   );
 
@@ -252,12 +272,10 @@ void main() {
     'switching tabs resets the target tab to its root — no scope carried over '
     '(#345, FR-UX-2)',
     (tester) async {
-      await tester.pumpWidget(
-        _buildShellApp(
-          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
-        ),
+      await _pumpShellOnApiaries(
+        tester,
+        apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
       );
-      await tester.pumpAndSettle();
 
       // Push into the Apiaries branch's detail/form stack. The Apiaries tab's
       // two quick actions live behind the single "Actions" speed dial now
@@ -293,12 +311,10 @@ void main() {
   testWidgets('re-tapping the active tab also resets it to root (#345)', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      _buildShellApp(
-        apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
-      ),
+    await _pumpShellOnApiaries(
+      tester,
+      apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
     );
-    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
     await tester.pumpAndSettle();
@@ -319,8 +335,7 @@ void main() {
       'switching tabs with unsaved edits prompts confirm-discard; Keep editing '
       'stays on the form',
       (tester) async {
-        await tester.pumpWidget(_buildShellApp());
-        await tester.pumpAndSettle();
+        await _pumpShellOnApiaries(tester);
 
         // Open the New-apiary form and dirty it.
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
@@ -355,8 +370,7 @@ void main() {
     testWidgets(
       'switching tabs with unsaved edits and confirming Discard leaves the form',
       (tester) async {
-        await tester.pumpWidget(_buildShellApp());
-        await tester.pumpAndSettle();
+        await _pumpShellOnApiaries(tester);
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
@@ -387,8 +401,7 @@ void main() {
     testWidgets('a pristine (untouched) form navigates freely with no prompt', (
       tester,
     ) async {
-      await tester.pumpWidget(_buildShellApp());
-      await tester.pumpAndSettle();
+      await _pumpShellOnApiaries(tester);
 
       await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
       await tester.pumpAndSettle();
@@ -406,8 +419,7 @@ void main() {
     testWidgets(
       'the shell back button on a dirty form prompts confirm-discard',
       (tester) async {
-        await tester.pumpWidget(_buildShellApp());
-        await tester.pumpAndSettle();
+        await _pumpShellOnApiaries(tester);
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
@@ -436,8 +448,7 @@ void main() {
     'the Apiaries "Actions" speed dial expands to the new-apiary option, which '
     'navigates to the new-apiary form (#347)',
     (tester) async {
-      await tester.pumpWidget(_buildShellApp());
-      await tester.pumpAndSettle();
+      await _pumpShellOnApiaries(tester);
 
       // Collapsed: a single "Actions" control, not the raw quick-add FABs.
       expect(
@@ -461,8 +472,7 @@ void main() {
   testWidgets(
     'the Actions control hides while the apiaries map view is showing, and returns when back on the list (#35)',
     (tester) async {
-      await tester.pumpWidget(_buildShellApp());
-      await tester.pumpAndSettle();
+      await _pumpShellOnApiaries(tester);
 
       expect(
         find.byKey(const Key('actions-speed-dial-toggle')),
@@ -577,8 +587,7 @@ void main() {
       'the Apiaries tab "Actions" speed dial reveals BOTH its "Add apiary" '
       'and "New todo" options when expanded (#52, #347)',
       (tester) async {
-        await tester.pumpWidget(_buildShellApp());
-        await tester.pumpAndSettle();
+        await _pumpShellOnApiaries(tester);
 
         // Collapsed: neither option is in the tree yet.
         expect(find.byKey(const Key('shell-fab-new-apiary')), findsNothing);
@@ -598,8 +607,7 @@ void main() {
       'the "Add apiary" option still navigates to the new-apiary form '
       'unchanged (regression guard)',
       (tester) async {
-        await tester.pumpWidget(_buildShellApp());
-        await tester.pumpAndSettle();
+        await _pumpShellOnApiaries(tester);
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
@@ -615,8 +623,7 @@ void main() {
       'tapping the Apiaries tab "New todo" option routes to the full create '
       'form (#389), with no apiary pre-selected',
       (tester) async {
-        await tester.pumpWidget(_buildShellApp());
-        await tester.pumpAndSettle();
+        await _pumpShellOnApiaries(tester);
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
@@ -644,8 +651,7 @@ void main() {
   testWidgets(
     'the header has no back button at each tab root, but shows one after pushing into a stack',
     (tester) async {
-      await tester.pumpWidget(_buildShellApp());
-      await tester.pumpAndSettle();
+      await _pumpShellOnApiaries(tester);
 
       expect(find.byKey(const Key('shell-back-button')), findsNothing);
 
@@ -957,6 +963,11 @@ void main() {
             ),
             apiariesStreamProvider.overrideWith(
               (ref) => Stream.value(const []),
+            ),
+            // Tasks is the landing tab now (#427, D-29) — stub its stream so
+            // the shell renders its home hermetically here too.
+            todosStreamProvider.overrideWith(
+              (ref) => Stream.value(const <Todo>[]),
             ),
             profileProvider.overrideWith(_CompleteProfileController.new),
             organizationProvider.overrideWith(

@@ -222,8 +222,12 @@ class TodosViewModel {
 /// journey_filters.dart's own un-scoped convention: there is only ever one
 /// Todos tab, no embedded/per-apiary variant, so per-instance scoping has no
 /// second consumer to serve yet (YAGNI).
+// Defaults to `open` (non-closed tasks) rather than `all` (#427, D-29): the
+// app now lands on this tab as its home screen, and the field workflow starts
+// from "what's still to do", so done/closed tasks are hidden until the user
+// deliberately widens the filter.
 final todoStatusFilterProvider = StateProvider.autoDispose<TodoStatusFilter>(
-  (ref) => TodoStatusFilter.all,
+  (ref) => TodoStatusFilter.open,
 );
 
 final todoPriorityFilterProvider = StateProvider.autoDispose<String?>(
@@ -234,12 +238,15 @@ final todoDueFilterProvider = StateProvider.autoDispose<TodoDueFilter>(
   (ref) => TodoDueFilter.any,
 );
 
+// Defaults to `priority` (most urgent first, via that field's own descending
+// default direction below) rather than `dueDate` (#427, D-29) — the home
+// screen surfaces the highest-priority open tasks at the top.
 final todoSortFieldProvider = StateProvider.autoDispose<TodoSortField>(
-  (ref) => TodoSortField.dueDate,
+  (ref) => TodoSortField.priority,
 );
 
 final todoSortDirectionProvider = StateProvider.autoDispose<SortDirection>(
-  (ref) => defaultSortDirectionFor(TodoSortField.dueDate),
+  (ref) => defaultSortDirectionFor(TodoSortField.priority),
 );
 
 /// Combines [todosStreamProvider] with the filter/sort state providers above

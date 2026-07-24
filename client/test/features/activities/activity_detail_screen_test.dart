@@ -8,6 +8,7 @@ import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/history/history_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,6 +113,10 @@ Widget _buildApp({
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(_apiaries)),
+      // Tasks is the app's landing screen now (#427, D-29) — stub its stream
+      // so booting the app renders the Todos tab without hanging on the real,
+      // never-resolving todos repository chain.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       apiaryByIdProvider.overrideWith(
         (ref, apiaryId) => Stream.value(
           _apiaries.cast<Apiary?>().firstWhere(
@@ -206,6 +211,10 @@ void main() {
       'tapping a row in the per-apiary Activities section opens the detail',
       (tester) async {
         await tester.pumpWidget(_buildApp(activity: _harvest()));
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
 
         // Open the apiary detail (the per-apiary section lives here).
