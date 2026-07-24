@@ -23,10 +23,10 @@ import 'journeys_repository.dart';
 /// same UNDERLYING pieces [JourneyFormScreen] itself uses for the fields
 /// this shortcut actually needs (name + main activity type + apiaries):
 /// [ApiaryMultiSelectField] verbatim, the same activity-type dropdown
-/// pattern, and [JourneysRepository.create] — the same validation rules
-/// (name required, at least one apiary), just condensed into a sheet that
-/// returns the new journey's id (or null if canceled) instead of navigating
-/// anywhere.
+/// pattern, and [JourneysRepository.create] — the same validation rule
+/// (name required; the apiary plan may be empty — D-30, #428), just
+/// condensed into a sheet that returns the new journey's id (or null if
+/// canceled) instead of navigating anywhere.
 ///
 /// [initialApiaryId] pre-selects the apiary the activity is being logged
 /// against (the natural default — this journey is being created FOR this
@@ -95,7 +95,6 @@ class _JourneyQuickCreateSheetState
   final _nameController = TextEditingController();
   late Set<String> _apiaryIds = {widget.initialApiaryId};
   bool _busy = false;
-  String? _apiaryIdsError;
 
   // Journey-level subtype attribute defaults (#385) — type is LOCKED here
   // (this widget's own doc comment), so unlike journey_form_screen.dart
@@ -109,18 +108,15 @@ class _JourneyQuickCreateSheetState
     super.dispose();
   }
 
-  bool _validate(AppLocalizations l10n) {
-    final formOk = _formKey.currentState!.validate();
-    final hasApiary = _apiaryIds.isNotEmpty;
-    setState(() {
-      _apiaryIdsError = hasApiary ? null : l10n.journeyApiariesRequired;
-    });
-    return formOk && hasApiary;
-  }
+  // A journey may be saved with an empty apiary plan (D-30, #428): only the
+  // name is required; the pre-selected apiary can be deselected and the plan
+  // filled in later via edit ([JourneysRepository.create] documents
+  // `apiaryIds` may be empty).
+  bool _validate() => _formKey.currentState!.validate();
 
   Future<void> _create() async {
     final l10n = AppLocalizations.of(context);
-    if (!_validate(l10n)) return;
+    if (!_validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
@@ -236,20 +232,8 @@ class _JourneyQuickCreateSheetState
                         selectedApiaryIds: _apiaryIds,
                         onChanged: (ids) => setState(() {
                           _apiaryIds = ids;
-                          _apiaryIdsError = null;
                         }),
                       ),
-                      if (_apiaryIdsError != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6, left: 4),
-                          child: Text(
-                            _apiaryIdsError!,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),

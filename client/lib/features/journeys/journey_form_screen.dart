@@ -48,7 +48,6 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
   String _status = journeyStatusOpen;
   Set<String> _apiaryIds = {};
   bool _busy = false;
-  String? _apiaryIdsError;
 
   // Journey-level subtype attribute defaults (#385) — see
   // journey_default_attributes_section.dart's own doc comment.
@@ -102,18 +101,14 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
     }
   }
 
-  bool _validate(AppLocalizations l10n) {
-    final formOk = _formKey.currentState!.validate();
-    final hasApiary = _apiaryIds.isNotEmpty;
-    setState(() {
-      _apiaryIdsError = hasApiary ? null : l10n.journeyApiariesRequired;
-    });
-    return formOk && hasApiary;
-  }
+  // A journey may be saved with an empty apiary plan (D-30, #428): only the
+  // name is required at create time; apiaries can be added later via edit
+  // ([JourneysRepository.create] already documents `apiaryIds` may be empty).
+  bool _validate() => _formKey.currentState!.validate();
 
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
-    if (!_validate(l10n)) return;
+    if (!_validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
@@ -300,22 +295,10 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
                     onChanged: (ids) {
                       setState(() {
                         _apiaryIds = ids;
-                        _apiaryIdsError = null;
                       });
                       markUnsavedChanges();
                     },
                   ),
-                  if (_apiaryIdsError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, left: 4),
-                      child: Text(
-                        _apiaryIdsError!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
                   const SizedBox(height: 24),
                   PrimaryActionButton(
                     key: const Key('journey-save-button'),
