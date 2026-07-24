@@ -253,17 +253,18 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
         };
       }
     }
-    // activities `attributes` is stored locally as JSON-encoded TEXT
-    // (activities_repository.dart's jsonEncode; PowerSync's local schema has no
-    // JSON column type, powersync_schema.dart's activities table doc). Left
-    // as-is, the queued opData carries it as a JSON *string*, but the activities
-    // sync-apply/validate contract (services/activities/api/sync.go's
-    // activityData.Attributes, matching the REST create shape in write.go)
-    // expects a nested JSON object — so every offline-created/edited activity
-    // was rejected on upload with "attributes must be a JSON object" (found by
-    // live E2E testing of M3, EPIC-03/#39). Decode it back to an object here so
-    // the wire op matches the server contract.
-    data = decodeActivityAttributes(e.table, data);
+    // Some syncable tables store JSON columns as JSON-encoded TEXT locally
+    // (the repositories' jsonEncode; PowerSync's local schema has no JSON
+    // column type, powersync_schema.dart) — e.g. activities `attributes` (#39)
+    // and journeys `default_attributes` (#385). Left as-is, the queued opData
+    // carries them as JSON *strings*, but each owning service's
+    // sync-apply/validate contract expects a nested JSON object — so an
+    // offline-created row was rejected on upload with "<column> must be a JSON
+    // object" (found by live E2E testing: activities in M3, journeys in M4).
+    // Decode every such column back to an object here so the wire op matches
+    // the server contract; [jsonColumnsByTable] is the single source of truth,
+    // so the next JSON column can't regress the same way.
+    data = decodeJsonColumns(e.table, data);
     // Device edit time is the LWW comparator (sync.md §4.3) — see
     // [lwwTimestampFor]'s doc for why DELETE needs a per-op cache rather than
     // a bare `DateTime.now()` fallback.
@@ -392,33 +393,60 @@ String entityTypeForTable(String table) => switch (table) {
   _ => apiaryEntityType,
 };
 
-/// Normalizes an [activitiesTable] op's `attributes` back to a nested JSON
-/// object before it goes on the wire (#39, EPIC-03). The client stores
-/// `attributes` as JSON-encoded TEXT (activities_repository.dart's `jsonEncode`
-/// — PowerSync's local schema has no JSON column type, powersync_schema.dart's
-/// activities table doc), so a queued CRUD op's `data['attributes']` is a
-/// String. The activities sync-apply/validate contract expects an *object*
-/// (services/activities/api/sync.go's `activityData.Attributes`, matching the
-/// REST create shape in write.go) — uploaded as a string it was rejected with
-/// "attributes must be a JSON object", so no offline activity ever reached the
-/// server via the normal offline-first path (found by live E2E testing of M3).
+/// The syncable tables whose columns are stored as JSON-encoded TEXT locally
+/// (PowerSync's local schema has no JSON column type, powersync_schema.dart)
+/// but whose sync-apply/validate contract expects a nested JSON *object* on
+/// the wire, mapped to the columns [decodeJsonColumns] must decode back.
 ///
-/// Only rewrites when the value is actually a String, so it is a safe no-op for:
-/// every non-activities table (apiaries/counters), a `delete` op (null [data]),
-/// and a `patch` that didn't touch `attributes` (the column is simply absent
-/// from opData). A `put` (full row) and a `patch` that changed `attributes`
-/// both carry the String and get decoded. Top-level + `@visibleForTesting` so
-/// the rewrite is unit-testable without a real PowerSync database, matching this
-/// file's other pure seams ([entityTypeForTable]/[lwwTimestampFor]).
+/// - [activitiesTable] `attributes` — #39 (EPIC-03): the client's `jsonEncode`
+///   (activities_repository.dart) vs `activityData.Attributes`
+///   (services/activities/api/sync.go, matching the REST shape in write.go).
+/// - [journeysTable] `default_attributes` — #385 (D-21): the client's
+///   `jsonEncode` (journeys_repository.dart) vs `validateDefaultAttributes`
+///   (services/journeys/api/types.go, which `json.Unmarshal`s into a
+///   `map[string]any` and rejects a JSON string with "default_attributes must
+///   be a JSON object").
+///
+/// Listing every JSON column in one place is the single seam the connector
+/// decodes through, so a newly-added JSON column can't silently regress the
+/// same "uploaded as a string, rejected 422" bug.
+const jsonColumnsByTable = <String, List<String>>{
+  activitiesTable: ['attributes'],
+  journeysTable: ['default_attributes'],
+};
+
+/// Normalizes a syncable op's JSON columns back to nested JSON objects before
+/// it goes on the wire (#39/#385), driven by [jsonColumnsByTable]. The client
+/// stores these columns as JSON-encoded TEXT (the repositories' `jsonEncode` —
+/// PowerSync's local schema has no JSON column type, powersync_schema.dart), so
+/// a queued CRUD op carries them as Strings, while each owning service's
+/// sync-apply/validate contract expects an *object* — uploaded as a string the
+/// op was rejected with "`<column>` must be a JSON object" (found by live E2E
+/// testing: activities in M3, journeys in M4).
+///
+/// Only rewrites a listed column when its value is actually a String, so it is
+/// a safe no-op for: every unlisted table (apiaries/counters/todos), a `delete`
+/// op (null [data]), a `patch` that didn't touch the column (simply absent from
+/// opData), a NULL column (empty defaults — the local NULL-means-no-defaults
+/// convention is preserved), and an already-decoded Map. A `put` (full row) and
+/// a `patch` that changed the column both carry the String and get decoded.
+/// Top-level + `@visibleForTesting` so the rewrite is unit-testable without a
+/// real PowerSync database, matching this file's other pure seams
+/// ([entityTypeForTable]/[lwwTimestampFor]).
 @visibleForTesting
-Map<String, dynamic>? decodeActivityAttributes(
+Map<String, dynamic>? decodeJsonColumns(
   String table,
   Map<String, dynamic>? data,
 ) {
-  if (table != activitiesTable || data == null) return data;
-  final attrs = data['attributes'];
-  if (attrs is! String) return data;
-  return {...data, 'attributes': jsonDecode(attrs)};
+  final columns = jsonColumnsByTable[table];
+  if (columns == null || data == null) return data;
+  var result = data;
+  for (final column in columns) {
+    final value = result[column];
+    if (value is! String) continue;
+    result = {...result, column: jsonDecode(value)};
+  }
+  return result;
 }
 
 /// Parses the apply endpoint's `{"results": [{"id","op","result"}]}` body

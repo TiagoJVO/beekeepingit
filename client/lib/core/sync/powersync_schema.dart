@@ -52,8 +52,8 @@ const journeyPlanItemEntityType = 'journey_plan_item';
 /// `groupOpsByOwner` (this table's own `entityTypeForTable` mapping in
 /// `powersync_connector.dart`). Unlike [activitiesTable], there is no JSON
 /// attributes bag to decode/encode — every column here is a plain scalar, so
-/// no connector-side transform is needed for this table (contrast
-/// `decodeActivityAttributes`).
+/// no connector-side transform is needed for this table (contrast the JSON
+/// columns [decodeJsonColumns] decodes).
 const todosTable = 'todos';
 const todoEntityType = 'todo';
 
