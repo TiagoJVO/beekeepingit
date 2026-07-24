@@ -4,6 +4,7 @@ import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,9 +25,10 @@ class FakeDeviceLocationService implements DeviceLocationService {
 }
 
 /// A profile that is always complete, so these pre-existing "authenticated"
-/// tests reach the apiaries home rather than being redirected to /profile by
-/// the completion gate (#25) — this file predates profile onboarding and
-/// isn't testing it, so it stubs profile as already done.
+/// tests reach the app home (the Tasks tab, #427/D-29) rather than being
+/// redirected to /profile by the completion gate (#25) — this file predates
+/// profile onboarding and isn't testing it, so it stubs profile as already
+/// done.
 class _CompleteProfileController extends ProfileController {
   @override
   Future<Profile> build() async => Profile(
@@ -41,8 +43,9 @@ class _CompleteProfileController extends ProfileController {
 }
 
 /// An organization that always exists, so these pre-existing "authenticated"
-/// tests reach the apiaries home rather than being redirected to
-/// /organization/new by the org-completion gate (#26) — this file predates
+/// tests reach the app home (the Tasks tab, #427/D-29) rather than being
+/// redirected to /organization/new by the org-completion gate (#26) — this
+/// file predates
 /// org onboarding and isn't testing it, so it stubs the org as already there.
 /// Role defaults to "admin" (#172) so the manage-members app-bar action is
 /// visible by default, matching this file's tests' original expectations
@@ -83,6 +86,10 @@ Widget buildApp({
       ),
       if (apiaries != null)
         apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      // Tasks is the app's landing screen now (#427, D-29), so its stream is
+      // stubbed too — authed tests land there before navigating on to the tab
+      // they actually exercise.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       if (authed) profileProvider.overrideWith(_CompleteProfileController.new),
       if (authed)
         organizationProvider.overrideWith(
@@ -113,6 +120,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // The app now lands on the Tasks tab (#427, D-29) — switch to the Apiaries
+    // tab before asserting its list content.
+    await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+    await tester.pumpAndSettle();
+
     // "Apiaries" now appears twice (shell header title + bottom-nav tab
     // label, #197) — findsWidgets rather than findsOneWidget.
     expect(find.text('Apiaries'), findsWidgets);
@@ -125,6 +137,11 @@ void main() {
 
   testWidgets('empty local data shows the empty state', (tester) async {
     await tester.pumpWidget(buildApp(authed: true, apiaries: const []));
+    await tester.pumpAndSettle();
+
+    // The Apiaries empty state lives on the Apiaries tab, no longer the
+    // landing screen (#427, D-29) — navigate there first.
+    await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('No apiaries yet'), findsOneWidget);

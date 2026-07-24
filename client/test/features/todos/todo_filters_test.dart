@@ -1,6 +1,7 @@
 import 'package:beekeepingit_client/features/todos/todo_filters.dart';
 import 'package:beekeepingit_client/features/todos/todo_priority.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // A fixed "today" for every test — Wednesday, 2026-06-10 — so date-relative
@@ -415,6 +416,38 @@ void main() {
       expect(vm.hasAnyTodos, isTrue);
       expect(vm.filtered, isEmpty);
       expect(vm.today, _today);
+    });
+  });
+
+  group('Todos tab default filter/sort (#427, D-29 — the Tasks home defaults '
+      'to open tasks sorted by priority, most urgent first)', () {
+    test('status filter defaults to open (non-closed tasks only)', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      expect(container.read(todoStatusFilterProvider), TodoStatusFilter.open);
+    });
+
+    test('sort field defaults to priority', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      expect(container.read(todoSortFieldProvider), TodoSortField.priority);
+    });
+
+    test('sort direction defaults to priority\'s descending (most urgent '
+        'first)', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      expect(
+        container.read(todoSortDirectionProvider),
+        defaultSortDirectionFor(TodoSortField.priority),
+      );
+      expect(
+        container.read(todoSortDirectionProvider),
+        SortDirection.descending,
+      );
     });
   });
 }

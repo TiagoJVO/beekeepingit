@@ -128,6 +128,9 @@ Widget _buildApp({required bool profileComplete, bool hasOrganization = true}) {
         const FakeDeviceLocationService(),
       ),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
+      // Tasks is now the landing screen (#427, D-29), so its stream must be
+      // stubbed for the app to render its home hermetically.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       profileProvider.overrideWith(
         () => _FixedProfileController(profileComplete),
       ),
@@ -165,14 +168,19 @@ void main() {
   );
 
   testWidgets(
-    'an authenticated user with a complete profile and an organization reaches the apiaries home',
+    'an authenticated, fully-onboarded user lands on the Tasks home (#427, '
+    'D-29 — not the apiaries list)',
     (tester) async {
       await tester.pumpWidget(_buildApp(profileComplete: true));
       await tester.pumpAndSettle();
 
-      // "Apiaries" now appears twice (shell header title + bottom-nav tab
-      // label, #197) — findsWidgets rather than findsOneWidget.
-      expect(find.text('Apiaries'), findsWidgets);
+      // The Todos tab's own filter bar (todo-filter-status-field) is unique to
+      // the Tasks screen, so its presence proves the app landed there rather
+      // than on the apiaries list (whose own content would render instead).
+      expect(
+        find.byKey(const Key('todo-filter-status-field')),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
       expect(find.byKey(const Key('profile-name-field')), findsNothing);
       expect(find.byKey(const Key('organization-name-field')), findsNothing);
@@ -246,6 +254,11 @@ void main() {
             ),
             apiariesStreamProvider.overrideWith(
               (ref) => Stream.value(const []),
+            ),
+            // Tasks is the landing screen (#427, D-29) — stub its stream so
+            // the home renders without the sync engine.
+            todosStreamProvider.overrideWith(
+              (ref) => Stream.value(const <Todo>[]),
             ),
             apiClientProvider.overrideWith(
               (ref) => ApiClient(ref, httpClient: throwingClient),

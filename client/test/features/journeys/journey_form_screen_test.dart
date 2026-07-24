@@ -6,6 +6,7 @@ import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:beekeepingit_client/theming/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -190,6 +191,10 @@ Widget _buildApp({
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      // Tasks is the app's landing screen now (#427, D-29) — stub its stream
+      // so booting the app renders the Todos tab without hanging on the real,
+      // never-resolving todos repository chain.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       // Switching to the Journeys tab renders JourneysListScreen first (its
       // tab root), which watches journeysStreamProvider — overridden here
       // (mirrors app_shell_test.dart's identical fix) so it resolves

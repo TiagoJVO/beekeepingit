@@ -126,8 +126,9 @@ Widget _buildApp(
   );
 }
 
-/// Switches from the apiaries list (the router's initial location) to the
-/// map view via the list/map toggle's map segment (#34, #35).
+/// Switches to the map view via the list/map toggle's map segment (#34, #35).
+/// The app now lands on the Tasks tab (#427, D-29), so this first navigates to
+/// the Apiaries tab (where the list/map toggle lives) before toggling to map.
 Future<void> _goToMap(
   WidgetTester tester, {
   DeviceLocationService? locationService,
@@ -142,6 +143,8 @@ Future<void> _goToMap(
       todos: todos,
     ),
   );
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
   await tester.pumpAndSettle();
@@ -262,6 +265,9 @@ void main() {
     'the empty case (no located apiaries) shows the empty state, not an error',
     (tester) async {
       await tester.pumpWidget(_buildApp([_semLocal]));
+      await tester.pumpAndSettle();
+      // Lands on the Tasks tab now (#427, D-29) — switch to Apiaries first.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
       await tester.pumpAndSettle();
@@ -615,6 +621,11 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        // The app lands on the Tasks tab now (#427, D-29); the list/map
+        // IndexedStack under test only mounts once the Apiaries tab opens, so
+        // switch to it before asserting the single shared location request.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
 
         // Before the fix, the list screen's own proximity-ordering banner
         // fetch (via deviceLocationProvider) and the map screen's
@@ -678,6 +689,9 @@ void main() {
             child: const BeekeepingitApp(),
           ),
         );
+        await tester.pumpAndSettle();
+        // Lands on the Tasks tab now (#427, D-29) — switch to Apiaries first.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiaries-view-map-button')));

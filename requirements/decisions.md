@@ -603,6 +603,19 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 ---
 
+## D-29 — Default landing screen: Tasks (Tarefas), open tasks sorted by priority
+
+- **Decision (product owner, 2026-07-24):** after login the app lands on the **Tasks
+  (Tarefas)** screen, not Apiários. The task list defaults to **non-closed (open)** tasks,
+  sorted by **priority** (most urgent first). Bottom-nav tab order is unchanged. From
+  field-testing feedback (#427).
+- **Rationale:** the daily field workflow starts from "what do I need to do today", not the
+  apiary list.
+- No prior decision governed the app's initial screen; this records it. **Touches:**
+  `area/todos`, #427, EPIC-17 (#430).
+
+---
+
 ## Open Spikes
 
 - **SP-1** — ✅ **RESOLVED (2026-07-01) → PowerSync** (self-hosted Open Edition). Head-to-head +

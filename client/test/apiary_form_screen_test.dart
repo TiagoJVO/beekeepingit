@@ -8,6 +8,7 @@ import 'package:beekeepingit_client/features/apiaries/apiary_form_screen.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -188,6 +189,10 @@ Widget _buildApp({
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      // Tasks is the app's landing screen now (#427, D-29) — stub its stream
+      // so booting the app renders the Todos tab without hanging on the real,
+      // never-resolving todos repository chain.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       // The detail screen (reached via the apiary-a1 -> edit-button chain
       // several tests below drive) watches apiaryByIdProvider (HIGH
       // finding), not the whole-org apiariesStreamProvider — overridden
@@ -280,6 +285,10 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
@@ -364,6 +373,10 @@ void main() {
           _buildApp(apiaries: const [], repositoryOverride: repo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
@@ -403,6 +416,10 @@ void main() {
     (tester) async {
       await tester.pumpWidget(_buildApp(apiaries: const []));
       await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
       await tester.pumpAndSettle();
@@ -439,6 +456,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
       await tester.pumpAndSettle();
@@ -465,6 +486,10 @@ void main() {
     'the create form has a notes field that accepts free text (FR-AP-8, #196)',
     (tester) async {
       await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
@@ -495,6 +520,10 @@ void main() {
     'default with a "set on map" toggle (#252)',
     (tester) async {
       await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
@@ -562,6 +591,10 @@ void main() {
         _buildApp(apiaries: const [], repositoryOverride: repo),
       );
       await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
       await tester.pumpAndSettle();
@@ -615,6 +648,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
       // The Apiaries tab now exposes an expandable Actions speed dial (#347),
       // so open it first, then tap the primary "New apiary" action.
@@ -657,6 +694,10 @@ void main() {
     'clearable (#252 AC: editable and clearable)',
     (tester) async {
       await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
@@ -763,6 +804,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('apiary-a1')));
       await tester.pumpAndSettle();
@@ -810,6 +855,10 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
@@ -844,6 +893,10 @@ void main() {
             ),
           ),
         );
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
@@ -888,6 +941,10 @@ void main() {
             ),
           ),
         );
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
@@ -942,6 +999,10 @@ void main() {
           _buildApp(apiaries: const [existingApiary], repositoryOverride: repo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
@@ -985,6 +1046,10 @@ void main() {
         _buildApp(apiaries: const [existingApiary], repositoryOverride: repo),
       );
       await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('apiary-a1')));
       await tester.pumpAndSettle();
@@ -1022,6 +1087,10 @@ void main() {
             repositoryOverride: repo,
           ),
         );
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiary-a1')));
