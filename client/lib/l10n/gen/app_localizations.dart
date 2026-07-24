@@ -773,7 +773,7 @@ abstract class AppLocalizations {
   /// Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)
   ///
   /// In en, this message translates to:
-  /// **'Some changes failed to sync and PowerSync is retrying.'**
+  /// **'Some changes couldn\'t sync yet — retrying.'**
   String get offlineBannerErrorMessage;
 
   /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
