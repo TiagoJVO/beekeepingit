@@ -3,6 +3,7 @@ import 'package:beekeepingit_client/features/apiaries/apiaries_list_screen.dart'
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +22,57 @@ class _FakeDeviceLocationService implements DeviceLocationService {
   Future<DeviceLocation> current() async => result;
 }
 
+/// Like [_FakeDeviceLocationService] but counts every [current] call and lets
+/// the test mutate [result] between calls — so the periodic (#422) and
+/// pull-to-refresh re-fetches can be asserted (the timer actually fired a new
+/// fetch) and the re-sort verified (moving the device flips the order).
+class _CountingDeviceLocationService implements DeviceLocationService {
+  _CountingDeviceLocationService(this.result);
+  DeviceLocation result;
+  int callCount = 0;
+
+  @override
+  Future<DeviceLocation> current() async {
+    callCount++;
+    return result;
+  }
+}
+
+/// The apiary titles in their current rendered order — several tests assert
+/// on the nearest-first ordering, so factor the extraction out.
+List<String> _cardTitles(WidgetTester tester) => tester
+    .widgetList<BrandRowCard>(find.byType(BrandRowCard))
+    .map((c) => c.title)
+    .toList(growable: false);
+
+/// Drive the app to the background through the valid intermediate lifecycle
+/// states — Flutter's [AppLifecycleListener] asserts on illegal jumps (e.g.
+/// resumed straight to paused), so send the real sequence a real backgrounding
+/// would.
+Future<void> _backgroundApp(WidgetTester tester) async {
+  for (final state in const [
+    AppLifecycleState.inactive,
+    AppLifecycleState.hidden,
+    AppLifecycleState.paused,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  await tester.pump();
+}
+
+/// Drive the app back to the foreground through the valid intermediate
+/// lifecycle states (the reverse of [_backgroundApp]).
+Future<void> _foregroundApp(WidgetTester tester) async {
+  for (final state in const [
+    AppLifecycleState.hidden,
+    AppLifecycleState.inactive,
+    AppLifecycleState.resumed,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  await tester.pump();
+}
+
 /// Wraps [ApiariesListScreen] with just enough scaffolding (router for the
 /// row-tap navigation, l10n, a ProviderScope with the apiaries stream and
 /// device-location fixed) to test it in isolation — this screen has no own
@@ -29,13 +81,29 @@ class _FakeDeviceLocationService implements DeviceLocationService {
 Widget _buildScreen({
   required List<Apiary> apiaries,
   DeviceLocation location = const DeviceLocationUnavailable(),
+  DeviceLocationService? service,
+  ValueListenable<bool>? tabVisible,
 }) {
   final router = GoRouter(
     initialLocation: '/apiaries',
     routes: [
       GoRoute(
         path: '/apiaries',
-        builder: (context, state) => const Scaffold(body: ApiariesListScreen()),
+        // When [tabVisible] is supplied, wrap the screen in a toggleable
+        // [TickerMode] — exactly how StatefulShellRoute.indexedStack disables
+        // the ticker on offstage branches (go_router route.dart), the signal
+        // the screen gates its periodic refresh on (#422). Flipping the
+        // listenable simulates switching to/from the Apiaries tab.
+        builder: (context, state) {
+          const screen = Scaffold(body: ApiariesListScreen());
+          if (tabVisible == null) return screen;
+          return ValueListenableBuilder<bool>(
+            valueListenable: tabVisible,
+            builder: (context, visible, child) =>
+                TickerMode(enabled: visible, child: child!),
+            child: screen,
+          );
+        },
       ),
       GoRoute(
         path: '/apiaries/:id',
@@ -48,7 +116,7 @@ Widget _buildScreen({
     overrides: [
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
       deviceLocationServiceProvider.overrideWithValue(
-        _FakeDeviceLocationService(location),
+        service ?? _FakeDeviceLocationService(location),
       ),
     ],
     child: MaterialApp.router(
@@ -683,6 +751,188 @@ void main() {
 
         expect(find.textContaining('Could not load apiaries'), findsOneWidget);
         expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('location refresh (#422)', () {
+    // A device that starts east of centre — nearest to "East" — then moves
+    // west; used to prove a re-fetch actually re-sorts the list, not just
+    // that current() was called again.
+    List<Apiary> eastWestApiaries() => [
+      _apiary('east', 'East', lon: 10.0, lat: 0.0),
+      _apiary('west', 'West', lon: -10.0, lat: 0.0),
+    ];
+
+    testWidgets(
+      'the periodic timer re-acquires the location about every 10s and re-sorts',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 9.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(apiaries: eastWestApiaries(), service: service),
+        );
+        await tester.pumpAndSettle();
+
+        // Device starts east, so East sorts first.
+        expect(_cardTitles(tester), ['East', 'West']);
+        final fetchesBeforeTick = service.callCount;
+
+        // The user walks west; the next ~10s tick must re-fetch and re-sort.
+        service.result = const DeviceLocationAvailable(lon: -9.0, lat: 0.0);
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+
+        expect(service.callCount, greaterThan(fetchesBeforeTick));
+        expect(_cardTitles(tester), ['West', 'East']);
+
+        // Dispose so the still-live periodic timer doesn't outlive the test.
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets(
+      'the periodic refresh timer is cancelled when the screen is disposed',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final fetchesBeforeDispose = service.callCount;
+
+        // Tearing down the screen must cancel the timer in State.dispose —
+        // if it didn't, flutter_test would itself fail the test for a pending
+        // timer, and the later tick would push callCount up.
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 30));
+
+        expect(service.callCount, fetchesBeforeDispose);
+      },
+    );
+
+    testWidgets('pull-to-refresh re-acquires the location and re-sorts', (
+      tester,
+    ) async {
+      final service = _CountingDeviceLocationService(
+        const DeviceLocationAvailable(lon: 9.0, lat: 0.0),
+      );
+      await tester.pumpWidget(
+        _buildScreen(apiaries: eastWestApiaries(), service: service),
+      );
+      await tester.pumpAndSettle();
+      expect(_cardTitles(tester), ['East', 'West']);
+
+      // Move west, then pull down on the list to force a refresh.
+      service.result = const DeviceLocationAvailable(lon: -9.0, lat: 0.0);
+      await tester.fling(
+        find.byKey(const Key('apiaries-list-refresh-indicator')),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(service.callCount, greaterThan(1));
+      expect(_cardTitles(tester), ['West', 'East']);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+      'polling is suspended while the tab is offstage and resumes with a '
+      'catch-up fetch when it becomes visible again',
+      (tester) async {
+        final visible = ValueNotifier<bool>(true);
+        addTearDown(visible.dispose);
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+            tabVisible: visible,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch away from the Apiaries tab: its indexedStack branch goes
+        // offstage (TickerMode disabled). The screen stays mounted, but must
+        // stop polling — no new fetch, no matter how much time elapses.
+        visible.value = false;
+        await tester.pump();
+        final countWhileHidden = service.callCount;
+        await tester.pump(const Duration(seconds: 30));
+        expect(service.callCount, countWhileHidden);
+
+        // Return to the Apiaries tab: an immediate catch-up fetch, then the
+        // ~10s polling resumes.
+        visible.value = true;
+        await tester.pump();
+        expect(
+          service.callCount,
+          greaterThan(countWhileHidden),
+          reason: 'a catch-up fetch fires when the tab becomes visible',
+        );
+        final countAfterReturn = service.callCount;
+
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+        expect(
+          service.callCount,
+          greaterThan(countAfterReturn),
+          reason: 'the periodic timer resumed once the tab is visible again',
+        );
+
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets(
+      'polling stops when the app is backgrounded and resumes with a catch-up '
+      'fetch when it is foregrounded',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Background the app: the timer must stop firing.
+        await _backgroundApp(tester);
+        final countWhilePaused = service.callCount;
+        await tester.pump(const Duration(seconds: 30));
+        expect(service.callCount, countWhilePaused);
+
+        // Foreground again: an immediate catch-up fetch, then polling resumes.
+        await _foregroundApp(tester);
+        expect(
+          service.callCount,
+          greaterThan(countWhilePaused),
+          reason: 'a catch-up fetch fires on foreground',
+        );
+        final countAfterResume = service.callCount;
+
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+        expect(
+          service.callCount,
+          greaterThan(countAfterResume),
+          reason: 'the periodic timer resumed once foregrounded',
+        );
+
+        await tester.pumpWidget(const SizedBox());
       },
     );
   });
