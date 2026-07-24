@@ -12,7 +12,8 @@ class AppLocalizationsPt extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
-  String get loginPrompt => 'Inicie sessão para gerir os seus apiários.';
+  String get loginPrompt =>
+      'Inicie sessão para gerir os seus apiários. É a primeira vez? Toque em Iniciar sessão — pode criar a sua conta no ecrã seguinte.';
 
   @override
   String get loginButton => 'Iniciar sessão';

@@ -1,4 +1,4 @@
-<!-- Generated: 2026-07-18 | Files scanned: 95 | Token estimate: ~980 -->
+<!-- Generated: 2026-07-23 | Files scanned: 95 | Token estimate: ~1000 -->
 
 # Dependencies Codemap
 
@@ -10,6 +10,7 @@ Deployed via Helm umbrella chart (`infra/helm/beekeepingit`), GitOps by Flux.
 | Service                      | Role                                                        | Where configured                            |
 | ---------------------------- | ----------------------------------------------------------- | ------------------------------------------- |
 | **Authentik**                | OIDC IdP (auth host); replaced Keycloak (ADR-0016)          | charts/authentik; client AppConfig.oidc\*   |
+| **Mailpit**                  | Dev/CI SMTP sink for Authentik's outbound email (ADR-0019)  | charts/mailpit; authentik `email.*` values  |
 | **PowerSync**                | Sync engine — streams Postgres→device, JWKS-verified tokens | charts/powersync (+ Sync Rules)             |
 | **Postgres+PostGIS**         | Primary datastore (CloudNativePG operator)                  | charts/postgres; `beekeepingit-postgres-rw` |
 | **MinIO**                    | S3-compatible object storage                                | charts/minio; via `shared/objectstore`      |

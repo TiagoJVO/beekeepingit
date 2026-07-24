@@ -6,6 +6,7 @@ import '../../core/api/api_client.dart';
 import '../../core/validation/email.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../organization/organization_repository.dart';
 import 'profile_repository.dart';
 
 /// Create-or-edit profile screen (FR-ONB-1, #25). Serves both "first login,
@@ -65,6 +66,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ).showSnackBar(SnackBar(content: Text(l10n.profileSaveSuccess)));
       final complete = ref.read(profileCompleteProvider);
       if (complete) {
+        // Re-fetch the organization state before moving on (#366): for a
+        // BRAND-NEW user the router's boot-time `GET /v1/organizations/me`
+        // races the identity-row-creating first `GET /v1/profile` — the
+        // organizations service then can't resolve the caller yet, answers
+        // the same 404 as "no org", and that resolved answer stays cached,
+        // permanently routing a user with a pending invitation to
+        // /organization/new instead of auto-joining (FR-ONB-3
+        // accept-on-login; caught live by the registration e2e's trace).
+        // Profile completion is the first moment the identity row is
+        // GUARANTEED to exist server-side, so refreshing here makes the org
+        // gate's answer — join via invitation, or genuinely create — always
+        // computed from a resolvable caller. The router treats the resulting
+        // loading state as "wait, don't bounce" (app_router.dart).
+        ref.invalidate(organizationProvider);
         // Next onboarding step: the router's own redirect (app_router.dart)
         // sends a profile-complete, no-organization user to
         // /organization/new (FR-ONB-2, #26) and everyone else to /apiaries,

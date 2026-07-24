@@ -1,7 +1,7 @@
 {
   "@@locale": "pt",
   "appTitle": "BeekeepingIT",
-  "loginPrompt": "Inicie sessão para gerir os seus apiários.",
+  "loginPrompt": "Inicie sessão para gerir os seus apiários. É a primeira vez? Toque em Iniciar sessão — pode criar a sua conta no ecrã seguinte.",
   "loginButton": "Iniciar sessão",
   "loginError": "Não foi possível iniciar sessão — verifique a ligação e tente novamente.",
   "logout": "Terminar sessão",

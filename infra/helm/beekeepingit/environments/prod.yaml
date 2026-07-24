@@ -71,3 +71,21 @@ networkpolicy:
   # its ingress controller lives in isn't known. Revisit alongside
   # infra/cluster/scaleway-up.sh once prod's cluster script exists — see
   # that script's own gatewayNamespace: traefik override for the pattern.
+
+# No mail sink in prod (#361): verification email must actually reach real
+# inboxes, via a real relay. Placeholder connection values below; the relay's
+# username/password are NEVER values — create the out-of-band Secret
+# `beekeepingit-authentik-email-credentials` (keys: username, password) in the
+# prod namespace and charts/authentik's config-secret template merges it via
+# `lookup` (NFR-SEC-1).
+mailpit:
+  enabled: false
+
+authentik:
+  email:
+    host: smtp.beekeepingit.example # TODO: real relay host once prod exists
+    port: 587
+    useTls: true
+    useSsl: false
+    timeout: 10
+    from: no-reply@beekeepingit.example # TODO: real domain

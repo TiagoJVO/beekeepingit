@@ -1,12 +1,15 @@
 import 'dart:async';
 
 import 'package:beekeepingit_client/core/api/api_client.dart';
+import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 Profile _profile({
   String name = '',
@@ -63,6 +66,22 @@ class _FakeProfileController extends ProfileController {
 class _PendingProfileController extends ProfileController {
   @override
   Future<Profile> build() => Completer<Profile>().future;
+}
+
+/// Counts [build] invocations of the organization controller — a re-count is
+/// the observable proof that `_save` invalidated [organizationProvider]
+/// (each invalidation constructs a fresh controller and rebuilds). The
+/// counter is external state because invalidation replaces the instance.
+class _CountingOrganizationController extends OrganizationController {
+  _CountingOrganizationController(this.counter);
+
+  final List<int> counter;
+
+  @override
+  Future<Organization?> build() async {
+    counter.add(1);
+    return null;
+  }
 }
 
 /// A controller whose [build] throws, so [ProfileScreen] resolves to
@@ -146,6 +165,80 @@ void main() {
 
     expect(find.text('Profile saved.'), findsOneWidget);
   });
+
+  testWidgets(
+    'a completing save re-fetches the organization state; a failed save does '
+    'not (#366: the org gate must recompute once the identity row exists, so '
+    'a pending invitation is claimed instead of routing to org creation)',
+    (tester) async {
+      final builds = <int>[];
+      final controller = _FakeProfileController(_profile());
+      // Unlike the other tests, this one needs the COMPLETING save path,
+      // which is gated on `profileCompleteProvider` (auth-gated: false when
+      // logged out) and ends in a `context.go` — so authenticate the fake
+      // session and mount the screen under a minimal real GoRouter.
+      final router = GoRouter(
+        initialLocation: '/profile',
+        routes: [
+          GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
+          GoRoute(
+            path: '/apiaries',
+            builder: (_, _) => const SizedBox.shrink(),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            isAuthenticatedProvider.overrideWith((ref) => true),
+            profileProvider.overrideWith(() => controller),
+            organizationProvider.overrideWith(
+              () => _CountingOrganizationController(builds),
+            ),
+          ],
+          child: MaterialApp.router(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            routerConfig: router,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Keep the provider alive so an invalidation actually rebuilds it —
+      // in the app the router's own `ref.listen` plays this role.
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ProfileScreen)),
+      );
+      final subscription = container.listen(organizationProvider, (_, _) {});
+      addTearDown(subscription.close);
+      await tester.pumpAndSettle();
+      expect(builds.length, 1, reason: 'initial fetch only');
+
+      // An INVALID save (client-side validation failure) must not refresh.
+      await tester.tap(find.byKey(const Key('profile-save-button')));
+      await tester.pumpAndSettle();
+      expect(builds.length, 1, reason: 'a rejected save must not re-fetch');
+
+      // A valid, completing save refreshes the org state exactly once.
+      await tester.enterText(
+        find.byKey(const Key('profile-name-field')),
+        'Beatriz',
+      );
+      await tester.enterText(
+        find.byKey(const Key('profile-email-field')),
+        'bea@example.com',
+      );
+      await tester.tap(find.byKey(const Key('profile-save-button')));
+      await tester.pumpAndSettle();
+      expect(
+        builds.length,
+        2,
+        reason: 'a completing save re-fetches the organization state',
+      );
+    },
+  );
 
   testWidgets('surfaces a mocked 422 field error from the server', (
     tester,

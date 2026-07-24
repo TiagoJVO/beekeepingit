@@ -41,6 +41,12 @@ dependencies:
     version: "0.1.0"
     repository: "file://charts/gateway"
     condition: gateway.enabled
+  # Dev/CI SMTP sink for Authentik's outbound email (#361, ADR-0019) — hand-rolled
+  # (mailpit ships as a bare Docker image, like powersync). Disabled in prod.
+  - name: mailpit
+    version: "0.1.0"
+    repository: "file://charts/mailpit"
+    condition: mailpit.enabled
   - name: powersync
     version: "0.1.0"
     repository: "file://charts/powersync"
