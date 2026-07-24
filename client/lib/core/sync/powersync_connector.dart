@@ -421,7 +421,7 @@ const jsonColumnsByTable = <String, List<String>>{
 /// PowerSync's local schema has no JSON column type, powersync_schema.dart), so
 /// a queued CRUD op carries them as Strings, while each owning service's
 /// sync-apply/validate contract expects an *object* — uploaded as a string the
-/// op was rejected with "<column> must be a JSON object" (found by live E2E
+/// op was rejected with "`<column>` must be a JSON object" (found by live E2E
 /// testing: activities in M3, journeys in M4).
 ///
 /// Only rewrites a listed column when its value is actually a String, so it is
