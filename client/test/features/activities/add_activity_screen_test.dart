@@ -622,7 +622,10 @@ void main() {
         await tester.pumpWidget(
           _buildApp(
             repo: _FakeActivitiesRepository(),
-            apiariesRepo: _FakeApiariesRepository(_apiary, throwOnGetById: true),
+            apiariesRepo: _FakeApiariesRepository(
+              _apiary,
+              throwOnGetById: true,
+            ),
           ),
         );
         await tester.pumpAndSettle();
