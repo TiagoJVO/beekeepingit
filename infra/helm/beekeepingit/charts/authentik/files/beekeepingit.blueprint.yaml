@@ -539,9 +539,16 @@ entries:
   # SESSION_KEY_GET) — so a user who arrived via the app's OIDC authorize
   # redirect flows register → emailed link → auto-login → straight back into
   # the pending authorize request and lands in the app, no dead end at the
-  # IdP. Partial update: only enrollment_flow is set; the stage's other
-  # fields (user_fields etc.) stay upstream-managed.
+  # IdP. `user_fields` MUST be restated here even though this entry only
+  # means to add enrollment_flow: the importer validates an update entry's
+  # own data, and IdentificationStageSerializer's cross-field validation
+  # rejects "no user fields and no source" — omitting it marks the WHOLE
+  # blueprint invalid and nothing in this file applies (found live: the CI
+  # bring-up's discovery 404, PR #414). The value pins upstream's default
+  # ([email, username], flow-default-authentication-flow.yaml @ 2026.5.4) —
+  # re-check on version bumps (oidc-integration.md §8 watch-list).
   - model: authentik_stages_identification.identificationstage
     identifiers: { name: default-authentication-identification }
     attrs:
+      user_fields: [email, username]
       enrollment_flow: !KeyOf flow-enrollment

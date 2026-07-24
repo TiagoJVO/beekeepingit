@@ -541,6 +541,23 @@ jobs:
           # never arrived (SMTP wiring) or the flow never sent it (blueprint) —
           # the sink's log + message count tells the two apart fast.
           kubectl -n beekeepingit-dev logs deploy/beekeepingit-mailpit --tail=100 || true
+          # Blueprint instance status (#366): an INVALID blueprint file is only
+          # recorded on its BlueprintInstance (status "error" + stored apply
+          # logs) — the apply task finishes with exc:null and the sole outward
+          # symptom is OIDC discovery 404ing forever (exactly how PR #414's
+          # missing-user_fields regression presented). Dump every instance's
+          # path/status so an invalid blueprint names itself here; second
+          # query best-effort surfaces the stored per-task messages.
+          AK_WORKER=$(kubectl -n beekeepingit-dev get pod \
+            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          if [ -n "$AK_WORKER" ]; then
+            kubectl -n beekeepingit-dev exec "$AK_WORKER" -- ak shell -c \
+              "from authentik.blueprints.models import BlueprintInstance; [print('blueprint:', i.path, '| status:', i.status, '| last_applied:', i.last_applied) for i in BlueprintInstance.objects.all().order_by('path')]" || true
+            kubectl -n beekeepingit-dev exec "$AK_WORKER" -- ak shell -c \
+              "from authentik.tasks.models import Task; [print('task:', t.actor_name, '|', str(getattr(t, '_messages', ''))[:1500]) for t in Task.objects.filter(actor_name__icontains='blueprint').order_by('-mtime')[:10]]" || true
+          fi
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
           for d in identity organizations apiaries activities journeys todos sync pwa beekeepingit-powersync; do

@@ -168,7 +168,12 @@ optional.
   catalogs similarly ship `pt-BR` but no `pt-PT`, so the enrollment UI renders English for a
   pt-PT browser) — and the **enrollment-flow splice points (#366,
   [auth.md §8.11](auth.md))**: the default identification stage's `enrollment_flow` link and
-  the reused `default-authentication-login` stage must survive a bump; the email stage's
+  the reused `default-authentication-login` stage must survive a bump (the identification-stage
+  entry also **restates `user_fields: [email, username]`** — the importer validates an update
+  entry's own data and the stage serializer rejects "no user fields, no source" without it
+  (learned the hard way: omitting it marked the whole blueprint invalid, PR #414's discovery-404
+  CI failure), so an upstream change to the default `user_fields` must be mirrored there); the
+  email stage's
   per-send uuid4-embedding flow-token identifiers must stay per-send (a regression to a shared
   identifier would make concurrent enrollment/login-verification links clobber each other);
   the prompt serializer admitting only declared fields plus `user_write`'s `groups`/`pk` deny
