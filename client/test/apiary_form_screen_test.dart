@@ -870,54 +870,51 @@ void main() {
   });
 
   group('map-picker recenter (#420)', () {
-    testWidgets(
-      'the recenter control appears only once a pin is set, and is '
-      'gloves-friendly with a semantics label',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('the recenter control appears only once a pin is set, and is '
+        'gloves-friendly with a semantics label', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [],
-            locationService: const _FakeDeviceLocationService(
-              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
-            ),
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [],
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
           ),
-        );
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+      await tester.pumpAndSettle();
 
-        // No pin yet: nothing to recenter on, so no control.
-        expect(
-          find.byKey(const Key('apiary-location-picker-recenter-button')),
-          findsNothing,
-        );
+      // No pin yet: nothing to recenter on, so no control.
+      expect(
+        find.byKey(const Key('apiary-location-picker-recenter-button')),
+        findsNothing,
+      );
 
-        await tester.tap(
-          find.byKey(const Key('apiary-use-current-location-button')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-use-current-location-button')),
+      );
+      await tester.pumpAndSettle();
 
-        final recenter = find.byKey(
-          const Key('apiary-location-picker-recenter-button'),
-        );
-        expect(recenter, findsOneWidget);
-        expectMinTapTarget(tester, recenter);
-        expectHasSemanticsLabel(
-          tester,
-          const Key('apiary-location-picker-recenter-button'),
-        );
-      },
-    );
+      final recenter = find.byKey(
+        const Key('apiary-location-picker-recenter-button'),
+      );
+      expect(recenter, findsOneWidget);
+      expectMinTapTarget(tester, recenter);
+      expectHasSemanticsLabel(
+        tester,
+        const Key('apiary-location-picker-recenter-button'),
+      );
+    });
 
     testWidgets(
       '"use current location" recenters the picker camera onto the fix at '
