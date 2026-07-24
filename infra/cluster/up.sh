@@ -4,6 +4,12 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Optional local config from infra/cluster/.env (see .env.example) — the local
+# cluster needs no external secrets (in-cluster ones are chart-generated,
+# NFR-SEC); sourced for consistency with the other cluster scripts so any
+# variable set there applies uniformly.
+# shellcheck disable=SC1091 # resolved at runtime next to this script
+. "$script_dir/env.sh"
 cluster_name="beekeeping"
 
 for bin in k3d kubectl helm flock; do
