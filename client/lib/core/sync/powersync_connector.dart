@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
@@ -168,6 +169,14 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
             {'field': e.field, 'code': e.code, 'message': e.message},
         ],
       });
+      // Keep the server's raw (English, possibly column-name-bearing) validation
+      // text in the log only — the needs-fix UI shows a localized, non-technical
+      // message instead of surfacing this verbatim (#426).
+      developer.log(
+        'offline write rejected: entity=$entityType code=${problem.code} '
+        'detail=$detail',
+        name: 'sync',
+      );
       await store.execute(
         'DELETE FROM $rejectedOpsTable WHERE $dedupKeyColumn = ?',
         [dedupKey],

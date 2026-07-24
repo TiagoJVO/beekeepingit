@@ -43,6 +43,20 @@ void main() {
       );
     });
 
+    test(
+      'the offline sync-error banner drops the "PowerSync" technical term in '
+      'both locales (#426)',
+      () {
+        final en = AppLocalizationsEn();
+        final pt = AppLocalizationsPt();
+        expect(en.offlineBannerErrorMessage, isNot(contains('PowerSync')));
+        expect(pt.offlineBannerErrorMessage, isNot(contains('PowerSync')));
+        // Still a non-empty, human message (not blanked out).
+        expect(en.offlineBannerErrorMessage, isNotEmpty);
+        expect(pt.offlineBannerErrorMessage, isNotEmpty);
+      },
+    );
+
     test('lookupAppLocalizations resolves en and pt to the matching class', () {
       expect(
         lookupAppLocalizations(const Locale('en')),

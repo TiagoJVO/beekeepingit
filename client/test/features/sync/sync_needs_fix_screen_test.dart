@@ -24,7 +24,8 @@ void main() {
   });
 
   testWidgets(
-    'renders one card per rejected op, with its field-error message',
+    'renders one card per rejected op, with a localized non-technical message '
+    "(never the server's raw validation text) (#426)",
     (tester) async {
       final store = _FakeRejectedStore([
         _row(id: 'r1'), // an apiary_counter rejection (default)
@@ -35,8 +36,40 @@ void main() {
 
       expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
       expect(find.byKey(const Key('needs-fix-r2')), findsOneWidget);
-      // The server's field-level message is surfaced (not a generic fallback).
-      expect(find.text('value must be >= 0'), findsWidgets);
+      // The server's raw field-level message is NOT surfaced — a localized,
+      // non-technical message is shown instead (#426).
+      expect(find.text('value must be >= 0'), findsNothing);
+      expect(
+        find.text('This change was rejected and needs your attention.'),
+        findsWidgets,
+      );
+    },
+  );
+
+  testWidgets(
+    'does not leak a raw snake_case DB column name from the server detail — '
+    'shows the localized generic message instead (#426)',
+    (tester) async {
+      // Reproduces the field-tested leak: a rejected journey whose server
+      // detail named the `default_attributes` DB column verbatim.
+      final store = _FakeRejectedStore([
+        _row(
+          id: 'r1',
+          entityType: 'journey',
+          errorDetail:
+              '{"detail":"validation failed","errors":[{"field":"data.default_attributes","code":"invalid_type","message":"default_attributes must be a JSON object"}]}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+      // The internal column name must never reach the UI.
+      expect(find.textContaining('default_attributes'), findsNothing);
+      expect(
+        find.text('This change was rejected and needs your attention.'),
+        findsOneWidget,
+      );
     },
   );
 
@@ -337,6 +370,7 @@ Map<String, Object?> _row({
   String entityType = 'apiary_counter',
   String fixApiaryId = 'apiary-1',
   String? payload,
+  String? errorDetail,
 }) => {
   'id': id,
   'entity_type': entityType,
@@ -345,6 +379,7 @@ Map<String, Object?> _row({
   'payload': payload ?? '{}',
   'error_code': 'validation.failed',
   'error_detail':
+      errorDetail ??
       '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',
   'rejected_at': '2026-07-14T10:00:00Z',
 };
