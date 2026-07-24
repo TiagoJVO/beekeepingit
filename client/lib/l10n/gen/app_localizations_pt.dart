@@ -930,6 +930,12 @@ class AppLocalizationsPt extends AppLocalizations {
       'Ainda não há apiários — adicione um no separador Apiários primeiro.';
 
   @override
+  String get journeyApiariesSelectAll => 'Selecionar todos';
+
+  @override
+  String get journeyApiariesClearAll => 'Limpar tudo';
+
+  @override
   String journeyApiariesSelectedCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
