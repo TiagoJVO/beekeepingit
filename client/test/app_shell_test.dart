@@ -823,10 +823,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('shell-offline-banner')), findsOneWidget);
+      // #426: the error banner must not leak the sync technology ("PowerSync")
+      // to the beekeeper — it reads as plain, non-technical copy.
       expect(
-        find.text('Some changes failed to sync and PowerSync is retrying.'),
+        find.text("Some changes couldn't sync yet — retrying."),
         findsOneWidget,
       );
+      expect(find.textContaining('PowerSync'), findsNothing);
     },
   );
 

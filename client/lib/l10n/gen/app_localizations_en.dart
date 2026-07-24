@@ -420,7 +420,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get offlineBannerErrorMessage =>
-      'Some changes failed to sync and PowerSync is retrying.';
+      'Some changes couldn\'t sync yet — retrying.';
 
   @override
   String get syncSupersededNotice =>

@@ -424,7 +424,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get offlineBannerErrorMessage =>
-      'Algumas alterações não foram sincronizadas e o PowerSync está a tentar novamente.';
+      'Algumas alterações ainda não foram sincronizadas — a tentar novamente.';
 
   @override
   String get syncSupersededNotice =>

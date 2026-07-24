@@ -523,7 +523,7 @@
   "@syncStatusError": {
     "description": "App-shell header sync-status pill label when the last upload/download attempt errored and PowerSync is waiting to retry (SyncStatus.hasError) — distinct from merely offline, so a beekeeper whose uploads keep failing isn't shown the same pill as someone who simply has no signal"
   },
-  "offlineBannerErrorMessage": "Some changes failed to sync and PowerSync is retrying.",
+  "offlineBannerErrorMessage": "Some changes couldn't sync yet — retrying.",
   "@offlineBannerErrorMessage": {
     "description": "Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)"
   },
