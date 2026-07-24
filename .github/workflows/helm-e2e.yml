@@ -56,7 +56,7 @@ jobs:
     # in-app onboardings) on top of the existing suite.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -111,7 +111,7 @@ jobs:
       # (cross-repo) — the gitops repo's own CI validates it instead.
       - name: Check out the GitOps manifests (Authentik HelmRelease)
         if: steps.changes.outputs.e2e == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: TiagoJVO/beekeepingit-gitops
           path: beekeepingit-gitops
