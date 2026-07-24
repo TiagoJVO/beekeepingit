@@ -10,8 +10,10 @@ import 'package:beekeepingit_client/features/organization/organization_repositor
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
 
 import 'support/a11y_matchers.dart';
 
@@ -863,6 +865,146 @@ void main() {
           findsOneWidget,
         );
         expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('map-picker recenter (#420)', () {
+    testWidgets('the recenter control appears only once a pin is set, and is '
+        'gloves-friendly with a semantics label', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [],
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+      await tester.pumpAndSettle();
+
+      // No pin yet: nothing to recenter on, so no control.
+      expect(
+        find.byKey(const Key('apiary-location-picker-recenter-button')),
+        findsNothing,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('apiary-use-current-location-button')),
+      );
+      await tester.pumpAndSettle();
+
+      final recenter = find.byKey(
+        const Key('apiary-location-picker-recenter-button'),
+      );
+      expect(recenter, findsOneWidget);
+      expectMinTapTarget(tester, recenter);
+      expectHasSemanticsLabel(
+        tester,
+        const Key('apiary-location-picker-recenter-button'),
+      );
+    });
+
+    testWidgets(
+      '"use current location" recenters the picker camera onto the fix at '
+      'street zoom',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-use-current-location-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // The picker's own MapController — asserting its camera proves the
+        // fetch drove a live move(point, streetZoom), not just that the pin
+        // status text updated.
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        expect(controller.camera.zoom, 16.0);
+        expect(controller.camera.center.latitude, closeTo(41.1496, 0.0001));
+        expect(controller.camera.center.longitude, closeTo(-8.6109, 0.0001));
+      },
+    );
+
+    testWidgets(
+      'tapping the recenter control moves the camera back onto the pin at '
+      'street zoom',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-use-current-location-button')),
+        );
+        await tester.pumpAndSettle();
+
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        // Pan the camera away and zoom out, simulating the user browsing the
+        // map after the pin was placed.
+        controller.move(const LatLng(0, 0), 3);
+        await tester.pumpAndSettle();
+        expect(controller.camera.zoom, 3);
+
+        await tester.tap(
+          find.byKey(const Key('apiary-location-picker-recenter-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(controller.camera.zoom, 16.0);
+        expect(controller.camera.center.latitude, closeTo(41.1496, 0.0001));
+        expect(controller.camera.center.longitude, closeTo(-8.6109, 0.0001));
       },
     );
   });

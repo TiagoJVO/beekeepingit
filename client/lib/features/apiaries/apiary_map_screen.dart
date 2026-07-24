@@ -21,6 +21,12 @@ const _fallbackCenter = ll.LatLng(39.5, -8.0);
 const _fallbackZoom = 6.0;
 const _focusedZoom = 12.0;
 
+/// Street-level zoom the "my location" recenter control (#420) jumps the
+/// camera to — close enough to read the roads/tracks around the user's
+/// current position, versus [_focusedZoom]'s regional overview that only
+/// frames the org's apiaries on open.
+const _streetZoom = 16.0;
+
 /// The two tile layers the map can render (#257, refines D-16). Satellite is
 /// the default — field users recognize terrain/tree cover, not street
 /// outlines — with a toggle down to streets (the original OSM layer) for
@@ -144,6 +150,30 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
 
   void _clearSelection() => setState(_selected.clear);
 
+  /// "My location" recenter control (#420): reads a FRESH device fix (the
+  /// [deviceLocationServiceProvider] "where am I RIGHT NOW" service the
+  /// form's "use current location" already uses, not the cached
+  /// [deviceLocationProvider] that drives the passive user marker) and moves
+  /// the camera onto it at street-level zoom. A denied/disabled/unavailable
+  /// fix degrades to a snackbar (the map's existing graceful-fallback UX,
+  /// #34 AC) rather than throwing — [DeviceLocationService.current] never
+  /// throws, so the switch simply collapses every non-available variant onto
+  /// the same "location unavailable" message.
+  Future<void> _recenterOnUser() async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await ref.read(deviceLocationServiceProvider).current();
+    if (!mounted) return;
+    switch (result) {
+      case DeviceLocationAvailable(:final lon, :final lat):
+        _mapController.move(ll.LatLng(lat, lon), _streetZoom);
+      default:
+        messenger.showSnackBar(
+          SnackBar(content: Text(l10n.apiaryMapLocationPermissionDenied)),
+        );
+    }
+  }
+
   /// Toggling the ruler OFF clears any in-progress selection (#388 design
   /// step 6/test plan #7) — a stale two-apiary (or apiary+location)
   /// selection left over from ruler mode has no meaning once tapping a pin
@@ -250,6 +280,8 @@ class _ApiaryMapScreenState extends ConsumerState<ApiaryMapScreen> {
                   ),
                   const SizedBox(height: 8),
                   _MapRulerToggle(active: rulerMode, onChanged: _setRulerMode),
+                  const SizedBox(height: 8),
+                  _MapRecenterButton(onTap: _recenterOnUser),
                 ],
               ),
             ),
@@ -721,6 +753,38 @@ class _MapRulerToggle extends StatelessWidget {
         tooltip: l10n.apiaryMapRulerToggleAction,
         selected: active,
         onTap: () => onChanged(!active),
+      ),
+    );
+  }
+}
+
+/// The "my location" recenter control (#420) — placed directly under the
+/// layer/ruler toggles in the same top-right corner, reusing
+/// [_MapLayerToggleSegment] verbatim for the identical gloves-friendly
+/// shape (≥[kMinTapTarget], `Semantics` label, `Tooltip`, Material
+/// focus/hover). Unlike the toggles this is a one-shot action button, not an
+/// on/off state, so it always renders its plain (never-"selected") segment;
+/// the tap reads a fresh device fix and moves the camera to street level.
+class _MapRecenterButton extends StatelessWidget {
+  const _MapRecenterButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(12),
+      child: _MapLayerToggleSegment(
+        itemKey: const Key('apiary-map-recenter-button'),
+        icon: Icons.my_location,
+        selectedIcon: Icons.my_location,
+        tooltip: l10n.apiaryMapRecenterAction,
+        selected: false,
+        onTap: onTap,
       ),
     );
   }
