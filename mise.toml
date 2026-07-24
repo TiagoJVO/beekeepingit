@@ -17,7 +17,7 @@ flutter = "3.44.4"   # client/ (#21) — stable channel; bundles a matching Dart
 
 # --- Task runner & git hooks ---
 task = "3"          # go-task — the monorepo task runner (Taskfile.yml)
-lefthook = "1"      # fast, cross-platform git hooks (lefthook.yml)
+lefthook = "2.1.10"      # fast, cross-platform git hooks (lefthook.yml)
 
 # --- Per-language linters/formatters ---
 golangci-lint = "2.12.2"   # Go meta-linter (see .golangci.yml). v2 (ADR-0008 follow-up, #85:
