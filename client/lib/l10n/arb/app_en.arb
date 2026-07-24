@@ -781,6 +781,10 @@
   "@apiaryMapMeasureFromMyLocation": {
     "description": "Chip/button shown in the measure overlay (ruler ON, current location available, not yet selected) that adds the user's current location as one of the two measurement endpoints (#388)"
   },
+  "apiaryMapRecenterAction": "Center on my location",
+  "@apiaryMapRecenterAction": {
+    "description": "Tooltip/semantics label for the 'my location' recenter control on the full-screen apiary map that reads a fresh device fix and moves the camera onto it at street zoom (#420)"
+  },
   "apiaryMapInfoOpenTodos": "{count, plural, =0{No open todos} one{1 open todo} other{{count} open todos}}",
   "@apiaryMapInfoOpenTodos": {
     "description": "Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider",
@@ -849,6 +853,10 @@
   "apiaryMapPickerLabel": "Map: tap to place the apiary's pin",
   "@apiaryMapPickerLabel": {
     "description": "Semantics label for the embedded map-pin picker on the apiary form (#252)"
+  },
+  "apiaryMapPickerRecenterAction": "Recenter on the pin",
+  "@apiaryMapPickerRecenterAction": {
+    "description": "Tooltip/semantics label for the recenter control on the apiary form's map picker that moves the camera back onto the placed pin at street zoom after panning away (#420)"
   },
   "apiaryDistanceValue": "{distanceKm} km away",
   "@apiaryDistanceValue": {
