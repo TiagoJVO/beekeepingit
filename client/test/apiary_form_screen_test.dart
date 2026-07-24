@@ -833,48 +833,45 @@ void main() {
 
   group('"use current location" (CRITICAL finding: shared '
       'deviceLocationServiceProvider, not raw Geolocator)', () {
-    testWidgets(
-      'tapping "use current location" sets the pin from the overridden '
-      'deviceLocationServiceProvider',
-      (tester) async {
-        // A tall viewport so "use current location" is on-screen without
-        // scrolling — same rationale as the "save with no location" test
-        // above (the default 800x600 test viewport puts it below the
-        // fold once the map picker is expanded).
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('tapping "use current location" sets the pin from the overridden '
+        'deviceLocationServiceProvider', (tester) async {
+      // A tall viewport so "use current location" is on-screen without
+      // scrolling — same rationale as the "save with no location" test
+      // above (the default 800x600 test viewport puts it below the
+      // fold once the map picker is expanded).
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        await tester.pumpWidget(
-          _buildApp(
-            apiaries: const [],
-            locationService: const _FakeDeviceLocationService(
-              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
-            ),
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [],
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
           ),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(
-          find.byKey(const Key('apiary-use-current-location-button')),
-        );
-        await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-use-current-location-button')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(find.text('Location set: 41.14960, -8.61090'), findsOneWidget);
-      },
-    );
+      expect(find.text('Location set: 41.14960, -8.61090'), findsOneWidget);
+    });
 
     testWidgets(
       'a denied/unavailable location shows the permission-denied message, '

@@ -177,10 +177,7 @@ void main() {
       // The Todos tab's own filter bar (todo-filter-status-field) is unique to
       // the Tasks screen, so its presence proves the app landed there rather
       // than on the apiaries list (whose own content would render instead).
-      expect(
-        find.byKey(const Key('todo-filter-status-field')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('todo-filter-status-field')), findsOneWidget);
       expect(find.byKey(const Key('shell-bottom-nav')), findsOneWidget);
       expect(find.byKey(const Key('profile-name-field')), findsNothing);
       expect(find.byKey(const Key('organization-name-field')), findsNothing);
@@ -297,6 +294,12 @@ void main() {
             const FakeDeviceLocationService(),
           ),
           apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
+          // Tasks is the app's landing screen now (#427, D-29) — stub its
+          // stream so the boot pumpAndSettle doesn't hang on the real,
+          // never-resolving todos repository chain before router.go(...).
+          todosStreamProvider.overrideWith(
+            (ref) => Stream.value(const <Todo>[]),
+          ),
           journeysStreamProvider.overrideWith(
             (ref) => Stream.value(const [_routeTestJourney]),
           ),

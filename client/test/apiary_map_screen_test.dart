@@ -676,6 +676,12 @@ void main() {
               apiariesStreamProvider.overrideWith(
                 (ref) => Stream<List<Apiary>>.error('boom'),
               ),
+              // Tasks is the app's landing screen now (#427, D-29) — stub its
+              // stream so the boot pumpAndSettle renders the Todos tab instead
+              // of hanging on the real, never-resolving todos repository chain.
+              todosStreamProvider.overrideWith(
+                (ref) => Stream.value(const <Todo>[]),
+              ),
               deviceLocationServiceProvider.overrideWithValue(
                 const _FakeDeviceLocationService(
                   DeviceLocationServicesDisabled(),

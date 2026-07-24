@@ -577,50 +577,49 @@ void main() {
       },
     );
 
-    testWidgets(
-      'a valid harvest saves successfully with the typed attributes',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('a valid harvest saves successfully with the typed attributes', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final repo = _FakeActivitiesRepository();
-        await tester.pumpWidget(_buildApp(repo: repo));
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.enterText(
-          find.byKey(const Key('activity-honey-supers-field')),
-          '4',
-        );
-        final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
-        await tester.pumpAndSettle();
-        await tester.tap(saveButton);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
-        await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
-        expect(repo.created, hasLength(1));
-        expect(repo.created.single.apiaryId, 'a1');
-        expect(repo.created.single.type, 'harvest');
-        expect(repo.created.single.attributes['honey_supers'], 4);
-        // Navigated away.
-        expect(find.byKey(const Key('activity-save-button')), findsNothing);
-      },
-    );
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.apiaryId, 'a1');
+      expect(repo.created.single.type, 'harvest');
+      expect(repo.created.single.attributes['honey_supers'], 4);
+      // Navigated away.
+      expect(find.byKey(const Key('activity-save-button')), findsNothing);
+    });
 
     testWidgets(
       'a failing create() keeps the form open and shows an error, not an indefinite spinner',
@@ -870,56 +869,53 @@ void main() {
   );
 
   group('journey picker (#46, FR-JO-1, D-21)', () {
-    testWidgets(
-      'auto-match HIT: a matching open journey is pre-filled and saved '
-      'as journey_id',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('auto-match HIT: a matching open journey is pre-filled and saved '
+        'as journey_id', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final journeysRepo = _FakeJourneysRepository(matches: [openJourney]);
-        final repo = _FakeActivitiesRepository();
-        await tester.pumpWidget(
-          _buildApp(repo: repo, journeysRepo: journeysRepo),
-        );
-        await tester.pumpAndSettle();
-        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
-        // tab before interacting with the apiaries list.
-        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final journeysRepo = _FakeJourneysRepository(matches: [openJourney]);
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(
+        _buildApp(repo: repo, journeysRepo: journeysRepo),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('activity-journey-attachment-name')),
-          findsOneWidget,
-        );
-        expect(find.text('Spring Harvest Round'), findsOneWidget);
+      expect(
+        find.byKey(const Key('activity-journey-attachment-name')),
+        findsOneWidget,
+      );
+      expect(find.text('Spring Harvest Round'), findsOneWidget);
 
-        await tester.enterText(
-          find.byKey(const Key('activity-honey-supers-field')),
-          '4',
-        );
-        final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
-        await tester.pumpAndSettle();
-        await tester.tap(saveButton);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
-        await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
-        expect(repo.created, hasLength(1));
-        expect(repo.created.single.journeyId, 'j1');
-      },
-    );
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.journeyId, 'j1');
+    });
 
     testWidgets('auto-match MISS: no matching journey -> no journey attached, '
         'journey_id is null on save', (tester) async {
