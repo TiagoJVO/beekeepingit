@@ -1592,6 +1592,18 @@ abstract class AppLocalizations {
   /// **'No apiaries yet — add one from the Apiaries tab first.'**
   String get journeyApiariesNoneAvailable;
 
+  /// Bulk action in the journey apiary picker that selects every apiary matching the current search filter (#425, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get journeyApiariesSelectAll;
+
+  /// Bulk action in the journey apiary picker that clears the whole apiary selection (#425, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get journeyApiariesClearAll;
+
   /// Running count below the apiary multi-select picker (#45)
   ///
   /// In en, this message translates to:

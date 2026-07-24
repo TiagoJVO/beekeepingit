@@ -923,6 +923,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'No apiaries yet — add one from the Apiaries tab first.';
 
   @override
+  String get journeyApiariesSelectAll => 'Select all';
+
+  @override
+  String get journeyApiariesClearAll => 'Clear all';
+
+  @override
   String journeyApiariesSelectedCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,

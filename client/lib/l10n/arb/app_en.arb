@@ -1220,6 +1220,14 @@
   "@journeyApiariesNoneAvailable": {
     "description": "Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)"
   },
+  "journeyApiariesSelectAll": "Select all",
+  "@journeyApiariesSelectAll": {
+    "description": "Bulk action in the journey apiary picker that selects every apiary matching the current search filter (#425, FR-JO-4)"
+  },
+  "journeyApiariesClearAll": "Clear all",
+  "@journeyApiariesClearAll": {
+    "description": "Bulk action in the journey apiary picker that clears the whole apiary selection (#425, FR-JO-4)"
+  },
   "journeyApiariesSelectedCount": "{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}",
   "@journeyApiariesSelectedCount": {
     "description": "Running count below the apiary multi-select picker (#45)",
