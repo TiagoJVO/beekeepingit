@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -93,6 +95,15 @@ final apiariesViewModelProvider = Provider<AsyncValue<ApiariesViewModel>>((
   });
 });
 
+/// How often the apiary list silently re-acquires the device location while
+/// it's the visible, foregrounded view (#422) so the per-row distances and
+/// nearest-first ordering track the user as they walk the yard. Kept
+/// deliberately coarse — ordering a short list doesn't need second-by-second
+/// precision, and a longer interval limits GPS/battery use; the timer is also
+/// fully suspended while the app is backgrounded (see
+/// [_ApiariesListScreenState.didChangeAppLifecycleState]).
+const Duration _locationRefreshInterval = Duration(seconds: 10);
+
 /// The home screen: the org's apiaries, read live from local SQLite (works
 /// offline). Tapping a row opens the edit form. No own AppBar/FAB: this
 /// screen is the Apiaries tab's root within the app shell (FR-UX-2, #197),
@@ -120,11 +131,83 @@ final apiariesViewModelProvider = Provider<AsyncValue<ApiariesViewModel>>((
 /// shown via the segmented control's selected segment (#35 AC: "the active
 /// view is visually indicated"); the map screen no longer has its own pushed
 /// route (superseding #34's original one-way "View map" navigation).
-class ApiariesListScreen extends ConsumerWidget {
+///
+/// Keeps the device location fresh while the list is on screen (#422): a
+/// [Timer.periodic] ([_locationRefreshInterval]) silently re-acquires it so
+/// the distances/ordering track the user as they move, and a
+/// [RefreshIndicator] lets them pull-to-refresh on demand. The timer is a
+/// stateful resource (started in [State.initState], cancelled in
+/// [State.dispose], suspended while backgrounded), so this is a
+/// [ConsumerStatefulWidget] rather than the previous stateless
+/// [ConsumerWidget].
+class ApiariesListScreen extends ConsumerStatefulWidget {
   const ApiariesListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ApiariesListScreen> createState() => _ApiariesListScreenState();
+}
+
+class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
+    with WidgetsBindingObserver {
+  Timer? _locationRefreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startLocationRefreshTimer();
+  }
+
+  @override
+  void dispose() {
+    _stopLocationRefreshTimer();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Suspend the periodic refresh while the app is backgrounded and resume it
+  /// (with an immediate catch-up fetch) on return — a foreground gate so a
+  /// pocketed, walked-away phone isn't polling GPS every ~10s (#422: "gate to
+  /// foreground/visible to limit battery use"; AC: "the timer is cancelled
+  /// when the screen is disposed/backgrounded").
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _refreshLocation();
+        _startLocationRefreshTimer();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        _stopLocationRefreshTimer();
+    }
+  }
+
+  void _startLocationRefreshTimer() {
+    _locationRefreshTimer?.cancel();
+    _locationRefreshTimer = Timer.periodic(
+      _locationRefreshInterval,
+      (_) => _refreshLocation(),
+    );
+  }
+
+  void _stopLocationRefreshTimer() {
+    _locationRefreshTimer?.cancel();
+    _locationRefreshTimer = null;
+  }
+
+  /// Re-acquire the device location without tearing down the list — see
+  /// [DeviceLocationController.refresh]. Returned so [RefreshIndicator] can
+  /// await it (keeping its spinner up until the new fix resolves); guards on
+  /// [State.mounted] so a timer tick racing disposal is a no-op.
+  Future<void> _refreshLocation() {
+    if (!mounted) return Future<void>.value();
+    return ref.read(deviceLocationProvider.notifier).refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     // The heavy filter+sort work is memoized in apiariesViewModelProvider
     // (HIGH finding) rather than recomputed here on every rebuild; this
@@ -204,38 +287,48 @@ class ApiariesListScreen extends ConsumerWidget {
                   final deviceLocation = location.value;
                   final brand = context.brand;
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(
-                      BrandDimens.gutter,
-                      4,
-                      BrandDimens.gutter,
-                      BrandDimens.scrollBottomInset,
+                  // Pull-to-refresh re-acquires the location on demand (#422).
+                  // AlwaysScrollableScrollPhysics keeps the gesture available
+                  // even when the list is too short to overscroll on its own;
+                  // the localized accessibility label comes from
+                  // MaterialLocalizations (no bespoke string needed).
+                  return RefreshIndicator(
+                    key: const Key('apiaries-list-refresh-indicator'),
+                    onRefresh: _refreshLocation,
+                    child: ListView.separated(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(
+                        BrandDimens.gutter,
+                        4,
+                        BrandDimens.gutter,
+                        BrandDimens.scrollBottomInset,
+                      ),
+                      itemCount: vm.ordered.length,
+                      separatorBuilder: (_, _) =>
+                          const SizedBox(height: BrandDimens.gapCard),
+                      itemBuilder: (context, i) {
+                        final apiary = vm.ordered[i];
+                        final distanceText = _distanceSubtitle(
+                          context,
+                          l10n,
+                          apiary,
+                          deviceLocation,
+                        );
+                        return BrandRowCard(
+                          key: Key('apiary-${apiary.id}'),
+                          title: apiary.name,
+                          subtitle: distanceText == null
+                              ? l10n.hiveCountValue(apiary.hiveCount)
+                              : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
+                          leading: LeadingIconTile(
+                            icon: Icons.hive,
+                            color: brand.cresta.color,
+                            tint: brand.cresta.tint,
+                          ),
+                          onTap: () => context.go('/apiaries/${apiary.id}'),
+                        );
+                      },
                     ),
-                    itemCount: vm.ordered.length,
-                    separatorBuilder: (_, _) =>
-                        const SizedBox(height: BrandDimens.gapCard),
-                    itemBuilder: (context, i) {
-                      final apiary = vm.ordered[i];
-                      final distanceText = _distanceSubtitle(
-                        context,
-                        l10n,
-                        apiary,
-                        deviceLocation,
-                      );
-                      return BrandRowCard(
-                        key: Key('apiary-${apiary.id}'),
-                        title: apiary.name,
-                        subtitle: distanceText == null
-                            ? l10n.hiveCountValue(apiary.hiveCount)
-                            : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
-                        leading: LeadingIconTile(
-                          icon: Icons.hive,
-                          color: brand.cresta.color,
-                          tint: brand.cresta.tint,
-                        ),
-                        onTap: () => context.go('/apiaries/${apiary.id}'),
-                      );
-                    },
                   );
                 },
               ),

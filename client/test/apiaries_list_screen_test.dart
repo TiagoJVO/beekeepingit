@@ -21,6 +21,29 @@ class _FakeDeviceLocationService implements DeviceLocationService {
   Future<DeviceLocation> current() async => result;
 }
 
+/// Like [_FakeDeviceLocationService] but counts every [current] call and lets
+/// the test mutate [result] between calls — so the periodic (#422) and
+/// pull-to-refresh re-fetches can be asserted (the timer actually fired a new
+/// fetch) and the re-sort verified (moving the device flips the order).
+class _CountingDeviceLocationService implements DeviceLocationService {
+  _CountingDeviceLocationService(this.result);
+  DeviceLocation result;
+  int callCount = 0;
+
+  @override
+  Future<DeviceLocation> current() async {
+    callCount++;
+    return result;
+  }
+}
+
+/// The apiary titles in their current rendered order — several tests assert
+/// on the nearest-first ordering, so factor the extraction out.
+List<String> _cardTitles(WidgetTester tester) => tester
+    .widgetList<BrandRowCard>(find.byType(BrandRowCard))
+    .map((c) => c.title)
+    .toList(growable: false);
+
 /// Wraps [ApiariesListScreen] with just enough scaffolding (router for the
 /// row-tap navigation, l10n, a ProviderScope with the apiaries stream and
 /// device-location fixed) to test it in isolation — this screen has no own
@@ -29,6 +52,7 @@ class _FakeDeviceLocationService implements DeviceLocationService {
 Widget _buildScreen({
   required List<Apiary> apiaries,
   DeviceLocation location = const DeviceLocationUnavailable(),
+  DeviceLocationService? service,
 }) {
   final router = GoRouter(
     initialLocation: '/apiaries',
@@ -48,7 +72,7 @@ Widget _buildScreen({
     overrides: [
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
       deviceLocationServiceProvider.overrideWithValue(
-        _FakeDeviceLocationService(location),
+        service ?? _FakeDeviceLocationService(location),
       ),
     ],
     child: MaterialApp.router(
@@ -685,5 +709,95 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+  });
+
+  group('location refresh (#422)', () {
+    // A device that starts east of centre — nearest to "East" — then moves
+    // west; used to prove a re-fetch actually re-sorts the list, not just
+    // that current() was called again.
+    List<Apiary> eastWestApiaries() => [
+      _apiary('east', 'East', lon: 10.0, lat: 0.0),
+      _apiary('west', 'West', lon: -10.0, lat: 0.0),
+    ];
+
+    testWidgets(
+      'the periodic timer re-acquires the location about every 10s and re-sorts',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 9.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(apiaries: eastWestApiaries(), service: service),
+        );
+        await tester.pumpAndSettle();
+
+        // Initial (once-only) fetch: device is east, so East sorts first.
+        expect(service.callCount, 1);
+        expect(_cardTitles(tester), ['East', 'West']);
+
+        // The user walks west; the next ~10s tick must re-fetch and re-sort.
+        service.result = const DeviceLocationAvailable(lon: -9.0, lat: 0.0);
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+
+        expect(service.callCount, greaterThan(1));
+        expect(_cardTitles(tester), ['West', 'East']);
+
+        // Dispose so the still-live periodic timer doesn't outlive the test.
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets(
+      'the periodic refresh timer is cancelled when the screen is disposed',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(service.callCount, 1);
+
+        // Tearing down the screen must cancel the timer in State.dispose —
+        // if it didn't, flutter_test would itself fail the test for a pending
+        // timer, and the later tick would push callCount past 1.
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 30));
+
+        expect(service.callCount, 1);
+      },
+    );
+
+    testWidgets('pull-to-refresh re-acquires the location and re-sorts', (
+      tester,
+    ) async {
+      final service = _CountingDeviceLocationService(
+        const DeviceLocationAvailable(lon: 9.0, lat: 0.0),
+      );
+      await tester.pumpWidget(
+        _buildScreen(apiaries: eastWestApiaries(), service: service),
+      );
+      await tester.pumpAndSettle();
+      expect(_cardTitles(tester), ['East', 'West']);
+
+      // Move west, then pull down on the list to force a refresh.
+      service.result = const DeviceLocationAvailable(lon: -9.0, lat: 0.0);
+      await tester.fling(
+        find.byKey(const Key('apiaries-list-refresh-indicator')),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(service.callCount, greaterThan(1));
+      expect(_cardTitles(tester), ['West', 'East']);
+
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 }
