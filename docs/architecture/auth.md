@@ -816,11 +816,19 @@ matches an invitation, before the emailed one-time link is used.
   stays untouched. Known upstream caveat, watch-listed in [oidc-integration.md §8](oidc-integration.md):
   with duplicate emails, identification by email resolves first-match; accounts registered here
   always have a unique username to identify by.
-- **Onboarding unchanged (AC 4).** After verification, the ordinary first-sign-in path takes
+- **Onboarding (AC 4).** After verification, the ordinary first-sign-in path takes
   over: `identity` creates the profile row on first sight (FR-ONB-1), and the org gate
   auto-claims a pending invitation for the now-verified address (FR-ONB-3, §8.7) or routes to
-  org creation (FR-ONB-2; creator becomes `admin`, D-3). **No Go service or app-flow code
-  changed for #366** — deliberate: the gates already keyed on the real claim. Org-creation
+  org creation (FR-ONB-2; creator becomes `admin`, D-3). **No Go service code changed for
+  #366** — the gates already keyed on the real claim. One client-side fix was needed for the
+  brand-new-user case this issue made reachable: at boot the router's org fetch
+  (`GET /v1/organizations/me`) races the identity-row-creating first `GET /v1/profile`, and the
+  organizations service answers "can't resolve caller" with the same 404 as "no org" — a
+  resolved answer the app caches, which permanently routed a freshly-registered invitee to org
+  creation instead of auto-joining (trace-evidenced by the registration e2e's first red run).
+  `profile_screen.dart`'s save now invalidates `organizationProvider` on completion — the first
+  moment the identity row is guaranteed — so the org gate always recomputes from a resolvable
+  caller (widget-tested; the e2e proves the journey). Org-creation
   policy for self-registered users is deliberately NOT restricted (spike
   [#362](https://github.com/TiagoJVO/beekeepingit/issues/362) exists but does not block this).
 - **i18n (NFR-I18N-1) — same limitation class as §8.10's email finding.** Prompt
@@ -834,8 +842,9 @@ matches an invitation, before the emailed one-time link is used.
   gen-l10n.
 - **A11y (D-18).** The registration UI is Authentik's flow executor (PatternFly) — the same
   surface as §8.10's verification pages; its conformance is upstream's, documented as the
-  accepted posture rather than re-audited per release. The app-side change is copy-only (no new
-  tap targets; the login screen's single 56px primary action stands).
+  accepted posture rather than re-audited per release. The app-side changes are copy plus a
+  non-visual org-state refresh (no new tap targets; the login screen's single 56px primary
+  action stands).
 - **Tests (NFR-TST-1).** Live e2e
   ([`client/e2e/tests/registration.spec.ts`](../../client/e2e/tests/registration.spec.ts), run
   by `helm-e2e.yml` with the Mailpit port-forward; shared plumbing extracted to
