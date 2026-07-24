@@ -3,6 +3,7 @@ import 'package:beekeepingit_client/features/apiaries/apiaries_list_screen.dart'
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/theming/brand_widgets.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,6 +44,34 @@ List<String> _cardTitles(WidgetTester tester) => tester
     .widgetList<BrandRowCard>(find.byType(BrandRowCard))
     .map((c) => c.title)
     .toList(growable: false);
+
+/// Drive the app to the background through the valid intermediate lifecycle
+/// states — Flutter's [AppLifecycleListener] asserts on illegal jumps (e.g.
+/// resumed straight to paused), so send the real sequence a real backgrounding
+/// would.
+Future<void> _backgroundApp(WidgetTester tester) async {
+  for (final state in const [
+    AppLifecycleState.inactive,
+    AppLifecycleState.hidden,
+    AppLifecycleState.paused,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  await tester.pump();
+}
+
+/// Drive the app back to the foreground through the valid intermediate
+/// lifecycle states (the reverse of [_backgroundApp]).
+Future<void> _foregroundApp(WidgetTester tester) async {
+  for (final state in const [
+    AppLifecycleState.hidden,
+    AppLifecycleState.inactive,
+    AppLifecycleState.resumed,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  await tester.pump();
+}
 
 /// Wraps [ApiariesListScreen] with just enough scaffolding (router for the
 /// row-tap navigation, l10n, a ProviderScope with the apiaries stream and
@@ -881,17 +910,13 @@ void main() {
         await tester.pumpAndSettle();
 
         // Background the app: the timer must stop firing.
-        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-        await tester.pump();
+        await _backgroundApp(tester);
         final countWhilePaused = service.callCount;
         await tester.pump(const Duration(seconds: 30));
         expect(service.callCount, countWhilePaused);
 
         // Foreground again: an immediate catch-up fetch, then polling resumes.
-        tester.binding.handleAppLifecycleStateChanged(
-          AppLifecycleState.resumed,
-        );
-        await tester.pump();
+        await _foregroundApp(tester);
         expect(
           service.callCount,
           greaterThan(countWhilePaused),

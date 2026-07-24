@@ -187,7 +187,7 @@ class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final tabVisible = TickerMode.of(context);
+    final tabVisible = TickerMode.valuesOf(context).enabled;
     final becameVisible = tabVisible && !_tabVisible;
     _tabVisible = tabVisible;
     _reconcileRefreshTimer(catchUp: becameVisible);
