@@ -231,21 +231,29 @@ const _apiary = Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4);
 /// Returns a fixed apiary from [getById] so the #424 create-mode
 /// `hives_involved` prefill can read a hive count without a real PowerSync
 /// backend — mirrors `_FakeActivitiesRepository`'s record-and-return
-/// convention. Every other method is inherited untouched (the form only
-/// calls [getById]).
+/// convention, including its `throwOnGetById` precedent for driving the
+/// "lookup fails, form must stay usable" path. Every other method is
+/// inherited untouched (the form only calls [getById]). A null [_apiary]
+/// stands in for a since-deleted apiary.
 class _FakeApiariesRepository extends ApiariesRepository {
-  _FakeApiariesRepository(this._apiary) : super(_NoopLocalStore());
+  _FakeApiariesRepository(this._apiary, {this.throwOnGetById = false})
+    : super(_NoopLocalStore());
 
   final Apiary? _apiary;
+  final bool throwOnGetById;
 
   @override
-  Future<Apiary?> getById(String id) async => _apiary;
+  Future<Apiary?> getById(String id) async {
+    if (throwOnGetById) throw Exception('boom-apiary-load');
+    return _apiary;
+  }
 }
 
 Widget _buildApp({
   required _FakeActivitiesRepository repo,
   _FakeJourneysRepository? journeysRepo,
   Apiary apiary = _apiary,
+  _FakeApiariesRepository? apiariesRepo,
 }) {
   return ProviderScope(
     overrides: [
@@ -256,8 +264,10 @@ Widget _buildApp({
       // apiariesRepositoryProvider.getById — override it (default: the same
       // fixture the list/detail streams use) so it never hangs on the real,
       // never-resolving powerSyncProvider chain a bare provider would await.
+      // Tests exercising the "lookup fails / apiary gone" paths inject their
+      // own fake here (a throwing one, or one returning null).
       apiariesRepositoryProvider.overrideWith(
-        (ref) async => _FakeApiariesRepository(apiary),
+        (ref) async => apiariesRepo ?? _FakeApiariesRepository(apiary),
       ),
       // The detail screen's activities section (#42) — overridden with an
       // empty stream so navigating there doesn't hang on the real
@@ -602,6 +612,75 @@ void main() {
               .text,
           isEmpty,
         );
+      },
+    );
+
+    testWidgets(
+      'a failing apiary lookup leaves the field empty and the form usable, '
+      'never blocking or crashing',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            repo: _FakeActivitiesRepository(),
+            apiariesRepo: _FakeApiariesRepository(_apiary, throwOnGetById: true),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // The form rendered and is usable; the prefill just no-op'd.
+        expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-hives-involved-field')),
+              )
+              .controller!
+              .text,
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'a since-deleted apiary (getById returns null) leaves the field empty, '
+      'no crash',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            repo: _FakeActivitiesRepository(),
+            apiariesRepo: _FakeApiariesRepository(null),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-hives-involved-field')),
+              )
+              .controller!
+              .text,
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
       },
     );
   });

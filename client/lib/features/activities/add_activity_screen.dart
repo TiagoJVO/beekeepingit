@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -169,9 +171,18 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
       if (apiary == null || apiary.hiveCount <= 0) return;
       if (_hivesInvolvedController.text.trim().isNotEmpty) return;
       _hivesInvolvedController.text = apiary.hiveCount.toString();
-    } catch (_) {
+    } on Exception catch (e, st) {
       // Non-critical: a failed apiary lookup must never block the form — the
-      // field simply stays empty, exactly as it was before #424.
+      // field simply stays empty, exactly as it was before #424. Narrowed to
+      // Exception (not a bare catch-all) so a genuine programming Error still
+      // surfaces loudly, and the transient failure is logged rather than
+      // silently swallowed (coding-standards.md's error-handling rule).
+      developer.log(
+        'hives_involved prefill skipped: apiary lookup failed',
+        name: 'activities',
+        error: e,
+        stackTrace: st,
+      );
     }
   }
 
