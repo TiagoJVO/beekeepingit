@@ -46,6 +46,7 @@ yq = "4"                     # YAML query/extraction (scripts/check-deploy-url-d
 helm = "3.21.2"     # pinned to match .github/workflows/helm-ci.yml
 kubectl = "latest"
 k3d = "latest"
+"aqua:scaleway/scaleway-cli" = "2.59.0"   # `scw` — Kapsule staging/prod cluster ops (D-26; infra/cluster/scaleway-*.sh, cluster-ops.yml)
 
 [settings]
 # Trust this config without an interactive prompt in CI/agent contexts.
