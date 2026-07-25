@@ -40,7 +40,14 @@ export function validateOrganizationForm(values: OrganizationFormValues): Organi
   return errors;
 }
 
-/** True when the edited values differ from the loaded record (drives the Save/Discard state). */
+/**
+ * True when the edited values differ from the loaded record (drives the Save/Discard state).
+ * Compares the trimmed values that would actually be submitted, so a whitespace-only "edit"
+ * does not enable Save — which would otherwise fire a real PATCH that bumps the version and
+ * writes a no-op history row server-side.
+ */
 export function isDirty(values: OrganizationFormValues, baseline: OrganizationFormValues): boolean {
-  return values.name !== baseline.name || values.address !== baseline.address;
+  return (
+    values.name.trim() !== baseline.name.trim() || values.address.trim() !== baseline.address.trim()
+  );
 }

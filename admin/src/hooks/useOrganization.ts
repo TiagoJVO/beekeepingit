@@ -42,6 +42,11 @@ export function useOrganization(config: AppConfig) {
     enabled: auth.isAuthenticated,
     retry: false,
     staleTime: 60_000,
+    // Never refetch this record out from under an in-progress edit: a background refresh would
+    // swap the ETag (and the baseline the form diffs against) mid-edit. The screen adopts fresh
+    // server state only on an explicit action — a successful save or the post-conflict reload.
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
   });
 
   const mutation = useMutation({

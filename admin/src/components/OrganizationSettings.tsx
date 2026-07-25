@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api/client";
 import { ORG_ADDRESS_MAX_LENGTH, ORG_NAME_MAX_LENGTH } from "../api/organizations";
+import type { Organization } from "../api/organizations";
 import type { AppConfig } from "../config/env";
 import { useOrganization } from "../hooks/useOrganization";
 import {
@@ -35,7 +36,6 @@ export function OrganizationSettings({ config }: OrganizationSettingsProps) {
 
   const org = query.data?.data;
   const etag = query.data?.etag ?? null;
-  const version = org?.updated_at ?? org?.id;
 
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -48,19 +48,33 @@ export function OrganizationSettings({ config }: OrganizationSettingsProps) {
   const addressRef = useRef<HTMLTextAreaElement>(null);
   const conflictRef = useRef<HTMLDivElement>(null);
   const formErrorRef = useRef<HTMLParagraphElement>(null);
+  const initializedRef = useRef(false);
 
-  // Sync the editable fields to the loaded record whenever a new server record arrives (initial
-  // load, a successful save's cache replacement, or a post-conflict reload). Deliberately does
-  // NOT touch `saveStatus`, so a just-saved success message survives the cache replacement it
-  // itself triggered; the message is instead cleared when the user next edits a field.
+  // Prefill the form from the server record exactly once, when it first loads. All later
+  // adoptions of server state (a successful save, a post-conflict reload) are done explicitly at
+  // their call sites — deliberately NOT from a general "org changed" effect — so a background
+  // query refresh can never silently clobber the admin's in-progress, unsaved edits. A genuine
+  // concurrent change is instead surfaced on save via the 409 path (FR-TEN-2).
   useEffect(() => {
-    if (!org) return;
+    if (!org || initializedRef.current) return;
+    initializedRef.current = true;
     setName(org.name);
     setAddress(org.address ?? "");
+  }, [org]);
+
+  const baseline = useMemo(
+    () => ({ name: org?.name ?? "", address: org?.address ?? "" }),
+    [org?.name, org?.address],
+  );
+  const dirty = isDirty({ name, address }, baseline);
+
+  function resetForm(record: Organization): void {
+    setName(record.name);
+    setAddress(record.address ?? "");
     setFieldMessages({});
     setFormError(null);
     setConflict(false);
-  }, [org, version]);
+  }
 
   function handleNameChange(value: string): void {
     setName(value);
@@ -71,12 +85,6 @@ export function OrganizationSettings({ config }: OrganizationSettingsProps) {
     setAddress(value);
     setSaveStatus((prev) => (prev === "saved" ? "idle" : prev));
   }
-
-  const baseline = useMemo(
-    () => ({ name: org?.name ?? "", address: org?.address ?? "" }),
-    [org?.name, org?.address],
-  );
-  const dirty = isDirty({ name, address }, baseline);
 
   function messageForCode(field: OrgEditableField, code: "required" | "too_long"): string {
     if (field === "name") {
@@ -134,6 +142,16 @@ export function OrganizationSettings({ config }: OrganizationSettingsProps) {
     setConflict(false);
     setSaveStatus("idle");
 
+    // Fail safe: without the current version we cannot enforce optimistic concurrency, so a
+    // PATCH would become an unconditional overwrite (a missing If-Match is "OK" server-side).
+    // Refuse rather than risk silently clobbering a concurrent edit (FR-TEN-2). In practice the
+    // GET always returns an ETag; a null here means it was stripped in transit (e.g. a CORS
+    // response that does not expose ETag) — a configuration fault the admin should see, not hide.
+    if (etag === null) {
+      setFormError(t("orgSettings.errors.versionUnavailable"));
+      return;
+    }
+
     const clientErrors = validateOrganizationForm({ name, address });
     if (Object.keys(clientErrors).length > 0) {
       const messages = resolveClientErrors(clientErrors);
@@ -146,11 +164,12 @@ export function OrganizationSettings({ config }: OrganizationSettingsProps) {
     const trimmedAddress = address.trim();
     setSaveStatus("saving");
     try {
-      await mutation.mutateAsync({
+      const saved = await mutation.mutateAsync({
         orgId: org.id,
         update: { name: name.trim(), address: trimmedAddress === "" ? null : trimmedAddress },
         etag,
       });
+      resetForm(saved.data);
       setSaveStatus("saved");
     } catch (error) {
       setSaveStatus("idle");
@@ -180,11 +199,15 @@ export function OrganizationSettings({ config }: OrganizationSettingsProps) {
     if (formError) formErrorRef.current?.focus();
   }, [formError]);
 
+  async function handleReload(): Promise<void> {
+    const result = await query.refetch();
+    const fresh = result.data?.data;
+    if (fresh) resetForm(fresh);
+    setSaveStatus("idle");
+  }
+
   function handleDiscard(): void {
-    setName(baseline.name);
-    setAddress(baseline.address);
-    setFieldMessages({});
-    setFormError(null);
+    if (org) resetForm(org);
     setSaveStatus("idle");
   }
 
@@ -223,7 +246,7 @@ export function OrganizationSettings({ config }: OrganizationSettingsProps) {
       {conflict && (
         <div className="notice notice-danger" role="alert" tabIndex={-1} ref={conflictRef}>
           <p>{t("orgSettings.conflict.body")}</p>
-          <button type="button" className="btn btn-secondary" onClick={() => void query.refetch()}>
+          <button type="button" className="btn btn-secondary" onClick={() => void handleReload()}>
             {t("orgSettings.conflict.reload")}
           </button>
         </div>

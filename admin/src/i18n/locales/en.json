@@ -39,7 +39,8 @@
       "nameTooLong": "Organization name must be at most {{max}} characters.",
       "addressTooLong": "Address must be at most {{max}} characters.",
       "saveFailed": "We could not save your changes. Please try again.",
-      "loadFailed": "We could not load your organization. Please try again."
+      "loadFailed": "We could not load your organization. Please try again.",
+      "versionUnavailable": "We could not confirm the current version of your organization, so we did not save to avoid overwriting someone else's changes. Please reload and try again."
     }
   },
   "denied": {

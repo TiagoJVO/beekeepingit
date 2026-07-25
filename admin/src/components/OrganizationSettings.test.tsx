@@ -116,6 +116,56 @@ describe("OrganizationSettings", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  it("reloading after a conflict adopts the latest server values (FR-TEN-2)", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    const getOrg = vi
+      .spyOn(organizations, "getOrganization")
+      .mockResolvedValueOnce({ data: org, etag: '"v1"' })
+      // The reload's refetch sees the record another admin changed in the meantime.
+      .mockResolvedValueOnce({
+        data: { ...org, name: "Apiário do Outro Admin", updated_at: "2026-07-03T00:00:00Z" },
+        etag: '"v2"',
+      });
+    vi.spyOn(organizations, "updateOrganization").mockRejectedValue(
+      new ApiError("conflict", 409, "stale"),
+    );
+
+    renderSettings();
+
+    const nameInput = await screen.findByLabelText(/organization name/i);
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "Minha Edição");
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await screen.findByRole("button", { name: /reload latest details/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /reload latest details/i }));
+
+    await waitFor(() => expect(getOrg).toHaveBeenCalledTimes(2));
+    // The form now shows the server's latest value, not the user's stale edit.
+    expect(await screen.findByLabelText(/organization name/i)).toHaveValue(
+      "Apiário do Outro Admin",
+    );
+    expect(screen.queryByText(/someone else changed this organization/i)).not.toBeInTheDocument();
+  });
+
+  it("refuses to save when the current version (ETag) is unavailable (fail-safe, FR-TEN-2)", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    // A null ETag (e.g. a CORS response that does not expose it) must not degrade to an
+    // unconditional overwrite: the save is blocked instead of silently dropping If-Match.
+    vi.spyOn(organizations, "getOrganization").mockResolvedValue({ data: org, etag: null });
+    const update = vi.spyOn(organizations, "updateOrganization");
+
+    renderSettings();
+
+    const nameInput = await screen.findByLabelText(/organization name/i);
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "Apiário Norte");
+    await userEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    expect(await screen.findByText(/could not confirm the current version/i)).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("blocks the save when the name is empty and never calls the API (validation)", async () => {
     useAuthMock.mockReturnValue(authenticated());
     vi.spyOn(organizations, "getOrganization").mockResolvedValue({ data: org, etag: '"v1"' });

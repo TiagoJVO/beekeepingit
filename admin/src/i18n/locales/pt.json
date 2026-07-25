@@ -39,7 +39,8 @@
       "nameTooLong": "O nome da organização deve ter no máximo {{max}} caracteres.",
       "addressTooLong": "A morada deve ter no máximo {{max}} caracteres.",
       "saveFailed": "Não foi possível guardar as suas alterações. Por favor, tente novamente.",
-      "loadFailed": "Não foi possível carregar a sua organização. Por favor, tente novamente."
+      "loadFailed": "Não foi possível carregar a sua organização. Por favor, tente novamente.",
+      "versionUnavailable": "Não foi possível confirmar a versão atual da sua organização, por isso não guardámos para evitar sobrepor as alterações de outra pessoa. Recarregue e tente novamente."
     }
   },
   "denied": {
