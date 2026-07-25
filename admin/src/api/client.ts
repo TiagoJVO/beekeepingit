@@ -62,6 +62,17 @@ export interface ApiClient {
    * server rejects a stale write with `409` (surfaced as an `ApiError` of kind `conflict`).
    */
   patch<T>(path: string, body: unknown, options?: { ifMatch?: string | null }): Promise<ETagged<T>>;
+  /**
+   * POST a resource (a create). Returns the parsed JSON body of a `2xx` response. A server
+   * `409`/`422` becomes an `ApiError` of kind `conflict`/`validation` — the caller maps the
+   * problem body (e.g. a duplicate-invitation conflict or a bad-email field error) onto the UI.
+   */
+  post<T>(path: string, body: unknown): Promise<T>;
+  /**
+   * DELETE a resource. Resolves on a `204 No Content` (nothing to parse); a server `409`
+   * (e.g. the last-admin guard) or `404` becomes a typed `ApiError` for the UI to surface.
+   */
+  del(path: string): Promise<void>;
 }
 
 function kindForStatus(status: number): ApiErrorKind {
@@ -140,6 +151,18 @@ export function createApiClient(
         headers,
       });
       return { data: (await response.json()) as T, etag: response.headers.get("ETag") };
+    },
+    async post<T>(path: string, body: unknown): Promise<T> {
+      const response = await send(path, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+      });
+      return (await response.json()) as T;
+    },
+    async del(path: string): Promise<void> {
+      // A successful DELETE is `204 No Content` — there is no body to parse.
+      await send(path, { method: "DELETE" });
     },
   };
 }

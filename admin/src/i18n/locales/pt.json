@@ -43,6 +43,63 @@
       "versionUnavailable": "Não foi possível confirmar a versão atual da sua organização, por isso não guardámos para evitar sobrepor as alterações de outra pessoa. Recarregue e tente novamente."
     }
   },
+  "members": {
+    "heading": "Membros",
+    "intro": "Veja quem pertence à sua organização, convide novos membros por email e remova membros que já não devam ter acesso.",
+    "invite": {
+      "heading": "Convidar um membro",
+      "emailLabel": "Endereço de email",
+      "roleLabel": "Função",
+      "submit": "Enviar convite",
+      "sending": "A enviar…",
+      "sent": "Convite enviado para {{email}}.",
+      "errors": {
+        "emailRequired": "O endereço de email é obrigatório.",
+        "invalidEmail": "Introduza um endereço de email válido.",
+        "alreadyInvited": "Essa pessoa já tem um convite pendente ou já é membro.",
+        "failed": "Não foi possível enviar o convite. Por favor, tente novamente."
+      }
+    },
+    "roster": {
+      "heading": "Membros atuais",
+      "loading": "A carregar membros…",
+      "loadFailed": "Não foi possível carregar os membros. Por favor, tente novamente.",
+      "empty": "Ainda não há membros.",
+      "loadMore": "Carregar mais membros",
+      "loadingMore": "A carregar…",
+      "columns": {
+        "member": "Membro",
+        "role": "Função",
+        "status": "Estado",
+        "actions": "Ações"
+      }
+    },
+    "roles": {
+      "admin": "Administrador",
+      "user": "Membro"
+    },
+    "statuses": {
+      "active": "Ativo",
+      "invited": "Convidado",
+      "removed": "Removido"
+    },
+    "remove": {
+      "action": "Remover",
+      "ariaLabel": "Remover o membro {{member}}",
+      "confirm": {
+        "title": "Remover este membro?",
+        "body": "O membro {{member}} perderá o acesso a esta organização. Esta ação não pode ser anulada aqui.",
+        "confirm": "Remover membro",
+        "removing": "A remover…",
+        "cancel": "Cancelar"
+      },
+      "errors": {
+        "lastAdmin": "Não pode remover o último administrador. Promova outro membro a administrador primeiro e tente novamente.",
+        "notMember": "Essa pessoa já não é membro desta organização.",
+        "failed": "Não foi possível remover o membro. Por favor, tente novamente."
+      }
+    }
+  },
   "quotasSeam": {
     "navLabel": "Quotas e limites de taxa (em breve)"
   },

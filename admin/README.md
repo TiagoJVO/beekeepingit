@@ -4,9 +4,11 @@ The **web admin app** (`D-5`, `NFR-ROL-2`) — a **React + TypeScript**, **onlin
 (no offline / PWA / service worker) browser app for organization administration: managing
 members, roles and invitations (`auth.md` §5.3). Scaffolded by [#72](https://github.com/TiagoJVO/beekeepingit/issues/72)
 (M7): OIDC login, the admin-role guard, a typed authenticated API client, and a guarded
-landing shell. Its first administrative screen is **organization management** — view/edit the
-org's name and address with `If-Match` optimistic concurrency ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73));
-further screens (members, roles, invitations) land in follow-up M7 stories.
+landing shell. Its administrative screens are **organization management** — view/edit the
+org's name and address with `If-Match` optimistic concurrency ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73))
+— and **member management** — view the roster, invite by email with a chosen role, and remove
+members (with a last-admin guard) ([#74](https://github.com/TiagoJVO/beekeepingit/issues/74));
+the roles screen ([#75](https://github.com/TiagoJVO/beekeepingit/issues/75)) builds on the roster.
 
 Architecture as-built: [`docs/architecture/admin-app.md`](../docs/architecture/admin-app.md).
 It authenticates against the platform OIDC provider behind the provider-agnostic boundary
