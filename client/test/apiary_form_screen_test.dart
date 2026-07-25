@@ -1071,6 +1071,269 @@ void main() {
     );
   });
 
+  group('full-screen map picker (#421)', () {
+    testWidgets(
+      'the embedded picker exposes a gloves-friendly maximize control with a '
+      'semantics label, even before a pin is set',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(_buildApp(apiaries: const []));
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the
+        // Apiaries tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+
+        // No pin yet, but the maximize control is visible regardless — the
+        // full-screen view is where a first pin can be placed too.
+        final maximize = find.byKey(
+          const Key('apiary-location-picker-maximize-button'),
+        );
+        expect(maximize, findsOneWidget);
+        expectMinTapTarget(tester, maximize);
+        expectHasSemanticsLabel(
+          tester,
+          const Key('apiary-location-picker-maximize-button'),
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping maximize opens the full-screen picker; confirming a tapped '
+      'location returns it and the form persists it',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(_buildApp(apiaries: const []));
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the
+        // Apiaries tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+
+        // No location yet on the form.
+        expect(
+          find.text('No location set — tap the map to place a pin'),
+          findsOneWidget,
+        );
+
+        // Open the full-screen picker.
+        await tester.tap(
+          find.byKey(const Key('apiary-location-picker-maximize-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker')),
+          findsOneWidget,
+        );
+
+        // Confirm is disabled while there's no pin to return.
+        final confirmButton = tester.widget<IconButton>(
+          find.byKey(const Key('apiary-fullscreen-picker-confirm')),
+        );
+        expect(confirmButton.onPressed, isNull);
+
+        // Tap the full-screen map to place a pin (flutter_map debounces a tap
+        // behind a ~250ms timer before firing MapOptions.onTap — wait past it,
+        // matching the embedded-picker tap test above). The exact projected
+        // lon/lat isn't asserted (that's flutter_map's projection, not this
+        // screen's logic) — only that a location becomes set and round-trips
+        // back to the form.
+        final fullScreenMap = find.byKey(
+          const Key('apiary-fullscreen-picker-map'),
+        );
+        await tester.tapAt(tester.getCenter(fullScreenMap));
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // The pin now renders and the recenter control appears.
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker-pin')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker-recenter-button')),
+          findsOneWidget,
+        );
+
+        // Confirm returns the chosen location to the form.
+        await tester.tap(
+          find.byKey(const Key('apiary-fullscreen-picker-confirm')),
+        );
+        await tester.pumpAndSettle();
+
+        // Back on the form, and the location is now set (persisted in state):
+        // the status text flipped off "not set" and the clear action appeared.
+        expect(find.byKey(const Key('apiary-fullscreen-picker')), findsNothing);
+        expect(
+          find.text('No location set — tap the map to place a pin'),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const Key('apiary-clear-location-button')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'the full-screen picker seeds from the form pin and cancel discards any '
+      'change (the form keeps its original location)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            // Set an initial pin via "use current location" so the picker has
+            // something to seed from and the form has a location to keep.
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the
+        // Apiaries tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-use-current-location-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Location set: 41.14960, -8.61090'), findsOneWidget);
+
+        // Open the full-screen picker — it seeds from the form's pin, so its
+        // pin + recenter control are present immediately.
+        await tester.tap(
+          find.byKey(const Key('apiary-location-picker-maximize-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker-pin')),
+          findsOneWidget,
+        );
+
+        // Move the pin elsewhere, then CANCEL — the change must be discarded.
+        await tester.tapAt(
+          tester.getCenter(
+            find.byKey(const Key('apiary-fullscreen-picker-map')),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tap(
+          find.byKey(const Key('apiary-fullscreen-picker-cancel')),
+        );
+        await tester.pumpAndSettle();
+
+        // Back on the form with the ORIGINAL location intact.
+        expect(find.byKey(const Key('apiary-fullscreen-picker')), findsNothing);
+        expect(find.text('Location set: 41.14960, -8.61090'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the full-screen picker "use current location" sets the pin from the '
+      'overridden device-location service',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [],
+            locationService: const _FakeDeviceLocationService(
+              DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the
+        // Apiaries tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-toggle-map-button')));
+        await tester.pumpAndSettle();
+
+        // Open the full-screen picker with no pin yet.
+        await tester.tap(
+          find.byKey(const Key('apiary-location-picker-maximize-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker-pin')),
+          findsNothing,
+        );
+
+        // "Use current location" fetches from the fake and drops the pin,
+        // moving the camera onto it at street zoom.
+        await tester.tap(
+          find.byKey(
+            const Key('apiary-fullscreen-picker-use-current-location'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('apiary-fullscreen-picker-pin')),
+          findsOneWidget,
+        );
+        final controller = tester
+            .widget<FlutterMap>(
+              find.byKey(const Key('apiary-fullscreen-picker-map')),
+            )
+            .mapController!;
+        expect(controller.camera.zoom, 16.0);
+        expect(controller.camera.center.latitude, closeTo(41.1496, 0.0001));
+        expect(controller.camera.center.longitude, closeTo(-8.6109, 0.0001));
+
+        // Confirm carries it back to the form.
+        await tester.tap(
+          find.byKey(const Key('apiary-fullscreen-picker-confirm')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Location set: 41.14960, -8.61090'), findsOneWidget);
+      },
+    );
+  });
+
   group('error handling on create/update/delete/load (HIGH finding)', () {
     testWidgets(
       'a failing create() resets busy and shows an error toast instead of '

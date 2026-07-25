@@ -1160,6 +1160,36 @@ abstract class AppLocalizations {
   /// **'Recenter on the pin'**
   String get apiaryMapPickerRecenterAction;
 
+  /// Tooltip/semantics label for the control on the apiary form's map picker that opens the full-screen map picker so the pin can be placed precisely (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Maximize map'**
+  String get apiaryMapPickerMaximizeAction;
+
+  /// App bar title of the full-screen apiary location picker opened from the form's maximize control (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Place the apiary\'s pin'**
+  String get apiaryLocationPickerFullScreenTitle;
+
+  /// Tooltip/semantics label for the confirm control in the full-screen apiary location picker that returns the chosen location to the form (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm location'**
+  String get apiaryLocationPickerConfirmAction;
+
+  /// Tooltip/semantics label for the cancel/close control in the full-screen apiary location picker that discards any change and returns to the form (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get apiaryLocationPickerCancelAction;
+
+  /// Semantics label for the map in the full-screen apiary location picker (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Full-screen map: tap to place the apiary\'s pin'**
+  String get apiaryLocationPickerFullScreenLabel;
+
   /// Distance from the device's current location shown on an apiaries list row, locale-formatted (FR-AP-2, #253)
   ///
   /// In en, this message translates to:

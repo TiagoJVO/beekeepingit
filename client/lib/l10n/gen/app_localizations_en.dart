@@ -674,6 +674,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiaryMapPickerRecenterAction => 'Recenter on the pin';
 
   @override
+  String get apiaryMapPickerMaximizeAction => 'Maximize map';
+
+  @override
+  String get apiaryLocationPickerFullScreenTitle => 'Place the apiary\'s pin';
+
+  @override
+  String get apiaryLocationPickerConfirmAction => 'Confirm location';
+
+  @override
+  String get apiaryLocationPickerCancelAction => 'Cancel';
+
+  @override
+  String get apiaryLocationPickerFullScreenLabel =>
+      'Full-screen map: tap to place the apiary\'s pin';
+
+  @override
   String apiaryDistanceValue(String distanceKm) {
     return '$distanceKm km away';
   }
