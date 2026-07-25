@@ -343,7 +343,6 @@
   "journeyNameRequired": "O nome é obrigatório",
   "journeyMainActivityTypeLabel": "Atividade principal",
   "journeyApiariesLabel": "Apiários a visitar",
-  "journeyApiariesRequired": "Selecione pelo menos um apiário",
   "journeyApiariesNoneAvailable": "Ainda não há apiários — adicione um no separador Apiários primeiro.",
   "journeyApiariesSelectAll": "Selecionar todos",
   "journeyApiariesClearAll": "Limpar tudo",
