@@ -6,6 +6,7 @@ import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:beekeepingit_client/theming/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -190,6 +191,10 @@ Widget _buildApp({
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      // Tasks is the app's landing screen now (#427, D-29) — stub its stream
+      // so booting the app renders the Todos tab without hanging on the real,
+      // never-resolving todos repository chain.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       // Switching to the Journeys tab renders JourneysListScreen first (its
       // tab root), which watches journeysStreamProvider — overridden here
       // (mirrors app_shell_test.dart's identical fix) so it resolves
@@ -264,21 +269,31 @@ void main() {
       expect(find.text('Name is required'), findsOneWidget);
     });
 
-    testWidgets('saving without any apiary selected is blocked (#45 AC: '
-        'the set of apiaries to visit)', (tester) async {
-      final repo = _FakeJourneysRepository();
-      await _openNewJourneyForm(tester, repo: repo);
+    testWidgets(
+      'saving with no apiary selected is allowed — the plan may be empty and '
+      'apiaries added later via edit (D-30, #428, FR-JO-4)',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
 
-      await tester.enterText(
-        find.byKey(const Key('journey-name-field')),
-        'Colheita de Primavera',
-      );
-      await tester.tap(find.byKey(const Key('journey-save-button')));
-      await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          'Colheita de Primavera',
+        );
+        // No apiary selected.
+        await tester.tap(find.byKey(const Key('journey-save-button')));
+        await tester.pumpAndSettle();
 
-      expect(repo.created, isEmpty);
-      expect(find.text('Select at least one apiary'), findsOneWidget);
-    });
+        // The journey is created with an empty plan; the old
+        // "Select at least one apiary" gate no longer blocks the save.
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.name, 'Colheita de Primavera');
+        expect(repo.created.single.apiaryIds, isEmpty);
+        expect(find.text('Select at least one apiary'), findsNothing);
+        // Navigated back to the list on success.
+        expect(find.byKey(const Key('journey-name-field')), findsNothing);
+      },
+    );
 
     testWidgets(
       'a selected apiary checkbox uses the accent (tertiary) color, not the '

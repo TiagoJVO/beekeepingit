@@ -616,6 +616,33 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 ---
 
+## D-29 — Default landing screen: Tasks (Tarefas), open tasks sorted by priority
+
+- **Decision (product owner, 2026-07-24):** after login the app lands on the **Tasks
+  (Tarefas)** screen, not Apiários. The task list defaults to **non-closed (open)** tasks,
+  sorted by **priority** (most urgent first). Bottom-nav tab order is unchanged. From
+  field-testing feedback (#427).
+- **Rationale:** the daily field workflow starts from "what do I need to do today", not the
+  apiary list.
+- No prior decision governed the app's initial screen; this records it. **Touches:**
+  `area/todos`, #427, EPIC-17 (#430).
+
+---
+
+## D-30 — A journey may be created with zero apiaries (plan filled in later)
+
+- **Decision (product owner, 2026-07-24):** the journey create/edit form no longer requires
+  at least one apiary; a journey can be saved with an **empty plan** and apiaries added later
+  via edit (the data layer already supports this — `JourneysRepository.create` documents
+  `apiaryIds` may be empty). The name-required rule stays. From field-testing feedback (#428).
+- **Relaxes FR-JO-4's create-time UX** ("select the apiaries to be visited"): apiary selection
+  at create time becomes optional, not mandatory; FR-JO-4's intent (a journey plans apiaries)
+  is unchanged, only the mandatory-at-create gate is lifted.
+- **Relates to D-21** (attribution) and the planned D-31 (attaching an activity whose apiary the
+  journey did not plan adds that apiary to the plan). **Touches:** FR-JO-4, D-21, #428, EPIC-17 (#430).
+
+---
+
 ## Open Spikes
 
 - **SP-1** — ✅ **RESOLVED (2026-07-01) → PowerSync** (self-hosted Open Edition). Head-to-head +

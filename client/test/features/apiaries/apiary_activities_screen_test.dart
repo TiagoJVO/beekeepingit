@@ -4,6 +4,7 @@ import 'package:beekeepingit_client/features/activities/activities_repository.da
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/routing/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,6 +60,10 @@ Future<void> _openFullList(
         apiariesStreamProvider.overrideWith(
           (ref) => Stream.value(const [_apiary]),
         ),
+        // Tasks is the app's landing screen now (#427, D-29) — stub its stream
+        // so booting the app renders the Todos tab without hanging on the real,
+        // never-resolving todos repository chain.
+        todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
         apiaryByIdProvider.overrideWith((ref, id) => Stream.value(_apiary)),
         apiaryCountersProvider.overrideWith(
           (ref, id) => Stream.value(const <ApiaryCounter>[]),

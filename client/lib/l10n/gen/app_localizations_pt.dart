@@ -424,7 +424,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get offlineBannerErrorMessage =>
-      'Algumas alterações não foram sincronizadas e o PowerSync está a tentar novamente.';
+      'Algumas alterações ainda não foram sincronizadas — a tentar novamente.';
 
   @override
   String get syncSupersededNotice =>
@@ -929,11 +929,14 @@ class AppLocalizationsPt extends AppLocalizations {
   String get journeyApiariesLabel => 'Apiários a visitar';
 
   @override
-  String get journeyApiariesRequired => 'Selecione pelo menos um apiário';
-
-  @override
   String get journeyApiariesNoneAvailable =>
       'Ainda não há apiários — adicione um no separador Apiários primeiro.';
+
+  @override
+  String get journeyApiariesSelectAll => 'Selecionar todos';
+
+  @override
+  String get journeyApiariesClearAll => 'Limpar tudo';
 
   @override
   String journeyApiariesSelectedCount(int count) {

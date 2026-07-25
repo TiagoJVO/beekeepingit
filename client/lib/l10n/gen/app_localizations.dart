@@ -773,7 +773,7 @@ abstract class AppLocalizations {
   /// Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)
   ///
   /// In en, this message translates to:
-  /// **'Some changes failed to sync and PowerSync is retrying.'**
+  /// **'Some changes couldn\'t sync yet — retrying.'**
   String get offlineBannerErrorMessage;
 
   /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
@@ -1592,17 +1592,23 @@ abstract class AppLocalizations {
   /// **'Apiaries to visit'**
   String get journeyApiariesLabel;
 
-  /// Validation message when no apiary is selected for a journey's plan (#45)
-  ///
-  /// In en, this message translates to:
-  /// **'Select at least one apiary'**
-  String get journeyApiariesRequired;
-
   /// Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)
   ///
   /// In en, this message translates to:
   /// **'No apiaries yet — add one from the Apiaries tab first.'**
   String get journeyApiariesNoneAvailable;
+
+  /// Bulk action in the journey apiary picker that selects every apiary matching the current search filter (#425, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get journeyApiariesSelectAll;
+
+  /// Bulk action in the journey apiary picker that clears the whole apiary selection (#425, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get journeyApiariesClearAll;
 
   /// Running count below the apiary multi-select picker (#45)
   ///

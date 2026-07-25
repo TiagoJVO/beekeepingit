@@ -106,9 +106,9 @@ export async function fillIfPresent(
 /**
  * Starts a login from the app and submits the given credentials on the IdP's
  * form — deliberately WITHOUT asserting where the flow lands afterwards: the
- * walking-skeleton login expects to arrive back on /apiaries, while the
- * verification spec (#361) expects an unverified user to be HELD at the IdP's
- * email stage instead. Each caller asserts its own outcome.
+ * walking-skeleton login expects to arrive back on the Tasks tab (/todos,
+ * D-29/#427), while the verification spec (#361) expects an unverified user to
+ * be HELD at the IdP's email stage instead. Each caller asserts its own outcome.
  */
 export async function submitIdpCredentials(page: Page, user: string, pass: string) {
   await gotoAppRoot(page);
@@ -242,8 +242,8 @@ export const APP_ORIGIN_RE = /^https:\/\/app\.beekeepingit\.local/;
 
 // A login that completed lands the user back on the app origin — the
 // onboarding gate then routes by profile/org state (/profile for a fresh
-// user, /apiaries once onboarded/joined). Anything still on the auth host
-// means the flow didn't finish.
+// user, /todos — the Tasks tab, D-29/#427 — once onboarded/joined). Anything
+// still on the auth host means the flow didn't finish.
 export async function expectLoginCompleted(page: Page, expectedEmail: string) {
   await page.waitForURL(APP_ORIGIN_RE, { timeout: 60_000 });
   const claims = await readIdTokenClaims(page);

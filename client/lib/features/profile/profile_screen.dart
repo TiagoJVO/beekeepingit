@@ -82,10 +82,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ref.invalidate(organizationProvider);
         // Next onboarding step: the router's own redirect (app_router.dart)
         // sends a profile-complete, no-organization user to
-        // /organization/new (FR-ONB-2, #26) and everyone else to /apiaries,
-        // so a plain '/apiaries' navigation here always lands wherever the
-        // router's gates currently require.
-        context.go('/apiaries');
+        // /organization/new (FR-ONB-2, #26) and everyone else to the Tasks
+        // home (/todos, D-29/#427), so a plain '/todos' navigation here always
+        // lands wherever the router's gates currently require.
+        context.go('/todos');
       }
     } on ApiException catch (e) {
       if (!mounted) return;

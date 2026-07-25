@@ -108,9 +108,14 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
     final title = op.displayName == null
         ? entityLabel
         : l10n.syncNeedsFixTitleWithName(entityLabel, op.displayName!);
-    final message = op.primaryMessage.isNotEmpty
-        ? op.primaryMessage
-        : l10n.syncNeedsFixGenericProblem;
+    // #426: never surface the server's raw validation text to the beekeeper.
+    // It is English-only (breaks EN/PT i18n) and can embed internal DB
+    // field/column names — a rejected journey once rendered
+    // "default_attributes must be a JSON object", leaking the column name.
+    // Show a localized, non-technical message; the raw detail
+    // (op.primaryMessage / op.detail) stays confined to the dead-letter row
+    // and the connector's log for diagnostics only.
+    final message = l10n.syncNeedsFixGenericProblem;
 
     return Card(
       key: Key('needs-fix-${op.id}'),

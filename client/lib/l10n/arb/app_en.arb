@@ -523,7 +523,7 @@
   "@syncStatusError": {
     "description": "App-shell header sync-status pill label when the last upload/download attempt errored and PowerSync is waiting to retry (SyncStatus.hasError) — distinct from merely offline, so a beekeeper whose uploads keep failing isn't shown the same pill as someone who simply has no signal"
   },
-  "offlineBannerErrorMessage": "Some changes failed to sync and PowerSync is retrying.",
+  "offlineBannerErrorMessage": "Some changes couldn't sync yet — retrying.",
   "@offlineBannerErrorMessage": {
     "description": "Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)"
   },
@@ -1220,13 +1220,17 @@
   "@journeyApiariesLabel": {
     "description": "Section label above the apiary multi-select picker on the journey create/edit form (#45, FR-JO-4)"
   },
-  "journeyApiariesRequired": "Select at least one apiary",
-  "@journeyApiariesRequired": {
-    "description": "Validation message when no apiary is selected for a journey's plan (#45)"
-  },
   "journeyApiariesNoneAvailable": "No apiaries yet — add one from the Apiaries tab first.",
   "@journeyApiariesNoneAvailable": {
     "description": "Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)"
+  },
+  "journeyApiariesSelectAll": "Select all",
+  "@journeyApiariesSelectAll": {
+    "description": "Bulk action in the journey apiary picker that selects every apiary matching the current search filter (#425, FR-JO-4)"
+  },
+  "journeyApiariesClearAll": "Clear all",
+  "@journeyApiariesClearAll": {
+    "description": "Bulk action in the journey apiary picker that clears the whole apiary selection (#425, FR-JO-4)"
   },
   "journeyApiariesSelectedCount": "{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}",
   "@journeyApiariesSelectedCount": {
