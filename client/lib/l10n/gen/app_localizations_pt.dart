@@ -679,6 +679,23 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiaryMapPickerRecenterAction => 'Centrar no marcador';
 
   @override
+  String get apiaryMapPickerMaximizeAction => 'Maximizar mapa';
+
+  @override
+  String get apiaryLocationPickerFullScreenTitle =>
+      'Colocar o alfinete do apiário';
+
+  @override
+  String get apiaryLocationPickerConfirmAction => 'Confirmar localização';
+
+  @override
+  String get apiaryLocationPickerCancelAction => 'Cancelar';
+
+  @override
+  String get apiaryLocationPickerFullScreenLabel =>
+      'Mapa em ecrã inteiro: toque para colocar o alfinete do apiário';
+
+  @override
   String apiaryDistanceValue(String distanceKm) {
     return 'a $distanceKm km';
   }

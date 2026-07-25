@@ -10,6 +10,7 @@ import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
+import 'apiary_location_picker_screen.dart';
 
 /// Default map-picker center/zoom when no location is set yet — same
 /// mainland-Portugal default as apiary_map_screen.dart's `_fallbackCenter`
@@ -224,6 +225,31 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
       _locationError = null;
     });
     markUnsavedChanges();
+  }
+
+  /// Opens the full-screen map picker (#421) so the pin can be placed
+  /// precisely on a full viewport (the embedded 220px map is hard to aim on,
+  /// especially with gloves — field-testing feedback). The picker carries the
+  /// current pin in and returns the chosen [ll.LatLng] (or null on cancel);
+  /// on a real choice we adopt it, clear any pending errors, and recenter the
+  /// embedded picker onto it so the form's own small map reflects the change.
+  Future<void> _openFullScreenPicker() async {
+    final result = await showApiaryLocationPickerScreen(
+      context,
+      initialLocation: _location,
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _location = result;
+      _locationPermissionDenied = false;
+      _locationError = null;
+    });
+    // The pin lives outside the Form's field tree, so Form.onChanged won't
+    // catch it — arm the unsaved-changes guard explicitly (#345).
+    markUnsavedChanges();
+    // Reflect the newly-chosen pin on the embedded picker, which may have been
+    // panned away (an already-built map ignores its initialCenter — #420).
+    _recenterPicker(result);
   }
 
   void _clearLocation() {
@@ -501,6 +527,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   controller: _pickerMapController,
                                   location: _location,
                                   onTap: _onMapTap,
+                                  onMaximize: _openFullScreenPicker,
                                   streetZoom: _pickerStreetZoom,
                                 ),
                                 const SizedBox(height: 8),
@@ -606,12 +633,14 @@ class _LocationPicker extends StatelessWidget {
     required this.controller,
     required this.location,
     required this.onTap,
+    required this.onMaximize,
     required this.streetZoom,
   });
 
   final MapController controller;
   final ll.LatLng? location;
   final void Function(ll.LatLng) onTap;
+  final VoidCallback onMaximize;
   final double streetZoom;
 
   @override
@@ -679,6 +708,50 @@ class _LocationPicker extends StatelessWidget {
                     l10n.apiaryMapAttributionEsri,
                     key: const Key('apiary-location-picker-attribution'),
                     style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ),
+              ),
+              // "Maximize" control (#421) — opens the full-screen map picker
+              // so the pin can be placed precisely on a full viewport (the
+              // embedded 220px map is hard to aim on, especially with gloves).
+              // Always shown (unlike recenter): the full-screen view is where
+              // a first pin gets placed too, not only where an existing one is
+              // adjusted. Top-left, clear of the top-right recenter control.
+              // Gloves-friendly: ≥[kMinTapTarget], Tooltip + Semantics label.
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Semantics(
+                  button: true,
+                  label: l10n.apiaryMapPickerMaximizeAction,
+                  child: Tooltip(
+                    message: l10n.apiaryMapPickerMaximizeAction,
+                    child: Material(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      elevation: 2,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        key: const Key(
+                          'apiary-location-picker-maximize-button',
+                        ),
+                        customBorder: const CircleBorder(),
+                        onTap: onMaximize,
+                        child: Container(
+                          width: kMinTapTarget,
+                          height: kMinTapTarget,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.fullscreen,
+                            size: 22,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
