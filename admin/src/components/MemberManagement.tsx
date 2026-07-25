@@ -5,7 +5,12 @@ import { ApiError } from "../api/client";
 import type { InvitableRole, Member } from "../api/members";
 import type { AppConfig } from "../config/env";
 import { useMembers } from "../hooks/useMembers";
-import { DEFAULT_INVITE_ROLE, INVITABLE_ROLES, validateInviteForm } from "./inviteForm";
+import {
+  DEFAULT_INVITE_ROLE,
+  INVITABLE_ROLES,
+  isInvitableRole,
+  validateInviteForm,
+} from "./inviteForm";
 
 interface MemberManagementProps {
   config: AppConfig;
@@ -105,6 +110,9 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
       await inviteMutation.mutateAsync({ orgId, invite: { email: trimmedEmail, role } });
       setInvitedEmail(trimmedEmail);
       setEmail("");
+      // Reset the role to the least-privilege default so the next invite doesn't silently
+      // inherit an elevated role the admin picked for the previous person.
+      setRole(DEFAULT_INVITE_ROLE);
       setInviteStatus("invited");
     } catch (error) {
       setInviteStatus("idle");
@@ -159,6 +167,26 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
     if (event.key === "Escape") {
       event.stopPropagation();
       closeRemoveDialog();
+      return;
+    }
+    // Trap focus inside the modal (WCAG 2.2 AA): Tab/Shift+Tab must cycle within the dialog
+    // rather than escaping to the inert page behind the backdrop.
+    if (event.key !== "Tab") return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === dialog)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
     }
   }
 
@@ -217,7 +245,9 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
             id="invite-role"
             name="role"
             value={role}
-            onChange={(e) => setRole(e.target.value as InvitableRole)}
+            onChange={(e) => {
+              if (isInvitableRole(e.target.value)) setRole(e.target.value);
+            }}
           >
             {INVITABLE_ROLES.map((r) => (
               <option key={r} value={r}>

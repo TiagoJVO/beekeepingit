@@ -20,6 +20,11 @@ export const INVITABLE_ROLES: readonly InvitableRole[] = ["user", "admin"];
 /** The default role a new invitee is given (least privilege — a plain member). */
 export const DEFAULT_INVITE_ROLE: InvitableRole = "user";
 
+/** Narrow an arbitrary string (e.g. a native `<select>` value) to the fixed invitable-role set. */
+export function isInvitableRole(value: string): value is InvitableRole {
+  return (INVITABLE_ROLES as readonly string[]).includes(value);
+}
+
 // A deliberately conservative single-line email shape: a non-empty local part, an `@`, and a
 // dotted domain with no spaces. It is only a fast-feedback UX gate — the server re-validates
 // (OpenAPI `format: email`) and remains authoritative; a `422` it returns maps back onto the field.

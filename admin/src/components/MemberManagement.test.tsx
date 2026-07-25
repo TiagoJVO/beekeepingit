@@ -169,6 +169,25 @@ describe("MemberManagement — remove (FR-TEN-2, NFR-ROL-1)", () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
+  it("moves focus into the confirmation dialog and closes it on Escape (a11y)", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember]));
+    const remove = vi.spyOn(members, "removeMember");
+
+    renderMembers();
+    await screen.findByText("user-bob");
+
+    await userEvent.click(screen.getByRole("button", { name: /remove member user-bob/i }));
+    const dialog = await screen.findByRole("alertdialog");
+    // Focus is moved into the dialog so it is announced and reachable.
+    expect(dialog).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it("surfaces the last-admin guard (409) clearly and keeps the member (D-3)", async () => {
     useAuthMock.mockReturnValue(authenticated());
     vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember]));

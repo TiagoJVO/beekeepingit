@@ -57,7 +57,9 @@ export const MEMBERS_PAGE_LIMIT = 50;
 function membersPath(orgId: string, cursor?: string | null): string {
   const params = new URLSearchParams({ limit: String(MEMBERS_PAGE_LIMIT) });
   if (cursor) params.set("cursor", cursor);
-  return `/organizations/${orgId}/members?${params.toString()}`;
+  // Encode the id path segment (defense-in-depth — ids are server-sourced today, but never
+  // interpolate an untrusted value into a URL path raw); query params go via URLSearchParams.
+  return `/organizations/${encodeURIComponent(orgId)}/members?${params.toString()}`;
 }
 
 /**
@@ -86,7 +88,7 @@ export function createInvitation(
   orgId: string,
   invite: InvitationCreate,
 ): Promise<Invitation> {
-  return client.post<Invitation>(`/organizations/${orgId}/invitations`, invite);
+  return client.post<Invitation>(`/organizations/${encodeURIComponent(orgId)}/invitations`, invite);
 }
 
 /**
@@ -97,5 +99,7 @@ export function createInvitation(
  * who is not an active member is `404` (ADR-0002, never `403`).
  */
 export function removeMember(client: ApiClient, orgId: string, userId: string): Promise<void> {
-  return client.del(`/organizations/${orgId}/members/${userId}`);
+  return client.del(
+    `/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
+  );
 }

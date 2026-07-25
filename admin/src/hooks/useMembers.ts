@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-q
 import { useAuth } from "react-oidc-context";
 import { createApiClient } from "../api/client";
 import { createInvitation, listMembers, removeMember } from "../api/members";
-import type { InvitationCreate, Member, MemberList } from "../api/members";
+import type { InvitationCreate, Member } from "../api/members";
 import type { AppConfig } from "../config/env";
 
 /** Variables for an invite: the target org and the new-invitation body (email + role). */
@@ -41,9 +41,15 @@ export function useMembers(config: AppConfig, orgId: string | undefined) {
 
   const queryKey = useMemo(() => ["members", subject, orgId] as const, [subject, orgId]);
 
-  const query = useInfiniteQuery<MemberList>({
+  // Let TanStack infer the page-param type from `initialPageParam`/`getNextPageParam` (so
+  // `pageParam` is `string | null` with no cast), and narrow `orgId` with a runtime guard rather
+  // than asserting it — the guard is co-located with the fetch, so it cannot drift from `enabled`.
+  const query = useInfiniteQuery({
     queryKey,
-    queryFn: ({ pageParam }) => listMembers(client, orgId as string, pageParam as string | null),
+    queryFn: ({ pageParam }) => {
+      if (!orgId) return Promise.reject(new Error("useMembers: orgId is required"));
+      return listMembers(client, orgId, pageParam);
+    },
     enabled: auth.isAuthenticated && Boolean(orgId),
     retry: false,
     staleTime: 60_000,
@@ -57,18 +63,20 @@ export function useMembers(config: AppConfig, orgId: string | undefined) {
     [query.data],
   );
 
+  // Return the invalidation promise so `mutateAsync` only settles once the roster refetch has
+  // been kicked off — keeps the success UI in step with the refreshed table (v5 idiom).
   const invalidateMembers = () => queryClient.invalidateQueries({ queryKey });
 
   const inviteMutation = useMutation({
     mutationFn: (variables: InviteMemberVariables) =>
       createInvitation(client, variables.orgId, variables.invite),
-    onSuccess: () => void invalidateMembers(),
+    onSuccess: () => invalidateMembers(),
   });
 
   const removeMutation = useMutation({
     mutationFn: (variables: RemoveMemberVariables) =>
       removeMember(client, variables.orgId, variables.userId),
-    onSuccess: () => void invalidateMembers(),
+    onSuccess: () => invalidateMembers(),
   });
 
   return { query, members, inviteMutation, removeMutation };
