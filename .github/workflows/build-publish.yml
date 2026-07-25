@@ -75,7 +75,8 @@ jobs:
             if echo "$changed" | grep -q "^${dir}/"; then
               name="$(echo "$dir" | tr '/' '-')"
               image="ghcr.io/${owner}/beekeepingit/${name}"
-              # Every component (Go service or the PWA) is one build. The client is
+              # Every component (Go service, the Flutter PWA, or the React admin app) is one
+              # build. The client is
               # built define-less here (AppConfig's dev defaults) as pure CI/artifact
               # validation — its real per-environment, deployable build is produced by
               # release-deploy.yml with the target env's URLs baked in (D-27, ADR-0018).
@@ -141,8 +142,15 @@ jobs:
               && cd "$COMPONENT_PATH" && flutter pub get && dart run powersync:setup_web \
               && flutter analyze && flutter test \
               && flutter build web --release --no-web-resources-cdn )
+          elif [ -f "$COMPONENT_PATH/package.json" ]; then
+            # npm component (the React admin app, #72): lint → test → build the static
+            # Vite bundle into dist/, which the component's Dockerfile then COPYs. Online-only
+            # SPA, so no per-environment define step (OIDC/API hosts are read from VITE_* env
+            # at deploy time — see admin/README.md). Repo-wide web lint/test also run in
+            # ci.yml's `task web:*` fan-out; this scopes the same gates to the built artifact.
+            ( cd "$COMPONENT_PATH" && npm ci && npm run lint && npm test && npm run build )
           else
-            echo "::error::unknown component type at $COMPONENT_PATH (no go.mod or pubspec.yaml)"
+            echo "::error::unknown component type at $COMPONENT_PATH (no go.mod, pubspec.yaml, or package.json)"
             exit 1
           fi
 

@@ -1,0 +1,41 @@
+{
+  "app": {
+    "title": "BeekeepingIT Admin",
+    "signOut": "Sign out",
+    "manageAccount": "Manage account"
+  },
+  "login": {
+    "heading": "Sign in to the admin app",
+    "intro": "Use your BeekeepingIT account to manage your organization, members and roles.",
+    "signIn": "Sign in",
+    "accountNote": "Account and password are managed at your identity provider."
+  },
+  "loading": {
+    "authenticating": "Signing you in…",
+    "checkingAccess": "Checking your access…"
+  },
+  "shell": {
+    "welcome": "Welcome, {{name}}",
+    "org": "Organization: {{org}}",
+    "placeholder": "Administrative screens (members, roles, invitations) will appear here.",
+    "roleBadge": "Signed in as admin"
+  },
+  "denied": {
+    "heading": "Admin access required",
+    "body": "Your account does not have the admin role in this organization, so you cannot use the admin app. Ask an organization admin to grant you the admin role, then sign in again.",
+    "noOrg": "Your account is not a member of any organization yet. Join or create an organization in the field app first.",
+    "signOut": "Sign out"
+  },
+  "error": {
+    "authHeading": "Sign-in failed",
+    "accessHeading": "Could not verify your access",
+    "network": "We could not reach the server. Check your connection and try again.",
+    "generic": "Something went wrong. Please try again.",
+    "retry": "Try again"
+  },
+  "config": {
+    "heading": "Configuration error",
+    "body": "The admin app is missing required configuration. Set the following environment variables and rebuild:",
+    "seeExample": "See admin/.env.example for details."
+  }
+}

@@ -1,0 +1,5 @@
+# Admin app build/test output (root .gitignore also covers most of these).
+dist/
+coverage/
+*.tsbuildinfo
+node_modules/
