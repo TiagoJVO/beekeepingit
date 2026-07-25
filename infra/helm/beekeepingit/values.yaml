@@ -20,15 +20,21 @@ global:
   # normally omit the port (standard 443 via a real LoadBalancer/Ingress).
   appOrigin: https://app.beekeepingit.local:8443
 
-  # Browser-facing origin of the React Admin App (scheme + host + port, no trailing
-  # slash) — the counterpart of appOrigin for the `beekeepingit-admin` OAuth2 client
-  # (#456, NFR-ROL-2). charts/authentik's blueprint templates the admin provider's
-  # redirect_uris/CORS-allowed-origins from it, so it must match wherever the admin app
-  # is actually served or login fails with a redirect_uri mismatch (same D-26 lesson as
-  # appOrigin). Dev value is the by-convention admin host mirroring appHost; the admin
-  # app is not yet gateway-served (local Vite dev uses http://localhost, covered by the
-  # blueprint's localhost redirect entry). Override per environment when the admin app is
-  # deployed there.
+  # Browser-facing origin of the React admin app / gateway.adminHost (scheme + host +
+  # port, no trailing slash) — the counterpart of appOrigin, defined ONCE and used for
+  # two things:
+  #   - OIDC (#456, NFR-ROL-2): charts/authentik's blueprint templates the
+  #     `beekeepingit-admin` OAuth2 client's redirect_uris/CORS-allowed-origins from it,
+  #     so it must match wherever the admin app is served or login fails with a
+  #     redirect_uri mismatch (same D-26 lesson as appOrigin).
+  #   - CORS (#449, ADR-0016/ADR-0020): the `services` subchart reads it (a subchart can
+  #     only see global.*, not a sibling's values) to build each service's
+  #     CORS_ALLOWED_ORIGINS — the admin SPA is CROSS-origin from the app-host API, so
+  #     the API must allow this origin and expose ETag for it, or the admin edit path
+  #     (If-Match optimistic concurrency, FR-TEN-2) can't read the version stamp.
+  # The admin app is now gateway-served on this host (#449); local Vite dev still uses
+  # http://localhost, covered by the blueprint's localhost redirect entry. Dev's :8443 is
+  # k3d's host-port mapping. Override per environment.
   adminOrigin: https://admin.beekeepingit.local:8443
 
   # Resource-request/limit presets every subchart should reference via
@@ -102,6 +108,10 @@ gateway:
   # the PWA `/` catch-all. The self-signed TLS Secret's SAN covers both.
   appHost: app.beekeepingit.local
   authHost: auth.beekeepingit.local
+  # Third host (#449, ADR-0016): the React admin app's own origin. Kept out of
+  # the PWA/API app host so it never collides with the PWA `/` catch-all; the
+  # self-signed TLS Secret's SAN covers all three.
+  adminHost: admin.beekeepingit.local
   # No workload of its own (just Ingress + a self-signed TLS Secret) — reuses
   # k3d's already-running Traefik, so there's no resourceTier to size here.
 
@@ -120,9 +130,29 @@ powersync:
 # the tag. A release's tag-bump PR sets the deployed tag (D-27, ADR-0018).
 services:
   enabled: true
+  # Cross-origin CORS for the admin app (#449, FR-TEN-2, NFR-SEC-1). The admin
+  # SPA is served from its own origin (global.adminOrigin) and calls the
+  # app-host API, so every service must answer that origin's browser CORS
+  # (preflight + Access-Control-Expose-Headers: ETag). The services subchart
+  # injects CORS_ALLOWED_ORIGINS (charts/services/deployment.yaml) — by default
+  # global.adminOrigin (set above), so no per-environment wiring is needed here.
+  # To allow ADDITIONAL origins beyond the admin host, add an explicit list under
+  # this key, e.g.:
+  #   cors:
+  #     allowedOrigins:
+  #       - https://admin.beekeepingit.local:8443
+  #       - https://other-admin.example
+  # (an explicit list REPLACES the global.adminOrigin fallback). The
+  # servicetemplate CORS middleware (services/servicetemplate/cors) allows only
+  # exact-match origins — NOT `*`, since credentials are allowed.
 
 # The Flutter Web PWA static bundle (#21/#23), served behind the gateway's `/`.
 pwa:
+  enabled: true
+
+# The React admin app static bundle (#72/#73), served behind the gateway on its
+# own host admin.beekeepingit.local (#449, ADR-0016).
+admin:
   enabled: true
 
 # Default-deny + explicit-allow NetworkPolicies (EPIC-14 #89, NFR-SEC-1).

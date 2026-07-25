@@ -103,6 +103,12 @@ jobs:
               - '.github/workflows/helm-e2e.yml'
               - 'client/**'
               - 'services/**'
+              # The admin image is built in-job from this checkout below (#449),
+              # exactly like the PWA/services — so an admin-only change is visible
+              # to (and pays for) the live bring-up. Its Deployment carries the
+              # part-of=beekeepingit label the readiness gate waits on, so it must
+              # come up cleanly here.
+              - 'admin/**'
 
       # The Authentik HelmRelease used to bring up the IdP below lives in the
       # beekeepingit-gitops repo now (D-27/ADR-0018), not this one. Check it out
@@ -145,6 +151,31 @@ jobs:
             && dart run powersync:setup_web \
             && flutter build web --release --no-web-resources-cdn )
           docker build -t "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" client
+
+      # Build the admin image from THIS checkout (#449), same rationale as the PWA
+      # step above: the admin subchart defaults to `admin:latest` (published only on
+      # push to main), so installing the chart as-is would deploy MAIN's admin bundle
+      # — and worse, on a first-ever PR that tag may not exist, leaving the admin
+      # Deployment (labelled part-of=beekeepingit) in ImagePullBackOff so the
+      # domain-service readiness gate below never passes. Bake the dev VITE_* (Vite
+      # build-time constants, mirroring build-publish.yml's admin build) so the
+      # deployed SPA targets the dev hosts. The e2e specs don't drive the admin app
+      # today; this only needs to serve `/` for its readiness probe.
+      - name: Build the admin image from the checkout
+        id: admin_image
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "repository=ghcr.io/${owner}/beekeepingit/admin" >> "$GITHUB_OUTPUT"
+          echo "tag=e2e-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          ( cd admin \
+            && npm ci \
+            && VITE_OIDC_ISSUER="https://auth.beekeepingit.local:8443/application/o/beekeepingit/" \
+               VITE_OIDC_CLIENT_ID="beekeepingit-admin" \
+               VITE_API_BASE_URL="https://app.beekeepingit.local:8443" \
+               VITE_ACCOUNT_URL="https://auth.beekeepingit.local:8443/if/user/#/settings" \
+               npm run build )
+          docker build -t "ghcr.io/${owner}/beekeepingit/admin:e2e-${GITHUB_SHA}" admin
 
       # Build the Go SERVICE images from THIS checkout (#245) — the generalization
       # of the PWA step above to the domain services (identity, organizations,
@@ -243,6 +274,30 @@ jobs:
           echo "::error::k3d image import never landed $PWA_IMAGE in $node's containerd after 3 attempts"
           exit 1
 
+      # Import the admin image the same way (#449) — built to the local daemon
+      # above, never pushed, so the cluster's containerd can't pull it; import so
+      # pullPolicy: IfNotPresent finds the imported copy. Same import-race
+      # hardening as the PWA import step (see its comment).
+      - name: Import the admin image into the cluster
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          ADMIN_IMAGE: ${{ steps.admin_image.outputs.repository }}:${{ steps.admin_image.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node="$(docker ps --filter 'name=k3d-beekeeping-server-' --format '{{.Names}}' | head -n1)"
+          for attempt in 1 2 3; do
+            echo "k3d image import attempt ${attempt}/3: $ADMIN_IMAGE"
+            k3d image import "$ADMIN_IMAGE" -c beekeeping
+            if docker exec "$node" ctr -n k8s.io images ls -q | grep -qxF "$ADMIN_IMAGE"; then
+              echo "verified: $ADMIN_IMAGE present in $node's containerd"
+              exit 0
+            fi
+            echo "warning: $ADMIN_IMAGE missing from $node's containerd after attempt ${attempt} — retrying"
+            sleep 5
+          done
+          echo "::error::k3d image import never landed $ADMIN_IMAGE in $node's containerd after 3 attempts"
+          exit 1
+
       # Import the service images the same way (#245): they were built to the
       # local daemon, never pushed (PR builds don't publish), so the cluster's
       # containerd can't pull them — import each so pullPolicy: IfNotPresent
@@ -307,12 +362,16 @@ jobs:
         env:
           PWA_IMAGE_REPOSITORY: ${{ steps.pwa_image.outputs.repository }}
           PWA_IMAGE_TAG: ${{ steps.pwa_image.outputs.tag }}
+          ADMIN_IMAGE_REPOSITORY: ${{ steps.admin_image.outputs.repository }}
+          ADMIN_IMAGE_TAG: ${{ steps.admin_image.outputs.tag }}
           SERVICE_IMAGE_TAG: ${{ steps.service_images.outputs.tag }}
         run: |
           helm upgrade --install beekeepingit infra/helm/beekeepingit \
             -f infra/helm/beekeepingit/environments/dev.yaml \
             --set "pwa.image.repository=${PWA_IMAGE_REPOSITORY}" \
             --set "pwa.image.tag=${PWA_IMAGE_TAG}" \
+            --set "admin.image.repository=${ADMIN_IMAGE_REPOSITORY}" \
+            --set "admin.image.tag=${ADMIN_IMAGE_TAG}" \
             --set "services.image.tag=${SERVICE_IMAGE_TAG}" \
             --namespace beekeepingit-dev --create-namespace \
             --timeout 15m
@@ -609,7 +668,7 @@ jobs:
           fi
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
-          for d in identity organizations apiaries activities journeys todos sync pwa beekeepingit-powersync; do
+          for d in identity organizations apiaries activities journeys todos sync pwa admin beekeepingit-powersync; do
             echo "=== previous logs: $d ==="
             kubectl -n beekeepingit-dev logs "deploy/$d" --previous --tail=30 || true
           done

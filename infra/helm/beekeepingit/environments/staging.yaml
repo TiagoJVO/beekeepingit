@@ -14,10 +14,14 @@ global:
   # small/medium/large defaults (values.yaml) unchanged; DEV1-L (D-26) has
   # enough headroom that this hasn't needed tuning yet.
   appOrigin: https://beekeepingit-rc.melargil.pt
+  # Admin app origin (#449) — its own host, cross-origin from the app-host API,
+  # so the services' CORS_ALLOWED_ORIGINS is derived from this.
+  adminOrigin: https://admin.beekeepingit-rc.melargil.pt
 
 gateway:
   appHost: beekeepingit-rc.melargil.pt
   authHost: auth.beekeepingit-rc.melargil.pt
+  adminHost: admin.beekeepingit-rc.melargil.pt
   certManager:
     enabled: true
     clusterIssuer: letsencrypt-prod
@@ -54,6 +58,15 @@ pwa:
     # --dart-define — AppConfig reads these at Dart *compile* time, so `latest`
     # would have dev's *.beekeepingit.local:8443 baked in and fail to log in).
     # See FOLLOWUPS.md for the real per-environment-build fix.
+    tag: staging-manual
+
+admin:
+  image:
+    # Like the PWA above: Vite bakes VITE_* at BUILD time, so a per-environment
+    # image is required (release-deploy.yml's publish-admin job builds it with the
+    # melargil.pt URLs). `latest` carries dev's admin/.env defaults, so pin the
+    # release-built tag once one exists; `staging-manual` mirrors the PWA's
+    # placeholder until the release pipeline has cut a staging admin image.
     tag: staging-manual
 
 networkpolicy:

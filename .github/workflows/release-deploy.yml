@@ -284,9 +284,107 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=release-client
 
+  publish-admin:
+    name: publish admin (${{ needs.route.outputs.target }})
+    needs: [route, approve]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up toolchains from mise.toml
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Compute image ref (ghcr requires a lowercased owner)
+        id: img
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/${owner}/beekeepingit/admin" >> "$GITHUB_OUTPUT"
+
+      - name: Lint, test & build the admin bundle (target-env URLs baked in)
+        env:
+          TARGET: ${{ needs.route.outputs.target }}
+        run: |
+          set -euo pipefail
+          # The admin SPA's OIDC/API/account URLs are Vite *build-time* constants
+          # (VITE_*, baked by `npm run build`), so one image can't serve every
+          # environment — the target (from the release tag) picks which URLs are
+          # baked in. The admin CLIENT id is constant (beekeepingit-admin, a public
+          # Auth-Code+PKCE client, no secret). Keep these in sync BY HAND with
+          # infra/helm/beekeepingit/environments/<env>.yaml
+          # (gateway.appHost/authHost) — `task repo:deploy-urls`
+          # (scripts/check-deploy-url-drift.sh, run by `task ci`) FAILS if they
+          # disagree, so drift can't ship silently (#369/#449). prod's are
+          # placeholders until a real prod domain exists (D-26); a bare (prod)
+          # release shouldn't be cut until then.
+          if [ "$TARGET" = "staging" ]; then
+            export VITE_OIDC_ISSUER="https://auth.beekeepingit-rc.melargil.pt/application/o/beekeepingit/"
+            export VITE_API_BASE_URL="https://beekeepingit-rc.melargil.pt"
+            export VITE_ACCOUNT_URL="https://auth.beekeepingit-rc.melargil.pt/if/user/#/settings"
+          else
+            export VITE_OIDC_ISSUER="https://auth.beekeepingit.example/application/o/beekeepingit/"
+            export VITE_API_BASE_URL="https://app.beekeepingit.example"
+            export VITE_ACCOUNT_URL="https://auth.beekeepingit.example/if/user/#/settings"
+          fi
+          export VITE_OIDC_CLIENT_ID="beekeepingit-admin"
+          cd admin
+          npm ci
+          npm run lint
+          npm test
+          npm run build
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Image metadata (tag by release version)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ steps.img.outputs.image }}
+          tags: |
+            type=raw,value=${{ github.event.release.tag_name }}
+
+      - name: Build image (load, no push — scan gates before publishing)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: admin
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-admin
+          cache-to: type=gha,mode=max,scope=release-admin
+
+      - name: Trivy image scan (blocks on HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.img.outputs.image }}:${{ steps.meta.outputs.version }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image (scan passed; cache reused from the build step above)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: admin
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-admin
+
   open-pr:
     name: open tag-bump PR (${{ needs.route.outputs.target }})
-    needs: [route, detect, publish, publish-client]
+    needs: [route, detect, publish, publish-client, publish-admin]
     runs-on: ubuntu-latest
     steps:
       # Check out the GitOps repo (not this one) with the fine-grained PAT so the

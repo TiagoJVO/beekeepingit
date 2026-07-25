@@ -57,6 +57,59 @@ run_script="$(yq -r '
   exit 1
 }
 
+# --- copy 1b: the admin app's per-environment VITE_* build args ----------------
+#
+# The React admin app (#449) is baked the same way the PWA is, but with Vite
+# VITE_* build args instead of Dart defines. publish-admin's build step exports
+# them inside the same `if TARGET = staging … else … fi`, so read them per branch.
+# The admin app is served from its own host but its OIDC issuer / API base / IdP
+# account URL point at the SAME auth/app hosts the PWA uses, so they must agree
+# with the same overlay values — this catches a one-sided admin URL edit.
+admin_run_script="$(yq -r '
+  .jobs.publish-admin.steps[]
+  | select(.run != null and (.run | contains("VITE_OIDC_ISSUER")))
+  | .run
+' "$workflow")"
+
+[ -n "$admin_run_script" ] || {
+  err "no VITE_* build step found in ${workflow#"$repo_root"/} (publish-admin restructured?)"
+  exit 1
+}
+
+# Emits `<env>\t<space-joined VITE_* assignments>` lines (one per environment).
+admin_defines_by_env="$(printf '%s\n' "$admin_run_script" | awk '
+  /^[[:space:]]*if[[:space:]].*TARGET.*=.*"staging"/ { branch = "staging"; next }
+  /^[[:space:]]*else[[:space:]]*$/                   { if (branch == "staging") branch = "prod"; next }
+  /^[[:space:]]*fi[[:space:]]*$/ {
+    if (sbuf != "") print "staging\t" sbuf
+    if (pbuf != "") print "prod\t" pbuf
+    branch = ""; next
+  }
+  /^[[:space:]]*export[[:space:]]+VITE_/ {
+    if (branch == "") next
+    line = $0
+    sub(/^[[:space:]]*export[[:space:]]+/, "", line)
+    if (branch == "staging") sbuf = (sbuf == "" ? line : sbuf " " line)
+    else if (branch == "prod") pbuf = (pbuf == "" ? line : pbuf " " line)
+  }
+')"
+
+[ -n "$admin_defines_by_env" ] || {
+  err "could not read the VITE_* branches out of publish-admin's build step"
+  exit 1
+}
+
+# Value of a single VITE_* export inside one environment's assignment string.
+# Values are URLs (no spaces), so a space-split isolates each `KEY="value"`.
+vite_arg() { # <assignments-string> <key>
+  printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s|^$2=\"\\{0,1\\}\\([^\"]*\\)\"\\{0,1\\}\$|\\1|p" | head -n 1
+}
+
+# Look up one environment's admin VITE_* assignment blob.
+admin_defines_for() { # <env>
+  printf '%s\n' "$admin_defines_by_env" | awk -F'\t' -v e="$1" '$1==e {print $2; exit}'
+}
+
 # Emits `<env>\t<DART_DEFINES value>` lines.
 defines_by_env="$(printf '%s\n' "$run_script" | awk '
   /^[[:space:]]*if[[:space:]].*TARGET.*=.*"staging"/ { branch = "staging"; next }
@@ -141,6 +194,26 @@ while IFS="$(printf '\t')" read -r env defines; do
   # POWERSYNC_URL is the gateway origin + the /sync-stream/ route, so its authority
   # must match appHost too (a same-origin path difference is not drift).
   expect "$env" "POWERSYNC_URL host vs gateway.appHost" "$(url_host "$powersync")" "$app_host"
+
+  # --- admin app (#449): its VITE_* URLs point at the same auth/app hosts ------
+  # publish-admin bakes these into the admin image per environment; they must
+  # agree with the overlay the image is served alongside, exactly like the PWA.
+  admin_defines="$(admin_defines_for "$env")"
+  if [ -n "$admin_defines" ]; then
+    admin_issuer="$(vite_arg "$admin_defines" VITE_OIDC_ISSUER)"
+    admin_api="$(vite_arg "$admin_defines" VITE_API_BASE_URL)"
+    admin_account="$(vite_arg "$admin_defines" VITE_ACCOUNT_URL)"
+    for pair in "VITE_OIDC_ISSUER=$admin_issuer" "VITE_API_BASE_URL=$admin_api" \
+      "VITE_ACCOUNT_URL=$admin_account"; do
+      [ -n "${pair#*=}" ] || err "$env: publish-admin has no ${pair%%=*}"
+    done
+    expect "$env" "VITE_OIDC_ISSUER vs services.oidc.issuerUrl" "$admin_issuer" "$issuer_url"
+    expect "$env" "VITE_OIDC_ISSUER host vs gateway.authHost" "$(url_host "$admin_issuer")" "$auth_host"
+    expect "$env" "VITE_API_BASE_URL host vs gateway.appHost" "$(url_host "$admin_api")" "$app_host"
+    expect "$env" "VITE_ACCOUNT_URL host vs gateway.authHost" "$(url_host "$admin_account")" "$auth_host"
+  else
+    err "$env: publish-client builds this environment but publish-admin has no VITE_* for it"
+  fi
 done <<EOF
 $defines_by_env
 EOF

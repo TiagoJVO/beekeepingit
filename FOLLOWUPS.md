@@ -21,12 +21,25 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
   override mapping inherits acceptance by the domain services. Consider a lightweight blueprint/CI
   assertion that ONLY `provider-beekeepingit-admin` carries it, so a future PR can't silently widen
   the set. (security review, #456.)
-- **Admin app deployment to staging/prod** — when the admin app is actually served behind the
-  gateway there (it's local-Vite-only in dev today), add a gateway `adminHost` route and override
-  `global.adminOrigin` in `environments/staging.yaml`/`prod.yaml` (base default is the dev
-  `admin.beekeepingit.local:8443`; the blueprint's `http://localhost:.*` redirect entry is
-  dev-convenience and belongs to the EPIC-14 hardened-blueprint variant, not prod). Owner: admin
-  deploy story / EPIC-14.
+- **Harden the admin OIDC redirect set for staging/prod** — the gateway `adminHost` route and the
+  staging/prod `global.adminOrigin` overrides are now in place (#449), so the admin app IS
+  gateway-served per environment. What remains is blueprint-side: the `http://localhost:.*` redirect
+  entry is dev-convenience and belongs to the EPIC-14 hardened-blueprint variant, not prod — tighten
+  the admin client's redirect_uris to the real per-environment admin origin there. Owner: EPIC-14.
+
+## `feat/admin-app-deploy-and-cors` (#449 — admin host + cross-origin CORS)
+
+- **Per-environment admin nginx CSP** — `admin/nginx.conf` ships its
+  `Content-Security-Policy-Report-Only` with the **dev** `connect-src` hosts
+  (`https://app.beekeepingit.local:8443` / `auth…`) hardcoded. `release-deploy.yml`'s
+  `publish-admin` now bakes the **staging/prod** `VITE_*` API/issuer hosts into the image, so a
+  non-dev admin build's real API host is **not** in its CSP — harmless today only because the
+  policy is **Report-Only** (it reports, does not block). Env-templating the admin (and client)
+  nginx CSP is already owned by [#89](https://github.com/TiagoJVO/beekeepingit/issues/89) (both
+  nginx.conf files carry that note); this entry just records that flipping the admin CSP to
+  enforcing **must** wait for that per-environment templating, or a staging/prod admin build
+  would block its own API calls. **Not a merge blocker** (Report-Only). Prune once #89 lands the
+  templating.
 
 ## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
 

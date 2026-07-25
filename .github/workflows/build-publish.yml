@@ -143,12 +143,28 @@ jobs:
               && flutter analyze && flutter test \
               && flutter build web --release --no-web-resources-cdn )
           elif [ -f "$COMPONENT_PATH/package.json" ]; then
-            # npm component (the React admin app, #72): lint → test → build the static
-            # Vite bundle into dist/, which the component's Dockerfile then COPYs. Online-only
-            # SPA, so no per-environment define step (OIDC/API hosts are read from VITE_* env
-            # at deploy time — see admin/README.md). Repo-wide web lint/test also run in
+            # npm component (the React admin app, #72/#449): lint → test → build the static
+            # Vite bundle into dist/, which the component's Dockerfile then COPYs. Vite bakes
+            # VITE_* at BUILD time (not read at deploy time — an earlier comment here was
+            # wrong), so the dev hostnames must be present now, exactly like the PWA's
+            # define-less `client:latest` carries AppConfig's dev defaults. This build
+            # publishes `admin:latest` (dev URLs), which the dev cluster's Flux HelmRelease
+            # pulls; the real per-environment (staging/prod) admin image is built by
+            # release-deploy.yml's publish-admin job with that env's URLs baked in
+            # (D-27, ADR-0018). These dev VITE_* mirror admin/.env.example and the dev
+            # hostnames in infra/helm/beekeepingit/charts/gateway/values.yaml — the
+            # `deploy-urls` check (scripts/check-deploy-url-drift.sh) guards the
+            # staging/prod copies against the overlays. Repo-wide web lint/test also run in
             # ci.yml's `task web:*` fan-out; this scopes the same gates to the built artifact.
-            ( cd "$COMPONENT_PATH" && npm ci && npm run lint && npm test && npm run build )
+            # Only `npm run build` needs the VITE_* (Vite reads them at bundle time); lint/test
+            # don't. Keep the dev values in one place via env for the build step.
+            ( cd "$COMPONENT_PATH" \
+              && npm ci && npm run lint && npm test \
+              && VITE_OIDC_ISSUER="https://auth.beekeepingit.local:8443/application/o/beekeepingit/" \
+                 VITE_OIDC_CLIENT_ID="beekeepingit-admin" \
+                 VITE_API_BASE_URL="https://app.beekeepingit.local:8443" \
+                 VITE_ACCOUNT_URL="https://auth.beekeepingit.local:8443/if/user/#/settings" \
+                 npm run build )
           else
             echo "::error::unknown component type at $COMPONENT_PATH (no go.mod, pubspec.yaml, or package.json)"
             exit 1
