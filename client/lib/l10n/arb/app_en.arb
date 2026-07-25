@@ -858,6 +858,26 @@
   "@apiaryMapPickerRecenterAction": {
     "description": "Tooltip/semantics label for the recenter control on the apiary form's map picker that moves the camera back onto the placed pin at street zoom after panning away (#420)"
   },
+  "apiaryMapPickerMaximizeAction": "Maximize map",
+  "@apiaryMapPickerMaximizeAction": {
+    "description": "Tooltip/semantics label for the control on the apiary form's map picker that opens the full-screen map picker so the pin can be placed precisely (#421)"
+  },
+  "apiaryLocationPickerFullScreenTitle": "Place the apiary's pin",
+  "@apiaryLocationPickerFullScreenTitle": {
+    "description": "App bar title of the full-screen apiary location picker opened from the form's maximize control (#421)"
+  },
+  "apiaryLocationPickerConfirmAction": "Confirm location",
+  "@apiaryLocationPickerConfirmAction": {
+    "description": "Tooltip/semantics label for the confirm control in the full-screen apiary location picker that returns the chosen location to the form (#421)"
+  },
+  "apiaryLocationPickerCancelAction": "Cancel",
+  "@apiaryLocationPickerCancelAction": {
+    "description": "Tooltip/semantics label for the cancel/close control in the full-screen apiary location picker that discards any change and returns to the form (#421)"
+  },
+  "apiaryLocationPickerFullScreenLabel": "Full-screen map: tap to place the apiary's pin",
+  "@apiaryLocationPickerFullScreenLabel": {
+    "description": "Semantics label for the map in the full-screen apiary location picker (#421)"
+  },
   "apiaryDistanceValue": "{distanceKm} km away",
   "@apiaryDistanceValue": {
     "description": "Distance from the device's current location shown on an apiaries list row, locale-formatted (FR-AP-2, #253)",
