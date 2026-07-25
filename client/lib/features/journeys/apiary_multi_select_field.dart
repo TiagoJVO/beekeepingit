@@ -62,12 +62,25 @@ class _ApiaryMultiSelectFieldState
   /// the whole org) so "select all" means "select what I'm looking at",
   /// matching the search box directly above it.
   void _selectAll(List<Apiary> filtered) {
-    widget.onChanged(filtered.map((a) => a.id).toSet());
+    _emitIfChanged(filtered.map((a) => a.id).toSet());
   }
 
   /// Clears the whole selection (#425, FR-JO-4).
   void _clearAll() {
-    widget.onChanged(const <String>{});
+    _emitIfChanged(const <String>{});
+  }
+
+  /// Notifies the owning form only when [next] actually differs from the
+  /// current selection. A bulk tap that computes an identical set (e.g.
+  /// "Clear all" on an already-empty selection, or "Select all" when the
+  /// filtered set is already fully selected) is a no-op, so it must NOT fire
+  /// [onChanged] — the form's callback arms the unsaved-changes leave-guard
+  /// unconditionally, and a spurious "discard changes?" prompt on a no-op tap
+  /// is exactly the surprise we avoid here.
+  void _emitIfChanged(Set<String> next) {
+    final current = widget.selectedApiaryIds;
+    if (next.length == current.length && next.containsAll(current)) return;
+    widget.onChanged(next);
   }
 
   @override
@@ -123,8 +136,13 @@ class _ApiaryMultiSelectFieldState
                 // Bulk select-all / clear-all controls (#425, FR-JO-4).
                 // "Select all" acts on the filtered set above; both are
                 // kMinTapTarget-tall for gloved/field use and expose their
-                // own button semantics via their label text.
-                Row(
+                // own button semantics via their label text. A [Wrap] (not a
+                // [Row]) so the two buttons drop to a second line instead of
+                // RenderFlex-overflowing on a narrow phone or at a large OS
+                // text scale (FR-AX-1 text-scaling).
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     TextButton.icon(
                       key: const Key('journey-apiaries-select-all'),
@@ -135,7 +153,6 @@ class _ApiaryMultiSelectFieldState
                         minimumSize: const Size(0, kMinTapTarget),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     TextButton.icon(
                       key: const Key('journey-apiaries-clear-all'),
                       onPressed: _clearAll,
