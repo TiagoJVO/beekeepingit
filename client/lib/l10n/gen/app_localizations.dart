@@ -773,7 +773,7 @@ abstract class AppLocalizations {
   /// Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)
   ///
   /// In en, this message translates to:
-  /// **'Some changes failed to sync and PowerSync is retrying.'**
+  /// **'Some changes couldn\'t sync yet — retrying.'**
   String get offlineBannerErrorMessage;
 
   /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
@@ -1064,6 +1064,12 @@ abstract class AppLocalizations {
   /// **'Use my location'**
   String get apiaryMapMeasureFromMyLocation;
 
+  /// Tooltip/semantics label for the 'my location' recenter control on the full-screen apiary map that reads a fresh device fix and moves the camera onto it at street zoom (#420)
+  ///
+  /// In en, this message translates to:
+  /// **'Center on my location'**
+  String get apiaryMapRecenterAction;
+
   /// Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider
   ///
   /// In en, this message translates to:
@@ -1147,6 +1153,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Map: tap to place the apiary\'s pin'**
   String get apiaryMapPickerLabel;
+
+  /// Tooltip/semantics label for the recenter control on the apiary form's map picker that moves the camera back onto the placed pin at street zoom after panning away (#420)
+  ///
+  /// In en, this message translates to:
+  /// **'Recenter on the pin'**
+  String get apiaryMapPickerRecenterAction;
 
   /// Distance from the device's current location shown on an apiaries list row, locale-formatted (FR-AP-2, #253)
   ///
@@ -1585,6 +1597,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No apiaries yet — add one from the Apiaries tab first.'**
   String get journeyApiariesNoneAvailable;
+
+  /// Bulk action in the journey apiary picker that selects every apiary matching the current search filter (#425, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get journeyApiariesSelectAll;
+
+  /// Bulk action in the journey apiary picker that clears the whole apiary selection (#425, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get journeyApiariesClearAll;
 
   /// Running count below the apiary multi-select picker (#45)
   ///

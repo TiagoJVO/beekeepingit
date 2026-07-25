@@ -65,9 +65,16 @@ class RejectedOp {
   /// The problem's human `detail`, shown when there are no field-level messages.
   final String detail;
 
-  /// The single most useful human line for the list row: the first field error
-  /// if any, else the problem detail. May be empty (the screen falls back to a
-  /// generic localized message then).
+  /// The single most useful raw server line for this rejection: the first field
+  /// error if any, else the problem detail. May be empty.
+  ///
+  /// **Diagnostics only — never render this to the user (#426).** It is the
+  /// server's English-only validation text and can embed internal DB
+  /// field/column names (e.g. "default_attributes must be a JSON object"),
+  /// which both breaks EN/PT i18n and leaks technical terms into the UI. The
+  /// needs-fix screen shows a localized, non-technical message instead; this
+  /// getter is kept for logs/diagnostics (the raw detail also stays persisted
+  /// in the dead-letter row's `error_detail` column).
   String get primaryMessage =>
       fieldErrors.isNotEmpty ? fieldErrors.first : detail;
 

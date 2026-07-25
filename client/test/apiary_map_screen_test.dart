@@ -126,8 +126,9 @@ Widget _buildApp(
   );
 }
 
-/// Switches from the apiaries list (the router's initial location) to the
-/// map view via the list/map toggle's map segment (#34, #35).
+/// Switches to the map view via the list/map toggle's map segment (#34, #35).
+/// The app now lands on the Tasks tab (#427, D-29), so this first navigates to
+/// the Apiaries tab (where the list/map toggle lives) before toggling to map.
 Future<void> _goToMap(
   WidgetTester tester, {
   DeviceLocationService? locationService,
@@ -142,6 +143,8 @@ Future<void> _goToMap(
       todos: todos,
     ),
   );
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
   await tester.pumpAndSettle();
@@ -262,6 +265,9 @@ void main() {
     'the empty case (no located apiaries) shows the empty state, not an error',
     (tester) async {
       await tester.pumpWidget(_buildApp([_semLocal]));
+      await tester.pumpAndSettle();
+      // Lands on the Tasks tab now (#427, D-29) — switch to Apiaries first.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
       await tester.pumpAndSettle();
@@ -615,6 +621,11 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        // The app lands on the Tasks tab now (#427, D-29); the list/map
+        // IndexedStack under test only mounts once the Apiaries tab opens, so
+        // switch to it before asserting the single shared location request.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
 
         // Before the fix, the list screen's own proximity-ordering banner
         // fetch (via deviceLocationProvider) and the map screen's
@@ -665,6 +676,12 @@ void main() {
               apiariesStreamProvider.overrideWith(
                 (ref) => Stream<List<Apiary>>.error('boom'),
               ),
+              // Tasks is the app's landing screen now (#427, D-29) — stub its
+              // stream so the boot pumpAndSettle renders the Todos tab instead
+              // of hanging on the real, never-resolving todos repository chain.
+              todosStreamProvider.overrideWith(
+                (ref) => Stream.value(const <Todo>[]),
+              ),
               deviceLocationServiceProvider.overrideWithValue(
                 const _FakeDeviceLocationService(
                   DeviceLocationServicesDisabled(),
@@ -678,6 +695,9 @@ void main() {
             child: const BeekeepingitApp(),
           ),
         );
+        await tester.pumpAndSettle();
+        // Lands on the Tasks tab now (#427, D-29) — switch to Apiaries first.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
@@ -994,5 +1014,79 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  group('"my location" recenter control (#420)', () {
+    testWidgets(
+      'the recenter control is present, meets the min tap target, and has a '
+      'semantics label',
+      (tester) async {
+        await _goToMap(tester);
+
+        expect(
+          find.byKey(const Key('apiary-map-recenter-button')),
+          findsOneWidget,
+        );
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-map-recenter-button')),
+        );
+        expectHasSemanticsLabel(
+          tester,
+          const Key('apiary-map-recenter-button'),
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping it moves and zooms the camera to a fresh fix at street level',
+      (tester) async {
+        await _goToMap(
+          tester,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        );
+
+        // The map's own controller — the exact one the recenter handler calls
+        // move() on. Assert against its camera rather than a widget key so the
+        // move (resolved location + street zoom) is verified, not just that a
+        // button exists.
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        // Precondition: the initial CameraFit frames the markers at a regional
+        // zoom, well short of street level.
+        expect(controller.camera.zoom, lessThan(16.0));
+
+        await tester.tap(find.byKey(const Key('apiary-map-recenter-button')));
+        await tester.pumpAndSettle();
+
+        expect(controller.camera.zoom, 16.0);
+        expect(controller.camera.center.latitude, closeTo(41.1496, 0.0001));
+        expect(controller.camera.center.longitude, closeTo(-8.6109, 0.0001));
+      },
+    );
+
+    testWidgets(
+      'recenter with location unavailable surfaces a message, not a crash',
+      (tester) async {
+        // Default fake reports services disabled — the same graceful branch
+        // the passive user-marker path already degrades to (#34 AC).
+        await _goToMap(tester);
+
+        await tester.tap(find.byKey(const Key('apiary-map-recenter-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.byType(SnackBar), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        // The camera was not moved to street level for an unavailable fix.
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        expect(controller.camera.zoom, lessThan(16.0));
+      },
+    );
   });
 }

@@ -181,10 +181,7 @@ void main() {
         initialLocation: '/profile',
         routes: [
           GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
-          GoRoute(
-            path: '/apiaries',
-            builder: (_, _) => const SizedBox.shrink(),
-          ),
+          GoRoute(path: '/todos', builder: (_, _) => const SizedBox.shrink()),
         ],
       );
       addTearDown(router.dispose);
