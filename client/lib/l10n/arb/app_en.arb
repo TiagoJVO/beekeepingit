@@ -2117,6 +2117,10 @@
   "@historyFieldApiary": {
     "description": "Localized name of the activities.apiary_id column in a changed-fields list (#60)"
   },
+  "historyFieldStatus": "Status",
+  "@historyFieldStatus": {
+    "description": "Localized name of the journeys.status column in a changed-fields list (#315)"
+  },
   "discardChangesTitle": "Discard changes?",
   "@discardChangesTitle": {
     "description": "Title of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345, FR-UX-1/FR-UX-2)"

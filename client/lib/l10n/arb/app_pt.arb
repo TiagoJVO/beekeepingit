@@ -623,6 +623,7 @@
   "historyFieldActivityType": "Tipo de atividade",
   "historyFieldAttributes": "Detalhes",
   "historyFieldApiary": "Apiário",
+  "historyFieldStatus": "Estado",
   "discardChangesTitle": "Descartar alterações?",
   "discardChangesMessage": "Tem alterações por guardar. Se sair agora, serão perdidas.",
   "discardChangesConfirmAction": "Descartar",

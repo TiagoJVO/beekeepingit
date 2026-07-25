@@ -309,6 +309,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                           journeyId: state.pathParameters['id']!,
                         ),
                       ),
+                      // Full per-journey change history (#315, FR-HIS-1): the
+                      // uncapped counterpart of the detail page's embedded
+                      // HistorySection, the same generic screen the apiary /
+                      // activity history routes use, differing only in the
+                      // entity type it is pointed at.
+                      GoRoute(
+                        path: 'history',
+                        name: 'journeyHistory',
+                        builder: (context, state) => HistoryScreen(
+                          entityType: journeyEntityType,
+                          entityId: state.pathParameters['id']!,
+                        ),
+                      ),
                       // Journey-scoped activity detail (#384): the SAME
                       // ActivityDetailScreen the apiaries-branch route above
                       // renders, reached instead from within a journey's own

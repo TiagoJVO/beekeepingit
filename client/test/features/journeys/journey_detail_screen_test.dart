@@ -1,9 +1,12 @@
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/history/history_repository.dart';
+import 'package:beekeepingit_client/features/history/history_screen.dart';
+import 'package:beekeepingit_client/features/history/history_section.dart';
 import 'package:beekeepingit_client/features/journeys/journey_stats.dart';
 import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
@@ -231,6 +234,36 @@ void main() {
         findsNothing,
       );
     });
+
+    testWidgets(
+      'embeds the per-journey history section pointed at this journey '
+      '(#315, FR-HIS-1)',
+      (tester) async {
+        await _openDetail(tester);
+
+        expect(find.byKey(const Key('history-section')), findsOneWidget);
+        final section = tester.widget<HistorySection>(
+          find.byType(HistorySection),
+        );
+        expect(section.entityType, journeyEntityType);
+        expect(section.entityId, 'j1');
+      },
+    );
+
+    testWidgets(
+      'the nested history route resolves to the full journey history screen '
+      '(#315, FR-HIS-1)',
+      (tester) async {
+        await _openDetail(tester);
+        final router = GoRouter.of(tester.element(find.byType(AppShell)));
+        router.go('/journeys/j1/history');
+        await tester.pumpAndSettle();
+
+        final screen = tester.widget<HistoryScreen>(find.byType(HistoryScreen));
+        expect(screen.entityType, journeyEntityType);
+        expect(screen.entityId, 'j1');
+      },
+    );
 
     testWidgets(
       'shows the journey\'s default_attributes as a muted summary line '

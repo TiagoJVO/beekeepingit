@@ -2685,6 +2685,12 @@ abstract class AppLocalizations {
   /// **'Apiary'**
   String get historyFieldApiary;
 
+  /// Localized name of the journeys.status column in a changed-fields list (#315)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get historyFieldStatus;
+
   /// Title of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345, FR-UX-1/FR-UX-2)
   ///
   /// In en, this message translates to:
