@@ -114,7 +114,10 @@ edit name / address ──▶ PATCH /v1/organizations/{org.id}   If-Match: <ETag
   value (concurrent edit) is a `409`, surfaced as a clear reload prompt rather than silently
   overwriting. On success the query cache is replaced with the returned record **and its new
   `ETag`**, so an immediate follow-up edit uses the current version — no stale write, no manual
-  refetch.
+  refetch. Because the admin app is served **cross-origin** from the API (§9), a browser only
+  lets `getWithETag` read this header when the API sends `Access-Control-Expose-Headers: ETag`
+  — provided by the services' CORS middleware (#449). Without it the client reads `etag: null`
+  and #73's fail-safe blocks the save with a "reload" message.
 - **Validation** — client-side checks (name required, length limits) mirror the server's
   `OrganizationUpdate` rules for fast feedback and **block the save**; the server remains
   authoritative and a `422` maps its field errors back onto the offending inputs.
@@ -243,5 +246,41 @@ first release, same rollout as the client — #89). CI wiring:
 - **Build + lint + test + image** — `build-publish.yml` detects `admin/` (it has a
   `Dockerfile`) and runs `npm ci && npm run lint && npm test && npm run build`, then builds
   and Trivy-scans the image — the same shape as the Go services and the Flutter client.
+  Vite bakes `VITE_*` at **build time**, so `build-publish.yml`'s `admin:latest` is compiled
+  with the **dev** hostnames baked in (mirroring the PWA's dev-default `client:latest`), and
+  the real per-environment (staging/prod) image is built by `release-deploy.yml`'s
+  `publish-admin` job with that environment's URLs (#449, D-27). The `deploy-urls` drift check
+  (`scripts/check-deploy-url-drift.sh`) guards those staging/prod URLs against the helm
+  overlays, exactly as it does the PWA's.
 - **Dependency updates** — Dependabot `npm` ecosystem on `/admin`
   (`.github/dependabot.yml`).
+
+## 9. Serving host & cross-origin CORS (#449)
+
+The admin app is served from its **own host** — `admin.beekeepingit.local:8443` in dev, mirrored
+per environment (`gateway.adminHost`, ADR-0016, `oidc-integration.md` §2). As-built infra:
+
+- **Helm** — an `admin` subchart (`infra/helm/beekeepingit/charts/admin`, a Deployment + Service
+  behind nginx, mirroring the `pwa` subchart) plus a gateway Ingress rule for `adminHost` → the
+  `admin` Service, with `adminHost` added to the gateway TLS Secret's SAN.
+- **Image config** — `VITE_OIDC_ISSUER` → auth host, `VITE_API_BASE_URL` → app host,
+  `VITE_ACCOUNT_URL` → auth host, `VITE_OIDC_CLIENT_ID=beekeepingit-admin`, baked per
+  environment (§8).
+
+Because the admin origin is **different** from the app-host API, the admin app's `fetch()`es are
+cross-origin. The API therefore answers CORS:
+
+- **Where** — a shared middleware in `services/servicetemplate/cors`, wired into every service's
+  router by `servicetemplate.New`. Kept out of the gateway (a plain, controller-agnostic
+  `networking.k8s.io/v1` Ingress, NFR-ARC-2) so a controller swap can't drop CORS, and so every
+  service inherits identical behavior.
+- **What** — for an allowed `Origin`: echoes it (never `*`, credentials are allowed), sets
+  `Access-Control-Allow-Credentials: true`, and — the load-bearing bit for FR-TEN-2 —
+  **`Access-Control-Expose-Headers: ETag`**, without which a browser hides the `ETag` from
+  `getWithETag` and the optimistic-concurrency `If-Match` round-trip (§5) can't work
+  cross-origin. Preflight `OPTIONS` is answered `204` ahead of JWT auth with
+  `Access-Control-Allow-Methods` (incl. `PATCH`/`DELETE`) and `Access-Control-Allow-Headers`
+  (incl. `Authorization`/`If-Match`/`Content-Type`).
+- **Config** — the allowlist is `CORS_ALLOWED_ORIGINS` (per-environment, from
+  `global.adminOrigin`); empty disables CORS (same-origin services). The IdP **audience**
+  contract is untouched — services still validate `OIDC_AUDIENCE=beekeepingit-pwa`.

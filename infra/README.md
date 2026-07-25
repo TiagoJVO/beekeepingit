@@ -112,8 +112,9 @@ kubectl -n beekeepingit-dev exec beekeepingit-postgres-1 -- \
   psql -U postgres -d beekeepingit -c "SELECT postgis_version();"
 
 # Authentik: seeded OIDC provider's discovery doc reachable through the gateway on
-# the dedicated auth host (add BOTH app.beekeepingit.local and auth.beekeepingit.local
-# to /etc/hosts pointing at 127.0.0.1, or use --resolve like this). The issuer is
+# the dedicated auth host (add app.beekeepingit.local, auth.beekeepingit.local AND
+# admin.beekeepingit.local — the admin app's host, #449 — to /etc/hosts pointing at
+# 127.0.0.1, or use --resolve like this). The issuer is
 # https://auth.beekeepingit.local:8443/application/o/beekeepingit/ (oidc-integration.md §6).
 curl -sk --resolve auth.beekeepingit.local:8443:127.0.0.1 \
   https://auth.beekeepingit.local:8443/application/o/beekeepingit/.well-known/openid-configuration
@@ -127,9 +128,12 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9000/minio/health/live
 kubectl -n beekeepingit-dev get pods -l app.kubernetes.io/name=powersync
 kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=powersync --tail=50
 
-# Gateway: routes to backend services on two hosts (ADR-0016) — the auth host to
-# Authentik (the curl above exercises this) and the app host to the PWA + Go APIs
-# (/v1/*) + PowerSync (/sync-stream).
+# Gateway: routes to backend services on three hosts (ADR-0016, #449) — the auth host
+# to Authentik (the curl above exercises this), the app host to the PWA + Go APIs
+# (/v1/*) + PowerSync (/sync-stream), and the admin host to the React admin app.
+# The admin app is cross-origin from the app-host API, so the Go services answer its
+# browser CORS (Access-Control-Expose-Headers: ETag) via the servicetemplate CORS
+# middleware — origins set per environment (global.adminOrigin).
 ```
 
 PowerSync's real org-scoped Sync Rules + the `sync`-service JWKS connector landed with

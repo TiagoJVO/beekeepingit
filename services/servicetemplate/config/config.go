@@ -30,7 +30,12 @@ type Config struct {
 	OIDCIssuerURL    string
 	OIDCAudience     string
 	OIDCDiscoveryURL string
-	DB               dbaccess.Config
+	// CORSAllowedOrigins is the exact-match allowlist of browser origins the
+	// service answers cross-origin CORS for (the admin app's origin, #449).
+	// Empty (the default) disables CORS — same-origin callers only. Set via
+	// CORS_ALLOWED_ORIGINS as a comma-separated list.
+	CORSAllowedOrigins []string
+	DB                 dbaccess.Config
 }
 
 // Load reads Config from the process environment.
@@ -45,12 +50,13 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		ServiceName:      req("SERVICE_NAME"),
-		HTTPAddr:         envDefault("HTTP_ADDR", ":8080"),
-		OTelEndpoint:     envDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
-		OIDCIssuerURL:    req("OIDC_ISSUER_URL"),
-		OIDCAudience:     req("OIDC_AUDIENCE"),
-		OIDCDiscoveryURL: os.Getenv("OIDC_DISCOVERY_URL"),
+		ServiceName:        req("SERVICE_NAME"),
+		HTTPAddr:           envDefault("HTTP_ADDR", ":8080"),
+		OTelEndpoint:       envDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
+		OIDCIssuerURL:      req("OIDC_ISSUER_URL"),
+		OIDCAudience:       req("OIDC_AUDIENCE"),
+		OIDCDiscoveryURL:   os.Getenv("OIDC_DISCOVERY_URL"),
+		CORSAllowedOrigins: parseCSV(os.Getenv("CORS_ALLOWED_ORIGINS")),
 		DB: dbaccess.Config{
 			Host:       req("DB_HOST"),
 			Port:       envDefault("DB_PORT", "5432"),
@@ -78,6 +84,22 @@ func Load() (Config, error) {
 		return Config{}, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+// parseCSV splits a comma-separated env value into a trimmed, empty-free slice.
+// Returns nil for an empty/absent value so an unset CORS_ALLOWED_ORIGINS leaves
+// CORS disabled rather than allowlisting an empty origin.
+func parseCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if v := strings.TrimSpace(part); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func envDefault(key, def string) string {

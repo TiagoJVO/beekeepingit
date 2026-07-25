@@ -24,15 +24,27 @@ authZ + offline model in [auth.md](auth.md) is provider-neutral and unchanged.
 
 ## 2. Topology & hosts (replaces the single `keycloak.beekeepingit.local`)
 
-| Host                               | Serves                                                     |
-| ---------------------------------- | ---------------------------------------------------------- |
-| **`auth.beekeepingit.local:8443`** | Authentik (issuer + all its paths)                         |
-| **`app.beekeepingit.local:8443`**  | PWA (`/`) + Go APIs (`/v1/*`) + PowerSync (`/sync-stream`) |
+| Host                                | Serves                                                     |
+| ----------------------------------- | ---------------------------------------------------------- |
+| **`auth.beekeepingit.local:8443`**  | Authentik (issuer + all its paths)                         |
+| **`app.beekeepingit.local:8443`**   | PWA (`/`) + Go APIs (`/v1/*`) + PowerSync (`/sync-stream`) |
+| **`admin.beekeepingit.local:8443`** | React admin app (`/`) — its own origin (#449)              |
 
 Dedicated auth host: avoids Authentik's broad root paths (`/api`, `/static`, `/media`, `/-`,
 `/if`, root files) colliding with the PWA `/` catch-all, and keeps the app origin
 **cross-origin-isolated** (COOP/COEP for PowerSync). OIDC redirects are cross-origin-friendly,
 so a separate origin is free of cost here.
+
+Dedicated **admin host** (#449, ADR-0016): the React admin app is served from its own origin,
+mirroring the app/auth split so it never collides with the PWA `/` catch-all. Being a different
+origin from the app-host API, the admin app's browser `fetch()`es are **cross-origin**, so the
+Go services answer its CORS preflight and expose `ETag` (`Access-Control-Expose-Headers: ETag`)
+so the admin edit path can read the optimistic-concurrency version stamp (FR-TEN-2). CORS lives
+in the shared **`services/servicetemplate/cors`** middleware (every service inherits it, so the
+gateway stays a plain controller-agnostic Ingress — NFR-ARC-2), with the allowed origin set per
+environment via `global.adminOrigin` → `CORS_ALLOWED_ORIGINS`. The IdP audience contract is
+unchanged — the admin app is a distinct OIDC **client** (`beekeepingit-admin`, provisioned by
+the Authentik blueprint) but services still validate `OIDC_AUDIENCE=beekeepingit-pwa`.
 
 ## 3. Provider (Authentik application + OAuth2 provider)
 

@@ -15,7 +15,11 @@ what each role can do via a role-capabilities reference ([#75](https://github.co
 Architecture as-built: [`docs/architecture/admin-app.md`](../docs/architecture/admin-app.md).
 It authenticates against the platform OIDC provider behind the provider-agnostic boundary
 ([`docs/architecture/oidc-integration.md`](../docs/architecture/oidc-integration.md),
-[ADR-0016](../docs/adr/0016-replace-keycloak-with-authentik.md)).
+[ADR-0016](../docs/adr/0016-replace-keycloak-with-authentik.md)). It is deployed on its **own
+host** (`admin.beekeepingit.local:8443` in dev) — being cross-origin from the app-host API, its
+browser calls are answered by the Go services' CORS middleware, which exposes `ETag` for the
+`If-Match` edit path ([#449](https://github.com/TiagoJVO/beekeepingit/issues/449),
+[ADR-0020](../docs/adr/0020-admin-app-host-and-cross-origin-cors.md)).
 
 ## Stack
 
