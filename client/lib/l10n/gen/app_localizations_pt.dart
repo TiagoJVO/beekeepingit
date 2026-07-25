@@ -424,7 +424,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get offlineBannerErrorMessage =>
-      'Algumas alterações não foram sincronizadas e o PowerSync está a tentar novamente.';
+      'Algumas alterações ainda não foram sincronizadas — a tentar novamente.';
 
   @override
   String get syncSupersededNotice =>
@@ -616,6 +616,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiaryMapMeasureFromMyLocation => 'Usar a minha localização';
 
   @override
+  String get apiaryMapRecenterAction => 'Centrar na minha localização';
+
+  @override
   String apiaryMapInfoOpenTodos(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -671,6 +674,9 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get apiaryMapPickerLabel =>
       'Mapa: toque para colocar o alfinete do apiário';
+
+  @override
+  String get apiaryMapPickerRecenterAction => 'Centrar no marcador';
 
   @override
   String apiaryDistanceValue(String distanceKm) {

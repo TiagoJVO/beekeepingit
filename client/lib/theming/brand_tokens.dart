@@ -64,8 +64,13 @@ abstract final class BrandTokens {
   /// Ink `#2B2438` — primary body text.
   static const ink = Color(0xFF2B2438);
 
-  /// Muted `#6E6680` — secondary text (meets AA on cream/sand/paper).
-  static const muted = Color(0xFF6E6680);
+  /// Muted `#524B60` — secondary text. Darkened from the prototype's
+  /// `#6E6680` (which cleared the 4.5:1 AA floor only marginally, ~4.64:1 on
+  /// [sand]) so counter/badge text reaches a comfortable ≥7:1 margin on every
+  /// light ground (sand 7.10:1, cream 7.48:1, paper 8.29:1) — WCAG 2.2 AAA for
+  /// normal text (#423). The grayish-plum hue is preserved; the token is only
+  /// darkened. Used as the light scheme's `onSurfaceVariant`.
+  static const muted = Color(0xFF524B60);
 
   /// Stone `#8B8270` — tertiary text/hint. Decorative on light grounds (below
   /// AA as body text), so not used as an `on*` text role.

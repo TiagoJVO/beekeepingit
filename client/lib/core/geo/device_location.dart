@@ -109,6 +109,24 @@ class DeviceLocationController extends AsyncNotifier<DeviceLocation> {
     ref.invalidateSelf();
     await future;
   }
+
+  /// Silently re-acquires the device location — used by the apiary list's
+  /// periodic (#422, ~every 10s) and pull-to-refresh updates so the per-row
+  /// distances/ordering track the user as they move. Unlike [retry] it does
+  /// NOT flip the provider back to [AsyncLoading]: the currently-shown list
+  /// and distances stay on screen (rather than flashing to a full-screen
+  /// spinner every tick) while the new fix is fetched, then swap in place
+  /// once it resolves. [retry] keeps the loading transition for the failure
+  /// banner's button, where showing progress between an error and the retried
+  /// result is the wanted affordance. Guards on [Ref.mounted] so a tick
+  /// racing disposal doesn't write to a torn-down notifier.
+  Future<void> refresh() async {
+    final next = await AsyncValue.guard(
+      () => ref.read(deviceLocationServiceProvider).current(),
+    );
+    if (!ref.mounted) return;
+    state = next;
+  }
 }
 
 final deviceLocationProvider =
