@@ -1044,6 +1044,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'Show journeys that didn\'t plan this apiary';
 
   @override
+  String journeyPickerUnplannedOptionSemanticLabel(String name) {
+    return '$name, will add this apiary to the plan';
+  }
+
+  @override
+  String get journeyPickerAddsApiaryBadge => 'Adds apiary';
+
+  @override
   String journeyPickerClosedOptionSemanticLabel(String name) {
     return '$name, closed journey';
   }

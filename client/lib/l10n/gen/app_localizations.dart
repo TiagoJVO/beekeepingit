@@ -1784,6 +1784,18 @@ abstract class AppLocalizations {
   /// **'Show journeys that didn\'t plan this apiary'**
   String get journeyPickerShowUnplannedToggle;
 
+  /// Screen-reader label for a journey's row in the relaxed "didn't plan this apiary" list, disclosing that picking it also adds the current apiary to the journey's plan (#440, D-31)
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, will add this apiary to the plan'**
+  String journeyPickerUnplannedOptionSemanticLabel(String name);
+
+  /// Short visual badge on a journey row in the relaxed "didn't plan this apiary" list, marking that picking it adds the current apiary to that journey's plan (#440, D-31)
+  ///
+  /// In en, this message translates to:
+  /// **'Adds apiary'**
+  String get journeyPickerAddsApiaryBadge;
+
   /// Screen-reader label for a closed journey's row in the picker, once revealed via the show-hidden toggle (#46, D-21)
   ///
   /// In en, this message translates to:

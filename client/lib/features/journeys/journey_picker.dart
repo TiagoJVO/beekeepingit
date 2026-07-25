@@ -252,6 +252,7 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                               _JourneyTile(
                                 journey: journey,
                                 selected: journey.id == widget.currentJourneyId,
+                                addsApiaryToPlan: true,
                                 onTap: () => Navigator.of(context).pop(
                                   JourneyPickerSelected(
                                     journey.id,
@@ -377,20 +378,40 @@ class _JourneyTile extends StatelessWidget {
     required this.journey,
     required this.selected,
     required this.onTap,
+    this.addsApiaryToPlan = false,
   });
 
   final Journey journey;
   final bool selected;
   final VoidCallback onTap;
 
+  /// #440/D-31: true for a row in the picker's "attach to a journey that
+  /// didn't plan this apiary" relaxed list. Gives the row a DISTINCT
+  /// screen-reader label and visible badge disclosing that picking it also
+  /// adds the current apiary to the journey's plan — the same per-row
+  /// disclosure a closed journey gets, so neither a sighted nor an assistive
+  /// user has to infer the side effect from which toggle they opened. Never
+  /// combined with a closed journey (the relaxed list is open-only), so the
+  /// two disclosures are mutually exclusive.
+  final bool addsApiaryToPlan;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final closed = journey.status == journeyStatusClosed;
-    final label = closed
-        ? l10n.journeyPickerClosedOptionSemanticLabel(journey.name)
-        : journey.name;
+    final String label;
+    final String? badgeText;
+    if (closed) {
+      label = l10n.journeyPickerClosedOptionSemanticLabel(journey.name);
+      badgeText = l10n.journeyStatusClosedLabel;
+    } else if (addsApiaryToPlan) {
+      label = l10n.journeyPickerUnplannedOptionSemanticLabel(journey.name);
+      badgeText = l10n.journeyPickerAddsApiaryBadge;
+    } else {
+      label = journey.name;
+      badgeText = null;
+    }
     return Semantics(
       button: true,
       selected: selected,
@@ -403,28 +424,36 @@ class _JourneyTile extends StatelessWidget {
               ? theme.colorScheme.tertiary
               : theme.colorScheme.onSurfaceVariant,
           title: journey.name,
-          trailing: closed
-              ? Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(
-                      BrandDimens.radiusBadge,
-                    ),
-                  ),
-                  child: Text(
-                    l10n.journeyStatusClosedLabel,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                )
-              : null,
+          trailing: badgeText == null ? null : _PickerBadge(text: badgeText),
           onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
+/// A small pill badge shown at the trailing edge of a picker row — the
+/// closed-journey status marker (D-21) and the #440/D-31 "adds this apiary to
+/// the plan" disclosure share this one shape so both read identically.
+class _PickerBadge extends StatelessWidget {
+  const _PickerBadge({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
+      ),
+      child: Text(
+        text,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

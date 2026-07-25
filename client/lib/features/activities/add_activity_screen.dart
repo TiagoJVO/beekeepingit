@@ -695,6 +695,19 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
 
     setState(() => _busy = true);
     try {
+      // #440/D-31: when attaching to a journey chosen from the "didn't plan
+      // this apiary" relaxed list, grow that journey's plan FIRST — before
+      // writing the activity. Ordering matters for partial-failure safety:
+      // addApiaryToPlan is idempotent, so if it throws, we abort before any
+      // activity exists (retry-safe — no duplicate activity, create() has no
+      // idempotency key). A failure at the activity write below then leaves
+      // at most an extra planned-but-unvisited apiary — still coherent
+      // (visited ⊆ planned) — never the visited-without-planned state D-31
+      // exists to prevent. A no-op if the apiary is somehow already planned.
+      if (_attachGrowsPlan && journeyIdToSave != null) {
+        final journeysRepo = await ref.read(journeysRepositoryProvider.future);
+        await journeysRepo.addApiaryToPlan(journeyIdToSave, widget.apiaryId);
+      }
       final repo = await ref.read(activitiesRepositoryProvider.future);
       if (widget.isEdit) {
         await repo.update(
@@ -712,16 +725,6 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           attributes: _buildAttributes(),
           journeyId: journeyIdToSave,
         );
-      }
-      // #440/D-31: attaching to a journey chosen from the "didn't plan this
-      // apiary" relaxed list ALSO adds this apiary to that journey's plan, so
-      // its stats stay coherent (the apiary shows as planned+visited).
-      // Idempotent — a no-op if the apiary is somehow already planned. Runs
-      // after the activity write so a failure here surfaces as a save error
-      // rather than silently growing a plan for an activity that didn't save.
-      if (_attachGrowsPlan && journeyIdToSave != null) {
-        final journeysRepo = await ref.read(journeysRepositoryProvider.future);
-        await journeysRepo.addApiaryToPlan(journeyIdToSave, widget.apiaryId);
       }
       if (!mounted) return;
       clearUnsavedChanges();
