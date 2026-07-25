@@ -43,6 +43,9 @@
       "versionUnavailable": "Não foi possível confirmar a versão atual da sua organização, por isso não guardámos para evitar sobrepor as alterações de outra pessoa. Recarregue e tente novamente."
     }
   },
+  "quotasSeam": {
+    "navLabel": "Quotas e limites de taxa (em breve)"
+  },
   "denied": {
     "heading": "Acesso de administrador necessário",
     "body": "A sua conta não tem a função de administrador nesta organização, por isso não pode usar a aplicação de administração. Peça a um administrador da organização para lhe atribuir a função de administrador e inicie sessão novamente.",

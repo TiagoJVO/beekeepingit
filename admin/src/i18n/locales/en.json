@@ -43,6 +43,9 @@
       "versionUnavailable": "We could not confirm the current version of your organization, so we did not save to avoid overwriting someone else's changes. Please reload and try again."
     }
   },
+  "quotasSeam": {
+    "navLabel": "Quotas & rate limits (coming later)"
+  },
   "denied": {
     "heading": "Admin access required",
     "body": "Your account does not have the admin role in this organization, so you cannot use the admin app. Ask an organization admin to grant you the admin role, then sign in again.",

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { AppConfig } from "../config/env";
 import { OrganizationSettings } from "./OrganizationSettings";
+import { QuotasSeam } from "./QuotasSeam";
 
 interface AppShellProps {
   config: AppConfig;
@@ -22,6 +23,8 @@ export function AppShell({ config, userName, orgName, accountUrl, onSignOut }: A
       <header className="topbar">
         <strong>{t("app.title")}</strong>
         <nav aria-label={t("app.title")} className="nav-actions">
+          {/* Deferred seam — inert unless explicitly flagged on (D-4 / EPIC-91). */}
+          {config.quotasSeamEnabled && <QuotasSeam />}
           {accountUrl && (
             <a
               className="btn btn-secondary"

@@ -11,6 +11,12 @@ export interface AppConfig {
   readonly apiBaseUrl: string;
   /** IdP self-service account page — account/password stays at the IdP (D-7). */
   readonly accountUrl: string;
+  /**
+   * Dev/preview-only flag that reveals the INERT quotas & rate-limit management seam
+   * (NFR-RL-1 mechanism boundary / NFR-ROL-2). Quotas are DEFERRED out of v1 (D-4), so this
+   * defaults to `false` and the seam ships hidden — the real screens land under EPIC-91.
+   */
+  readonly quotasSeamEnabled: boolean;
 }
 
 export interface ConfigResult {
@@ -40,6 +46,8 @@ export function readConfig(
   const apiBaseUrl = trimmed(env.VITE_API_BASE_URL);
   const accountUrl = trimmed(env.VITE_ACCOUNT_URL);
   const oidcRedirectUri = trimmed(env.VITE_OIDC_REDIRECT_URI) || origin;
+  // Opt-in flag; anything other than the literal "true" keeps the deferred seam hidden (D-4).
+  const quotasSeamEnabled = trimmed(env.VITE_FEATURE_QUOTAS_SEAM).toLowerCase() === "true";
 
   const missing: string[] = [];
   if (!oidcIssuer) missing.push("VITE_OIDC_ISSUER");
@@ -58,6 +66,7 @@ export function readConfig(
       apiBaseUrl: apiBaseUrl.replace(/\/+$/, ""),
       // accountUrl is optional; empty string hides the "manage account" link.
       accountUrl,
+      quotasSeamEnabled,
     },
     missing: [],
   };

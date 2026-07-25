@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_OIDC_REDIRECT_URI?: string;
   readonly VITE_API_BASE_URL?: string;
   readonly VITE_ACCOUNT_URL?: string;
+  readonly VITE_FEATURE_QUOTAS_SEAM?: string;
 }
 
 interface ImportMeta {

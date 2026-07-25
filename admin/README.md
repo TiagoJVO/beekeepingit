@@ -73,3 +73,11 @@ build+lint+test+image step in `build-publish.yml`).
 The guard's decision logic (`src/auth/access.ts`) is a pure function, unit-tested for every
 branch; the wired `AdminGuard` is integration-tested (admin allowed, non-admin denied) with
 React Testing Library (`NFR-TST-1`).
+
+## Deferred seams
+
+Quotas & rate-limit management (`NFR-RL-1` / `NFR-ROL-2`) is **deferred out of v1** (`D-4`):
+nothing is enforced against users and no quota logic exists. The admin app carries only an
+**inert seam** for it (`src/components/QuotasSeam.tsx`) — a disabled "coming later" nav entry
+that the real screens slot into when **EPIC-91** is picked up. It ships **hidden**, gated
+behind the default-off `VITE_FEATURE_QUOTAS_SEAM` flag (see [`.env.example`](.env.example)).
