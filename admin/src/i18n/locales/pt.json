@@ -1,0 +1,41 @@
+{
+  "app": {
+    "title": "Administração BeekeepingIT",
+    "signOut": "Terminar sessão",
+    "manageAccount": "Gerir conta"
+  },
+  "login": {
+    "heading": "Inicie sessão na aplicação de administração",
+    "intro": "Use a sua conta BeekeepingIT para gerir a sua organização, membros e funções.",
+    "signIn": "Iniciar sessão",
+    "accountNote": "A conta e a palavra-passe são geridas no seu fornecedor de identidade."
+  },
+  "loading": {
+    "authenticating": "A iniciar a sua sessão…",
+    "checkingAccess": "A verificar o seu acesso…"
+  },
+  "shell": {
+    "welcome": "Bem-vindo, {{name}}",
+    "org": "Organização: {{org}}",
+    "placeholder": "Os ecrãs de administração (membros, funções, convites) aparecerão aqui.",
+    "roleBadge": "Sessão iniciada como administrador"
+  },
+  "denied": {
+    "heading": "Acesso de administrador necessário",
+    "body": "A sua conta não tem a função de administrador nesta organização, por isso não pode usar a aplicação de administração. Peça a um administrador da organização para lhe atribuir a função de administrador e inicie sessão novamente.",
+    "noOrg": "A sua conta ainda não é membro de nenhuma organização. Junte-se ou crie uma organização primeiro na aplicação de campo.",
+    "signOut": "Terminar sessão"
+  },
+  "error": {
+    "authHeading": "Falha ao iniciar sessão",
+    "accessHeading": "Não foi possível verificar o seu acesso",
+    "network": "Não foi possível contactar o servidor. Verifique a sua ligação e tente novamente.",
+    "generic": "Ocorreu um erro. Por favor, tente novamente.",
+    "retry": "Tentar novamente"
+  },
+  "config": {
+    "heading": "Erro de configuração",
+    "body": "Faltam configurações obrigatórias à aplicação de administração. Defina as seguintes variáveis de ambiente e reconstrua:",
+    "seeExample": "Consulte admin/.env.example para mais detalhes."
+  }
+}
