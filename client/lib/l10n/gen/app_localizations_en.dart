@@ -612,6 +612,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiaryMapMeasureFromMyLocation => 'Use my location';
 
   @override
+  String get apiaryMapRecenterAction => 'Center on my location';
+
+  @override
   String apiaryMapInfoOpenTodos(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -666,6 +669,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryMapPickerLabel => 'Map: tap to place the apiary\'s pin';
+
+  @override
+  String get apiaryMapPickerRecenterAction => 'Recenter on the pin';
 
   @override
   String apiaryDistanceValue(String distanceKm) {

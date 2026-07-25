@@ -995,4 +995,78 @@ void main() {
       );
     });
   });
+
+  group('"my location" recenter control (#420)', () {
+    testWidgets(
+      'the recenter control is present, meets the min tap target, and has a '
+      'semantics label',
+      (tester) async {
+        await _goToMap(tester);
+
+        expect(
+          find.byKey(const Key('apiary-map-recenter-button')),
+          findsOneWidget,
+        );
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-map-recenter-button')),
+        );
+        expectHasSemanticsLabel(
+          tester,
+          const Key('apiary-map-recenter-button'),
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping it moves and zooms the camera to a fresh fix at street level',
+      (tester) async {
+        await _goToMap(
+          tester,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        );
+
+        // The map's own controller — the exact one the recenter handler calls
+        // move() on. Assert against its camera rather than a widget key so the
+        // move (resolved location + street zoom) is verified, not just that a
+        // button exists.
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        // Precondition: the initial CameraFit frames the markers at a regional
+        // zoom, well short of street level.
+        expect(controller.camera.zoom, lessThan(16.0));
+
+        await tester.tap(find.byKey(const Key('apiary-map-recenter-button')));
+        await tester.pumpAndSettle();
+
+        expect(controller.camera.zoom, 16.0);
+        expect(controller.camera.center.latitude, closeTo(41.1496, 0.0001));
+        expect(controller.camera.center.longitude, closeTo(-8.6109, 0.0001));
+      },
+    );
+
+    testWidgets(
+      'recenter with location unavailable surfaces a message, not a crash',
+      (tester) async {
+        // Default fake reports services disabled — the same graceful branch
+        // the passive user-marker path already degrades to (#34 AC).
+        await _goToMap(tester);
+
+        await tester.tap(find.byKey(const Key('apiary-map-recenter-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.byType(SnackBar), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        // The camera was not moved to street level for an unavailable fix.
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        expect(controller.camera.zoom, lessThan(16.0));
+      },
+    );
+  });
 }

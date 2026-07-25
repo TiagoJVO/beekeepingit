@@ -363,7 +363,7 @@ void main() {
         'attributes': storedAttributes,
         'updated_at': store.rows.single['updated_at'],
       };
-      final decoded = decodeActivityAttributes(activitiesTable, opData)!;
+      final decoded = decodeJsonColumns(activitiesTable, opData)!;
 
       // 3. The actual bytes that hit POST /v1/sync/batch (uploadData jsonEncodes
       //    the ops). Re-decoding proves attributes is a JSON object there, which

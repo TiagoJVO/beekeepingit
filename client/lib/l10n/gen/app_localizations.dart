@@ -1064,6 +1064,12 @@ abstract class AppLocalizations {
   /// **'Use my location'**
   String get apiaryMapMeasureFromMyLocation;
 
+  /// Tooltip/semantics label for the 'my location' recenter control on the full-screen apiary map that reads a fresh device fix and moves the camera onto it at street zoom (#420)
+  ///
+  /// In en, this message translates to:
+  /// **'Center on my location'**
+  String get apiaryMapRecenterAction;
+
   /// Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider
   ///
   /// In en, this message translates to:
@@ -1147,6 +1153,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Map: tap to place the apiary\'s pin'**
   String get apiaryMapPickerLabel;
+
+  /// Tooltip/semantics label for the recenter control on the apiary form's map picker that moves the camera back onto the placed pin at street zoom after panning away (#420)
+  ///
+  /// In en, this message translates to:
+  /// **'Recenter on the pin'**
+  String get apiaryMapPickerRecenterAction;
 
   /// Distance from the device's current location shown on an apiaries list row, locale-formatted (FR-AP-2, #253)
   ///
