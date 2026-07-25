@@ -155,3 +155,68 @@ describe("createApiClient.patch", () => {
     expect(error.problem?.errors?.[0]).toMatchObject({ field: "name", code: "required" });
   });
 });
+
+describe("createApiClient.post", () => {
+  it("POSTs a JSON body with the bearer token and returns the created resource", async () => {
+    const response = new Response(JSON.stringify({ id: "inv-1", email: "a@b.co" }), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    const client = createApiClient("https://app.example", () => "tok", fetchMock);
+
+    const result = await client.post<{ id: string; email: string }>(
+      "/organizations/o1/invitations",
+      { email: "a@b.co", role: "user" },
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://app.example/v1/organizations/o1/invitations",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "a@b.co", role: "user" }),
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer tok",
+        }),
+      }),
+    );
+    expect(result).toEqual({ id: "inv-1", email: "a@b.co" });
+  });
+
+  it("maps a 409 to a conflict ApiError (duplicate invitation)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: "Conflict" }, 409));
+    const client = createApiClient("https://app.example", () => "t", fetchMock);
+
+    await expect(
+      client.post("/organizations/o1/invitations", { email: "a@b.co" }),
+    ).rejects.toMatchObject({ kind: "conflict", status: 409 });
+  });
+});
+
+describe("createApiClient.del", () => {
+  it("DELETEs the path with the bearer token and resolves on 204 No Content", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const client = createApiClient("https://app.example", () => "tok", fetchMock);
+
+    await expect(client.del("/organizations/o1/members/u1")).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://app.example/v1/organizations/o1/members/u1",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({ Authorization: "Bearer tok" }),
+      }),
+    );
+  });
+
+  it("maps a 409 to a conflict ApiError (last-admin guard)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: "Conflict" }, 409));
+    const client = createApiClient("https://app.example", () => "t", fetchMock);
+
+    await expect(client.del("/organizations/o1/members/u1")).rejects.toMatchObject({
+      kind: "conflict",
+      status: 409,
+    });
+  });
+});

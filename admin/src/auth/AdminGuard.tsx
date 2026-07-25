@@ -80,6 +80,7 @@ export function AdminGuard({ config }: AdminGuardProps) {
           config={config}
           userName={auth.user?.profile.name ?? auth.user?.profile.preferred_username ?? ""}
           orgName={roleQuery.data?.name ?? ""}
+          orgId={roleQuery.data?.id}
           accountUrl={config.accountUrl || undefined}
           onSignOut={onSignOut}
         />

@@ -43,6 +43,63 @@
       "versionUnavailable": "We could not confirm the current version of your organization, so we did not save to avoid overwriting someone else's changes. Please reload and try again."
     }
   },
+  "members": {
+    "heading": "Members",
+    "intro": "View who belongs to your organization, invite new members by email, and remove members who should no longer have access.",
+    "invite": {
+      "heading": "Invite a member",
+      "emailLabel": "Email address",
+      "roleLabel": "Role",
+      "submit": "Send invitation",
+      "sending": "Sending…",
+      "sent": "Invitation sent to {{email}}.",
+      "errors": {
+        "emailRequired": "Email address is required.",
+        "invalidEmail": "Enter a valid email address.",
+        "alreadyInvited": "That person already has a pending invitation or is already a member.",
+        "failed": "We could not send the invitation. Please try again."
+      }
+    },
+    "roster": {
+      "heading": "Current members",
+      "loading": "Loading members…",
+      "loadFailed": "We could not load the members. Please try again.",
+      "empty": "No members yet.",
+      "loadMore": "Load more members",
+      "loadingMore": "Loading…",
+      "columns": {
+        "member": "Member",
+        "role": "Role",
+        "status": "Status",
+        "actions": "Actions"
+      }
+    },
+    "roles": {
+      "admin": "Admin",
+      "user": "Member"
+    },
+    "statuses": {
+      "active": "Active",
+      "invited": "Invited",
+      "removed": "Removed"
+    },
+    "remove": {
+      "action": "Remove",
+      "ariaLabel": "Remove member {{member}}",
+      "confirm": {
+        "title": "Remove this member?",
+        "body": "Member {{member}} will lose access to this organization. This cannot be undone from here.",
+        "confirm": "Remove member",
+        "removing": "Removing…",
+        "cancel": "Cancel"
+      },
+      "errors": {
+        "lastAdmin": "You can't remove the last admin. Promote another member to admin first, then try again.",
+        "notMember": "That person is no longer a member of this organization.",
+        "failed": "We could not remove the member. Please try again."
+      }
+    }
+  },
   "quotasSeam": {
     "navLabel": "Quotas & rate limits (coming later)"
   },

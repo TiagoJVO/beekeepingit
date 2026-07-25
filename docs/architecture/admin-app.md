@@ -1,14 +1,16 @@
 # Web admin app — architecture (as-built)
 
 > **Status:** As-built for the M7 scaffold ([#72](https://github.com/TiagoJVO/beekeepingit/issues/72))
-> plus organization management ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73)).
-> Covers the app shell, OIDC auth, the admin-role guard, and the first admin screen (org
-> view/edit). Further screens (members, roles, invitations) land in follow-up M7 stories and
-> extend this doc as they ship.
+> plus organization management ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73)) and
+> member management ([#74](https://github.com/TiagoJVO/beekeepingit/issues/74)).
+> Covers the app shell, OIDC auth, the admin-role guard, and the admin screens (org view/edit;
+> member view/invite/remove). Further screens (roles) land in follow-up M7 stories and extend
+> this doc as they ship.
 
 **Requirements:** NFR-ROL-1 (RBAC), NFR-ROL-2 (separate online-only admin app), FR-ONB-2 (org
-details), FR-TEN-2 (org-scoped ownership + optimistic concurrency), FR-HIS-1 (entity history),
-NFR-SEC-1 (authenticated/authorized API access), NFR-TST-1 (automated tests), NFR-I18N (EN/PT)
+details), FR-ONB-3 (membership & invitations), FR-TEN-2 (org-scoped ownership + optimistic
+concurrency), FR-HIS-1 (entity history), NFR-SEC-1 (authenticated/authorized API access),
+NFR-TST-1 (automated tests), NFR-I18N (EN/PT)
 **Decisions:** [D-5](../../requirements/decisions.md#d-5) (React + TS admin, online-only),
 [D-7](../../requirements/decisions.md#d-7) (Authentik behind a provider-agnostic OIDC boundary)
 **Builds on:** [auth.md](auth.md) (§3.2 admin client, §3.4 token, §5.3 roles),
@@ -125,6 +127,53 @@ flow, plus `conflict` (409) and `validation` (422) `ApiError` kinds; the 422 pro
 (RFC 9457 `errors[]`) is parsed so field errors can be localized. Data-fetching + mutation live
 in the `useOrganization` hook; pure form validation lives in `src/components/organizationForm.ts`
 (unit-tested independently of the widget).
+
+## 5b. Member management (view/invite/remove) — #74
+
+The second administrative screen (`src/components/MemberManagement.tsx`, rendered below the org
+screen in the `AppShell`) lets an admin **view the org's members, invite a new member by email
+with a chosen role, and remove a member** (NFR-ROL-2, FR-ONB-3, FR-TEN-2, D-3). Like the org
+screen it is scoped to the caller's **own** org — the org id comes from `GET /organizations/me`
+(resolved server-side), never chosen client-side — and the server re-enforces admin-only +
+org-scope (auth.md §5.3) regardless of the client.
+
+```text
+GET /v1/organizations/{orgId}/members?limit=&cursor=  ──▶ { data[], page{ next_cursor } }
+        │  rows accumulate via useInfiniteQuery; "load more" appears while next_cursor ≠ null
+        ▼
+invite:  POST /v1/organizations/{orgId}/invitations  { email, role }
+        ├─ 201 ▶ "invitation sent" status; roster query invalidated
+        ├─ 422 ▶ email field error (bad address); invite blocked
+        └─ 409 ▶ "already invited / already a member" form error
+remove:  confirm dialog ─▶ DELETE /v1/organizations/{orgId}/members/{userId}
+        ├─ 204 ▶ dialog closes; roster query invalidated (soft-remove server-side)
+        ├─ 409 ▶ "can't remove the last admin" — dialog stays open (last-admin guard, D-3)
+        └─ 404 ▶ "no longer a member" (ADR-0002 — a non-member is 404, never 403)
+```
+
+- **Roster + pagination** — `useMembers` fetches the roster with `useInfiniteQuery`, keyed off
+  the server's opaque `page.next_cursor` (ADR-0003 keyset pagination); pages accumulate behind a
+  "load more" affordance. The `Member` shape is `user_id`/`role`/`status` only — display names
+  live behind the separate least-privilege `.../members/names` roster, not consumed here. The
+  **roles screen (#75) builds on this same roster** (its per-member role control slots into the
+  table's actions column).
+- **Invite with a role at invite time** — the invitee's role is chosen from the fixed
+  `admin`/`user` model (`InvitationCreate.role`, auth.md §5.3, NFR-ROL-1) via a labelled
+  `<select>`, defaulting to least-privilege `user`. Client-side email validation is a fast-feedback
+  gate only (`src/components/inviteForm.ts`, unit-tested); the server re-validates (`format: email`)
+  and a `422` maps back onto the field.
+- **Remove behind a confirmation** — the destructive remove is gated by an accessible
+  `role="alertdialog"` (focus moved in on open, `Escape`/Cancel to dismiss, focus restored to the
+  triggering row control). The **last-admin guard is server-enforced** (a `409`, D-3) and surfaced
+  as a clear message with the dialog kept open — it is deliberately **not** reimplemented
+  client-side as the source of truth.
+- **History** — invitation and removal entity-history rows are written **server-side** (FR-HIS-1,
+  #290); the admin app relies on that and does not re-implement history.
+
+The API client gained `post` (create → JSON body) and `del` (`204 No Content`) for this flow; the
+existing `conflict`/`validation`/`not-found`/`network` `ApiError` kinds carry the 409/422/404 cases.
+Data-fetching + the invite/remove mutations live in the `useMembers` hook; the typed member/
+invitation calls live in `src/api/members.ts` (unit-tested independently).
 
 ## 6. i18n & accessibility
 

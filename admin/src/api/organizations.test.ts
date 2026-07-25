@@ -13,6 +13,8 @@ describe("getMyOrganization", () => {
       get: vi.fn().mockResolvedValue({ id: "o1", name: "Org", role: "admin" }),
       getWithETag: vi.fn(),
       patch: vi.fn(),
+      post: vi.fn(),
+      del: vi.fn(),
     } satisfies ApiClient;
 
     const org = await getMyOrganization(client);
@@ -31,6 +33,8 @@ describe("getOrganization", () => {
         etag: '"v1"',
       }),
       patch: vi.fn(),
+      post: vi.fn(),
+      del: vi.fn(),
     } satisfies ApiClient;
 
     const result = await getOrganization(client);
@@ -50,6 +54,8 @@ describe("updateOrganization", () => {
         data: { id: "o1", name: "New", address: "Addr", role: "admin" },
         etag: '"v2"',
       }),
+      post: vi.fn(),
+      del: vi.fn(),
     } satisfies ApiClient;
 
     const result = await updateOrganization(client, "o1", { name: "New", address: "Addr" }, '"v1"');

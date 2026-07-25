@@ -5,6 +5,7 @@ import type { AuthContextProps } from "react-oidc-context";
 import { AppShell } from "./AppShell";
 import type { AppConfig } from "../config/env";
 import * as organizations from "../api/organizations";
+import * as members from "../api/members";
 
 // The quotas/rate-limit management surface is DEFERRED out of v1 (D-4); the admin app carries
 // only an INERT seam for it (EPIC-91). These tests pin the two guarantees that keep it inert:
@@ -33,9 +34,10 @@ function renderShell(quotasSeamEnabled: boolean) {
       profile: { sub: "user-1", name: "Ada" },
     } as AuthContextProps["user"],
   });
-  // Keep the embedded organization screen (#73) in a quiet loading state — this suite only
-  // asserts the nav seam, not org CRUD, so we never resolve the fetch.
+  // Keep the embedded organization (#73) and member (#74) screens in a quiet loading state —
+  // this suite only asserts the nav seam, not org/member CRUD, so we never resolve the fetches.
   vi.spyOn(organizations, "getOrganization").mockReturnValue(new Promise(() => {}));
+  vi.spyOn(members, "listMembers").mockReturnValue(new Promise(() => {}));
 
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -44,6 +46,7 @@ function renderShell(quotasSeamEnabled: boolean) {
         config={{ ...baseConfig, quotasSeamEnabled }}
         userName="Ada"
         orgName="Hive Co"
+        orgId="org-1"
         onSignOut={vi.fn()}
       />
     </QueryClientProvider>,
