@@ -40,3 +40,7 @@ email:
 global:
   namespace: beekeepingit
   appOrigin: https://app.beekeepingit.local:8443
+  # Admin App origin — templated into the beekeepingit-admin OAuth2 client's
+  # redirect_uris (#456). Placeholder for standalone rendering; the umbrella injects the
+  # real global.* from its own values.yaml.
+  adminOrigin: https://admin.beekeepingit.local:8443
