@@ -57,12 +57,27 @@ const apiaryDetailHiveCount = (page: Page) => page.getByText(/\d+ hives|No hives
 async function login(page: Page) {
   await submitIdpCredentials(page, TEST_USER, TEST_PASS);
 
-  // Back on the PWA (apiaries list). The OIDC callback is a full page load that
-  // re-bootstraps Flutter + the token exchange, so allow generously for a cold
-  // stack rather than the default 30s navigation budget.
-  await page.waitForURL(/\/apiaries/, { timeout: 60_000 });
+  // Back on the PWA. After login the app now lands on the Tasks (Tarefas) tab
+  // (D-29, #427), not the apiaries list. The OIDC callback is a full page load
+  // that re-bootstraps Flutter + the token exchange, so allow generously for a
+  // cold stack rather than the default 30s navigation budget.
+  await page.waitForURL(/\/todos/, { timeout: 60_000 });
   await enableSemantics(page);
-  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible({ timeout: 30_000 });
+}
+
+// After login the app lands on the Tasks tab (D-29, #427). Flows that operate
+// on the apiaries list switch to the Apiaries tab first. The bottom nav is a
+// Material 3 NavigationBar, whose destinations Flutter web exposes as
+// role="tab" (SemanticsRole.tab, navigation_bar.dart) with the tab label as the
+// accessible name — so target the "Apiaries" tab by role, then confirm the
+// branch's own route + heading render before the caller drives the list.
+async function goToApiariesTab(page: Page) {
+  await page.getByRole("tab", { name: "Apiaries" }).click();
+  await page.waitForURL(/\/apiaries/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible({
+    timeout: 30_000,
+  });
 }
 
 /**
@@ -177,6 +192,10 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // "Actions" (l10n.actionsMenuLabel) whether collapsed or expanded — only
   // its `expanded` semantics flag and icon change — so a single locator
   // works for the tap.
+  //
+  // The app landed on the Tasks tab (D-29, #427); this create → edit → sync
+  // flow is apiaries-centric, so switch to the Apiaries tab first.
+  await goToApiariesTab(page);
   await page.getByRole("button", { name: "Actions" }).click();
   await page.getByRole("button", { name: "Add apiary" }).click();
   await enableSemantics(page);
@@ -315,6 +334,9 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   try {
     const p2 = await fresh.newPage();
     await login(p2);
+    // The fresh client also lands on the Tasks tab (D-29, #427); switch to the
+    // Apiaries tab before asserting the downloaded apiary row.
+    await goToApiariesTab(p2);
     await expect(apiaryRow(p2, apiaryName)).toBeVisible({ timeout: 60_000 });
     await expect(apiaryRow(p2, apiaryName)).toContainText("12 hives");
 
@@ -344,8 +366,9 @@ test("reload keeps the session and converges (#236: offline_access → refresh t
   await login(page);
   await page.reload();
   await enableSemantics(page);
-  // Should still be authenticated (on /apiaries), not bounced to /login.
-  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible();
+  // Should still be authenticated — the reload restores the D-29/#427 landing
+  // (the Tasks tab), not bounce to /login.
+  await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible();
 });
 
 // Blocked on a real, separate walking-skeleton bug — NOT an e2e-harness issue,
