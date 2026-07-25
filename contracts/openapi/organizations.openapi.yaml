@@ -1,8 +1,8 @@
 # Organizations service — client-facing REST contract.
 # Onboarding (FR-ONB) + the management surface the React Admin App consumes (NFR-ROL-2).
-# Organization create/read (#26), membership listing and email invitations (#27) are built;
-# organization update (PATCH) and member removal/role changes remain a skeleton (still-open
-# detail per D-3/FR-ONB-3 — invite expiry, re-invite, removing members, transferring admin).
+# Organization create/read (#26), membership listing and email invitations (#27), and
+# organization update (PATCH, #289) are built; member removal/role changes remain a skeleton
+# (still-open detail per D-3/FR-ONB-3 — invite expiry, re-invite, removing members, transferring admin).
 # Stamped from ./_shared/components.openapi.yaml; conventions in
 # docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email).
 openapi: 3.1.0
@@ -144,6 +144,8 @@ paths:
           $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
         '403':
           $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
         '409':
           $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
         '422':
