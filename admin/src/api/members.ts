@@ -103,3 +103,28 @@ export function removeMember(client: ApiClient, orgId: string, userId: string): 
     `/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
   );
 }
+
+/**
+ * Change a member's role within the fixed `admin`/`user` model (`PATCH .../members/{userId}` with
+ * `MemberRoleUpdate`, NFR-ROL-1/2, #290/#75). The change is enforced server-side and takes effect on
+ * the target user's **next authorized request** (auth.md §5.3); it is recorded in entity history with
+ * the acting admin + a timestamp (FR-HIS-1). The server re-enforces admin-only + org-scope regardless
+ * of the client, and the **last-admin guard** rejects demoting the org's only remaining admin with a
+ * `409` (D-3) — surfaced as an `ApiError` of kind `conflict`; a user who is not an active member is
+ * `404` (ADR-0002, never `403`); a role outside the fixed enum is a `422`.
+ *
+ * The endpoint carries no optimistic-concurrency precondition (no `If-Match`), so the change is a
+ * plain PATCH; it responds `200` with the member's updated record, which this returns unwrapped.
+ */
+export async function changeMemberRole(
+  client: ApiClient,
+  orgId: string,
+  userId: string,
+  role: InvitableRole,
+): Promise<Member> {
+  const { data } = await client.patch<Member>(
+    `/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,
+    { role },
+  );
+  return data;
+}

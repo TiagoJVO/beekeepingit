@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "react-oidc-context";
 import { createApiClient } from "../api/client";
-import { createInvitation, listMembers, removeMember } from "../api/members";
-import type { InvitationCreate, Member } from "../api/members";
+import { changeMemberRole, createInvitation, listMembers, removeMember } from "../api/members";
+import type { InvitableRole, InvitationCreate, Member } from "../api/members";
 import type { AppConfig } from "../config/env";
 
 /** Variables for an invite: the target org and the new-invitation body (email + role). */
@@ -16,6 +16,13 @@ export interface InviteMemberVariables {
 export interface RemoveMemberVariables {
   readonly orgId: string;
   readonly userId: string;
+}
+
+/** Variables for a role change: the target org, the member's user id, and the new role. */
+export interface ChangeMemberRoleVariables {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly role: InvitableRole;
 }
 
 /**
@@ -79,5 +86,14 @@ export function useMembers(config: AppConfig, orgId: string | undefined) {
     onSuccess: () => invalidateMembers(),
   });
 
-  return { query, members, inviteMutation, removeMutation };
+  // Change a member's role (#75). The server is authoritative — it enforces the new role on the
+  // target's next request and rejects demoting the last admin with a 409 (D-3) — so on success we
+  // just invalidate the roster to reflect the updated role rather than mutating cache in place.
+  const changeRoleMutation = useMutation({
+    mutationFn: (variables: ChangeMemberRoleVariables) =>
+      changeMemberRole(client, variables.orgId, variables.userId, variables.role),
+    onSuccess: () => invalidateMembers(),
+  });
+
+  return { query, members, inviteMutation, removeMutation, changeRoleMutation };
 }

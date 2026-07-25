@@ -64,11 +64,14 @@ describe("MemberManagement — roster (NFR-ROL-2)", () => {
 
     renderMembers();
 
-    const table = await screen.findByRole("table");
+    const table = await screen.findByRole("table", { name: /current members/i });
     expect(within(table).getByText("user-admin")).toBeInTheDocument();
     expect(within(table).getByText("user-bob")).toBeInTheDocument();
-    // Role + status are rendered as localized labels, not raw enum values.
-    expect(within(table).getByText(/^Admin$/)).toBeInTheDocument();
+    // Role + status are rendered as localized labels, not raw enum values. Ignore the per-row role
+    // <option>s (which also read "Admin"/"Member") so we match the Role column cell only.
+    expect(
+      within(table).getByText(/^Admin$/, { ignore: "script, style, option" }),
+    ).toBeInTheDocument();
     expect(within(table).getAllByText(/^Active$/)).toHaveLength(2);
   });
 
@@ -103,7 +106,8 @@ describe("MemberManagement — invite (FR-ONB-3, D-3)", () => {
     await screen.findByText("user-admin");
 
     await userEvent.type(screen.getByLabelText(/email address/i), "new@hive.co");
-    await userEvent.selectOptions(screen.getByLabelText(/role/i), "admin");
+    // Target the invite role picker exactly — roster rows now also carry "…role…" labelled selects.
+    await userEvent.selectOptions(screen.getByLabelText("Role"), "admin");
     await userEvent.click(screen.getByRole("button", { name: /send invitation/i }));
 
     await waitFor(() => expect(invite).toHaveBeenCalledTimes(1));
@@ -208,13 +212,211 @@ describe("MemberManagement — remove (FR-TEN-2, NFR-ROL-1)", () => {
   });
 });
 
+describe("MemberManagement — change role (NFR-ROL-1, D-3)", () => {
+  it("shows a per-member role picker only for active members (in the roster actions)", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    const invited: Member = { user_id: "user-inv", role: "user", status: "invited" };
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember, invited]));
+
+    renderMembers();
+    await screen.findByText("user-bob");
+
+    // Active members get a role picker…
+    expect(screen.getByLabelText(/change role for member user-bob/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/change role for member user-admin/i)).toBeInTheDocument();
+    // …an invited (not-yet-active) member does not — the change endpoint is for active members.
+    expect(screen.queryByLabelText(/change role for member user-inv/i)).not.toBeInTheDocument();
+  });
+
+  it("confirms, PATCHes the chosen role, reflects it in the roster and announces success", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    // First read: bob is a plain member; after the change the roster re-reads him as an admin.
+    vi.spyOn(members, "listMembers")
+      .mockResolvedValueOnce(page([adminMember, plainMember]))
+      .mockResolvedValue(page([adminMember, { ...plainMember, role: "admin" }]));
+    const change = vi
+      .spyOn(members, "changeMemberRole")
+      .mockResolvedValue({ ...plainMember, role: "admin" });
+
+    renderMembers();
+    await screen.findByText("user-bob");
+
+    // Picking a different role opens a confirmation step; nothing is sent yet.
+    await userEvent.selectOptions(
+      screen.getByLabelText(/change role for member user-bob/i),
+      "admin",
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(change).not.toHaveBeenCalled();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: /^change role$/i }));
+
+    // The PATCH carries the org scope, the target user, and the chosen role.
+    await waitFor(() =>
+      expect(change).toHaveBeenCalledWith(expect.anything(), "org-1", "user-bob", "admin"),
+    );
+    // Dialog closes, success is announced, and the roster reflects the new role after refetch.
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(await screen.findByText(/user-bob is now admin/i)).toBeInTheDocument();
+    const table = screen.getByRole("table", { name: /current members/i });
+    await waitFor(() =>
+      expect(
+        within(table).getAllByText(/^Admin$/, { ignore: "script, style, option" }),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("surfaces the last-admin guard (409) clearly and keeps the dialog open (D-3)", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember]));
+    vi.spyOn(members, "changeMemberRole").mockRejectedValue(
+      new ApiError("conflict", 409, "cannot demote the last admin"),
+    );
+
+    renderMembers();
+    await screen.findByText("user-admin");
+
+    // Demote the only admin → the server's last-admin guard rejects it.
+    await userEvent.selectOptions(
+      screen.getByLabelText(/change role for member user-admin/i),
+      "user",
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^change role$/i }));
+
+    expect(await within(dialog).findByText(/can't demote the last admin/i)).toBeInTheDocument();
+    // The dialog stays open so the admin sees why; no success announced.
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.queryByText(/is now/i)).not.toBeInTheDocument();
+  });
+
+  it("surfaces a 404 (no longer a member) and a 403 (not permitted) with distinct messages", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember]));
+    const change = vi
+      .spyOn(members, "changeMemberRole")
+      .mockRejectedValueOnce(new ApiError("not-found", 404, "not a member"))
+      .mockRejectedValueOnce(new ApiError("forbidden", 403, "not permitted"));
+
+    renderMembers();
+    await screen.findByText("user-bob");
+
+    // 404 — the target is no longer a member.
+    await userEvent.selectOptions(
+      screen.getByLabelText(/change role for member user-bob/i),
+      "admin",
+    );
+    let dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^change role$/i }));
+    expect(await within(dialog).findByText(/no longer a member/i)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: /cancel/i }));
+
+    // 403 — the server refuses (admin-only re-enforced).
+    await userEvent.selectOptions(
+      screen.getByLabelText(/change role for member user-bob/i),
+      "admin",
+    );
+    dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^change role$/i }));
+    expect(
+      await within(dialog).findByText(/don't have permission to change roles/i),
+    ).toBeInTheDocument();
+    expect(change).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a network error via the shared network message", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember]));
+    vi.spyOn(members, "changeMemberRole").mockRejectedValue(new ApiError("network", 0, "offline"));
+
+    renderMembers();
+    await screen.findByText("user-bob");
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(/change role for member user-bob/i),
+      "admin",
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^change role$/i }));
+
+    expect(await within(dialog).findByText(/could not reach the server/i)).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("does not render a role picker for a member whose role is outside the fixed set", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    // A defensive edge: the open MembershipRole type permits a value beyond admin/user.
+    const oddRole = { user_id: "user-x", role: "owner", status: "active" } as unknown as Member;
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, oddRole]));
+
+    renderMembers();
+    await screen.findByText("user-x");
+
+    // No mis-rendering select for the unknown role; the active admin still has one.
+    expect(screen.queryByLabelText(/change role for member user-x/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/change role for member user-admin/i)).toBeInTheDocument();
+  });
+
+  it("cancelling the confirmation does not change the role", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember]));
+    const change = vi.spyOn(members, "changeMemberRole");
+
+    renderMembers();
+    await screen.findByText("user-bob");
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(/change role for member user-bob/i),
+      "admin",
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /cancel/i }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(change).not.toHaveBeenCalled();
+  });
+
+  it("moves focus into the role dialog and closes it on Escape (a11y)", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember]));
+    const change = vi.spyOn(members, "changeMemberRole");
+
+    renderMembers();
+    await screen.findByText("user-bob");
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(/change role for member user-bob/i),
+      "admin",
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(change).not.toHaveBeenCalled();
+  });
+
+  it("renders the role-capabilities reference so an admin can inspect each role (NFR-ROL-1)", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember]));
+
+    renderMembers();
+    await screen.findByText("user-bob");
+
+    // The collapsible reference is present with its capability rows (row headers).
+    expect(screen.getByText(/what can each role do/i)).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: /assign member roles/i })).toBeInTheDocument();
+  });
+});
+
 describe("MemberManagement — accessibility", () => {
   it("has no automatically-detectable accessibility violations", async () => {
     useAuthMock.mockReturnValue(authenticated());
     vi.spyOn(members, "listMembers").mockResolvedValue(page([adminMember, plainMember]));
 
     const { container } = renderMembers();
-    await screen.findByRole("table");
+    await screen.findByRole("table", { name: /current members/i });
 
     await waitFor(async () => {
       expect(await axe(container)).toHaveNoViolations();

@@ -98,6 +98,39 @@
         "notMember": "Essa pessoa já não é membro desta organização.",
         "failed": "Não foi possível remover o membro. Por favor, tente novamente."
       }
+    },
+    "changeRole": {
+      "selectLabel": "Alterar a função do membro {{member}}",
+      "success": "O membro {{member}} é agora {{role}}.",
+      "confirm": {
+        "title": "Alterar a função deste membro?",
+        "body": "O membro {{member}} passará de {{from}} para {{to}}. As novas permissões entram em vigor no próximo pedido.",
+        "confirm": "Alterar função",
+        "changing": "A alterar…",
+        "cancel": "Cancelar"
+      },
+      "errors": {
+        "lastAdmin": "Não pode despromover o último administrador. Promova outro membro a administrador primeiro e tente novamente.",
+        "notMember": "Essa pessoa já não é membro desta organização.",
+        "forbidden": "Não tem permissão para alterar funções nesta organização.",
+        "failed": "Não foi possível alterar a função do membro. Por favor, tente novamente."
+      }
+    },
+    "roleCapabilities": {
+      "heading": "O que pode fazer cada função?",
+      "intro": "Cada membro tem uma de duas funções. Os administradores gerem a organização; os membros trabalham com os dados partilhados do apiário.",
+      "allowed": "Permitido",
+      "notAllowed": "Não permitido",
+      "columns": {
+        "capability": "Capacidade"
+      },
+      "capabilities": {
+        "data": "Acesso total a apiários, atividades, jornadas e tarefas",
+        "aiHistory": "Usar o assistente de IA e ver o histórico",
+        "members": "Convidar e remover membros",
+        "roles": "Atribuir funções aos membros (promover ou despromover administrador / membro)",
+        "orgSettings": "Editar as definições da organização e gerir convites pendentes"
+      }
     }
   },
   "quotasSeam": {
