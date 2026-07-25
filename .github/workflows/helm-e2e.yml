@@ -556,6 +556,10 @@ jobs:
           warm "PWA" app.beekeepingit.local /
           warm "OIDC discovery" auth.beekeepingit.local \
             /application/o/beekeepingit/.well-known/openid-configuration
+          # The admin app is its own gateway-served origin (#449); the admin-token
+          # claim-shape spec (#460) drives a real login through it, so warm its route
+          # too — same cold-stack 502 window as the PWA's.
+          warm "Admin app" admin.beekeepingit.local /
 
       # The verification-flow e2e (#361, client/e2e/tests/verification.spec.ts)
       # and the registration e2e (#366, registration.spec.ts) read the emailed
@@ -601,6 +605,11 @@ jobs:
           # specs — see the port-forward step above. The walking-skeleton
           # spec ignores it.
           E2E_MAILPIT_URL: http://localhost:8025
+          # Opts in the admin-token claim-shape spec (#460): it drives a real
+          # login through the deployed admin app and asserts the minted token's
+          # iss/aud override. Absent locally → the spec self-skips. The admin
+          # host is warmed above and mapped to loopback in playwright.config.ts.
+          E2E_ADMIN_ORIGIN: https://admin.beekeepingit.local:8443
         run: npm test
 
       # Playwright's own trace/screenshot/HTML report (playwright.config.ts:

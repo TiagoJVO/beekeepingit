@@ -250,8 +250,14 @@ optional.
   `id_dict.update(claims)`, no reserved-claim guard) and `get_claims` only evaluates mappings whose
   `scope_name` is in the requested scopes (the override rides `openid`). A bump that adds a
   reserved-claim guard, stops overriding `iss`/`aud` from claims, or changes the scope-gating would
-  break admin-token acceptance (the services would see the admin app's own issuer/audience) — the
-  helm-e2e admin login is the live pin. It also makes the **shared signing key load-bearing**: the
+  break admin-token acceptance (the services would see the admin app's own issuer/audience). The
+  live pin is the helm-e2e **admin-token claim-shape** e2e (#460,
+  `client/e2e/tests/admin-token.spec.ts`): it drives a real admin login and asserts the minted
+  ACCESS token's `iss` == the beekeepingit issuer and `aud` contains BOTH `beekeepingit-admin` and
+  `beekeepingit-pwa`, so such a bump goes red in CI instead of as a silent prod 401. A companion
+  static guard (`scripts/check-admin-audience-mapping.sh`, run by `task repo:lint` in CI) asserts
+  the `scope-admin-audience` mapping is attached to ONLY `provider-beekeepingit-admin`, so a future PR
+  can't silently widen which clients the services accept. It also makes the **shared signing key load-bearing**: the
   admin provider signs with the same `authentik Self-signed Certificate` as the pwa, so its
   forged-issuer token validates against the JWKS the beekeepingit discovery advertises — giving the
   admin provider its own signing cert (a routine-looking ops change) would silently 401 every admin

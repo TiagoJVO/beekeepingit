@@ -6,7 +6,7 @@ silent: true
 
 tasks:
   lint:
-    desc: "Repo hygiene: format check + Markdown + GitHub Actions + shell + secrets + deploy URLs"
+    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + admin-audience"
     cmds:
       - task: format-check
       - task: markdown
@@ -14,6 +14,7 @@ tasks:
       - task: shell
       - task: secrets
       - task: deploy-urls
+      - task: admin-audience-mapping
 
   format:
     desc: "Format Markdown / YAML / JSON with Prettier (writes changes)"
@@ -56,3 +57,8 @@ tasks:
     desc: "Verify the PWA URLs in release-deploy.yml match the helm env overlays (#369, D-27)"
     cmds:
       - ./scripts/check-deploy-url-drift.sh
+
+  admin-audience-mapping:
+    desc: "Verify the admin iss/aud override mapping is attached to ONLY the admin provider (#460, NFR-SEC-1)"
+    cmds:
+      - ./scripts/check-admin-audience-mapping.sh

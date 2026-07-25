@@ -16,6 +16,11 @@ import { APIRequestContext, Browser, BrowserContext, expect, Page } from "@playw
 // the sink and sets it).
 export const MAILPIT_URL = process.env.E2E_MAILPIT_URL ?? "";
 export const API_URL = process.env.E2E_API_URL ?? "";
+// The React admin app's own origin (its own OIDC client `beekeepingit-admin`,
+// #456/#460). Doubles as the admin-token claim-shape spec's opt-in switch:
+// helm-e2e.yml sets it to the deployed admin host; absent → the spec self-skips
+// (e.g. a local PWA-only run). Distinct from the PWA app origin above.
+export const ADMIN_ORIGIN = process.env.E2E_ADMIN_ORIGIN ?? "";
 
 export async function enableSemantics(page: Page) {
   // Flutter builds its semantics DOM (what Playwright selects against) only
@@ -122,6 +127,19 @@ export async function submitIdpCredentials(page: Page, user: string, pass: strin
   await appSignIn.waitFor({ state: "visible", timeout: 60_000 });
   await appSignIn.click();
 
+  await submitAuthentikForm(page, user, pass);
+}
+
+/**
+ * Drives the IdP's login form once the app has already redirected to it —
+ * extracted from submitIdpCredentials (#460) so the admin-token spec can reuse
+ * the SAME proven Authentik form driving without the PWA-specific
+ * glass-pane/Flutter bootstrap. Behavior is unchanged: locate fields by
+ * accessible label/role (Playwright pierces the lit web components' shadow DOM),
+ * tolerating a two-step (identify → password) flow. The caller is responsible
+ * for getting the page onto the IdP first (clicking its own app's Sign in).
+ */
+export async function submitAuthentikForm(page: Page, user: string, pass: string) {
   // The app redirects to Authentik; its login form (lit web components) also
   // needs a beat to render on a cold stack. Wait for the identifier field to
   // be visible before interacting, so we don't click through a half-rendered
@@ -166,6 +184,36 @@ export async function readIdTokenClaims(page: Page): Promise<Record<string, unkn
   if (!idToken) throw new Error("bk.id_token disappeared between poll and read");
   const payload = idToken.split(".")[1];
   if (!payload) throw new Error("stored id_token is not a JWT");
+  return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+}
+
+/**
+ * Reads the ACCESS token the admin app persists after a completed login and
+ * returns its decoded payload (#460). The admin app (react-oidc-context +
+ * oidc-client-ts, WebStorageStateStore over localStorage) stores the signed-in
+ * User as JSON under `oidc.user:<authority>:<client_id>`; its `access_token` is
+ * the credential the domain services actually validate — so asserting on THIS
+ * token (not the id_token) pins exactly what the services accept. Scans for the
+ * `oidc.user:` key rather than reconstructing the exact authority string, and
+ * polls until it appears (the OIDC callback code-exchange writes it a beat after
+ * the redirect back to the admin origin).
+ */
+export async function readAdminAccessTokenClaims(page: Page): Promise<Record<string, unknown>> {
+  await page.waitForFunction(
+    () => Object.keys(window.localStorage).some((k) => k.startsWith("oidc.user:")),
+    null,
+    { timeout: 60_000 },
+  );
+  const accessToken = await page.evaluate(() => {
+    const key = Object.keys(window.localStorage).find((k) => k.startsWith("oidc.user:"));
+    if (!key) return null;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    return (JSON.parse(raw) as { access_token?: string }).access_token ?? null;
+  });
+  if (!accessToken) throw new Error("admin oidc.user access_token not found in localStorage");
+  const payload = accessToken.split(".")[1];
+  if (!payload) throw new Error("stored admin access_token is not a JWT");
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
 }
 

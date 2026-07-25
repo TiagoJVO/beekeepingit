@@ -12,15 +12,8 @@
 Post-merge hardening (NOT merge blockers — the blueprint provisioning is complete and the
 `beekeepingit-admin` login/aud/iss is pinned by the helm-e2e admin-login gate):
 
-- **Assert the admin token's claim SHAPE in e2e, not just "login succeeds"** — the `iss`/`aud`
-  override rides version-sensitive Authentik internals (oidc-integration.md §8 watch-list). The
-  helm-e2e / admin login e2e should assert the minted token's `iss` == the beekeepingit issuer and
-  `aud` == `[beekeepingit-admin, beekeepingit-pwa]`, so an Authentik bump that adds a reserved-claim
-  guard or starts enforcing `azp`-with-multi-`aud` fails loudly in CI instead of as a silent prod 401. Owner: WS-C/e2e. (security review, #456.)
-- **Guard which providers may carry `scope-admin-audience`** — any provider that attaches the
-  override mapping inherits acceptance by the domain services. Consider a lightweight blueprint/CI
-  assertion that ONLY `provider-beekeepingit-admin` carries it, so a future PR can't silently widen
-  the set. (security review, #456.)
+- Assert the admin token's claim SHAPE in e2e + guard which providers may carry
+  `scope-admin-audience` → #460 (both promoted from this #456 security review).
 - **Harden the admin OIDC redirect set for staging/prod** — the gateway `adminHost` route and the
   staging/prod `global.adminOrigin` overrides are now in place (#449), so the admin app IS
   gateway-served per environment. What remains is blueprint-side: the `http://localhost:.*` redirect
@@ -43,18 +36,7 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
 
 ## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
 
-- **Re-invite / re-join after member removal** — enabling member removal (#290, soft
-  `status` → `removed`) makes a previously-unreachable edge reachable: if an admin later
-  **re-invites a removed member's email** and that user logs in, the accept-on-login path
-  (`acceptPendingInvitationByEmail` in `services/organizations/api/invitations.go`) does an
-  `INSERT` into `organizations.memberships`, which violates `UNIQUE (organization_id, user_id)`
-  because the `removed` row persists — surfacing as a `500` instead of re-activating the
-  membership. **Not a merge blocker for #290** (remove + role change only; the removal endpoint
-  itself is correct). Re-invite is explicitly still-open detail under D-3. **Fix when re-invite
-  is built:** have the accept path **reactivate** an existing `removed` membership (UPSERT /
-  `ON CONFLICT (organization_id, user_id) DO UPDATE SET status='active', role=…`) instead of a
-  bare `INSERT`. **Promote to a GitHub Issue** and fold into the re-invite/expiry story; prune
-  here once referenced.
+- Re-invite reactivation on removal → #459
 
 ---
 
