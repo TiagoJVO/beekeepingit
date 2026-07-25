@@ -51,6 +51,17 @@ const double _kMinNormalTextContrast = 4.5;
 /// for a decorative/non-body role.
 const double _kMinNonTextContrast = 3.0;
 
+/// A comfortable margin above the 4.5:1 AA floor (WCAG 2.2 AAA for normal
+/// text, 7:1). The `surfaceContainerHighest`/`onSurfaceVariant` pair carries
+/// the journey counter/badge text (`journeys_list_screen.dart`'s
+/// `_ProgressBadge`/`_StatusBadge`, `journey_detail_screen.dart`'s
+/// `_VisitedBadge`, `journey_stats_detail_screen.dart`'s `_VisitBadge`). In
+/// light mode it previously sat at only ~4.64:1 — passing the floor but
+/// rendering as barely-legible in the field (#423). This bar guards that pair
+/// (both brightnesses) so a future token nudge can't silently drop it back to
+/// marginal.
+const double _kComfortableTextContrast = 7.0;
+
 void _expectAaContrast(
   String label,
   Color foreground,
@@ -88,10 +99,10 @@ void _checkOnColorPairs(String themeName, ColorScheme scheme) {
       scheme.secondaryContainer,
     ),
     'surface/onSurface': (scheme.onSurface, scheme.surface),
-    'surfaceContainerHighest/onSurfaceVariant': (
-      scheme.onSurfaceVariant,
-      scheme.surfaceContainerHighest,
-    ),
+    // NOTE: surfaceContainerHighest/onSurfaceVariant (the counter/badge text
+    // pair) is intentionally NOT here — it's held to the higher
+    // _kComfortableTextContrast bar via _checkBadgeTextPair below, not this
+    // 4.5:1 floor.
     'error/onError': (scheme.onError, scheme.error),
     'errorContainer/onErrorContainer': (
       scheme.onErrorContainer,
@@ -106,6 +117,18 @@ void _checkOnColorPairs(String themeName, ColorScheme scheme) {
       entry.value.$2,
     );
   }
+}
+
+/// Guards the counter/badge text pair
+/// (`surfaceContainerHighest`/`onSurfaceVariant`) against the comfortable
+/// ≥7:1 margin rather than the bare 4.5:1 floor (#423).
+void _checkBadgeTextPair(String themeName, ColorScheme scheme) {
+  _expectAaContrast(
+    '$themeName surfaceContainerHighest/onSurfaceVariant (counter/badge text)',
+    scheme.onSurfaceVariant,
+    scheme.surfaceContainerHighest,
+    minRatio: _kComfortableTextContrast,
+  );
 }
 
 void _checkTertiaryPair(
@@ -128,6 +151,17 @@ void main() {
 
   test('dark theme color pairs meet WCAG 2.2 AA (4.5:1)', () {
     _checkOnColorPairs('dark', AppTheme.dark().colorScheme);
+  });
+
+  test('counter/badge text pair clears the comfortable 7:1 margin, not just '
+      'the 4.5:1 floor, in both brightnesses (#423)', () {
+    // surfaceContainerHighest/onSurfaceVariant carries the journey
+    // counter/badge text. Light mode sat at only ~4.64:1 (barely-legible in
+    // the field); darkening the `muted` token lifts it to ~7.10:1. Dark mode
+    // already sits at ~7.87:1. Both are asserted against the higher bar so a
+    // future nudge can't silently drop this pair back to marginal.
+    _checkBadgeTextPair('light', AppTheme.light().colorScheme);
+    _checkBadgeTextPair('dark', AppTheme.dark().colorScheme);
   });
 
   test('light theme tertiary/onTertiary meets the non-text 3:1 floor, not '

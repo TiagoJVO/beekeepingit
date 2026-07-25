@@ -39,8 +39,8 @@ void main() {
     });
   });
 
-  group('decodeActivityAttributes (#39 — attributes must upload as an object, '
-      'not a JSON string)', () {
+  group('decodeJsonColumns — activities attributes (#39 — must upload as an '
+      'object, not a JSON string)', () {
     test('an activities put decodes the JSON-string attributes into a Map', () {
       // What PowerSync queues: the row column is JSON-encoded TEXT
       // (activities_repository.dart's jsonEncode), so opData carries a String.
@@ -52,7 +52,7 @@ void main() {
         'updated_at': '2026-07-14T10:00:00Z',
       };
 
-      final out = decodeActivityAttributes(activitiesTable, data)!;
+      final out = decodeJsonColumns(activitiesTable, data)!;
 
       // The regression: attributes must be an object on the wire, or the
       // server rejects it with "attributes must be a JSON object".
@@ -76,7 +76,7 @@ void main() {
           'updated_at': '2026-07-14T10:00:00Z',
         };
 
-        final out = decodeActivityAttributes(activitiesTable, data)!;
+        final out = decodeJsonColumns(activitiesTable, data)!;
 
         expect(out['journey_id'], 'journey-1');
         expect(out['attributes'], {'honey_supers': 4});
@@ -95,7 +95,7 @@ void main() {
           'updated_at': '2026-07-14T10:00:00Z',
         };
 
-        final out = decodeActivityAttributes(activitiesTable, data)!;
+        final out = decodeJsonColumns(activitiesTable, data)!;
 
         expect(out['journey_id'], isNull);
       },
@@ -108,7 +108,7 @@ void main() {
         'updated_at': '2026-07-14T11:00:00Z',
       };
 
-      final out = decodeActivityAttributes(activitiesTable, data)!;
+      final out = decodeJsonColumns(activitiesTable, data)!;
 
       expect(out['attributes'], isA<Map<String, dynamic>>());
       expect(out['attributes'], {'note': 'requeened'});
@@ -119,7 +119,7 @@ void main() {
         'attributes': jsonEncode(<String, dynamic>{}),
       };
 
-      final out = decodeActivityAttributes(activitiesTable, data)!;
+      final out = decodeJsonColumns(activitiesTable, data)!;
 
       expect(out['attributes'], isA<Map<String, dynamic>>());
       expect(out['attributes'], isEmpty);
@@ -132,11 +132,11 @@ void main() {
         'updated_at': '2026-07-14T11:00:00Z',
       };
 
-      expect(decodeActivityAttributes(activitiesTable, data), same(data));
+      expect(decodeJsonColumns(activitiesTable, data), same(data));
     });
 
     test('a delete (null opData) is passed through untouched', () {
-      expect(decodeActivityAttributes(activitiesTable, null), isNull);
+      expect(decodeJsonColumns(activitiesTable, null), isNull);
     });
 
     test('a non-activities table is never rewritten, even if it happens to '
@@ -145,8 +145,8 @@ void main() {
 
       // apiaries/counters ops must be handed to the server verbatim — only the
       // activities contract expects a nested object here.
-      expect(decodeActivityAttributes(apiariesTable, data), same(data));
-      expect(decodeActivityAttributes(apiaryCountersTable, data), same(data));
+      expect(decodeJsonColumns(apiariesTable, data), same(data));
+      expect(decodeJsonColumns(apiaryCountersTable, data), same(data));
     });
 
     test(
@@ -156,9 +156,81 @@ void main() {
           'attributes': {'queen_seen': true},
         };
 
-        expect(decodeActivityAttributes(activitiesTable, data), same(data));
+        expect(decodeJsonColumns(activitiesTable, data), same(data));
       },
     );
+  });
+
+  group('decodeJsonColumns — journeys default_attributes (#385, D-21 — the '
+      'same class of bug as activities, fixed at the same seam)', () {
+    test('a journeys put decodes the JSON-string default_attributes into a '
+        'Map — the non-empty case that was rejected 422', () {
+      // What PowerSync queues: journeys_repository.dart's _encodeDefaultAttributes
+      // jsonEncodes a non-empty map to TEXT, so opData carries a String.
+      final data = <String, dynamic>{
+        'name': 'loque Americana',
+        'main_activity_type': 'treatment',
+        'status': 'open',
+        'default_attributes': jsonEncode({
+          'treatment_context': 'detection_only',
+          'disease': 'american_foulbrood',
+        }),
+        'updated_at': '2026-07-14T10:00:00Z',
+      };
+
+      final out = decodeJsonColumns(journeysTable, data)!;
+
+      // The regression: default_attributes must be an object on the wire, or
+      // the journeys service rejects it with "default_attributes must be a
+      // JSON object" (services/journeys/api/types.go validateDefaultAttributes).
+      expect(out['default_attributes'], isA<Map<String, dynamic>>());
+      expect(out['default_attributes'], {
+        'treatment_context': 'detection_only',
+        'disease': 'american_foulbrood',
+      });
+      // Other columns pass through untouched.
+      expect(out['name'], 'loque Americana');
+      expect(out['main_activity_type'], 'treatment');
+    });
+
+    test('a NULL default_attributes (empty defaults) stays NULL — the local '
+        'NULL-means-no-defaults convention is preserved', () {
+      final data = <String, dynamic>{
+        'name': 'plain journey',
+        'main_activity_type': 'inspection',
+        'status': 'open',
+        'default_attributes': null,
+        'updated_at': '2026-07-14T10:00:00Z',
+      };
+
+      final out = decodeJsonColumns(journeysTable, data)!;
+
+      expect(out['default_attributes'], isNull);
+    });
+
+    test('a patch that did not touch default_attributes is left as-is (the '
+        'column is absent, so there is nothing to decode)', () {
+      final data = <String, dynamic>{
+        'name': 'renamed journey',
+        'updated_at': '2026-07-14T11:00:00Z',
+      };
+
+      expect(decodeJsonColumns(journeysTable, data), same(data));
+    });
+
+    test('a journeys delete (null opData) is passed through untouched', () {
+      expect(decodeJsonColumns(journeysTable, null), isNull);
+    });
+
+    test('a non-journeys table is never rewritten for default_attributes, '
+        'even if it happens to carry such a string column', () {
+      final data = <String, dynamic>{'default_attributes': '{"x":1}'};
+
+      // Only the journeys contract decodes this column — apiaries/counters
+      // ops must be handed to the server verbatim.
+      expect(decodeJsonColumns(apiariesTable, data), same(data));
+      expect(decodeJsonColumns(apiaryCountersTable, data), same(data));
+    });
   });
 
   group('parseSupersededChanges', () {
