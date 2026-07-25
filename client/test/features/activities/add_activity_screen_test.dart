@@ -1383,6 +1383,10 @@ void main() {
           _buildApp(repo: repo, journeysRepo: journeysRepo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
@@ -1458,6 +1462,10 @@ void main() {
           _buildApp(repo: repo, journeysRepo: journeysRepo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
@@ -1505,6 +1513,10 @@ void main() {
         await tester.pumpWidget(
           _buildApp(repo: repo, journeysRepo: journeysRepo),
         );
+        await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
         await tester.pumpAndSettle();
