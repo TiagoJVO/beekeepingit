@@ -18,7 +18,21 @@ describe("readConfig", () => {
       oidcRedirectUri: "http://localhost:5174",
       apiBaseUrl: "https://app.example",
       accountUrl: validEnv.VITE_ACCOUNT_URL,
+      quotasSeamEnabled: false,
     });
+  });
+
+  it("keeps the deferred quotas seam disabled by default (D-4)", () => {
+    const { config } = readConfig(validEnv, "http://localhost");
+    expect(config?.quotasSeamEnabled).toBe(false);
+  });
+
+  it("enables the quotas seam only for the literal flag value 'true'", () => {
+    const on = readConfig({ ...validEnv, VITE_FEATURE_QUOTAS_SEAM: "true" }, "http://localhost");
+    expect(on.config?.quotasSeamEnabled).toBe(true);
+
+    const off = readConfig({ ...validEnv, VITE_FEATURE_QUOTAS_SEAM: "1" }, "http://localhost");
+    expect(off.config?.quotasSeamEnabled).toBe(false);
   });
 
   it("defaults the redirect URI to the origin when unset", () => {

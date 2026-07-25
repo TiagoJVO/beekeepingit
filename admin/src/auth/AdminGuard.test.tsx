@@ -22,6 +22,7 @@ const config: AppConfig = {
   oidcRedirectUri: "http://localhost:5174",
   apiBaseUrl: "https://app.example",
   accountUrl: "https://auth.example/if/user/#/settings",
+  quotasSeamEnabled: false,
 };
 
 const signinRedirect = vi.fn();

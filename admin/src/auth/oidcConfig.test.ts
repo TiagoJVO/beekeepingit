@@ -8,6 +8,7 @@ const config: AppConfig = {
   oidcRedirectUri: "http://localhost:5174",
   apiBaseUrl: "https://app.example",
   accountUrl: "",
+  quotasSeamEnabled: false,
 };
 
 describe("buildOidcConfig", () => {
