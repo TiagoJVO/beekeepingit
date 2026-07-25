@@ -28,11 +28,10 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
   `publish-admin` now bakes the **staging/prod** `VITE_*` API/issuer hosts into the image, so a
   non-dev admin build's real API host is **not** in its CSP — harmless today only because the
   policy is **Report-Only** (it reports, does not block). Env-templating the admin (and client)
-  nginx CSP is already owned by [#89](https://github.com/TiagoJVO/beekeepingit/issues/89) (both
-  nginx.conf files carry that note); this entry just records that flipping the admin CSP to
-  enforcing **must** wait for that per-environment templating, or a staging/prod admin build
-  would block its own API calls. **Not a merge blocker** (Report-Only). Prune once #89 lands the
-  templating.
+  nginx CSP is tracked in [#462](https://github.com/TiagoJVO/beekeepingit/issues/462); flipping
+  the admin CSP to **enforcing** must wait for that per-environment templating, or a staging/prod
+  admin build would block its own API calls. **Not a merge blocker** (Report-Only). Prune once
+  #462 lands the templating.
 
 ## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
 
