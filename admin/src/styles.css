@@ -167,7 +167,8 @@ code {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   min-height: 44px;
   padding: 0.5rem 0.75rem;
@@ -176,6 +177,11 @@ code {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.field select:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .field textarea {
@@ -287,4 +293,40 @@ code {
 .modal:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+}
+
+/* Roster row actions — the per-member role picker sits beside the remove button, wrapping on
+   narrow viewports so neither control is clipped. */
+.row-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+/* An inline field (no full-width stretch) for the compact per-row role <select>. */
+.field-inline {
+  gap: 0.25rem;
+}
+
+.field-inline select {
+  width: auto;
+}
+
+/* Role-capabilities reference — a collapsible panel documenting what each role can do (§5.3). */
+.role-capabilities > summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.role-capabilities > summary:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.role-capabilities .capability-cell {
+  text-align: center;
 }

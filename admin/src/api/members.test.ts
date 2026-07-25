@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createInvitation, listMembers, MEMBERS_PAGE_LIMIT, removeMember } from "./members";
+import {
+  changeMemberRole,
+  createInvitation,
+  listMembers,
+  MEMBERS_PAGE_LIMIT,
+  removeMember,
+} from "./members";
 import type { ApiClient } from "./client";
 
 function mockClient(overrides: Partial<ApiClient> = {}): ApiClient {
@@ -80,5 +86,38 @@ describe("removeMember", () => {
     await removeMember(client, "org-1", "u9");
 
     expect(del).toHaveBeenCalledWith("/organizations/org-1/members/u9");
+  });
+});
+
+describe("changeMemberRole", () => {
+  it("PATCHes the member's role to the chosen value (fixed admin/user model)", async () => {
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ data: { user_id: "u9", role: "admin", status: "active" }, etag: null });
+    const client = mockClient({ patch });
+
+    await changeMemberRole(client, "org-1", "u9", "admin");
+
+    // PATCH /organizations/{orgId}/members/{userId} with the MemberRoleUpdate body — no If-Match.
+    expect(patch).toHaveBeenCalledWith("/organizations/org-1/members/u9", { role: "admin" });
+  });
+
+  it("returns the member's updated record, unwrapped from the ETag envelope", async () => {
+    const updated = { user_id: "u9", role: "user", status: "active" };
+    const patch = vi.fn().mockResolvedValue({ data: updated, etag: null });
+    const client = mockClient({ patch });
+
+    await expect(changeMemberRole(client, "org-1", "u9", "user")).resolves.toEqual(updated);
+  });
+
+  it("encodes id path segments (defense-in-depth against path injection)", async () => {
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ data: { user_id: "a/b", role: "user", status: "active" }, etag: null });
+    const client = mockClient({ patch });
+
+    await changeMemberRole(client, "org 1", "a/b", "user");
+
+    expect(patch).toHaveBeenCalledWith("/organizations/org%201/members/a%2Fb", { role: "user" });
   });
 });

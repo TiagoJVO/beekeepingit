@@ -98,6 +98,39 @@
         "notMember": "That person is no longer a member of this organization.",
         "failed": "We could not remove the member. Please try again."
       }
+    },
+    "changeRole": {
+      "selectLabel": "Change role for member {{member}}",
+      "success": "Member {{member}} is now {{role}}.",
+      "confirm": {
+        "title": "Change this member's role?",
+        "body": "Member {{member}} will change from {{from}} to {{to}}. The new permissions take effect on their next request.",
+        "confirm": "Change role",
+        "changing": "Changing…",
+        "cancel": "Cancel"
+      },
+      "errors": {
+        "lastAdmin": "You can't demote the last admin. Promote another member to admin first, then try again.",
+        "notMember": "That person is no longer a member of this organization.",
+        "forbidden": "You don't have permission to change roles in this organization.",
+        "failed": "We could not change the member's role. Please try again."
+      }
+    },
+    "roleCapabilities": {
+      "heading": "What can each role do?",
+      "intro": "Every member has one of two roles. Admins manage the organization; members work with the shared hive data.",
+      "allowed": "Allowed",
+      "notAllowed": "Not allowed",
+      "columns": {
+        "capability": "Capability"
+      },
+      "capabilities": {
+        "data": "Full access to apiaries, activities, journeys and to-dos",
+        "aiHistory": "Use the AI assistant and view history",
+        "members": "Invite and remove members",
+        "roles": "Assign member roles (promote or demote admin / member)",
+        "orgSettings": "Edit organization settings and manage pending invitations"
+      }
     }
   },
   "quotasSeam": {

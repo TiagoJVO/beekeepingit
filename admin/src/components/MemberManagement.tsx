@@ -11,6 +11,36 @@ import {
   isInvitableRole,
   validateInviteForm,
 } from "./inviteForm";
+import { RoleCapabilities } from "./RoleCapabilities";
+
+/** A pending, not-yet-confirmed role change: which member, and the role the admin picked for them. */
+interface PendingRoleChange {
+  readonly member: Member;
+  readonly targetRole: InvitableRole;
+}
+
+/**
+ * Keep Tab / Shift+Tab inside an open modal (WCAG 2.2 AA focus trap): rather than escaping to the
+ * inert page behind the backdrop, focus cycles within the dialog. Shared by the remove and
+ * role-change dialogs so both trap focus identically.
+ */
+function trapTabKey(event: KeyboardEvent<HTMLDivElement>, dialog: HTMLDivElement | null): void {
+  if (event.key !== "Tab" || !dialog) return;
+  const focusable = dialog.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  );
+  if (focusable.length === 0) return;
+  const first = focusable[0]!;
+  const last = focusable[focusable.length - 1]!;
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || active === dialog)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
 
 interface MemberManagementProps {
   config: AppConfig;
@@ -21,19 +51,25 @@ interface MemberManagementProps {
 type InviteStatus = "idle" | "inviting" | "invited";
 
 /**
- * View, invite and remove the caller's organization members — the admin member-management
- * screen (NFR-ROL-2, FR-ONB-3, FR-TEN-2, D-3, #74). It reads the paginated roster
- * (`GET .../members`), invites by email with a chosen role (`POST .../invitations`), and
- * removes a member behind a confirmation step (`DELETE .../members/{userId}`).
+ * View, invite, remove and re-role the caller's organization members — the admin member-management
+ * screen (NFR-ROL-1, NFR-ROL-2, FR-ONB-3, FR-TEN-2, D-3, #74/#75). It reads the paginated roster
+ * (`GET .../members`), invites by email with a chosen role (`POST .../invitations`), removes a member
+ * behind a confirmation step (`DELETE .../members/{userId}`), and **changes an active member's role**
+ * within the fixed `admin`/`user` model behind a confirmation step (`PATCH .../members/{userId}`,
+ * #75). It also renders an accessible **role-capabilities reference** (`RoleCapabilities`) so an admin
+ * can inspect what each role is allowed to do (NFR-ROL-1, auth.md §5.3).
  *
  * The server is authoritative throughout (auth.md §5.3): admin-only + org-scope are re-enforced
- * regardless of the client, entity history is recorded server-side (FR-HIS-1), and the
- * **last-admin guard** (`409`, D-3) is surfaced here as a clear "can't remove the last admin"
- * message rather than reimplemented client-side.
+ * regardless of the client, the new role takes effect on the target's next request and is recorded in
+ * entity history (FR-HIS-1), and the **last-admin guard** (`409`, D-3) is surfaced here as a clear
+ * message (can't remove/demote the last admin) rather than reimplemented client-side.
  */
 export function MemberManagement({ config, orgId }: MemberManagementProps) {
   const { t } = useTranslation();
-  const { query, members, inviteMutation, removeMutation } = useMembers(config, orgId);
+  const { query, members, inviteMutation, removeMutation, changeRoleMutation } = useMembers(
+    config,
+    orgId,
+  );
 
   // --- Invite form state ---------------------------------------------------------------------
   const [email, setEmail] = useState("");
@@ -52,10 +88,36 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
-  // Move focus into the confirmation dialog when it opens so it is announced and reachable.
+  // --- Role-change confirmation state --------------------------------------------------------
+  const [pendingRoleChange, setPendingRoleChange] = useState<PendingRoleChange | null>(null);
+  const [roleChangeError, setRoleChangeError] = useState<string | null>(null);
+  const [roleChangeSuccess, setRoleChangeSuccess] = useState<string | null>(null);
+  const roleDialogRef = useRef<HTMLDivElement>(null);
+  const roleTriggerRef = useRef<HTMLSelectElement | null>(null);
+
+  // Manage dialog focus as an effect (not inline in the handlers) so it runs *after* the render
+  // that toggles the background `inert` (below): on open, move focus into the dialog so it is
+  // announced and reachable; on close, restore focus to the row control that opened it — which
+  // is only focusable again once the background is no longer inert.
   useEffect(() => {
-    if (pendingRemoval) dialogRef.current?.focus();
+    if (pendingRemoval) {
+      dialogRef.current?.focus();
+    } else if (triggerRef.current) {
+      const trigger = triggerRef.current;
+      triggerRef.current = null;
+      if (document.body.contains(trigger)) trigger.focus();
+    }
   }, [pendingRemoval]);
+
+  useEffect(() => {
+    if (pendingRoleChange) {
+      roleDialogRef.current?.focus();
+    } else if (roleTriggerRef.current) {
+      const trigger = roleTriggerRef.current;
+      roleTriggerRef.current = null;
+      if (document.body.contains(trigger)) trigger.focus();
+    }
+  }, [pendingRoleChange]);
 
   // Move focus to the invite form-level error once it appears.
   useEffect(() => {
@@ -127,12 +189,9 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
   }
 
   function closeRemoveDialog(): void {
+    // Focus is restored to the triggering control by the effect above once the dialog is gone.
     setPendingRemoval(null);
     setRemoveError(null);
-    // Return focus to the row control that opened the dialog, when it is still present.
-    const trigger = triggerRef.current;
-    if (trigger && document.body.contains(trigger)) trigger.focus();
-    triggerRef.current = null;
   }
 
   async function handleConfirmRemove(): Promise<void> {
@@ -140,11 +199,8 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
     setRemoveError(null);
     try {
       await removeMutation.mutateAsync({ orgId, userId: pendingRemoval.user_id });
-      // Success: the roster is invalidated by the hook; drop the dialog and restore focus.
+      // Success: the roster is invalidated by the hook; drop the dialog (the effect restores focus).
       setPendingRemoval(null);
-      const trigger = triggerRef.current;
-      if (trigger && document.body.contains(trigger)) trigger.focus();
-      triggerRef.current = null;
     } catch (error) {
       // Keep the dialog open and explain why — the last-admin guard is the headline case (D-3).
       if (error instanceof ApiError && error.kind === "conflict") {
@@ -169,25 +225,82 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
       closeRemoveDialog();
       return;
     }
-    // Trap focus inside the modal (WCAG 2.2 AA): Tab/Shift+Tab must cycle within the dialog
-    // rather than escaping to the inert page behind the backdrop.
-    if (event.key !== "Tab") return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusable = dialog.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0]!;
-    const last = focusable[focusable.length - 1]!;
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || active === dialog)) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
+    trapTabKey(event, dialogRef.current);
+  }
+
+  function openRoleDialog(
+    member: Member,
+    targetRole: InvitableRole,
+    trigger: HTMLSelectElement,
+  ): void {
+    roleTriggerRef.current = trigger;
+    setRoleChangeError(null);
+    setRoleChangeSuccess(null);
+    setPendingRoleChange({ member, targetRole });
+  }
+
+  function closeRoleDialog(): void {
+    // Focus is restored to the triggering role control by the effect above once the dialog is gone.
+    setPendingRoleChange(null);
+    setRoleChangeError(null);
+  }
+
+  function mapRoleChangeError(error: unknown): void {
+    // The last-admin guard is the headline case (409, D-3): demoting the org's only admin is refused.
+    if (error instanceof ApiError && error.kind === "conflict") {
+      setRoleChangeError(t("members.changeRole.errors.lastAdmin"));
+      return;
     }
+    if (error instanceof ApiError && error.kind === "not-found") {
+      setRoleChangeError(t("members.changeRole.errors.notMember"));
+      return;
+    }
+    if (error instanceof ApiError && error.kind === "forbidden") {
+      setRoleChangeError(t("members.changeRole.errors.forbidden"));
+      return;
+    }
+    setRoleChangeError(
+      error instanceof ApiError && error.kind === "network"
+        ? t("error.network")
+        : t("members.changeRole.errors.failed"),
+    );
+  }
+
+  async function handleConfirmRoleChange(): Promise<void> {
+    if (!orgId || !pendingRoleChange) return;
+    const { member, targetRole } = pendingRoleChange;
+    setRoleChangeError(null);
+    try {
+      await changeRoleMutation.mutateAsync({ orgId, userId: member.user_id, role: targetRole });
+      // Success: the roster is invalidated by the hook and re-reads the new role. Announce the
+      // change and drop the dialog (the effect restores focus to the row control).
+      setRoleChangeSuccess(
+        t("members.changeRole.success", {
+          member: member.user_id,
+          role: roleLabel(targetRole),
+        }),
+      );
+      setPendingRoleChange(null);
+    } catch (error) {
+      // Keep the dialog open and explain why (the last-admin 409 is the headline case, D-3).
+      mapRoleChangeError(error);
+    }
+  }
+
+  function handleRoleDialogKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      closeRoleDialog();
+      return;
+    }
+    trapTabKey(event, roleDialogRef.current);
+  }
+
+  function handleRoleSelect(member: Member, value: string, control: HTMLSelectElement): void {
+    // Ignore a re-selection of the member's current role, and narrow the native value to the fixed
+    // admin/user set before treating it as a change to confirm.
+    if (!isInvitableRole(value) || value === member.role) return;
+    openRoleDialog(member, value, control);
   }
 
   function roleLabel(memberRole: string): string {
@@ -201,146 +314,201 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
   }
 
   const removing = removeMutation.isPending;
+  const changingRole = changeRoleMutation.isPending;
+  // While either confirmation dialog is open, take the rest of the screen out of the tab order and
+  // the accessibility tree (ARIA modal-dialog pattern, WCAG 4.1.2) so assistive tech and pointer
+  // users can't reach the roster/invite controls behind the backdrop. Focus restore is handled by
+  // the effects above, which run after this `inert` is lifted.
+  const backgroundInert = pendingRemoval !== null || pendingRoleChange !== null;
 
   return (
     <section className="stack" aria-labelledby="members-heading">
-      <h1 id="members-heading">{t("members.heading")}</h1>
-      <p className="muted">{t("members.intro")}</p>
+      <div className="stack" inert={backgroundInert || undefined}>
+        <h1 id="members-heading">{t("members.heading")}</h1>
+        <p className="muted">{t("members.intro")}</p>
 
-      {/* --- Invite a member ------------------------------------------------------------- */}
-      <form className="stack" onSubmit={handleInvite} noValidate aria-labelledby="invite-heading">
-        <h2 id="invite-heading">{t("members.invite.heading")}</h2>
+        {/* --- Invite a member ------------------------------------------------------------- */}
+        <form className="stack" onSubmit={handleInvite} noValidate aria-labelledby="invite-heading">
+          <h2 id="invite-heading">{t("members.invite.heading")}</h2>
 
-        {inviteError && (
-          <p className="field-error" role="alert" tabIndex={-1} ref={inviteErrorRef}>
-            {inviteError}
-          </p>
-        )}
-
-        <div className="field">
-          <label htmlFor="invite-email">{t("members.invite.emailLabel")}</label>
-          <input
-            id="invite-email"
-            name="email"
-            type="email"
-            autoComplete="off"
-            value={email}
-            ref={emailRef}
-            onChange={(e) => handleEmailChange(e.target.value)}
-            required
-            aria-required="true"
-            aria-invalid={emailError ? true : undefined}
-            aria-describedby={emailError ? "invite-email-error" : undefined}
-          />
-          {emailError && (
-            <p id="invite-email-error" className="field-error" role="alert">
-              {emailError}
+          {inviteError && (
+            <p className="field-error" role="alert" tabIndex={-1} ref={inviteErrorRef}>
+              {inviteError}
             </p>
           )}
-        </div>
 
-        <div className="field">
-          <label htmlFor="invite-role">{t("members.invite.roleLabel")}</label>
-          <select
-            id="invite-role"
-            name="role"
-            value={role}
-            onChange={(e) => {
-              if (isInvitableRole(e.target.value)) setRole(e.target.value);
-            }}
-          >
-            {INVITABLE_ROLES.map((r) => (
-              <option key={r} value={r}>
-                {roleLabel(r)}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div className="field">
+            <label htmlFor="invite-email">{t("members.invite.emailLabel")}</label>
+            <input
+              id="invite-email"
+              name="email"
+              type="email"
+              autoComplete="off"
+              value={email}
+              ref={emailRef}
+              onChange={(e) => handleEmailChange(e.target.value)}
+              required
+              aria-required="true"
+              aria-invalid={emailError ? true : undefined}
+              aria-describedby={emailError ? "invite-email-error" : undefined}
+            />
+            {emailError && (
+              <p id="invite-email-error" className="field-error" role="alert">
+                {emailError}
+              </p>
+            )}
+          </div>
 
-        {inviteStatus === "invited" && (
+          <div className="field">
+            <label htmlFor="invite-role">{t("members.invite.roleLabel")}</label>
+            <select
+              id="invite-role"
+              name="role"
+              value={role}
+              onChange={(e) => {
+                if (isInvitableRole(e.target.value)) setRole(e.target.value);
+              }}
+            >
+              {INVITABLE_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {roleLabel(r)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {inviteStatus === "invited" && (
+            <p className="notice notice-success" role="status">
+              {t("members.invite.sent", { email: invitedEmail })}
+            </p>
+          )}
+
+          <div className="nav-actions">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={inviteStatus === "inviting"}
+            >
+              {inviteStatus === "inviting"
+                ? t("members.invite.sending")
+                : t("members.invite.submit")}
+            </button>
+          </div>
+        </form>
+
+        {/* --- Role capabilities reference (inspect what each role can do — NFR-ROL-1) ------ */}
+        <RoleCapabilities />
+
+        {/* --- Member roster --------------------------------------------------------------- */}
+        <h2 id="roster-heading">{t("members.roster.heading")}</h2>
+
+        {/* Announce a successful role change to assistive tech without stealing focus. */}
+        {roleChangeSuccess && (
           <p className="notice notice-success" role="status">
-            {t("members.invite.sent", { email: invitedEmail })}
+            {roleChangeSuccess}
           </p>
         )}
 
-        <div className="nav-actions">
-          <button type="submit" className="btn btn-primary" disabled={inviteStatus === "inviting"}>
-            {inviteStatus === "inviting" ? t("members.invite.sending") : t("members.invite.submit")}
-          </button>
-        </div>
-      </form>
-
-      {/* --- Member roster --------------------------------------------------------------- */}
-      <h2 id="roster-heading">{t("members.roster.heading")}</h2>
-      {query.isLoading ? (
-        <p className="muted" role="status">
-          {t("members.roster.loading")}
-        </p>
-      ) : query.isError ? (
-        <div className="stack" role="alert">
-          <p>
-            {query.error instanceof ApiError && query.error.kind === "network"
-              ? t("error.network")
-              : t("members.roster.loadFailed")}
+        {query.isLoading ? (
+          <p className="muted" role="status">
+            {t("members.roster.loading")}
           </p>
-          <button type="button" className="btn btn-secondary" onClick={() => void query.refetch()}>
-            {t("error.retry")}
-          </button>
-        </div>
-      ) : members.length === 0 ? (
-        <p className="muted">{t("members.roster.empty")}</p>
-      ) : (
-        <table className="data-table" aria-labelledby="roster-heading">
-          <thead>
-            <tr>
-              <th scope="col">{t("members.roster.columns.member")}</th>
-              <th scope="col">{t("members.roster.columns.role")}</th>
-              <th scope="col">{t("members.roster.columns.status")}</th>
-              <th scope="col">
-                <span className="visually-hidden">{t("members.roster.columns.actions")}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((member) => (
-              <tr key={member.user_id}>
-                <td>
-                  <code>{member.user_id}</code>
-                </td>
-                <td>{roleLabel(member.role)}</td>
-                <td>{statusLabel(member.status)}</td>
-                <td>
-                  {member.status !== "removed" && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={(e) => openRemoveDialog(member, e.currentTarget)}
-                      aria-label={t("members.remove.ariaLabel", { member: member.user_id })}
-                    >
-                      {t("members.remove.action")}
-                    </button>
-                  )}
-                </td>
+        ) : query.isError ? (
+          <div className="stack" role="alert">
+            <p>
+              {query.error instanceof ApiError && query.error.kind === "network"
+                ? t("error.network")
+                : t("members.roster.loadFailed")}
+            </p>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void query.refetch()}
+            >
+              {t("error.retry")}
+            </button>
+          </div>
+        ) : members.length === 0 ? (
+          <p className="muted">{t("members.roster.empty")}</p>
+        ) : (
+          <table className="data-table" aria-labelledby="roster-heading">
+            <thead>
+              <tr>
+                <th scope="col">{t("members.roster.columns.member")}</th>
+                <th scope="col">{t("members.roster.columns.role")}</th>
+                <th scope="col">{t("members.roster.columns.status")}</th>
+                <th scope="col">
+                  <span className="visually-hidden">{t("members.roster.columns.actions")}</span>
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {members.map((member) => (
+                <tr key={member.user_id}>
+                  <td>
+                    <code>{member.user_id}</code>
+                  </td>
+                  <td>{roleLabel(member.role)}</td>
+                  <td>{statusLabel(member.status)}</td>
+                  <td>
+                    <div className="row-actions">
+                      {/* A role picker only for an active member whose current role is one of the
+                        fixed values — a role outside the enum (the open `MembershipRole` type)
+                        can't be represented as a selected <option> without mis-displaying it, so
+                        we fall back to the read-only Role column rather than risk a wrong baseline. */}
+                      {member.status === "active" && isInvitableRole(member.role) && (
+                        <div className="field field-inline">
+                          <label htmlFor={`role-${member.user_id}`} className="visually-hidden">
+                            {t("members.changeRole.selectLabel", { member: member.user_id })}
+                          </label>
+                          <select
+                            id={`role-${member.user_id}`}
+                            value={member.role}
+                            onChange={(e) =>
+                              handleRoleSelect(member, e.target.value, e.currentTarget)
+                            }
+                          >
+                            {INVITABLE_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {roleLabel(r)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {member.status !== "removed" && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={(e) => openRemoveDialog(member, e.currentTarget)}
+                          aria-label={t("members.remove.ariaLabel", { member: member.user_id })}
+                        >
+                          {t("members.remove.action")}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
-      {query.hasNextPage && (
-        <div className="nav-actions">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => void query.fetchNextPage()}
-            disabled={query.isFetchingNextPage}
-          >
-            {query.isFetchingNextPage
-              ? t("members.roster.loadingMore")
-              : t("members.roster.loadMore")}
-          </button>
-        </div>
-      )}
+        {query.hasNextPage && (
+          <div className="nav-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void query.fetchNextPage()}
+              disabled={query.isFetchingNextPage}
+            >
+              {query.isFetchingNextPage
+                ? t("members.roster.loadingMore")
+                : t("members.roster.loadMore")}
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* --- Remove confirmation dialog -------------------------------------------------- */}
       {pendingRemoval && (
@@ -384,6 +552,64 @@ export function MemberManagement({ config, orgId }: MemberManagementProps) {
                 disabled={removing}
               >
                 {t("members.remove.confirm.cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- Role-change confirmation dialog --------------------------------------------- */}
+      {pendingRoleChange && (
+        <div className="modal-backdrop">
+          <div
+            className="card stack modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="role-dialog-title"
+            aria-describedby="role-dialog-body"
+            tabIndex={-1}
+            ref={roleDialogRef}
+            onKeyDown={handleRoleDialogKeyDown}
+          >
+            <h2 id="role-dialog-title">{t("members.changeRole.confirm.title")}</h2>
+            <p id="role-dialog-body">
+              {t("members.changeRole.confirm.body", {
+                member: pendingRoleChange.member.user_id,
+                // Re-derive the "from" role from the live roster so a concurrent refetch can't leave
+                // the confirmation showing a stale baseline; fall back to the snapshot if the member
+                // has since dropped out of the loaded pages.
+                from: roleLabel(
+                  members.find((m) => m.user_id === pendingRoleChange.member.user_id)?.role ??
+                    pendingRoleChange.member.role,
+                ),
+                to: roleLabel(pendingRoleChange.targetRole),
+              })}
+            </p>
+
+            {roleChangeError && (
+              <p className="field-error" role="alert">
+                {roleChangeError}
+              </p>
+            )}
+
+            <div className="nav-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleConfirmRoleChange()}
+                disabled={changingRole}
+              >
+                {changingRole
+                  ? t("members.changeRole.confirm.changing")
+                  : t("members.changeRole.confirm.confirm")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={closeRoleDialog}
+                disabled={changingRole}
+              >
+                {t("members.changeRole.confirm.cancel")}
               </button>
             </div>
           </div>

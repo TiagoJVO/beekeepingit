@@ -6,9 +6,11 @@ members, roles and invitations (`auth.md` §5.3). Scaffolded by [#72](https://gi
 (M7): OIDC login, the admin-role guard, a typed authenticated API client, and a guarded
 landing shell. Its administrative screens are **organization management** — view/edit the
 org's name and address with `If-Match` optimistic concurrency ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73))
-— and **member management** — view the roster, invite by email with a chosen role, and remove
-members (with a last-admin guard) ([#74](https://github.com/TiagoJVO/beekeepingit/issues/74));
-the roles screen ([#75](https://github.com/TiagoJVO/beekeepingit/issues/75)) builds on the roster.
+— **member management** — view the roster, invite by email with a chosen role, and remove
+members (with a last-admin guard) ([#74](https://github.com/TiagoJVO/beekeepingit/issues/74))
+— and **roles & permissions management** — change an active member's role within the fixed
+`admin`/`user` model from the roster (behind a confirmation, with the last-admin guard) and inspect
+what each role can do via a role-capabilities reference ([#75](https://github.com/TiagoJVO/beekeepingit/issues/75)).
 
 Architecture as-built: [`docs/architecture/admin-app.md`](../docs/architecture/admin-app.md).
 It authenticates against the platform OIDC provider behind the provider-agnostic boundary

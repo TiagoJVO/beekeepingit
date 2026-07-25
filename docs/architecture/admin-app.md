@@ -1,11 +1,11 @@
 # Web admin app — architecture (as-built)
 
 > **Status:** As-built for the M7 scaffold ([#72](https://github.com/TiagoJVO/beekeepingit/issues/72))
-> plus organization management ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73)) and
-> member management ([#74](https://github.com/TiagoJVO/beekeepingit/issues/74)).
+> plus organization management ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73)),
+> member management ([#74](https://github.com/TiagoJVO/beekeepingit/issues/74)) and roles &
+> permissions management ([#75](https://github.com/TiagoJVO/beekeepingit/issues/75)).
 > Covers the app shell, OIDC auth, the admin-role guard, and the admin screens (org view/edit;
-> member view/invite/remove). Further screens (roles) land in follow-up M7 stories and extend
-> this doc as they ship.
+> member view/invite/remove/re-role; role-capabilities reference).
 
 **Requirements:** NFR-ROL-1 (RBAC), NFR-ROL-2 (separate online-only admin app), FR-ONB-2 (org
 details), FR-ONB-3 (membership & invitations), FR-TEN-2 (org-scoped ownership + optimistic
@@ -155,8 +155,8 @@ remove:  confirm dialog ─▶ DELETE /v1/organizations/{orgId}/members/{userId}
   the server's opaque `page.next_cursor` (ADR-0003 keyset pagination); pages accumulate behind a
   "load more" affordance. The `Member` shape is `user_id`/`role`/`status` only — display names
   live behind the separate least-privilege `.../members/names` roster, not consumed here. The
-  **roles screen (#75) builds on this same roster** (its per-member role control slots into the
-  table's actions column).
+  **role control (#75) builds on this same roster** — its per-member role picker slots into the
+  table's actions column (§5c).
 - **Invite with a role at invite time** — the invitee's role is chosen from the fixed
   `admin`/`user` model (`InvitationCreate.role`, auth.md §5.3, NFR-ROL-1) via a labelled
   `<select>`, defaulting to least-privilege `user`. Client-side email validation is a fast-feedback
@@ -174,6 +174,49 @@ The API client gained `post` (create → JSON body) and `del` (`204 No Content`)
 existing `conflict`/`validation`/`not-found`/`network` `ApiError` kinds carry the 409/422/404 cases.
 Data-fetching + the invite/remove mutations live in the `useMembers` hook; the typed member/
 invitation calls live in `src/api/members.ts` (unit-tested independently).
+
+## 5c. Roles & permissions management (assign/change + inspect) — #75
+
+Roles management (NFR-ROL-1, auth.md §5.3) is **membership-role management** — the fixed,
+org-scoped `admin`/`user` model, not IdP realm roles (auth.md §3.3). It adds two things to the
+member screen, both behind the same `AdminGuard` and both server-authoritative:
+
+```text
+assign/change: roster actions ─▶ per-member role <select> (active members only)
+        │  picking a different role opens a confirm dialog (no eager PATCH)
+        ▼
+        confirm ─▶ PATCH /v1/organizations/{orgId}/members/{userId}  { role }
+        ├─ 200 ▶ "member is now <role>" status; roster query invalidated → reflects new role
+        ├─ 409 ▶ "can't demote the last admin" — dialog stays open (last-admin guard, D-3)
+        ├─ 404 ▶ "no longer a member" (ADR-0002 — a non-member is 404, never 403)
+        └─ 403 ▶ "no permission to change roles" (server re-enforces admin-only)
+inspect: collapsible "What can each role do?" panel — the §5.3 capability matrix
+```
+
+- **Assign/change from the roster** — each **active** member's actions cell carries a labelled
+  role `<select>` (`admin`/`user`); an invited/removed member has none (the change endpoint targets
+  active members). The select is controlled by the member's current role, so picking a different
+  value doesn't mutate eagerly — it opens an accessible `role="alertdialog"` confirmation ("change
+  X from _Member_ to _Admin_?"), mirroring the remove dialog (focus moved in, `Escape`/Cancel to
+  dismiss, focus restored, focus-trapped). On confirm the change goes via `changeMemberRole`
+  (`PATCH .../members/{userId}` with the `MemberRoleUpdate` body — no `If-Match`; the endpoint has
+  no optimistic-concurrency precondition). **The new role is enforced server-side on the target's
+  next authorized request** (auth.md §5.3) and recorded in entity history with the acting admin +
+  timestamp (FR-HIS-1, #290) — the UI just issues the change, announces success via a `role="status"`
+  live region, and lets the invalidated roster re-read the new role.
+- **Last-admin guard** — demoting the org's only admin is refused server-side with a `409` (D-3);
+  surfaced as a clear message with the dialog kept open, **not** reimplemented client-side.
+- **Inspect what each role can do** — `src/components/RoleCapabilities.tsx` renders the fixed §5.3
+  capability matrix as a real data table (a row header per capability, a column per role, ✓/—
+  marks paired with visually-hidden "Allowed"/"Not allowed" text) inside a collapsible
+  `<details>`. It is a **faithful mirror of auth.md §5.3** — it documents, it does not decide, and
+  the deferred quotas/rate-limit row (D-4) is intentionally omitted as not-yet-a-capability.
+
+The role-change mutation lives in `useMembers` (`changeRoleMutation`, invalidating the roster on
+success); the typed `changeMemberRole` call lives in `src/api/members.ts` (unit-tested). No new
+`ApiError` kinds were needed — `conflict`/`not-found`/`forbidden`/`network` already cover the cases.
+Server-side enforcement of the change (and the last-admin guard + history) is owned and tested by
+#290 (Go), not re-tested here.
 
 ## 6. i18n & accessibility
 
