@@ -51,7 +51,8 @@ final _assistantBranchKey = GlobalKey<NavigatorState>(
 /// /login; once logged in, an incomplete profile is routed to /profile; once
 /// the profile is complete but there's no organization yet, /organization/new;
 /// both gates block every other route (AC bullet 3) until satisfied. Once both
-/// are done, the apiaries list is home. /organization/members (#27,
+/// are done, the Tasks (Tarefas) list is home (#427, D-29).
+/// /organization/members (#27,
 /// admin-only server-side) and /account (#29) are reachable once onboarded —
 /// neither is part of the onboarding gate itself, just normal authenticated
 /// routes. Exposed as a provider so widget tests can override
@@ -69,13 +70,16 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.listen(organizationProvider, (_, __) => refresh.value++);
 
   return GoRouter(
-    initialLocation: '/apiaries',
+    // Tasks (Tarefas) is the app's home screen (#427, D-29): the daily field
+    // workflow starts from "what do I need to do today", not the apiary list.
+    // Bottom-nav tab order is unchanged — only the landing target moved.
+    initialLocation: '/todos',
     refreshListenable: refresh,
     redirect: (context, state) {
       final authed = ref.read(isAuthenticatedProvider);
       final atLogin = state.matchedLocation == '/login';
       if (!authed) return atLogin ? null : '/login';
-      if (atLogin) return '/apiaries';
+      if (atLogin) return '/todos';
 
       final atProfile = state.matchedLocation == '/profile';
       final profileAsync = ref.read(profileProvider);
@@ -95,7 +99,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!hasOrganization) {
         return atOrganization ? null : '/organization/new';
       }
-      if (atOrganization) return '/apiaries';
+      // A user who has just finished onboarding lands on the same Tasks home
+      // as a returning user (#427, D-29), not the apiaries list.
+      if (atOrganization) return '/todos';
 
       return null;
     },
