@@ -17,6 +17,21 @@
   it lands. Promoted to [#449](https://github.com/TiagoJVO/beekeepingit/issues/449). _Status:
   tracked in #449 (infra/services), not owed by this PR._
 
+## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
+
+- **Re-invite / re-join after member removal** — enabling member removal (#290, soft
+  `status` → `removed`) makes a previously-unreachable edge reachable: if an admin later
+  **re-invites a removed member's email** and that user logs in, the accept-on-login path
+  (`acceptPendingInvitationByEmail` in `services/organizations/api/invitations.go`) does an
+  `INSERT` into `organizations.memberships`, which violates `UNIQUE (organization_id, user_id)`
+  because the `removed` row persists — surfacing as a `500` instead of re-activating the
+  membership. **Not a merge blocker for #290** (remove + role change only; the removal endpoint
+  itself is correct). Re-invite is explicitly still-open detail under D-3. **Fix when re-invite
+  is built:** have the accept path **reactivate** an existing `removed` membership (UPSERT /
+  `ON CONFLICT (organization_id, user_id) DO UPDATE SET status='active', role=…`) instead of a
+  bare `INSERT`. **Promote to a GitHub Issue** and fold into the re-invite/expiry story; prune
+  here once referenced.
+
 ---
 
 _Aside from the above: PR #418's before-merge item (create the `cluster-ops.yml`

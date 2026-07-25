@@ -128,6 +128,11 @@ type invitationCreateRequest struct {
 func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) {
 	r.Get("/organizations/{orgId}/members", listMembersHandler(q, resolver))
 	r.Get("/organizations/{orgId}/members/names", listMemberNamesHandler(q, resolver))
+	// Member lifecycle (#290) -- admin-only remove + change-role, implemented in
+	// member_lifecycle.go. Kept off the /members/names path so the member-name
+	// roster stays the one member-readable exception (auth.md §5.3).
+	r.Patch("/organizations/{orgId}/members/{userId}", changeMemberRoleHandler(pool, q, resolver))
+	r.Delete("/organizations/{orgId}/members/{userId}", removeMemberHandler(pool, q, resolver))
 	r.Get("/organizations/{orgId}/invitations", listInvitationsHandler(q, resolver))
 	r.Post("/organizations/{orgId}/invitations", createInvitationHandler(pool, q, resolver))
 	r.Delete("/organizations/{orgId}/invitations/{invitationId}", revokeInvitationHandler(pool, q, resolver))
@@ -334,7 +339,7 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 		if role == "" {
 			role = "user"
 		}
-		if role != "admin" && role != "user" {
+		if !isValidMembershipRole(role) {
 			fieldErrs = append(fieldErrs, problem.FieldError{Field: "role", Code: "invalid", Message: "role must be admin or user"})
 		}
 		if len(fieldErrs) > 0 {

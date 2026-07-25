@@ -24,6 +24,8 @@ linked through the repo-root `go.work`.
 | `GET /v1/organizations/{orgId}`                               | OIDC JWT | An organization by id; `404` (not `403`) unless `{orgId}` is the caller's own org (ADR-0002 — the path never widens scope).                                                                                                                                                    |
 | `PATCH /v1/organizations/{orgId}`                             | OIDC JWT | Update the org's mutable fields (`name`, `address`); admin only (`403` for a non-admin member), `404` if `{orgId}` isn't the caller's own org. Optimistic concurrency via `If-Match`/ETag (`409` on a stale write); the change is recorded in entity history (FR-HIS-1, #289). |
 | `GET /v1/organizations/{orgId}/members`                       | OIDC JWT | List the org's members (admin only, `403` for a non-admin member). Keyset-paginated.                                                                                                                                                                                           |
+| `PATCH /v1/organizations/{orgId}/members/{userId}`            | OIDC JWT | Change a member's role within the fixed `admin`/`user` model (admin only). `409` if it would demote the org's last admin (D-3); `404` if not an active member of this org (#290).                                                                                              |
+| `DELETE /v1/organizations/{orgId}/members/{userId}`           | OIDC JWT | Remove a member (soft `status` → `removed`); the member loses org access on their next request. Admin only. `409` if it would remove the org's last admin (D-3); `404` if not an active member of this org (#290).                                                             |
 | `GET /v1/organizations/{orgId}/invitations`                   | OIDC JWT | List the org's invitations, any status (admin only). Keyset-paginated.                                                                                                                                                                                                         |
 | `POST /v1/organizations/{orgId}/invitations`                  | OIDC JWT | Invite an email to join at a role (default `user`, admin only). `409` if that email already has a pending invitation to this org.                                                                                                                                              |
 | `DELETE /v1/organizations/{orgId}/invitations/{invitationId}` | OIDC JWT | Revoke a still-pending invitation (admin only); `404` if it's already resolved or doesn't exist in this org.                                                                                                                                                                   |
@@ -35,19 +37,18 @@ All `/v1` routes run behind OIDC authn only, **not** the shared
 brand-new caller must reach `POST /organizations`, and looping back into this
 same service's own membership table over HTTP would be redundant).
 
-Member removal, invitation expiry/re-invite, and admin transfer are **not**
-built — D-3 and FR-ONB-3 both flag these as still-open detail beyond "implement
-the core invite/join now." Because member removal doesn't exist yet, its history
-recording ([#165](https://github.com/TiagoJVO/beekeepingit/issues/165) AC) has
-nothing to wire into yet either — it lands with the removal endpoint itself,
-whenever that's built, using the same `organizations.audit_log` this service
-already has.
+Member removal and role changes are built ([#290](https://github.com/TiagoJVO/beekeepingit/issues/290)):
+both are admin-only, org-scoped, and refuse to remove or demote the org's **last
+admin** (D-3's last-admin guard), made race-safe by row-locking the organization
+(`SELECT … FOR UPDATE`) as a single per-org serialization point. Admin transfer is
+promote-then-demote (no distinct operation). Invitation expiry/re-invite remain
+still-open detail (D-3, FR-ONB-3).
 
 History recording (FR-HIS-1, [#165](https://github.com/TiagoJVO/beekeepingit/issues/165)):
 organization creation, organization update (PATCH, #289), membership creation
-(the create pair in the same D-3 transaction), and invitation invite/accept/revoke
-each write one `organizations.audit_log` row
-in the same local transaction as their domain write
+(the create pair in the same D-3 transaction), membership role change / removal
+(#290), and invitation invite/accept/revoke each write one
+`organizations.audit_log` row in the same local transaction as their domain write
 ([docs/architecture/history.md](../../docs/architecture/history.md) §4).
 `entity_type` (`organization` | `membership` | `invitation`) distinguishes the
 three entities sharing this one table (history.md §3/§9). Append-only

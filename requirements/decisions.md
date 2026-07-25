@@ -48,8 +48,15 @@ _Last updated: 2026-07-13._
 - **Supersedes:** Q-JOIN.
 - **Affected requirements:** adds FR-ONB-3 / FR-TEN-3 (invitation & membership
   management). The org-creator's admin role aligns with NFR-ROL-1.
-- **Still open:** invitation expiry, re-invite, removing members, transferring
-  admin (minor — for planning detail).
+- **Refined by #290 (2026-07-25):** **removing members** and **transferring admin**
+  are now decided (closes those open details). An admin may **remove** a member
+  (soft `status` → `removed`, so the member loses org access on their next request,
+  FR-TEN-2) and **change** a member's role within the fixed `admin`/`user` model
+  (auth.md §5.3, NFR-ROL-1/2) — admin transfer is promote-then-demote, not a
+  distinct operation. A **last-admin guard** forbids removing or demoting the org's
+  only remaining admin, so an organization always keeps at least one admin. Both
+  actions are recorded in `organizations.audit_log` (FR-HIS-1).
+- **Still open:** invitation expiry, re-invite (minor — for planning detail).
 
 ## D-4 — v1 scope deferrals
 

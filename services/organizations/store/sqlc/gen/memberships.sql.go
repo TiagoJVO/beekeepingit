@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveAdmins = `-- name: CountActiveAdmins :one
+SELECT count(*)
+FROM organizations.memberships
+WHERE organization_id = $1 AND role = 'admin' AND status = 'active'
+`
+
+// Count an org's active admins for the last-admin guard (#290, D-3). Only ever
+// called after LockOrganizationForUpdate has serialized this org's lifecycle
+// writes, so the count can't change under us before the transaction commits.
+func (q *Queries) CountActiveAdmins(ctx context.Context, organizationID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveAdmins, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createMembership = `-- name: CreateMembership :one
 INSERT INTO organizations.memberships (id, organization_id, user_id, role, status)
 VALUES ($1, $2, $3, 'admin', 'active')
@@ -65,6 +81,37 @@ func (q *Queries) CreateMembershipWithRole(ctx context.Context, arg CreateMember
 		arg.UserID,
 		arg.Role,
 	)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getActiveMembership = `-- name: GetActiveMembership :one
+SELECT id, organization_id, user_id, role, status, created_at, updated_at
+FROM organizations.memberships
+WHERE organization_id = $1 AND user_id = $2 AND status = 'active'
+`
+
+type GetActiveMembershipParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+// The target member of a management action (#290): one org's active membership
+// for a given user. Org-scoped (organization_id = $1) so a cross-org caller can
+// never address another org's membership (ADR-0002). pgx.ErrNoRows means "no
+// such active member in this org" — the handler maps it to 404 (already removed,
+// never a member, or a different org's user).
+func (q *Queries) GetActiveMembership(ctx context.Context, arg GetActiveMembershipParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, getActiveMembership, arg.OrganizationID, arg.UserID)
 	var i OrganizationsMembership
 	err := row.Scan(
 		&i.ID,
@@ -177,4 +224,94 @@ func (q *Queries) ListMembers(ctx context.Context, arg ListMembersParams) ([]Org
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockOrganizationForUpdate = `-- name: LockOrganizationForUpdate :one
+SELECT id
+FROM organizations.organizations
+WHERE id = $1
+FOR UPDATE
+`
+
+// The last-admin guard's single per-org serialization point (#290, D-3): row-lock
+// the organization itself FOR UPDATE at the top of every remove/change-role
+// transaction. All such writes on one org therefore serialize on this single row,
+// so the CountActiveAdmins check below runs against a stable admin set that no
+// concurrent demote/remove/promote can change before this transaction commits —
+// closing the TOCTOU race that would otherwise let two concurrent demotions each
+// see "two admins" and together leave the org with zero. Locking the org row
+// (rather than the admin membership rows) also avoids spuriously blocking on / by
+// an unrelated promotion. The caller is already an admin of this exact org
+// (requireOrgAdmin), so the row always exists.
+func (q *Queries) LockOrganizationForUpdate(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockOrganizationForUpdate, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const removeMembership = `-- name: RemoveMembership :one
+UPDATE organizations.memberships
+SET status = 'removed', updated_at = now()
+WHERE organization_id = $1 AND user_id = $2 AND status = 'active'
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at
+`
+
+type RemoveMembershipParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+// Soft-removes an active member (#290, FR-TEN-2): status active -> removed, so
+// the user immediately stops resolving to this org on their next request
+// (GetActiveMembershipByUser filters status = 'active') and frees the
+// one-active-membership-per-user slot (idx_memberships_one_active_per_user,
+// 00004). The row is kept (not hard-deleted) so its history/audit trail and
+// UNIQUE(organization_id, user_id) identity survive. Org-scoped; updated_at
+// bumped explicitly. Same-transaction #165 audit row as the other writes.
+func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, removeMembership, arg.OrganizationID, arg.UserID)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateMembershipRole = `-- name: UpdateMembershipRole :one
+UPDATE organizations.memberships
+SET role = $3, updated_at = now()
+WHERE organization_id = $1 AND user_id = $2 AND status = 'active'
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at
+`
+
+type UpdateMembershipRoleParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Role           string      `json:"role"`
+}
+
+// Changes an active member's role within the fixed admin/user model (#290,
+// NFR-ROL-1/2, auth.md §5.3). Org-scoped; updated_at is bumped explicitly (no
+// ON UPDATE trigger on this table). Called in the same transaction as its
+// #165 audit row, after the last-admin guard has run.
+func (q *Queries) UpdateMembershipRole(ctx context.Context, arg UpdateMembershipRoleParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, updateMembershipRole, arg.OrganizationID, arg.UserID, arg.Role)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
