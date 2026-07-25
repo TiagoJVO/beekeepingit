@@ -1,8 +1,8 @@
 # Organizations service — client-facing REST contract.
 # Onboarding (FR-ONB) + the management surface the React Admin App consumes (NFR-ROL-2).
-# Organization create/read (#26), membership listing and email invitations (#27), and
-# organization update (PATCH, #289) are built; member removal/role changes remain a skeleton
-# (still-open detail per D-3/FR-ONB-3 — invite expiry, re-invite, removing members, transferring admin).
+# Organization create/read (#26), membership listing and email invitations (#27), organization
+# update (PATCH, #289), and member removal + role changes (#290) are built. Invitation
+# expiry/re-invite remain still-open detail per D-3/FR-ONB-3.
 # Stamped from ./_shared/components.openapi.yaml; conventions in
 # docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email).
 openapi: 3.1.0
@@ -206,6 +206,71 @@ paths:
         '404':
           $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
 
+  # Member lifecycle (#290) — kept in its own path block so it rebases cleanly
+  # against the parallel organization-update (PATCH /organizations/{orgId}) work.
+  /organizations/{orgId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: userId
+        in: path
+        required: true
+        description: The member's user id (organizations.memberships.user_id).
+        schema:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+    patch:
+      operationId: changeMemberRole
+      summary: Change a member's role (admin only)
+      description: >-
+        Changes a member's role within the fixed `admin`/`user` model (auth.md §5.3,
+        NFR-ROL-1/2). Admin-only and org-scoped. Refuses to demote the organization's
+        last admin (`409`, D-3). A user who is not an active member of `{orgId}` is
+        `404` (ADR-0002 — never `403`).
+      tags: [Members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberRoleUpdate'
+      responses:
+        '200':
+          description: The member, with its updated role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+    delete:
+      operationId: removeMember
+      summary: Remove a member (admin only)
+      description: >-
+        Removes a member from the organization; the removed member immediately loses
+        access to the org's data (FR-TEN-2, NFR-ROL-1). Admin-only and org-scoped.
+        Refuses to remove the organization's last admin (`409`, D-3). A user who is
+        not an active member of `{orgId}` — already removed, never a member, or from
+        another org — is `404` (ADR-0002 — never `403`).
+      tags: [Members]
+      responses:
+        '204':
+          description: Removed (no content).
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+
   /organizations/{orgId}/invitations:
     parameters:
       - $ref: '#/components/parameters/OrgId'
@@ -376,6 +441,16 @@ components:
         page:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
       required: [data, page]
+
+    MemberRoleUpdate:
+      type: object
+      description: >-
+        Change-role request body (#290). Only the role field, constrained to the
+        fixed admin/user enum (NFR-ROL-1/2 — no new roles).
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+      required: [role]
 
     MemberName:
       type: object
