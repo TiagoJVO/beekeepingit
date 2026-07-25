@@ -30,6 +30,25 @@ final journeyMatchesProvider = StreamProvider.autoDispose
       );
     });
 
+/// Live relaxed candidate journeys for one (apiary, activity type) pair
+/// (#440, D-31) — the data source for the picker's "attach to a journey that
+/// didn't plan this apiary" toggle: open, type-matching journeys whose plan
+/// does NOT include this apiary. Family-keyed + autoDispose, mirroring
+/// [journeyMatchesProvider]'s own per-key live-query convention.
+final journeyUnplannedMatchesProvider = StreamProvider.autoDispose
+    .family<List<Journey>, ({String apiaryId, String activityType})>((
+      ref,
+      args,
+    ) async* {
+      final repo = await ref.watch(journeysRepositoryProvider.future);
+      final org = await ref.watch(organizationProvider.future);
+      yield* repo.watchTypeMatchingUnplanned(
+        apiaryId: args.apiaryId,
+        activityType: args.activityType,
+        organizationId: org?.id,
+      );
+    });
+
 /// The result of a picker session (#46 AC: deselect / switch / create-new),
 /// returned by [showJourneyPickerSheet]. `null` (no outcome at all) means the
 /// sheet was dismissed without a choice — the caller's current selection is
@@ -46,8 +65,21 @@ class JourneyPickerNone extends JourneyPickerOutcome {
 /// The user picked an existing journey (open or closed — the confirm warning
 /// for a closed one is enforced at SAVE time by the caller, not here).
 class JourneyPickerSelected extends JourneyPickerOutcome {
-  const JourneyPickerSelected(this.journeyId);
+  const JourneyPickerSelected(
+    this.journeyId, {
+    this.addCurrentApiaryToPlan = false,
+  });
   final String journeyId;
+
+  /// True only when the journey was chosen from the #440/D-31 "attach to a
+  /// journey that didn't plan this apiary" relaxed list — the caller must
+  /// then add the current apiary to this journey's plan on save
+  /// ([JourneysRepository.addApiaryToPlan]). False for every ordinary
+  /// planned-apiary match (open or closed): those already plan the apiary, so
+  /// growing the plan would be a no-op at best and, on edit, could wrongly
+  /// re-add an apiary the user had removed from the plan — so plan-growth is
+  /// scoped strictly to this deliberate relaxed pick.
+  final bool addCurrentApiaryToPlan;
 }
 
 /// The user tapped the inline create-new-journey shortcut — the caller opens
@@ -99,6 +131,11 @@ class _JourneyPickerSheet extends ConsumerStatefulWidget {
 
 class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
   bool _showHidden = false;
+  // #440/D-31: distinct from _showHidden (which reveals CLOSED planned
+  // matches) — this reveals OPEN journeys that did NOT plan this apiary,
+  // still filtered to the matching activity type. Opt-in; off by default so
+  // the planned-first view is unchanged.
+  bool _showUnplanned = false;
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +143,12 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
     final theme = Theme.of(context);
     final matchesAsync = ref.watch(
       journeyMatchesProvider((
+        apiaryId: widget.apiaryId,
+        activityType: widget.activityType,
+      )),
+    );
+    final unplannedAsync = ref.watch(
+      journeyUnplannedMatchesProvider((
         apiaryId: widget.apiaryId,
         activityType: widget.activityType,
       )),
@@ -137,6 +180,14 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                 ),
                 data: (matches) {
                   final candidates = splitJourneyCandidates(matches);
+                  // The relaxed set is a secondary, opt-in affordance: a
+                  // transient load/error in its own live query must never
+                  // block the main picker, so fall back to an empty list
+                  // rather than surfacing its own loading/error UI.
+                  final unplanned = unplannedPickerCandidates(
+                    unplannedAsync.value ?? const [],
+                    planned: candidates.open,
+                  );
                   return SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -183,6 +234,30 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                                 onTap: () => Navigator.of(
                                   context,
                                 ).pop(JourneyPickerSelected(journey.id)),
+                              ),
+                        ],
+                        if (unplanned.isNotEmpty) ...[
+                          Divider(color: context.brand.cardBorder),
+                          SwitchListTile(
+                            key: const Key(
+                              'journey-picker-show-unplanned-toggle',
+                            ),
+                            title: Text(l10n.journeyPickerShowUnplannedToggle),
+                            value: _showUnplanned,
+                            onChanged: (v) =>
+                                setState(() => _showUnplanned = v),
+                          ),
+                          if (_showUnplanned)
+                            for (final journey in unplanned)
+                              _JourneyTile(
+                                journey: journey,
+                                selected: journey.id == widget.currentJourneyId,
+                                onTap: () => Navigator.of(context).pop(
+                                  JourneyPickerSelected(
+                                    journey.id,
+                                    addCurrentApiaryToPlan: true,
+                                  ),
+                                ),
                               ),
                         ],
                         Divider(color: context.brand.cardBorder),

@@ -344,6 +344,61 @@ class JourneysRepository {
         .map((rows) => rows.map((r) => _fromRow(r, const [])).toList());
   }
 
+  /// The relaxed candidate set for the #440/D-31 "attach to a journey that
+  /// didn't plan this apiary" picker toggle: every **open** journey whose
+  /// `main_activity_type` is [activityType] but whose plan does NOT currently
+  /// include [apiaryId] — the exact complement of [watchMatching]'s
+  /// apiary-plan JOIN, still scoped to the matching activity type. Closed
+  /// journeys are deliberately excluded (D-21 keeps those behind the separate
+  /// "show hidden journeys" toggle); this relaxation only ever surfaces open
+  /// journeys the user could still meaningfully attach to and grow the plan of
+  /// (D-31). Org-scoped and newest-first exactly like [watchMatching]/
+  /// [watchAll], evaluated purely against locally-synced data so it works
+  /// fully offline. The `NOT EXISTS` guard is what makes a zero-apiary journey
+  /// (D-30 — empty plan, matches no apiary) reachable here: it plans no
+  /// apiary, so it never includes [apiaryId], so it always qualifies.
+  Stream<List<Journey>> watchTypeMatchingUnplanned({
+    required String apiaryId,
+    required String activityType,
+    required String? organizationId,
+  }) {
+    if (organizationId == null) return Stream.value(const []);
+    return _store
+        .watch(
+          'SELECT j.id, j.organization_id, j.name, j.main_activity_type, j.status, j.default_attributes '
+          'FROM $journeysTable j '
+          'WHERE (j.organization_id = ? OR j.organization_id IS NULL) '
+          'AND j.main_activity_type = ? AND j.status = ? '
+          'AND NOT EXISTS ('
+          'SELECT 1 FROM $journeyPlanItemsTable p '
+          'WHERE p.journey_id = j.id AND p.apiary_id = ?) '
+          'ORDER BY j.created_at DESC',
+          [organizationId, activityType, journeyStatusOpen, apiaryId],
+        )
+        .map((rows) => rows.map((r) => _fromRow(r, const [])).toList());
+  }
+
+  /// Idempotently adds [apiaryId] to [journeyId]'s plan (D-31, #440) — the
+  /// plan-growth half of attaching an activity to a journey that didn't plan
+  /// this apiary. Reuses the SAME [_insertPlanItem] write path
+  /// [create]/[update] use, so PowerSync's CRUD queue carries the identical
+  /// `journey_plan_items` op the server's existing plan-item apply handles and
+  /// audits — no new plan-write or history path is invented (FR-HIS). Guarded
+  /// by a pre-check so re-selecting (or re-saving) a journey that already
+  /// plans the apiary never inserts a duplicate plan row — the newly-planned
+  /// apiary then shows in the journey's stats as planned+visited (its
+  /// [watchStats] query re-fires on the plan-item write), keeping
+  /// "apiaries visited vs planned" coherent (visited ⊆ planned).
+  Future<void> addApiaryToPlan(String journeyId, String apiaryId) async {
+    final existing = await _store.getOptional(
+      'SELECT id FROM $journeyPlanItemsTable '
+      'WHERE journey_id = ? AND apiary_id = ?',
+      [journeyId, apiaryId],
+    );
+    if (existing != null) return;
+    await _insertPlanItem(journeyId, apiaryId, _nowIso());
+  }
+
   /// One-shot [JourneyStats] for [journeyId] (#49, FR-JO-1, D-2, D-21) — see
   /// [watchStats]'s doc for the query shape; this is its one-shot
   /// counterpart, mirroring [getById]/[watchById]'s existing split.

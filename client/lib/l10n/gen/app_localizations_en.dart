@@ -1040,6 +1040,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get journeyPickerShowHiddenToggle => 'Show hidden journeys';
 
   @override
+  String get journeyPickerShowUnplannedToggle =>
+      'Show journeys that didn\'t plan this apiary';
+
+  @override
   String journeyPickerClosedOptionSemanticLabel(String name) {
     return '$name, closed journey';
   }

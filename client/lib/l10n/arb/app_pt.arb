@@ -369,6 +369,7 @@
   "journeyPickerNoneOption": "Nenhuma jornada",
   "journeyPickerNoOpenMatches": "Ainda não há jornadas abertas correspondentes a este apiário e tipo de atividade.",
   "journeyPickerShowHiddenToggle": "Mostrar jornadas ocultas",
+  "journeyPickerShowUnplannedToggle": "Mostrar jornadas que não planearam este apiário",
   "journeyPickerClosedOptionSemanticLabel": "{name}, jornada fechada",
   "journeyPickerCreateNewAction": "Criar nova jornada",
   "journeyQuickCreateTitle": "Nova jornada",

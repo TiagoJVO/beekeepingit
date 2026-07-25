@@ -44,6 +44,51 @@ void main() {
     );
   });
 
+  group('unplannedPickerCandidates (#440, D-31)', () {
+    test('an empty candidate list yields empty', () {
+      expect(unplannedPickerCandidates(const [], planned: const []), isEmpty);
+    });
+
+    test('keeps open journeys, dropping any closed one defensively', () {
+      final open1 = _journey('open-1');
+      final closed1 = _journey('closed-1', status: journeyStatusClosed);
+      final open2 = _journey('open-2');
+
+      final result = unplannedPickerCandidates([
+        open1,
+        closed1,
+        open2,
+      ], planned: const []);
+
+      expect(result, [open1, open2]);
+    });
+
+    test('removes any journey already present in the planned set so the '
+        'same journey never appears in both lists', () {
+      final shared = _journey('shared');
+      final onlyUnplanned = _journey('only-unplanned');
+
+      final result = unplannedPickerCandidates(
+        [shared, onlyUnplanned],
+        planned: [shared],
+      );
+
+      expect(result, [onlyUnplanned]);
+    });
+
+    test('preserves the incoming (newest-first) order', () {
+      final newest = _journey('newest');
+      final older = _journey('older');
+
+      final result = unplannedPickerCandidates([
+        newest,
+        older,
+      ], planned: const []);
+
+      expect(result, [newest, older]);
+    });
+  });
+
   group('JourneyPickerCandidates.autoSelected (#46 AC: auto-match hit/miss)', () {
     test('auto-match HIT: picks the first (newest) open match', () {
       final newest = _journey('newest');

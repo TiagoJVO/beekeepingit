@@ -85,6 +85,15 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
   // explicit user action).
   _JourneyTouch _journeyTouch = _JourneyTouch.none;
   String? _manualJourneyId;
+  // #440/D-31: true only while the effective selection is a journey the user
+  // picked from the picker's "attach to a journey that didn't plan this
+  // apiary" relaxed list — [_save] then adds this apiary to that journey's
+  // plan (JourneysRepository.addApiaryToPlan). Reset to false alongside every
+  // _manualJourneyId reset (deselect / remove / inline-create / activity-type
+  // change) so it can never carry over to an unrelated selection, and never
+  // set for an ordinary planned match (open or closed) — see
+  // JourneyPickerSelected.addCurrentApiaryToPlan's own doc comment.
+  bool _attachGrowsPlan = false;
   // Only set right after an inline create (journey_quick_create_sheet.dart) —
   // covers the brief window before the local store's own live query
   // (journeyMatchesProvider) necessarily catches up with the just-written
@@ -548,6 +557,7 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
                       _journeyTouch = _JourneyTouch.deselected;
                       _manualJourneyId = null;
                       _manualJourneyNameFallback = null;
+                      _attachGrowsPlan = false;
                     });
                     markUnsavedChanges();
                   },
@@ -574,12 +584,19 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           _journeyTouch = _JourneyTouch.deselected;
           _manualJourneyId = null;
           _manualJourneyNameFallback = null;
+          _attachGrowsPlan = false;
         });
-      case JourneyPickerSelected(:final journeyId):
+      case JourneyPickerSelected(
+        :final journeyId,
+        :final addCurrentApiaryToPlan,
+      ):
         setState(() {
           _journeyTouch = _JourneyTouch.selected;
           _manualJourneyId = journeyId;
           _manualJourneyNameFallback = null;
+          // #440/D-31: only a pick from the relaxed "didn't plan this apiary"
+          // list grows the plan on save; an ordinary planned match doesn't.
+          _attachGrowsPlan = addCurrentApiaryToPlan;
         });
         // #386: prefill from the picked journey's defaults — a FRESH read
         // (mirrors _save's own closed-check fresh read above), not the
@@ -588,7 +605,16 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
         final journey = await journeysRepo.getById(journeyId);
         if (!mounted) return;
         _lastPrefilledJourneyId = journeyId;
-        if (journey != null) _applyJourneyDefaults(journey.defaultAttributes);
+        if (journey != null) {
+          // #440/D-31: a journey picked from the relaxed "didn't plan this
+          // apiary" list is NOT in [_lastKnownJourneyMatches] (watchMatching
+          // only surfaces planned matches), so the attachment summary would
+          // otherwise render "No journey attached" for a link that IS set.
+          // Cache its name as the display fallback — harmless for an ordinary
+          // planned pick (the live matches list resolves that name first).
+          setState(() => _manualJourneyNameFallback = journey.name);
+          _applyJourneyDefaults(journey.defaultAttributes);
+        }
       case JourneyPickerCreateNew():
         final created = await showJourneyQuickCreateSheet(
           context,
@@ -600,6 +626,9 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           _journeyTouch = _JourneyTouch.selected;
           _manualJourneyId = created.id;
           _manualJourneyNameFallback = created.name;
+          // An inline-created journey already plans this apiary (the quick
+          // create sheet seeds initialApiaryId), so there's nothing to grow.
+          _attachGrowsPlan = false;
         });
         // #386: the sheet already returns the defaults it just saved (#385)
         // — apply them directly rather than re-reading the store, sidestepping
@@ -683,6 +712,16 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
           attributes: _buildAttributes(),
           journeyId: journeyIdToSave,
         );
+      }
+      // #440/D-31: attaching to a journey chosen from the "didn't plan this
+      // apiary" relaxed list ALSO adds this apiary to that journey's plan, so
+      // its stats stay coherent (the apiary shows as planned+visited).
+      // Idempotent — a no-op if the apiary is somehow already planned. Runs
+      // after the activity write so a failure here surfaces as a save error
+      // rather than silently growing a plan for an activity that didn't save.
+      if (_attachGrowsPlan && journeyIdToSave != null) {
+        final journeysRepo = await ref.read(journeysRepositoryProvider.future);
+        await journeysRepo.addApiaryToPlan(journeyIdToSave, widget.apiaryId);
       }
       if (!mounted) return;
       clearUnsavedChanges();
@@ -797,6 +836,10 @@ class _AddActivityScreenState extends ConsumerState<AddActivityScreen>
                                     : _JourneyTouch.none;
                                 _manualJourneyId = null;
                                 _manualJourneyNameFallback = null;
+                                // #440/D-31: a type change invalidates any
+                                // prior relaxed pick too — the plan-growth
+                                // flag must not survive it.
+                                _attachGrowsPlan = false;
                                 // #386: the fresh auto-match for the new
                                 // type must get its own prefill — even if
                                 // it happens to re-select the SAME journey
