@@ -138,3 +138,35 @@ ORDER BY recorded_at, id;
 INSERT INTO journeys.sync_conflict_log
     (id, organization_id, entity_type, entity_id, winning_payload, losing_payload, winner, actor_user_id, occurred_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+
+-- name: ListEntityTimeline :many
+-- The combined per-entity timeline (FR-HIS-1, history.md §6, #315): UNIONs
+-- journeys.audit_log (applied create/update/delete rows, event_kind =
+-- change_type) with journeys.sync_conflict_log (LWW-loss rows, event_kind
+-- hardcoded 'superseded' — mirrors history.EventSuperseded — so "LWW losers...
+-- surfaced as a superseded timeline event, not silently overwritten"), ordered
+-- chronologically. change carries the audit delta for audit_log rows and the
+-- {winning_payload, losing_payload, winner} conflict payload for
+-- sync_conflict_log rows — the two tables' change shapes differ by design (§3
+-- vs §4.2), so callers branch on event_kind to interpret it. Exposed via HTTP
+-- (GET /v1/journeys/{journeyId}/history, api/history.go) as the online fallback
+-- for a device that has no local slice to render from. A verbatim mirror of
+-- apiaries/activities' own ListEntityTimeline, swapped onto the journeys schema.
+SELECT timeline.id, timeline.organization_id, timeline.entity_type, timeline.entity_id,
+       timeline.event_kind, timeline.actor_user_id, timeline.occurred_at, timeline.recorded_at,
+       timeline.changed_fields, timeline.change
+FROM (
+    SELECT al.id, al.organization_id, al.entity_type, al.entity_id, al.change_type AS event_kind,
+           al.actor_user_id, al.occurred_at, al.recorded_at, al.changed_fields, al.change
+    FROM journeys.audit_log al
+    WHERE al.organization_id = $1 AND al.entity_type = $2 AND al.entity_id = $3
+
+    UNION ALL
+
+    SELECT scl.id, scl.organization_id, scl.entity_type, scl.entity_id, 'superseded' AS event_kind,
+           scl.actor_user_id, scl.occurred_at, scl.recorded_at, NULL::text[] AS changed_fields,
+           jsonb_build_object('winning_payload', scl.winning_payload, 'losing_payload', scl.losing_payload, 'winner', scl.winner) AS change
+    FROM journeys.sync_conflict_log scl
+    WHERE scl.organization_id = $1 AND scl.entity_type = $2 AND scl.entity_id = $3
+) timeline
+ORDER BY timeline.recorded_at, timeline.id;
