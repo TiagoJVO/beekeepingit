@@ -1,6 +1,9 @@
 import { useTranslation } from "react-i18next";
+import type { AppConfig } from "../config/env";
+import { OrganizationSettings } from "./OrganizationSettings";
 
 interface AppShellProps {
+  config: AppConfig;
   userName: string;
   orgName: string;
   accountUrl?: string;
@@ -8,11 +11,11 @@ interface AppShellProps {
 }
 
 /**
- * The guarded landing shell shown only to admins. Real administrative screens (members,
- * roles, invitations — auth.md §5.3) land in follow-up stories; this is the authenticated,
- * admin-gated frame + placeholder they slot into.
+ * The guarded landing shell shown only to admins (auth.md §5.3). Its first administrative
+ * screen is organization management (view/edit name + address — #73); further screens
+ * (members, roles, invitations) land in follow-up stories and slot into the same frame.
  */
-export function AppShell({ userName, orgName, accountUrl, onSignOut }: AppShellProps) {
+export function AppShell({ config, userName, orgName, accountUrl, onSignOut }: AppShellProps) {
   const { t } = useTranslation();
   return (
     <div>
@@ -34,14 +37,13 @@ export function AppShell({ userName, orgName, accountUrl, onSignOut }: AppShellP
           </button>
         </nav>
       </header>
-      <main className="page">
-        <div className="card stack">
+      <main className="page page-top">
+        <div className="card stack" style={{ maxWidth: "40rem" }}>
           <p>
             <span className="badge">{t("shell.roleBadge")}</span>
           </p>
-          <h1>{t("shell.welcome", { name: userName })}</h1>
-          <p>{t("shell.org", { org: orgName })}</p>
-          <p className="muted">{t("shell.placeholder")}</p>
+          <p className="muted">{t("shell.signedInAs", { name: userName, org: orgName })}</p>
+          <OrganizationSettings config={config} />
         </div>
       </main>
     </div>

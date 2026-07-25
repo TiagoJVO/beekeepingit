@@ -77,6 +77,7 @@ export function AdminGuard({ config }: AdminGuardProps) {
     case "admin":
       return (
         <AppShell
+          config={config}
           userName={auth.user?.profile.name ?? auth.user?.profile.preferred_username ?? ""}
           orgName={roleQuery.data?.name ?? ""}
           accountUrl={config.accountUrl || undefined}

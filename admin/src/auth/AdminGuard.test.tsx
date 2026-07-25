@@ -75,12 +75,21 @@ describe("AdminGuard", () => {
       name: "Apiário Central",
       role: "admin",
     });
+    vi.spyOn(organizations, "getOrganization").mockResolvedValue({
+      data: { id: "o1", name: "Apiário Central", address: "Rua das Flores 1", role: "admin" },
+      etag: '"v1"',
+    });
 
     renderGuard();
 
-    expect(await screen.findByRole("heading", { name: /welcome, ana admin/i })).toBeInTheDocument();
-    expect(screen.getByText(/organization: apiário central/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/signed in as ana admin · apiário central/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/signed in as admin/i)).toBeInTheDocument();
+    // The shell's first administrative screen is organization management (#73).
+    expect(
+      await screen.findByRole("heading", { name: /organization details/i }),
+    ).toBeInTheDocument();
   });
 
   it("DENIES a non-admin (user role) with a clear message (NFR-ROL-1)", async () => {
@@ -162,9 +171,13 @@ describe("AdminGuard", () => {
       name: "Org",
       role: "admin",
     });
+    vi.spyOn(organizations, "getOrganization").mockResolvedValue({
+      data: { id: "o1", name: "Org", address: "1 Main St", role: "admin" },
+      etag: '"v1"',
+    });
 
     const { container } = renderGuard();
-    await screen.findByRole("heading", { name: /welcome/i });
+    await screen.findByRole("heading", { name: /organization details/i });
 
     await waitFor(async () => {
       expect(await axe(container)).toHaveNoViolations();
