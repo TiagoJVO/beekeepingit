@@ -113,6 +113,139 @@ entries:
     identifiers: { slug: beekeepingit }
     attrs: { name: BeekeepingIT, slug: beekeepingit, provider: !KeyOf provider-beekeepingit }
 
+  # --- Admin app OIDC client (#456, D-7/ADR-0016, auth.md §3.2, NFR-ROL-2, NFR-SEC-1) ---
+  # The React Admin App authenticates as its OWN public client `beekeepingit-admin`
+  # (Authorization Code + PKCE S256, RS256), DISTINCT from the PWA's `beekeepingit-pwa`
+  # (oidc-integration.md §3). But every domain service is pinned to ONE issuer and ONE
+  # audience — `OIDC_ISSUER_URL=.../application/o/beekeepingit/` and
+  # `OIDC_AUDIENCE=beekeepingit-pwa`, the aud checked by CONTAINMENT (oidc-integration.md
+  # §4/§6, services/servicetemplate/authn) — and that is FROZEN: admin tokens must be
+  # accepted with NO services-side change.
+  #
+  # Why a plain second provider isn't enough (verified against Authentik 2026.5.4):
+  #   - `OAuth2Provider.get_issuer` derives the per_provider `iss` from the provider's OWN
+  #     application slug, and the global /authorize endpoint mints the token for whichever
+  #     provider owns the request's `client_id` — so a second provider necessarily emits
+  #     `iss = .../application/o/beekeepingit-admin/` and a default `aud` of its own client id.
+  #   - A BACKCHANNEL provider can't serve an interactive login at all: the authorize view
+  #     resolves the app via `provider.application` (the PRIMARY OneToOne), and `get_issuer`
+  #     returns None without one — backchannel is for LDAP/SCIM/RAC, not OIDC discovery.
+  #   - `issuer_mode: global` would move BOTH providers off the frozen per-app issuer.
+  # The mechanism that works WITHOUT touching the services is a scope mapping that OVERRIDES
+  # the minted `iss`/`aud`: a mapping's returned dict is merged over the token's built-in
+  # fields (`IDToken.to_dict` does `id_dict.update(claims)`; `get_claims` only evaluates
+  # mappings whose `scope_name` is in the requested scopes — hence `openid`, always requested).
+  # `include_claims_in_id_token: true` carries the override into the access token the services
+  # read. `iss` is computed from the request exactly as `get_issuer` does, so it auto-adapts
+  # per environment and is byte-identical to the PWA's. Attached ONLY to the admin provider,
+  # so the frozen PWA provider is untouched. The admin app's own client (oidc-client-ts) does
+  # not validate id_token `iss`/`aud`, so the override is transparent to it; the strict
+  # validator is go-oidc in the services, which this satisfies. See oidc-integration.md §3.
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-admin-audience
+    identifiers: { name: "BeekeepingIT OAuth Mapping: admin issuer+audience (beekeepingit)" }
+    attrs:
+      name: "BeekeepingIT OAuth Mapping: admin issuer+audience (beekeepingit)"
+      # Rides the always-requested `openid` scope: get_claims only evaluates a mapping when
+      # its scope_name is among the token's requested scopes (the admin app requests
+      # `openid profile email`). The managed openid mapping also runs — the two merge, and
+      # only this one emits iss/aud, so there is no key collision.
+      scope_name: openid
+      description: "Aligns admin-app token iss/aud with the beekeepingit resource"
+      expression: |
+        # Derive `iss` by asking the PWA provider itself — pwa.get_issuer(http_req) is the
+        # SAME call the services' expected issuer comes from, so the admin token's iss tracks
+        # the pwa's byte-for-byte per environment AND survives any future change to the issuer
+        # URL shape (a hardcoded path would silently diverge and break only admin login).
+        # `request` is a PolicyRequest; the Django HttpRequest (with build_absolute_uri) is
+        # request.http_request — None outside an HTTP context. If either the request or the pwa
+        # provider is missing we emit no override (fail closed: the services' strict `iss` check
+        # then rejects the admin's own-issuer token rather than a wrong issuer being accepted).
+        from authentik.providers.oauth2.models import OAuth2Provider
+
+        http_req = request.http_request
+        pwa = OAuth2Provider.objects.filter(client_id="beekeepingit-pwa").first()
+        if not http_req or not pwa:
+            return {}
+        return {
+            "iss": pwa.get_issuer(http_req),
+            "aud": ["beekeepingit-admin", "beekeepingit-pwa"],
+        }
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider-beekeepingit-admin
+    identifiers: { name: beekeepingit-admin }
+    attrs:
+      name: beekeepingit-admin
+      client_type: public
+      client_id: beekeepingit-admin
+      authorization_flow:
+        !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # Same shared signing key as the PWA — LOAD-BEARING, not just convenience: the iss
+      # override makes admin tokens claim the beekeepingit issuer, and they only verify because
+      # this provider signs with the key the beekeepingit discovery/JWKS advertises. Giving the
+      # admin provider its own cert would silently break admin login (401) — keep them shared
+      # (oidc-integration.md §8 watch-list).
+      signing_key:
+        !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      sub_mode: user_upn
+      issuer_mode: per_provider
+      # MUST stay true: the access token the services read is built from the id_token's
+      # claims, so the iss/aud override only reaches it when claims are included.
+      include_claims_in_id_token: true
+      access_code_validity: minutes=1
+      access_token_validity: minutes=15
+      # Shorter than the PWA's 30d: the admin app is ONLINE-ONLY (NFR-ROL-2) and renews via a
+      # silent iframe (it doesn't request offline_access, so no refresh token is issued today),
+      # but a privileged admin session shouldn't carry a 30-day offline credential if that ever
+      # changes — keep the refresh window tight (security review, #456).
+      refresh_token_validity: hours=8
+      # Explicit grant types — Authentik 2026.5.x defaults to [] (no grants). Admin app uses
+      # auth-code + PKCE; refresh_token kept for parity (admin app renews via silent iframe).
+      grant_types: [authorization_code, refresh_token]
+      # Admin host by convention mirrors the PWA's app host: admin.beekeepingit.local:8443 in
+      # dev, {{ .Values.global.adminOrigin }} per environment. Same three-entry shape as the
+      # PWA: localhost for Vite dev, a host regex, and a STRICT bare-origin so Authentik's
+      # redirect_uris-derived CORS allows the admin origin (an Origin has no path, so the
+      # `…/.*` regex never matches it).
+      redirect_uris:
+        - { matching_mode: regex, url: "http://localhost:.*" }
+        - { matching_mode: regex, url: '{{ .Values.global.adminOrigin | replace "." "\\." }}/.*' }
+        - { matching_mode: strict, url: "{{ .Values.global.adminOrigin }}" }
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+          ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+          ]
+        # Same custom real-email_verified mapping the PWA uses (#361, NFR-SEC-1) — the admin
+        # app requests the `email` scope, so it must get the genuine verification state too.
+        - !KeyOf scope-email-verified
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-offline_access],
+          ]
+        # Issuer + audience alignment (defined above) — makes admin tokens land on the
+        # beekeepingit issuer with beekeepingit-pwa in aud, so the services accept them.
+        - !KeyOf scope-admin-audience
+  # The admin provider needs its OWN primary application: the interactive authorize flow
+  # resolves the application via `provider.application` (the PRIMARY OneToOne). Its own
+  # per_provider issuer (.../application/o/beekeepingit-admin/) is never validated by anyone
+  # — the admin app discovers from the beekeepingit issuer and the token's iss is overridden
+  # to match it — so a second application slug here breaks nothing.
+  - model: authentik_core.application
+    id: app-beekeepingit-admin
+    identifiers: { slug: beekeepingit-admin }
+    attrs:
+      {
+        name: BeekeepingIT Admin,
+        slug: beekeepingit-admin,
+        provider: !KeyOf provider-beekeepingit-admin,
+      }
+
   # --- White-label the login as BeekeepingIT (not authentik) so end users never see the
   # IdP's branding. Applied live via the API during #193 login re-validation; recorded here
   # so a fresh deploy matches. ---

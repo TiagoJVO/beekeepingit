@@ -20,6 +20,17 @@ global:
   # normally omit the port (standard 443 via a real LoadBalancer/Ingress).
   appOrigin: https://app.beekeepingit.local:8443
 
+  # Browser-facing origin of the React Admin App (scheme + host + port, no trailing
+  # slash) — the counterpart of appOrigin for the `beekeepingit-admin` OAuth2 client
+  # (#456, NFR-ROL-2). charts/authentik's blueprint templates the admin provider's
+  # redirect_uris/CORS-allowed-origins from it, so it must match wherever the admin app
+  # is actually served or login fails with a redirect_uri mismatch (same D-26 lesson as
+  # appOrigin). Dev value is the by-convention admin host mirroring appHost; the admin
+  # app is not yet gateway-served (local Vite dev uses http://localhost, covered by the
+  # blueprint's localhost redirect entry). Override per environment when the admin app is
+  # deployed there.
+  adminOrigin: https://admin.beekeepingit.local:8443
+
   # Resource-request/limit presets every subchart should reference via
   # `.Values.global.resources.<tier>` instead of hardcoding numbers, so sizing is
   # tuned in one place per environment.

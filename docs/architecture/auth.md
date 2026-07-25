@@ -110,6 +110,10 @@ no provider secrets live in the repo (NFR-SEC, EPIC-14).
 
 The provider client id the services expect is **`beekeepingit-pwa`** — Authentik's default `aud`
 is the client id, so `OIDC_AUDIENCE=beekeepingit-pwa` ([oidc-integration.md §4](oidc-integration.md#4-subject--audience--the-two-claim-decisions)).
+The **`beekeepingit-admin`** client is provisioned as its own provider/application (#456); a
+claim-override scope mapping rewrites its tokens' `iss`/`aud` to the same beekeepingit issuer +
+`beekeepingit-pwa` audience, so the services accept admin tokens **without** any per-client change
+([oidc-integration.md §3.1](oidc-integration.md#3-provider-authentik-application--oauth2-provider)).
 
 **Domain services are OAuth2 _resource servers_, not login clients** — they **validate** bearer
 tokens (§4) and never initiate a login. A **confidential service-account client** would be introduced

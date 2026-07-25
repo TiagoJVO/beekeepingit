@@ -48,6 +48,51 @@ so a separate origin is free of cost here.
   contract above is unchanged — enrollment is IdP-side flow config.
 - **`platform-operator`** — an Authentik **group** (ops-only marker, **not** an app role); the app authZ path never reads it.
 
+### 3.1 Admin app client (`beekeepingit-admin`, #456 — ADDITIVE, the pwa values above are frozen)
+
+The **React Admin App** ([auth.md §3.2](auth.md), NFR-ROL-2) authenticates as its **own** public
+client **`beekeepingit-admin`** — **public**, **Authorization Code + PKCE (S256)**, **RS256**,
+same authorization/invalidation flows, shared signing key, `sub_mode: user_upn`,
+`issuer_mode: per_provider`, `include_claims_in_id_token: true`, and scope mappings
+(openid/profile/offline_access + the real-`email_verified` mapping) as the pwa. It is a
+**separate `oauth2provider` on its own `application` (slug `beekeepingit-admin`)** — required
+because the interactive authorize flow resolves the application via the provider's **primary**
+relation (a `backchannel` provider has none and gets no issuer; `issuer_mode: global` would move
+_both_ providers off the frozen per-app issuer).
+
+> **Why a distinct client at all** (the override is its _price_, not a technical necessity): a
+> distinct `beekeepingit-admin` client is a **decided requirement** ([auth.md §3.2](auth.md) client
+> table, NFR-ROL-2) — it gives privileged admin logins their own IdP audit/event trail and
+> independent client lifecycle. The one alternative that needs no override — pointing the admin app
+> at the **existing `beekeepingit-pwa`** client id (public clients allow multiple redirect URIs) —
+> is rejected precisely because it collapses that separation. Because Authentik ties the per-provider
+> issuer to the application slug, "separate application" and "one frozen issuer" are inherently in
+> tension; the claim override is what bridges them.
+
+- **Same issuer, same audience — enforced by a claim-override scope mapping, not a services change.**
+  The domain services are pinned to **one** issuer (`OIDC_ISSUER_URL`) and **one** audience
+  (`OIDC_AUDIENCE=beekeepingit-pwa`, checked by containment — §4/§6), and that stays **frozen**.
+  Authentik would otherwise mint admin tokens under the admin app's _own_ per-provider issuer
+  (`…/application/o/beekeepingit-admin/`) with its own client id as `aud`. A scope mapping attached
+  **only** to the admin provider (`scope_name: openid`, always requested) **overrides both claims**:
+  it returns `iss` by calling the **pwa provider's own `get_issuer(request)`** (the same call the
+  services' expected issuer derives from — so the value is byte-identical per environment _and_
+  tracks any future issuer-URL-shape change instead of a hardcoded path silently diverging) and
+  `aud` = `[beekeepingit-admin, beekeepingit-pwa]`. Authentik merges a mapping's returned claims
+  over the token's built-in fields (`IDToken.to_dict` → `id_dict.update(claims)`), and
+  `include_claims_in_id_token: true` carries the override into the **access token** the services
+  read. Net effect: an admin-minted token has `iss` = the beekeepingit issuer and `aud` containing
+  `beekeepingit-pwa`, so the services accept it **unchanged**. The admin client (oidc-client-ts)
+  does not validate the id_token's `iss`/`aud`, so the override is transparent to it; the strict
+  validator is `go-oidc` in the services (§6), which this satisfies via the **shared signing key**
+  (LOAD-BEARING: the admin token verifies only because it is signed with the key the beekeepingit
+  discovery/JWKS advertises — the two providers' signing keys must **stay shared**, per §8).
+- **Redirect URIs** — `http://localhost:.*` (regex, Vite dev), `https://admin\.beekeepingit\.local:8443/.*`
+  (regex), **and** `https://admin.beekeepingit.local:8443` (**strict**, for the redirect-URIs-derived
+  CORS origin — same reason as the pwa's strict entry). The admin host is
+  `admin.beekeepingit.local:8443` by convention (mirrors `app.beekeepingit.local:8443`), templated
+  from `global.adminOrigin`.
+
 ## 4. Subject & audience — the two claim decisions
 
 - **`sub` → `sub_mode: user_upn`.** Each user's `attributes.upn` holds an **app-assigned UUID**;
@@ -59,7 +104,11 @@ so a separate origin is free of cost here.
   `upn` per user at creation (an expression policy on its `user_write` binding, fail closed: no
   account is created without one — [auth.md §8.11](auth.md)).
 - **`aud` → services expect `beekeepingit-pwa`.** Authentik's default `aud` is the client id, so
-  set **`OIDC_AUDIENCE=beekeepingit-pwa`** (no custom audience mapper). A stale value = silent 401s.
+  set **`OIDC_AUDIENCE=beekeepingit-pwa`** (no custom audience mapper for the pwa). A stale value =
+  silent 401s. The **admin client** (`beekeepingit-admin`, §3.1) is the one exception that needs an
+  explicit audience: its override scope mapping adds `beekeepingit-pwa` to the admin token's `aud`
+  (and rewrites `iss` to the beekeepingit issuer) so services accept it **without** changing
+  `OIDC_AUDIENCE` or `OIDC_ISSUER_URL`.
 
 ## 5. Claims
 
@@ -146,7 +195,11 @@ optional.
   declares the self-service **enrollment flow** `beekeepingit-enrollment` (prompts + length-only
   password policy, upn-assigning `user_write`, the reused email/stamp stages, the default
   user-login stage) and links it from the default identification stage's `enrollment_flow` —
-  see [auth.md §8.11](auth.md).
+  see [auth.md §8.11](auth.md). Since #456 it also declares the **admin app client**
+  (`beekeepingit-admin` provider + its own `beekeepingit-admin` application) and a claim-override
+  scope mapping that rewrites the admin token's `iss`/`aud` to the beekeepingit issuer +
+  `beekeepingit-pwa` audience (§3.1) — so admin tokens are accepted by the single-issuer,
+  single-audience services with no services change.
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
@@ -179,7 +232,18 @@ optional.
   the prompt serializer admitting only declared fields plus `user_write`'s `groups`/`pk` deny
   and unknown-key discard are the enrollment write-safety boundary (re-verify on bump, the #170
   shape); and identification resolves duplicate emails first-match (accounts registered here
-  always have a unique username to identify by — re-check if `user_fields` ever changes).
+  always have a unique username to identify by — re-check if `user_fields` ever changes). The
+  **admin client's `iss`/`aud` override (#456, §3.1)** rides two 2026.5.4 internals: a scope
+  mapping's returned claims are merged **over** the token's built-in fields (`IDToken.to_dict`'s
+  `id_dict.update(claims)`, no reserved-claim guard) and `get_claims` only evaluates mappings whose
+  `scope_name` is in the requested scopes (the override rides `openid`). A bump that adds a
+  reserved-claim guard, stops overriding `iss`/`aud` from claims, or changes the scope-gating would
+  break admin-token acceptance (the services would see the admin app's own issuer/audience) — the
+  helm-e2e admin login is the live pin. It also makes the **shared signing key load-bearing**: the
+  admin provider signs with the same `authentik Self-signed Certificate` as the pwa, so its
+  forged-issuer token validates against the JWKS the beekeepingit discovery advertises — giving the
+  admin provider its own signing cert (a routine-looking ops change) would silently 401 every admin
+  login. Keep the two providers' `signing_key` shared.
 - **CI** — `helm-e2e`: timeout 20→30m, install `--timeout` →15m, apply the Authentik `HelmRelease`
   - `rollout status` before `helm test`; `helm test` hook curls `/-/health/ready/`. `helm-ci`: swap
     the `codecentric` repo add for the `authentik` repo where a lint/template needs it.

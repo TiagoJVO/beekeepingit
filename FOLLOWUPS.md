@@ -7,15 +7,26 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `feat/admin-org-management` (#73 — admin org view/edit)
+## `feat/authentik-admin-oidc-client` (#456 — admin OIDC client in the blueprint)
 
-- **CORS: expose `ETag` for the cross-origin admin app** — the org-management screen's
-  `If-Match` optimistic concurrency (FR-TEN-2) needs the API to send
-  `Access-Control-Expose-Headers: ETag`, which no service/gateway config does yet. #73 ships a
-  client fail-safe (a null ETag blocks the save with a clear message — no silent overwrite), so
-  this is **not a merge blocker for #73**, but the edit feature is unusable cross-origin until
-  it lands. Promoted to [#449](https://github.com/TiagoJVO/beekeepingit/issues/449). _Status:
-  tracked in #449 (infra/services), not owed by this PR._
+Post-merge hardening (NOT merge blockers — the blueprint provisioning is complete and the
+`beekeepingit-admin` login/aud/iss is pinned by the helm-e2e admin-login gate):
+
+- **Assert the admin token's claim SHAPE in e2e, not just "login succeeds"** — the `iss`/`aud`
+  override rides version-sensitive Authentik internals (oidc-integration.md §8 watch-list). The
+  helm-e2e / admin login e2e should assert the minted token's `iss` == the beekeepingit issuer and
+  `aud` == `[beekeepingit-admin, beekeepingit-pwa]`, so an Authentik bump that adds a reserved-claim
+  guard or starts enforcing `azp`-with-multi-`aud` fails loudly in CI instead of as a silent prod 401. Owner: WS-C/e2e. (security review, #456.)
+- **Guard which providers may carry `scope-admin-audience`** — any provider that attaches the
+  override mapping inherits acceptance by the domain services. Consider a lightweight blueprint/CI
+  assertion that ONLY `provider-beekeepingit-admin` carries it, so a future PR can't silently widen
+  the set. (security review, #456.)
+- **Admin app deployment to staging/prod** — when the admin app is actually served behind the
+  gateway there (it's local-Vite-only in dev today), add a gateway `adminHost` route and override
+  `global.adminOrigin` in `environments/staging.yaml`/`prod.yaml` (base default is the dev
+  `admin.beekeepingit.local:8443`; the blueprint's `http://localhost:.*` redirect entry is
+  dev-convenience and belongs to the EPIC-14 hardened-blueprint variant, not prod). Owner: admin
+  deploy story / EPIC-14.
 
 ## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
 
