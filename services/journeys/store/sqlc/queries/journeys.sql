@@ -6,14 +6,14 @@
 INSERT INTO journeys.journeys
     (id, organization_id, name, main_activity_type, status, default_attributes, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, organization_id, name, main_activity_type, status, default_attributes,
-          created_at, updated_at, recorded_at, deleted_at;
+RETURNING id, organization_id, name, main_activity_type, status,
+          created_at, updated_at, recorded_at, deleted_at, default_attributes;
 
 -- name: GetJourney :one
 -- Org-scoped single-row read (never a client-supplied organization_id —
 -- api/common.go's requireOrg pattern, mirrored from activities).
-SELECT id, organization_id, name, main_activity_type, status, default_attributes,
-       created_at, updated_at, recorded_at, deleted_at
+SELECT id, organization_id, name, main_activity_type, status,
+       created_at, updated_at, recorded_at, deleted_at, default_attributes
 FROM journeys.journeys
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 
@@ -22,8 +22,8 @@ WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL;
 -- the REST update/delete transaction and the sync-apply LWW compare — no
 -- deleted_at filter, callers explicitly check the returned row's deleted_at
 -- (mirrors activities' GetActivityForUpdate).
-SELECT id, organization_id, name, main_activity_type, status, default_attributes,
-       created_at, updated_at, recorded_at, deleted_at
+SELECT id, organization_id, name, main_activity_type, status,
+       created_at, updated_at, recorded_at, deleted_at, default_attributes
 FROM journeys.journeys
 WHERE organization_id = $1 AND id = $2
 FOR UPDATE;
@@ -32,8 +32,8 @@ FOR UPDATE;
 -- Org-wide, live rows, newest first (#45's minimal list screen; #47 adds
 -- filters later) — keyset-paginated on (created_at, id) since created_at is
 -- not unique. Pass a null cursor pair for the first page.
-SELECT id, organization_id, name, main_activity_type, status, default_attributes,
-       created_at, updated_at, recorded_at, deleted_at
+SELECT id, organization_id, name, main_activity_type, status,
+       created_at, updated_at, recorded_at, deleted_at, default_attributes
 FROM journeys.journeys
 WHERE organization_id = $1
   AND deleted_at IS NULL
@@ -54,8 +54,8 @@ LIMIT $2;
 UPDATE journeys.journeys
 SET name = $3, main_activity_type = $4, status = $5, default_attributes = $6, updated_at = $7, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, main_activity_type, status, default_attributes,
-          created_at, updated_at, recorded_at, deleted_at;
+RETURNING id, organization_id, name, main_activity_type, status,
+          created_at, updated_at, recorded_at, deleted_at, default_attributes;
 
 -- name: UpdateJourneySync :exec
 -- Sync-apply put/patch/delete: sets every mutable column, INCLUDING
