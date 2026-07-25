@@ -45,3 +45,69 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 	)
 	return i, err
 }
+
+const getOrganizationForUpdate = `-- name: GetOrganizationForUpdate :one
+SELECT id, name, address, created_by, created_at, updated_at
+FROM organizations.organizations
+WHERE id = $1
+FOR UPDATE
+`
+
+// Row-locking read for the PATCH path (#289): SELECT ... FOR UPDATE so the
+// If-Match version check and the subsequent UpdateOrganization run atomically
+// against a concurrent writer. A second PATCH blocks here until the first
+// commits, then observes the bumped updated_at, so its stale If-Match is
+// rejected with 409 rather than silently clobbering (optimistic concurrency,
+// FR-TEN-2). Mirrors apiaries' GetApiaryForUpdate.
+func (q *Queries) GetOrganizationForUpdate(ctx context.Context, id pgtype.UUID) (OrganizationsOrganization, error) {
+	row := q.db.QueryRow(ctx, getOrganizationForUpdate, id)
+	var i OrganizationsOrganization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Address,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateOrganization = `-- name: UpdateOrganization :one
+UPDATE organizations.organizations
+SET name = $2,
+    address = $3,
+    updated_at = $4
+WHERE id = $1
+RETURNING id, name, address, created_by, created_at, updated_at
+`
+
+type UpdateOrganizationParams struct {
+	ID        pgtype.UUID        `json:"id"`
+	Name      string             `json:"name"`
+	Address   string             `json:"address"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Applies an admin's org-detail edit (PATCH /organizations/{orgId}, #289,
+// FR-ONB-2). Sets every mutable column plus updated_at (the LWW/ETag version
+// stamp, data-model.md §4.3) explicitly. Scoped by PK; the handler has already
+// asserted the caller is an admin of exactly this org (ADR-0002, NFR-ROL-1).
+func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (OrganizationsOrganization, error) {
+	row := q.db.QueryRow(ctx, updateOrganization,
+		arg.ID,
+		arg.Name,
+		arg.Address,
+		arg.UpdatedAt,
+	)
+	var i OrganizationsOrganization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Address,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

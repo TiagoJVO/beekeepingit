@@ -55,6 +55,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -305,6 +306,7 @@ func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 	r.Post("/organizations", createOrganization(pool, q, resolver))
 	r.Get("/organizations/me", getMyOrganization(pool, q, resolver))
 	r.Get("/organizations/{orgId}", getOrganization(q, resolver))
+	r.Patch("/organizations/{orgId}", updateOrganization(pool, q, resolver))
 	registerMemberAndInvitationRoutes(r, pool, q, resolver)
 	return r
 }
@@ -571,6 +573,10 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 		}
 
 		w.Header().Set("Location", "/v1/organizations/"+uuidString(org.ID))
+		// ETag is the row's updated_at version stamp (etagFor) -- the contract
+		// declares it on this 201, and it's the value a client echoes back in
+		// If-Match on a later PATCH (#289 optimistic concurrency, FR-TEN-2).
+		w.Header().Set("ETag", etagFor(org.UpdatedAt))
 		// The creator is always admin (D-3) -- no extra lookup needed for the
 		// role this response reports.
 		writeJSON(w, r, http.StatusCreated, toOrganizationResponse(org, "admin"))
@@ -646,6 +652,10 @@ func getMyOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserReso
 			problem.Write(w, r, problem.Internal())
 			return
 		}
+		// ETag version stamp so the client can round-trip it back in If-Match
+		// on a PATCH (#289, FR-TEN-2) -- same etagFor derivation the PATCH
+		// handler compares against.
+		w.Header().Set("ETag", etagFor(row.UpdatedAt))
 		writeJSON(w, r, http.StatusOK, toOrganizationResponse(row, member.Role))
 	}
 }
@@ -676,8 +686,197 @@ func getOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc
 			problem.Write(w, r, problem.Internal())
 			return
 		}
+		w.Header().Set("ETag", etagFor(row.UpdatedAt))
 		writeJSON(w, r, http.StatusOK, toOrganizationResponse(row, member.Role))
 	}
+}
+
+// errStaleIfMatch signals, from inside updateOrganization's transaction, that
+// the request's If-Match header did not match the org's current version -- the
+// closure returns it so the surrounding handler maps it to a 409 (and the tx
+// rolls back, leaving the org unchanged) rather than proceeding with the write.
+var errStaleIfMatch = errors.New("api: stale If-Match on organization update")
+
+// updateOrganizationRequest is the PATCH /organizations/{orgId} request body
+// (OrganizationUpdate schema): name and/or address. Both are pointers so an
+// absent key is distinguishable from a supplied one, and presence is tracked
+// separately (via the raw field map) so an explicit JSON null on address --
+// which the schema's `[string, "null"]` type allows, meaning "clear it" --
+// isn't confused with "leave unchanged". name is a non-nullable string
+// (schema `type: string`), so a null there is rejected.
+type updateOrganizationRequest struct {
+	Name    *string `json:"name"`
+	Address *string `json:"address"`
+}
+
+// updateOrganization applies an admin's edit of their own org's mutable
+// fields (PATCH /organizations/{orgId}, #289, FR-ONB-2). It is admin-only and
+// org-scoped: requireOrgAdmin asserts {orgId} matches the caller's own
+// resolved org (404 otherwise -- ADR-0002, the path never widens scope) and
+// that the caller is that org's admin (403 otherwise -- auth.md §5.3,
+// NFR-ROL-1). Invalid payloads are rejected before any write (422, NFR-SEC-1).
+// Optimistic concurrency uses the If-Match / ETag version stamp: a stale value
+// is a 409 (FR-TEN-2). The applied change is recorded in organizations.audit_log
+// with actor + timestamp, in the same transaction as the domain write
+// (FR-HIS-1, #165, history.md §4).
+func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		member, ok := requireOrgAdmin(w, r, q, resolver)
+		if !ok {
+			return
+		}
+
+		// Decode to a raw field map first so key PRESENCE (not just non-nil
+		// value) is observable: OrganizationUpdate has minProperties:1, and
+		// address distinguishes "absent" (leave unchanged) from explicit null
+		// (clear) -- neither of which a plain struct decode alone can tell
+		// apart from a zero value.
+		var fields map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
+			problem.Write(w, r, problem.ValidationFailed("request body must be valid JSON"))
+			return
+		}
+		var body updateOrganizationRequest
+		if err := json.Unmarshal(rawFieldsToObject(fields), &body); err != nil {
+			problem.Write(w, r, problem.ValidationFailed("request body must be valid JSON"))
+			return
+		}
+		_, nameSet := fields["name"]
+		_, addressSet := fields["address"]
+
+		if fieldErrs := validateOrganizationUpdate(body, nameSet, addressSet); len(fieldErrs) > 0 {
+			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
+			return
+		}
+
+		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		var updated sqlcgen.OrganizationsOrganization
+		txErr := withTx(r.Context(), pool, func(tx pgx.Tx) error {
+			txq := q.WithTx(tx)
+			// Row-locking read (FOR UPDATE) so the If-Match check and the write
+			// are atomic against a concurrent PATCH (optimistic concurrency,
+			// FR-TEN-2). member.OrgID is guaranteed to exist -- the caller's
+			// active membership references it -- so pgx.ErrNoRows here is a
+			// genuine fault, not a business 404.
+			current, err := txq.GetOrganizationForUpdate(r.Context(), member.OrgID)
+			if err != nil {
+				return fmt.Errorf("get organization for update: %w", err)
+			}
+
+			if !ifMatchOK(r, etagFor(current.UpdatedAt)) {
+				return errStaleIfMatch
+			}
+
+			// Compute the desired row from the current one, applying only the
+			// fields this PATCH actually carried (matching apiaries' full-row
+			// "want" pattern). name is validated non-empty above; address null
+			// clears to '' (the column is NOT NULL DEFAULT '').
+			wantName := current.Name
+			if nameSet {
+				wantName = strings.TrimSpace(*body.Name)
+			}
+			wantAddress := current.Address
+			if addressSet {
+				if body.Address == nil {
+					wantAddress = ""
+				} else {
+					wantAddress = strings.TrimSpace(*body.Address)
+				}
+			}
+
+			updated, err = txq.UpdateOrganization(r.Context(), sqlcgen.UpdateOrganizationParams{
+				ID:        member.OrgID,
+				Name:      wantName,
+				Address:   wantAddress,
+				UpdatedAt: now,
+			})
+			if err != nil {
+				return fmt.Errorf("update organization: %w", err)
+			}
+
+			// History (FR-HIS-1, #165): the org's update row, in the same D-3
+			// transaction as the domain write. The actor is the admin making
+			// the change; occurred_at is server-now (an admin-app edit has no
+			// offline device timestamp).
+			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeOrganization, member.OrgID, member.UserID, now,
+				history.ChangeUpdate, organizationFields(current), organizationFields(updated)); err != nil {
+				return fmt.Errorf("write organization audit log: %w", err)
+			}
+			return nil
+		})
+		if errors.Is(txErr, errStaleIfMatch) {
+			problem.Write(w, r, problem.Conflict("If-Match does not match the current version"))
+			return
+		}
+		if txErr != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "update organization failed", slog.Any("error", txErr))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		w.Header().Set("ETag", etagFor(updated.UpdatedAt))
+		writeJSON(w, r, http.StatusOK, toOrganizationResponse(updated, member.Role))
+	}
+}
+
+// validateOrganizationUpdate enforces the OrganizationUpdate schema server-side
+// (NFR-SEC-1): at least one field present (minProperties:1); name, when
+// present, a non-null non-empty string of at most maxOrgNameLength runes;
+// address, when present, either null (clear) or at most maxOrgAddressLength
+// runes. Rune counts (not byte lengths) match createOrganization's own limits
+// so PT diacritics aren't penalized.
+func validateOrganizationUpdate(body updateOrganizationRequest, nameSet, addressSet bool) []problem.FieldError {
+	var fieldErrs []problem.FieldError
+	if !nameSet && !addressSet {
+		fieldErrs = append(fieldErrs, problem.FieldError{Field: "(body)", Code: "required", Message: "request must change at least one field"})
+	}
+	if nameSet {
+		switch {
+		case body.Name == nil || strings.TrimSpace(*body.Name) == "":
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "name", Code: "required", Message: "name must not be empty"})
+		case utf8.RuneCountInString(strings.TrimSpace(*body.Name)) > maxOrgNameLength:
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "name", Code: "too_long", Message: "name must be at most 200 characters"})
+		}
+	}
+	if addressSet && body.Address != nil {
+		if utf8.RuneCountInString(strings.TrimSpace(*body.Address)) > maxOrgAddressLength {
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "address", Code: "too_long", Message: "address must be at most 500 characters"})
+		}
+	}
+	return fieldErrs
+}
+
+// rawFieldsToObject re-marshals an already-decoded top-level field map back to
+// a JSON object so it can be unmarshaled into a typed struct -- the small
+// two-stage decode (raw map for key presence, struct for typed values) the
+// PATCH handler uses, mirroring apiaries' decodeFields. Marshaling a
+// map[string]json.RawMessage never fails (the values are already valid JSON),
+// so the error is discarded.
+func rawFieldsToObject(fields map[string]json.RawMessage) []byte {
+	b, _ := json.Marshal(fields)
+	return b
+}
+
+// etagFor derives a deterministic, opaque ETag from a row's updated_at -- the
+// row's version stamp (data-model.md §4.3), so it changes exactly when the
+// row's mutable content changes and is stable across reads of the same
+// version. Quoted per RFC 9110 §8.8.3. Mirrors apiaries' etagFor so the two
+// services present ETags identically.
+func etagFor(updatedAt pgtype.Timestamptz) string {
+	return fmt.Sprintf("%q", strconv.FormatInt(updatedAt.Time.UnixNano(), 36))
+}
+
+// ifMatchOK reports whether the request's If-Match header (if any) matches
+// currentETag -- optimistic concurrency for PATCH (IfMatchHeader,
+// contracts/openapi/_shared/components.openapi.yaml). An absent header is
+// treated as OK (If-Match is optional per the contract); a present header must
+// match exactly, or be the wildcard "*". Mirrors apiaries' ifMatchOK.
+func ifMatchOK(r *http.Request, currentETag string) bool {
+	want := r.Header.Get("If-Match")
+	if want == "" || want == "*" {
+		return true
+	}
+	return want == currentETag
 }
 
 // writeJSON and uuidString are defined once in common.go and shared with
