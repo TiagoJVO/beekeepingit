@@ -112,7 +112,7 @@
   "syncStatusSyncing": "A sincronizar…",
   "syncStatusWaitingForSignal": "A aguardar melhor sinal",
   "syncStatusError": "Erro de sincronização",
-  "offlineBannerErrorMessage": "Algumas alterações não foram sincronizadas e o PowerSync está a tentar novamente.",
+  "offlineBannerErrorMessage": "Algumas alterações ainda não foram sincronizadas — a tentar novamente.",
   "syncSupersededNotice": "Uma das suas alterações offline foi substituída por uma edição mais recente.",
   "syncRejectedNotice": "Uma das suas alterações foi rejeitada e precisa de correção.",
   "syncNeedsFixTitle": "Alterações a corrigir",
