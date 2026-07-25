@@ -1068,6 +1068,18 @@ class AppLocalizationsPt extends AppLocalizations {
   String get journeyPickerShowHiddenToggle => 'Mostrar jornadas ocultas';
 
   @override
+  String get journeyPickerShowUnplannedToggle =>
+      'Mostrar jornadas que não planearam este apiário';
+
+  @override
+  String journeyPickerUnplannedOptionSemanticLabel(String name) {
+    return '$name, irá adicionar este apiário ao plano';
+  }
+
+  @override
+  String get journeyPickerAddsApiaryBadge => 'Adiciona apiário';
+
+  @override
   String journeyPickerClosedOptionSemanticLabel(String name) {
     return '$name, jornada fechada';
   }

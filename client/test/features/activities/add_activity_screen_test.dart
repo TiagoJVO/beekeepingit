@@ -162,19 +162,47 @@ class _CreatedJourney {
 /// candidate list, same as journey_form_screen_test.dart's
 /// `_FakeJourneysRepository` fakes create/update/close/delete without
 /// re-deriving any real persistence.
+class _AddedPlanApiary {
+  _AddedPlanApiary(this.journeyId, this.apiaryId);
+  final String journeyId;
+  final String apiaryId;
+}
+
 class _FakeJourneysRepository extends JourneysRepository {
   _FakeJourneysRepository({
     this.matches = const [],
+    this.unplannedMatches = const [],
     this.throwOnCreate = false,
+    this.throwOnAddApiaryToPlan = false,
     Map<String, Journey>? journeysById,
-  }) : journeysById = journeysById ?? {for (final j in matches) j.id: j},
+  }) : journeysById =
+           journeysById ??
+           {
+             for (final j in [...matches, ...unplannedMatches]) j.id: j,
+           },
        super(_NoopLocalStore());
 
   final List<Journey> matches;
+
+  /// The canned relaxed candidate set (#440, D-31) [watchTypeMatchingUnplanned]
+  /// returns — open, type-matching journeys that did NOT plan this apiary,
+  /// revealed behind the picker's "show unplanned" toggle. The real SQL-level
+  /// filtering is covered by journeys_repository_test.dart; this fake only
+  /// drives the picker/save behavior given a fixed list.
+  final List<Journey> unplannedMatches;
   final bool throwOnCreate;
+
+  /// #440/D-31: drives the "plan-grow fails BEFORE the activity is written"
+  /// ordering test — a throwing [addApiaryToPlan] must abort `_save` before
+  /// any activity `create()` runs (no duplicate-activity retry hazard).
+  final bool throwOnAddApiaryToPlan;
   final Map<String, Journey> journeysById;
 
   final List<_CreatedJourney> created = [];
+
+  /// Records [addApiaryToPlan] calls (#440, D-31) so the plan-growth-on-save
+  /// path can be asserted without a real backend.
+  final List<_AddedPlanApiary> addedPlanApiaries = [];
 
   @override
   Stream<List<Journey>> watchMatching({
@@ -182,6 +210,19 @@ class _FakeJourneysRepository extends JourneysRepository {
     required String activityType,
     required String? organizationId,
   }) => Stream.value(matches);
+
+  @override
+  Stream<List<Journey>> watchTypeMatchingUnplanned({
+    required String apiaryId,
+    required String activityType,
+    required String? organizationId,
+  }) => Stream.value(unplannedMatches);
+
+  @override
+  Future<void> addApiaryToPlan(String journeyId, String apiaryId) async {
+    if (throwOnAddApiaryToPlan) throw Exception('boom-add-plan');
+    addedPlanApiaries.add(_AddedPlanApiary(journeyId, apiaryId));
+  }
 
   @override
   Future<Journey?> getById(String id) async => journeysById[id];
@@ -1319,6 +1360,202 @@ void main() {
 
         expect(repo.created, hasLength(1));
         expect(repo.created.single.journeyId, 'j2');
+      },
+    );
+
+    testWidgets(
+      'unplanned journeys (#440, D-31): hidden by default, revealed by the '
+      '"show unplanned" toggle; picking one attaches it AND grows its plan '
+      'with the current apiary on save',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        // No planned matches at all (auto-match miss), but one open,
+        // type-matching journey that did NOT plan this apiary.
+        final journeysRepo = _FakeJourneysRepository(
+          unplannedMatches: [otherOpenJourney],
+        );
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Auto-match miss: nothing attached by default.
+        expect(find.text('No journey attached'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // The unplanned journey is hidden until its own toggle is on.
+        expect(find.byKey(const Key('journey-picker-option-j2')), findsNothing);
+        expect(
+          find.byKey(const Key('journey-picker-show-unplanned-toggle')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('journey-picker-show-unplanned-toggle')),
+        );
+        await tester.pumpAndSettle();
+
+        // The revealed row carries the D-31 disclosure badge (a11y: picking
+        // it also adds the apiary to the plan) — a planned match never does.
+        expect(find.text('Adds apiary'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Second Harvest Round'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Activity attached to the journey (D-21)...
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.journeyId, 'j2');
+        // ...AND the current apiary was added to that journey's plan (D-31).
+        expect(journeysRepo.addedPlanApiaries, hasLength(1));
+        expect(journeysRepo.addedPlanApiaries.single.journeyId, 'j2');
+        expect(journeysRepo.addedPlanApiaries.single.apiaryId, 'a1');
+      },
+    );
+
+    testWidgets(
+      'picking an ordinary planned match does NOT grow the plan (#440, '
+      'D-31: plan-growth is scoped to the relaxed "unplanned" pick)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(matches: [openJourney]);
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Auto-selected planned match.
+        expect(find.text('Spring Harvest Round'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created.single.journeyId, 'j1');
+        expect(journeysRepo.addedPlanApiaries, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'plan-grow failure aborts BEFORE the activity is written (#440, D-31 '
+      'ordering): no duplicate-activity hazard, no visited-without-planned '
+      'state',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(
+          unplannedMatches: [otherOpenJourney],
+          throwOnAddApiaryToPlan: true,
+        );
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-show-unplanned-toggle')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // The plan-grow threw first, so NO activity was ever created (a retry
+        // can't produce a duplicate) and no plan row was recorded — the form
+        // stays open on the error rather than navigating away.
+        expect(repo.created, isEmpty);
+        expect(journeysRepo.addedPlanApiaries, isEmpty);
+        expect(saveButton, findsOneWidget);
       },
     );
 

@@ -130,6 +130,39 @@ class FakeLocalStore implements LocalStoreEngine {
           .where((p) => matchingJourneyIds.contains(p['journey_id']))
           .toList();
     }
+    // watchTypeMatchingUnplanned's query (#440, D-31) mentions
+    // journey_plan_items only inside a NOT EXISTS subquery (no JOIN) —
+    // detected by that keyword and checked BEFORE the plain
+    // journeyPlanItemsTable branch below (which would otherwise return raw
+    // plan-item rows). Args order matches the query's own:
+    // [organizationId, activityType, status(open), apiaryId].
+    if (normalized.contains('NOT EXISTS')) {
+      final orgId = args[0];
+      final activityType = args[1];
+      final status = args[2];
+      final apiaryId = args[3];
+      final plannedJourneyIds = planRows
+          .where((p) => p['apiary_id'] == apiaryId)
+          .map((p) => p['journey_id'])
+          .toSet();
+      final results =
+          rows
+              .where(
+                (r) =>
+                    r['main_activity_type'] == activityType &&
+                    r['status'] == status &&
+                    (r['organization_id'] == orgId ||
+                        r['organization_id'] == null) &&
+                    !plannedJourneyIds.contains(r['id']),
+              )
+              .toList()
+            ..sort(
+              (a, b) => (b['created_at'] as String).compareTo(
+                a['created_at'] as String,
+              ),
+            );
+      return results;
+    }
     // watchMatching's join query (#46) mentions BOTH tables — check for the
     // JOIN shape first so it doesn't fall into the plain
     // journeyPlanItemsTable branch below (which would return raw plan-item
@@ -160,7 +193,17 @@ class FakeLocalStore implements LocalStoreEngine {
     }
     if (normalized.contains(journeyPlanItemsTable.toUpperCase())) {
       var results = List<Map<String, Object?>>.from(planRows);
-      if (normalized.contains('WHERE JOURNEY_ID = ?')) {
+      // addApiaryToPlan's idempotency pre-check (#440, D-31) filters on BOTH
+      // journey_id AND apiary_id — checked first so it doesn't degrade to the
+      // journey_id-only filter below (which would wrongly report "already
+      // planned" for any other apiary in the same journey).
+      if (normalized.contains('WHERE JOURNEY_ID = ? AND APIARY_ID = ?')) {
+        results = results
+            .where(
+              (r) => r['journey_id'] == args[0] && r['apiary_id'] == args[1],
+            )
+            .toList();
+      } else if (normalized.contains('WHERE JOURNEY_ID = ?')) {
         results = results.where((r) => r['journey_id'] == args[0]).toList();
       }
       results.sort(
@@ -897,6 +940,208 @@ void main() {
         expect(matches, isEmpty);
       },
     );
+  });
+
+  group('JourneysRepository.watchTypeMatchingUnplanned() (#440, D-31)', () {
+    void seedJourney({
+      required String id,
+      required String mainActivityType,
+      String status = journeyStatusOpen,
+      String? organizationId = 'org-a',
+      String createdAt = '2026-06-01T00:00:00Z',
+    }) {
+      store.rows.add({
+        'id': id,
+        'organization_id': organizationId,
+        'name': 'Journey $id',
+        'main_activity_type': mainActivityType,
+        'status': status,
+        'default_attributes': null,
+        'created_at': createdAt,
+        'updated_at': createdAt,
+      });
+    }
+
+    void seedPlanItem(String journeyId, String apiaryId) {
+      store.planRows.add({
+        'id': 'plan-$journeyId-$apiaryId',
+        'journey_id': journeyId,
+        'apiary_id': apiaryId,
+        'created_at': '2026-06-01T00:00:00Z',
+      });
+    }
+
+    test('returns an empty stream when the organization id is null', () async {
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: null,
+          )
+          .first;
+      expect(matches, isEmpty);
+    });
+
+    test('matches an open, type-matching journey whose plan does NOT include '
+        'the apiary', () async {
+      seedJourney(id: 'j1', mainActivityType: 'harvest');
+      seedPlanItem('j1', 'a-other');
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches.map((j) => j.id), ['j1']);
+    });
+
+    test('surfaces a zero-apiary journey (D-30 — empty plan matches no '
+        'apiary, so it always qualifies)', () async {
+      seedJourney(id: 'empty-plan', mainActivityType: 'harvest');
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches.map((j) => j.id), ['empty-plan']);
+    });
+
+    test('EXCLUDES a journey that already plans the apiary (that is '
+        'watchMatching\'s job, not this relaxed query)', () async {
+      seedJourney(id: 'j1', mainActivityType: 'harvest');
+      seedPlanItem('j1', 'a1');
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+
+    test('excludes a journey with a DIFFERENT main activity type', () async {
+      seedJourney(id: 'j1', mainActivityType: 'feeding');
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+
+    test('excludes CLOSED journeys (those stay behind the show-hidden '
+        'toggle, D-21)', () async {
+      seedJourney(
+        id: 'closed-1',
+        mainActivityType: 'harvest',
+        status: journeyStatusClosed,
+      );
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+
+    test('excludes another organization\'s journey (FR-TEN-2)', () async {
+      seedJourney(
+        id: 'foreign',
+        mainActivityType: 'harvest',
+        organizationId: 'org-b',
+      );
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+  });
+
+  group('JourneysRepository.addApiaryToPlan() (#440, D-31)', () {
+    test(
+      'adds the apiary to a journey whose plan did not include it',
+      () async {
+        final id = await repo.create(
+          name: 'Journey',
+          mainActivityType: 'harvest',
+          apiaryIds: const [],
+        );
+
+        await repo.addApiaryToPlan(id, 'a1');
+
+        final journey = await repo.getById(id);
+        expect(journey!.apiaryIds, ['a1']);
+      },
+    );
+
+    test('is idempotent — adding an already-planned apiary inserts no '
+        'duplicate row', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+      expect(store.planRows, hasLength(1));
+
+      await repo.addApiaryToPlan(id, 'a1');
+
+      expect(store.planRows, hasLength(1));
+      final journey = await repo.getById(id);
+      expect(journey!.apiaryIds, ['a1']);
+    });
+
+    test('a repeat call for the same new apiary is also a no-op', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      await repo.addApiaryToPlan(id, 'a1');
+      await repo.addApiaryToPlan(id, 'a1');
+
+      expect(store.planRows.where((r) => r['apiary_id'] == 'a1'), hasLength(1));
+    });
+
+    test('reuses the same plan-item write path — the added apiary shows in '
+        'watchPlanApiariesByJourney (so journey stats recompute)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      await repo.addApiaryToPlan(id, 'a1');
+
+      final planByJourney = await repo
+          .watchPlanApiariesByJourney(organizationId: 'org-a')
+          .first;
+      expect(planByJourney[id], ['a1']);
+    });
   });
 
   group('JourneysRepository.watchPlanApiariesByJourney() (#47, FR-JO-2)', () {

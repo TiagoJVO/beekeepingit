@@ -630,6 +630,21 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 
 ---
 
+## D-31 — Attaching an activity to a journey that didn't plan its apiary adds the apiary to the plan
+
+- **Decision (product owner, 2026-07-24):** the activity form's journey picker can (behind a
+  toggle, distinct from the closed-journey "show hidden" toggle) offer **open journeys whose
+  plan does not include the current apiary**, still filtered to the matching main activity type.
+  Selecting one attaches the activity (`journey_id`, D-21) **and adds the current apiary to that
+  journey's plan** (`journey_plan_items`). From field-testing feedback (#428 Part B, #440).
+- **Rationale / invariant:** keeps "apiaries visited vs planned" coherent — the attached apiary
+  becomes planned+visited (visited is always a subset of planned; feitos/planeados never exceeds
+  100%). Makes zero-apiary journeys (D-30) usable: their plan fills in as activities are logged.
+- **Extends D-21** (which matched only journeys whose plan already includes the apiary).
+  **Touches:** FR-JO-1, FR-JO-4, D-21, D-30, #428, #440, EPIC-17 (#430).
+
+---
+
 ## Open Spikes
 
 - **SP-1** — ✅ **RESOLVED (2026-07-01) → PowerSync** (self-hosted Open Edition). Head-to-head +

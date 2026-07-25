@@ -13,6 +13,46 @@ import 'package:flutter_test/flutter_test.dart';
 /// this file only exercises the arithmetic over already-scoped plain data,
 /// mirroring journey_matching_test.dart's own split.
 void main() {
+  group('computeJourneyStats() — D-31 plan-growth coherence (#440)', () {
+    test('an activity attributed to a journey at an UNPLANNED apiary does not '
+        'count as visited (visited is a subset of planned) — the incoherence '
+        'D-31 fixes', () {
+      // Before D-31: the apiary was visited (an activity links to the
+      // journey there) but was never in the plan, so it must NOT inflate
+      // progress — apiariesVisited only counts planned apiaries.
+      final stats = computeJourneyStats(
+        plannedApiaryIds: const [],
+        visitedApiaryIds: const {'a1'},
+        harvestTotals: const [],
+        activityHivesInvolved: const [null],
+        plannedApiaryHiveCounts: const {},
+      );
+
+      expect(stats.apiariesPlanned, 0);
+      expect(stats.apiariesVisited, 0);
+    });
+
+    test('once D-31 adds the apiary to the plan, that apiary is BOTH planned '
+        'and visited — planned count grows, no visited-without-planned '
+        'inconsistency', () {
+      // After D-31: addApiaryToPlan put a1 into the plan, so the same
+      // attributed activity now makes a1 planned+visited (1/1).
+      final stats = computeJourneyStats(
+        plannedApiaryIds: const ['a1'],
+        visitedApiaryIds: const {'a1'},
+        harvestTotals: const [],
+        activityHivesInvolved: const [null],
+        plannedApiaryHiveCounts: const {},
+      );
+
+      expect(stats.apiariesPlanned, 1);
+      expect(stats.apiariesVisited, 1);
+      expect(stats.apiariesMissing, 0);
+      // The invariant D-31 preserves: visited never exceeds planned.
+      expect(stats.apiariesVisited, lessThanOrEqualTo(stats.apiariesPlanned));
+    });
+  });
+
   group('computeJourneyStats() — empty journey', () {
     test('an empty journey (no plan, no activities) is all zeros with no '
         'divide-by-zero on média alças/colmeia', () {
