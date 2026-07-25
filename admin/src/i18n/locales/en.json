@@ -15,10 +15,33 @@
     "checkingAccess": "Checking your access…"
   },
   "shell": {
-    "welcome": "Welcome, {{name}}",
-    "org": "Organization: {{org}}",
-    "placeholder": "Administrative screens (members, roles, invitations) will appear here.",
+    "signedInAs": "Signed in as {{name}} · {{org}}",
     "roleBadge": "Signed in as admin"
+  },
+  "orgSettings": {
+    "heading": "Organization details",
+    "intro": "Update your organization's name and address. Changes apply to everyone in the organization.",
+    "loading": "Loading your organization…",
+    "fields": {
+      "name": "Organization name",
+      "address": "Address"
+    },
+    "save": "Save changes",
+    "saving": "Saving…",
+    "discard": "Discard changes",
+    "saved": "Organization details saved.",
+    "conflict": {
+      "body": "Someone else changed this organization while you were editing. Reload to get the latest details, then apply your changes again.",
+      "reload": "Reload latest details"
+    },
+    "errors": {
+      "nameRequired": "Organization name is required.",
+      "nameTooLong": "Organization name must be at most {{max}} characters.",
+      "addressTooLong": "Address must be at most {{max}} characters.",
+      "saveFailed": "We could not save your changes. Please try again.",
+      "loadFailed": "We could not load your organization. Please try again.",
+      "versionUnavailable": "We could not confirm the current version of your organization, so we did not save to avoid overwriting someone else's changes. Please reload and try again."
+    }
   },
   "denied": {
     "heading": "Admin access required",

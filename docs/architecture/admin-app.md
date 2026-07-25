@@ -1,11 +1,14 @@
 # Web admin app — architecture (as-built)
 
-> **Status:** As-built for the M7 scaffold ([#72](https://github.com/TiagoJVO/beekeepingit/issues/72)).
-> Covers the app shell, OIDC auth, and the admin-role guard. Administrative screens (members,
-> roles, invitations) land in follow-up M7 stories and extend this doc as they ship.
+> **Status:** As-built for the M7 scaffold ([#72](https://github.com/TiagoJVO/beekeepingit/issues/72))
+> plus organization management ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73)).
+> Covers the app shell, OIDC auth, the admin-role guard, and the first admin screen (org
+> view/edit). Further screens (members, roles, invitations) land in follow-up M7 stories and
+> extend this doc as they ship.
 
-**Requirements:** NFR-ROL-1 (RBAC), NFR-ROL-2 (separate online-only admin app), NFR-SEC-1
-(authenticated/authorized API access), NFR-TST-1 (automated tests), NFR-I18N (EN/PT)
+**Requirements:** NFR-ROL-1 (RBAC), NFR-ROL-2 (separate online-only admin app), FR-ONB-2 (org
+details), FR-TEN-2 (org-scoped ownership + optimistic concurrency), FR-HIS-1 (entity history),
+NFR-SEC-1 (authenticated/authorized API access), NFR-TST-1 (automated tests), NFR-I18N (EN/PT)
 **Decisions:** [D-5](../../requirements/decisions.md#d-5) (React + TS admin, online-only),
 [D-7](../../requirements/decisions.md#d-7) (Authentik behind a provider-agnostic OIDC boundary)
 **Builds on:** [auth.md](auth.md) (§3.2 admin client, §3.4 token, §5.3 roles),
@@ -81,7 +84,49 @@ auth + role-query state to a view — exhaustively unit-tested. `AdminGuard` wir
 (`401`) and non-admin callers (`403`) regardless of anything the client does; the client-side
 guard is a UX layer, not a security boundary.
 
-## 5. i18n & accessibility
+## 5. Organization management (view/edit) — #73
+
+The first administrative screen (`src/components/OrganizationSettings.tsx`, rendered inside the
+admin `AppShell`) lets an admin **view and edit their organization's name and address**
+(NFR-ROL-2, FR-ONB-2). It is deliberately scoped to the caller's **own** org — there is no
+cross-org switcher — and relies on the server to re-enforce admin-only + org-scope (auth.md
+§5.3) regardless of the client.
+
+**Read → edit → write, with optimistic concurrency (FR-TEN-2):**
+
+```text
+GET /v1/organizations/me ──▶ { org, ETag }         (useOrganization query)
+        │  org.id + current name/address prefill the form; ETag is retained
+        ▼
+edit name / address ──▶ PATCH /v1/organizations/{org.id}   If-Match: <ETag>
+        ├─ 200 ▶ cache replaced with fresh record + new ETag; "saved" status
+        ├─ 409 ▶ "someone else changed this — reload" alert + reload button
+        ├─ 422 ▶ field errors mapped back onto the inputs; save blocked
+        └─ network/other ▶ retryable form-level error
+```
+
+- **Why read via `/organizations/me`, write via `/organizations/{orgId}`** — the read resolves
+  the org id from the caller's active membership server-side (never chosen client-side), so the
+  UI cannot target another org; the PATCH path segment is that same resolved id (FR-TEN-2).
+- **ETag / `If-Match`** — the `ETag` from the GET is echoed as `If-Match` on the PATCH; a stale
+  value (concurrent edit) is a `409`, surfaced as a clear reload prompt rather than silently
+  overwriting. On success the query cache is replaced with the returned record **and its new
+  `ETag`**, so an immediate follow-up edit uses the current version — no stale write, no manual
+  refetch.
+- **Validation** — client-side checks (name required, length limits) mirror the server's
+  `OrganizationUpdate` rules for fast feedback and **block the save**; the server remains
+  authoritative and a `422` maps its field errors back onto the offending inputs.
+- **History** — the edit's entity-history row (actor + timestamp) is written **server-side** in
+  the same transaction as the domain write ([#289](https://github.com/TiagoJVO/beekeepingit/issues/289),
+  FR-HIS-1); the admin app relies on it and does not re-implement history.
+
+The API client (`src/api/client.ts`) gained `getWithETag` and `patch` (with `If-Match`) for this
+flow, plus `conflict` (409) and `validation` (422) `ApiError` kinds; the 422 problem body
+(RFC 9457 `errors[]`) is parsed so field errors can be localized. Data-fetching + mutation live
+in the `useOrganization` hook; pure form validation lives in `src/components/organizationForm.ts`
+(unit-tested independently of the widget).
+
+## 6. i18n & accessibility
 
 All user-facing strings are externalized in `src/i18n/locales/{en,pt}.json` (NFR-I18N);
 react-i18next auto-detects the language with English fallback. Screens use semantic
@@ -89,13 +134,13 @@ landmarks/roles (`main`, `role="alert"`, `role="status"`), labelled controls, gl
 44px/56px tap targets (D-18), visible focus outlines, and light/dark theming. `jest-axe`
 asserts the admin shell has no automatically-detectable a11y violations.
 
-## 6. Configuration & secrets
+## 7. Configuration & secrets
 
 All config is `VITE_*` env vars (`admin/.env.example`); a missing required var renders a clear
 **configuration-error** screen instead of a blank page. **No secrets are committed** — the
 public-client + PKCE design means there is no client secret to hold.
 
-## 7. Build & CI
+## 8. Build & CI
 
 `npm run build` (`tsc` typecheck + Vite) emits a static `dist/` bundle, served by nginx via
 `admin/Dockerfile` with security headers (`admin/nginx.conf`; CSP shipped Report-Only for the

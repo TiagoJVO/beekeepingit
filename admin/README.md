@@ -4,7 +4,9 @@ The **web admin app** (`D-5`, `NFR-ROL-2`) — a **React + TypeScript**, **onlin
 (no offline / PWA / service worker) browser app for organization administration: managing
 members, roles and invitations (`auth.md` §5.3). Scaffolded by [#72](https://github.com/TiagoJVO/beekeepingit/issues/72)
 (M7): OIDC login, the admin-role guard, a typed authenticated API client, and a guarded
-landing shell. The actual administrative screens land in follow-up M7 stories.
+landing shell. Its first administrative screen is **organization management** — view/edit the
+org's name and address with `If-Match` optimistic concurrency ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73));
+further screens (members, roles, invitations) land in follow-up M7 stories.
 
 Architecture as-built: [`docs/architecture/admin-app.md`](../docs/architecture/admin-app.md).
 It authenticates against the platform OIDC provider behind the provider-agnostic boundary
@@ -23,8 +25,8 @@ It authenticates against the platform OIDC provider behind the provider-agnostic
 | Tests        | **Vitest** + React Testing Library + jest-axe (a11y)             |
 | Lint/format  | ESLint (flat config, typescript-eslint) + Prettier               |
 
-No CRUD-scaffolding framework (Refine / React-Admin) is pulled in yet — there are no admin
-screens to scaffold at this stage (YAGNI); the option stays open per `tech-stack.md`.
+No CRUD-scaffolding framework (Refine / React-Admin) is pulled in yet — the single
+hand-built org screen does not justify one (YAGNI); the option stays open per `tech-stack.md`.
 
 ## Run it
 

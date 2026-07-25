@@ -143,3 +143,86 @@ code {
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
+
+/* A page anchored to the top (forms) rather than vertically centered (single-card screens). */
+.page-top {
+  align-items: flex-start;
+  padding-top: 2rem;
+}
+
+/* Labelled form field: label stacked above its control, error message below. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.field input[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.field-error:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Inline notices (conflict / success) — bordered blocks that stand out from body copy. */
+.notice {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.notice p {
+  margin: 0 0 0.5rem;
+  color: var(--text);
+}
+
+.notice-danger {
+  border-color: var(--danger);
+}
+
+.notice-success {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.notice:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}

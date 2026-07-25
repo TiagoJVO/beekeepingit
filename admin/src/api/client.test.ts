@@ -67,3 +67,91 @@ describe("createApiClient", () => {
     expect((error as ApiError).kind).toBe("network");
   });
 });
+
+describe("createApiClient.getWithETag", () => {
+  it("returns the body together with the response ETag", async () => {
+    const response = new Response(JSON.stringify({ id: "o1" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ETag: '"v7"' },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    const client = createApiClient("https://app.example", () => "t", fetchMock);
+
+    const result = await client.getWithETag<{ id: string }>("/organizations/me");
+
+    expect(result).toEqual({ data: { id: "o1" }, etag: '"v7"' });
+  });
+});
+
+describe("createApiClient.patch", () => {
+  it("sends the body and echoes the ETag back as If-Match (FR-TEN-2)", async () => {
+    const response = new Response(JSON.stringify({ id: "o1", name: "New" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ETag: '"v8"' },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    const client = createApiClient("https://app.example", () => "tok", fetchMock);
+
+    const result = await client.patch<{ id: string; name: string }>(
+      "/organizations/o1",
+      { name: "New" },
+      { ifMatch: '"v7"' },
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://app.example/v1/organizations/o1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ name: "New" }),
+        headers: expect.objectContaining({
+          "If-Match": '"v7"',
+          "Content-Type": "application/json",
+          Authorization: "Bearer tok",
+        }),
+      }),
+    );
+    expect(result).toEqual({ data: { id: "o1", name: "New" }, etag: '"v8"' });
+  });
+
+  it("omits If-Match when no ETag is supplied", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: "o1" }));
+    const client = createApiClient("https://app.example", () => "t", fetchMock);
+
+    await client.patch("/organizations/o1", { name: "X" });
+
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect((init.headers as Record<string, string>)["If-Match"]).toBeUndefined();
+  });
+
+  it("maps a 409 to a conflict ApiError (stale If-Match)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: "Conflict" }, 409));
+    const client = createApiClient("https://app.example", () => "t", fetchMock);
+
+    await expect(
+      client.patch("/organizations/o1", { name: "X" }, { ifMatch: '"stale"' }),
+    ).rejects.toMatchObject({ kind: "conflict", status: 409 });
+  });
+
+  it("maps a 422 to a validation ApiError and parses the problem field errors", async () => {
+    const problem = {
+      title: "Validation failed",
+      status: 422,
+      errors: [{ field: "name", code: "required", message: "name must not be empty" }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(problem), {
+        status: 422,
+        headers: { "Content-Type": "application/problem+json" },
+      }),
+    );
+    const client = createApiClient("https://app.example", () => "t", fetchMock);
+
+    const error = (await client
+      .patch("/organizations/o1", { name: "" }, { ifMatch: '"v1"' })
+      .catch((e: unknown) => e)) as ApiError;
+
+    expect(error.kind).toBe("validation");
+    expect(error.status).toBe(422);
+    expect(error.problem?.errors?.[0]).toMatchObject({ field: "name", code: "required" });
+  });
+});
