@@ -52,7 +52,9 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(l10n.organizationSaveSuccess)));
-      context.go('/apiaries');
+      // Onboarding complete → the app's home, which is the Tasks tab now
+      // (D-29, #427), not the apiaries list.
+      context.go('/todos');
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
