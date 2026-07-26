@@ -303,12 +303,117 @@ func identityUnavailable(detail string) problem.Problem {
 func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
+	r.Get("/organizations", listOrganizations(q))
 	r.Post("/organizations", createOrganization(pool, q, resolver))
 	r.Get("/organizations/me", getMyOrganization(pool, q, resolver))
 	r.Get("/organizations/{orgId}", getOrganization(q, resolver))
 	r.Patch("/organizations/{orgId}", updateOrganization(pool, q, resolver))
 	registerMemberAndInvitationRoutes(r, pool, q, resolver)
 	return r
+}
+
+// OrganizationSummaryResponse is the platform-operator-only cross-org list
+// shape (GET /organizations, #467, D-32, contracts/openapi/organizations.
+// openapi.yaml's OrganizationSummary schema) -- deliberately NOT the full
+// Organization schema: no address, no created_by, and no role (role is the
+// CALLER's own membership role in ONE org, #172 -- meaningless here, since a
+// platform operator enumerating every organization is a member of none of
+// them). member_count is the only member-related fact this endpoint exposes
+// -- no user_id/role/status/email for any member of any org ever leaves this
+// response (#467 AC "no member PII... nothing from inside the org").
+type OrganizationSummaryResponse struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	MemberCount int64     `json:"member_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type organizationListResponse struct {
+	Data []OrganizationSummaryResponse `json:"data"`
+	Page pageResponse                  `json:"page"`
+}
+
+// likeSearchPattern turns a caller-supplied free-text query (the `q` param,
+// #467 AC "search/filter by name") into a safe ILIKE substring pattern: `%`,
+// `_` and `\` -- ILIKE's own wildcard/escape characters -- are escaped first,
+// so a literal one of them in the search text is matched literally rather
+// than treated as a wildcard, then the escaped text is wrapped in `%...%` for
+// substring matching. Paired with organizations.sql's ListOrganizations query,
+// whose `ESCAPE '\'` clause is what makes the escaping effective server-side.
+func likeSearchPattern(q string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + replacer.Replace(q) + "%"
+}
+
+// listOrganizations is the platform-operator-only cross-org list (GET
+// /organizations, #467, D-32, EPIC-18 #463): enumerates every organization on
+// the platform, not just the caller's own -- the console operation a
+// platform operator needs and no ordinary caller (org admin or plain member)
+// is ever granted.
+//
+// This is a NEW endpoint with no existing {orgId}-scoped membership check to
+// extend (unlike organizations.go's other platform-operator-aware routes,
+// which reuse requirePlatformOperatorOrOrgMember/...OrgAdmin from
+// platform_authz.go) -- per that file's package doc and ADR-0021's
+// Follow-ups section, it calls isPlatformOperator(r) directly and, when
+// false, writes an ordinary problem.Forbidden (403), NOT problem.NotFound:
+// ADR-0002's "never confirm another org's existence via 404" rationale
+// doesn't apply here, since there is no specific {orgId} in the path for a
+// non-operator to probe the existence of -- this operation IS "list every
+// organization", so a non-operator's rejection is simply "you lack the
+// required role", the same 403 semantics as any other role-gated action
+// (servicetemplate/authn's RequireRole). The claim itself
+// (authn.Claims.PlatformOperator) is read exactly once, through
+// isPlatformOperator -- the one sanctioned read site for it in this service
+// -- and NEVER from authn.Claims.Raw["groups"] (platform_authz.go's package
+// doc explains why that claim must never authorize anything).
+func listOrganizations(q *sqlcgen.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !isPlatformOperator(r) {
+			problem.Write(w, r, problem.Forbidden("caller is not a platform operator"))
+			return
+		}
+
+		limit, cursor, ok := parsePage(w, r)
+		if !ok {
+			return
+		}
+
+		var search pgtype.Text
+		if raw := strings.TrimSpace(r.URL.Query().Get("q")); raw != "" {
+			search = pgtype.Text{String: likeSearchPattern(raw), Valid: true}
+		}
+
+		rows, err := q.ListOrganizations(r.Context(), sqlcgen.ListOrganizationsParams{
+			Limit:  int32(limit + 1), //nolint:gosec // limit is clamped to [1,maxPageLimit=200]
+			Cursor: cursor,
+			Q:      search,
+		})
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list organizations failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		page := pageResponse{Limit: limit}
+		if len(rows) > limit {
+			next := uuidString(rows[limit-1].ID)
+			page.NextCursor = &next
+			rows = rows[:limit]
+		}
+		data := make([]OrganizationSummaryResponse, 0, len(rows))
+		for _, row := range rows {
+			data = append(data, OrganizationSummaryResponse{
+				ID:          uuidString(row.ID),
+				Name:        row.Name,
+				MemberCount: row.MemberCount,
+				CreatedAt:   row.CreatedAt.Time,
+				UpdatedAt:   row.UpdatedAt.Time,
+			})
+		}
+		writeJSON(w, r, http.StatusOK, organizationListResponse{Data: data, Page: page})
+	}
 }
 
 // callerMembership is the resolved (org, user, role) tuple resolveActiveMembership
