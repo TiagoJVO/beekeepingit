@@ -76,6 +76,19 @@ finalizes the `AUDIT_LOG` shape from [data-model.md](data-model.md) §3.
 | `changed_fields`  | `text[]`       | on `update`, the columns that changed — drives the timeline UI and lets a reader filter                                                                                                                                                                     |
 | `change`          | `jsonb`        | the **delta**, not a full snapshot: on `create` the initial field values (the baseline); on `update` `{ field: { from, to } }` for **changed columns only**; on `delete` just the tombstone marker. Soft ID refs only, **no embedded personal data** (§7.3) |
 
+**As built (`organizations` only, #470, migration `00005`):** `organizations.audit_log` carries one
+additional column, `actor_scope text` (`'member'` \| `'platform_operator'`), recorded **explicitly,
+at write time, in the same INSERT** as the rest of the row (never inferred afterwards by
+cross-referencing `memberships` — a platform-operator write has no membership row to
+cross-reference against in the first place). It distinguishes a row written by an ordinary
+organization member/admin from one written by a verified **platform operator** acting on an
+organization it is not a member of (`services/organizations/api/platform_authz.go`, #466,
+[ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)) — "the app owner edited someone
+else's organization" is a materially more sensitive event than an ordinary member edit, and this
+column is what makes it distinguishable after the fact (FR-HIS-1, NFR-SEC-1, FR-TEN-2). No other
+service's `audit_log` has this column: the platform-operator carve-out is `organizations`-specific
+today.
+
 **Notes**
 
 - **Actor is an opaque internal ID.** The audit row records _that user `<uuid>` changed it_, never

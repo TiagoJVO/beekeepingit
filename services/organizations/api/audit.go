@@ -6,7 +6,10 @@
 // in services/apiaries/api/sync.go. entity_type distinguishes the three
 // entities sharing this one table ("organization" | "membership" |
 // "invitation", history.md §3/§9) — see organizations.go, invitations.go for
-// the call sites.
+// the call sites. actor_scope (#470, migration 00005) additionally
+// distinguishes an ordinary member/admin write from a verified
+// platform-operator write (#466, ADR-0021) — see actorScopeFor below and its
+// call sites in organizations.go/member_lifecycle.go.
 package api
 
 import (
@@ -30,13 +33,53 @@ const (
 	entityTypeInvitation   = "invitation"
 )
 
+// actor_scope discriminators for organizations.audit_log (#470, FR-HIS-1,
+// NFR-SEC-1, FR-TEN-2, migration 00005): distinguishes a history row written
+// by an ordinary organization member/admin from one written by a verified
+// platform operator acting outside their own membership (#466's
+// platform-operator authorization carve-out, platform_authz.go, ADR-0021).
+// actorScopePlatformOperator is deliberately the SAME string constant as
+// platform_authz.go's authorizedViaPlatformOperator (callerMembership.
+// AuthorizedVia's platform-path value) rather than an independently chosen
+// one -- so actorScopeFor below is a single equality check against one
+// source of truth, not two vocabularies for the same fact that could drift
+// apart.
+const (
+	actorScopeMember           = "member"
+	actorScopePlatformOperator = authorizedViaPlatformOperator
+)
+
+// actorScopeFor maps a resolved callerMembership.AuthorizedVia (see that
+// field's doc comment, organizations.go) to the audit_log.actor_scope value
+// a write site must persist alongside its domain change: the ordinary
+// membership path's zero value "" becomes actorScopeMember; the platform
+// path's authorizedViaPlatformOperator becomes actorScopePlatformOperator.
+// Call this at every writeAuditLog call site that has a callerMembership in
+// scope (organizations.go's updateOrganization, member_lifecycle.go's
+// removeMemberHandler/changeMemberRoleHandler -- the three mutations #466
+// wired to the platform path) so the distinction is derived from the SAME
+// authorization outcome the request was actually granted through, never
+// re-derived or guessed independently.
+func actorScopeFor(authorizedVia string) string {
+	if authorizedVia == authorizedViaPlatformOperator {
+		return actorScopePlatformOperator
+	}
+	return actorScopeMember
+}
+
 // writeAuditLog appends one history.md §3 row for an applied create/update on
 // entityType/entityID, in the same local transaction as the domain write
 // (§4). before is the field map prior to the change (ignored for
 // history.ChangeCreate — pass nil); after is the field map post-change.
 // Field maps must carry only the entity's own scalar/soft-ID fields, never
 // denormalized personal data (§7.3) — see the per-entity *Fields helpers.
-func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, orgID pgtype.UUID, entityType string, entityID pgtype.UUID, actorUserID pgtype.UUID, occurredAt pgtype.Timestamptz, changeType string, before, after map[string]any) error {
+// actorScope (#470) is a MANDATORY parameter, not optional/defaulted: every
+// call site must state, at write time, whether this row is attributed to the
+// ordinary membership path (actorScopeMember) or the verified
+// platform-operator path (actorScopePlatformOperator/actorScopeFor) --
+// there is no call site that can silently omit it, so the persisted
+// attribution can never be missed or fall back to an inferred value.
+func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, orgID pgtype.UUID, entityType string, entityID pgtype.UUID, actorUserID pgtype.UUID, actorScope string, occurredAt pgtype.Timestamptz, changeType string, before, after map[string]any) error {
 	changedFields, change, err := history.ComputeChange(changeType, before, after)
 	if err != nil {
 		return fmt.Errorf("compute organization change: %w", err)
@@ -54,6 +97,7 @@ func writeAuditLog(ctx context.Context, q *sqlcgen.Queries, orgID pgtype.UUID, e
 		EntityID:       entityID,
 		ChangeType:     changeType,
 		ActorUserID:    actorUserID,
+		ActorScope:     actorScope,
 		OccurredAt:     occurredAt,
 		ChangedFields:  changedFields,
 		Change:         changeJSON,

@@ -25,8 +25,10 @@ package main
 //     boolean must NOT be granted cross-org access.
 //   - TestPlatformOperator_AuditAttributesToOperator: the operator's OWN
 //     resolved user_id, not the org's own admin, is what lands in
-//     organizations.audit_log.actor_user_id for a platform-path write --
-//     the recoverability #470 will build on.
+//     organizations.audit_log.actor_user_id for a platform-path write, and
+//     (#470) actor_scope is persisted as "platform_operator" for that same
+//     row -- see platform_operator_audit_scope_test.go for the full
+//     member-vs-operator matrix across all three mutations this path wires.
 
 import (
 	"encoding/json"
@@ -325,5 +327,13 @@ func TestPlatformOperator_AuditAttributesToOperator(t *testing.T) {
 	if last.ActorUserID != pf.operatorID {
 		t.Errorf("update actor_user_id = %q, want %q (the platform operator's own resolved identity, not org A's admin %q)",
 			last.ActorUserID, pf.operatorID, pf.orgAAdminID)
+	}
+	// #470: the persisted, queryable distinction ADR-0021 deferred to this
+	// story -- a platform-path write's actor_scope is "platform_operator",
+	// never "member", recorded atomically with the same write. See
+	// platform_operator_audit_scope_test.go for the full member-vs-operator
+	// matrix across all three mutations #466 wired to this path.
+	if last.ActorScope != "platform_operator" {
+		t.Errorf("update actor_scope = %q, want %q", last.ActorScope, "platform_operator")
 	}
 }
