@@ -5,7 +5,7 @@
 -- indexed oidc_sub (00001/00002). A functional index on lower(email) backs
 -- that new access pattern's case-insensitive match -- without it, every
 -- lookup is a full sequential scan, mirroring the analogous fix organizations'
--- own migration 00005 (idx_memberships_user_id) makes for its new
+-- own migration 00006 (idx_memberships_user_id) makes for its new
 -- ListMembershipsByUser query. Excludes the empty-string default
 -- (UpsertUserOnFirstSeen's placeholder for an incomplete profile) so the
 -- index stays useful -- it would otherwise carry one enormous, unselective

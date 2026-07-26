@@ -51,9 +51,15 @@ organization creation, organization update (PATCH, #289), membership creation
 `organizations.audit_log` row in the same local transaction as their domain write
 ([docs/architecture/history.md](../../docs/architecture/history.md) §4).
 `entity_type` (`organization` | `membership` | `invitation`) distinguishes the
-three entities sharing this one table (history.md §3/§9). Append-only
-immutability (DB role grants) is out of scope here — that's
-[#62](https://github.com/TiagoJVO/beekeepingit/issues/62).
+three entities sharing this one table (history.md §3/§9). `actor_scope`
+(`member` | `platform_operator`, migration `00005`,
+[#470](https://github.com/TiagoJVO/beekeepingit/issues/470)) additionally
+distinguishes a row written by an ordinary org member/admin from one written
+by a verified platform operator acting outside their own membership (#466's
+carve-out, `api/platform_authz.go`) — recorded explicitly at write time by
+every writer (`api/audit.go`'s `writeAuditLog`/`actorScopeFor`), never
+inferred later. Append-only immutability (DB role grants) is out of scope
+here — that's [#62](https://github.com/TiagoJVO/beekeepingit/issues/62).
 
 ## Configuration
 

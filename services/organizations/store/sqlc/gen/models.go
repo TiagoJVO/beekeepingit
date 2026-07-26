@@ -15,6 +15,7 @@ type OrganizationsAuditLog struct {
 	EntityID       pgtype.UUID        `json:"entity_id"`
 	ChangeType     string             `json:"change_type"`
 	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	ActorScope     string             `json:"actor_scope"`
 	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
 	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
 	ChangedFields  []string           `json:"changed_fields"`

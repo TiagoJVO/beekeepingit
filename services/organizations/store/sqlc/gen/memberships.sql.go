@@ -261,7 +261,7 @@ type ListMembershipsByUserRow struct {
 // enum already includes it). Keyset-paginated by membership id, newest
 // first (mirrors ListInvitations' newest-first convention -- the most
 // recent org relationship is the one a support case most likely cares
-// about). idx_memberships_user_id (migration 00005) backs the WHERE
+// about). idx_memberships_user_id (migration 00006) backs the WHERE
 // clause.
 func (q *Queries) ListMembershipsByUser(ctx context.Context, arg ListMembershipsByUserParams) ([]ListMembershipsByUserRow, error) {
 	rows, err := q.db.Query(ctx, listMembershipsByUser, arg.UserID, arg.Cursor, arg.Limit)

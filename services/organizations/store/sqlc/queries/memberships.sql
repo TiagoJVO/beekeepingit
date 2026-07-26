@@ -99,7 +99,7 @@ RETURNING id, organization_id, user_id, role, status, created_at, updated_at;
 -- enum already includes it). Keyset-paginated by membership id, newest
 -- first (mirrors ListInvitations' newest-first convention -- the most
 -- recent org relationship is the one a support case most likely cares
--- about). idx_memberships_user_id (migration 00005) backs the WHERE
+-- about). idx_memberships_user_id (migration 00006) backs the WHERE
 -- clause.
 SELECT m.id, m.organization_id, o.name AS organization_name, m.role, m.status
 FROM organizations.memberships m

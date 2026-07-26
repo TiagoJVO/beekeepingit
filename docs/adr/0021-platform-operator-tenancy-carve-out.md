@@ -140,6 +140,12 @@ target org's admin — proven by `TestPlatformOperator_AuditAttributesToOperator
 and the INFO log are the extension point #470 builds the persisted, queryable distinction on top
 of, without this story pre-guessing #470's exact schema.
 
+**Update (#470, landed):** the persisted column is `organizations.audit_log.actor_scope`
+(migration `00005`) — `'member'` \| `'platform_operator'`, set by `actorScopeFor(AuthorizedVia)`
+(`api/audit.go`) at every write site this ADR's five routes reach that writes an audit row
+(`updateOrganization`, `removeMemberHandler`, `changeMemberRoleHandler`; `getOrganization`/
+`listMembersHandler` are read-only, no audit write). See `history.md`'s "As built" note on `AUDIT_LOG`.
+
 ## Consequences
 
 **Positive**
@@ -169,11 +175,14 @@ of, without this story pre-guessing #470's exact schema.
   from this field. Extending the enum was judged out of scope for an authorization-mechanism story
   (#466) versus a contract change, but it is flagged here for #467/#468/#470 to revisit if the
   console needs to render that distinction.
-- **No persisted "authorized via platform operator" column yet.** Until #470 lands, the only
+- **No persisted "authorized via platform operator" column yet.** ~~Until #470 lands, the only
   durable record that a given `audit_log` row came from the platform path (rather than the org's
   own admin) is that its `actor_user_id` does not correspond to a membership row in that
-  organization — inferable, not stored. Acceptable short-term because `auth.md §5.3.2` already
-  assigns the persisted-distinction work to #470, but noted so it is not silently forgotten.
+  organization — inferable, not stored.~~ **Resolved by #470**: `organizations.audit_log` gained an
+  `actor_scope` column (migration `00005`) written explicitly, in the same transaction as every
+  write this ADR's five routes make, directly from this ADR's own `AuthorizedVia` field — see
+  `history.md`'s "As built (`organizations` only, #470...)" note and
+  `services/organizations/api/audit.go`'s `actorScopeFor`.
 
 ## Alternatives considered
 
@@ -218,8 +227,9 @@ of, without this story pre-guessing #470's exact schema.
   `NotFound`) for every non-operator caller, and the operator's own identity resolved
   (`resolver.Resolve`, mirroring `platformOperatorMembership`) purely for its INFO grant log — this
   is a read endpoint, so there is no `audit_log` write to attribute.
-- [#470](https://github.com/TiagoJVO/beekeepingit/issues/470) — persist a distinguishable,
+- ~~[#470](https://github.com/TiagoJVO/beekeepingit/issues/470) — persist a distinguishable,
   queryable record of platform-path actions in history, building on `AuthorizedVia` and the INFO
-  grant log this ADR introduces.
+  grant log this ADR introduces.~~ **Done** — `organizations.audit_log.actor_scope` (migration
+  `00005`), derived directly from `AuthorizedVia` at every write site this ADR's routes touch.
 - Revisit the `role: "admin"` wire-contract overload (Consequences, above) if the admin console
   needs to visually distinguish a platform-operator grant from a real org admin.

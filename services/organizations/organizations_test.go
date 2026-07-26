@@ -248,11 +248,19 @@ func newOrgFixtureInternal(t *testing.T, users map[string]stubUser, claimsBySub 
 
 // auditRow is the subset of organizations.audit_log columns (#165,
 // history.md §3) the history tests assert on — mirrors
-// services/apiaries/main_test.go's own auditRow/auditLogFor.
+// services/apiaries/main_test.go's own auditRow/auditLogFor. ActorScope
+// (#470, migration 00005) is the persisted platform-operator-vs-member
+// attribution platform_operator_authz_test.go's
+// TestPlatformOperator_AuditAttributesToOperator and
+// platform_operator_audit_scope_test.go's
+// TestAuditActorScope_OrganizationUpdate_MemberVsPlatformOperator /
+// TestAuditActorScope_RemoveMember_MemberVsPlatformOperator /
+// TestAuditActorScope_ChangeMemberRole_MemberVsPlatformOperator assert on.
 type auditRow struct {
 	EntityType    string
 	ChangeType    string
 	ActorUserID   string
+	ActorScope    string
 	OccurredAt    time.Time
 	RecordedAt    time.Time
 	ChangedFields []string
@@ -264,7 +272,7 @@ type auditRow struct {
 func (f *orgFixture) auditLogFor(t *testing.T, entityType, entityID string) []auditRow {
 	t.Helper()
 	rows, err := f.pool.Query(context.Background(),
-		`SELECT entity_type, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+		`SELECT entity_type, change_type, actor_user_id, actor_scope, occurred_at, recorded_at, changed_fields, change
 		 FROM organizations.audit_log
 		 WHERE entity_type = $1 AND entity_id = $2
 		 ORDER BY recorded_at, id`, entityType, entityID)
@@ -279,7 +287,7 @@ func (f *orgFixture) auditLogFor(t *testing.T, entityType, entityID string) []au
 			a       auditRow
 			actorID uuid.UUID
 		)
-		if err := rows.Scan(&a.EntityType, &a.ChangeType, &actorID, &a.OccurredAt, &a.RecordedAt, &a.ChangedFields, &a.Change); err != nil {
+		if err := rows.Scan(&a.EntityType, &a.ChangeType, &actorID, &a.ActorScope, &a.OccurredAt, &a.RecordedAt, &a.ChangedFields, &a.Change); err != nil {
 			t.Fatalf("scan audit_log row: %v", err)
 		}
 		a.ActorUserID = actorID.String()
