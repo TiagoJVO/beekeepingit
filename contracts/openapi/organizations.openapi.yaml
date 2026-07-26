@@ -1,10 +1,12 @@
 # Organizations service — client-facing REST contract.
 # Onboarding (FR-ONB) + the management surface the React Admin App consumes (NFR-ROL-2).
 # Organization create/read (#26), membership listing and email invitations (#27), organization
-# update (PATCH, #289), and member removal + role changes (#290) are built. Invitation
-# expiry/re-invite remain still-open detail per D-3/FR-ONB-3.
+# update (PATCH, #289), member removal + role changes (#290), and the platform-operator-only
+# cross-org list (GET /organizations, #467, D-32) are built. Invitation expiry/re-invite remain
+# still-open detail per D-3/FR-ONB-3.
 # Stamped from ./_shared/components.openapi.yaml; conventions in
-# docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email).
+# docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email),
+# D-32 (two-tier admin: organization + platform operator, ADR-0021).
 openapi: 3.1.0
 info:
   title: BeekeepingIT — Organizations API
@@ -14,7 +16,9 @@ info:
     organization becomes its admin and invites others by email (D-3); an invited user who
     logs in is auto-joined to the inviting organization on their first `GET /organizations/me`
     poll rather than being prompted to create a new one (FR-ONB-3). Org scope and role
-    are derived from the JWT (ADR-0002); `{orgId}` in the path must match the caller's org.
+    are derived from the JWT (ADR-0002); `{orgId}` in the path must match the caller's org --
+    except `GET /organizations`, which lists every organization for a verified platform
+    operator only (D-32, ADR-0021).
   license:
     name: AGPL-3.0-only
     identifier: AGPL-3.0-only
@@ -41,6 +45,41 @@ tags:
 
 paths:
   /organizations:
+    get:
+      operationId: listOrganizations
+      summary: List all organizations (platform operator only)
+      description: >-
+        Enumerates every organization on the platform (D-32, EPIC-18 #463) --
+        not the caller's own org, unlike every other route in this contract.
+        Requires the caller's verified access token to carry the
+        `platform_operator` claim (ADR-0021); every other caller, including an
+        organization's own admin, is rejected with `403` -- there is no
+        `{orgId}` in this path to hide the existence of, so the ordinary
+        ADR-0002 `404`-not-`403` rule does not apply here (see #466's handoff
+        comment on this issue). The response is a minimal per-organization
+        summary only -- no member roster, no invitation data, nothing from
+        inside any organization.
+      tags: [Organizations]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive free-text search over organization name.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of organizations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationList'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
     post:
       operationId: createOrganization
       summary: Create an organization (caller becomes admin)
@@ -446,6 +485,44 @@ components:
                 The caller's own membership role in this organization — not a property of the
                 organization itself (#172).
           required: [id, name, role]
+
+    OrganizationSummary:
+      type: object
+      description: >-
+        The minimal per-organization shape `GET /organizations` returns
+        (#467, platform-operator only) -- deliberately NOT the full
+        `Organization` schema: no `address`, no `created_by`, and no `role`
+        (that field is the caller's own membership role in ONE org, #172 --
+        meaningless for a platform operator enumerating every organization,
+        who is a member of none of them). `member_count` is the only
+        member-related fact exposed; no member roster, invitation data, or
+        anything else from inside the organization is included.
+      allOf:
+        - $ref: './_shared/components.openapi.yaml#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id:
+              $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+            name:
+              type: string
+              minLength: 1
+              maxLength: 200
+            member_count:
+              type: integer
+              minimum: 0
+              description: Count of the organization's active members.
+          required: [id, name, member_count]
+
+    OrganizationList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrganizationSummary'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
 
     OrganizationCreate:
       type: object

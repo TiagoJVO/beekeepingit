@@ -217,11 +217,13 @@ of, without this story pre-guessing #470's exact schema.
 
 ## Follow-ups
 
-- [#467](https://github.com/TiagoJVO/beekeepingit/issues/467) — list organizations, the remaining new
-  endpoint with no existing membership check to extend; call `isPlatformOperator(r)` directly and
-  `problem.Forbidden(...)` (not `NotFound` — there is no `{orgId}` to hide) when it is false. See
-  `platform_authz.go`'s package doc.
-- [#468](https://github.com/TiagoJVO/beekeepingit/issues/468) — **built.** The cross-org membership
+- [#467](https://github.com/TiagoJVO/beekeepingit/issues/467) — ✅ **Built:** `GET /organizations`
+  (list organizations) calls `isPlatformOperator(r)` directly and `problem.Forbidden(...)` (not
+  `NotFound` — there is no `{orgId}` to hide) when it is false, exactly as anticipated below. The
+  response is a minimal per-organization summary (`id`, `name`, `member_count`) — no member roster,
+  no invitation data. See `platform_authz.go`'s package doc and
+  `services/organizations/api/organizations.go`'s `listOrganizations`.
+- [#468](https://github.com/TiagoJVO/beekeepingit/issues/468) — ✅ **Built:** the cross-org membership
   lookup, `GET /organizations/platform/memberships` (`services/organizations/api/platform_membership_lookup.go`),
   follows exactly this extension point: `isPlatformOperator(r)` directly, `problem.Forbidden` (not
   `NotFound`) for every non-operator caller, and the operator's own identity resolved
