@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { ADMIN_ORIGIN, readAdminAccessTokenClaims, submitAuthentikForm } from "./helpers";
+import { ADMIN_ORIGIN, adminSignIn, readAdminAccessTokenClaims } from "./helpers";
 
 /**
- * Admin-token claim-shape e2e (#460, #456, NFR-SEC-1, NFR-TST-1).
+ * Admin-token claim-shape e2e (#460 iss/aud override, #465 platform-operator
+ * claim; #456, EPIC-18 #463, NFR-SEC-1, NFR-ROL-1, NFR-TST-1).
  *
  * The admin app authenticates as its OWN OIDC client (`beekeepingit-admin`),
  * distinct from the PWA's `beekeepingit-pwa`. The domain services are frozen to
@@ -11,93 +12,41 @@ import { ADMIN_ORIGIN, readAdminAccessTokenClaims, submitAuthentikForm } from ".
  * ONLY to the admin provider OVERRIDES the minted `iss`/`aud` so an admin token
  * carries `iss` = the beekeepingit issuer and `aud` = [beekeepingit-admin,
  * beekeepingit-pwa] (blueprint `scope-admin-audience`, oidc-integration.md §3.1).
+ * A second admin-only mapping (`scope-platform-operator`, §3.2) emits the
+ * `platform_operator` boolean the services will authorize the platform tier on.
  *
- * That override rides version-sensitive Authentik internals (oidc-integration.md
+ * Both overrides ride version-sensitive Authentik internals (oidc-integration.md
  * §8 watch-list). The pre-existing admin path in CI only proved "the admin image
  * comes up" — it never asserted the token's CLAIM SHAPE, so an Authentik bump
- * that broke the override would be a silent prod 401, not a red CI. This spec
- * closes that gap: it drives a REAL Authorization Code + PKCE login through the
- * admin app (so the /authorize + /token path — and the override mapping — runs),
- * then asserts the minted ACCESS token (the credential the services validate):
- *   - `iss` == the beekeepingit issuer (NOT the admin provider's own
- *     `.../application/o/beekeepingit-admin/`), and
- *   - `aud` CONTAINS BOTH `beekeepingit-admin` AND `beekeepingit-pwa`.
- * Either missing fails the job loudly — the whole point (catch the regression in
- * CI, not prod).
+ * that broke either mapping would be a silent prod failure (a 401 for the
+ * iss/aud override; a platform-tier authorization that silently opens or closes
+ * for the operator claim), not a red CI. This spec closes that gap: it drives
+ * REAL Authorization Code + PKCE logins through the admin app (so the /authorize
+ * + /token path — and both mappings — run), then asserts the minted ACCESS token
+ * (the credential the services validate).
  *
  * Opt-in via E2E_ADMIN_ORIGIN (helm-e2e.yml sets it to the deployed admin host);
  * self-skips otherwise (a local PWA-only run has no admin app served). Reuses the
- * blueprint-seeded admin test user — the same creds the other specs use.
+ * blueprint-seeded users — the same creds the other specs use.
  */
 
+// Seeded IN the `platform-operator` group (blueprint `user-test-beekeeper`).
 const ADMIN_USER = process.env.E2E_USER ?? "test.beekeeper@beekeepingit.local";
 const ADMIN_PASS = process.env.E2E_PASS ?? "dev-password123";
+// Seeded verified but deliberately NOT in `platform-operator` (blueprint
+// `user-non-operator`, #465) — the negative half of the claim proof.
+const NON_OPERATOR_USER = process.env.E2E_NON_OPERATOR_USER ?? "non.operator@beekeepingit.local";
+const NON_OPERATOR_PASS = process.env.E2E_NON_OPERATOR_PASS ?? ADMIN_PASS;
 // The beekeepingit issuer the services are pinned to (and the admin build's
 // VITE_OIDC_ISSUER). The override makes the admin token claim exactly this.
 const EXPECTED_ISSUER =
   process.env.E2E_OIDC_ISSUER ?? "https://auth.beekeepingit.local:8443/application/o/beekeepingit/";
 
-// The admin origin, anchored — a login that completed lands back here (the OIDC
-// callback), whereas anything still on the auth host means the flow didn't
-// finish. Escape it for use in a RegExp (it contains . and : metacharacters).
-const adminOriginRe = ADMIN_ORIGIN
-  ? new RegExp(`^${ADMIN_ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
-  : /$^/;
-
 test.describe("admin token iss/aud override (#460)", () => {
   test.skip(!ADMIN_ORIGIN, "E2E_ADMIN_ORIGIN unset — admin app not served (local PWA-only run)");
 
   test("admin login mints a token with the overridden iss + dual aud", async ({ page }) => {
-    // Navigate to the admin app, tolerating a cold stack: like the PWA route, the
-    // gateway can transiently answer 5xx right after the pod is marked ready
-    // (endpoints/first-request not warm). Retry until the SPA's Sign in button
-    // paints, not just until goto() resolves.
-    const deadline = Date.now() + 120_000;
-    const signIn = page.getByRole("button", { name: /sign in/i });
-    for (;;) {
-      const resp = await page
-        .goto(`${ADMIN_ORIGIN}/`, { waitUntil: "domcontentloaded" })
-        .catch(() => null);
-      const serverError = resp != null && resp.status() >= 500;
-      if (!serverError) {
-        const painted = await signIn
-          .waitFor({ state: "visible", timeout: 20_000 })
-          .then(() => true)
-          .catch(() => false);
-        if (painted) break;
-      }
-      if (Date.now() > deadline) {
-        throw new Error(
-          `admin app never rendered its Sign in screen (last HTTP ${resp?.status() ?? "unknown"})`,
-        );
-      }
-      await page.waitForTimeout(3_000);
-    }
-
-    // Click the admin app's Sign in → oidc-client-ts signinRedirect: it fetches OIDC
-    // discovery from the beekeepingit issuer, then redirects to the auth host. If that
-    // discovery/JWKS fetch is CORS-blocked (the admin origin must be an allowed CORS
-    // origin on the pwa provider — see the blueprint), the admin app instead shows its
-    // own "Sign-in failed" screen and never leaves the admin origin. Wait for the hop to
-    // the auth host and surface THAT error fast, rather than hanging the full test budget
-    // in submitAuthentikForm waiting for an IdP form that will never appear.
-    await signIn.click();
-    try {
-      await page.waitForURL(/\/\/auth\./, { timeout: 45_000 });
-    } catch {
-      const detail = await page
-        .getByRole("main")
-        .innerText()
-        .catch(() => "");
-      throw new Error(
-        `admin sign-in never reached the IdP (still at ${page.url()}): ${detail.replace(/\s+/g, " ").slice(0, 300)}`,
-      );
-    }
-    await submitAuthentikForm(page, ADMIN_USER, ADMIN_PASS);
-
-    // Back on the admin origin means the code exchange completed; the access
-    // token is now persisted by oidc-client-ts.
-    await page.waitForURL(adminOriginRe, { timeout: 60_000 });
+    await adminSignIn(page, ADMIN_USER, ADMIN_PASS);
 
     const claims = await readAdminAccessTokenClaims(page);
 
@@ -120,5 +69,47 @@ test.describe("admin token iss/aud override (#460)", () => {
     expect(aud, "admin token aud must contain the admin client's own audience").toContain(
       "beekeepingit-admin",
     );
+  });
+});
+
+/**
+ * The platform tier (EPIC-18 #463): an app owner who administers EVERY
+ * organization, as opposed to EPIC-10's org-scoped `admin` (a member of ONE org).
+ * That authority is minted here as the `platform_operator` boolean, derived
+ * server-side from the caller's real `platform-operator` group membership — the
+ * claim #466 will authorize on. Proved BOTH ways, because either direction
+ * failing is a security bug: a false negative locks the platform admin out, a
+ * false positive hands every tenant's data to a non-operator.
+ */
+test.describe("platform-operator claim (#465)", () => {
+  test.skip(!ADMIN_ORIGIN, "E2E_ADMIN_ORIGIN unset — admin app not served (local PWA-only run)");
+
+  test("an operator's admin token carries platform_operator: true", async ({ page }) => {
+    await adminSignIn(page, ADMIN_USER, ADMIN_PASS);
+
+    const claims = await readAdminAccessTokenClaims(page);
+
+    // Strict identity, not truthiness: #466 reads a JSON boolean, so a string
+    // "true" (or any other shape drift from an Authentik bump) must fail here
+    // rather than quietly work on one side of the boundary and not the other.
+    expect(
+      claims.platform_operator,
+      "a platform-operator's admin access token must carry platform_operator: true",
+    ).toBe(true);
+  });
+
+  test("a non-operator's admin token carries platform_operator: false", async ({ page }) => {
+    await adminSignIn(page, NON_OPERATOR_USER, NON_OPERATOR_PASS);
+
+    const claims = await readAdminAccessTokenClaims(page);
+
+    // Explicitly `false`, not merely absent: a present `false` proves the mapping
+    // RAN and evaluated this user's real memberships. Asserting only "not true"
+    // would still pass if the mapping had silently stopped being applied at all,
+    // which is exactly the regression the positive case above must catch.
+    expect(
+      claims.platform_operator,
+      "a non-operator's admin access token must carry platform_operator: false",
+    ).toBe(false);
   });
 });

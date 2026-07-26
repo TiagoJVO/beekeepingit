@@ -23,6 +23,11 @@ entries:
       # attribute is also the documented escape hatch for ops-provisioned accounts
       # whose address was verified out-of-band.
       attributes: { upn: "11111111-1111-4111-8111-111111111111", email_verified: true }
+      # In `platform-operator` since the Authentik cut-over (#191). Since #465 this
+      # membership is LOAD-BEARING for CI: it is the POSITIVE half of the
+      # platform-operator claim e2e (admin-token.spec.ts asserts this user's admin
+      # access token carries `platform_operator: true`). Removing it here silently
+      # turns that assertion red — pair any change with the spec.
       groups: [!KeyOf group-platform-operator]
       password: dev-password123
   # Second dev/CI seed user, deliberately UNVERIFIED (#361): the verification-flow
@@ -40,6 +45,26 @@ entries:
       is_active: true
       path: users
       attributes: { upn: "22222222-2222-4222-8222-222222222222" }
+      password: dev-password123
+  # Third dev/CI seed user, deliberately NOT in `platform-operator` (#465): the
+  # NEGATIVE half of the platform-operator claim e2e
+  # (client/e2e/tests/admin-token.spec.ts) logs into the ADMIN app as this user
+  # and asserts the minted access token carries `platform_operator: false`.
+  # Seeded VERIFIED for the same reason test.beekeeper is (see above): the claim
+  # spec must not detour through the email-verification stage. No group, no org
+  # membership (devseed doesn't know it) — after admin login it lands on the
+  # admin app's "access required" screen, which is fine: the token is already
+  # persisted by then and that is all the spec reads.
+  - model: authentik_core.user
+    id: user-non-operator
+    identifiers: { username: non.operator@beekeepingit.local }
+    attrs:
+      username: non.operator@beekeepingit.local
+      name: Non Operator
+      email: non.operator@beekeepingit.local
+      is_active: true
+      path: users
+      attributes: { upn: "33333333-3333-4333-8333-333333333333", email_verified: true }
       password: dev-password123
   # Custom `email` scope mapping (#361, NFR-SEC-1): emits the user's GENUINE
   # verification state instead of the built-in managed mapping's hardcoded value.
@@ -188,6 +213,74 @@ entries:
             "iss": pwa.get_issuer(http_req),
             "aud": ["beekeepingit-admin", "beekeepingit-pwa"],
         }
+
+  # --- Platform-operator claim (#465, EPIC-18 #463, NFR-SEC-1, NFR-ROL-1) ---
+  # EPIC-10 built the ORGANIZATION tier (an `admin` is a member of ONE org, per
+  # organizations.memberships.role — auth.md §3.3/§5.3). EPIC-18 adds the PLATFORM
+  # tier above it: the app owner administers EVERY organization. That authority must
+  # come from the IdP, not from anything the client says — so it is minted here as a
+  # VERIFIED claim derived from the caller's real `platform-operator` group
+  # membership, and the services (#466) authorize on it.
+  #
+  # Contract (documented in oidc-integration.md §3.2 — #466 codes against it):
+  #   claim `platform_operator`, a JSON BOOLEAN, present on every token minted by the
+  #   `beekeepingit-admin` provider; ABSENT means "not a platform operator".
+  # Deliberately NOT reusing the `groups` array: the managed `profile` scope mapping
+  # already emits `groups` on BOTH providers, so a PWA (field-app) token lists
+  # `platform-operator` for a member today. Authorizing on `groups` would therefore
+  # hand platform authority to field-app tokens. A distinct boolean, attached ONLY to
+  # the admin provider, keeps the two unambiguous (§3.2).
+  #
+  # Why it cannot be spoofed or requested by the client:
+  #   - The value is read from the IdP's OWN database (`request.user`'s group
+  #     memberships) inside the provider's token-minting path. Nothing from the
+  #     authorization request — no scope, parameter, prompt or user attribute — feeds
+  #     it, so a crafted /authorize or /token request cannot change it.
+  #   - It rides `openid` (always requested), NOT a bespoke scope: a client cannot
+  #     opt the mapping in or out. `get_claims` only evaluates mappings whose
+  #     `scope_name` is among the requested scopes — the same trick the iss/aud
+  #     override uses — and `openid` is mandatory for OIDC.
+  #   - Group membership itself is only assignable by an IdP operator (blueprint or
+  #     the authentik admin UI); `user_write` explicitly denies `groups` writes, so
+  #     neither self-service registration (#366) nor the verification flow can grant
+  #     it (auth.md §8.11's write-safety boundary).
+  #   - The token is RS256-signed by the provider, so the claim cannot be edited in
+  #     flight; the services validate the signature before reading any claim (§6).
+  # Fail-closed by construction: an unauthenticated/absent user returns False, and if
+  # the expression ever raises, authentik drops the mapping's claims entirely — the
+  # claim is then ABSENT, which #466 must treat as "not an operator". There is no
+  # error path that yields a true value.
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-platform-operator
+    identifiers: { name: "BeekeepingIT OAuth Mapping: platform-operator membership" }
+    attrs:
+      name: "BeekeepingIT OAuth Mapping: platform-operator membership"
+      # Rides the always-requested `openid` scope (see above). The managed openid
+      # mapping and the iss/aud override also run on this scope; the three merge and
+      # only this one emits `platform_operator`, so there is no key collision.
+      scope_name: openid
+      description: "Platform-operator group membership (verified, admin app only)"
+      expression: |
+        # Real IdP group membership — read server-side from the user's own
+        # memberships, never from anything the client sent.
+        user = request.user
+        if not user or not user.pk:
+            return {"platform_operator": False}
+        # `all_groups()` is authentik's own membership accessor (direct memberships
+        # plus any inherited through a parent group) — the same notion its built-in
+        # `groups` claim reports, so the boolean can never disagree with it. Falls
+        # back to the raw M2M if a version bump renames the helper
+        # (oidc-integration.md §8 watch-list). Deliberately ITERATED rather than
+        # `.filter(...).exists()`: iteration works whether the accessor returns a
+        # QuerySet or a plain list, so a shape change upstream can't turn this into
+        # an AttributeError. A user's group count is tiny, so the full fetch is free.
+        all_groups = getattr(user, "all_groups", None)
+        groups = all_groups() if all_groups else user.ak_groups.all()
+        # Emitted explicitly as False (not omitted) for a non-operator: a present
+        # `false` proves the mapping RAN, so the e2e's negative case distinguishes
+        # "evaluated, not an operator" from "mapping silently stopped applying".
+        is_operator = any(getattr(group, "name", None) == "platform-operator" for group in groups)
+        return {"platform_operator": is_operator}
   - model: authentik_providers_oauth2.oauth2provider
     id: provider-beekeepingit-admin
     identifiers: { name: beekeepingit-admin }
@@ -248,6 +341,11 @@ entries:
         # Issuer + audience alignment (defined above) — makes admin tokens land on the
         # beekeepingit issuer with beekeepingit-pwa in aud, so the services accept them.
         - !KeyOf scope-admin-audience
+        # Verified platform-operator membership (#465, defined above). ADMIN PROVIDER
+        # ONLY — never attach it to `provider-beekeepingit` (the PWA): a field-app
+        # token must not be able to carry platform authority. Enforced in CI by
+        # scripts/check-platform-operator-mapping.sh.
+        - !KeyOf scope-platform-operator
   # The admin provider needs its OWN primary application: the interactive authorize flow
   # resolves the application via `provider.application` (the PRIMARY OneToOne). Its own
   # per_provider issuer (.../application/o/beekeepingit-admin/) is never validated by anyone
