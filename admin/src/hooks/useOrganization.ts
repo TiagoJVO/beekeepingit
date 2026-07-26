@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "react-oidc-context";
 import { createApiClient } from "../api/client";
 import type { ETagged } from "../api/client";
-import { getOrganization, updateOrganization } from "../api/organizations";
+import { getOrganization, getOrganizationById, updateOrganization } from "../api/organizations";
 import type { Organization, OrganizationUpdate } from "../api/organizations";
 import type { AppConfig } from "../config/env";
 
@@ -15,15 +15,22 @@ export interface UpdateOrganizationVariables {
 }
 
 /**
- * Load the caller's organization (with its `ETag`) and expose a mutation to edit it (#73).
+ * Load an organization (with its `ETag`) and expose a mutation to edit it (#73, #469).
  *
- * The org is fetched from `GET /organizations/me` so the screen is strictly scoped to the
- * caller's own admin org (FR-TEN-2); the bearer token is attached by the API client on every
- * request (NFR-SEC-1). On a successful edit the query cache is replaced with the fresh record
- * and its new `ETag`, so an immediate follow-up edit uses the current version — no stale
- * `If-Match` and no manual refetch.
+ * By default (no `orgId`) the org is fetched from `GET /organizations/me` so the screen is
+ * strictly scoped to the caller's own admin org (FR-TEN-2) — this is the unchanged
+ * organization-admin path. When an explicit `orgId` is supplied, a platform operator has selected
+ * an organization from the list to administer (#469): the query instead targets that organization
+ * directly via `GET /organizations/{orgId}`. This is never inferred from anything on the fetched
+ * record itself — the server reports `role: "admin"` for both a real org admin and an operator
+ * acting through the platform-operator carve-out (ADR-0021 Consequences), so `role` is not a safe
+ * client-side signal to branch on; the caller of this hook already knows which mode it is in.
+ *
+ * The bearer token is attached by the API client on every request (NFR-SEC-1). On a successful
+ * edit the query cache is replaced with the fresh record and its new `ETag`, so an immediate
+ * follow-up edit uses the current version — no stale `If-Match` and no manual refetch.
  */
-export function useOrganization(config: AppConfig) {
+export function useOrganization(config: AppConfig, orgId?: string) {
   const auth = useAuth();
   const token = auth.user?.access_token ?? null;
   const subject = auth.user?.profile.sub ?? null;
@@ -34,11 +41,17 @@ export function useOrganization(config: AppConfig) {
     [config.apiBaseUrl, token],
   );
 
-  const queryKey = useMemo(() => ["organization", subject] as const, [subject]);
+  // Unchanged key/fetch for the default (no orgId) case — an explicit orgId is a distinct cache
+  // entry so it can never collide with, or be confused for, the caller's own "my org" record.
+  const queryKey = useMemo(
+    () =>
+      orgId ? (["organization", subject, orgId] as const) : (["organization", subject] as const),
+    [subject, orgId],
+  );
 
   const query = useQuery<ETagged<Organization>>({
     queryKey,
-    queryFn: () => getOrganization(client),
+    queryFn: () => (orgId ? getOrganizationById(client, orgId) : getOrganization(client)),
     enabled: auth.isAuthenticated,
     retry: false,
     staleTime: 60_000,

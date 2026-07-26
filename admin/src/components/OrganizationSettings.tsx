@@ -15,6 +15,12 @@ import {
 
 interface OrganizationSettingsProps {
   config: AppConfig;
+  /**
+   * Present only when a platform operator is administering an organization they selected from the
+   * organization list (#469) — reads/writes that org directly via `/organizations/{orgId}`
+   * instead of `/organizations/me`. Absent (default) for the unchanged "my own organization" path.
+   */
+  orgId?: string;
 }
 
 type SaveStatus = "idle" | "saving" | "saved";
@@ -23,16 +29,18 @@ type SaveStatus = "idle" | "saving" | "saved";
 type FieldMessages = Partial<Record<OrgEditableField, string>>;
 
 /**
- * View and edit the caller's organization (name + address) — the org-management screen
- * (NFR-ROL-2, FR-ONB-2, #73). It reads the org (with its `ETag`) via `GET /organizations/me`
- * and persists edits through `PATCH /organizations/{orgId}` with `If-Match` optimistic
- * concurrency (FR-TEN-2): a `409` becomes a clear "someone else changed this, reload" alert; a
- * `422` maps field errors back onto the inputs and blocks the save. Entity history for the edit
- * is recorded server-side (FR-HIS-1, #289) — nothing to do here.
+ * View and edit an organization's name + address — the org-management screen (NFR-ROL-2,
+ * FR-ONB-2, #73). By default (no `orgId`) it reads the org (with its `ETag`) via
+ * `GET /organizations/me`, scoped to the caller's own org. When `orgId` is supplied (#469), it
+ * instead reads `GET /organizations/{orgId}` — the organization a platform operator picked from
+ * the organization list. Either way, edits persist through `PATCH /organizations/{orgId}` with
+ * `If-Match` optimistic concurrency (FR-TEN-2): a `409` becomes a clear "someone else changed
+ * this, reload" alert; a `422` maps field errors back onto the inputs and blocks the save. Entity
+ * history for the edit is recorded server-side (FR-HIS-1, #289) — nothing to do here.
  */
-export function OrganizationSettings({ config }: OrganizationSettingsProps) {
+export function OrganizationSettings({ config, orgId }: OrganizationSettingsProps) {
   const { t } = useTranslation();
-  const { query, mutation } = useOrganization(config);
+  const { query, mutation } = useOrganization(config, orgId);
 
   const org = query.data?.data;
   const etag = query.data?.etag ?? null;

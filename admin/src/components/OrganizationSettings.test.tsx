@@ -45,11 +45,11 @@ function authenticated(): Partial<AuthContextProps> {
   };
 }
 
-function renderSettings(): RenderResult {
+function renderSettings(orgId?: string): RenderResult {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationSettings config={config} />
+      <OrganizationSettings config={config} orgId={orgId} />
     </QueryClientProvider>,
   );
 }
@@ -202,6 +202,27 @@ describe("OrganizationSettings", () => {
 
     expect(await screen.findByText(/organization name is required/i)).toBeInTheDocument();
     expect(nameInput).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("reads an explicit orgId via /organizations/{orgId} instead of /me when supplied (#469, operator mode)", async () => {
+    useAuthMock.mockReturnValue(authenticated());
+    const getMyOrg = vi.spyOn(organizations, "getOrganization");
+    const getOrgById = vi.spyOn(organizations, "getOrganizationById").mockResolvedValue({
+      data: { ...org, id: "org-selected", name: "Apiário Selecionado" },
+      etag: '"v1"',
+    });
+
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <OrganizationSettings config={config} orgId="org-selected" />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByLabelText(/organization name/i)).toHaveValue("Apiário Selecionado");
+    expect(getOrgById).toHaveBeenCalledWith(expect.anything(), "org-selected");
+    expect(getMyOrg).not.toHaveBeenCalled();
   });
 
   it("has no automatically-detectable accessibility violations", async () => {

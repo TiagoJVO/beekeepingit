@@ -1,4 +1,5 @@
 import type { ApiClient, ETagged } from "./client";
+import type { Page } from "./members";
 
 // Mirrors the `organizations` OpenAPI contract (contracts/openapi/organizations.openapi.yaml):
 // the caller's membership role is an open enum, resolved server-side per request from
@@ -75,7 +76,9 @@ export function updateOrganization(
   update: OrganizationUpdate,
   etag: string | null,
 ): Promise<ETagged<Organization>> {
-  return client.patch<Organization>(`/organizations/${orgId}`, update, { ifMatch: etag });
+  return client.patch<Organization>(`/organizations/${encodeURIComponent(orgId)}`, update, {
+    ifMatch: etag,
+  });
 }
 
 /** The application admin role (NFR-ROL-1). */
@@ -83,4 +86,73 @@ export const ADMIN_ROLE = "admin";
 
 export function isAdminRole(role: MembershipRole | undefined | null): boolean {
   return role === ADMIN_ROLE;
+}
+
+// --- Platform-operator organization list + switcher (D-32, ADR-0021, #467/#469). -------------
+
+/**
+ * The minimal per-organization shape `GET /organizations` returns (`OrganizationSummary` schema,
+ * #467, platform-operator only) — deliberately not the full `Organization` schema: no `address`,
+ * no `created_by`, and no `role` (that field is the caller's own membership role in ONE org, #172
+ * — meaningless for an operator enumerating every organization, who is a member of none of them).
+ */
+export interface OrganizationSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly member_count: number;
+  readonly created_at?: string;
+  readonly updated_at?: string;
+}
+
+/** A page of organizations (`OrganizationList` schema, #467). */
+export interface OrganizationList {
+  readonly data: readonly OrganizationSummary[];
+  readonly page: Page;
+}
+
+/** Mirrors the server default page size (`LimitParam.default`); a page holds up to this many. */
+export const ORGANIZATIONS_PAGE_LIMIT = 50;
+
+function organizationsPath(params: { cursor?: string | null; q?: string }): string {
+  const search = new URLSearchParams({ limit: String(ORGANIZATIONS_PAGE_LIMIT) });
+  if (params.cursor) search.set("cursor", params.cursor);
+  const trimmedQuery = params.q?.trim();
+  if (trimmedQuery) search.set("q", trimmedQuery);
+  return `/organizations?${search.toString()}`;
+}
+
+/**
+ * List every organization on the platform (`GET /organizations`, #467, D-32) — platform-operator
+ * only; every other caller is rejected with a `403` (there is no `{orgId}` in this path to hide
+ * the existence of, so ADR-0002's usual 404-not-403 rule does not apply here).
+ *
+ * This call doubles as the admin app's client-side **operator-detection signal** (#469): the app
+ * never reads the `platform_operator` token claim itself (it is a server-verified, admin-client-
+ * only claim, auth.md §3.4) — instead, once `GET /organizations/me` has 404'd for the caller (no
+ * active membership), the guard calls this. A `200` means the caller is a verified platform
+ * operator (render the organization picker); a `403` means the caller genuinely has no
+ * organization and is not an operator either (the pre-existing "no organization" denial, #73,
+ * unchanged). `q` is a free-text, case-insensitive search over organization name.
+ */
+export function listOrganizations(
+  client: ApiClient,
+  params: { cursor?: string | null; q?: string } = {},
+): Promise<OrganizationList> {
+  return client.get<OrganizationList>(organizationsPath(params));
+}
+
+/**
+ * Fetch a specific organization by id (`GET /organizations/{orgId}`), together with its `ETag`.
+ *
+ * Used by the organization-settings screen when a platform operator has selected an organization
+ * to administer (#469) — unlike `getOrganization` (which always resolves the caller's **own** org
+ * via `/me`), this targets an explicit id chosen from the organization list. The server
+ * re-enforces the platform-operator-or-org-admin check regardless of the client (ADR-0021); a
+ * caller who is neither gets `403`/`404` per the ordinary rules.
+ */
+export function getOrganizationById(
+  client: ApiClient,
+  orgId: string,
+): Promise<ETagged<Organization>> {
+  return client.getWithETag<Organization>(`/organizations/${encodeURIComponent(orgId)}`);
 }

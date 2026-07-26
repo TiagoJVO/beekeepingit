@@ -229,6 +229,16 @@ of, without this story pre-guessing #470's exact schema.
   `NotFound`) for every non-operator caller, and the operator's own identity resolved
   (`resolver.Resolve`, mirroring `platformOperatorMembership`) purely for its INFO grant log — this
   is a read endpoint, so there is no `audit_log` write to attribute.
+- [#469](https://github.com/TiagoJVO/beekeepingit/issues/469) — ✅ **Built:** the admin app's
+  organization list, switcher and operator-context indicator. The client never reads the
+  `platform_operator` claim (it is server-verified and admin-client-only, auth.md §3.4) — it
+  infers operator mode purely from response codes, mirroring this ADR's own server-side design:
+  `GET /organizations/me` 404s (no membership), then `GET /organizations` (#467) either `403`s
+  (genuinely not an operator — the pre-existing "no organization" denial) or `200`s (a verified
+  operator — render the picker). See `docs/architecture/admin-app.md` §5d. This also confirms in
+  the client the Consequences note below on `role: "admin"` overloading the wire contract: the
+  picked organization's `Organization.role` is indistinguishable from a real admin's, so the admin
+  app tracks "am I in operator mode" as local navigational state, never derived from that field.
 - ~~[#470](https://github.com/TiagoJVO/beekeepingit/issues/470) — persist a distinguishable,
   queryable record of platform-path actions in history, building on `AuthorizedVia` and the INFO
   grant log this ADR introduces.~~ **Done** — `organizations.audit_log.actor_scope` (migration

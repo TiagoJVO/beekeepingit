@@ -2,19 +2,27 @@
 
 > **Status:** As-built for the M7 scaffold ([#72](https://github.com/TiagoJVO/beekeepingit/issues/72))
 > plus organization management ([#73](https://github.com/TiagoJVO/beekeepingit/issues/73)),
-> member management ([#74](https://github.com/TiagoJVO/beekeepingit/issues/74)) and roles &
-> permissions management ([#75](https://github.com/TiagoJVO/beekeepingit/issues/75)).
+> member management ([#74](https://github.com/TiagoJVO/beekeepingit/issues/74)), roles &
+> permissions management ([#75](https://github.com/TiagoJVO/beekeepingit/issues/75)), and the
+> platform-operator organization list, switcher and operator-context indicator
+> ([#469](https://github.com/TiagoJVO/beekeepingit/issues/469), EPIC-18
+> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463)).
 > Covers the app shell, OIDC auth, the admin-role guard, and the admin screens (org view/edit;
-> member view/invite/remove/re-role; role-capabilities reference).
+> member view/invite/remove/re-role; role-capabilities reference; the platform-operator
+> organization picker + switcher).
 
 **Requirements:** NFR-ROL-1 (RBAC), NFR-ROL-2 (separate online-only admin app), FR-ONB-2 (org
 details), FR-ONB-3 (membership & invitations), FR-TEN-2 (org-scoped ownership + optimistic
 concurrency), FR-HIS-1 (entity history), NFR-SEC-1 (authenticated/authorized API access),
 NFR-TST-1 (automated tests), NFR-I18N (EN/PT)
 **Decisions:** [D-5](../../requirements/decisions.md#d-5) (React + TS admin, online-only),
-[D-7](../../requirements/decisions.md#d-7) (Authentik behind a provider-agnostic OIDC boundary)
+[D-7](../../requirements/decisions.md#d-7) (Authentik behind a provider-agnostic OIDC boundary),
+[D-32](../../requirements/decisions.md#d-32--administration-is-two-tier-organization-admin--platform-operator)
+(two-tier administration: organization admin + platform operator)
 **Builds on:** [auth.md](auth.md) (§3.2 admin client, §3.4 token, §5.3 roles),
-[oidc-integration.md](oidc-integration.md) (frozen OIDC contract), [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md)
+[oidc-integration.md](oidc-integration.md) (frozen OIDC contract), [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md),
+[ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md) (the platform-operator carve-out
+this UI surfaces)
 
 ---
 
@@ -79,12 +87,12 @@ auth + role-query state to a view — exhaustively unit-tested. `AdminGuard` wir
 (admin allowed, non-admin denied) with React Testing Library.
 
 > **This guard is the _organization_ tier only** (auth.md §5.3.1). The **platform tier** — a
-> `platform-operator` who is **not** a member of any organization, and so is denied by the flow
-> above — is **planned, not built**: it needs its own admission path plus an organization
-> switcher ([D-32](../../requirements/decisions.md), EPIC-18
-> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463) /
-> [#469](https://github.com/TiagoJVO/beekeepingit/issues/469)). Everything documented here
-> describes what ships today and is unchanged by that work.
+> `platform-operator` who is **not** a member of any organization, and so would otherwise be
+> denied by the flow above — is now built (D-32, EPIC-18
+> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463),
+> [#469](https://github.com/TiagoJVO/beekeepingit/issues/469)): see §5d below. Nothing in this
+> section changed to add it — the platform gate is consulted only from the pre-existing
+> "denied: no-org" outcome, so the organization-tier flow documented above is unchanged.
 
 ## 4. Authenticated API access (NFR-SEC-1)
 
@@ -228,6 +236,73 @@ success); the typed `changeMemberRole` call lives in `src/api/members.ts` (unit-
 `ApiError` kinds were needed — `conflict`/`not-found`/`forbidden`/`network` already cover the cases.
 Server-side enforcement of the change (and the last-admin guard + history) is owned and tested by
 #290 (Go), not re-tested here.
+
+## 5d. Platform-operator organization list, switcher and operator-context indicator — #469
+
+D-32 adds a second, **platform** tier above the organization tier §§5/5b/5c cover: a verified
+`platform-operator` who is a member of **no** organization but administers **every**
+organization (ADR-0021). The admin app never reads the `platform_operator` token claim itself —
+it is a server-verified, admin-client-only claim (auth.md §3.4) the client has no business
+decoding. Instead it infers operator mode from **response codes alone**, exactly the way §3's
+organization-tier guard already infers `admin`/`user` from `GET /organizations/me` rather than
+the token:
+
+```text
+GET /v1/organizations/me ──▶ 404 (no active membership, as §3 already handles)
+        │
+        ▼
+GET /v1/organizations (#467) ──▶ ?
+        ├─ 403 ▶ genuinely no organization AND not an operator — the pre-existing §3
+        │        "no organization" denial, byte-for-byte unchanged
+        └─ 200 ▶ verified platform operator ─▶ organization picker (below)
+```
+
+- **Where this is decided** — `src/auth/operatorAccess.ts`'s `decideOperatorGate`, a pure
+  function mirroring `src/auth/access.ts`'s `decideAccess` (exhaustively unit-tested). `AdminGuard`
+  consults it from **exactly one** place: the pre-existing `decideAccess` outcome
+  `{ view: "denied", reason: "no-org" }`. Every other `decideAccess` outcome (admin, not-admin,
+  loading, login, errors) renders unchanged, and the operator-list query (`useOrganizations`,
+  `GET /organizations`) is only `enabled` once that one outcome is reached — it is never fired
+  speculatively for an ordinary organization admin. This is what keeps the organization-tier path
+  §3 documents provably byte-for-byte unchanged by this story, verified by a regression test that
+  a real organization admin never sees the picker (`AdminGuard.test.tsx`).
+- **Why not the `Organization.role` field** — a platform operator acting on an organization via
+  the carve-out is reported `role: "admin"` by `GET /organizations/{orgId}`, identical to what a
+  real admin of that org would see (ADR-0021 Consequences: the wire contract's `Role` enum has no
+  third value). The client therefore cannot and does not infer operator mode from anything on the
+  fetched organization record — only from the navigational path that got it there (the picker
+  selection), tracked as local component state.
+- **The organization picker** (`src/components/OrganizationPicker.tsx`) — a searchable, paginated
+  list of every organization (`GET /organizations`, `src/hooks/useOrganizations.ts`, the same
+  `useInfiniteQuery`/"load more" shape as `useMembers`, §5b). Search is a committed, explicit
+  submit (not live-as-you-type) so it is predictable and restarts pagination from the first page.
+  Each organization is a native `<button>` row (keyboard-operable without extra script) naming the
+  org and its member count; selecting one stores the pick as local state in `AdminGuard`.
+- **Selection drives the detail screens** — once an organization is selected, `AppShell` renders
+  exactly as it does for an organization admin (§5/§5b), except `orgId` is the **selected**
+  organization's id instead of the caller's own, and `OrganizationSettings` is passed that same
+  `orgId` so it reads/writes `GET`/`PATCH /organizations/{orgId}` directly instead of
+  `/organizations/me` (`useOrganization(config, orgId)` — the default, no-`orgId` call is
+  unchanged). `MemberManagement` already accepted an explicit `orgId` (§5b) and needed no change.
+- **The operator-context indicator** (`src/components/OperatorContextBanner.tsx`) — a
+  **safety-critical**, persistent banner rendered by `AppShell` whenever `operatorMode` is passed,
+  naming the organization being administered so a destructive action (edit settings, remove a
+  member, change a role) is never taken against the wrong organization by accident. It is
+  deliberately **not colour-only** (WCAG 1.4.1): a decorative icon (`aria-hidden`) plus explicit
+  text carry the meaning. `role="status"` makes it an assistive-tech live region, announced
+  whenever it (re)mounts — including when switching organizations, not just on first entry into
+  operator mode. A "switch organization" control returns to the picker.
+- **History/attribution** — unchanged from ADR-0021/#470: the server attributes every write to
+  the operator's own identity with `actor_scope = 'platform_operator'`; this UI does not
+  re-implement or duplicate that attribution.
+
+The typed `listOrganizations`/`getOrganizationById` calls live in `src/api/organizations.ts`
+(mirroring the `OrganizationSummary`/`OrganizationList` schemas #467 added); no new `ApiError`
+kinds were needed. Tests cover: the operator sees the picker and can select an organization; an
+organization-tier admin is unaffected (never sees the picker — the regression test D-32 calls
+for); selecting an organization drives the detail screens with **that** organization's data, not
+"my organization"; the operator-context banner renders and persists across the selected
+organization's screens; and `jest-axe` on the picker, the banner, and the combined operator view.
 
 ## 6. i18n & accessibility
 
