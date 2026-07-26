@@ -208,10 +208,16 @@ of, without this story pre-guessing #470's exact schema.
 
 ## Follow-ups
 
-- [#467](https://github.com/TiagoJVO/beekeepingit/issues/467) / [#468](https://github.com/TiagoJVO/beekeepingit/issues/468) —
-  new endpoints (list organizations; cross-org membership lookup) with no existing membership check
-  to extend; call `isPlatformOperator(r)` directly and `problem.Forbidden(...)` (not `NotFound` —
-  there is no `{orgId}` to hide) when it is false. See `platform_authz.go`'s package doc.
+- [#467](https://github.com/TiagoJVO/beekeepingit/issues/467) — list organizations, the remaining new
+  endpoint with no existing membership check to extend; call `isPlatformOperator(r)` directly and
+  `problem.Forbidden(...)` (not `NotFound` — there is no `{orgId}` to hide) when it is false. See
+  `platform_authz.go`'s package doc.
+- [#468](https://github.com/TiagoJVO/beekeepingit/issues/468) — **built.** The cross-org membership
+  lookup, `GET /organizations/platform/memberships` (`services/organizations/api/platform_membership_lookup.go`),
+  follows exactly this extension point: `isPlatformOperator(r)` directly, `problem.Forbidden` (not
+  `NotFound`) for every non-operator caller, and the operator's own identity resolved
+  (`resolver.Resolve`, mirroring `platformOperatorMembership`) purely for its INFO grant log — this
+  is a read endpoint, so there is no `audit_log` write to attribute.
 - [#470](https://github.com/TiagoJVO/beekeepingit/issues/470) — persist a distinguishable,
   queryable record of platform-path actions in history, building on `AuthorizedVia` and the INFO
   grant log this ADR introduces.

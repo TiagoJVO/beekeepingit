@@ -147,6 +147,17 @@ type UserResolver interface {
 	// which the client renders as a short id fragment). Never returns email
 	// (FR-TEN-2).
 	ResolveNames(ctx context.Context, bearer string, userIDs []string) (map[string]string, error)
+	// ResolveByEmail maps an email address to its identity.users row -- the
+	// email-lookup half of #468's platform cross-organization
+	// membership-lookup support tool (platform_membership_lookup.go): a
+	// support operator who only has a person's email needs their user_id
+	// before organizations' own memberships table (keyed by user_id, never
+	// email) can be queried across orgs. Matches the same mutable, non-
+	// authoritative profile email ResolvedUser's doc comment warns about --
+	// fine for a support SEARCH key, never for an authorization decision.
+	// Returns ErrUnknownUser (not a generic error) when identity has no row
+	// for the email, exactly like Resolve does for an unknown subject.
+	ResolveByEmail(ctx context.Context, bearer, email string) (ResolvedUser, error)
 }
 
 // HTTPUserResolver calls identity's internal resolve endpoint directly --
@@ -207,6 +218,32 @@ func (h *HTTPUserResolver) Resolve(ctx context.Context, bearer, sub string) (Res
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return ResolvedUser{}, fmt.Errorf("resolve user by sub: decode identity response: %w", err)
+	}
+	return ResolvedUser{UserID: out.UserID, Email: out.Email}, nil
+}
+
+// ResolveByEmail maps an email address to its identity.users row via
+// identity's internal GET /internal/users/by-email/{email} (#468). Mirrors
+// Resolve's shape exactly (same ErrUnknownUser-on-404 contract, same
+// escaped-path-segment request) -- the only difference is the lookup key.
+func (h *HTTPUserResolver) ResolveByEmail(ctx context.Context, bearer, email string) (ResolvedUser, error) {
+	reqURL := h.IdentityBaseURL + "/internal/users/by-email/" + url.PathEscape(email)
+	status, body, err := h.getJSON(ctx, reqURL, bearer)
+	if err != nil {
+		return ResolvedUser{}, fmt.Errorf("resolve user by email: call identity: %w", err)
+	}
+	if status == http.StatusNotFound {
+		return ResolvedUser{}, ErrUnknownUser
+	}
+	if status != http.StatusOK {
+		return ResolvedUser{}, fmt.Errorf("resolve user by email: identity responded %d", status)
+	}
+	var out struct {
+		UserID string `json:"user_id"`
+		Email  string `json:"email"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return ResolvedUser{}, fmt.Errorf("resolve user by email: decode identity response: %w", err)
 	}
 	return ResolvedUser{UserID: out.UserID, Email: out.Email}, nil
 }
@@ -299,7 +336,13 @@ func identityUnavailable(detail string) problem.Problem {
 // PublicRouter returns the client-facing /v1 organization routes backed by
 // pool, mounted under "/v1" behind authn.NewMiddleware only (see package doc
 // for why no authn.NewOrgResolver sits in front of any of these routes).
-// Member/invitation routes are registered in invitations.go's registerMemberAndInvitationRoutes.
+// Member/invitation routes are registered in invitations.go's
+// registerMemberAndInvitationRoutes; the platform-operator cross-organization
+// membership lookup (#468) is registered in
+// platform_membership_lookup.go's registerPlatformRoutes -- both live under
+// this same "/organizations"-prefixed router so the gateway's existing
+// /v1/organizations path-prefix route (infra/helm/beekeepingit/charts/gateway
+// /values.yaml) reaches them with no infra change.
 func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
@@ -308,6 +351,7 @@ func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 	r.Get("/organizations/{orgId}", getOrganization(q, resolver))
 	r.Patch("/organizations/{orgId}", updateOrganization(pool, q, resolver))
 	registerMemberAndInvitationRoutes(r, pool, q, resolver)
+	registerPlatformRoutes(r, q, resolver)
 	return r
 }
 
