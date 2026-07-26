@@ -29,3 +29,45 @@ SET name = $2,
     updated_at = $4
 WHERE id = $1
 RETURNING id, name, address, created_by, created_at, updated_at;
+
+-- name: ListOrganizations :many
+-- Platform-operator-only cross-org list (#467, D-32, FR-TEN-2, NFR-ROL-1):
+-- the ONE query in this file (indeed, in this service) that deliberately has
+-- NO organization_id scope -- every other query here is org-scoped because
+-- every other caller is confined to their own org (ADR-0002); this one backs
+-- the platform console's "enumerate every tenant" screen, gated entirely at
+-- the handler by isPlatformOperator (api/organizations.go's listOrganizations),
+-- never by this query itself.
+--
+-- Keyset-paginated by id DESC (newest org first) -- matches ListMembers'/
+-- ListInvitations' own id-DESC convention in this same service (memberships.sql,
+-- invitations.sql), not apiaries' id-ASC (a different service's convention).
+--
+-- q (optional, #467 AC "search/filter by name"): a case-insensitive ILIKE
+-- substring match on name. The caller-supplied query is turned into an
+-- escaped `%...%` pattern in Go (api/organizations.go's likeSearchPattern)
+-- before reaching here, so a literal %, _ or \ in the search text is matched
+-- literally, not as a wildcard -- this query only ever sees an
+-- already-escaped pattern plus the ESCAPE '\' clause that makes the escaping
+-- effective.
+--
+-- member_count (#467 AC "no member PII... maybe member count"): a
+-- COALESCE'd LEFT JOIN aggregate over ACTIVE memberships only, mirroring
+-- apiaries' hive_count LEFT JOIN convention (apiaries.sql) -- one join over
+-- the page, not one query per row (avoiding N+1). This is the only
+-- member-related fact exposed here; no user_id/role/status/email leaves this
+-- query, keeping the response a pure organization summary (#467 AC "the
+-- response exposes only what the console needs").
+SELECT o.id, o.name, o.created_at, o.updated_at,
+       COALESCE(mc.member_count, 0)::bigint AS member_count
+FROM organizations.organizations o
+LEFT JOIN (
+    SELECT organization_id, count(*) AS member_count
+    FROM organizations.memberships
+    WHERE status = 'active'
+    GROUP BY organization_id
+) mc ON mc.organization_id = o.id
+WHERE (sqlc.narg('cursor')::uuid IS NULL OR o.id < sqlc.narg('cursor')::uuid)
+  AND (sqlc.narg('q')::text IS NULL OR o.name ILIKE sqlc.narg('q')::text ESCAPE '\')
+ORDER BY o.id DESC
+LIMIT $1;
