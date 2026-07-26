@@ -44,7 +44,7 @@ function trapTabKey(event: KeyboardEvent<HTMLDivElement>, dialog: HTMLDivElement
 
 interface MemberManagementProps {
   config: AppConfig;
-  /** The caller's own organization id (resolved server-side via `/organizations/me`). */
+  /** The organization id being administered — the caller's own org, or an operator's selected org (#469). */
   orgId: string | undefined;
 }
 

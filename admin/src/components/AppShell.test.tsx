@@ -74,3 +74,64 @@ describe("AppShell quotas/rate-limit seam", () => {
     expect(screen.getByText(/loading your organization/i)).toBeInTheDocument();
   });
 });
+
+describe("AppShell — operator mode (#469, D-32)", () => {
+  function renderShellWithOperatorMode(
+    operatorMode: { onSwitchOrganization: () => void } | undefined,
+  ) {
+    useAuthMock.mockReturnValue({
+      isLoading: false,
+      isAuthenticated: true,
+      user: {
+        access_token: "tok",
+        profile: { sub: "user-1", name: "Ada" },
+      } as AuthContextProps["user"],
+    });
+    const getOrgById = vi
+      .spyOn(organizations, "getOrganizationById")
+      .mockReturnValue(new Promise(() => {}));
+    const getOrg = vi
+      .spyOn(organizations, "getOrganization")
+      .mockReturnValue(new Promise(() => {}));
+    vi.spyOn(members, "listMembers").mockReturnValue(new Promise(() => {}));
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const result = render(
+      <QueryClientProvider client={queryClient}>
+        <AppShell
+          config={baseConfig}
+          userName="Ada"
+          orgName="Some Other Org"
+          orgId="org-selected"
+          onSignOut={vi.fn()}
+          operatorMode={operatorMode}
+        />
+      </QueryClientProvider>,
+    );
+    return { ...result, getOrgById, getOrg };
+  }
+
+  it("without operatorMode (the organization-admin default): no banner, org-settings reads /me — unchanged", () => {
+    const { getOrgById, getOrg } = renderShellWithOperatorMode(undefined);
+
+    expect(screen.queryByText(/platform operator view/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /switch organization/i })).not.toBeInTheDocument();
+    expect(getOrg).toHaveBeenCalled();
+    expect(getOrgById).not.toHaveBeenCalled();
+  });
+
+  it("with operatorMode: shows the persistent operator banner and org-settings reads the SELECTED org, not /me", () => {
+    const onSwitchOrganization = vi.fn();
+    const { getOrgById, getOrg } = renderShellWithOperatorMode({ onSwitchOrganization });
+
+    // MemberManagement's own roster also carries a `role="status"` loading indicator, so target
+    // the operator banner specifically via its "switch organization" control.
+    const switchButton = screen.getByRole("button", { name: /switch organization/i });
+    const banner = switchButton.closest('[role="status"]');
+    expect(banner).not.toBeNull();
+    expect(banner as HTMLElement).toHaveTextContent(/some other org/i);
+    expect(banner as HTMLElement).toHaveTextContent(/platform operator/i);
+    expect(getOrgById).toHaveBeenCalledWith(expect.anything(), "org-selected");
+    expect(getOrg).not.toHaveBeenCalled();
+  });
+});

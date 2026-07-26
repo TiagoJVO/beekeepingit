@@ -136,6 +136,24 @@
   "quotasSeam": {
     "navLabel": "Quotas e limites de taxa (em breve)"
   },
+  "orgPicker": {
+    "heading": "Escolha uma organização para administrar",
+    "intro": "Sessão iniciada como {{name}}. É um operador da plataforma — pesquise uma organização e selecione-a para gerir os seus detalhes, membros e funções.",
+    "searchLabel": "Pesquisar organizações por nome",
+    "search": "Pesquisar",
+    "loading": "A carregar organizações…",
+    "loadFailed": "Não foi possível carregar as organizações. Por favor, tente novamente.",
+    "empty": "Nenhuma organização corresponde à sua pesquisa.",
+    "listLabel": "Organizações",
+    "memberCount_one": "{{count}} membro",
+    "memberCount_other": "{{count}} membros",
+    "loadMore": "Carregar mais organizações",
+    "loadingMore": "A carregar…"
+  },
+  "operatorBanner": {
+    "message": "Vista de operador da plataforma — está a administrar \"{{org}}\", uma organização da qual não é membro.",
+    "switch": "Mudar de organização"
+  },
   "denied": {
     "heading": "Acesso de administrador necessário",
     "body": "A sua conta não tem a função de administrador nesta organização, por isso não pode usar a aplicação de administração. Peça a um administrador da organização para lhe atribuir a função de administrador e inicie sessão novamente.",

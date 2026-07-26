@@ -136,6 +136,24 @@
   "quotasSeam": {
     "navLabel": "Quotas & rate limits (coming later)"
   },
+  "orgPicker": {
+    "heading": "Choose an organization to administer",
+    "intro": "Signed in as {{name}}. You are a platform operator — search for an organization and select it to manage its details, members and roles.",
+    "searchLabel": "Search organizations by name",
+    "search": "Search",
+    "loading": "Loading organizations…",
+    "loadFailed": "We could not load the organizations. Please try again.",
+    "empty": "No organizations match your search.",
+    "listLabel": "Organizations",
+    "memberCount_one": "{{count}} member",
+    "memberCount_other": "{{count}} members",
+    "loadMore": "Load more organizations",
+    "loadingMore": "Loading…"
+  },
+  "operatorBanner": {
+    "message": "Platform operator view — you are administering \"{{org}}\", an organization you are not a member of.",
+    "switch": "Switch organization"
+  },
   "denied": {
     "heading": "Admin access required",
     "body": "Your account does not have the admin role in this organization, so you cannot use the admin app. Ask an organization admin to grant you the admin role, then sign in again.",

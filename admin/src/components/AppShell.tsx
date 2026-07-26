@@ -1,24 +1,39 @@
 import { useTranslation } from "react-i18next";
 import type { AppConfig } from "../config/env";
 import { MemberManagement } from "./MemberManagement";
+import { OperatorContextBanner } from "./OperatorContextBanner";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { QuotasSeam } from "./QuotasSeam";
+
+/**
+ * Present only when a platform operator is administering an organization they are not a member
+ * of (#469, D-32) — drives the persistent operator-context banner AND switches the org-settings
+ * screen from "my organization" (`/organizations/me`) onto the explicit `orgId` prop
+ * (`/organizations/{orgId}`). Absent for the unchanged organization-admin path.
+ */
+export interface OperatorModeContext {
+  readonly onSwitchOrganization: () => void;
+}
 
 interface AppShellProps {
   config: AppConfig;
   userName: string;
   orgName: string;
-  /** The caller's own organization id, resolved server-side (used to scope member management). */
+  /** The organization id being administered — the caller's own org, or an operator's pick. */
   orgId?: string;
   accountUrl?: string;
   onSignOut: () => void;
+  operatorMode?: OperatorModeContext;
 }
 
 /**
- * The guarded landing shell shown only to admins (auth.md §5.3). It hosts the administrative
- * screens — organization management (view/edit name + address — #73) and member management
+ * The guarded landing shell shown only to admins (auth.md §5.3) or, once selected, to a platform
+ * operator acting on an organization (D-32, #469). It hosts the administrative screens —
+ * organization management (view/edit name + address — #73) and member management
  * (view/invite/remove — #74) — each in its own card; further screens (roles) slot into the
- * same frame.
+ * same frame. When `operatorMode` is present, a persistent banner names the organization being
+ * administered and the org-settings screen reads/writes it directly via `orgId` instead of "my
+ * organization" — the default (no `operatorMode`) path is unchanged from #73/#74/#75.
  */
 export function AppShell({
   config,
@@ -27,6 +42,7 @@ export function AppShell({
   orgId,
   accountUrl,
   onSignOut,
+  operatorMode,
 }: AppShellProps) {
   const { t } = useTranslation();
   return (
@@ -51,6 +67,12 @@ export function AppShell({
           </button>
         </nav>
       </header>
+      {operatorMode && (
+        <OperatorContextBanner
+          orgName={orgName}
+          onSwitchOrganization={operatorMode.onSwitchOrganization}
+        />
+      )}
       <main className="page page-top">
         <div className="stack" style={{ maxWidth: "40rem", width: "100%" }}>
           <div className="card stack">
@@ -58,7 +80,7 @@ export function AppShell({
               <span className="badge">{t("shell.roleBadge")}</span>
             </p>
             <p className="muted">{t("shell.signedInAs", { name: userName, org: orgName })}</p>
-            <OrganizationSettings config={config} />
+            <OrganizationSettings config={config} orgId={operatorMode ? orgId : undefined} />
           </div>
           <div className="card stack">
             <MemberManagement config={config} orgId={orgId} />

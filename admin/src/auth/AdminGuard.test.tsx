@@ -9,6 +9,7 @@ import { AdminGuard } from "./AdminGuard";
 import { ApiError } from "../api/client";
 import type { AppConfig } from "../config/env";
 import * as organizations from "../api/organizations";
+import * as members from "../api/members";
 
 // --- Mock the OIDC auth context. Each test sets the return value of useAuth. ---
 const useAuthMock = vi.fn<() => Partial<AuthContextProps>>();
@@ -109,15 +110,165 @@ describe("AdminGuard", () => {
     expect(screen.queryByRole("heading", { name: /welcome/i })).not.toBeInTheDocument();
   });
 
-  it("DENIES with a no-organization message on a 404", async () => {
+  it("DENIES with a no-organization message on a 404 (genuinely not a platform operator either)", async () => {
     useAuthMock.mockReturnValue(authenticatedAs("New User"));
     vi.spyOn(organizations, "getMyOrganization").mockRejectedValue(
       new ApiError("not-found", 404, "no membership"),
+    );
+    // The operator-detection call (#469): a 403 here means this caller has no organization AND
+    // is not a platform operator — the pre-existing "no organization" denial, unchanged.
+    vi.spyOn(organizations, "listOrganizations").mockRejectedValue(
+      new ApiError("forbidden", 403, "not a platform operator"),
     );
 
     renderGuard();
 
     expect(await screen.findByText(/not a member of any organization/i)).toBeInTheDocument();
+  });
+
+  describe("platform operator (#469, D-32)", () => {
+    function operatorOrgs(): organizations.OrganizationList {
+      return {
+        data: [
+          { id: "org-a", name: "Apiário Alfa", member_count: 3 },
+          { id: "org-b", name: "Apiário Beta", member_count: 7 },
+        ],
+        page: { next_cursor: null, limit: 50 },
+      };
+    }
+
+    it("shows the organization picker for a verified operator (no membership, GET /organizations succeeds)", async () => {
+      useAuthMock.mockReturnValue(authenticatedAs("Opal Operator"));
+      vi.spyOn(organizations, "getMyOrganization").mockRejectedValue(
+        new ApiError("not-found", 404, "no membership"),
+      );
+      vi.spyOn(organizations, "listOrganizations").mockResolvedValue(operatorOrgs());
+
+      renderGuard();
+
+      expect(
+        await screen.findByRole("heading", { name: /choose an organization to administer/i }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /apiário alfa/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /apiário beta/i })).toBeInTheDocument();
+      // The organization-tier "admin access required"/"no organization" screens never render here.
+      expect(
+        screen.queryByRole("heading", { name: /admin access required/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("selecting an organization drives the detail screens with THAT org's data and shows the persistent operator banner", async () => {
+      useAuthMock.mockReturnValue(authenticatedAs("Opal Operator"));
+      vi.spyOn(organizations, "getMyOrganization").mockRejectedValue(
+        new ApiError("not-found", 404, "no membership"),
+      );
+      vi.spyOn(organizations, "listOrganizations").mockResolvedValue(operatorOrgs());
+      const getOrgById = vi.spyOn(organizations, "getOrganizationById").mockResolvedValue({
+        data: { id: "org-b", name: "Apiário Beta", address: "Rua B", role: "admin" },
+        etag: '"v1"',
+      });
+      vi.spyOn(members, "listMembers").mockResolvedValue({
+        data: [],
+        page: { next_cursor: null, limit: 50 },
+      });
+
+      renderGuard();
+
+      await userEvent.click(await screen.findByRole("button", { name: /apiário beta/i }));
+
+      // The banner names the SELECTED org and is visible alongside the detail screens.
+      const banner = await screen.findByRole("status");
+      expect(banner).toHaveTextContent(/platform operator view/i);
+      expect(banner).toHaveTextContent(/apiário beta/i);
+
+      // The org-settings screen reads the SELECTED org (org-b) via /organizations/{orgId}, never
+      // "my organization" — proving the selected org drives the detail screens, not "my org".
+      await waitFor(() => expect(getOrgById).toHaveBeenCalledWith(expect.anything(), "org-b"));
+      expect(await screen.findByDisplayValue("Apiário Beta")).toBeInTheDocument();
+    });
+
+    it("switching organizations returns the operator to the picker", async () => {
+      useAuthMock.mockReturnValue(authenticatedAs("Opal Operator"));
+      vi.spyOn(organizations, "getMyOrganization").mockRejectedValue(
+        new ApiError("not-found", 404, "no membership"),
+      );
+      vi.spyOn(organizations, "listOrganizations").mockResolvedValue(operatorOrgs());
+      vi.spyOn(organizations, "getOrganizationById").mockResolvedValue({
+        data: { id: "org-b", name: "Apiário Beta", address: "Rua B", role: "admin" },
+        etag: '"v1"',
+      });
+      vi.spyOn(members, "listMembers").mockResolvedValue({
+        data: [],
+        page: { next_cursor: null, limit: 50 },
+      });
+
+      renderGuard();
+
+      await userEvent.click(await screen.findByRole("button", { name: /apiário beta/i }));
+      await screen.findByText(/platform operator view/i);
+
+      await userEvent.click(screen.getByRole("button", { name: /switch organization/i }));
+
+      expect(
+        await screen.findByRole("heading", { name: /choose an organization to administer/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows a retryable error when the operator-detection call fails on the network", async () => {
+      useAuthMock.mockReturnValue(authenticatedAs("Opal Operator"));
+      vi.spyOn(organizations, "getMyOrganization").mockRejectedValue(
+        new ApiError("not-found", 404, "no membership"),
+      );
+      vi.spyOn(organizations, "listOrganizations").mockRejectedValue(
+        new ApiError("network", 0, "offline"),
+      );
+
+      renderGuard();
+
+      expect(
+        await screen.findByRole("heading", { name: /could not verify your access/i }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/could not reach the server/i)).toBeInTheDocument();
+    });
+
+    it("the organization picker has no automatically-detectable accessibility violations", async () => {
+      useAuthMock.mockReturnValue(authenticatedAs("Opal Operator"));
+      vi.spyOn(organizations, "getMyOrganization").mockRejectedValue(
+        new ApiError("not-found", 404, "no membership"),
+      );
+      vi.spyOn(organizations, "listOrganizations").mockResolvedValue(operatorOrgs());
+
+      const { container } = renderGuard();
+      await screen.findByRole("heading", { name: /choose an organization to administer/i });
+
+      await waitFor(async () => {
+        expect(await axe(container)).toHaveNoViolations();
+      });
+    });
+
+    it("the operator-context banner + detail screens have no automatically-detectable accessibility violations", async () => {
+      useAuthMock.mockReturnValue(authenticatedAs("Opal Operator"));
+      vi.spyOn(organizations, "getMyOrganization").mockRejectedValue(
+        new ApiError("not-found", 404, "no membership"),
+      );
+      vi.spyOn(organizations, "listOrganizations").mockResolvedValue(operatorOrgs());
+      vi.spyOn(organizations, "getOrganizationById").mockResolvedValue({
+        data: { id: "org-b", name: "Apiário Beta", address: "Rua B", role: "admin" },
+        etag: '"v1"',
+      });
+      vi.spyOn(members, "listMembers").mockResolvedValue({
+        data: [],
+        page: { next_cursor: null, limit: 50 },
+      });
+
+      const { container } = renderGuard();
+      await userEvent.click(await screen.findByRole("button", { name: /apiário beta/i }));
+      await screen.findByText(/platform operator view/i);
+
+      await waitFor(async () => {
+        expect(await axe(container)).toHaveNoViolations();
+      });
+    });
   });
 
   it("signs the denied user out on request", async () => {
