@@ -58,7 +58,10 @@ the Authentik blueprint) but services still validate `OIDC_AUDIENCE=beekeepingit
   stage's `enrollment_flow`. Registrations are held **unverified** on an emailed one-time link
   (the #361 machinery) and a UUID `upn` is assigned at creation (§4). The provider/client
   contract above is unchanged — enrollment is IdP-side flow config.
-- **`platform-operator`** — an Authentik **group** (ops-only marker, **not** an app role); the app authZ path never reads it.
+- **`platform-operator`** — an Authentik **group**. Still **not** an app role (the org-scoped
+  `admin`/`user` role stays membership-derived — [auth.md §3.3](auth.md)), and the **PWA** authZ
+  path never reads it. Since #465 it is the **platform tier's** authority source (EPIC-18): it is
+  surfaced as the verified `platform_operator` claim on **admin-app tokens only** — §3.2.
 
 ### 3.1 Admin app client (`beekeepingit-admin`, #456 — ADDITIVE, the pwa values above are frozen)
 
@@ -111,6 +114,61 @@ _both_ providers off the frozen per-app issuer).
   `admin.beekeepingit.local:8443` by convention (mirrors `app.beekeepingit.local:8443`), templated
   from `global.adminOrigin`.
 
+### 3.2 Platform-operator claim (`platform_operator`, #465 — EPIC-18 #463)
+
+EPIC-10 built the **organization tier**: an `admin` is a member of **one** org and manages only
+that org, resolved per request from `organizations.memberships.role` ([auth.md §3.3/§5.3](auth.md)).
+EPIC-18 adds the **platform tier** above it — the app owner who administers **every** organization.
+That authority must come from the **IdP**, verified, never asserted by the client, so it is minted
+as a claim derived from the caller's real `platform-operator` group membership.
+
+**The claim contract** (services code against exactly this — [#466](https://github.com/TiagoJVO/beekeepingit/issues/466)):
+
+| Property        | Value                                                                                                     |
+| --------------- | --------------------------------------------------------------------------------------------------------- |
+| Claim name      | **`platform_operator`**                                                                                   |
+| Type            | **JSON boolean** — `true` / `false`, never a string, never an array                                       |
+| Where           | The **access token** (and the id_token — `include_claims_in_id_token: true` puts the same claims in both) |
+| Which clients   | **`beekeepingit-admin` only.** Never present on a `beekeepingit-pwa` token                                |
+| Absent          | **Treat as `false`.** Absence is the fail-closed outcome (mapping error, or a non-admin client)           |
+| Source of truth | The user's `platform-operator` **group membership** in Authentik, read server-side at token mint          |
+
+Implemented as blueprint scope mapping **`scope-platform-operator`**, attached **only** to
+`provider-beekeepingit-admin`. Like the §3.1 override it rides **`scope_name: openid`** (always
+requested — `get_claims` only evaluates mappings whose `scope_name` is among the requested scopes),
+so a client can neither opt it in nor opt it out.
+
+**Why a dedicated boolean and not the `groups` array.** The managed `profile` scope mapping already
+emits `groups` on **both** providers, so a **PWA** token for an operator lists `platform-operator`
+today. Authorizing on `groups` would therefore hand platform authority to a field-app token — an
+offline-cached, long-lived credential on a beekeeper's phone. The distinct boolean, attached to one
+provider, keeps "who you are" (`groups`, informational, both clients) separate from "what this token
+may do at the platform tier" (`platform_operator`, admin client only). **Services must authorize on
+`platform_operator`, never on `groups`.**
+
+**Why it cannot be spoofed.** The value is read from the IdP's own database (`request.user`'s
+memberships) inside the token-minting path — no scope, request parameter, prompt or user-writable
+attribute feeds it. Group membership is assignable only by an IdP operator: `user_write` denies
+`groups` writes, so neither self-service registration (#366) nor the verification flow can grant it
+([auth.md §8.11](auth.md)). The token is RS256-signed, so the claim cannot be edited in flight, and
+the services validate the signature before reading any claim (§6). Every failure path yields
+`false`/absent — there is no error path that produces `true`.
+
+**Guards.** `scripts/check-platform-operator-mapping.sh` (run by `task repo:lint` in CI, sharing its
+engine — `scripts/check-scope-mapping-provider.sh` — with the #460 audience guard) asserts the
+mapping is attached to **exactly** `provider-beekeepingit-admin`. It matches both reference forms
+(`!KeyOf <id>`, token-anchored, and `!Find`-by-name) **and fails closed on anything it cannot
+resolve**: on any provider other than the admin one, a `!Find` into
+`authentik_providers_oauth2.scopemapping` by a field other than `managed`, or a YAML alias, is
+rejected outright — otherwise a `!Find [..., [description, …]]` edit could attach the mapping to the
+PWA provider and still read as green (found in the #465 security review). **Blueprint convention this
+enforces: custom scope mappings are attached with `!KeyOf`; `!Find` is for upstream `managed`
+built-ins.** The live proof is `client/e2e/tests/admin-token.spec.ts`: an operator
+login yields `platform_operator: true`, a non-operator login yields `false`, and
+`client/e2e/tests/slice.spec.ts` asserts the same operator's **PWA** token carries no such claim at
+all. Dev/CI seeds: `test.beekeeper@beekeepingit.local` (in the group) and
+`non.operator@beekeepingit.local` (not).
+
 ## 4. Subject & audience — the two claim decisions
 
 - **`sub` → `sub_mode: user_upn`.** Each user's `attributes.upn` holds an **app-assigned UUID**;
@@ -131,7 +189,8 @@ _both_ providers off the frozen per-app issuer).
 ## 5. Claims
 
 Present: `sub, iss, aud, azp, exp, iat, email, email_verified, name, given_name (=full name),
-preferred_username, groups`. **Absent by default:** `family_name`, `locale`. The app collects
+preferred_username, groups` — plus **`platform_operator`** on **admin-client tokens only** (§3.2).
+**Absent by default:** `family_name`, `locale`. The app collects
 profile (name/locale) during onboarding (FR-ONB-1), so it does **not** depend on IdP profile
 claims; add a `locale` scope mapping only if IdP-sourced locale is later wanted (NFR-I18N) —
 optional.
@@ -217,7 +276,10 @@ optional.
   (`beekeepingit-admin` provider + its own `beekeepingit-admin` application) and a claim-override
   scope mapping that rewrites the admin token's `iss`/`aud` to the beekeepingit issuer +
   `beekeepingit-pwa` audience (§3.1) — so admin tokens are accepted by the single-issuer,
-  single-audience services with no services change.
+  single-audience services with no services change. Since #465 it additionally declares the
+  **`scope-platform-operator`** mapping (the verified `platform_operator` claim, §3.2 — admin
+  provider only) and a third seed user, `non.operator@beekeepingit.local`, deliberately outside the
+  `platform-operator` group so the claim's negative case is provable in e2e.
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
@@ -267,7 +329,13 @@ optional.
   admin provider signs with the same `authentik Self-signed Certificate` as the pwa, so its
   forged-issuer token validates against the JWKS the beekeepingit discovery advertises — giving the
   admin provider its own signing cert (a routine-looking ops change) would silently 401 every admin
-  login. Keep the two providers' `signing_key` shared.
+  login. Keep the two providers' `signing_key` shared. The **`platform_operator` claim (#465, §3.2)**
+  rides the same scope-gating internal plus authentik's `User.all_groups()` membership accessor (with
+  a fallback to the raw `ak_groups` M2M if a bump renames it) — a bump that changes either would drop
+  the claim, which is fail-closed (the platform tier denies) but locks the platform admin out, so it
+  must go red in CI: the live pin is the same `admin-token.spec.ts` (operator ⇒ `true`, non-operator
+  ⇒ `false`) plus `slice.spec.ts`'s assertion that a PWA token never carries it, and the static pin is
+  `scripts/check-platform-operator-mapping.sh` (`task repo:lint`).
 - **CI** — `helm-e2e`: timeout 20→30m, install `--timeout` →15m, apply the Authentik `HelmRelease`
   - `rollout status` before `helm test`; `helm test` hook curls `/-/health/ready/`. `helm-ci`: swap
     the `codecentric` repo add for the `authentik` repo where a lint/template needs it.
