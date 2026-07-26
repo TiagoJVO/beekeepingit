@@ -313,10 +313,38 @@ func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 
 // callerMembership is the resolved (org, user, role) tuple resolveActiveMembership
 // produces for the caller of the current request.
+//
+// #466: this is now a UNION of two distinct shapes, discriminated by
+// AuthorizedVia -- not a single invariant struct anymore. When AuthorizedVia
+// is "" (the ordinary membership path -- resolveActiveMembership,
+// requireOrgMember/requireOrgAdmin, entirely unchanged by #466), UserID is
+// genuinely an ACTIVE MEMBER of OrgID with role Role, backed by a real
+// organizations.memberships row, and every invariant that implies (e.g.
+// GetOrganizationForUpdate's "OrgID is guaranteed to exist" assumption,
+// organizations.go) holds. When AuthorizedVia is authorizedViaPlatformOperator
+// (platform_authz.go), UserID is the verified platform operator's OWN
+// identity -- NOT a member of OrgID at all, no memberships row backs this
+// callerMembership -- and Role is a fixed sentinel (platformOperatorRole),
+// not a real membership role read from the database. Do not assume a
+// callerMembership implies DB-backed membership without checking
+// AuthorizedVia first; see platform_authz.go's package doc for the full
+// contract.
 type callerMembership struct {
 	OrgID  pgtype.UUID
 	UserID pgtype.UUID
 	Role   string
+	// AuthorizedVia records which of the two authorization paths (#466)
+	// produced this callerMembership: the zero value "" is the ordinary
+	// membership-derived path (requireOrgMember/requireOrgAdmin,
+	// resolveActiveMembership -- entirely unchanged by #466, so every
+	// pre-existing call site simply never sets this field, and Go's zero
+	// value for a new struct field requires no change to those call sites)
+	// or authorizedViaPlatformOperator (platform_authz.go) for the verified-
+	// claim carve-out. Never serialized to any client response --
+	// recoverability for #470's audit-attribution story and for this
+	// package's own structured logging (platform_authz.go logs every grant
+	// through that path regardless of this field).
+	AuthorizedVia string
 }
 
 // resolveActiveMembership maps the request's verified sub to its active
@@ -663,16 +691,17 @@ func getMyOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserReso
 // getOrganization requires {orgId} to match the caller's own resolved org
 // (ADR-0002, api-contracts.md section 9): the path never widens scope, so a
 // different (even valid) org id is a 404, not a 403 -- the API never confirms
-// another org's existence.
+// another org's existence. #466: a verified platform operator is the one
+// deliberate exception -- requirePlatformOperatorOrOrgMember grants it
+// {orgId} access outside their own membership (ADR-0021); every other caller
+// goes through requireOrgMember exactly as before (this is a pure
+// call-site-equivalent refactor of the inline resolveActiveMembership +
+// {orgId}-match check this handler used to run itself -- byte-for-byte the
+// same logic requireOrgMember (invitations.go) already centralizes).
 func getOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		member, ok := resolveActiveMembership(w, r, q, resolver)
+		member, ok := requirePlatformOperatorOrOrgMember(w, r, q, resolver)
 		if !ok {
-			return
-		}
-		requested, err := uuid.Parse(chi.URLParam(r, "orgId"))
-		if err != nil || requested != uuid.UUID(member.OrgID.Bytes) {
-			problem.Write(w, r, problem.NotFound("organization not found"))
 			return
 		}
 
@@ -714,14 +743,17 @@ type updateOrganizationRequest struct {
 // org-scoped: requireOrgAdmin asserts {orgId} matches the caller's own
 // resolved org (404 otherwise -- ADR-0002, the path never widens scope) and
 // that the caller is that org's admin (403 otherwise -- auth.md §5.3,
-// NFR-ROL-1). Invalid payloads are rejected before any write (422, NFR-SEC-1).
+// NFR-ROL-1). #466: a verified platform operator may also reach this route
+// for an org it is not a member of (requirePlatformOperatorOrOrgAdmin,
+// ADR-0021); every other caller goes through requireOrgAdmin unchanged.
+// Invalid payloads are rejected before any write (422, NFR-SEC-1).
 // Optimistic concurrency uses the If-Match / ETag version stamp: a stale value
 // is a 409 (FR-TEN-2). The applied change is recorded in organizations.audit_log
 // with actor + timestamp, in the same transaction as the domain write
 // (FR-HIS-1, #165, history.md §4).
 func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		member, ok := requireOrgAdmin(w, r, q, resolver)
+		member, ok := requirePlatformOperatorOrOrgAdmin(w, r, q, resolver)
 		if !ok {
 			return
 		}
@@ -755,9 +787,18 @@ func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 			txq := q.WithTx(tx)
 			// Row-locking read (FOR UPDATE) so the If-Match check and the write
 			// are atomic against a concurrent PATCH (optimistic concurrency,
-			// FR-TEN-2). member.OrgID is guaranteed to exist -- the caller's
-			// active membership references it -- so pgx.ErrNoRows here is a
-			// genuine fault, not a business 404.
+			// FR-TEN-2). For the ordinary membership path, member.OrgID is
+			// guaranteed to exist -- the caller's active membership references
+			// it -- so pgx.ErrNoRows here is a genuine fault, not a business
+			// 404. #466: on the platform-operator path there is no membership
+			// row backing this guarantee -- member.OrgID's existence was only
+			// confirmed by platform_authz.go's own, separate GetOrganization
+			// read moments earlier (a TOCTOU window: the org could theoretically
+			// be deleted between that check and this one). Still treated as a
+			// fault today because no endpoint deletes an organization -- if one
+			// is ever added, this call site needs its own pgx.ErrNoRows -> 404
+			// handling for the platform path, the same way platform_authz.go's
+			// GetOrganization already does.
 			current, err := txq.GetOrganizationForUpdate(r.Context(), member.OrgID)
 			if err != nil {
 				return fmt.Errorf("get organization for update: %w", err)

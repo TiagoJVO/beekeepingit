@@ -694,7 +694,10 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **Tenancy carve-out (the risk).** ADR-0002's rule that cross-organization access returns `404`
   (never `403`) still protects tenants; platform operators need real data across that boundary,
   so the carve-out must be **narrow, per-endpoint and test-proven** (a non-operator still gets
-  `404`). Designed and recorded in its own ADR under EPIC-18 (#466) — not decided here.
+  `404`). Designed and recorded in its own ADR under EPIC-18 (#466) — not decided here. **Built:**
+  [ADR-0021](../docs/adr/0021-platform-operator-tenancy-carve-out.md) (per-endpoint
+  `requirePlatformOperatorOrOrgAdmin`/`...OrgMember`, wired into the five existing organization-
+  scoped routes; `groups` never authorizes; non-operators unaffected, test-proven).
 - **Touches:** NFR-ROL-1, NFR-ROL-2, NFR-SEC-1, FR-TEN-2, FR-HIS-1, D-3, D-7, ADR-0002, ADR-0004,
   `docs/architecture/auth.md` §3.3/§5.3, EPIC-10 (#11), EPIC-18 (#463), #464.
 

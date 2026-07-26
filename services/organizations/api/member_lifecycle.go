@@ -62,14 +62,17 @@ type memberRoleUpdateRequest struct {
 }
 
 // removeMemberHandler soft-removes an active member of the caller's org (#290,
-// FR-TEN-2). Admin-only and org-scoped (requireOrgAdmin). Refuses to remove the
+// FR-TEN-2). Admin-only and org-scoped (requireOrgAdmin). #466: a verified
+// platform operator may also reach this route for an org it is not a member
+// of (requirePlatformOperatorOrOrgAdmin, ADR-0021); every other caller is
+// unaffected. Refuses to remove the
 // org's last admin (409, D-3). A member id that isn't an active member of this
 // org -- already removed, never a member, or a different org's user -- is 404,
 // matching revokeInvitation's "nothing to act on" semantics and never
 // confirming another org's membership (ADR-0002).
 func removeMemberHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor, ok := requireOrgAdmin(w, r, q, resolver)
+		actor, ok := requirePlatformOperatorOrOrgAdmin(w, r, q, resolver)
 		if !ok {
 			return
 		}
@@ -121,12 +124,15 @@ func removeMemberHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRe
 
 // changeMemberRoleHandler changes an active member's role within the fixed
 // admin/user model (#290, NFR-ROL-1/2, auth.md §5.3). Admin-only and
-// org-scoped. Refuses to demote the org's last admin to user (409, D-3);
-// promotions are always safe. A no-op (role already equal) succeeds with 200
-// and writes no audit row. An unknown active member of this org is 404.
+// org-scoped. #466: a verified platform operator may also reach this route
+// for an org it is not a member of (requirePlatformOperatorOrOrgAdmin,
+// ADR-0021); every other caller is unaffected. Refuses to demote the org's
+// last admin to user (409, D-3); promotions are always safe. A no-op (role
+// already equal) succeeds with 200 and writes no audit row. An unknown
+// active member of this org is 404.
 func changeMemberRoleHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor, ok := requireOrgAdmin(w, r, q, resolver)
+		actor, ok := requirePlatformOperatorOrOrgAdmin(w, r, q, resolver)
 		if !ok {
 			return
 		}

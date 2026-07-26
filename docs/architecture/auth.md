@@ -10,7 +10,7 @@
 **Decisions:** [D-7](../../requirements/decisions.md#d-7) (Authentik, IdP-agnostic OIDC boundary),
 [D-3](../../requirements/decisions.md) (org creator = admin, invite by email),
 [D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-10](../../requirements/decisions.md) (PWA-first),
-[D-32](../../requirements/decisions.md) (two administration tiers — §5.3; platform tier **planned**, EPIC-18 #463)
+[D-32](../../requirements/decisions.md) (two administration tiers — §5.3; platform tier **claim built (#465), authorization built (#466, ADR-0021)**, EPIC-18 #463)
 **Resolves:** [Q-AUTH](../../requirements/open-questions.md), [Q-ROLE](../../requirements/open-questions.md)
 **Depends on:** #104, #105, #108 · **ADR:** [0004-authn-authz](../adr/0004-authn-authz.md),
 [0016-replace-keycloak-with-authentik](../adr/0016-replace-keycloak-with-authentik.md)
@@ -144,9 +144,12 @@ app, where a client secret cannot be kept confidential.
     ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)).
     The claim is minted from real IdP group membership and can neither be requested nor injected
     by a client; it is **never** emitted for `beekeepingit-pwa`.
-  - **Not built yet:** the services' authorization path that **reads** the claim and carves out the
-    tenancy rule ([#466](https://github.com/TiagoJVO/beekeepingit/issues/466)). Until that lands
-    the claim is minted but nothing acts on it, so no behaviour changes for any user.
+  - **Built (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)):** the
+    `organizations` service's authorization path that **reads** the claim and carves out the
+    tenancy rule for five existing routes (get/update organization, list/remove members, change
+    role) — `requirePlatformOperatorOrOrgAdmin`/`requirePlatformOperatorOrOrgMember`, additive to
+    the pre-existing `requireOrgMember`/`requireOrgAdmin` chokepoint. A caller without the claim is
+    unaffected (same 404-not-403, proven by regression tests run unmodified).
   - The group **never** participates in the org-scoped `admin`/`user` decision below, and the
     **PWA**'s authZ path never reads it.
 - **The application role `admin` / `user` (NFR-ROL-1) is the _membership_ role** — a property of the
@@ -169,13 +172,13 @@ hook.
 Services consume the **access token** (JWT, **RS256**). We rely on **standard OIDC claims** and
 **deliberately keep org/role _out_ of the token**:
 
-| Claim                                          | Use                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sub`                                          | OIDC subject → maps to `identity.users.oidc_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity. Set via Authentik `sub_mode: user_upn` = an **app-assigned UUID** (contract §4)                                                                                       |
-| `email`, `email_verified`                      | profile (FR-ONB-1); gate on verification if required (`email_verified` caveat below)                                                                                                                                                                                                                           |
-| `preferred_username`, `name`, `groups`         | profile / i18n (EN-PT, NFR-I18N); `groups` carries the `platform-operator` marker but is **informational only** — it is emitted on **both** clients, so services must **never** authorize on it (§3.3)                                                                                                         |
-| `platform_operator`                            | **Admin-client tokens only** (#465): verified `platform-operator` membership as a boolean — the platform tier's authority ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)). Absent ⇒ **false**. Emitted today; **read** by the services in #466 |
-| `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4)                                                                                                                                                                                                                                                                                         |
+| Claim                                          | Use                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sub`                                          | OIDC subject → maps to `identity.users.oidc_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity. Set via Authentik `sub_mode: user_upn` = an **app-assigned UUID** (contract §4)                                                                                                                                                                                                       |
+| `email`, `email_verified`                      | profile (FR-ONB-1); gate on verification if required (`email_verified` caveat below)                                                                                                                                                                                                                                                                                                                                           |
+| `preferred_username`, `name`, `groups`         | profile / i18n (EN-PT, NFR-I18N); `groups` carries the `platform-operator` marker but is **informational only** — it is emitted on **both** clients, so services must **never** authorize on it (§3.3)                                                                                                                                                                                                                         |
+| `platform_operator`                            | **Admin-client tokens only** (#465): verified `platform-operator` membership as a boolean — the platform tier's authority ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)). Absent ⇒ **false**. Emitted, and **read** by the `organizations` service on its platform-path-enabled routes (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)) |
+| `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4)                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 **Why no `organization_id` / org-role claim:** membership is **domain data that changes** and a token
 is **long-ish lived and cached offline** — an embedded org/role would go **stale** (e.g. a removed
@@ -319,10 +322,10 @@ graph TD
 Administration is **two-tier** ([D-32](../../requirements/decisions.md)). The tiers are distinct in
 _who_ grants the authority and _how far_ it reaches:
 
-| Tier                      | Authority comes from                                                            | Reaches                   | Status                                                                              |
-| ------------------------- | ------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------- |
-| **Organization** (§5.3.1) | the caller's **membership role** `admin` in `organizations.memberships` (D-3)   | that **one** organization | **Built** (EPIC-10)                                                                 |
-| **Platform** (§5.3.2)     | membership of the IdP **`platform-operator`** group, as a verified claim (§3.3) | **every** organization    | **Planned** — EPIC-18 ([#463](https://github.com/TiagoJVO/beekeepingit/issues/463)) |
+| Tier                      | Authority comes from                                                            | Reaches                   | Status                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Organization** (§5.3.1) | the caller's **membership role** `admin` in `organizations.memberships` (D-3)   | that **one** organization | **Built** (EPIC-10)                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Platform** (§5.3.2)     | membership of the IdP **`platform-operator`** group, as a verified claim (§3.3) | **every** organization    | **Built for the five existing organization-scoped routes** (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)); **new endpoints** (list orgs, cross-org membership lookup) **planned** — EPIC-18 ([#463](https://github.com/TiagoJVO/beekeepingit/issues/463), [#467](https://github.com/TiagoJVO/beekeepingit/issues/467)/[#468](https://github.com/TiagoJVO/beekeepingit/issues/468)) |
 
 They are independent: a platform operator is **not** a member of the organizations it administers,
 and an organization admin gains nothing outside its own org.
@@ -352,30 +355,39 @@ attribution (FR-TEN-2, [#44](https://github.com/TiagoJVO/beekeepingit/issues/44)
 member's id to a real name and org data is shared across all members anyway; a non-member still gets
 `404` (ADR-0002, never `403`).
 
-#### 5.3.2 Platform tier (EPIC-18 #463 — authority minted, not yet enforced)
+#### 5.3.2 Platform tier (EPIC-18 #463 — authority minted and enforced on existing routes; new endpoints still to come)
 
-> **Half built.** The **source of authority ships** ([#465](https://github.com/TiagoJVO/beekeepingit/issues/465)):
-> an admin-app token now carries the verified **`platform_operator`** boolean, minted from real
-> `platform-operator` group membership and never emitted for the PWA client
+> **Claim + enforcement both built for this story's scope.** The **source of authority** shipped
+> ([#465](https://github.com/TiagoJVO/beekeepingit/issues/465)): an admin-app token carries the
+> verified **`platform_operator`** boolean, minted from real `platform-operator` group membership
+> and never emitted for the PWA client
 > ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)).
-> **No service reads it yet** — the authorization path and the tenancy carve-out are
-> [#466](https://github.com/TiagoJVO/beekeepingit/issues/466), so today the claim changes no
-> behaviour for anyone. The rest of this section records the **intended** model
-> ([D-32](../../requirements/decisions.md)) so the org tier above is not read as the whole story.
+> The **organizations service now reads it**
+> ([#466](https://github.com/TiagoJVO/beekeepingit/issues/466),
+> [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)): a verified operator can reach
+> `GET`/`PATCH /organizations/{orgId}`, `GET /organizations/{orgId}/members`, and
+> `PATCH`/`DELETE /organizations/{orgId}/members/{userId}` for an organization it does not belong
+> to, additive to the pre-existing membership-derived path (unchanged for everyone else — proven by
+> regression tests run unmodified). **Not yet built:** the NEW endpoints themselves — list
+> organizations ([#467](https://github.com/TiagoJVO/beekeepingit/issues/467)) and cross-org
+> membership lookup ([#468](https://github.com/TiagoJVO/beekeepingit/issues/468)) — and the
+> persisted, distinguishable history record ([#470](https://github.com/TiagoJVO/beekeepingit/issues/470)).
+> The rest of this section records the **intended** model ([D-32](../../requirements/decisions.md))
+> so the org tier above is not read as the whole story.
 
 A **platform operator** — a member of the IdP **`platform-operator`** group (§3.3), typically **not
 a member of any organization** — administers the platform **across** organizations: list
 organizations, look up their members, and manage membership roles, expanding to further
 administration features later. The intended shape:
 
-| Property            | Platform tier                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Source of authority | IdP group membership, surfaced as the **verified `platform_operator` boolean** on **admin-app** tokens only (**built**, [#465](https://github.com/TiagoJVO/beekeepingit/issues/465); shape in [oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)) — never client-asserted, never derived from org membership. **Authorize on that claim, never on the `groups` array** (§3.4): `groups` is emitted on the PWA client too |
-| Scope               | **every** organization (the organization tier's `{orgId}`-asserted-against-membership rule is carved out per endpoint, [#466](https://github.com/TiagoJVO/beekeepingit/issues/466))                                                                                                                                                                                                                                                                                                 |
-| May do              | Administer organizations, their members and their **membership roles** (the same `admin`/`user` model, applied on behalf of an org)                                                                                                                                                                                                                                                                                                                                                 |
-| May **not** do      | Touch **accounts or credentials** — create/disable, password reset, MFA all stay at the IdP ([D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary), unchanged)                                                                                                                                                                                                                                                  |
-| Accountability      | Platform actions are recorded in history **distinguishably** from a member's own actions (FR-HIS-1, [#470](https://github.com/TiagoJVO/beekeepingit/issues/470))                                                                                                                                                                                                                                                                                                                    |
-| Tenancy risk        | ADR-0002 returns **`404`, never `403`**, across org boundaries. The operator carve-out is deliberate, **narrow, per-endpoint and test-proven** — a **non**-operator must still get `404`. Its ADR is written in #466, not assumed here                                                                                                                                                                                                                                              |
+| Property            | Platform tier                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Source of authority | IdP group membership, surfaced as the **verified `platform_operator` boolean** on **admin-app** tokens only (**built**, [#465](https://github.com/TiagoJVO/beekeepingit/issues/465); shape in [oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)) — never client-asserted, never derived from org membership. **Authorize on that claim, never on the `groups` array** (§3.4): `groups` is emitted on the PWA client too                    |
+| Scope               | **Built:** the five existing organization-scoped routes (get/update organization, list/remove members, change role) — carved out per endpoint, [#466](https://github.com/TiagoJVO/beekeepingit/issues/466)/[ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md). **Planned:** list-all-organizations and cross-org membership lookup ([#467](https://github.com/TiagoJVO/beekeepingit/issues/467)/[#468](https://github.com/TiagoJVO/beekeepingit/issues/468)), reusing the same claim check |
+| May do              | Administer organizations, their members and their **membership roles** (the same `admin`/`user` model, applied on behalf of an org)                                                                                                                                                                                                                                                                                                                                                                    |
+| May **not** do      | Touch **accounts or credentials** — create/disable, password reset, MFA all stay at the IdP ([D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary), unchanged)                                                                                                                                                                                                                                                                     |
+| Accountability      | Platform actions are recorded in history, attributed to the operator's own identity (not the target org's admin — proven by test); a persisted, **distinguishable** marker on the history row itself is [#470](https://github.com/TiagoJVO/beekeepingit/issues/470) (FR-HIS-1) — #466 exposes the recoverability #470 builds that on (`AuthorizedVia`, a structured grant log)                                                                                                                         |
+| Tenancy risk        | ADR-0002 returns **`404`, never `403`**, across org boundaries. The operator carve-out is deliberate, **narrow, per-endpoint and test-proven** — a **non**-operator still gets `404` on every carved-out route (regression-tested, #466). Its ADR is [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)                                                                                                                                                                                    |
 
 **The organization tier is unaffected** — customers keep self-service member management exactly as
 EPIC-10 shipped. The platform tier sits **above** it.
