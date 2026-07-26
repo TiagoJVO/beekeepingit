@@ -11,6 +11,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, oidc_sub, name, email, locale, created_at, updated_at
+FROM identity.users
+WHERE email <> '' AND lower(email) = lower($1)
+ORDER BY created_at
+LIMIT 1
+`
+
+// Case-insensitive email -> identity.users lookup, backing the internal
+// GET /internal/users/by-email/{email} endpoint (#468's platform
+// cross-organization membership-lookup support tool, D-7: this stays a
+// LOCAL query against identity's own mirrored profile data -- no new IdP
+// integration). identity.users.email has NO uniqueness constraint (it is
+// the free-text profile field PATCH /v1/profile lets a caller set to
+// anything, #25 -- see organizations/api/organizations.go's ResolvedUser
+// doc comment for why it must never be used for anything
+// security-sensitive); the earliest-created match wins on the rare chance
+// two profiles share one address, the same "oldest wins" convention
+// organizations' own GetPendingInvitationByEmail uses for its analogous
+// ambiguity. Empty-string emails (UpsertUserOnFirstSeen's default for an
+// incomplete profile) are excluded explicitly so a blank query can never
+// match every never-completed profile in one row.
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
+	var i IdentityUser
+	err := row.Scan(
+		&i.ID,
+		&i.OidcSub,
+		&i.Name,
+		&i.Email,
+		&i.Locale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserByOidcSub = `-- name: GetUserByOidcSub :one
 SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users

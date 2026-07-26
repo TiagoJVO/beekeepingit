@@ -37,6 +37,11 @@ tags:
     description: Organization membership and roles (NFR-ROL-1).
   - name: Invitations
     description: Email invitations to join an organization (D-3, FR-ONB-3).
+  - name: Platform
+    description: >-
+      Platform-operator-only, cross-organization endpoints (D-32, ADR-0021, EPIC-18 #463)
+      -- restricted to a verified platform_operator claim, never an organization's own
+      admin or member.
 
 paths:
   /organizations:
@@ -384,6 +389,58 @@ paths:
         '404':
           $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
 
+  # Platform-operator-only cross-organization lookup (#468, EPIC-18 #463, D-7, D-32).
+  # Deliberately NOT under /organizations/{orgId} -- there is no single org in scope, by
+  # design (the support question this answers spans every organization). Kept at
+  # /organizations/platform/... (not a new top-level /platform prefix) so the gateway's
+  # existing /v1/organizations path-prefix route reaches it with no infra change.
+  /organizations/platform/memberships:
+    get:
+      operationId: lookupPlatformMemberships
+      summary: Look up a person's memberships across every organization (platform operator only)
+      description: >-
+        Answers the support question "which organization(s) does this person belong to,
+        and with what role?" (#468). Restricted to a verified platform operator
+        (D-32, ADR-0021) -- every other caller, including an organization's own admin, is
+        `403` (never `404`: unlike the org-scoped routes ADR-0021 also carves out, there is
+        no `{orgId}` in this path to hide the existence of). Exactly one of `email` or
+        `user_id` must be supplied. Returns organization id + name, role and status
+        (`active`/`invited`/`removed`) only -- never the target's email, credentials, or
+        any other IdP account internal (D-7); an email or user_id that resolves to a
+        known person with no memberships, and one that resolves to no person at all, both
+        come back as an empty page rather than an error.
+      tags: [Platform]
+      parameters:
+        - name: email
+          in: query
+          description: >-
+            The person's email (mutually exclusive with user_id). Matched against the
+            profile email identity mirrors, case-insensitively -- a search key, not an
+            authorization-sensitive value.
+          schema:
+            type: string
+            format: email
+        - name: user_id
+          in: query
+          description: The person's user id (mutually exclusive with email).
+          schema:
+            $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: A page of the resolved person's organization memberships.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformMembershipList'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
 components:
   # bearerAuth must resolve locally for the top-level `security` name reference; the
   # canonical definition stays in _shared (single source of truth), pulled in by $ref.
@@ -590,6 +647,44 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Invitation'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
+
+    PlatformMembership:
+      type: object
+      description: >-
+        One organization membership in a #468 cross-organization lookup result --
+        deliberately NOT the org-scoped Member schema: it adds organization_id/
+        organization_name (there is no single {orgId} in scope here) and never carries
+        anything beyond role/status (D-7 -- no email, no credentials, no IdP internals).
+      properties:
+        organization_id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        organization_name:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        status:
+          type: string
+          enum: [active, invited, removed]
+      required: [organization_id, organization_name, role, status]
+
+    PlatformMembershipList:
+      type: object
+      properties:
+        user_id:
+          type: [string, "null"]
+          format: uuid
+          description: >-
+            The resolved person's own user id, echoed back so an email-keyed caller can
+            confirm who the results are for. Null when the lookup key (email) matched no
+            known identity at all (#468 -- deliberately indistinguishable from "a known
+            person with zero memberships": data is an empty array either way).
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformMembership'
         page:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
       required: [data, page]

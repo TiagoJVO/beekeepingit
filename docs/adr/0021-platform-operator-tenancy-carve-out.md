@@ -223,8 +223,12 @@ of, without this story pre-guessing #470's exact schema.
   response is a minimal per-organization summary (`id`, `name`, `member_count`) — no member roster,
   no invitation data. See `platform_authz.go`'s package doc and
   `services/organizations/api/organizations.go`'s `listOrganizations`.
-- [#468](https://github.com/TiagoJVO/beekeepingit/issues/468) — cross-org membership lookup; same
-  new-endpoint shape as #467 above, not yet built.
+- [#468](https://github.com/TiagoJVO/beekeepingit/issues/468) — ✅ **Built:** the cross-org membership
+  lookup, `GET /organizations/platform/memberships` (`services/organizations/api/platform_membership_lookup.go`),
+  follows exactly this extension point: `isPlatformOperator(r)` directly, `problem.Forbidden` (not
+  `NotFound`) for every non-operator caller, and the operator's own identity resolved
+  (`resolver.Resolve`, mirroring `platformOperatorMembership`) purely for its INFO grant log — this
+  is a read endpoint, so there is no `audit_log` write to attribute.
 - [#469](https://github.com/TiagoJVO/beekeepingit/issues/469) — ✅ **Built:** the admin app's
   organization list, switcher and operator-context indicator. The client never reads the
   `platform_operator` claim (it is server-verified and admin-client-only, auth.md §3.4) — it

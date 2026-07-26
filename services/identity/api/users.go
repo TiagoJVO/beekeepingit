@@ -1,8 +1,11 @@
-// Package api holds the identity service's HTTP surface. In the walking
-// skeleton that is a single internal, east-west endpoint: resolve an OIDC
-// subject to its identity.users row, called by the shared auth middleware of
-// other services (auth.md §5.1 step 1, walking-skeleton.md
-// §5.2). It is never exposed through the gateway.
+// Package api holds the identity service's HTTP surface: internal, east-west
+// endpoints, never exposed through the gateway. The original resolve an
+// OIDC subject to its identity.users row, called by the shared auth
+// middleware of other services (auth.md §5.1 step 1, walking-skeleton.md
+// §5.2); GET /users/by-email/{email} (#468) is the same kind of internal
+// lookup, keyed by the mutable profile email instead of the verified OIDC
+// sub, backing organizations' platform cross-organization membership-lookup
+// support tool.
 package api
 
 import (
@@ -57,6 +60,7 @@ func InternalRouter(pool *pgxpool.Pool) http.Handler {
 	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
 	r.Get("/users/by-sub/{sub}", getUserBySub(q))
+	r.Get("/users/by-email/{email}", getUserByEmail(q))
 	r.Get("/users/names", getUsersByNames(q))
 	return r
 }
@@ -76,6 +80,47 @@ func getUserBySub(q *sqlcgen.Queries) http.HandlerFunc {
 		}
 		if err != nil {
 			logging.FromContext(r.Context()).ErrorContext(r.Context(), "users: get user by oidc sub failed", "error", err)
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, UserResponse{
+			UserID:  uuid.UUID(u.ID.Bytes).String(),
+			OidcSub: u.OidcSub,
+			Name:    u.Name,
+			Email:   u.Email,
+			Locale:  u.Locale,
+		})
+	}
+}
+
+// getUserByEmail resolves a single email address to its identity.users row —
+// the internal half of #468's platform cross-organization membership-lookup
+// support tool (organizations' GET /organizations/platform/memberships):
+// organizations knows the memberships, identity owns the email -> user_id
+// mapping (service-decomposition.md §4 rule 3). email is matched
+// case-insensitively against the mutable PATCH /v1/profile field (D-7: this
+// is app-owned profile data, not an IdP credential), so it can return a
+// false negative/ambiguous match if a caller's profile email is stale or
+// shared -- acceptable for a support lookup tool, never used for anything
+// authorization-sensitive. Never exposed through the gateway (same trust
+// boundary as /users/by-sub and organizations' own
+// /internal/memberships/active, #280).
+func getUserByEmail(q *sqlcgen.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		email := strings.TrimSpace(chi.URLParam(r, "email"))
+		if email == "" {
+			problem.Write(w, r, problem.ValidationFailed("email path parameter is required"))
+			return
+		}
+
+		u, err := q.GetUserByEmail(r.Context(), email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			problem.Write(w, r, problem.NotFound("no user for the given email"))
+			return
+		}
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "users: get user by email failed", "error", err)
 			problem.Write(w, r, problem.Internal())
 			return
 		}
