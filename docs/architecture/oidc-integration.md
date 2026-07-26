@@ -94,11 +94,17 @@ _both_ providers off the frozen per-app issuer).
   over the token's built-in fields (`IDToken.to_dict` → `id_dict.update(claims)`), and
   `include_claims_in_id_token: true` carries the override into the **access token** the services
   read. Net effect: an admin-minted token has `iss` = the beekeepingit issuer and `aud` containing
-  `beekeepingit-pwa`, so the services accept it **unchanged**. The admin client (oidc-client-ts)
-  does not validate the id_token's `iss`/`aud`, so the override is transparent to it; the strict
-  validator is `go-oidc` in the services (§6), which this satisfies via the **shared signing key**
-  (LOAD-BEARING: the admin token verifies only because it is signed with the key the beekeepingit
-  discovery/JWKS advertises — the two providers' signing keys must **stay shared**, per §8).
+  `beekeepingit-pwa`, so the services accept it **unchanged**. The admin client (oidc-client-ts) is
+  pointed at the **beekeepingit issuer** (`VITE_OIDC_ISSUER=…/application/o/beekeepingit/`), so the
+  overridden id_token `iss` **matches** the discovery issuer the client validates against — the
+  override is consistent with the client's own checks, not bypassed by them. This also means the
+  admin app fetches the **beekeepingit application's** discovery + JWKS cross-origin, so the admin
+  origin must be a CORS-allowed origin on the **pwa** provider (a strict `global.adminOrigin`
+  redirect entry there — #460; without it the admin app's discovery fetch is CORS-blocked and admin
+  login can't start). The strict validator that matters for acceptance is `go-oidc` in the services
+  (§6), which this satisfies via the **shared signing key** (LOAD-BEARING: the admin token verifies
+  only because it is signed with the key the beekeepingit discovery/JWKS advertises — the two
+  providers' signing keys must **stay shared**, per §8).
 - **Redirect URIs** — `http://localhost:.*` (regex, Vite dev), `https://admin\.beekeepingit\.local:8443/.*`
   (regex), **and** `https://admin.beekeepingit.local:8443` (**strict**, for the redirect-URIs-derived
   CORS origin — same reason as the pwa's strict entry). The admin host is
@@ -250,8 +256,14 @@ optional.
   `id_dict.update(claims)`, no reserved-claim guard) and `get_claims` only evaluates mappings whose
   `scope_name` is in the requested scopes (the override rides `openid`). A bump that adds a
   reserved-claim guard, stops overriding `iss`/`aud` from claims, or changes the scope-gating would
-  break admin-token acceptance (the services would see the admin app's own issuer/audience) — the
-  helm-e2e admin login is the live pin. It also makes the **shared signing key load-bearing**: the
+  break admin-token acceptance (the services would see the admin app's own issuer/audience). The
+  live pin is the helm-e2e **admin-token claim-shape** e2e (#460,
+  `client/e2e/tests/admin-token.spec.ts`): it drives a real admin login and asserts the minted
+  ACCESS token's `iss` == the beekeepingit issuer and `aud` contains BOTH `beekeepingit-admin` and
+  `beekeepingit-pwa`, so such a bump goes red in CI instead of as a silent prod 401. A companion
+  static guard (`scripts/check-admin-audience-mapping.sh`, run by `task repo:lint` in CI) asserts
+  the `scope-admin-audience` mapping is attached to ONLY `provider-beekeepingit-admin`, so a future PR
+  can't silently widen which clients the services accept. It also makes the **shared signing key load-bearing**: the
   admin provider signs with the same `authentik Self-signed Certificate` as the pwa, so its
   forged-issuer token validates against the JWKS the beekeepingit discovery advertises — giving the
   admin provider its own signing cert (a routine-looking ops change) would silently 401 every admin

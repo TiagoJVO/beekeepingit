@@ -9,13 +9,16 @@ import { defineConfig, devices } from "@playwright/test";
  */
 const baseURL = process.env.E2E_BASE_URL ?? "https://app.beekeepingit.local:8443";
 
-// Map both the app host (PWA/APIs/sync) and the auth host (the OIDC provider,
-// on its own origin — see docs/architecture/oidc-integration.md §2) to loopback
-// in the browser itself (no /etc/hosts edit needed) so the OIDC redirect
-// resolves to the k3d host port. Override E2E_HOST_MAP to point elsewhere.
+// Map the app host (PWA/APIs/sync), the auth host (the OIDC provider, on its own
+// origin — see docs/architecture/oidc-integration.md §2) and the admin host (the
+// React admin app's own origin, #449/#460) to loopback in the browser itself (no
+// /etc/hosts edit needed) so the OIDC redirect resolves to the k3d host port.
+// The admin entry is harmless to the PWA specs (they never navigate there) and
+// lets the admin-token spec reach the admin app. Override E2E_HOST_MAP to point
+// elsewhere.
 const hostMap =
   process.env.E2E_HOST_MAP ??
-  "MAP app.beekeepingit.local 127.0.0.1, MAP auth.beekeepingit.local 127.0.0.1";
+  "MAP app.beekeepingit.local 127.0.0.1, MAP auth.beekeepingit.local 127.0.0.1, MAP admin.beekeepingit.local 127.0.0.1";
 
 export default defineConfig({
   testDir: "./tests",
