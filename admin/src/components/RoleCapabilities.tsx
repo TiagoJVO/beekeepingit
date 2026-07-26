@@ -3,8 +3,11 @@ import type { InvitableRole } from "../api/members";
 
 /**
  * A capability the two membership roles are (or are not) allowed to perform. `user`/`admin` mirror
- * the authoritative matrix in auth.md §5.3 exactly — this panel documents, it does not decide, and
- * must not invent capabilities the server doesn't actually gate.
+ * the authoritative matrix in auth.md §5.3.1 (the *organization* tier) exactly — this panel
+ * documents, it does not decide, and must not invent capabilities the server doesn't actually gate.
+ *
+ * Deliberately org-tier only: the platform tier (auth.md §5.3.2, D-32, EPIC-18 #463) is not a
+ * membership role and is not built, so it has no column here.
  */
 interface Capability {
   /** i18n key under `members.roleCapabilities.capabilities.*`. */
@@ -13,7 +16,7 @@ interface Capability {
   readonly admin: boolean;
 }
 
-// The fixed two-role capability matrix (auth.md §5.3). The deferred quotas/rate-limit row (D-4) is
+// The fixed two-role capability matrix (auth.md §5.3.1). The deferred quotas/rate-limit row (D-4) is
 // intentionally omitted — it is not a live capability of the app yet, so listing it would misdescribe
 // what the roles can do today.
 const CAPABILITIES: readonly Capability[] = [
@@ -27,8 +30,9 @@ const CAPABILITIES: readonly Capability[] = [
 const ROLES: readonly InvitableRole[] = ["user", "admin"];
 
 /**
- * An accessible, read-only reference of **what each role (`admin`/`user`) is allowed to do**
- * (NFR-ROL-1, auth.md §5.3) — the inspection half of roles management (#75). It renders the fixed
+ * An accessible, read-only reference of **what each role (`admin`/`user`) is allowed to do
+ * within this organization** (NFR-ROL-1, auth.md §5.3.1) — the inspection half of roles
+ * management (#75). It renders the fixed
  * capability matrix as a real data table with a row header per capability and a column per role, so
  * the allowed/not-allowed marks are announced with their capability and role rather than read as bare
  * glyphs. Rendered collapsed behind a `<details>` so it is discoverable next to the roster without
