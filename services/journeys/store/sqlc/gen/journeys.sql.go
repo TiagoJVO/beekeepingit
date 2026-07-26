@@ -12,8 +12,8 @@ import (
 )
 
 const getJourney = `-- name: GetJourney :one
-SELECT id, organization_id, name, main_activity_type, status, default_attributes,
-       created_at, updated_at, recorded_at, deleted_at
+SELECT id, organization_id, name, main_activity_type, status,
+       created_at, updated_at, recorded_at, deleted_at, default_attributes
 FROM journeys.journeys
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
 `
@@ -34,18 +34,18 @@ func (q *Queries) GetJourney(ctx context.Context, arg GetJourneyParams) (Journey
 		&i.Name,
 		&i.MainActivityType,
 		&i.Status,
-		&i.DefaultAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
 		&i.DeletedAt,
+		&i.DefaultAttributes,
 	)
 	return i, err
 }
 
 const getJourneyForUpdate = `-- name: GetJourneyForUpdate :one
-SELECT id, organization_id, name, main_activity_type, status, default_attributes,
-       created_at, updated_at, recorded_at, deleted_at
+SELECT id, organization_id, name, main_activity_type, status,
+       created_at, updated_at, recorded_at, deleted_at, default_attributes
 FROM journeys.journeys
 WHERE organization_id = $1 AND id = $2
 FOR UPDATE
@@ -69,11 +69,11 @@ func (q *Queries) GetJourneyForUpdate(ctx context.Context, arg GetJourneyForUpda
 		&i.Name,
 		&i.MainActivityType,
 		&i.Status,
-		&i.DefaultAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
 		&i.DeletedAt,
+		&i.DefaultAttributes,
 	)
 	return i, err
 }
@@ -181,8 +181,8 @@ const insertJourney = `-- name: InsertJourney :one
 INSERT INTO journeys.journeys
     (id, organization_id, name, main_activity_type, status, default_attributes, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, organization_id, name, main_activity_type, status, default_attributes,
-          created_at, updated_at, recorded_at, deleted_at
+RETURNING id, organization_id, name, main_activity_type, status,
+          created_at, updated_at, recorded_at, deleted_at, default_attributes
 `
 
 type InsertJourneyParams struct {
@@ -216,11 +216,11 @@ func (q *Queries) InsertJourney(ctx context.Context, arg InsertJourneyParams) (J
 		&i.Name,
 		&i.MainActivityType,
 		&i.Status,
-		&i.DefaultAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
 		&i.DeletedAt,
+		&i.DefaultAttributes,
 	)
 	return i, err
 }
@@ -239,8 +239,8 @@ type InsertJourneyPlanItemParams struct {
 	ApiaryID       pgtype.UUID `json:"apiary_id"`
 }
 
-// Adds one apiary to a journey's plan (FR-JO-4). apiary_id is a CROSS-SERVICE
-// reference already verified against the apiaries service
+// Adds one apiary to a journey's plan (FR-JO-4). apiary_id is a
+// CROSS-SERVICE reference already verified against the apiaries service
 // (api/apiaries_client.go) before this runs; journey_id is verified to
 // belong to the caller's org by the caller having already loaded the parent
 // journey row in the SAME transaction (GetJourneyForUpdate).
@@ -310,6 +310,89 @@ func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]J
 	return items, nil
 }
 
+const listEntityTimeline = `-- name: ListEntityTimeline :many
+SELECT timeline.id, timeline.organization_id, timeline.entity_type, timeline.entity_id,
+       timeline.event_kind, timeline.actor_user_id, timeline.occurred_at, timeline.recorded_at,
+       timeline.changed_fields, timeline.change
+FROM (
+    SELECT al.id, al.organization_id, al.entity_type, al.entity_id, al.change_type AS event_kind,
+           al.actor_user_id, al.occurred_at, al.recorded_at, al.changed_fields, al.change
+    FROM journeys.audit_log al
+    WHERE al.organization_id = $1 AND al.entity_type = $2 AND al.entity_id = $3
+
+    UNION ALL
+
+    SELECT scl.id, scl.organization_id, scl.entity_type, scl.entity_id, 'superseded' AS event_kind,
+           scl.actor_user_id, scl.occurred_at, scl.recorded_at, NULL::text[] AS changed_fields,
+           jsonb_build_object('winning_payload', scl.winning_payload, 'losing_payload', scl.losing_payload, 'winner', scl.winner) AS change
+    FROM journeys.sync_conflict_log scl
+    WHERE scl.organization_id = $1 AND scl.entity_type = $2 AND scl.entity_id = $3
+) timeline
+ORDER BY timeline.recorded_at, timeline.id
+`
+
+type ListEntityTimelineParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	EntityType     string      `json:"entity_type"`
+	EntityID       pgtype.UUID `json:"entity_id"`
+}
+
+type ListEntityTimelineRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	EventKind      string             `json:"event_kind"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
+}
+
+// The combined per-entity timeline (FR-HIS-1, history.md §6, #315): UNIONs
+// journeys.audit_log (applied create/update/delete rows, event_kind =
+// change_type) with journeys.sync_conflict_log (LWW-loss rows, event_kind
+// hardcoded 'superseded' — mirrors history.EventSuperseded — so "LWW losers...
+// surfaced as a superseded timeline event, not silently overwritten"), ordered
+// chronologically. change carries the audit delta for audit_log rows and the
+// {winning_payload, losing_payload, winner} conflict payload for
+// sync_conflict_log rows — the two tables' change shapes differ by design (§3
+// vs §4.2), so callers branch on event_kind to interpret it. Exposed via HTTP
+// (GET /v1/journeys/{journeyId}/history, api/history.go) as the online fallback
+// for a device that has no local slice to render from. A verbatim mirror of
+// apiaries/activities' own ListEntityTimeline, swapped onto the journeys schema.
+func (q *Queries) ListEntityTimeline(ctx context.Context, arg ListEntityTimelineParams) ([]ListEntityTimelineRow, error) {
+	rows, err := q.db.Query(ctx, listEntityTimeline, arg.OrganizationID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityTimelineRow
+	for rows.Next() {
+		var i ListEntityTimelineRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.EventKind,
+			&i.ActorUserID,
+			&i.OccurredAt,
+			&i.RecordedAt,
+			&i.ChangedFields,
+			&i.Change,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listJourneyPlanItemsByJourney = `-- name: ListJourneyPlanItemsByJourney :many
 SELECT id, organization_id, journey_id, apiary_id, created_at, deleted_at
 FROM journeys.journey_plan_items
@@ -354,8 +437,8 @@ func (q *Queries) ListJourneyPlanItemsByJourney(ctx context.Context, arg ListJou
 }
 
 const listJourneysByOrg = `-- name: ListJourneysByOrg :many
-SELECT id, organization_id, name, main_activity_type, status, default_attributes,
-       created_at, updated_at, recorded_at, deleted_at
+SELECT id, organization_id, name, main_activity_type, status,
+       created_at, updated_at, recorded_at, deleted_at, default_attributes
 FROM journeys.journeys
 WHERE organization_id = $1
   AND deleted_at IS NULL
@@ -398,11 +481,11 @@ func (q *Queries) ListJourneysByOrg(ctx context.Context, arg ListJourneysByOrgPa
 			&i.Name,
 			&i.MainActivityType,
 			&i.Status,
-			&i.DefaultAttributes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RecordedAt,
 			&i.DeletedAt,
+			&i.DefaultAttributes,
 		); err != nil {
 			return nil, err
 		}
@@ -468,8 +551,8 @@ const updateJourney = `-- name: UpdateJourney :one
 UPDATE journeys.journeys
 SET name = $3, main_activity_type = $4, status = $5, default_attributes = $6, updated_at = $7, recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, main_activity_type, status, default_attributes,
-          created_at, updated_at, recorded_at, deleted_at
+RETURNING id, organization_id, name, main_activity_type, status,
+          created_at, updated_at, recorded_at, deleted_at, default_attributes
 `
 
 type UpdateJourneyParams struct {
@@ -484,7 +567,9 @@ type UpdateJourneyParams struct {
 
 // REST update (PATCH /v1/journeys/{id}): the caller computes the full desired
 // row first (matching sync.go's mergeJourneyOp pattern), so this always sets
-// every mutable column, INCLUDING default_attributes.
+// every mutable column, INCLUDING default_attributes (absent-on-PATCH keeps
+// the caller's already-loaded value — write.go's updateJourney computes it,
+// matching status's optionality convention).
 func (q *Queries) UpdateJourney(ctx context.Context, arg UpdateJourneyParams) (JourneysJourney, error) {
 	row := q.db.QueryRow(ctx, updateJourney,
 		arg.OrganizationID,
@@ -502,11 +587,11 @@ func (q *Queries) UpdateJourney(ctx context.Context, arg UpdateJourneyParams) (J
 		&i.Name,
 		&i.MainActivityType,
 		&i.Status,
-		&i.DefaultAttributes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RecordedAt,
 		&i.DeletedAt,
+		&i.DefaultAttributes,
 	)
 	return i, err
 }

@@ -78,6 +78,13 @@ String historyFieldLabel(AppLocalizations l10n, String column) =>
       'type' => l10n.historyFieldActivityType,
       'attributes' => l10n.historyFieldAttributes,
       'apiary_id' => l10n.historyFieldApiary,
+      // Journey-audited columns (#315, journeyRowState.fields()): reuse the
+      // journey form's own field labels where one exists, mirroring how
+      // 'name'/'occurred_at' above reuse the apiary/activity form labels.
+      'main_activity_type' => l10n.journeyMainActivityTypeLabel,
+      'status' => l10n.historyFieldStatus,
+      'apiary_ids' => l10n.journeyApiariesLabel,
+      'default_attributes' => l10n.historyFieldAttributes,
       _ => column,
     };
 

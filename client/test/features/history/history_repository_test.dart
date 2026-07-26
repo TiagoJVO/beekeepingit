@@ -365,12 +365,26 @@ void main() {
       expect(h.requests.single.path, endsWith('/v1/activities/act1/history'));
     });
 
+    test('routes a journey to its own owning service path (#315)', () async {
+      final h = _buildRepo();
+
+      await h.repo.fetchRemoteTimeline(
+        entityType: journeyEntityType,
+        entityId: 'j1',
+      );
+
+      expect(h.requests.single.path, endsWith('/v1/journeys/j1/history'));
+    });
+
     test('an entity type with no history endpoint makes no request', () async {
       final h = _buildRepo();
 
+      // todo has no history read surface (its audit_log/sync_conflict_log
+      // aren't synced and there is no /v1/todos/{id}/history endpoint) — an
+      // unmapped type must fall through to an empty result, not a guessed URL.
       final entries = await h.repo.fetchRemoteTimeline(
-        entityType: 'journey',
-        entityId: 'j1',
+        entityType: todoEntityType,
+        entityId: 't1',
       );
 
       expect(entries, isEmpty);

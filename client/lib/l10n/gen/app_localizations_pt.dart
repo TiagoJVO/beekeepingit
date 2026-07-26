@@ -1567,6 +1567,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get historyFieldApiary => 'Apiário';
 
   @override
+  String get historyFieldStatus => 'Estado';
+
+  @override
   String get discardChangesTitle => 'Descartar alterações?';
 
   @override

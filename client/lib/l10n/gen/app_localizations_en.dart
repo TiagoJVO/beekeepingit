@@ -1556,6 +1556,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get historyFieldApiary => 'Apiary';
 
   @override
+  String get historyFieldStatus => 'Status';
+
+  @override
   String get discardChangesTitle => 'Discard changes?';
 
   @override

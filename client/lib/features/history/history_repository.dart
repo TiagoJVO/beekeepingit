@@ -114,13 +114,15 @@ class HistoryRepository {
   /// Maps an `entity_type` to its owning service's REST history path prefix.
   ///
   /// Only entity types with a history **read endpoint** appear here (#60
-  /// shipped apiaries' and activities'). An absent type simply has no online
-  /// fallback — [fetchRemoteTimeline] returns empty rather than guessing a
-  /// URL, so adding e.g. journeys (#315) or todos means adding its route
-  /// here alongside the server endpoint, not changing this class's logic.
+  /// shipped apiaries' and activities'; #315 added journeys'). An absent type
+  /// (e.g. todos) simply has no online fallback — [fetchRemoteTimeline]
+  /// returns empty rather than guessing a URL, so adding one later means
+  /// adding its route here alongside the server endpoint, not changing this
+  /// class's logic.
   static const _remotePathPrefix = <String, String>{
     apiaryEntityType: '/apiaries',
     activityEntityType: '/activities',
+    journeyEntityType: '/journeys',
   };
 
   /// The combined local timeline for one entity, newest first.

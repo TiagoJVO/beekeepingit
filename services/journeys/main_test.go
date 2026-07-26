@@ -35,6 +35,7 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/health"
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 	"github.com/TiagoJVO/beekeepingit/services/shared/devseed"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 // testOrgHeader lets a test request stand in as a caller resolved to a
@@ -1713,5 +1714,274 @@ func TestJourneysSync_Apply_Conflict_WinningPayloadIncludesDefaultAttributes(t *
 	}
 	if winning.DefaultAttributes["lot_batch"] != "WINNER-LOT" {
 		t.Fatalf("winning_payload.default_attributes = %+v, want lot_batch=WINNER-LOT (the surviving server state)", winning.DefaultAttributes)
+	}
+}
+
+// --- History view over HTTP (GET /v1/journeys/{journeyId}/history, #315,
+// FR-HIS-1) — the journeys counterpart of apiaries/activities' own combined
+// audit_log+sync_conflict_log read endpoint. ---
+
+// historyEntryView mirrors api/history.go's historyEntryDTO wire shape — this
+// test file's own decode target (can't import the api package's unexported
+// type across packages), matching journeyResponse's own convention.
+type historyEntryView struct {
+	ID            string          `json:"id"`
+	EntityType    string          `json:"entity_type"`
+	EntityID      string          `json:"entity_id"`
+	EventKind     string          `json:"event_kind"`
+	ActorUserID   *string         `json:"actor_user_id"`
+	OccurredAt    *time.Time      `json:"occurred_at"`
+	RecordedAt    time.Time       `json:"recorded_at"`
+	ChangedFields []string        `json:"changed_fields"`
+	Change        json.RawMessage `json:"change"`
+}
+
+type historyListView struct {
+	Data []historyEntryView `json:"data"`
+}
+
+func (f *journeysFixture) getJourneyHistory(t *testing.T, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	return f.do(t, http.MethodGet, "/v1/journeys/"+id+"/history", nil)
+}
+
+// TestJourneysRest_History_GetReturnsCombinedTimelineChronologically is #315's
+// core AC: GET /v1/journeys/{id}/history exposes the same combined
+// audit_log+sync_conflict_log timeline ListEntityTimeline builds — create /
+// update / delete via the REST write paths, then read it back over HTTP in
+// chronological (recorded_at) order, oldest first.
+func TestJourneysRest_History_GetReturnsCombinedTimelineChronologically(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Colheita", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/journeys/"+id, updateBody("Colheita Nova", "harvest", []string{apiaryID}, nil)); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/journeys/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getJourneyHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, update, delete): %+v", len(got.Data), got.Data)
+	}
+	wantKinds := []string{history.ChangeCreate, history.ChangeUpdate, history.ChangeDelete}
+	for i, want := range wantKinds {
+		e := got.Data[i]
+		if e.EventKind != want {
+			t.Fatalf("history[%d].EventKind = %q, want %q", i, e.EventKind, want)
+		}
+		if e.EntityType != "journey" || e.EntityID != id {
+			t.Fatalf("history[%d] entity = (%q,%q), want (journey,%q)", i, e.EntityType, e.EntityID, id)
+		}
+		if e.ActorUserID == nil || *e.ActorUserID != devseed.UserID {
+			t.Fatalf("history[%d].ActorUserID = %v, want %q", i, e.ActorUserID, devseed.UserID)
+		}
+		if e.OccurredAt == nil || e.OccurredAt.IsZero() || e.RecordedAt.IsZero() {
+			t.Fatalf("history[%d] has a missing/zero timestamp: %+v", i, e)
+		}
+	}
+	if len(got.Data[1].ChangedFields) != 1 || got.Data[1].ChangedFields[0] != "name" {
+		t.Fatalf("update entry ChangedFields = %v, want [name]", got.Data[1].ChangedFields)
+	}
+	// Chronological, oldest first (recorded_at) — not just the right kinds.
+	if !got.Data[0].RecordedAt.Before(got.Data[1].RecordedAt) || !got.Data[1].RecordedAt.Before(got.Data[2].RecordedAt) {
+		t.Fatalf("history entries not chronologically ordered: %+v", got.Data)
+	}
+}
+
+// TestJourneysRest_History_ConflictSurfacesAsSupersededOverHTTP proves an
+// LWW-losing offline edit (sync apply) shows up over the REST endpoint as a
+// "superseded" event (history.md §6), not silently missing.
+func TestJourneysRest_History_ConflictSurfacesAsSupersededOverHTTP(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{journeyPutOp(journeyID, "Journey", "generic")}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	newerPatch := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"name": "Newer Name", "main_activity_type": "generic"},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{newerPatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("newer patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	stalePatch := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T10:30:00Z", // older than the newer patch — loses the LWW compare
+		"data":       map[string]any{"name": "Stale Name", "main_activity_type": "generic"},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{stalePatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("stale patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getJourneyHistory(t, journeyID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	// create + newer patch (both applied audit rows) + the superseded loss.
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, winning update, superseded loss): %+v", len(got.Data), got.Data)
+	}
+	superseded := got.Data[2]
+	if superseded.EventKind != history.EventSuperseded {
+		t.Fatalf("last entry EventKind = %q, want %q", superseded.EventKind, history.EventSuperseded)
+	}
+	if superseded.ChangedFields != nil {
+		t.Fatalf("superseded entry ChangedFields = %v, want nil (only audit_log rows carry it)", superseded.ChangedFields)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(superseded.Change, &change); err != nil {
+		t.Fatalf("unmarshal superseded change: %v", err)
+	}
+	if change["winner"] != "server" {
+		t.Fatalf("superseded change[winner] = %v, want server", change["winner"])
+	}
+}
+
+// TestJourneysRest_History_NotFound_UnknownID: a history request for an id that
+// was never created 404s, same as GET /v1/journeys/{id} itself.
+func TestJourneysRest_History_NotFound_UnknownID(t *testing.T) {
+	f := newJourneysFixture(t)
+	rec := f.getJourneyHistory(t, uuid.NewString())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("history status for unknown id = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysRest_History_CrossOrg_NotFound is the #315 IDOR regression: org B
+// must not be able to read org A's journey history by id. 404 (ADR-0002
+// scope-hiding), not a distinguishable exists-but-forbidden signal, and not an
+// empty-but-200 body either (which would still leak "this id exists").
+func TestJourneysRest_History_CrossOrg_NotFound(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Org A Journey", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.doAs(t, otherOrgCaller(), http.MethodGet, "/v1/journeys/"+id+"/history", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-org history status = %d, want 404 (scope-hiding, ADR-0002), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysRest_History_DeletedJourneyStaysReachable is the deleted-agnostic
+// existence check's reason for being (mirrors apiaries' getApiaryHistory using
+// GetApiaryForUpdate, not GetApiary): a soft-deleted journey's audit trail —
+// including the delete event itself — must stay readable, since exposing that
+// trail is the whole point of the endpoint (FR-HIS-1). A GetJourney-style
+// deleted_at IS NULL check would wrongly 404 this.
+func TestJourneysRest_History_DeletedJourneyStaysReachable(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Journey", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/journeys/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getJourneyHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history-after-delete status = %d, want 200 (a deleted journey's trail must stay reachable), body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 2 {
+		t.Fatalf("history entries = %d, want 2 (create, delete): %+v", len(got.Data), got.Data)
+	}
+	if got.Data[1].EventKind != history.ChangeDelete {
+		t.Fatalf("last entry EventKind = %q, want %q (the delete event must be in the trail)", got.Data[1].EventKind, history.ChangeDelete)
+	}
+}
+
+// TestJourneysRest_History_ChangePayloadNeverEmbedsPersonalData is the journeys
+// counterpart of apiaries'/activities' same-named guard (history.md §7.3): the
+// change payloads this endpoint now exposes — both the audit_log delta AND the
+// sync_conflict_log winning/losing payloads (which embed the full journey row,
+// including the org-supplied default_attributes bag) — must carry only the
+// opaque actor_user_id UUID, never a denormalized actor name/email. Without
+// this, a future change that folded a resolved actor display name into
+// journeyRowState/default_attributes would ship silently and be exposed both
+// over this REST endpoint and org-wide via the PowerSync sync rule.
+func TestJourneysRest_History_ChangePayloadNeverEmbedsPersonalData(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	// Create carrying a default_attributes bag, then rename (an audit delta),
+	// then apply a stale sync edit that loses LWW (a conflict payload).
+	create := createBody(id, "Journey", "harvest", []string{apiaryID})
+	create["default_attributes"] = map[string]any{"lot_batch": "LOTE-2026-07"}
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", create); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/journeys/"+id, updateBody("Renamed", "harvest", []string{apiaryID}, nil)); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	stalePatch := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": id,
+		"updated_at": "2026-07-16T09:00:00Z", // older than the REST update above — loses LWW
+		"data":       map[string]any{"name": "Stale", "main_activity_type": "harvest"},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{stalePatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("stale patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getJourneyHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+
+	// devseed's known PII — if it ever leaked into a change payload it would
+	// appear verbatim as one of these substrings.
+	forbidden := []string{devseed.UserName, devseed.UserEmail}
+	for _, entry := range got.Data {
+		body := string(entry.Change)
+		for _, pii := range forbidden {
+			if strings.Contains(body, pii) {
+				t.Fatalf("change payload for event_kind=%s contains denormalized PII %q: %s", entry.EventKind, pii, body)
+			}
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(entry.Change, &decoded); err != nil {
+			t.Fatalf("change payload is not a JSON object: %s", body)
+		}
+		if _, ok := decoded["actor_name"]; ok {
+			t.Fatalf("change payload embeds an actor_name field: %s", body)
+		}
+		if _, ok := decoded["email"]; ok {
+			t.Fatalf("change payload embeds an email field: %s", body)
+		}
+		// The actor is carried only as the opaque UUID, in its own DTO column.
+		if entry.ActorUserID != nil && *entry.ActorUserID == devseed.UserName {
+			t.Fatalf("actor_user_id is a display name, want the opaque UUID: %q", *entry.ActorUserID)
+		}
 	}
 }
