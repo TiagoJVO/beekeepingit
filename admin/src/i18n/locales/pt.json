@@ -118,7 +118,7 @@
     },
     "roleCapabilities": {
       "heading": "O que pode fazer cada função?",
-      "intro": "Cada membro tem uma de duas funções. Os administradores gerem a organização; os membros trabalham com os dados partilhados do apiário.",
+      "intro": "Cada membro desta organização tem uma de duas funções. Os administradores gerem a organização; os membros trabalham com os dados partilhados do apiário. Estas funções aplicam-se apenas a esta organização.",
       "allowed": "Permitido",
       "notAllowed": "Não permitido",
       "columns": {

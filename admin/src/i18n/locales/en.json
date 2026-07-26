@@ -118,7 +118,7 @@
     },
     "roleCapabilities": {
       "heading": "What can each role do?",
-      "intro": "Every member has one of two roles. Admins manage the organization; members work with the shared hive data.",
+      "intro": "Every member of this organization has one of two roles. Admins manage the organization; members work with the shared hive data. These roles apply within this organization only.",
       "allowed": "Allowed",
       "notAllowed": "Not allowed",
       "columns": {

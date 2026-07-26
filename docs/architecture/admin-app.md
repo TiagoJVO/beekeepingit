@@ -78,6 +78,14 @@ auth + role-query state to a view — exhaustively unit-tested. `AdminGuard` wir
 (`useAuth`, `useMembershipRole`) into it and is integration-tested for the headline cases
 (admin allowed, non-admin denied) with React Testing Library.
 
+> **This guard is the _organization_ tier only** (auth.md §5.3.1). The **platform tier** — a
+> `platform-operator` who is **not** a member of any organization, and so is denied by the flow
+> above — is **planned, not built**: it needs its own admission path plus an organization
+> switcher ([D-32](../../requirements/decisions.md), EPIC-18
+> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463) /
+> [#469](https://github.com/TiagoJVO/beekeepingit/issues/469)). Everything documented here
+> describes what ships today and is unchanged by that work.
+
 ## 4. Authenticated API access (NFR-SEC-1)
 
 `src/api/client.ts` is a minimal typed client: every request attaches

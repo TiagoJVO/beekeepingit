@@ -58,7 +58,14 @@ the Authentik blueprint) but services still validate `OIDC_AUDIENCE=beekeepingit
   stage's `enrollment_flow`. Registrations are held **unverified** on an emailed one-time link
   (the #361 machinery) and a UUID `upn` is assigned at creation (§4). The provider/client
   contract above is unchanged — enrollment is IdP-side flow config.
-- **`platform-operator`** — an Authentik **group** (ops-only marker, **not** an app role); the app authZ path never reads it.
+- **`platform-operator`** — an Authentik **group** (not a membership role), declared **unassigned**.
+  **As provisioned today** it is an ops-only marker and the app authZ path never reads it.
+  **Planned (not built):** it becomes the **platform tier's** authority
+  ([D-32](../../requirements/decisions.md), [auth.md §5.3.2](auth.md)) — emitted as a verified
+  claim on **`beekeepingit-admin`** tokens only ([#465](https://github.com/TiagoJVO/beekeepingit/issues/465))
+  and read by the services ([#466](https://github.com/TiagoJVO/beekeepingit/issues/466)), under
+  EPIC-18 ([#463](https://github.com/TiagoJVO/beekeepingit/issues/463)). The frozen pwa contract
+  above is unaffected — no such claim is ever emitted for `beekeepingit-pwa`.
 
 ### 3.1 Admin app client (`beekeepingit-admin`, #456 — ADDITIVE, the pwa values above are frozen)
 

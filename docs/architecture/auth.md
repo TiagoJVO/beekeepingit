@@ -9,7 +9,8 @@
 **Requirements:** NFR-SEC-1, NFR-ROL-1, NFR-ROL-2, FR-TEN-1, FR-TEN-2, FR-ONB-1/2/3, FR-OF-1, NFR-AI-4
 **Decisions:** [D-7](../../requirements/decisions.md#d-7) (Authentik, IdP-agnostic OIDC boundary),
 [D-3](../../requirements/decisions.md) (org creator = admin, invite by email),
-[D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-10](../../requirements/decisions.md) (PWA-first)
+[D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-10](../../requirements/decisions.md) (PWA-first),
+[D-32](../../requirements/decisions.md) (two administration tiers — §5.3; platform tier **planned**, EPIC-18 #463)
 **Resolves:** [Q-AUTH](../../requirements/open-questions.md), [Q-ROLE](../../requirements/open-questions.md)
 **Depends on:** #104, #105, #108 · **ADR:** [0004-authn-authz](../adr/0004-authn-authz.md),
 [0016-replace-keycloak-with-authentik](../adr/0016-replace-keycloak-with-authentik.md)
@@ -122,16 +123,26 @@ provider-side invite email, if we ever choose the IdP over our own SMTP for invi
 needed). Public clients + PKCE (no embedded secret) is the correct choice for a SPA/PWA and a mobile
 app, where a client secret cannot be kept confidential.
 
-### 3.3 Roles — coarse in the IdP, org-scoped in the app
+### 3.3 Roles — coarse in the IdP, org-scoped in the app (+ a planned platform tier)
 
 > **Key decision.** The IdP carries only a **coarse, global** marker; the **admin/user distinction
 > that matters is per-organization** and lives in `organizations.memberships.role`, **not** in the
-> token. See [ADR-0004](../adr/0004-authn-authz.md).
+> token. See [ADR-0004](../adr/0004-authn-authz.md). The **platform tier** below
+> ([D-32](../../requirements/decisions.md), **planned** — EPIC-18
+> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463)) is the one authority that _does_
+> come from the IdP; it sits **above** membership and does not change the membership role model.
 
-- **IdP groups/roles** are kept minimal: every end user is simply an **authenticated user**. An
-  optional **`platform-operator`** — an Authentik **group** (not a realm role, not an app role) —
-  exists for **operations/superadmin** (managing the IdP/infra); it is an **ops concern, not a v1
-  application role**, and the app's authZ path never reads it.
+- **IdP groups/roles** are kept minimal: every end user is simply an **authenticated user**. A
+  **`platform-operator`** — an Authentik **group** (not a realm role, not a membership role) — is
+  declared in the blueprint, currently **unassigned**.
+  - **As built today:** it is an **ops/infra marker** (managing the IdP/cluster) and the app's
+    authZ path **never reads it**.
+  - **Planned (not built):** it becomes the **platform tier's** authority
+    ([D-32](../../requirements/decisions.md), §5.3) — emitted as a **verified claim** on
+    **admin-app** tokens only ([#465](https://github.com/TiagoJVO/beekeepingit/issues/465)) and
+    read by the services' authorization path
+    ([#466](https://github.com/TiagoJVO/beekeepingit/issues/466)). Until those land, nothing in
+    the application reads the group.
 - **The application role `admin` / `user` (NFR-ROL-1) is the _membership_ role** — a property of the
   **(user, organization)** pair in `organizations.memberships` (see
   [data-model.md §3](data-model.md#3-entityrelationship-model)). It is **resolved per request**
@@ -141,8 +152,11 @@ app, where a client secret cannot be kept confidential.
   role/group assignment for end users. (The IdP's own group admin is an ops/console task.)
 
 This satisfies NFR-ROL-1 ("every user has a role; roles `admin`/`user`; manage role assignment")
-while keeping the **org-scoped** semantics FR-TEN needs, and leaves NFR-ROL-1's "more roles may exist
-later" open (add membership roles, or adopt ReBAC — §5.5 — without re-plumbing authN).
+while keeping the **org-scoped** semantics FR-TEN needs. NFR-ROL-1's "more roles may exist later"
+hook is **now in use**: [D-32](../../requirements/decisions.md) spends it on the **platform tier**
+above — a tier, not a third membership role — so the membership enum stays `admin`/`user` and authN
+is unchanged. Further expansion (extra membership roles, or ReBAC — §5.5) remains open on the same
+hook.
 
 ### 3.4 Token & claims
 
@@ -153,7 +167,7 @@ Services consume the **access token** (JWT, **RS256**). We rely on **standard OI
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sub`                                          | OIDC subject → maps to `identity.users.oidc_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity. Set via Authentik `sub_mode: user_upn` = an **app-assigned UUID** (contract §4) |
 | `email`, `email_verified`                      | profile (FR-ONB-1); gate on verification if required (`email_verified` caveat below)                                                                                                                                     |
-| `preferred_username`, `name`, `groups`         | profile / i18n (EN-PT, NFR-I18N); `groups` carries the ops-only marker (§3.3)                                                                                                                                            |
+| `preferred_username`, `name`, `groups`         | profile / i18n (EN-PT, NFR-I18N); `groups` carries the `platform-operator` marker — **ops-only today**, the **planned** platform-tier claim on admin-app tokens (§3.3, #465)                                             |
 | `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4)                                                                                                                                                                                                   |
 
 **Why no `organization_id` / org-role claim:** membership is **domain data that changes** and a token
@@ -293,7 +307,20 @@ graph TD
     H -- yes --> I["execute — org-scoped query<br/>(+ optional RLS)"]
 ```
 
-### 5.3 Role capabilities — `admin` vs `user` (resolves Q-ROLE)
+### 5.3 Role capabilities — two administration tiers (resolves Q-ROLE)
+
+Administration is **two-tier** ([D-32](../../requirements/decisions.md)). The tiers are distinct in
+_who_ grants the authority and _how far_ it reaches:
+
+| Tier                      | Authority comes from                                                            | Reaches                   | Status                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------- |
+| **Organization** (§5.3.1) | the caller's **membership role** `admin` in `organizations.memberships` (D-3)   | that **one** organization | **Built** (EPIC-10)                                                                 |
+| **Platform** (§5.3.2)     | membership of the IdP **`platform-operator`** group, as a verified claim (§3.3) | **every** organization    | **Planned** — EPIC-18 ([#463](https://github.com/TiagoJVO/beekeepingit/issues/463)) |
+
+They are independent: a platform operator is **not** a member of the organizations it administers,
+and an organization admin gains nothing outside its own org.
+
+#### 5.3.1 Organization tier (built) — `admin` vs `user`
 
 **`admin` is org-scoped** (D-3: the org creator is its first admin). Within an organization:
 
@@ -316,10 +343,36 @@ exception:** `GET .../members/names` — a least-privilege roster (`user_id` + d
 role/status/email) — is readable by **any active member**, not just admins, because per-user
 attribution (FR-TEN-2, [#44](https://github.com/TiagoJVO/beekeepingit/issues/44)) must resolve another
 member's id to a real name and org data is shared across all members anyway; a non-member still gets
-`404` (ADR-0002, never `403`). There is **no system-wide application
-admin** in v1 — a platform super-admin is the **`platform-operator`** ops group (§3.3), not an app
-role; NFR-ROL-1's "more roles later" can add one when needed. _This resolves
-[Q-ROLE](../../requirements/open-questions.md) (admin = org-scoped)._
+`404` (ADR-0002, never `403`).
+
+#### 5.3.2 Platform tier (planned — EPIC-18 #463)
+
+> **Planned, not built.** Nothing below ships today: the `platform-operator` group is declared but
+> unassigned, no claim is emitted, and no service reads one. This records the **intended** model
+> ([D-32](../../requirements/decisions.md)) so the org tier above is not read as the whole story;
+> the build lands in EPIC-18 ([#463](https://github.com/TiagoJVO/beekeepingit/issues/463)).
+
+A **platform operator** — a member of the IdP **`platform-operator`** group (§3.3), typically **not
+a member of any organization** — administers the platform **across** organizations: list
+organizations, look up their members, and manage membership roles, expanding to further
+administration features later. The intended shape:
+
+| Property            | Platform tier                                                                                                                                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source of authority | IdP group membership, surfaced as a **verified token claim** on **admin-app** tokens only ([#465](https://github.com/TiagoJVO/beekeepingit/issues/465)) — never client-asserted, never derived from org membership                     |
+| Scope               | **every** organization (the organization tier's `{orgId}`-asserted-against-membership rule is carved out per endpoint, [#466](https://github.com/TiagoJVO/beekeepingit/issues/466))                                                    |
+| May do              | Administer organizations, their members and their **membership roles** (the same `admin`/`user` model, applied on behalf of an org)                                                                                                    |
+| May **not** do      | Touch **accounts or credentials** — create/disable, password reset, MFA all stay at the IdP ([D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary), unchanged)     |
+| Accountability      | Platform actions are recorded in history **distinguishably** from a member's own actions (FR-HIS-1, [#470](https://github.com/TiagoJVO/beekeepingit/issues/470))                                                                       |
+| Tenancy risk        | ADR-0002 returns **`404`, never `403`**, across org boundaries. The operator carve-out is deliberate, **narrow, per-endpoint and test-proven** — a **non**-operator must still get `404`. Its ADR is written in #466, not assumed here |
+
+**The organization tier is unaffected** — customers keep self-service member management exactly as
+EPIC-10 shipped. The platform tier sits **above** it.
+
+_This resolves [Q-ROLE](../../requirements/open-questions.md): **two tiers** — org-scoped `admin`
+membership (built) plus a cross-organization `platform-operator` (planned). It **supersedes** the
+earlier answer that there is no system-wide application admin
+([D-32](../../requirements/decisions.md))._
 
 ### 5.4 Resource ownership (FR-TEN-2)
 
@@ -466,7 +519,7 @@ recovery/password-reset remains **provider flow config in EPIC-14**; the fixed c
 | Item                                           | Effect on this design                                                | Resolved / built in                                                                                                     |
 | ---------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | [Q-AUTH](../../requirements/open-questions.md) | mechanism (D-7) + offline login, token lifetimes, verification/reset | **Resolved here** (§4, §6, §7)                                                                                          |
-| [Q-ROLE](../../requirements/open-questions.md) | admin org-scoped vs system-wide; capability split                    | **Resolved here** (§5.3) — org-scoped                                                                                   |
+| [Q-ROLE](../../requirements/open-questions.md) | admin org-scoped vs system-wide; capability split                    | **Resolved here** (§5.3) — **two tiers** (D-32): org-scoped `admin` **built**, platform operator **planned** (#463)     |
 | **Token-lifetime / grace values**              | exact minutes/days need security sign-off                            | EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15))                                                     |
 | **PWA token persistence (iOS)**                | durability of cached session in a PWA                                | SP-1 (PWA persistence), [#54](https://github.com/TiagoJVO/beekeepingit/issues/54)                                       |
 | **Membership read path**                       | services call `organizations` vs read a replicated projection        | [#108](https://github.com/TiagoJVO/beekeepingit/issues/108) / [#28](https://github.com/TiagoJVO/beekeepingit/issues/28) |
