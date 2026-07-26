@@ -92,6 +92,23 @@ entries:
         # CORS-allowed origins from redirect_uris — an Origin has no path, so the regex above
         # (which requires "/…") never matches it. This strict entry covers redirect + CORS.
         - { matching_mode: strict, url: "{{ .Values.global.appOrigin }}" }
+        # Admin-origin CORS on THIS provider's OIDC metadata (#460 — gap in #456/#449).
+        # The admin app authenticates as its OWN client (beekeepingit-admin) but is pointed
+        # at the beekeepingit ISSUER (VITE_OIDC_ISSUER=.../application/o/beekeepingit/) so the
+        # overridden token `iss` matches what oidc-client-ts validates against. That means the
+        # admin app fetches THIS application's discovery + JWKS (both under
+        # /application/o/beekeepingit/) cross-origin from the admin origin. Authentik gates
+        # those with CORS derived from THIS (pwa) provider's redirect_uris — the admin
+        # provider's own admin-origin entry does NOT help here (different application slug) —
+        # so without this the discovery fetch is CORS-blocked (net::ERR_FAILED) and admin
+        # login can't even start. Never surfaced before: the admin app was unreachable until
+        # #460 added its NetworkPolicy edge + the first e2e that actually drives admin login.
+        # It grants the admin origin nothing beyond reading public OIDC metadata: the admin
+        # code exchange runs on the admin provider (client_id=beekeepingit-admin, its own
+        # strict admin-origin entry), and a bare-origin redirect target that is a first-party
+        # app we already serve is not a new trust surface (same redirect+CORS duality as the
+        # appOrigin entry above). Does NOT touch OIDC_AUDIENCE / the frozen token contract.
+        - { matching_mode: strict, url: "{{ .Values.global.adminOrigin }}" }
       property_mappings:
         - !Find [
             authentik_providers_oauth2.scopemapping,

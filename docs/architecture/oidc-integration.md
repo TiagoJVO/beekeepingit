@@ -94,11 +94,17 @@ _both_ providers off the frozen per-app issuer).
   over the token's built-in fields (`IDToken.to_dict` → `id_dict.update(claims)`), and
   `include_claims_in_id_token: true` carries the override into the **access token** the services
   read. Net effect: an admin-minted token has `iss` = the beekeepingit issuer and `aud` containing
-  `beekeepingit-pwa`, so the services accept it **unchanged**. The admin client (oidc-client-ts)
-  does not validate the id_token's `iss`/`aud`, so the override is transparent to it; the strict
-  validator is `go-oidc` in the services (§6), which this satisfies via the **shared signing key**
-  (LOAD-BEARING: the admin token verifies only because it is signed with the key the beekeepingit
-  discovery/JWKS advertises — the two providers' signing keys must **stay shared**, per §8).
+  `beekeepingit-pwa`, so the services accept it **unchanged**. The admin client (oidc-client-ts) is
+  pointed at the **beekeepingit issuer** (`VITE_OIDC_ISSUER=…/application/o/beekeepingit/`), so the
+  overridden id_token `iss` **matches** the discovery issuer the client validates against — the
+  override is consistent with the client's own checks, not bypassed by them. This also means the
+  admin app fetches the **beekeepingit application's** discovery + JWKS cross-origin, so the admin
+  origin must be a CORS-allowed origin on the **pwa** provider (a strict `global.adminOrigin`
+  redirect entry there — #460; without it the admin app's discovery fetch is CORS-blocked and admin
+  login can't start). The strict validator that matters for acceptance is `go-oidc` in the services
+  (§6), which this satisfies via the **shared signing key** (LOAD-BEARING: the admin token verifies
+  only because it is signed with the key the beekeepingit discovery/JWKS advertises — the two
+  providers' signing keys must **stay shared**, per §8).
 - **Redirect URIs** — `http://localhost:.*` (regex, Vite dev), `https://admin\.beekeepingit\.local:8443/.*`
   (regex), **and** `https://admin.beekeepingit.local:8443` (**strict**, for the redirect-URIs-derived
   CORS origin — same reason as the pwa's strict entry). The admin host is

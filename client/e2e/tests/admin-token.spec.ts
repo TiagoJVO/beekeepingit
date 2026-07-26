@@ -74,9 +74,25 @@ test.describe("admin token iss/aud override (#460)", () => {
       await page.waitForTimeout(3_000);
     }
 
-    // Click the admin app's Sign in → oidc-client-ts signinRedirect to Authentik,
-    // then drive the same IdP form the PWA specs drive (proven form handling).
+    // Click the admin app's Sign in → oidc-client-ts signinRedirect: it fetches OIDC
+    // discovery from the beekeepingit issuer, then redirects to the auth host. If that
+    // discovery/JWKS fetch is CORS-blocked (the admin origin must be an allowed CORS
+    // origin on the pwa provider — see the blueprint), the admin app instead shows its
+    // own "Sign-in failed" screen and never leaves the admin origin. Wait for the hop to
+    // the auth host and surface THAT error fast, rather than hanging the full test budget
+    // in submitAuthentikForm waiting for an IdP form that will never appear.
     await signIn.click();
+    try {
+      await page.waitForURL(/\/\/auth\./, { timeout: 45_000 });
+    } catch {
+      const detail = await page
+        .getByRole("main")
+        .innerText()
+        .catch(() => "");
+      throw new Error(
+        `admin sign-in never reached the IdP (still at ${page.url()}): ${detail.replace(/\s+/g, " ").slice(0, 300)}`,
+      );
+    }
     await submitAuthentikForm(page, ADMIN_USER, ADMIN_PASS);
 
     // Back on the admin origin means the code exchange completed; the access
