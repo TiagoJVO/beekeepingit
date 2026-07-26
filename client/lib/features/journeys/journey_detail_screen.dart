@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/sync/powersync_schema.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
@@ -12,6 +13,7 @@ import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
 import '../activities/activity_types.dart';
 import '../apiaries/apiaries_repository.dart';
+import '../history/history_section.dart';
 import 'journey_stats_section.dart';
 import 'journey_status.dart';
 import 'journeys_repository.dart';
@@ -162,6 +164,17 @@ class _JourneyDetailBody extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               _JourneyApiariesSection(journey: journey),
+              const SizedBox(height: 14),
+              // Per-journey change history (#315, FR-HIS-1) — the same shared,
+              // capped preview the apiary/activity detail screens embed,
+              // pointed at this journey and linking out to the full-screen
+              // timeline (same preview-then-full-screen split, for the same
+              // virtualization reason a shrink-wrapped preview can't).
+              HistorySection(
+                entityType: journeyEntityType,
+                entityId: journey.id,
+                onViewAll: () => context.go('/journeys/${journey.id}/history'),
+              ),
             ],
           ),
         ),

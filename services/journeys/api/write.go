@@ -123,6 +123,7 @@ type journeyDTO struct {
 func Router(pool *pgxpool.Pool, verifier *ApiaryVerifier) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/{journeyId}", getJourney(pool))
+	r.Get("/{journeyId}/history", getJourneyHistory(pool))
 	r.Post("/", createJourney(pool, verifier))
 	r.Patch("/{journeyId}", updateJourney(pool, verifier))
 	r.Delete("/{journeyId}", deleteJourney(pool))
