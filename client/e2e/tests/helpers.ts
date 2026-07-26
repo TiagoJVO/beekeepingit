@@ -188,6 +188,72 @@ export async function readIdTokenClaims(page: Page): Promise<Record<string, unkn
 }
 
 /**
+ * Drives a full Authorization Code + PKCE login through the ADMIN app and returns
+ * once the callback has landed back on the admin origin (so the code exchange is
+ * done and oidc-client-ts has persisted the token). Extracted from
+ * admin-token.spec.ts (#465) so the claim specs can each run their own login
+ * without duplicating the cold-stack tolerance below. Behavior is unchanged from
+ * the #460 spec's inline version.
+ */
+export async function adminSignIn(page: Page, user: string, pass: string) {
+  if (!ADMIN_ORIGIN) throw new Error("adminSignIn called without E2E_ADMIN_ORIGIN");
+
+  // Navigate to the admin app, tolerating a cold stack: like the PWA route, the
+  // gateway can transiently answer 5xx right after the pod is marked ready
+  // (endpoints/first-request not warm). Retry until the SPA's Sign in button
+  // paints, not just until goto() resolves.
+  const deadline = Date.now() + 120_000;
+  const signIn = page.getByRole("button", { name: /sign in/i });
+  for (;;) {
+    const resp = await page
+      .goto(`${ADMIN_ORIGIN}/`, { waitUntil: "domcontentloaded" })
+      .catch(() => null);
+    const serverError = resp != null && resp.status() >= 500;
+    if (!serverError) {
+      const painted = await signIn
+        .waitFor({ state: "visible", timeout: 20_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (painted) break;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `admin app never rendered its Sign in screen (last HTTP ${resp?.status() ?? "unknown"})`,
+      );
+    }
+    await page.waitForTimeout(3_000);
+  }
+
+  // Click the admin app's Sign in → oidc-client-ts signinRedirect: it fetches OIDC
+  // discovery from the beekeepingit issuer, then redirects to the auth host. If that
+  // discovery/JWKS fetch is CORS-blocked (the admin origin must be an allowed CORS
+  // origin on the pwa provider — see the blueprint), the admin app instead shows its
+  // own "Sign-in failed" screen and never leaves the admin origin. Wait for the hop to
+  // the auth host and surface THAT error fast, rather than hanging the full test budget
+  // in submitAuthentikForm waiting for an IdP form that will never appear.
+  await signIn.click();
+  try {
+    await page.waitForURL(/\/\/auth\./, { timeout: 45_000 });
+  } catch {
+    const detail = await page
+      .getByRole("main")
+      .innerText()
+      .catch(() => "");
+    throw new Error(
+      `admin sign-in never reached the IdP (still at ${page.url()}): ${detail.replace(/\s+/g, " ").slice(0, 300)}`,
+    );
+  }
+  await submitAuthentikForm(page, user, pass);
+
+  // Back on the admin origin means the code exchange completed; the access token
+  // is now persisted by oidc-client-ts. Anchored — an unanchored match would also
+  // hit the IdP's flow URLs, whose ?next= embeds the admin origin.
+  await page.waitForURL(new RegExp(`^${ADMIN_ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), {
+    timeout: 60_000,
+  });
+}
+
+/**
  * Reads the ACCESS token the admin app persists after a completed login and
  * returns its decoded payload (#460). The admin app (react-oidc-context +
  * oidc-client-ts, WebStorageStateStore over localStorage) stores the signed-in

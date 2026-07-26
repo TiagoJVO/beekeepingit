@@ -6,7 +6,7 @@ silent: true
 
 tasks:
   lint:
-    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + admin-audience"
+    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings"
     cmds:
       - task: format-check
       - task: markdown
@@ -15,6 +15,7 @@ tasks:
       - task: secrets
       - task: deploy-urls
       - task: admin-audience-mapping
+      - task: platform-operator-mapping
 
   format:
     desc: "Format Markdown / YAML / JSON with Prettier (writes changes)"
@@ -62,3 +63,8 @@ tasks:
     desc: "Verify the admin iss/aud override mapping is attached to ONLY the admin provider (#460, NFR-SEC-1)"
     cmds:
       - ./scripts/check-admin-audience-mapping.sh
+
+  platform-operator-mapping:
+    desc: "Verify the platform-operator claim mapping is attached to ONLY the admin provider (#465, NFR-SEC-1)"
+    cmds:
+      - ./scripts/check-platform-operator-mapping.sh
