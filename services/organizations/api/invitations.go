@@ -173,9 +173,13 @@ func requireOrgAdmin(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries,
 	return member, true
 }
 
+// listMembersHandler is admin-only and org-scoped (requireOrgAdmin). #466: a
+// verified platform operator may also reach this route for an org it is not
+// a member of (requirePlatformOperatorOrOrgAdmin, ADR-0021); every other
+// caller is unaffected.
 func listMembersHandler(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		member, ok := requireOrgAdmin(w, r, q, resolver)
+		member, ok := requirePlatformOperatorOrOrgAdmin(w, r, q, resolver)
 		if !ok {
 			return
 		}
