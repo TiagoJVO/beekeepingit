@@ -109,7 +109,10 @@ func removeMemberHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRe
 				return fmt.Errorf("remove membership: %w", err)
 			}
 
-			if err := writeAuditLog(r.Context(), txq, actor.OrgID, entityTypeMembership, removed.ID, actor.UserID, now,
+			// actor_scope (#470) is derived from actor.AuthorizedVia, atomic
+			// with this same removal write -- see organizations.go's
+			// updateOrganization for the full rationale.
+			if err := writeAuditLog(r.Context(), txq, actor.OrgID, entityTypeMembership, removed.ID, actor.UserID, actorScopeFor(actor.AuthorizedVia), now,
 				history.ChangeUpdate, membershipFields(before), membershipFields(removed)); err != nil {
 				return fmt.Errorf("write membership audit log: %w", err)
 			}
@@ -196,7 +199,10 @@ func changeMemberRoleHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 				return fmt.Errorf("update membership role: %w", err)
 			}
 
-			if err := writeAuditLog(r.Context(), txq, actor.OrgID, entityTypeMembership, updated.ID, actor.UserID, now,
+			// actor_scope (#470) is derived from actor.AuthorizedVia, atomic
+			// with this same role-change write -- see organizations.go's
+			// updateOrganization for the full rationale.
+			if err := writeAuditLog(r.Context(), txq, actor.OrgID, entityTypeMembership, updated.ID, actor.UserID, actorScopeFor(actor.AuthorizedVia), now,
 				history.ChangeUpdate, membershipFields(before), membershipFields(updated)); err != nil {
 				return fmt.Errorf("write membership audit log: %w", err)
 			}

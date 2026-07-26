@@ -550,7 +550,11 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 			// same D-3 transaction as the domain write. occurred_at is
 			// server-now -- org creation has no client-supplied device
 			// timestamp the way apiaries' offline sync-apply ops do.
-			if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeOrganization, org.ID, actor, now,
+			// actor_scope (#470) is always actorScopeMember here: this route
+			// runs before any {orgId} exists to authorize a platform operator
+			// against (platform_authz.go's carve-out is keyed on an existing
+			// {orgId} path param), so it is never reachable via that path.
+			if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeOrganization, org.ID, actor, actorScopeMember, now,
 				history.ChangeCreate, nil, organizationFields(org)); err != nil {
 				return fmt.Errorf("write organization audit log: %w", err)
 			}
@@ -573,8 +577,9 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 
 			// The creator's admin membership is a second entity created in
 			// this same transaction (D-3) -- its own audit row,
-			// entity_type=membership.
-			if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeMembership, membership.ID, actor, now,
+			// entity_type=membership. Same actor_scope reasoning as the
+			// organization's own create row above.
+			if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeMembership, membership.ID, actor, actorScopeMember, now,
 				history.ChangeCreate, nil, membershipFields(membership)); err != nil {
 				return fmt.Errorf("write membership audit log: %w", err)
 			}
@@ -838,8 +843,13 @@ func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 			// History (FR-HIS-1, #165): the org's update row, in the same D-3
 			// transaction as the domain write. The actor is the admin making
 			// the change; occurred_at is server-now (an admin-app edit has no
-			// offline device timestamp).
-			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeOrganization, member.OrgID, member.UserID, now,
+			// offline device timestamp). actor_scope (#470) is derived from
+			// member.AuthorizedVia -- actorScopePlatformOperator when this
+			// write was granted via the verified platform-operator carve-out
+			// (requirePlatformOperatorOrOrgAdmin above), actorScopeMember for
+			// the org's own admin -- recorded atomically in this same
+			// transaction, not inferred later.
+			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeOrganization, member.OrgID, member.UserID, actorScopeFor(member.AuthorizedVia), now,
 				history.ChangeUpdate, organizationFields(current), organizationFields(updated)); err != nil {
 				return fmt.Errorf("write organization audit log: %w", err)
 			}
