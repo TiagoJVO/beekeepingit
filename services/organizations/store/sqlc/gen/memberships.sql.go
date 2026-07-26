@@ -226,6 +226,69 @@ func (q *Queries) ListMembers(ctx context.Context, arg ListMembersParams) ([]Org
 	return items, nil
 }
 
+const listMembershipsByUser = `-- name: ListMembershipsByUser :many
+SELECT m.id, m.organization_id, o.name AS organization_name, m.role, m.status
+FROM organizations.memberships m
+JOIN organizations.organizations o ON o.id = m.organization_id
+WHERE m.user_id = $1
+  AND ($2::uuid IS NULL OR m.id < $2::uuid)
+ORDER BY m.id DESC
+LIMIT $3
+`
+
+type ListMembershipsByUserParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Cursor pgtype.UUID `json:"cursor"`
+	Limit  int32       `json:"limit"`
+}
+
+type ListMembershipsByUserRow struct {
+	ID               pgtype.UUID `json:"id"`
+	OrganizationID   pgtype.UUID `json:"organization_id"`
+	OrganizationName string      `json:"organization_name"`
+	Role             string      `json:"role"`
+	Status           string      `json:"status"`
+}
+
+// The #468 cross-organization membership lookup (FR-TEN-2, D-7, NFR-SEC-1):
+// every membership row for ONE user_id, across ALL organizations, joined with
+// each organization's name -- the only query in this service that reads
+// memberships without an organization_id already in scope, by design (the
+// support question this backs is "which org(s) does this person belong to").
+// Unlike ListMembers, this does NOT filter out status = 'removed': a
+// support operator needs the full picture, including orgs the person was
+// later removed from, not just their current one (the Member.status schema
+// enum already includes it). Keyset-paginated by membership id, newest
+// first (mirrors ListInvitations' newest-first convention -- the most
+// recent org relationship is the one a support case most likely cares
+// about). idx_memberships_user_id (migration 00006) backs the WHERE
+// clause.
+func (q *Queries) ListMembershipsByUser(ctx context.Context, arg ListMembershipsByUserParams) ([]ListMembershipsByUserRow, error) {
+	rows, err := q.db.Query(ctx, listMembershipsByUser, arg.UserID, arg.Cursor, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMembershipsByUserRow
+	for rows.Next() {
+		var i ListMembershipsByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.Role,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockOrganizationForUpdate = `-- name: LockOrganizationForUpdate :one
 SELECT id
 FROM organizations.organizations

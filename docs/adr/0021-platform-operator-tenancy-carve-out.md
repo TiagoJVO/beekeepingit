@@ -223,8 +223,12 @@ of, without this story pre-guessing #470's exact schema.
   response is a minimal per-organization summary (`id`, `name`, `member_count`) — no member roster,
   no invitation data. See `platform_authz.go`'s package doc and
   `services/organizations/api/organizations.go`'s `listOrganizations`.
-- [#468](https://github.com/TiagoJVO/beekeepingit/issues/468) — cross-org membership lookup; same
-  new-endpoint shape as #467 above, not yet built.
+- [#468](https://github.com/TiagoJVO/beekeepingit/issues/468) — ✅ **Built:** the cross-org membership
+  lookup, `GET /organizations/platform/memberships` (`services/organizations/api/platform_membership_lookup.go`),
+  follows exactly this extension point: `isPlatformOperator(r)` directly, `problem.Forbidden` (not
+  `NotFound`) for every non-operator caller, and the operator's own identity resolved
+  (`resolver.Resolve`, mirroring `platformOperatorMembership`) purely for its INFO grant log — this
+  is a read endpoint, so there is no `audit_log` write to attribute.
 - ~~[#470](https://github.com/TiagoJVO/beekeepingit/issues/470) — persist a distinguishable,
   queryable record of platform-path actions in history, building on `AuthorizedVia` and the INFO
   grant log this ADR introduces.~~ **Done** — `organizations.audit_log.actor_scope` (migration

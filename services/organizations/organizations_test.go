@@ -84,6 +84,23 @@ func newStubIdentity(t *testing.T, users map[string]stubUser) *stubIdentity {
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
 			return
 		}
+		// Email resolve (#468's platform cross-organization membership
+		// lookup, api/organizations.go's ResolveByEmail): case-insensitive,
+		// mirroring identity's real GetUserByEmail query. An email with no
+		// match (including one no stubUser carries as a non-empty Email)
+		// is a 404, matching identity's real "unknown email" response.
+		const byEmailPrefix = "/internal/users/by-email/"
+		if strings.HasPrefix(r.URL.Path, byEmailPrefix) {
+			want := strings.ToLower(r.URL.Path[len(byEmailPrefix):])
+			for _, u := range s.users {
+				if u.Email != "" && strings.ToLower(u.Email) == want {
+					_ = json.NewEncoder(w).Encode(map[string]string{"user_id": u.UserID, "email": u.Email})
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		const prefix = "/internal/users/by-sub/"
 		sub := r.URL.Path[len(prefix):]
 		u, ok := s.users[sub]

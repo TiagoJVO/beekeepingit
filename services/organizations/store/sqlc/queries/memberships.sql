@@ -87,6 +87,28 @@ SET status = 'removed', updated_at = now()
 WHERE organization_id = $1 AND user_id = $2 AND status = 'active'
 RETURNING id, organization_id, user_id, role, status, created_at, updated_at;
 
+-- name: ListMembershipsByUser :many
+-- The #468 cross-organization membership lookup (FR-TEN-2, D-7, NFR-SEC-1):
+-- every membership row for ONE user_id, across ALL organizations, joined with
+-- each organization's name -- the only query in this service that reads
+-- memberships without an organization_id already in scope, by design (the
+-- support question this backs is "which org(s) does this person belong to").
+-- Unlike ListMembers, this does NOT filter out status = 'removed': a
+-- support operator needs the full picture, including orgs the person was
+-- later removed from, not just their current one (the Member.status schema
+-- enum already includes it). Keyset-paginated by membership id, newest
+-- first (mirrors ListInvitations' newest-first convention -- the most
+-- recent org relationship is the one a support case most likely cares
+-- about). idx_memberships_user_id (migration 00006) backs the WHERE
+-- clause.
+SELECT m.id, m.organization_id, o.name AS organization_name, m.role, m.status
+FROM organizations.memberships m
+JOIN organizations.organizations o ON o.id = m.organization_id
+WHERE m.user_id = sqlc.arg('user_id')
+  AND (sqlc.narg('cursor')::uuid IS NULL OR m.id < sqlc.narg('cursor')::uuid)
+ORDER BY m.id DESC
+LIMIT sqlc.arg('limit');
+
 -- name: ListMembers :many
 -- Keyset-paginated by id — the admin-facing member list (NFR-ROL-1, #27 AC:
 -- "membership is enforced for data access" / management surface). Excludes
