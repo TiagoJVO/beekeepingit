@@ -4,6 +4,7 @@ import 'package:beekeepingit_client/features/notifications/notification_dedup_st
 import 'package:beekeepingit_client/features/notifications/notification_events.dart';
 import 'package:beekeepingit_client/features/notifications/notification_preferences_repository.dart';
 import 'package:beekeepingit_client/features/settings/notification_event_toggles_list.dart';
+import 'package:beekeepingit_client/features/settings/notification_settings_repository.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -159,6 +160,7 @@ void main() {
       final checker = NotificationChecker(
         dedupStore: NotificationDedupStore(prefs: prefs),
         preferences: NotificationPreferencesRepository(prefs: prefs),
+        settings: NotificationSettingsRepository(prefs: prefs),
       );
       final result = checker.check(
         todos: [_overdueTodo('t1')],

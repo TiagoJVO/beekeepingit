@@ -43,11 +43,12 @@ const kAutoSyncEnabledKey = 'bk.settings.auto_sync_enabled';
 
 /// Settings key (FR-ST-1, #81) for the notifications master switch —
 /// `features/settings/notification_settings_repository.dart` reads/writes it.
-/// This gates (but is currently independent of) the notification engine's own
-/// per-event preferences below ([kNotificationPreferencesKey]) — reconciling
-/// the master switch with the per-event contract is #288's job when it wires
-/// the toggle list into `notification_settings_section.dart`'s
-/// `eventTogglesSlot`. Purged on logout — see [kAutoSyncEnabledKey].
+/// Gates the notification engine's own per-event preferences below
+/// ([kNotificationPreferencesKey]): `NotificationChecker.check` and
+/// `shell/app_shell.dart`'s real-time sync-conflict toast listener both
+/// consult this key in addition to the per-event map, so switching it off
+/// stops delivery outright rather than only dimming the settings-screen
+/// toggle list (D-24, #500). Purged on logout — see [kAutoSyncEnabledKey].
 const kNotificationsEnabledKey = 'bk.settings.notifications_enabled';
 
 /// Cache key for the notification engine's per-event preference map (#82's
