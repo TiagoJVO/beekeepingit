@@ -25,14 +25,14 @@ import '../notifications/notification_preferences_repository.dart';
 /// Reviewer note: the master switch
 /// (`notification_settings_repository.dart`'s `kNotificationsEnabledKey`,
 /// #81) and this per-event map (`kNotificationPreferencesKey`, #82) are
-/// deliberately separate preferences — not merged here. Today neither
-/// `NotificationChecker` nor `app_shell.dart`'s real-time sync-conflict
-/// toast actually consult the master switch (only the per-event map), so
-/// turning "Enable notifications" off does not yet stop delivery by itself —
-/// see `core/storage/local_prefs.dart`'s `kNotificationsEnabledKey` doc.
-/// Reconciling that gap touches #82's engine/display-site files, outside
-/// this story's scope (render the per-event list backed by #82's contract);
-/// tracked in `FOLLOWUPS.md` as a fast-follow instead of expanded into here.
+/// deliberately separate preferences — not merged here. Both
+/// `NotificationChecker.check` and `app_shell.dart`'s real-time
+/// sync-conflict toast listener consult the master switch in addition to
+/// this per-event map (FR-ST-1, D-24, #500), so turning "Enable
+/// notifications" off does stop delivery — see
+/// `core/storage/local_prefs.dart`'s `kNotificationsEnabledKey` doc. This
+/// widget still only owns rendering the per-event rows themselves; the
+/// master-switch gate lives entirely in the engine/display sites above.
 class NotificationEventTogglesList extends ConsumerWidget {
   const NotificationEventTogglesList({super.key});
 
