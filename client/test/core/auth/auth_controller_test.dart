@@ -748,6 +748,47 @@ void main() {
       },
     );
 
+    // #81: sync/notification settings are device-local (LocalPrefs), not the
+    // server-synced Profile resource — same shared-device privacy stance as
+    // the onboarding cache above, so they're purged the same way.
+    test('clears the device-local sync/notification settings (#81)', () async {
+      final prefs = FakeLocalPrefs();
+      prefs.write(kAutoSyncEnabledKey, 'false');
+      prefs.write(kNotificationsEnabledKey, 'false');
+      final client = MockClient((req) async => _tokenResponse(req));
+      final (_, _, notifier) = await buildLoggedInContainer(
+        client: client,
+        localStore: FakeLocalStoreEngine(),
+        localPrefs: prefs,
+      );
+
+      await notifier.logout();
+
+      expect(prefs.isEmpty, isTrue);
+    });
+
+    // #82: a second user on the same shared device must never inherit the
+    // prior user's notification toggles or "already notified" dedup state
+    // (mirrors the onboarding-cache clearing test above).
+    test(
+      'clears the notification engine\'s preference + dedup state',
+      () async {
+        final prefs = FakeLocalPrefs();
+        prefs.write(kNotificationPreferencesKey, '{"sync_failure":false}');
+        prefs.write(kNotificationDedupStateKey, '{"wasFullySynced":true}');
+        final client = MockClient((req) async => _tokenResponse(req));
+        final (_, _, notifier) = await buildLoggedInContainer(
+          client: client,
+          localStore: FakeLocalStoreEngine(),
+          localPrefs: prefs,
+        );
+
+        await notifier.logout();
+
+        expect(prefs.isEmpty, isTrue);
+      },
+    );
+
     test(
       'logging out with no session (already logged out) does not redirect',
       () async {

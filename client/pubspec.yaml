@@ -12,15 +12,20 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  flutter_riverpod: ^3.3.2
+  flutter_riverpod: ^3.4.1
   go_router: ^17.2.3
   intl: 0.20.2
   http: ^1.6.0
-  powersync: ^1.18.0
+  powersync: ^2.3.2
+  # Direct dependency so powersync_local_store.dart can import
+  # package:sqlite3/common.dart (the Row type) directly — powersync 2.x
+  # deprecated its package:powersync/sqlite3_common.dart re-export;
+  # otherwise only a transitive dep of powersync.
+  sqlite3: ^3.5.0
   crypto: ^3.0.7
   meta: ^1.18.0
   web: ^1.1.1
-  uuid: ^4.5.3
+  uuid: ^4.6.0
   # Provider-agnostic OIDC: discovery (`Issuer.discover`) + Authorization Code
   # + PKCE (`Flow.authorizationCodeWithPKCE`) driven behind the AuthPlatform
   # seam. Deliberately NOT openid_client_browser (that's the implicit flow).
@@ -29,7 +34,7 @@ dependencies:
   # Map view (D-16, #34): flutter_map + MapLibre/OSM tiles per tech-stack.md;
   # latlong2 is flutter_map's LatLng type.
   flutter_map: ^8.2.2
-  latlong2: ^0.9.1
+  latlong2: ^0.10.1
   # Device location — for both #34's map "Você" marker and #33's offline
   # proximity ordering (FR-AP-2): permission request + last-known/current
   # position, with a working web (PWA) implementation via the browser
@@ -40,7 +45,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
   # Direct dev dependency so tests can fake GeolocatorPlatform.instance
   # (apiary_map_screen_test.dart, #34) — otherwise only a transitive dep of
   # geolocator.

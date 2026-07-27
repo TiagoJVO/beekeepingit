@@ -528,6 +528,55 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get settingsAutoSyncLabel => 'Auto-sync';
+
+  @override
+  String get settingsAutoSyncHint =>
+      'Sync automatically over a good connection. Turn off to only sync when you tap “Sync now”.';
+
+  @override
+  String get accountNotificationsSectionTitle => 'Notifications';
+
+  @override
+  String get settingsNotificationsEnabledLabel => 'Enable notifications';
+
+  @override
+  String get settingsNotificationsEnabledHint =>
+      'Show in-app reminders for due todos and sync results.';
+
+  @override
+  String get settingsNotificationEventsComingSoon =>
+      'Individual notification types will appear here.';
+
+  @override
+  String get notificationEventTodoDueLabel => 'Todo due-date reminders';
+
+  @override
+  String get notificationEventTodoDueHint =>
+      'Notify when a todo is due soon or overdue.';
+
+  @override
+  String get notificationEventSyncFailureLabel => 'Sync failures';
+
+  @override
+  String get notificationEventSyncFailureHint =>
+      'Notify when a change is rejected and needs fixing.';
+
+  @override
+  String get notificationEventSyncSuccessLabel => 'Sync completed';
+
+  @override
+  String get notificationEventSyncSuccessHint =>
+      'Notify when all your changes finish syncing.';
+
+  @override
+  String get notificationEventSyncConflictLabel => 'Sync conflicts';
+
+  @override
+  String get notificationEventSyncConflictHint =>
+      'Notify when an offline edit is overwritten by a newer change.';
+
+  @override
   String get apiaryDetailTitle => 'Apiary';
 
   @override
@@ -1570,4 +1619,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get discardChangesCancelAction => 'Keep editing';
+
+  @override
+  String notificationTodoDueSoon(String title) {
+    return '\"$title\" is due soon.';
+  }
+
+  @override
+  String notificationTodoOverdue(String title) {
+    return '\"$title\" is overdue.';
+  }
+
+  @override
+  String get notificationSyncCompleted => 'All your changes are synced.';
 }

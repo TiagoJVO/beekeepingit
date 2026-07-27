@@ -263,7 +263,7 @@ class ActivityListView extends ConsumerWidget {
             shrinkWrap: shrinkWrap,
             physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
             itemCount: visible.length + (showViewAll ? 1 : 0),
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, i) {
               if (i == visible.length) {
                 return _ViewAllActivitiesTile(
