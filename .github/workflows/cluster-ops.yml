@@ -102,7 +102,7 @@ jobs:
       APP_HOST: ${{ vars.APP_HOST }}
       AUTH_HOST: ${{ vars.AUTH_HOST }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Only the infra tools this job actually uses — a full `mise install`
       # would pull Flutter/Go/etc. for nothing.
@@ -113,7 +113,7 @@ jobs:
 
       # flux isn't in mise.toml — same dedicated action helm-e2e.yml uses.
       - name: Install the flux CLI
-        uses: fluxcd/flux2/action@4a15fa6a023259353ef750acf1c98fe88407d4d0 # v2.7.2
+        uses: fluxcd/flux2/action@16602fa989daa99762f1c6d1186ae2ad1c735815 # v2.9.3
 
       - name: Run scaleway-${{ inputs.action }}.sh
         env:
