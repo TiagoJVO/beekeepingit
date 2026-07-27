@@ -454,6 +454,11 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     final prefs = _localPrefs();
     prefs.remove(kProfileCacheKey);
     prefs.remove(kOrganizationCacheKey);
+    // #82: the notification engine's per-event preferences and its
+    // "already notified for this condition" dedup state are per-user too —
+    // see kNotificationPreferencesKey/kNotificationDedupStateKey's own docs.
+    prefs.remove(kNotificationPreferencesKey);
+    prefs.remove(kNotificationDedupStateKey);
   }
 
   /// A valid access token, refreshed if within 30s of expiry, or null when
