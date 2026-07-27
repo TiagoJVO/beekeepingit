@@ -43,7 +43,7 @@ yq = "4"                     # YAML query/extraction (scripts/check-deploy-url-d
 "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "2.7.1"  # Go server-stub + models codegen (no-ops until a service adds internal/api/oapi-codegen.yaml)
 
 # --- Infra toolchain (infra/ — single-cluster k8s platform, #83/EPIC-13) ---
-helm = "3.21.2"     # pinned to match .github/workflows/helm-ci.yml
+helm = "4.2.3"     # pinned to match .github/workflows/helm-ci.yml
 kubectl = "latest"
 k3d = "latest"
 "aqua:scaleway/scaleway-cli" = "2.59.0"   # `scw` — Kapsule staging/prod cluster ops (D-26; infra/cluster/scaleway-*.sh, cluster-ops.yml)
