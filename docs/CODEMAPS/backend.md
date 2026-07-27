@@ -34,6 +34,7 @@ GET   /internal/users/names        → getUsersByNames api/users.go (batch user_
 POST   /v1/organizations                         → createOrganization  api/organizations.go
 GET    /v1/organizations/me                       → getMyOrganization   api/organizations.go
 GET    /v1/organizations/{orgId}                  → getOrganization     api/organizations.go
+PATCH  /v1/organizations/{orgId}                  → updateOrganization  api/organizations.go (admin; If-Match ETag; #289)
 GET    /v1/organizations/{orgId}/members          → listMembers         api/invitations.go (admin)
 GET    /v1/organizations/{orgId}/members/names    → listMemberNames     api/invitations.go (any member, #44)
 GET    /v1/organizations/{orgId}/invitations      → listInvitations     api/invitations.go

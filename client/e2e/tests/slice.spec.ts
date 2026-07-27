@@ -183,6 +183,21 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   expect(claims.email).toBe(TEST_USER);
   expect(claims.email_verified).toBe(true);
 
+  // ── No platform authority on a FIELD-APP token (#465, NFR-SEC-1) ──────
+  // The seed user IS in the `platform-operator` group, and their ADMIN-app
+  // token therefore carries `platform_operator: true` (admin-token.spec.ts).
+  // The claim mapping is attached ONLY to the admin provider, so the PWA
+  // token this login just persisted must NOT carry it at all — a long-lived,
+  // offline-cached credential on a beekeeper's phone must never be able to
+  // assert cross-tenant platform authority (#466 authorizes on this claim).
+  // The live counterpart to scripts/check-platform-operator-mapping.sh:
+  // attaching the mapping to the PWA provider fails the static guard AND
+  // this assertion.
+  expect(
+    claims.platform_operator,
+    "the PWA (field-app) token must never carry the platform_operator claim",
+  ).toBeUndefined();
+
   // ── Create an apiary ──────────────────────────────────────────────────
   // The apiaries tab's quick actions are now consolidated behind a single
   // expandable "Actions" FAB (#347, FR-UX-1/FR-UX-2) rather than a

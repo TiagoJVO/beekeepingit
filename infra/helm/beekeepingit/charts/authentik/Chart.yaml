@@ -4,8 +4,11 @@ description: >-
   BeekeepingIT-specific supplementary resources for Authentik (D-7, ADR-0016): the
   generated config Secret (server/worker secret key, bootstrap admin creds, and the
   bundled-Postgres connection), the matching Postgres password Secret, and a dev/CI-grade
-  declarative blueprint (OAuth2 provider `beekeepingit-pwa`, application `beekeepingit`,
-  the `platform-operator` group, and one seed user) — the analogue of Keycloak's realm
+  declarative blueprint (OAuth2 providers `beekeepingit-pwa` and `beekeepingit-admin` with
+  their applications `beekeepingit`/`beekeepingit-admin`, the admin client's issuer/audience
+  claim-override mapping, the admin-only `platform_operator` claim mapping, the
+  `platform-operator` group, and the seed users) — the analogue of
+  Keycloak's realm
   import. Authentik itself (the upstream `authentik/authentik` chart, with bundled Postgres)
   is deployed separately as its own Flux `HelmRelease`
   (the beekeepingit-gitops repo's `apps/dev/authentik-helmrelease.yaml`) — not nested here — since Flux's

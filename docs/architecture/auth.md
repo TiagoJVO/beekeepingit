@@ -9,7 +9,8 @@
 **Requirements:** NFR-SEC-1, NFR-ROL-1, NFR-ROL-2, FR-TEN-1, FR-TEN-2, FR-ONB-1/2/3, FR-OF-1, NFR-AI-4
 **Decisions:** [D-7](../../requirements/decisions.md#d-7) (Authentik, IdP-agnostic OIDC boundary),
 [D-3](../../requirements/decisions.md) (org creator = admin, invite by email),
-[D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-10](../../requirements/decisions.md) (PWA-first)
+[D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-10](../../requirements/decisions.md) (PWA-first),
+[D-32](../../requirements/decisions.md) (two administration tiers — §5.3; platform tier **claim built (#465), authorization built (#466, ADR-0021)**, EPIC-18 #463)
 **Resolves:** [Q-AUTH](../../requirements/open-questions.md), [Q-ROLE](../../requirements/open-questions.md)
 **Depends on:** #104, #105, #108 · **ADR:** [0004-authn-authz](../adr/0004-authn-authz.md),
 [0016-replace-keycloak-with-authentik](../adr/0016-replace-keycloak-with-authentik.md)
@@ -110,6 +111,10 @@ no provider secrets live in the repo (NFR-SEC, EPIC-14).
 
 The provider client id the services expect is **`beekeepingit-pwa`** — Authentik's default `aud`
 is the client id, so `OIDC_AUDIENCE=beekeepingit-pwa` ([oidc-integration.md §4](oidc-integration.md#4-subject--audience--the-two-claim-decisions)).
+The **`beekeepingit-admin`** client is provisioned as its own provider/application (#456); a
+claim-override scope mapping rewrites its tokens' `iss`/`aud` to the same beekeepingit issuer +
+`beekeepingit-pwa` audience, so the services accept admin tokens **without** any per-client change
+([oidc-integration.md §3.1](oidc-integration.md#3-provider-authentik-application--oauth2-provider)).
 
 **Domain services are OAuth2 _resource servers_, not login clients** — they **validate** bearer
 tokens (§4) and never initiate a login. A **confidential service-account client** would be introduced
@@ -118,16 +123,35 @@ provider-side invite email, if we ever choose the IdP over our own SMTP for invi
 needed). Public clients + PKCE (no embedded secret) is the correct choice for a SPA/PWA and a mobile
 app, where a client secret cannot be kept confidential.
 
-### 3.3 Roles — coarse in the IdP, org-scoped in the app
+### 3.3 Roles — coarse in the IdP, org-scoped in the app (+ a platform tier)
 
 > **Key decision.** The IdP carries only a **coarse, global** marker; the **admin/user distinction
 > that matters is per-organization** and lives in `organizations.memberships.role`, **not** in the
-> token. See [ADR-0004](../adr/0004-authn-authz.md).
+> token. See [ADR-0004](../adr/0004-authn-authz.md). The **platform tier** below
+> ([D-32](../../requirements/decisions.md) — EPIC-18
+> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463)) is the one authority that _does_
+> come from the IdP; it sits **above** membership and does not change the membership role model.
+> Its token claim ships in [#465](https://github.com/TiagoJVO/beekeepingit/issues/465); the
+> services that **act** on it are [#466](https://github.com/TiagoJVO/beekeepingit/issues/466).
 
-- **IdP groups/roles** are kept minimal: every end user is simply an **authenticated user**. An
-  optional **`platform-operator`** — an Authentik **group** (not a realm role, not an app role) —
-  exists for **operations/superadmin** (managing the IdP/infra); it is an **ops concern, not a v1
-  application role**, and the app's authZ path never reads it.
+- **IdP groups/roles** are kept minimal: every end user is simply an **authenticated user**. A
+  **`platform-operator`** — an Authentik **group** (not a realm role, not a membership role) — is
+  declared in the blueprint; the dev/CI seed user has been a member since the Authentik cut-over
+  (#191), and it is also the **ops/infra marker** (managing the IdP/cluster).
+  - **Built (#465):** it is the **platform tier's** source of authority
+    ([D-32](../../requirements/decisions.md), §5.3.2) — surfaced as the verified
+    **`platform_operator`** claim on **admin-app** tokens only
+    ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)).
+    The claim is minted from real IdP group membership and can neither be requested nor injected
+    by a client; it is **never** emitted for `beekeepingit-pwa`.
+  - **Built (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)):** the
+    `organizations` service's authorization path that **reads** the claim and carves out the
+    tenancy rule for five existing routes (get/update organization, list/remove members, change
+    role) — `requirePlatformOperatorOrOrgAdmin`/`requirePlatformOperatorOrOrgMember`, additive to
+    the pre-existing `requireOrgMember`/`requireOrgAdmin` chokepoint. A caller without the claim is
+    unaffected (same 404-not-403, proven by regression tests run unmodified).
+  - The group **never** participates in the org-scoped `admin`/`user` decision below, and the
+    **PWA**'s authZ path never reads it.
 - **The application role `admin` / `user` (NFR-ROL-1) is the _membership_ role** — a property of the
   **(user, organization)** pair in `organizations.memberships` (see
   [data-model.md §3](data-model.md#3-entityrelationship-model)). It is **resolved per request**
@@ -137,20 +161,24 @@ app, where a client secret cannot be kept confidential.
   role/group assignment for end users. (The IdP's own group admin is an ops/console task.)
 
 This satisfies NFR-ROL-1 ("every user has a role; roles `admin`/`user`; manage role assignment")
-while keeping the **org-scoped** semantics FR-TEN needs, and leaves NFR-ROL-1's "more roles may exist
-later" open (add membership roles, or adopt ReBAC — §5.5 — without re-plumbing authN).
+while keeping the **org-scoped** semantics FR-TEN needs. NFR-ROL-1's "more roles may exist later"
+hook is **now in use**: [D-32](../../requirements/decisions.md) spends it on the **platform tier**
+above — a tier, not a third membership role — so the membership enum stays `admin`/`user` and authN
+is unchanged. Further expansion (extra membership roles, or ReBAC — §5.5) remains open on the same
+hook.
 
 ### 3.4 Token & claims
 
 Services consume the **access token** (JWT, **RS256**). We rely on **standard OIDC claims** and
 **deliberately keep org/role _out_ of the token**:
 
-| Claim                                          | Use                                                                                                                                                                                                                      |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `sub`                                          | OIDC subject → maps to `identity.users.oidc_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity. Set via Authentik `sub_mode: user_upn` = an **app-assigned UUID** (contract §4) |
-| `email`, `email_verified`                      | profile (FR-ONB-1); gate on verification if required (`email_verified` caveat below)                                                                                                                                     |
-| `preferred_username`, `name`, `groups`         | profile / i18n (EN-PT, NFR-I18N); `groups` carries the ops-only marker (§3.3)                                                                                                                                            |
-| `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4)                                                                                                                                                                                                   |
+| Claim                                          | Use                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sub`                                          | OIDC subject → maps to `identity.users.oidc_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity. Set via Authentik `sub_mode: user_upn` = an **app-assigned UUID** (contract §4)                                                                                                                                                                                                       |
+| `email`, `email_verified`                      | profile (FR-ONB-1); gate on verification if required (`email_verified` caveat below)                                                                                                                                                                                                                                                                                                                                           |
+| `preferred_username`, `name`, `groups`         | profile / i18n (EN-PT, NFR-I18N); `groups` carries the `platform-operator` marker but is **informational only** — it is emitted on **both** clients, so services must **never** authorize on it (§3.3)                                                                                                                                                                                                                         |
+| `platform_operator`                            | **Admin-client tokens only** (#465): verified `platform-operator` membership as a boolean — the platform tier's authority ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)). Absent ⇒ **false**. Emitted, and **read** by the `organizations` service on its platform-path-enabled routes (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)) |
+| `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4)                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 **Why no `organization_id` / org-role claim:** membership is **domain data that changes** and a token
 is **long-ish lived and cached offline** — an embedded org/role would go **stale** (e.g. a removed
@@ -289,7 +317,20 @@ graph TD
     H -- yes --> I["execute — org-scoped query<br/>(+ optional RLS)"]
 ```
 
-### 5.3 Role capabilities — `admin` vs `user` (resolves Q-ROLE)
+### 5.3 Role capabilities — two administration tiers (resolves Q-ROLE)
+
+Administration is **two-tier** ([D-32](../../requirements/decisions.md)). The tiers are distinct in
+_who_ grants the authority and _how far_ it reaches:
+
+| Tier                      | Authority comes from                                                            | Reaches                   | Status                                                                                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Organization** (§5.3.1) | the caller's **membership role** `admin` in `organizations.memberships` (D-3)   | that **one** organization | **Built** (EPIC-10)                                                                                                                                                                                                                                                                                 |
+| **Platform** (§5.3.2)     | membership of the IdP **`platform-operator`** group, as a verified claim (§3.3) | **every** organization    | **Built:** the five existing organization-scoped routes (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)), `GET /organizations` (list organizations, #467), and the cross-org membership lookup (#468) — EPIC-18 ([#463](https://github.com/TiagoJVO/beekeepingit/issues/463)) |
+
+They are independent: a platform operator is **not** a member of the organizations it administers,
+and an organization admin gains nothing outside its own org.
+
+#### 5.3.1 Organization tier (built) — `admin` vs `user`
 
 **`admin` is org-scoped** (D-3: the org creator is its first admin). Within an organization:
 
@@ -312,10 +353,57 @@ exception:** `GET .../members/names` — a least-privilege roster (`user_id` + d
 role/status/email) — is readable by **any active member**, not just admins, because per-user
 attribution (FR-TEN-2, [#44](https://github.com/TiagoJVO/beekeepingit/issues/44)) must resolve another
 member's id to a real name and org data is shared across all members anyway; a non-member still gets
-`404` (ADR-0002, never `403`). There is **no system-wide application
-admin** in v1 — a platform super-admin is the **`platform-operator`** ops group (§3.3), not an app
-role; NFR-ROL-1's "more roles later" can add one when needed. _This resolves
-[Q-ROLE](../../requirements/open-questions.md) (admin = org-scoped)._
+`404` (ADR-0002, never `403`).
+
+#### 5.3.2 Platform tier (EPIC-18 #463 — authority minted, existing routes carved out, both new endpoints built)
+
+> **Claim + enforcement built for this story's scope; one new endpoint now built too.** The
+> **source of authority** shipped ([#465](https://github.com/TiagoJVO/beekeepingit/issues/465)): an
+> admin-app token carries the verified **`platform_operator`** boolean, minted from real
+> `platform-operator` group membership and never emitted for the PWA client
+> ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)).
+> The **organizations service reads it**
+> ([#466](https://github.com/TiagoJVO/beekeepingit/issues/466),
+> [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)): a verified operator can reach
+> `GET`/`PATCH /organizations/{orgId}`, `GET /organizations/{orgId}/members`, and
+> `PATCH`/`DELETE /organizations/{orgId}/members/{userId}` for an organization it does not belong
+> to, additive to the pre-existing membership-derived path (unchanged for everyone else — proven by
+> regression tests run unmodified). **Also built:** `GET /organizations`
+> ([#467](https://github.com/TiagoJVO/beekeepingit/issues/467)) — a NEW endpoint with no `{orgId}`
+> to carve an exception into, so it calls `isPlatformOperator` directly and rejects a non-operator
+> with an ordinary **`403`** (not `404` — there is no specific organization's existence to hide
+> here; ADR-0021's Follow-ups section). It lists every organization's `id`/`name`/`member_count`
+> only — no member roster, no invitation data, nothing from inside any organization. **Also
+> built:** the cross-org membership lookup,
+> `GET /organizations/platform/memberships?email=|user_id=` ([#468](https://github.com/TiagoJVO/beekeepingit/issues/468))
+> — the same `isPlatformOperator`/`403` pattern, returning organization id/name/role/status
+> only, never credentials or IdP internals (D-7). **Also built:** the persisted,
+> distinguishable history record ([#470](https://github.com/TiagoJVO/beekeepingit/issues/470)) —
+> `organizations.audit_log.actor_scope`, derived from `AuthorizedVia` (ADR-0021's
+> Follow-ups). The rest of this section records the **intended** model
+> ([D-32](../../requirements/decisions.md)) so the org tier above is not read as the whole story.
+
+A **platform operator** — a member of the IdP **`platform-operator`** group (§3.3), typically **not
+a member of any organization** — administers the platform **across** organizations: list
+organizations, look up their members, and manage membership roles, expanding to further
+administration features later. The intended shape:
+
+| Property            | Platform tier                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source of authority | IdP group membership, surfaced as the **verified `platform_operator` boolean** on **admin-app** tokens only (**built**, [#465](https://github.com/TiagoJVO/beekeepingit/issues/465); shape in [oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)) — never client-asserted, never derived from org membership. **Authorize on that claim, never on the `groups` array** (§3.4): `groups` is emitted on the PWA client too                                                                                                                                                                                                                   |
+| Scope               | **Built:** the five existing organization-scoped routes (get/update organization, list/remove members, change role) — carved out per endpoint, [#466](https://github.com/TiagoJVO/beekeepingit/issues/466)/[ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md) — `GET /organizations`, the list-all-organizations endpoint ([#467](https://github.com/TiagoJVO/beekeepingit/issues/467)) — and the cross-org membership lookup, `GET /organizations/platform/memberships` ([#468](https://github.com/TiagoJVO/beekeepingit/issues/468)) — all reusing the same `isPlatformOperator(r)` claim check and rejecting a non-operator with `403` (no `{orgId}` to hide) on the two new endpoints |
+| May do              | Administer organizations, their members and their **membership roles** (the same `admin`/`user` model, applied on behalf of an org)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| May **not** do      | Touch **accounts or credentials** — create/disable, password reset, MFA all stay at the IdP ([D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary), unchanged)                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Accountability      | Platform actions are recorded in history, attributed to the operator's own identity (not the target org's admin — proven by test); a persisted, **distinguishable** marker on the history row itself is [#470](https://github.com/TiagoJVO/beekeepingit/issues/470) (FR-HIS-1), **done** — `organizations.audit_log.actor_scope`, derived from `AuthorizedVia` (ADR-0021's Follow-ups)                                                                                                                                                                                                                                                                                                                |
+| Tenancy risk        | ADR-0002 returns **`404`, never `403`**, across org boundaries. The operator carve-out is deliberate, **narrow, per-endpoint and test-proven** — a **non**-operator still gets `404` on every carved-out route (regression-tested, #466). Its ADR is [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)                                                                                                                                                                                                                                                                                                                                                                                   |
+
+**The organization tier is unaffected** — customers keep self-service member management exactly as
+EPIC-10 shipped. The platform tier sits **above** it.
+
+_This resolves [Q-ROLE](../../requirements/open-questions.md): **two tiers** — org-scoped `admin`
+membership (built) plus a cross-organization `platform-operator` (its token claim built in #465,
+its services-side enforcement still #466). It **supersedes** the earlier answer that there is no
+system-wide application admin ([D-32](../../requirements/decisions.md))._
 
 ### 5.4 Resource ownership (FR-TEN-2)
 
@@ -462,7 +550,7 @@ recovery/password-reset remains **provider flow config in EPIC-14**; the fixed c
 | Item                                           | Effect on this design                                                | Resolved / built in                                                                                                     |
 | ---------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | [Q-AUTH](../../requirements/open-questions.md) | mechanism (D-7) + offline login, token lifetimes, verification/reset | **Resolved here** (§4, §6, §7)                                                                                          |
-| [Q-ROLE](../../requirements/open-questions.md) | admin org-scoped vs system-wide; capability split                    | **Resolved here** (§5.3) — org-scoped                                                                                   |
+| [Q-ROLE](../../requirements/open-questions.md) | admin org-scoped vs system-wide; capability split                    | **Resolved here** (§5.3) — **two tiers** (D-32): org-scoped `admin` **built**, platform operator **planned** (#463)     |
 | **Token-lifetime / grace values**              | exact minutes/days need security sign-off                            | EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15))                                                     |
 | **PWA token persistence (iOS)**                | durability of cached session in a PWA                                | SP-1 (PWA persistence), [#54](https://github.com/TiagoJVO/beekeepingit/issues/54)                                       |
 | **Membership read path**                       | services call `organizations` vs read a replicated projection        | [#108](https://github.com/TiagoJVO/beekeepingit/issues/108) / [#28](https://github.com/TiagoJVO/beekeepingit/issues/28) |
@@ -489,17 +577,17 @@ security review). The middleware here is also the **producer** of the `organizat
 > rename), and **client** (WS-C discovery-driven OIDC + front-channel logout). The rows below reflect
 > the Authentik reality; the frozen values are in [oidc-integration.md](oidc-integration.md).
 
-| §7/§3.3 item                                    | Where it landed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Logout — server-side SSO revoke (NFR-SEC-1)** | [`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) `logout()` revokes the **server-side SSO session**, not just local tokens, and degrades to local-only clearing offline (D-10). It performs a **front-channel `end_session` GET** to the **discovered** `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing local state first — driven off OIDC discovery, not a hard-coded path (replacing #24's refresh-token POST to Keycloak's logout endpoint). |
-| **PowerSync disconnect on logout**              | Same `logout()` invalidates [`powerSyncProvider`](../../client/lib/core/sync/powersync_service.dart) (its existing `onDispose` already calls `disconnect()`+`close()`) so a second user on shared hardware doesn't see stale replicated rows before the next sync                                                                                                                                                                                                                                                                                                  |
-| **Defensive local-session sweep**               | `logout()` clears all local session-storage keys (PKCE verifier, OAuth state, tokens), not just the refresh token, covering an abandoned mid-flow login                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **`platform-operator` group**                   | The Authentik **blueprint** ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)) declares a `platform-operator` **group** — unassigned, ops-only, per §3.3 (**not** an app role, and **not** literal `admin`/`user` roles — see the AC note below)                                                                                                                                                                                                                           |
-| **Email verification (mapping)**                | ~~Cosmetic default mapping~~ → **real state since #361 (§8.10)**: a custom scope mapping emits the `email_verified` **user attribute** the login-time verification flow sets; self-service registration (since #366, §8.11) reuses the same stages, so the attribute's only writer stays the restored-flow-token stamp                                                                                                                                                                                                                                             |
-| **Token lifetimes (blueprint validities)**      | Provider validity **`minutes=15`** (access) / **`days=30`** (refresh) in the blueprint (Django-timedelta strings) — the §7 proposed defaults, now concrete values; still subject to EPIC-14 security sign-off                                                                                                                                                                                                                                                                                                                                                      |
-| **Branding (narrow scope)**                     | Blueprint application title/branding; a custom login-flow theme is **out of scope** (design-owned effort, follow-up if needed)                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **TLS to the IdP**                              | Local k3d dev serves the auth host over HTTPS at the gateway (`auth.beekeepingit.local:8443`, self-signed); some redirect URIs still allow plain `http://localhost` for dev. Trusted-CA TLS is EPIC-14                                                                                                                                                                                                                                                                                                                                                             |
-| **Client-side tests**                           | [`client/test/core/auth/auth_controller_test.dart`](../../client/test/core/auth/auth_controller_test.dart) (login/PKCE, code exchange incl. CSRF-state rejection, token refresh, refresh-rejected, logout incl. session-revoke + offline-degrade); logout widget interaction in `client/test/widget_test.dart`; logout e2e in [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts)                                                                                                                                                             |
+| §7/§3.3 item                                    | Where it landed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Logout — server-side SSO revoke (NFR-SEC-1)** | [`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) `logout()` revokes the **server-side SSO session**, not just local tokens, and degrades to local-only clearing offline (D-10). It performs a **front-channel `end_session` GET** to the **discovered** `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing local state first — driven off OIDC discovery, not a hard-coded path (replacing #24's refresh-token POST to Keycloak's logout endpoint).                                                                                                                 |
+| **PowerSync disconnect on logout**              | Same `logout()` invalidates [`powerSyncProvider`](../../client/lib/core/sync/powersync_service.dart) (its existing `onDispose` already calls `disconnect()`+`close()`) so a second user on shared hardware doesn't see stale replicated rows before the next sync                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Defensive local-session sweep**               | `logout()` clears all local session-storage keys (PKCE verifier, OAuth state, tokens), not just the refresh token, covering an abandoned mid-flow login                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **`platform-operator` group**                   | The Authentik **blueprint** ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)) declares a `platform-operator` **group** — ops-only, per §3.3 (**not** an app role, and **not** literal `admin`/`user` roles — see the AC note below). It is **not empty**: the dev/CI seed user has been a member since the Authentik cut-over (#191), and since **#465** that membership is surfaced to the admin app as the verified `platform_operator` claim (EPIC-18's platform tier — [oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)) |
+| **Email verification (mapping)**                | ~~Cosmetic default mapping~~ → **real state since #361 (§8.10)**: a custom scope mapping emits the `email_verified` **user attribute** the login-time verification flow sets; self-service registration (since #366, §8.11) reuses the same stages, so the attribute's only writer stays the restored-flow-token stamp                                                                                                                                                                                                                                                                                                                                                             |
+| **Token lifetimes (blueprint validities)**      | Provider validity **`minutes=15`** (access) / **`days=30`** (refresh) in the blueprint (Django-timedelta strings) — the §7 proposed defaults, now concrete values; still subject to EPIC-14 security sign-off                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Branding (narrow scope)**                     | Blueprint application title/branding; a custom login-flow theme is **out of scope** (design-owned effort, follow-up if needed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **TLS to the IdP**                              | Local k3d dev serves the auth host over HTTPS at the gateway (`auth.beekeepingit.local:8443`, self-signed); some redirect URIs still allow plain `http://localhost` for dev. Trusted-CA TLS is EPIC-14                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Client-side tests**                           | [`client/test/core/auth/auth_controller_test.dart`](../../client/test/core/auth/auth_controller_test.dart) (login/PKCE, code exchange incl. CSRF-state rejection, token refresh, refresh-rejected, logout incl. session-revoke + offline-degrade); logout widget interaction in `client/test/widget_test.dart`; logout e2e in [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts)                                                                                                                                                                                                                                                                             |
 
 **AC note (roles).** Issue #24's acceptance criteria literally reads "`admin` and `user` roles are
 defined." Per §3.3's already-settled design (and ADR-0004), `admin`/`user` is the

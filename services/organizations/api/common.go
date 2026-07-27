@@ -29,6 +29,16 @@ func writeJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 
 func uuidString(u pgtype.UUID) string { return uuid.UUID(u.Bytes).String() }
 
+// isValidMembershipRole reports whether role is one of the fixed membership
+// roles (auth.md §5.3's two-role admin/user model, NFR-ROL-1/2). Single source
+// of truth shared by createInvitationHandler (invitations.go) and
+// changeMemberRoleHandler (member_lifecycle.go) so the accepted-role set is
+// defined in exactly one place — adding a role later (NFR-ROL-1) is a one-line
+// change here rather than a hunt across handlers.
+func isValidMembershipRole(role string) bool {
+	return role == "admin" || role == "user"
+}
+
 // withTx runs fn inside a new transaction on pool, committing on success.
 // Rollback is always deferred (a no-op after a successful Commit) so a
 // handler returning early on any error never leaves the transaction open.

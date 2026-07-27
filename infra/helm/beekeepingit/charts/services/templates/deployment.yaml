@@ -72,6 +72,23 @@ spec:
             - name: OIDC_DISCOVERY_URL
               value: {{ $root.Values.oidc.discoveryUrl | quote }}
             {{- end }}
+            {{- /*
+              CORS allowed origins for the cross-origin admin app (#449, FR-TEN-2).
+              Prefer an explicit services.cors.allowedOrigins list; otherwise fall
+              back to the shared global.adminOrigin (the common case — every
+              service allows the one admin origin). Rendered as a comma-separated
+              CORS_ALLOWED_ORIGINS the servicetemplate config parses; omitted
+              entirely when neither is set, leaving CORS disabled (same-origin only).
+            */}}
+            {{- $corsOrigins := list }}
+            {{- if $root.Values.cors }}{{- with $root.Values.cors.allowedOrigins }}{{- $corsOrigins = . }}{{- end }}{{- end }}
+            {{- if and (not $corsOrigins) $root.Values.global.adminOrigin }}
+            {{- $corsOrigins = list $root.Values.global.adminOrigin }}
+            {{- end }}
+            {{- if $corsOrigins }}
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ join "," $corsOrigins | quote }}
+            {{- end }}
             {{- if $svc.db.enabled }}
             - name: DB_HOST
               value: {{ $root.Values.db.host | quote }}

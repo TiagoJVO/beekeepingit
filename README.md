@@ -11,8 +11,9 @@ a multi-organization path kept open.
 > umbrella chart (`infra/`), contract-first OpenAPI specs (`contracts/`), all four domain
 > services — `identity`, `organizations`, `apiaries`, `sync` — plus the shared
 > `servicetemplate`/`shared` libraries, and the Flutter PWA client (`client/`) with OIDC login,
-> offline-first sync, and apiary CRUD. Source of truth (intent) is [requirements/](requirements/);
-> `docs/` documents the system as it's built.
+> offline-first sync, and apiary CRUD. The **React + TS web admin app** (`admin/`) has begun
+> (M7): OIDC login + an admin-role guard scaffold (`#72`). Source of truth (intent) is
+> [requirements/](requirements/); `docs/` documents the system as it's built.
 
 ## Intended stack (not final)
 
@@ -34,6 +35,7 @@ beekeepingit/
 ├── services/          # Go backend: identity, organizations, apiaries, activities, sync + shared/ (infra
 │                      #   library, #85) + servicetemplate/ (shared service template, #20)
 ├── client/            # Flutter PWA — shell, routing, theming, state mgmt, sync, i18n (#21)
+├── admin/             # React + TS web admin app — online-only, OIDC + admin-role guard (#72)
 ├── .claude/           # AI rules + settings (SessionStart workflow hook)
 ├── .github/           # Issue templates, PR template, label taxonomy
 ├── taskfiles/         # Per-language task definitions (go-task)
@@ -44,7 +46,7 @@ beekeepingit/
 └── CONTRIBUTING.md    # Branching, commits, PR process
 ```
 
-Code directories (`services/`, `apps/`, `client/`, `infra/`) appear as work needs them
+Code directories (`services/`, `client/`, `admin/`, `infra/`) appear as work needs them
 (`D-9`) — nothing is pre-scaffolded.
 
 ## Development

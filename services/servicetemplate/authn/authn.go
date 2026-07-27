@@ -81,6 +81,16 @@ func NewMiddleware(ctx context.Context, cfg Config) (func(http.Handler) http.Han
 			if verified, ok := raw["email_verified"].(bool); ok {
 				claims.EmailVerified = verified
 			}
+			// platform_operator (#465/#466): a literal JSON boolean only —
+			// a type assertion failure (absent, string, number, array, ...)
+			// leaves PlatformOperator at its zero value (false), the
+			// documented fail-closed outcome (oidc-integration.md §3.2).
+			// raw is decoded from idToken.Claims, which only succeeds after
+			// verifier.Verify has already checked the signature/iss/aud/exp
+			// above — this claim is never trusted before that point.
+			if operator, ok := raw["platform_operator"].(bool); ok {
+				claims.PlatformOperator = operator
+			}
 
 			ctx := context.WithValue(r.Context(), claimsKey{}, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))

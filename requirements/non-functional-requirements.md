@@ -60,13 +60,26 @@ to `open-questions.md`.
   Initial roles: **admin** and **user**; more roles may exist later. Provide
   management of roles/permissions: create roles, assign permissions to roles,
   assign roles to users.
-  - _Resolved (Q-ROLE):_ **admin is organization-scoped** (the membership role; D-3) — manages
-    members, roles, org settings and invitations; `user` does field CRUD + AI + history. No
-    system-wide app admin in v1. See [`docs/architecture/auth.md`](../docs/architecture/auth.md)
-    §5.3 / [ADR-0004](../docs/adr/0004-authn-authz.md).
+  - _Resolved (Q-ROLE), revised by [D-32](decisions.md):_ administration is **two-tier**.
+    1. **Organization tier** — `admin` is the **organization-scoped membership role** (D-3):
+       manages members, roles, org settings and invitations within **one** organization; `user`
+       does field CRUD + AI + history. Unchanged from what EPIC-10 shipped.
+    2. **Platform tier** — a **`platform-operator`** (IdP group membership, surfaced as a
+       verified token claim; **not** an org membership) administers **every** organization, its
+       members and their roles. Intended product scope, being built in EPIC-18 (#463).
+
+    The earlier half of this answer — _"no system-wide app admin in v1"_ — **no longer holds**.
+    This is NFR-ROL-1's **"more roles may exist later" hook now in use**: the expansion lands as
+    a **tier above** membership, not as a third membership role, so the fixed `admin`/`user`
+    membership enum is untouched. See [`docs/architecture/auth.md`](../docs/architecture/auth.md)
+    §3.3/§5.3 / [ADR-0004](../docs/adr/0004-authn-authz.md).
+
 - **NFR-ROL-2** — A separate **Admin App** (web/browser only, **no offline
   support**) for role management, organization management, and other
   administrative tasks (including rate-limit/quota management — see NFR-RL-1).
+  - _Refined (D-32):_ the same app hosts **both tiers** of NFR-ROL-1 — the organization tier
+    customers self-serve (EPIC-10), and the cross-organization **platform** tier for the app
+    owners (EPIC-18 #463). "Admin App" is therefore not organization-only.
 
 ## Performance (NFR-PER)
 

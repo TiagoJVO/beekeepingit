@@ -128,6 +128,11 @@ type invitationCreateRequest struct {
 func registerMemberAndInvitationRoutes(r chi.Router, pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) {
 	r.Get("/organizations/{orgId}/members", listMembersHandler(q, resolver))
 	r.Get("/organizations/{orgId}/members/names", listMemberNamesHandler(q, resolver))
+	// Member lifecycle (#290) -- admin-only remove + change-role, implemented in
+	// member_lifecycle.go. Kept off the /members/names path so the member-name
+	// roster stays the one member-readable exception (auth.md §5.3).
+	r.Patch("/organizations/{orgId}/members/{userId}", changeMemberRoleHandler(pool, q, resolver))
+	r.Delete("/organizations/{orgId}/members/{userId}", removeMemberHandler(pool, q, resolver))
 	r.Get("/organizations/{orgId}/invitations", listInvitationsHandler(q, resolver))
 	r.Post("/organizations/{orgId}/invitations", createInvitationHandler(pool, q, resolver))
 	r.Delete("/organizations/{orgId}/invitations/{invitationId}", revokeInvitationHandler(pool, q, resolver))
@@ -168,9 +173,13 @@ func requireOrgAdmin(w http.ResponseWriter, r *http.Request, q *sqlcgen.Queries,
 	return member, true
 }
 
+// listMembersHandler is admin-only and org-scoped (requireOrgAdmin). #466: a
+// verified platform operator may also reach this route for an org it is not
+// a member of (requirePlatformOperatorOrOrgAdmin, ADR-0021); every other
+// caller is unaffected.
 func listMembersHandler(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		member, ok := requireOrgAdmin(w, r, q, resolver)
+		member, ok := requirePlatformOperatorOrOrgAdmin(w, r, q, resolver)
 		if !ok {
 			return
 		}
@@ -334,7 +343,7 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 		if role == "" {
 			role = "user"
 		}
-		if role != "admin" && role != "user" {
+		if !isValidMembershipRole(role) {
 			fieldErrs = append(fieldErrs, problem.FieldError{Field: "role", Code: "invalid", Message: "role must be admin or user"})
 		}
 		if len(fieldErrs) > 0 {
@@ -360,7 +369,13 @@ func createInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 				return fmt.Errorf("create invitation: %w", err)
 			}
 
-			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, invitation.ID, member.UserID, now,
+			// actor_scope (#470): createInvitationHandler is gated by plain
+			// requireOrgAdmin, never requirePlatformOperatorOrOrgAdmin, so
+			// member.AuthorizedVia is always "" here -- actorScopeFor still
+			// used (not the literal actorScopeMember) so this call site
+			// tracks the actual authorization outcome automatically if it is
+			// ever wired to the platform path in the future.
+			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, invitation.ID, member.UserID, actorScopeFor(member.AuthorizedVia), now,
 				history.ChangeCreate, nil, invitationFields(invitation)); err != nil {
 				return fmt.Errorf("write invitation audit log: %w", err)
 			}
@@ -433,7 +448,10 @@ func revokeInvitationHandler(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver Us
 				return err
 			}
 
-			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, revoked.ID, member.UserID, now,
+			// actor_scope (#470): revokeInvitationHandler is also gated by
+			// plain requireOrgAdmin (never the platform path) -- same
+			// actorScopeFor rationale as createInvitationHandler above.
+			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeInvitation, revoked.ID, member.UserID, actorScopeFor(member.AuthorizedVia), now,
 				history.ChangeUpdate, invitationFields(before), invitationFields(revoked)); err != nil {
 				return fmt.Errorf("write invitation audit log: %w", err)
 			}
@@ -500,7 +518,11 @@ func acceptPendingInvitationByEmail(ctx context.Context, pool *pgxpool.Pool, q *
 		// invitation (pending -> accepted) -- the accepting user IS the
 		// actor here (there is no admin action on this path), in the same
 		// transaction as the domain update (history.md section 4).
-		if err := writeAuditLog(ctx, txq, accepted.OrganizationID, entityTypeInvitation, accepted.ID, userID, now,
+		// actor_scope (#470) is always actorScopeMember: this is the
+		// invitee's own self-service accept-on-login, never reachable via
+		// the platform-operator carve-out (there is no callerMembership with
+		// an AuthorizedVia to derive from at this call site).
+		if err := writeAuditLog(ctx, txq, accepted.OrganizationID, entityTypeInvitation, accepted.ID, userID, actorScopeMember, now,
 			history.ChangeUpdate, invitationFields(invitation), invitationFields(accepted)); err != nil {
 			return fmt.Errorf("write invitation audit log: %w", err)
 		}
@@ -518,7 +540,8 @@ func acceptPendingInvitationByEmail(ctx context.Context, pool *pgxpool.Pool, q *
 		// The new membership this acceptance creates is its own entity/create
 		// row, same transaction (mirrors organizations.go's createOrganization
 		// writing both the org's and its creator membership's rows together).
-		if err := writeAuditLog(ctx, txq, membership.OrganizationID, entityTypeMembership, membership.ID, userID, now,
+		// Same actor_scope reasoning as the invitation's own accept row above.
+		if err := writeAuditLog(ctx, txq, membership.OrganizationID, entityTypeMembership, membership.ID, userID, actorScopeMember, now,
 			history.ChangeCreate, nil, membershipFields(membership)); err != nil {
 			return fmt.Errorf("write membership audit log: %w", err)
 		}

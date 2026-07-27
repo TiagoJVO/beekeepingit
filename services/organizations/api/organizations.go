@@ -55,6 +55,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -146,6 +147,17 @@ type UserResolver interface {
 	// which the client renders as a short id fragment). Never returns email
 	// (FR-TEN-2).
 	ResolveNames(ctx context.Context, bearer string, userIDs []string) (map[string]string, error)
+	// ResolveByEmail maps an email address to its identity.users row -- the
+	// email-lookup half of #468's platform cross-organization
+	// membership-lookup support tool (platform_membership_lookup.go): a
+	// support operator who only has a person's email needs their user_id
+	// before organizations' own memberships table (keyed by user_id, never
+	// email) can be queried across orgs. Matches the same mutable, non-
+	// authoritative profile email ResolvedUser's doc comment warns about --
+	// fine for a support SEARCH key, never for an authorization decision.
+	// Returns ErrUnknownUser (not a generic error) when identity has no row
+	// for the email, exactly like Resolve does for an unknown subject.
+	ResolveByEmail(ctx context.Context, bearer, email string) (ResolvedUser, error)
 }
 
 // HTTPUserResolver calls identity's internal resolve endpoint directly --
@@ -206,6 +218,32 @@ func (h *HTTPUserResolver) Resolve(ctx context.Context, bearer, sub string) (Res
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return ResolvedUser{}, fmt.Errorf("resolve user by sub: decode identity response: %w", err)
+	}
+	return ResolvedUser{UserID: out.UserID, Email: out.Email}, nil
+}
+
+// ResolveByEmail maps an email address to its identity.users row via
+// identity's internal GET /internal/users/by-email/{email} (#468). Mirrors
+// Resolve's shape exactly (same ErrUnknownUser-on-404 contract, same
+// escaped-path-segment request) -- the only difference is the lookup key.
+func (h *HTTPUserResolver) ResolveByEmail(ctx context.Context, bearer, email string) (ResolvedUser, error) {
+	reqURL := h.IdentityBaseURL + "/internal/users/by-email/" + url.PathEscape(email)
+	status, body, err := h.getJSON(ctx, reqURL, bearer)
+	if err != nil {
+		return ResolvedUser{}, fmt.Errorf("resolve user by email: call identity: %w", err)
+	}
+	if status == http.StatusNotFound {
+		return ResolvedUser{}, ErrUnknownUser
+	}
+	if status != http.StatusOK {
+		return ResolvedUser{}, fmt.Errorf("resolve user by email: identity responded %d", status)
+	}
+	var out struct {
+		UserID string `json:"user_id"`
+		Email  string `json:"email"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return ResolvedUser{}, fmt.Errorf("resolve user by email: decode identity response: %w", err)
 	}
 	return ResolvedUser{UserID: out.UserID, Email: out.Email}, nil
 }
@@ -298,23 +336,164 @@ func identityUnavailable(detail string) problem.Problem {
 // PublicRouter returns the client-facing /v1 organization routes backed by
 // pool, mounted under "/v1" behind authn.NewMiddleware only (see package doc
 // for why no authn.NewOrgResolver sits in front of any of these routes).
-// Member/invitation routes are registered in invitations.go's registerMemberAndInvitationRoutes.
+// Member/invitation routes are registered in invitations.go's
+// registerMemberAndInvitationRoutes; the platform-operator cross-organization
+// membership lookup (#468) is registered in
+// platform_membership_lookup.go's registerPlatformRoutes -- both live under
+// this same "/organizations"-prefixed router so the gateway's existing
+// /v1/organizations path-prefix route (infra/helm/beekeepingit/charts/gateway
+// /values.yaml) reaches them with no infra change.
 func PublicRouter(pool *pgxpool.Pool, resolver UserResolver) http.Handler {
 	q := sqlcgen.New(pool)
 	r := chi.NewRouter()
+	r.Get("/organizations", listOrganizations(q))
 	r.Post("/organizations", createOrganization(pool, q, resolver))
 	r.Get("/organizations/me", getMyOrganization(pool, q, resolver))
 	r.Get("/organizations/{orgId}", getOrganization(q, resolver))
+	r.Patch("/organizations/{orgId}", updateOrganization(pool, q, resolver))
 	registerMemberAndInvitationRoutes(r, pool, q, resolver)
+	registerPlatformRoutes(r, q, resolver)
 	return r
+}
+
+// OrganizationSummaryResponse is the platform-operator-only cross-org list
+// shape (GET /organizations, #467, D-32, contracts/openapi/organizations.
+// openapi.yaml's OrganizationSummary schema) -- deliberately NOT the full
+// Organization schema: no address, no created_by, and no role (role is the
+// CALLER's own membership role in ONE org, #172 -- meaningless here, since a
+// platform operator enumerating every organization is a member of none of
+// them). member_count is the only member-related fact this endpoint exposes
+// -- no user_id/role/status/email for any member of any org ever leaves this
+// response (#467 AC "no member PII... nothing from inside the org").
+type OrganizationSummaryResponse struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	MemberCount int64     `json:"member_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type organizationListResponse struct {
+	Data []OrganizationSummaryResponse `json:"data"`
+	Page pageResponse                  `json:"page"`
+}
+
+// likeSearchPattern turns a caller-supplied free-text query (the `q` param,
+// #467 AC "search/filter by name") into a safe ILIKE substring pattern: `%`,
+// `_` and `\` -- ILIKE's own wildcard/escape characters -- are escaped first,
+// so a literal one of them in the search text is matched literally rather
+// than treated as a wildcard, then the escaped text is wrapped in `%...%` for
+// substring matching. Paired with organizations.sql's ListOrganizations query,
+// whose `ESCAPE '\'` clause is what makes the escaping effective server-side.
+func likeSearchPattern(q string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + replacer.Replace(q) + "%"
+}
+
+// listOrganizations is the platform-operator-only cross-org list (GET
+// /organizations, #467, D-32, EPIC-18 #463): enumerates every organization on
+// the platform, not just the caller's own -- the console operation a
+// platform operator needs and no ordinary caller (org admin or plain member)
+// is ever granted.
+//
+// This is a NEW endpoint with no existing {orgId}-scoped membership check to
+// extend (unlike organizations.go's other platform-operator-aware routes,
+// which reuse requirePlatformOperatorOrOrgMember/...OrgAdmin from
+// platform_authz.go) -- per that file's package doc and ADR-0021's
+// Follow-ups section, it calls isPlatformOperator(r) directly and, when
+// false, writes an ordinary problem.Forbidden (403), NOT problem.NotFound:
+// ADR-0002's "never confirm another org's existence via 404" rationale
+// doesn't apply here, since there is no specific {orgId} in the path for a
+// non-operator to probe the existence of -- this operation IS "list every
+// organization", so a non-operator's rejection is simply "you lack the
+// required role", the same 403 semantics as any other role-gated action
+// (servicetemplate/authn's RequireRole). The claim itself
+// (authn.Claims.PlatformOperator) is read exactly once, through
+// isPlatformOperator -- the one sanctioned read site for it in this service
+// -- and NEVER from authn.Claims.Raw["groups"] (platform_authz.go's package
+// doc explains why that claim must never authorize anything).
+func listOrganizations(q *sqlcgen.Queries) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !isPlatformOperator(r) {
+			problem.Write(w, r, problem.Forbidden("caller is not a platform operator"))
+			return
+		}
+
+		limit, cursor, ok := parsePage(w, r)
+		if !ok {
+			return
+		}
+
+		var search pgtype.Text
+		if raw := strings.TrimSpace(r.URL.Query().Get("q")); raw != "" {
+			search = pgtype.Text{String: likeSearchPattern(raw), Valid: true}
+		}
+
+		rows, err := q.ListOrganizations(r.Context(), sqlcgen.ListOrganizationsParams{
+			Limit:  int32(limit + 1), //nolint:gosec // limit is clamped to [1,maxPageLimit=200]
+			Cursor: cursor,
+			Q:      search,
+		})
+		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list organizations failed", slog.Any("error", err))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		page := pageResponse{Limit: limit}
+		if len(rows) > limit {
+			next := uuidString(rows[limit-1].ID)
+			page.NextCursor = &next
+			rows = rows[:limit]
+		}
+		data := make([]OrganizationSummaryResponse, 0, len(rows))
+		for _, row := range rows {
+			data = append(data, OrganizationSummaryResponse{
+				ID:          uuidString(row.ID),
+				Name:        row.Name,
+				MemberCount: row.MemberCount,
+				CreatedAt:   row.CreatedAt.Time,
+				UpdatedAt:   row.UpdatedAt.Time,
+			})
+		}
+		writeJSON(w, r, http.StatusOK, organizationListResponse{Data: data, Page: page})
+	}
 }
 
 // callerMembership is the resolved (org, user, role) tuple resolveActiveMembership
 // produces for the caller of the current request.
+//
+// #466: this is now a UNION of two distinct shapes, discriminated by
+// AuthorizedVia -- not a single invariant struct anymore. When AuthorizedVia
+// is "" (the ordinary membership path -- resolveActiveMembership,
+// requireOrgMember/requireOrgAdmin, entirely unchanged by #466), UserID is
+// genuinely an ACTIVE MEMBER of OrgID with role Role, backed by a real
+// organizations.memberships row, and every invariant that implies (e.g.
+// GetOrganizationForUpdate's "OrgID is guaranteed to exist" assumption,
+// organizations.go) holds. When AuthorizedVia is authorizedViaPlatformOperator
+// (platform_authz.go), UserID is the verified platform operator's OWN
+// identity -- NOT a member of OrgID at all, no memberships row backs this
+// callerMembership -- and Role is a fixed sentinel (platformOperatorRole),
+// not a real membership role read from the database. Do not assume a
+// callerMembership implies DB-backed membership without checking
+// AuthorizedVia first; see platform_authz.go's package doc for the full
+// contract.
 type callerMembership struct {
 	OrgID  pgtype.UUID
 	UserID pgtype.UUID
 	Role   string
+	// AuthorizedVia records which of the two authorization paths (#466)
+	// produced this callerMembership: the zero value "" is the ordinary
+	// membership-derived path (requireOrgMember/requireOrgAdmin,
+	// resolveActiveMembership -- entirely unchanged by #466, so every
+	// pre-existing call site simply never sets this field, and Go's zero
+	// value for a new struct field requires no change to those call sites)
+	// or authorizedViaPlatformOperator (platform_authz.go) for the verified-
+	// claim carve-out. Never serialized to any client response --
+	// recoverability for #470's audit-attribution story and for this
+	// package's own structured logging (platform_authz.go logs every grant
+	// through that path regardless of this field).
+	AuthorizedVia string
 }
 
 // resolveActiveMembership maps the request's verified sub to its active
@@ -520,7 +699,11 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 			// same D-3 transaction as the domain write. occurred_at is
 			// server-now -- org creation has no client-supplied device
 			// timestamp the way apiaries' offline sync-apply ops do.
-			if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeOrganization, org.ID, actor, now,
+			// actor_scope (#470) is always actorScopeMember here: this route
+			// runs before any {orgId} exists to authorize a platform operator
+			// against (platform_authz.go's carve-out is keyed on an existing
+			// {orgId} path param), so it is never reachable via that path.
+			if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeOrganization, org.ID, actor, actorScopeMember, now,
 				history.ChangeCreate, nil, organizationFields(org)); err != nil {
 				return fmt.Errorf("write organization audit log: %w", err)
 			}
@@ -543,8 +726,9 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 
 			// The creator's admin membership is a second entity created in
 			// this same transaction (D-3) -- its own audit row,
-			// entity_type=membership.
-			if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeMembership, membership.ID, actor, now,
+			// entity_type=membership. Same actor_scope reasoning as the
+			// organization's own create row above.
+			if err := writeAuditLog(r.Context(), txq, org.ID, entityTypeMembership, membership.ID, actor, actorScopeMember, now,
 				history.ChangeCreate, nil, membershipFields(membership)); err != nil {
 				return fmt.Errorf("write membership audit log: %w", err)
 			}
@@ -571,6 +755,10 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 		}
 
 		w.Header().Set("Location", "/v1/organizations/"+uuidString(org.ID))
+		// ETag is the row's updated_at version stamp (etagFor) -- the contract
+		// declares it on this 201, and it's the value a client echoes back in
+		// If-Match on a later PATCH (#289 optimistic concurrency, FR-TEN-2).
+		w.Header().Set("ETag", etagFor(org.UpdatedAt))
 		// The creator is always admin (D-3) -- no extra lookup needed for the
 		// role this response reports.
 		writeJSON(w, r, http.StatusCreated, toOrganizationResponse(org, "admin"))
@@ -646,6 +834,10 @@ func getMyOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserReso
 			problem.Write(w, r, problem.Internal())
 			return
 		}
+		// ETag version stamp so the client can round-trip it back in If-Match
+		// on a PATCH (#289, FR-TEN-2) -- same etagFor derivation the PATCH
+		// handler compares against.
+		w.Header().Set("ETag", etagFor(row.UpdatedAt))
 		writeJSON(w, r, http.StatusOK, toOrganizationResponse(row, member.Role))
 	}
 }
@@ -653,16 +845,17 @@ func getMyOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserReso
 // getOrganization requires {orgId} to match the caller's own resolved org
 // (ADR-0002, api-contracts.md section 9): the path never widens scope, so a
 // different (even valid) org id is a 404, not a 403 -- the API never confirms
-// another org's existence.
+// another org's existence. #466: a verified platform operator is the one
+// deliberate exception -- requirePlatformOperatorOrOrgMember grants it
+// {orgId} access outside their own membership (ADR-0021); every other caller
+// goes through requireOrgMember exactly as before (this is a pure
+// call-site-equivalent refactor of the inline resolveActiveMembership +
+// {orgId}-match check this handler used to run itself -- byte-for-byte the
+// same logic requireOrgMember (invitations.go) already centralizes).
 func getOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		member, ok := resolveActiveMembership(w, r, q, resolver)
+		member, ok := requirePlatformOperatorOrOrgMember(w, r, q, resolver)
 		if !ok {
-			return
-		}
-		requested, err := uuid.Parse(chi.URLParam(r, "orgId"))
-		if err != nil || requested != uuid.UUID(member.OrgID.Bytes) {
-			problem.Write(w, r, problem.NotFound("organization not found"))
 			return
 		}
 
@@ -676,8 +869,214 @@ func getOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc
 			problem.Write(w, r, problem.Internal())
 			return
 		}
+		w.Header().Set("ETag", etagFor(row.UpdatedAt))
 		writeJSON(w, r, http.StatusOK, toOrganizationResponse(row, member.Role))
 	}
+}
+
+// errStaleIfMatch signals, from inside updateOrganization's transaction, that
+// the request's If-Match header did not match the org's current version -- the
+// closure returns it so the surrounding handler maps it to a 409 (and the tx
+// rolls back, leaving the org unchanged) rather than proceeding with the write.
+var errStaleIfMatch = errors.New("api: stale If-Match on organization update")
+
+// updateOrganizationRequest is the PATCH /organizations/{orgId} request body
+// (OrganizationUpdate schema): name and/or address. Both are pointers so an
+// absent key is distinguishable from a supplied one, and presence is tracked
+// separately (via the raw field map) so an explicit JSON null on address --
+// which the schema's `[string, "null"]` type allows, meaning "clear it" --
+// isn't confused with "leave unchanged". name is a non-nullable string
+// (schema `type: string`), so a null there is rejected.
+type updateOrganizationRequest struct {
+	Name    *string `json:"name"`
+	Address *string `json:"address"`
+}
+
+// updateOrganization applies an admin's edit of their own org's mutable
+// fields (PATCH /organizations/{orgId}, #289, FR-ONB-2). It is admin-only and
+// org-scoped: requireOrgAdmin asserts {orgId} matches the caller's own
+// resolved org (404 otherwise -- ADR-0002, the path never widens scope) and
+// that the caller is that org's admin (403 otherwise -- auth.md §5.3,
+// NFR-ROL-1). #466: a verified platform operator may also reach this route
+// for an org it is not a member of (requirePlatformOperatorOrOrgAdmin,
+// ADR-0021); every other caller goes through requireOrgAdmin unchanged.
+// Invalid payloads are rejected before any write (422, NFR-SEC-1).
+// Optimistic concurrency uses the If-Match / ETag version stamp: a stale value
+// is a 409 (FR-TEN-2). The applied change is recorded in organizations.audit_log
+// with actor + timestamp, in the same transaction as the domain write
+// (FR-HIS-1, #165, history.md §4).
+func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		member, ok := requirePlatformOperatorOrOrgAdmin(w, r, q, resolver)
+		if !ok {
+			return
+		}
+
+		// Decode to a raw field map first so key PRESENCE (not just non-nil
+		// value) is observable: OrganizationUpdate has minProperties:1, and
+		// address distinguishes "absent" (leave unchanged) from explicit null
+		// (clear) -- neither of which a plain struct decode alone can tell
+		// apart from a zero value.
+		var fields map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
+			problem.Write(w, r, problem.ValidationFailed("request body must be valid JSON"))
+			return
+		}
+		var body updateOrganizationRequest
+		if err := json.Unmarshal(rawFieldsToObject(fields), &body); err != nil {
+			problem.Write(w, r, problem.ValidationFailed("request body must be valid JSON"))
+			return
+		}
+		_, nameSet := fields["name"]
+		_, addressSet := fields["address"]
+
+		if fieldErrs := validateOrganizationUpdate(body, nameSet, addressSet); len(fieldErrs) > 0 {
+			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
+			return
+		}
+
+		now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		var updated sqlcgen.OrganizationsOrganization
+		txErr := withTx(r.Context(), pool, func(tx pgx.Tx) error {
+			txq := q.WithTx(tx)
+			// Row-locking read (FOR UPDATE) so the If-Match check and the write
+			// are atomic against a concurrent PATCH (optimistic concurrency,
+			// FR-TEN-2). For the ordinary membership path, member.OrgID is
+			// guaranteed to exist -- the caller's active membership references
+			// it -- so pgx.ErrNoRows here is a genuine fault, not a business
+			// 404. #466: on the platform-operator path there is no membership
+			// row backing this guarantee -- member.OrgID's existence was only
+			// confirmed by platform_authz.go's own, separate GetOrganization
+			// read moments earlier (a TOCTOU window: the org could theoretically
+			// be deleted between that check and this one). Still treated as a
+			// fault today because no endpoint deletes an organization -- if one
+			// is ever added, this call site needs its own pgx.ErrNoRows -> 404
+			// handling for the platform path, the same way platform_authz.go's
+			// GetOrganization already does.
+			current, err := txq.GetOrganizationForUpdate(r.Context(), member.OrgID)
+			if err != nil {
+				return fmt.Errorf("get organization for update: %w", err)
+			}
+
+			if !ifMatchOK(r, etagFor(current.UpdatedAt)) {
+				return errStaleIfMatch
+			}
+
+			// Compute the desired row from the current one, applying only the
+			// fields this PATCH actually carried (matching apiaries' full-row
+			// "want" pattern). name is validated non-empty above; address null
+			// clears to '' (the column is NOT NULL DEFAULT '').
+			wantName := current.Name
+			if nameSet {
+				wantName = strings.TrimSpace(*body.Name)
+			}
+			wantAddress := current.Address
+			if addressSet {
+				if body.Address == nil {
+					wantAddress = ""
+				} else {
+					wantAddress = strings.TrimSpace(*body.Address)
+				}
+			}
+
+			updated, err = txq.UpdateOrganization(r.Context(), sqlcgen.UpdateOrganizationParams{
+				ID:        member.OrgID,
+				Name:      wantName,
+				Address:   wantAddress,
+				UpdatedAt: now,
+			})
+			if err != nil {
+				return fmt.Errorf("update organization: %w", err)
+			}
+
+			// History (FR-HIS-1, #165): the org's update row, in the same D-3
+			// transaction as the domain write. The actor is the admin making
+			// the change; occurred_at is server-now (an admin-app edit has no
+			// offline device timestamp). actor_scope (#470) is derived from
+			// member.AuthorizedVia -- actorScopePlatformOperator when this
+			// write was granted via the verified platform-operator carve-out
+			// (requirePlatformOperatorOrOrgAdmin above), actorScopeMember for
+			// the org's own admin -- recorded atomically in this same
+			// transaction, not inferred later.
+			if err := writeAuditLog(r.Context(), txq, member.OrgID, entityTypeOrganization, member.OrgID, member.UserID, actorScopeFor(member.AuthorizedVia), now,
+				history.ChangeUpdate, organizationFields(current), organizationFields(updated)); err != nil {
+				return fmt.Errorf("write organization audit log: %w", err)
+			}
+			return nil
+		})
+		if errors.Is(txErr, errStaleIfMatch) {
+			problem.Write(w, r, problem.Conflict("If-Match does not match the current version"))
+			return
+		}
+		if txErr != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "update organization failed", slog.Any("error", txErr))
+			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		w.Header().Set("ETag", etagFor(updated.UpdatedAt))
+		writeJSON(w, r, http.StatusOK, toOrganizationResponse(updated, member.Role))
+	}
+}
+
+// validateOrganizationUpdate enforces the OrganizationUpdate schema server-side
+// (NFR-SEC-1): at least one field present (minProperties:1); name, when
+// present, a non-null non-empty string of at most maxOrgNameLength runes;
+// address, when present, either null (clear) or at most maxOrgAddressLength
+// runes. Rune counts (not byte lengths) match createOrganization's own limits
+// so PT diacritics aren't penalized.
+func validateOrganizationUpdate(body updateOrganizationRequest, nameSet, addressSet bool) []problem.FieldError {
+	var fieldErrs []problem.FieldError
+	if !nameSet && !addressSet {
+		fieldErrs = append(fieldErrs, problem.FieldError{Field: "(body)", Code: "required", Message: "request must change at least one field"})
+	}
+	if nameSet {
+		switch {
+		case body.Name == nil || strings.TrimSpace(*body.Name) == "":
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "name", Code: "required", Message: "name must not be empty"})
+		case utf8.RuneCountInString(strings.TrimSpace(*body.Name)) > maxOrgNameLength:
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "name", Code: "too_long", Message: "name must be at most 200 characters"})
+		}
+	}
+	if addressSet && body.Address != nil {
+		if utf8.RuneCountInString(strings.TrimSpace(*body.Address)) > maxOrgAddressLength {
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "address", Code: "too_long", Message: "address must be at most 500 characters"})
+		}
+	}
+	return fieldErrs
+}
+
+// rawFieldsToObject re-marshals an already-decoded top-level field map back to
+// a JSON object so it can be unmarshaled into a typed struct -- the small
+// two-stage decode (raw map for key presence, struct for typed values) the
+// PATCH handler uses, mirroring apiaries' decodeFields. Marshaling a
+// map[string]json.RawMessage never fails (the values are already valid JSON),
+// so the error is discarded.
+func rawFieldsToObject(fields map[string]json.RawMessage) []byte {
+	b, _ := json.Marshal(fields)
+	return b
+}
+
+// etagFor derives a deterministic, opaque ETag from a row's updated_at -- the
+// row's version stamp (data-model.md §4.3), so it changes exactly when the
+// row's mutable content changes and is stable across reads of the same
+// version. Quoted per RFC 9110 §8.8.3. Mirrors apiaries' etagFor so the two
+// services present ETags identically.
+func etagFor(updatedAt pgtype.Timestamptz) string {
+	return fmt.Sprintf("%q", strconv.FormatInt(updatedAt.Time.UnixNano(), 36))
+}
+
+// ifMatchOK reports whether the request's If-Match header (if any) matches
+// currentETag -- optimistic concurrency for PATCH (IfMatchHeader,
+// contracts/openapi/_shared/components.openapi.yaml). An absent header is
+// treated as OK (If-Match is optional per the contract); a present header must
+// match exactly, or be the wildcard "*". Mirrors apiaries' ifMatchOK.
+func ifMatchOK(r *http.Request, currentETag string) bool {
+	want := r.Header.Get("If-Match")
+	if want == "" || want == "*" {
+		return true
+	}
+	return want == currentETag
 }
 
 // writeJSON and uuidString are defined once in common.go and shared with
