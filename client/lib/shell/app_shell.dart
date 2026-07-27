@@ -48,7 +48,7 @@ class _FabConfig {
   final _FabAction? secondary;
 
   /// The scope's actions, primary first, for [ActionsSpeedDial].
-  List<_FabAction> get actions => [primary, if (secondary != null) secondary!];
+  List<_FabAction> get actions => [primary, ?secondary];
 }
 
 const _fabConfigByTab = <String, _FabConfig>{
