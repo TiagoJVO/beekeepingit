@@ -6,6 +6,10 @@ import '../core/widgets/actions_speed_dial.dart';
 import '../core/widgets/tap_target.dart';
 import '../core/widgets/unsaved_changes.dart';
 import '../features/apiaries/apiaries_list_screen.dart';
+import '../features/notifications/notification_events.dart';
+import '../features/notifications/notification_feed_provider.dart';
+import '../features/notifications/notification_models.dart';
+import '../features/notifications/notification_preferences_repository.dart';
 import '../features/sync/sync_rejected_repository.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../theming/brand_tokens.dart';
@@ -293,6 +297,11 @@ class AppShell extends ConsumerWidget {
   // most screens. [_NeedsFixBanner] below replaces it: state-driven off the
   // same count, so it appears/disappears with the dead-letter queue itself,
   // and its own Fix button uses its own (always-current) build context.
+  //
+  // #82, D-24: also delivers the notification engine's own in-app
+  // notifications (todo-due reminders, sync results) — both are the same
+  // "non-blocking toast via this shell's own chrome" delivery D-24 calls
+  // for, so they share this one method rather than a parallel listener.
   void _listenForSyncToasts(
     BuildContext context,
     WidgetRef ref,
@@ -304,12 +313,57 @@ class AppShell extends ConsumerWidget {
     // (docs/design/prototype.md), not a dedicated screen: the user needs to
     // know it happened, not be interrupted. The full conflict record is the
     // entity-history/timeline UI (FR-HIS, #59-#62).
+    //
+    // Gated by the `sync_conflict` preference (#82's preference-key
+    // contract, D-24): this toast already existed (#58) as an
+    // always-on, real-time notice — a conflict can only ever happen while a
+    // sync attempt is in flight, which itself only happens while the app is
+    // open (no background sync in the PWA phase), so there is no "missed
+    // while closed" case to detect at app-open the way todo-due/sync-result
+    // events need (notification_events.dart's own doc on why `sync_conflict`
+    // has no engine-side detection of its own). This story just adds the
+    // missing per-event mute for it.
     ref.listen(supersededNotificationProvider, (previous, next) {
       final change = next.value;
       if (change == null) return;
+      final conflictsEnabled = ref
+          .read(notificationPreferencesRepositoryProvider)
+          .isEnabled(notificationEventSyncConflict);
+      if (!conflictsEnabled) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(l10n.syncSupersededNotice)));
+    });
+
+    // Todo-due-reminder / sync-result notifications (#82, D-24) queued by
+    // the app-open/foreground check (`features/notifications/
+    // notification_check_provider.dart`, wired at the app root in
+    // `app.dart`). Same "toast via `ref.listen`" shape as the superseded
+    // notice above — same accepted limitation too: a batch that finishes
+    // before THIS shell ever mounts (e.g. the very first cold-start check,
+    // while the user is still on /login or onboarding) is missed, exactly
+    // like `supersededNotificationProvider`'s own real-time notice always
+    // has been. [WidgetRef.listen] has no `fireImmediately` (by design —
+    // see its own doc: a rebuild can't tell which call site is a fresh
+    // subscription), so there is no safe way to also eagerly flush
+    // already-queued state synchronously from `build()` here. In practice
+    // the check's own async reads (`ref.read(...future)` in
+    // notification_check_provider.dart) mean it resolves after this shell
+    // has already mounted and registered this listener, for the same
+    // reason `AppShell` itself only ever renders post-auth/onboarding.
+    ref.listen(notificationFeedProvider, (previous, next) {
+      if (next.isEmpty) return;
+      final messenger = ScaffoldMessenger.of(context);
+      for (final notification in next) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(_engineNotificationMessage(l10n, notification)),
+          ),
+        );
+      }
+      // Marks this batch delivered so it's never shown twice — see
+      // [NotificationFeedController.drain]'s own doc.
+      ref.read(notificationFeedProvider.notifier).drain();
     });
   }
 
@@ -355,6 +409,31 @@ class AppShell extends ConsumerWidget {
     };
   }
 }
+
+/// Resolves one notification engine event (#82, D-24) to its localized
+/// toast text — the one display-site concern `notification_models.dart`
+/// deliberately stays agnostic of (that file's own doc: "which value" lives
+/// there, "which label" lives here). An exhaustive `switch` over the sealed
+/// [AppNotification] hierarchy: adding a new variant is a compile error here
+/// until this function (and the other one exhaustive switch, on
+/// [TodoDueBucket]/[SyncNotificationOutcome]) is updated too.
+String _engineNotificationMessage(
+  AppLocalizations l10n,
+  AppNotification notification,
+) => switch (notification) {
+  TodoDueAppNotification(:final title, :final bucket) => switch (bucket) {
+    TodoDueBucket.dueSoon => l10n.notificationTodoDueSoon(title),
+    TodoDueBucket.overdue => l10n.notificationTodoOverdue(title),
+  },
+  SyncResultAppNotification(:final outcome) => switch (outcome) {
+    // Reuses the existing rejection-toast copy (#379) rather than a
+    // duplicate string — same underlying event (a rejected offline write
+    // needing a fix), just delivered through this app-open check instead of
+    // the connector's own real-time stream.
+    SyncNotificationOutcome.failure => l10n.syncRejectedNotice,
+    SyncNotificationOutcome.success => l10n.notificationSyncCompleted,
+  },
+};
 
 /// A [ConsumerWidget] (not [AppShell] itself, HIGH-4) so a sync-status or
 /// needs-fix-count change only rebuilds this small header, not the whole
