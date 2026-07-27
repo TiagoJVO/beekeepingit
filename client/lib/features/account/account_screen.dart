@@ -39,6 +39,12 @@ import 'account_platform.dart';
 /// History recording (FR-HIS-1) for profile updates made from here is the
 /// same deferred seam as `features/profile` (#165) — no separate handling
 /// needed, since both paths go through the same `PATCH /v1/profile`.
+///
+/// Also the settings screen (FR-ST-1, #81): there is only one settings/
+/// account destination in the app today (the shell's sync pill and account
+/// icon both route here), so sync settings and notification preferences
+/// extend this screen rather than forking a new `/settings` route — see the
+/// Sync section's auto-sync toggle and [NotificationSettingsSection] below.
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
 
