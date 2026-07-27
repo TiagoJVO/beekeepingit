@@ -8,6 +8,7 @@ import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
 import '../activities/activity_types.dart';
+import '../apiaries/counter_types.dart';
 import '../organization/organization_repository.dart';
 import 'journey_stats.dart';
 import 'journey_status.dart';
@@ -40,6 +41,7 @@ class Journey {
     required this.status,
     this.organizationId,
     this.apiaryIds = const [],
+    this.defaultAttributes = const {},
   });
 
   final String id;
@@ -48,6 +50,14 @@ class Journey {
   final String status;
   final String? organizationId;
   final List<String> apiaryIds;
+
+  /// Journey-level subtype attribute defaults (#385) — e.g. a Treatment
+  /// journey's `treatment_context`/`treatment_type`/`disease`, a Feeding
+  /// journey's `feed_type` — that prefill an attached activity's own
+  /// attributes on create (the separate prefill issue). Empty (never null)
+  /// when the journey has none set, mirroring [Activity.attributes]'s own
+  /// "empty map, not null" convention.
+  final Map<String, dynamic> defaultAttributes;
 
   bool get isOpen => status == journeyStatusOpen;
 }
@@ -80,10 +90,14 @@ class JourneysRepository {
   /// Creates a journey with [apiaryIds] as its initial plan (FR-JO-4) —
   /// always starts **open** (D-21). [apiaryIds] may be empty: a journey can
   /// be created first and apiaries added to its plan later via [update].
+  /// [defaultAttributes] (#385) is entirely optional — an empty/omitted map
+  /// stores NULL, never an empty-object JSON literal (mirrors
+  /// [_encodeDefaultAttributes]'s own doc comment).
   Future<String> create({
     required String name,
     required String mainActivityType,
     required List<String> apiaryIds,
+    Map<String, dynamic> defaultAttributes = const {},
   }) async {
     final id = _uuid.v4();
     final now = _nowIso();
@@ -94,15 +108,30 @@ class JourneysRepository {
     // parent exists by the time a plan-item op applies.
     await _store.execute(
       'INSERT INTO $journeysTable '
-      '(id, name, main_activity_type, status, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?)',
-      [id, name, mainActivityType, journeyStatusOpen, now, now],
+      '(id, name, main_activity_type, status, default_attributes, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        name,
+        mainActivityType,
+        journeyStatusOpen,
+        _encodeDefaultAttributes(defaultAttributes),
+        now,
+        now,
+      ],
     );
     for (final apiaryId in apiaryIds) {
       await _insertPlanItem(id, apiaryId, now);
     }
     return id;
   }
+
+  /// JSON-encodes [defaultAttributes] for storage, or `null` (SQL NULL) when
+  /// empty — mirrors the server's own NULL-means-no-defaults convention
+  /// (services/journeys/store/migrations/00003_add_journey_default_attributes.sql)
+  /// rather than ever storing the 2-byte `{}` literal for "no defaults".
+  String? _encodeDefaultAttributes(Map<String, dynamic> defaultAttributes) =>
+      defaultAttributes.isEmpty ? null : jsonEncode(defaultAttributes);
 
   Future<void> _insertPlanItem(String journeyId, String apiaryId, String now) {
     return _store.execute(
@@ -117,7 +146,7 @@ class JourneysRepository {
   /// `getById`. Used by the edit form's initial load.
   Future<Journey?> getById(String id) async {
     final row = await _store.getOptional(
-      'SELECT id, organization_id, name, main_activity_type, status '
+      'SELECT id, organization_id, name, main_activity_type, status, default_attributes '
       'FROM $journeysTable WHERE id = ?',
       [id],
     );
@@ -146,7 +175,7 @@ class JourneysRepository {
   Stream<Journey?> watchById(String id) {
     return _store
         .watch(
-          'SELECT id, organization_id, name, main_activity_type, status '
+          'SELECT id, organization_id, name, main_activity_type, status, default_attributes '
           'FROM $journeysTable WHERE id = ?',
           [id],
         )
@@ -167,19 +196,51 @@ class JourneysRepository {
   /// [status] is always sent (mirrors [create]'s own "open" convention) —
   /// callers that only want to close a journey use [close], which reads the
   /// current state and resubmits it unchanged except for `status`.
+  /// [defaultAttributes] (#385) is REQUIRED, not optional, precisely because
+  /// this is a full-resubmit write (this method's own doc comment) — an
+  /// omitted value would silently WIPE the journey's stored defaults rather
+  /// than preserve them, so every caller must explicitly decide what to
+  /// send (the edit form's freshly-edited state, or — [close]'s case — the
+  /// journey's own already-loaded value, unchanged).
   Future<void> update(
     String id, {
     required String name,
     required String mainActivityType,
     required String status,
     required List<String> apiaryIds,
+    required Map<String, dynamic> defaultAttributes,
   }) async {
     final now = _nowIso();
-    await _store.execute(
-      'UPDATE $journeysTable SET name = ?, main_activity_type = ?, status = ?, updated_at = ? '
-      'WHERE id = ?',
-      [name, mainActivityType, status, now, id],
+    // #378: skip the journeys-table write when name/main_activity_type/
+    // status/default_attributes haven't actually changed (e.g. [close]
+    // re-closing an already-closed journey, or an edit form saved without
+    // changes) — otherwise this still bumps updated_at, queuing a sync op
+    // whose diffed payload carries only the changed columns (PowerSync
+    // uploads a column diff, not always this full row), which the server
+    // used to reject outright ("name is required", "main_activity_type...
+    // invalid"). The plan-item diffing below is already change-scoped and
+    // unaffected. default_attributes (#385) is compared via its encoded
+    // form (mirrors activities_repository.dart's own #378 fix for
+    // `attributes`) since Map equality is reference-based, not
+    // content-based.
+    final current = await getById(id);
+    final encodedDefaultAttributes = _encodeDefaultAttributes(
+      defaultAttributes,
     );
+    final journeyRowChanged =
+        current == null ||
+        current.name != name ||
+        current.mainActivityType != mainActivityType ||
+        current.status != status ||
+        _encodeDefaultAttributes(current.defaultAttributes) !=
+            encodedDefaultAttributes;
+    if (journeyRowChanged) {
+      await _store.execute(
+        'UPDATE $journeysTable SET name = ?, main_activity_type = ?, status = ?, default_attributes = ?, updated_at = ? '
+        'WHERE id = ?',
+        [name, mainActivityType, status, encodedDefaultAttributes, now, id],
+      );
+    }
 
     final existing = await _store.getAll(
       'SELECT id, apiary_id FROM $journeyPlanItemsTable WHERE journey_id = ?',
@@ -220,6 +281,7 @@ class JourneysRepository {
       mainActivityType: journey.mainActivityType,
       status: journeyStatusClosed,
       apiaryIds: journey.apiaryIds,
+      defaultAttributes: journey.defaultAttributes,
     );
   }
 
@@ -243,7 +305,7 @@ class JourneysRepository {
     if (organizationId == null) return Stream.value(const []);
     return _store
         .watch(
-          'SELECT id, organization_id, name, main_activity_type, status '
+          'SELECT id, organization_id, name, main_activity_type, status, default_attributes '
           'FROM $journeysTable '
           'WHERE organization_id = ? OR organization_id IS NULL '
           'ORDER BY created_at DESC',
@@ -271,7 +333,7 @@ class JourneysRepository {
     if (organizationId == null) return Stream.value(const []);
     return _store
         .watch(
-          'SELECT j.id, j.organization_id, j.name, j.main_activity_type, j.status '
+          'SELECT j.id, j.organization_id, j.name, j.main_activity_type, j.status, j.default_attributes '
           'FROM $journeysTable j '
           'JOIN $journeyPlanItemsTable p ON p.journey_id = j.id '
           'WHERE (j.organization_id = ? OR j.organization_id IS NULL) '
@@ -282,23 +344,83 @@ class JourneysRepository {
         .map((rows) => rows.map((r) => _fromRow(r, const [])).toList());
   }
 
+  /// The relaxed candidate set for the #440/D-31 "attach to a journey that
+  /// didn't plan this apiary" picker toggle: every **open** journey whose
+  /// `main_activity_type` is [activityType] but whose plan does NOT currently
+  /// include [apiaryId] — the exact complement of [watchMatching]'s
+  /// apiary-plan JOIN, still scoped to the matching activity type. Closed
+  /// journeys are deliberately excluded (D-21 keeps those behind the separate
+  /// "show hidden journeys" toggle); this relaxation only ever surfaces open
+  /// journeys the user could still meaningfully attach to and grow the plan of
+  /// (D-31). Org-scoped and newest-first exactly like [watchMatching]/
+  /// [watchAll], evaluated purely against locally-synced data so it works
+  /// fully offline. The `NOT EXISTS` guard is what makes a zero-apiary journey
+  /// (D-30 — empty plan, matches no apiary) reachable here: it plans no
+  /// apiary, so it never includes [apiaryId], so it always qualifies.
+  Stream<List<Journey>> watchTypeMatchingUnplanned({
+    required String apiaryId,
+    required String activityType,
+    required String? organizationId,
+  }) {
+    if (organizationId == null) return Stream.value(const []);
+    return _store
+        .watch(
+          'SELECT j.id, j.organization_id, j.name, j.main_activity_type, j.status, j.default_attributes '
+          'FROM $journeysTable j '
+          'WHERE (j.organization_id = ? OR j.organization_id IS NULL) '
+          'AND j.main_activity_type = ? AND j.status = ? '
+          'AND NOT EXISTS ('
+          'SELECT 1 FROM $journeyPlanItemsTable p '
+          'WHERE p.journey_id = j.id AND p.apiary_id = ?) '
+          'ORDER BY j.created_at DESC',
+          [organizationId, activityType, journeyStatusOpen, apiaryId],
+        )
+        .map((rows) => rows.map((r) => _fromRow(r, const [])).toList());
+  }
+
+  /// Idempotently adds [apiaryId] to [journeyId]'s plan (D-31, #440) — the
+  /// plan-growth half of attaching an activity to a journey that didn't plan
+  /// this apiary. Reuses the SAME [_insertPlanItem] write path
+  /// [create]/[update] use, so PowerSync's CRUD queue carries the identical
+  /// `journey_plan_items` op the server's existing plan-item apply handles and
+  /// audits — no new plan-write or history path is invented (FR-HIS). Guarded
+  /// by a pre-check so re-selecting (or re-saving) a journey that already
+  /// plans the apiary never inserts a duplicate plan row — the newly-planned
+  /// apiary then shows in the journey's stats as planned+visited (its
+  /// [watchStats] query re-fires on the plan-item write), keeping
+  /// "apiaries visited vs planned" coherent (visited ⊆ planned).
+  Future<void> addApiaryToPlan(String journeyId, String apiaryId) async {
+    final existing = await _store.getOptional(
+      'SELECT id FROM $journeyPlanItemsTable '
+      'WHERE journey_id = ? AND apiary_id = ?',
+      [journeyId, apiaryId],
+    );
+    if (existing != null) return;
+    await _insertPlanItem(journeyId, apiaryId, _nowIso());
+  }
+
   /// One-shot [JourneyStats] for [journeyId] (#49, FR-JO-1, D-2, D-21) — see
   /// [watchStats]'s doc for the query shape; this is its one-shot
   /// counterpart, mirroring [getById]/[watchById]'s existing split.
   Future<JourneyStats> getStats(String journeyId) async {
-    final rows = await _store.getAll(_statsSql, [journeyId, journeyId]);
+    final rows = await _store.getAll(_statsSql, [
+      journeyId,
+      journeyId,
+      journeyId,
+    ]);
     return _statsFromRows(rows);
   }
 
-  /// Live [JourneyStats] for one journey (#49, FR-JO-1, D-2, D-21) — apiaries
-  /// visited vs. planned, hives harvested, honey collected, and média
-  /// alças/colmeia, recomputed whenever a plan item or an activity is
-  /// added/edited/deleted/re-attributed (a plain write to either table
-  /// re-triggers this watch — PowerSync/sqlite_async auto-detect a watched
-  /// query's source tables via `EXPLAIN QUERY PLAN`, so ONE UNION query
-  /// spanning [journeyPlanItemsTable] AND [activitiesTable] is enough to
-  /// invalidate on writes to either, no manual multi-stream combination
-  /// needed).
+  /// Live [JourneyStats] for one journey (#49, FR-JO-1, D-2, D-21, #391) —
+  /// apiaries visited vs. planned, hives harvested, honey collected, média
+  /// alças/colmeia, and hive-level completion, recomputed whenever a plan
+  /// item, an activity, or a planned apiary's hive counter is
+  /// added/edited/deleted (a plain write to any of the three re-triggers
+  /// this watch — PowerSync/sqlite_async auto-detect a watched query's
+  /// source tables via `EXPLAIN QUERY PLAN`, so ONE UNION query spanning
+  /// [journeyPlanItemsTable], [activitiesTable], AND [apiaryCountersTable]
+  /// is enough to invalidate on writes to any of the three, no manual
+  /// multi-stream combination needed).
   ///
   /// Every attribution is by the activity's STORED `journey_id` column (D-21
   /// — "supersedes Q-JOUR" per this issue's own note): this is NOT a live
@@ -310,55 +432,96 @@ class JourneysRepository {
   /// shift (by design: "planned vs. done" is always against the live plan;
   /// the harvest sums are always against the immutable per-activity link).
   ///
-  /// [_statsFromRows] does the row-shape parsing (single query, two row
+  /// [_statsFromRows] does the row-shape parsing (single query, three row
   /// "kinds" via a `source` discriminator column); [computeJourneyStats]
   /// (journey_stats.dart) does the actual arithmetic, kept dependency-free
   /// and independently unit-tested.
   Stream<JourneyStats> watchStats(String journeyId) {
-    return _store.watch(_statsSql, [journeyId, journeyId]).map(_statsFromRows);
+    return _store
+        .watch(_statsSql, [journeyId, journeyId, journeyId])
+        .map(_statsFromRows);
   }
 
-  /// One UNION query touching both [journeyPlanItemsTable] (the plan) and
+  /// One UNION query touching [journeyPlanItemsTable] (the plan),
   /// [activitiesTable] (every activity attributed to this journey by its
-  /// stored `journey_id`) — kept as a single statement specifically so
-  /// [watchStats]'s live query invalidates on a write to EITHER table (see
-  /// its own doc). The `source` column tells [_statsFromRows] which branch a
-  /// row came from; `type`/`attributes` are NULL on the `plan` branch (a
-  /// plan item has neither).
+  /// stored `journey_id`), AND [apiaryCountersTable] (#391: the planned
+  /// apiaries' `hive` counters, the denominator for hive-level completion) —
+  /// kept as a single statement specifically so [watchStats]'s live query
+  /// invalidates on a write to ANY of the three tables (see its own doc): a
+  /// hive-counter edit re-fires the same watch a plan/activity write already
+  /// does. The `source` column tells [_statsFromRows] which branch a row
+  /// came from; `type`/`attributes` are NULL outside the `activity` branch,
+  /// `value` is NULL outside the `hive_count` branch.
+  ///
+  /// The `hive_count` branch is driven by [journeyPlanItemsTable] (one row
+  /// per CURRENTLY planned apiary, never per counter row) with a correlated
+  /// subquery for `value` — the exact same `ORDER BY updated_at DESC LIMIT
+  /// 1` newest-row-wins shape as apiaries_repository.dart's own
+  /// `_hiveCountSubquery`, so the brief optimistic-sync window where a
+  /// locally-created counter row and its server-authoritative replacement
+  /// coexist never double-counts a planned apiary's hive count here either.
+  /// `value` is NULL (not 0) when the apiary has no hive counter row at all
+  /// — [_statsFromRows] keeps that apiary out of the resulting map entirely,
+  /// which is what lets [JourneyStats.hivesPlanned] distinguish "no counter
+  /// data yet" from "some planned apiaries have 0 hives".
   static const _statsSql =
-      "SELECT 'plan' AS source, apiary_id, NULL AS type, NULL AS attributes "
+      "SELECT 'plan' AS source, apiary_id, NULL AS type, NULL AS attributes, "
+      'NULL AS value '
       'FROM $journeyPlanItemsTable WHERE journey_id = ? '
       'UNION ALL '
-      "SELECT 'activity' AS source, apiary_id, type, attributes "
-      'FROM $activitiesTable WHERE journey_id = ?';
+      "SELECT 'activity' AS source, apiary_id, type, attributes, NULL AS value "
+      'FROM $activitiesTable WHERE journey_id = ? '
+      'UNION ALL '
+      "SELECT 'hive_count' AS source, p.apiary_id AS apiary_id, NULL AS type, "
+      'NULL AS attributes, '
+      '(SELECT hc.value FROM $apiaryCountersTable hc '
+      'WHERE hc.apiary_id = p.apiary_id AND hc.counter_type = \'$counterTypeHive\' '
+      'ORDER BY hc.updated_at DESC LIMIT 1) AS value '
+      'FROM $journeyPlanItemsTable p WHERE p.journey_id = ?';
 
   /// Splits [_statsSql]'s combined row set back into the plan-item apiary
   /// ids, the set of apiary ids with ANY attributed activity (regardless of
   /// type — an apiary counts as "visited" the same way the Melargil
-  /// prototype's own `statsJornada` does, docs/design/prototype.md), and
-  /// every HARVEST-type activity's numeric attributes (D-2: only harvest
-  /// activities feed the hive/honey/supers sums) — then hands all three to
-  /// [computeJourneyStats] for the arithmetic.
+  /// prototype's own `statsJornada` does, docs/design/prototype.md), every
+  /// HARVEST-type activity's numeric attributes (D-2: only harvest
+  /// activities feed the hive/honey/supers sums), every activity's own
+  /// `hives_involved` regardless of type (#391: [JourneyStats.hivesWorked]'s
+  /// input — harvest/feeding/treatment all carry it), and the planned
+  /// apiaries' hive counter values (#391: [JourneyStats.hivesPlanned]'s
+  /// input) — then hands all of it to [computeJourneyStats] for the
+  /// arithmetic.
   JourneyStats _statsFromRows(List<Map<String, Object?>> rows) {
     final plannedApiaryIds = <String>[];
     final visitedApiaryIds = <String>{};
     final harvestTotals = <HarvestActivityTotals>[];
+    final activityHivesInvolved = <int?>[];
+    final plannedApiaryHiveCounts = <String, int>{};
 
     for (final row in rows) {
+      final source = row['source'];
       final apiaryId = row['apiary_id'] as String;
-      if (row['source'] == 'plan') {
+      if (source == 'plan') {
         plannedApiaryIds.add(apiaryId);
         continue;
       }
+      if (source == 'hive_count') {
+        final value = (row['value'] as num?)?.toInt();
+        if (value != null) plannedApiaryHiveCounts[apiaryId] = value;
+        continue;
+      }
+
+      // source == 'activity'
       visitedApiaryIds.add(apiaryId);
-      if (row['type'] != activityTypeHarvest) continue;
       final rawAttributes = row['attributes'] as String?;
       final attrs = rawAttributes == null
           ? const <String, dynamic>{}
           : (jsonDecode(rawAttributes) as Map<String, dynamic>);
+      final hivesInvolved = (attrs['hives_involved'] as num?)?.toInt();
+      activityHivesInvolved.add(hivesInvolved);
+      if (row['type'] != activityTypeHarvest) continue;
       harvestTotals.add(
         HarvestActivityTotals(
-          hivesInvolved: (attrs['hives_involved'] as num?)?.toInt(),
+          hivesInvolved: hivesInvolved,
           honeyKg: attrs['honey_kg'] as num?,
           honeySupers: (attrs['honey_supers'] as num?)?.toInt(),
         ),
@@ -369,6 +532,8 @@ class JourneysRepository {
       plannedApiaryIds: plannedApiaryIds,
       visitedApiaryIds: visitedApiaryIds,
       harvestTotals: harvestTotals,
+      activityHivesInvolved: activityHivesInvolved,
+      plannedApiaryHiveCounts: plannedApiaryHiveCounts,
     );
   }
 
@@ -411,7 +576,16 @@ class JourneysRepository {
     mainActivityType: r['main_activity_type'] as String,
     status: r['status'] as String,
     apiaryIds: apiaryIds,
+    defaultAttributes: _decodeDefaultAttributes(
+      r['default_attributes'] as String?,
+    ),
   );
+
+  /// Decodes a stored `default_attributes` JSON-text column back to a map —
+  /// `null` (no defaults set) decodes to an empty map, mirroring
+  /// [Journey.defaultAttributes]'s own "empty, never null" doc comment.
+  Map<String, dynamic> _decodeDefaultAttributes(String? raw) =>
+      raw == null ? const {} : (jsonDecode(raw) as Map<String, dynamic>);
 
   String _nowIso() => DateTime.now().toUtc().toIso8601String();
 }

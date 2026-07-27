@@ -16,6 +16,19 @@
 > only the **Keycloak-specific** realm/client/flow details are superseded. Read this for the model;
 > [ADR-0016](0016-replace-keycloak-with-authentik.md) +
 > [oidc-integration.md](../architecture/oidc-integration.md) for the Authentik specifics.
+>
+> **Update (2026-07-26) — decision 5 is extended, not reversed.** `admin` **remains** the
+> org-scoped membership role exactly as decided below, but the accompanying claim that there is
+> **no system-wide application admin** (carried in [auth.md](../architecture/auth.md) §5.3)
+> **no longer holds**: [D-32](../../requirements/decisions.md) adds a **platform tier** above
+> membership — a member of the IdP `platform-operator` group, surfaced as a **verified token
+> claim**, administering **every** organization. That tier is **planned, not built** (EPIC-18
+> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463)); its authorization path and the
+> **ADR-0002 tenancy carve-out** it needs get their own ADR in
+> [#466](https://github.com/TiagoJVO/beekeepingit/issues/466). Everything else here — JWKS
+> validation, org resolution from membership, org/role kept out of the token, offline grace — is
+> unchanged, as is [D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary)
+> (account/credential lifecycle stays at the IdP).
 
 ## Context
 

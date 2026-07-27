@@ -71,6 +71,37 @@ func TestLoad_OverridesDefaults(t *testing.T) {
 	}
 }
 
+func TestLoad_CORSAllowedOriginsDefaultsEmpty(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
+	}
+	if len(cfg.CORSAllowedOrigins) != 0 {
+		t.Errorf("CORSAllowedOrigins = %v, want empty by default (CORS disabled)", cfg.CORSAllowedOrigins)
+	}
+}
+
+func TestLoad_CORSAllowedOriginsParsesCSV(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("CORS_ALLOWED_ORIGINS", " https://admin.beekeepingit.local:8443 , https://admin2.example ")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
+	}
+	want := []string{"https://admin.beekeepingit.local:8443", "https://admin2.example"}
+	if len(cfg.CORSAllowedOrigins) != len(want) {
+		t.Fatalf("CORSAllowedOrigins = %v, want %v", cfg.CORSAllowedOrigins, want)
+	}
+	for i, w := range want {
+		if cfg.CORSAllowedOrigins[i] != w {
+			t.Errorf("CORSAllowedOrigins[%d] = %q, want %q (trimmed)", i, cfg.CORSAllowedOrigins[i], w)
+		}
+	}
+}
+
 func TestLoad_InvalidOTelInsecure(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("OTEL_INSECURE", "maybe")

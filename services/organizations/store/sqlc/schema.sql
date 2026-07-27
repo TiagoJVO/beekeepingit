@@ -37,7 +37,9 @@ CREATE TABLE organizations.invitations (
 
 -- organizations.audit_log (00003, #165) — append-only history for
 -- organization/membership/invitation changes. entity_type distinguishes the
--- three entities sharing this table (history.md §3, §9).
+-- three entities sharing this table (history.md §3, §9). actor_scope (00005,
+-- #470) distinguishes an ordinary member/admin write from a verified
+-- platform-operator write (ADR-0021) -- see 00005's migration comment.
 CREATE TABLE organizations.audit_log (
     id              UUID PRIMARY KEY,
     organization_id UUID NOT NULL,
@@ -45,6 +47,7 @@ CREATE TABLE organizations.audit_log (
     entity_id       UUID NOT NULL,
     change_type     TEXT NOT NULL CHECK (change_type IN ('create', 'update', 'delete')),
     actor_user_id   UUID,
+    actor_scope     TEXT NOT NULL DEFAULT 'member' CHECK (actor_scope IN ('member', 'platform_operator')),
     occurred_at     TIMESTAMPTZ NOT NULL,
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     changed_fields  TEXT[],

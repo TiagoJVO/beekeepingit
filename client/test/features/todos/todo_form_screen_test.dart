@@ -240,12 +240,17 @@ void _useTallViewport(WidgetTester tester) {
 Future<void> _goToNewForm(
   WidgetTester tester, {
   required _FakeTodosRepository repo,
+  String? initialApiaryId,
 }) async {
   _useTallViewport(tester);
   await tester.pumpWidget(_buildApp(repo: repo));
   await tester.pumpAndSettle();
   final router = GoRouter.of(tester.element(find.byType(AppShell)));
-  router.go('/todos/new');
+  router.go(
+    initialApiaryId == null
+        ? '/todos/new'
+        : '/todos/new?apiaryId=$initialApiaryId',
+  );
   await tester.pumpAndSettle();
 }
 
@@ -387,6 +392,57 @@ void main() {
       expect(saved.assigneeId, 'm1');
       expect(saved.apiaryId, 'a1');
     });
+
+    testWidgets(
+      'create mode pre-selects the apiary passed via initialApiaryId (#389)',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await _goToNewForm(tester, repo: repo, initialApiaryId: 'a1');
+
+        // The apiary picker (#293) shows Monte Alto (a1) already selected —
+        // preserves the create-from-apiary-detail flow that used to go
+        // through #52's own quick-create sheet's read-only chip.
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('todo-apiary-option-a1')),
+            matching: find.byIcon(Icons.radio_button_checked),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('todo-title-field')),
+          'Check queen',
+        );
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        await _pumpBounded(tester);
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.apiaryId, 'a1');
+      },
+    );
+
+    testWidgets(
+      'create mode with initialApiaryId still allows changing the apiary '
+      'via TodoApiaryPickerField (#389)',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await _goToNewForm(tester, repo: repo, initialApiaryId: 'a1');
+
+        await tester.tap(find.byKey(const Key('todo-apiary-option-a2')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('todo-title-field')),
+          'Check queen',
+        );
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        await _pumpBounded(tester);
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.apiaryId, 'a2');
+      },
+    );
 
     testWidgets(
       'a failing create() keeps the form open and shows an error, not an '

@@ -62,11 +62,32 @@ class FakeLocalStore implements LocalStoreEngine {
         'created_at': args[6],
         'updated_at': args[7],
       });
+    } else if (normalized.startsWith('UPDATE ACTIVITIES')) {
+      // update()'s SET type = ?, occurred_at = ?, attributes = ?,
+      // journey_id = ?, updated_at = ? WHERE id = ? (#387 added journey_id)
+      executeCalls++;
+      final id = args[5];
+      final i = rows.indexWhere((r) => r['id'] == id);
+      if (i != -1) {
+        rows[i] = {
+          ...rows[i],
+          'type': args[0],
+          'occurred_at': args[1],
+          'attributes': args[2],
+          'journey_id': args[3],
+          'updated_at': args[4],
+        };
+      }
     } else {
       throw UnsupportedError('FakeLocalStore.execute: unhandled SQL: $sql');
     }
     _notify();
   }
+
+  /// Count of [execute] calls that actually reached an UPDATE ACTIVITIES
+  /// branch — used to assert a no-op update() genuinely performs no write
+  /// (#378), not just that the row's own fields happen to be unchanged.
+  int executeCalls = 0;
 
   @override
   Future<void> clear() async {
@@ -78,7 +99,9 @@ class FakeLocalStore implements LocalStoreEngine {
     final normalized = sql.toUpperCase();
     var results = List<Map<String, Object?>>.from(rows);
 
-    if (normalized.contains('WHERE APIARY_ID = ?')) {
+    if (normalized.contains('WHERE ID = ?')) {
+      results = results.where((r) => r['id'] == args[0]).toList();
+    } else if (normalized.contains('WHERE APIARY_ID = ?')) {
       results = results.where((r) => r['apiary_id'] == args[0]).toList();
     } else if (normalized.contains('WHERE JOURNEY_ID = ?')) {
       results = results.where((r) => r['journey_id'] == args[0]).toList();
@@ -144,6 +167,139 @@ void main() {
     );
   });
 
+  group('ActivitiesRepository.update() (#378)', () {
+    test('with identical type/occurredAt/attributes performs no write at all — '
+        'a saved-but-unchanged edit must not queue a sync op', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+      );
+      final updatedAtBefore = store.rows.single['updated_at'];
+
+      await repo.update(
+        id,
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: null,
+      );
+
+      expect(store.executeCalls, 0, reason: 'no write means no sync op');
+      expect(store.rows.single['updated_at'], updatedAtBefore);
+    });
+
+    test('a genuine change writes exactly once', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+      );
+
+      await repo.update(
+        id,
+        type: 'harvest',
+        occurredAt: '2026-06-02', // only the date changed
+        attributes: {'honey_supers': 4},
+        journeyId: null,
+      );
+
+      expect(store.executeCalls, 1);
+      final row = store.rows.single;
+      expect(row['occurred_at'], '2026-06-02');
+      expect(jsonDecode(row['attributes'] as String), {'honey_supers': 4});
+    });
+
+    test(
+      'a journey_id-only change (attach) still writes exactly once '
+      '(#387: must not be masked by unchanged type/occurred_at/attributes)',
+      () async {
+        final id = await repo.create(
+          apiaryId: 'a1',
+          type: 'harvest',
+          occurredAt: '2026-06-01',
+          attributes: {'honey_supers': 4},
+        );
+
+        await repo.update(
+          id,
+          type: 'harvest',
+          occurredAt: '2026-06-01',
+          attributes: {'honey_supers': 4},
+          journeyId: 'j1',
+        );
+
+        expect(store.executeCalls, 1);
+        expect(store.rows.single['journey_id'], 'j1');
+      },
+    );
+
+    test('an unchanged journey_id ALSO performs no write when nothing else '
+        'changed (#387: the no-op check covers journey_id too)', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j1',
+      );
+
+      await repo.update(
+        id,
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j1',
+      );
+
+      expect(store.executeCalls, 0, reason: 'no write means no sync op');
+    });
+
+    test('journeyId: null clears a previously-attached journey', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j1',
+      );
+
+      await repo.update(
+        id,
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: null,
+      );
+
+      expect(store.executeCalls, 1);
+      expect(store.rows.single['journey_id'], isNull);
+      expect((await repo.getById(id))!.journeyId, isNull);
+    });
+
+    test('journeyId re-links to a different journey', () async {
+      final id = await repo.create(
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j1',
+      );
+
+      await repo.update(
+        id,
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 4},
+        journeyId: 'j2',
+      );
+
+      expect((await repo.getById(id))!.journeyId, 'j2');
+    });
+  });
+
   group('Activity.journeyId (#47) — read-side exposure of the #46 column', () {
     test('getById()/watchById()/watchByApiary()/watchAll() all surface the '
         'journey_id an activity was created with', () async {
@@ -207,7 +363,7 @@ void main() {
         'attributes': storedAttributes,
         'updated_at': store.rows.single['updated_at'],
       };
-      final decoded = decodeActivityAttributes(activitiesTable, opData)!;
+      final decoded = decodeJsonColumns(activitiesTable, opData)!;
 
       // 3. The actual bytes that hit POST /v1/sync/batch (uploadData jsonEncodes
       //    the ops). Re-decoding proves attributes is a JSON object there, which

@@ -33,11 +33,18 @@ import 'todos_repository.dart';
 /// [TodosRepository.update]'s own established convention: an omitted due
 /// date/assignee/apiary means "clear it".
 class TodoFormScreen extends ConsumerStatefulWidget {
-  const TodoFormScreen({this.todoId, super.key});
+  const TodoFormScreen({this.todoId, this.initialApiaryId, super.key});
 
   /// Null for create; the todo being viewed/edited/completed/deleted for
   /// edit.
   final String? todoId;
+
+  /// Pre-selects the apiary picker in CREATE mode only (#389) — preserves
+  /// the create-from-apiary-detail flow that used to go through #52's
+  /// quick-create sheet's own read-only apiary chip. Meaningless (ignored)
+  /// when [todoId] is set: [_loadExistingInner] overwrites `_apiaryId` from
+  /// the loaded todo's own `apiaryId` regardless.
+  final String? initialApiaryId;
 
   bool get isEdit => todoId != null;
 
@@ -68,7 +75,16 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
   @override
   void initState() {
     super.initState();
-    if (widget.isEdit) _loadExisting();
+    if (widget.isEdit) {
+      _loadExisting();
+    } else {
+      // A prefill, not a user edit (#389) — assigned directly (no
+      // `setState`/`markUnsavedChanges`) since this runs before the first
+      // build, mirroring `_loadExistingInner`'s own "don't arm the
+      // unsaved-changes guard for data that came from outside the user's
+      // own input" rule.
+      _apiaryId = widget.initialApiaryId;
+    }
   }
 
   @override

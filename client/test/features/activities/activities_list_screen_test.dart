@@ -6,6 +6,7 @@ import 'package:beekeepingit_client/features/activities/activity_filters.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,6 +66,10 @@ Widget _buildApp({required List<Activity> activities}) {
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(_apiaries)),
+      // Tasks is the app's landing screen now (#427, D-29) — stub its stream
+      // so booting the app renders the Todos tab without hanging on the real,
+      // never-resolving todos repository chain.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       activitiesStreamProvider.overrideWith((ref) => Stream.value(activities)),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
@@ -308,6 +313,12 @@ void main() {
                 isAuthenticatedProvider.overrideWithValue(true),
                 apiariesStreamProvider.overrideWith(
                   (ref) => Stream.value(_apiaries),
+                ),
+                // Tasks is the app's landing screen now (#427, D-29) — stub its
+                // stream so booting the app renders the Todos tab without
+                // hanging on the real, never-resolving todos repository chain.
+                todosStreamProvider.overrideWith(
+                  (ref) => Stream.value(const <Todo>[]),
                 ),
                 activitiesRepositoryProvider.overrideWith((ref) async => repo),
                 profileProvider.overrideWith(_CompleteProfileController.new),

@@ -6,7 +6,9 @@ import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
+import 'package:beekeepingit_client/theming/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -40,10 +42,16 @@ class _NoopLocalStore implements LocalStoreEngine {
 }
 
 class _CreatedJourney {
-  _CreatedJourney(this.name, this.mainActivityType, this.apiaryIds);
+  _CreatedJourney(
+    this.name,
+    this.mainActivityType,
+    this.apiaryIds,
+    this.defaultAttributes,
+  );
   final String name;
   final String mainActivityType;
   final List<String> apiaryIds;
+  final Map<String, dynamic> defaultAttributes;
 }
 
 class _UpdatedJourney {
@@ -53,12 +61,14 @@ class _UpdatedJourney {
     this.mainActivityType,
     this.status,
     this.apiaryIds,
+    this.defaultAttributes,
   );
   final String id;
   final String name;
   final String mainActivityType;
   final String status;
   final List<String> apiaryIds;
+  final Map<String, dynamic> defaultAttributes;
 }
 
 /// Records create()/update()/close()/delete() calls so the form's flows can
@@ -100,9 +110,12 @@ class _FakeJourneysRepository extends JourneysRepository {
     required String name,
     required String mainActivityType,
     required List<String> apiaryIds,
+    Map<String, dynamic> defaultAttributes = const {},
   }) async {
     if (throwOnCreate) throw Exception('boom-create');
-    created.add(_CreatedJourney(name, mainActivityType, apiaryIds));
+    created.add(
+      _CreatedJourney(name, mainActivityType, apiaryIds, defaultAttributes),
+    );
     return 'fake-${created.length - 1}';
   }
 
@@ -113,9 +126,19 @@ class _FakeJourneysRepository extends JourneysRepository {
     required String mainActivityType,
     required String status,
     required List<String> apiaryIds,
+    required Map<String, dynamic> defaultAttributes,
   }) async {
     if (throwOnUpdate) throw Exception('boom-update');
-    updated.add(_UpdatedJourney(id, name, mainActivityType, status, apiaryIds));
+    updated.add(
+      _UpdatedJourney(
+        id,
+        name,
+        mainActivityType,
+        status,
+        apiaryIds,
+        defaultAttributes,
+      ),
+    );
   }
 
   @override
@@ -168,6 +191,10 @@ Widget _buildApp({
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
+      // Tasks is the app's landing screen now (#427, D-29) — stub its stream
+      // so booting the app renders the Todos tab without hanging on the real,
+      // never-resolving todos repository chain.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
       // Switching to the Journeys tab renders JourneysListScreen first (its
       // tab root), which watches journeysStreamProvider — overridden here
       // (mirrors app_shell_test.dart's identical fix) so it resolves
@@ -242,21 +269,53 @@ void main() {
       expect(find.text('Name is required'), findsOneWidget);
     });
 
-    testWidgets('saving without any apiary selected is blocked (#45 AC: '
-        'the set of apiaries to visit)', (tester) async {
-      final repo = _FakeJourneysRepository();
-      await _openNewJourneyForm(tester, repo: repo);
+    testWidgets(
+      'saving with no apiary selected is allowed — the plan may be empty and '
+      'apiaries added later via edit (D-30, #428, FR-JO-4)',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
 
-      await tester.enterText(
-        find.byKey(const Key('journey-name-field')),
-        'Colheita de Primavera',
-      );
-      await tester.tap(find.byKey(const Key('journey-save-button')));
-      await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          'Colheita de Primavera',
+        );
+        // No apiary selected.
+        await tester.tap(find.byKey(const Key('journey-save-button')));
+        await tester.pumpAndSettle();
 
-      expect(repo.created, isEmpty);
-      expect(find.text('Select at least one apiary'), findsOneWidget);
-    });
+        // The journey is created with an empty plan; the old
+        // "Select at least one apiary" gate no longer blocks the save.
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.name, 'Colheita de Primavera');
+        expect(repo.created.single.apiaryIds, isEmpty);
+        expect(find.text('Select at least one apiary'), findsNothing);
+        // Navigated back to the list on success.
+        expect(find.byKey(const Key('journey-name-field')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a selected apiary checkbox uses the accent (tertiary) color, not the '
+      'muted secondary color that reads as disabled (#381)',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
+
+        await tester.tap(find.byKey(const Key('journey-apiary-option-a1')));
+        await tester.pumpAndSettle();
+
+        final scheme = AppTheme.light().colorScheme;
+        final icon = tester.widget<Icon>(
+          find.descendant(
+            of: find.byKey(const Key('journey-apiary-option-a1')),
+            matching: find.byIcon(Icons.check_box),
+          ),
+        );
+        expect(icon.color, scheme.tertiary);
+        expect(icon.color, isNot(scheme.secondary));
+      },
+    );
 
     testWidgets(
       'a valid create calls create() with the name/type/selected apiaries',
@@ -327,13 +386,110 @@ void main() {
     );
   });
 
+  group('default attributes section (#385)', () {
+    testWidgets(
+      'the harvest (default type) create form shows the lot/batch field, '
+      'and a valid create includes it',
+      (tester) async {
+        final repo = _FakeJourneysRepository();
+        await _openNewJourneyForm(tester, repo: repo);
+
+        expect(
+          find.byKey(const Key('journey-default-lot-batch-field')),
+          findsOneWidget,
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('journey-name-field')),
+          'Journey',
+        );
+        await tester.tap(find.byKey(const Key('journey-apiary-option-a1')));
+        await tester.enterText(
+          find.byKey(const Key('journey-default-lot-batch-field')),
+          'LOTE-2026-07',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.created.single.defaultAttributes, {
+          'lot_batch': 'LOTE-2026-07',
+        });
+      },
+    );
+
+    testWidgets('switching the main activity type swaps the defaults '
+        'fields shown', (tester) async {
+      final repo = _FakeJourneysRepository();
+      await _openNewJourneyForm(tester, repo: repo);
+
+      expect(
+        find.byKey(const Key('journey-default-lot-batch-field')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('journey-main-activity-type-field')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Feeding').last);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('journey-default-lot-batch-field')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('journey-default-feed-type-field')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('switching the main activity type clears previously-entered '
+        'defaults (#385: the old type\'s keys are invalid for the new type)', (
+      tester,
+    ) async {
+      final repo = _FakeJourneysRepository();
+      await _openNewJourneyForm(tester, repo: repo);
+
+      await tester.enterText(
+        find.byKey(const Key('journey-default-lot-batch-field')),
+        'LOTE-2026-07',
+      );
+      await tester.pumpAndSettle();
+
+      // Switch away, then back to harvest.
+      await tester.tap(
+        find.byKey(const Key('journey-main-activity-type-field')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Feeding').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('journey-main-activity-type-field')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Honey harvest').last);
+      await tester.pumpAndSettle();
+
+      final lotBatchField = tester.widget<TextFormField>(
+        find.byKey(const Key('journey-default-lot-batch-field')),
+      );
+      expect(lotBatchField.controller!.text, isEmpty);
+    });
+  });
+
   group('edit (#45, FR-JO-4, D-21)', () {
-    Journey existingJourney({String status = journeyStatusOpen}) => Journey(
+    Journey existingJourney({
+      String status = journeyStatusOpen,
+      Map<String, dynamic> defaultAttributes = const {},
+    }) => Journey(
       id: 'j1',
       name: 'Existing Journey',
       mainActivityType: 'feeding',
       status: status,
       apiaryIds: const ['a1'],
+      defaultAttributes: defaultAttributes,
     );
 
     /// Reaches the edit form by pushing its route directly (mirrors
@@ -367,6 +523,37 @@ void main() {
       expect(find.byKey(const Key('journey-delete-button')), findsOneWidget);
       // An open journey shows the close action.
       expect(find.byKey(const Key('journey-close-button')), findsOneWidget);
+    });
+
+    testWidgets('pre-fills the defaults section from the journey\'s stored '
+        'default_attributes (#385)', (tester) async {
+      final repo = _FakeJourneysRepository(
+        existing: existingJourney(
+          defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+        ),
+      );
+      await goToEditForm(tester, repo);
+
+      expect(find.text('Xarope 1:1'), findsOneWidget);
+    });
+
+    testWidgets('an edit that resubmits the name unchanged still resubmits the '
+        'existing default_attributes unchanged (never silently wiped)', (
+      tester,
+    ) async {
+      final repo = _FakeJourneysRepository(
+        existing: existingJourney(
+          defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+        ),
+      );
+      await goToEditForm(tester, repo);
+
+      await tester.tap(find.byKey(const Key('journey-save-button')));
+      await tester.pumpAndSettle();
+
+      expect(repo.updated.single.defaultAttributes, {
+        'feed_type': 'Xarope 1:1',
+      });
     });
 
     testWidgets('a closed journey does not show the close action again', (

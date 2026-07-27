@@ -7,6 +7,9 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Optional local config from infra/cluster/.env (see .env.example).
+# shellcheck disable=SC1091 # resolved at runtime next to this script
+. "$script_dir/env.sh"
 namespace="beekeepingit-dev"
 
 for bin in k3d kubectl helm flock git; do

@@ -287,18 +287,23 @@ class ApiariesRepository {
     int value,
   ) async {
     final existing = await _store.getOptional(
-      'SELECT id FROM $apiaryCountersTable WHERE apiary_id = ? AND counter_type = ? '
-      'ORDER BY updated_at DESC LIMIT 1',
+      'SELECT id, value FROM $apiaryCountersTable WHERE apiary_id = ? AND '
+      'counter_type = ? ORDER BY updated_at DESC LIMIT 1',
       [apiaryId, counterType],
     );
-    final now = _nowIso();
     if (existing == null) {
-      await _insertCounter(apiaryId, counterType, value, now);
+      await _insertCounter(apiaryId, counterType, value, _nowIso());
       return;
     }
+    // #378: skip the write entirely when the value hasn't actually changed
+    // (e.g. saving a counter edit back to its original value) — otherwise
+    // this still bumps updated_at, queuing a sync op whose diffed payload
+    // carries no `value` at all (PowerSync uploads only changed columns),
+    // which the server used to reject outright ("value is required").
+    if ((existing['value'] as int?) == value) return;
     await _store.execute(
       'UPDATE $apiaryCountersTable SET value = ?, updated_at = ? WHERE id = ?',
-      [value, now, existing['id']],
+      [value, _nowIso(), existing['id']],
     );
   }
 

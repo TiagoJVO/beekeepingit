@@ -238,4 +238,64 @@ void main() {
       );
     });
   });
+
+  // #385: a journey's default_attributes reuse the exact same per-type
+  // schema, but every field is optional there — validateJourneyDefaultAttributes
+  // must suppress `required`-coded errors while still surfacing every other
+  // kind (vocab/type/length/range).
+  group('validateJourneyDefaultAttributes', () {
+    test('an empty map is valid for a type with required fields (defaults '
+        'are entirely optional)', () {
+      expect(
+        validateJourneyDefaultAttributes(activityTypeTreatment, {}),
+        isEmpty,
+      );
+      expect(
+        validateJourneyDefaultAttributes(activityTypeFeeding, {}),
+        isEmpty,
+      );
+    });
+
+    test('a partial treatment default (context only) is valid — no '
+        'required-field errors leak through', () {
+      final errors = validateJourneyDefaultAttributes(activityTypeTreatment, {
+        'treatment_context': 'general_preventive',
+      });
+      expect(errors, isEmpty);
+    });
+
+    test('an out-of-vocab value is still rejected (not everything is '
+        'suppressed, only `required`)', () {
+      final errors = validateJourneyDefaultAttributes(activityTypeTreatment, {
+        'treatment_context': 'not-a-real-context',
+      });
+      expect(
+        hasFieldCode(errors, 'attributes.treatment_context', 'invalid'),
+        isTrue,
+      );
+    });
+
+    test('a too-long lot_batch default is still rejected', () {
+      final errors = validateJourneyDefaultAttributes(activityTypeHarvest, {
+        'lot_batch': 'a' * 101,
+      });
+      expect(hasFieldCode(errors, 'attributes.lot_batch', 'too_long'), isTrue);
+    });
+
+    test('an unknown key for the type is still rejected', () {
+      final errors = validateJourneyDefaultAttributes(activityTypeFeeding, {
+        'honey_supers': 4,
+      });
+      expect(
+        hasFieldCode(errors, 'attributes.honey_supers', 'invalid'),
+        isTrue,
+      );
+    });
+
+    test('an unregistered activity type is still rejected (not a '
+        '`required` error, so not suppressed)', () {
+      final errors = validateJourneyDefaultAttributes('nucs', {});
+      expect(hasFieldCode(errors, 'type', 'invalid'), isTrue);
+    });
+  });
 }

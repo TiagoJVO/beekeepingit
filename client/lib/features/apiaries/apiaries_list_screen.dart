@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -93,6 +95,15 @@ final apiariesViewModelProvider = Provider<AsyncValue<ApiariesViewModel>>((
   });
 });
 
+/// How often the apiary list silently re-acquires the device location while
+/// it's the visible, foregrounded view (#422) so the per-row distances and
+/// nearest-first ordering track the user as they walk the yard. Kept
+/// deliberately coarse — ordering a short list doesn't need second-by-second
+/// precision, and a longer interval limits GPS/battery use; the timer is also
+/// fully suspended while the app is backgrounded or this tab is offstage (see
+/// [_ApiariesListScreenState._reconcileRefreshTimer]).
+const Duration _locationRefreshInterval = Duration(seconds: 10);
+
 /// The home screen: the org's apiaries, read live from local SQLite (works
 /// offline). Tapping a row opens the edit form. No own AppBar/FAB: this
 /// screen is the Apiaries tab's root within the app shell (FR-UX-2, #197),
@@ -120,11 +131,125 @@ final apiariesViewModelProvider = Provider<AsyncValue<ApiariesViewModel>>((
 /// shown via the segmented control's selected segment (#35 AC: "the active
 /// view is visually indicated"); the map screen no longer has its own pushed
 /// route (superseding #34's original one-way "View map" navigation).
-class ApiariesListScreen extends ConsumerWidget {
+///
+/// Keeps the device location fresh while the list is on screen (#422): a
+/// [Timer.periodic] ([_locationRefreshInterval]) silently re-acquires it so
+/// the distances/ordering track the user as they move, and a
+/// [RefreshIndicator] lets them pull-to-refresh on demand. The timer is a
+/// stateful resource (started/stopped across the widget's lifecycle,
+/// suspended whenever polling wouldn't be useful — see [_reconcileRefreshTimer]),
+/// so this is a [ConsumerStatefulWidget] rather than the previous stateless
+/// [ConsumerWidget].
+class ApiariesListScreen extends ConsumerStatefulWidget {
   const ApiariesListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ApiariesListScreen> createState() => _ApiariesListScreenState();
+}
+
+class _ApiariesListScreenState extends ConsumerState<ApiariesListScreen>
+    with WidgetsBindingObserver {
+  Timer? _locationRefreshTimer;
+
+  // The periodic GPS refresh must only run when it's actually useful — the app
+  // is foregrounded AND this (the Apiaries) tab is the visible branch. This
+  // screen is the root of a StatefulShellRoute.indexedStack branch, so
+  // switching bottom-nav tabs does NOT dispose it: it stays mounted offstage,
+  // and without the visibility gate the timer would keep polling GPS on every
+  // other tab (battery drain, and contradicting the AC "while the list is
+  // visible"). Both conditions are tracked here and combined in [_shouldPoll].
+  bool _appForegrounded = true;
+  bool _tabVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // The timer is (re)started from [didChangeDependencies], which runs right
+    // after this and is the first point the tab's visibility (via TickerMode)
+    // is readable — starting it here would miss a cold start on another tab.
+  }
+
+  @override
+  void dispose() {
+    _stopLocationRefreshTimer();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Track whether this tab is the visible branch of the app shell's
+  /// [StatefulShellRoute.indexedStack]. go_router disables [TickerMode] on the
+  /// offstage branches, so it doubles as a reliable "am I the foreground tab"
+  /// signal — and because it's an inherited value, this callback re-runs on
+  /// every tab switch, letting us suspend GPS polling while the user is on
+  /// another tab and resume (with a catch-up fetch) when they return
+  /// (#422 AC: "auto-refreshes about every 10s while the list is visible").
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tabVisible = TickerMode.valuesOf(context).enabled;
+    final becameVisible = tabVisible && !_tabVisible;
+    _tabVisible = tabVisible;
+    _reconcileRefreshTimer(catchUp: becameVisible);
+  }
+
+  /// Suspend the periodic refresh while the app is backgrounded and resume it
+  /// (with an immediate catch-up fetch) on return — a foreground gate so a
+  /// pocketed, walked-away phone isn't polling GPS every ~10s (#422: "gate to
+  /// foreground/visible to limit battery use"; AC: "cancelled when the screen
+  /// is disposed/backgrounded").
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final foregrounded = state == AppLifecycleState.resumed;
+    final becameForegrounded = foregrounded && !_appForegrounded;
+    _appForegrounded = foregrounded;
+    _reconcileRefreshTimer(catchUp: becameForegrounded);
+  }
+
+  /// Whether the periodic location refresh should currently be running: only
+  /// when the app is foregrounded AND this tab is the visible branch.
+  bool get _shouldPoll => _appForegrounded && _tabVisible;
+
+  /// Reconcile the timer with [_shouldPoll]: start it (optionally firing an
+  /// immediate [catchUp] fetch, when we've just become eligible again after a
+  /// gap on another tab or in the background) or stop it. Idempotent — safe to
+  /// call on any lifecycle/visibility change.
+  void _reconcileRefreshTimer({required bool catchUp}) {
+    if (_shouldPoll) {
+      if (catchUp) _refreshLocation();
+      _startLocationRefreshTimer();
+    } else {
+      _stopLocationRefreshTimer();
+    }
+  }
+
+  void _startLocationRefreshTimer() {
+    // Don't restart an already-running timer: [didChangeDependencies] can fire
+    // for unrelated inherited changes (theme, locale), and resetting the
+    // countdown each time would keep the ~10s tick from ever landing.
+    if (_locationRefreshTimer?.isActive ?? false) return;
+    _locationRefreshTimer = Timer.periodic(
+      _locationRefreshInterval,
+      (_) => _refreshLocation(),
+    );
+  }
+
+  void _stopLocationRefreshTimer() {
+    _locationRefreshTimer?.cancel();
+    _locationRefreshTimer = null;
+  }
+
+  /// Re-acquire the device location without tearing down the list — see
+  /// [DeviceLocationController.refresh]. Returned so [RefreshIndicator] can
+  /// await it (keeping its spinner up until the new fix resolves); guards on
+  /// [State.mounted] so a timer tick racing disposal is a no-op.
+  Future<void> _refreshLocation() {
+    if (!mounted) return Future<void>.value();
+    return ref.read(deviceLocationProvider.notifier).refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     // The heavy filter+sort work is memoized in apiariesViewModelProvider
     // (HIGH finding) rather than recomputed here on every rebuild; this
@@ -204,38 +329,48 @@ class ApiariesListScreen extends ConsumerWidget {
                   final deviceLocation = location.value;
                   final brand = context.brand;
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(
-                      BrandDimens.gutter,
-                      4,
-                      BrandDimens.gutter,
-                      BrandDimens.scrollBottomInset,
+                  // Pull-to-refresh re-acquires the location on demand (#422).
+                  // AlwaysScrollableScrollPhysics keeps the gesture available
+                  // even when the list is too short to overscroll on its own;
+                  // the localized accessibility label comes from
+                  // MaterialLocalizations (no bespoke string needed).
+                  return RefreshIndicator(
+                    key: const Key('apiaries-list-refresh-indicator'),
+                    onRefresh: _refreshLocation,
+                    child: ListView.separated(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(
+                        BrandDimens.gutter,
+                        4,
+                        BrandDimens.gutter,
+                        BrandDimens.scrollBottomInset,
+                      ),
+                      itemCount: vm.ordered.length,
+                      separatorBuilder: (_, _) =>
+                          const SizedBox(height: BrandDimens.gapCard),
+                      itemBuilder: (context, i) {
+                        final apiary = vm.ordered[i];
+                        final distanceText = _distanceSubtitle(
+                          context,
+                          l10n,
+                          apiary,
+                          deviceLocation,
+                        );
+                        return BrandRowCard(
+                          key: Key('apiary-${apiary.id}'),
+                          title: apiary.name,
+                          subtitle: distanceText == null
+                              ? l10n.hiveCountValue(apiary.hiveCount)
+                              : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
+                          leading: LeadingIconTile(
+                            icon: Icons.hive,
+                            color: brand.cresta.color,
+                            tint: brand.cresta.tint,
+                          ),
+                          onTap: () => context.go('/apiaries/${apiary.id}'),
+                        );
+                      },
                     ),
-                    itemCount: vm.ordered.length,
-                    separatorBuilder: (_, _) =>
-                        const SizedBox(height: BrandDimens.gapCard),
-                    itemBuilder: (context, i) {
-                      final apiary = vm.ordered[i];
-                      final distanceText = _distanceSubtitle(
-                        context,
-                        l10n,
-                        apiary,
-                        deviceLocation,
-                      );
-                      return BrandRowCard(
-                        key: Key('apiary-${apiary.id}'),
-                        title: apiary.name,
-                        subtitle: distanceText == null
-                            ? l10n.hiveCountValue(apiary.hiveCount)
-                            : '${l10n.hiveCountValue(apiary.hiveCount)} · $distanceText',
-                        leading: LeadingIconTile(
-                          icon: Icons.hive,
-                          color: brand.cresta.color,
-                          tint: brand.cresta.tint,
-                        ),
-                        onTap: () => context.go('/apiaries/${apiary.id}'),
-                      );
-                    },
                   );
                 },
               ),

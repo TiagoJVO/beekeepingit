@@ -7,6 +7,7 @@ import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 import 'apiary_multi_select_field.dart';
+import 'journey_default_attributes_section.dart';
 import 'journeys_repository.dart';
 
 /// The #46 activity-form picker's inline "create a new journey" shortcut
@@ -22,10 +23,10 @@ import 'journeys_repository.dart';
 /// same UNDERLYING pieces [JourneyFormScreen] itself uses for the fields
 /// this shortcut actually needs (name + main activity type + apiaries):
 /// [ApiaryMultiSelectField] verbatim, the same activity-type dropdown
-/// pattern, and [JourneysRepository.create] — the same validation rules
-/// (name required, at least one apiary), just condensed into a sheet that
-/// returns the new journey's id (or null if canceled) instead of navigating
-/// anywhere.
+/// pattern, and [JourneysRepository.create] — the same validation rule
+/// (name required; the apiary plan may be empty — D-30, #428), just
+/// condensed into a sheet that returns the new journey's id (or null if
+/// canceled) instead of navigating anywhere.
 ///
 /// [initialApiaryId] pre-selects the apiary the activity is being logged
 /// against (the natural default — this journey is being created FOR this
@@ -41,18 +42,25 @@ import 'journeys_repository.dart';
 /// so the user sees what type the new journey will carry, without being able
 /// to diverge from the activity being registered.
 ///
-/// Returns both the new journey's id AND its entered name (not just the id):
-/// the caller (add_activity_screen.dart) displays the name immediately in
-/// its "attached to" summary, before the local store's own live query
-/// (journey_picker.dart's `journeyMatchesProvider`) necessarily catches up
-/// with the just-created row — returning the name sidesteps that race
-/// instead of the display briefly showing a raw id or "unknown".
-Future<({String id, String name})?> showJourneyQuickCreateSheet(
+/// Returns the new journey's id, its entered name, AND the defaults it
+/// saved (not just the id): the caller (add_activity_screen.dart) displays
+/// the name immediately in its "attached to" summary, before the local
+/// store's own live query (journey_picker.dart's `journeyMatchesProvider`)
+/// necessarily catches up with the just-created row — returning the name
+/// sidesteps that race instead of the display briefly showing a raw id or
+/// "unknown". [defaultAttributes] (#385) sidesteps the SAME race for the
+/// prefill flow (the separate dependent issue): the caller can apply them
+/// directly rather than waiting for the live query to replicate the
+/// just-written row back.
+Future<({String id, String name, Map<String, dynamic> defaultAttributes})?>
+showJourneyQuickCreateSheet(
   BuildContext context, {
   required String initialApiaryId,
   required String mainActivityType,
 }) {
-  return showModalBottomSheet<({String id, String name})>(
+  return showModalBottomSheet<
+    ({String id, String name, Map<String, dynamic> defaultAttributes})
+  >(
     context: context,
     isScrollControlled: true,
     // A quick-create form mid-flow shouldn't vanish on an accidental
@@ -87,38 +95,46 @@ class _JourneyQuickCreateSheetState
   final _nameController = TextEditingController();
   late Set<String> _apiaryIds = {widget.initialApiaryId};
   bool _busy = false;
-  String? _apiaryIdsError;
+
+  // Journey-level subtype attribute defaults (#385) — type is LOCKED here
+  // (this widget's own doc comment), so unlike journey_form_screen.dart
+  // there is no type-change reset to wire.
+  final _defaultAttributes = JourneyDefaultAttributesController();
 
   @override
   void dispose() {
     _nameController.dispose();
+    _defaultAttributes.dispose();
     super.dispose();
   }
 
-  bool _validate(AppLocalizations l10n) {
-    final formOk = _formKey.currentState!.validate();
-    final hasApiary = _apiaryIds.isNotEmpty;
-    setState(() {
-      _apiaryIdsError = hasApiary ? null : l10n.journeyApiariesRequired;
-    });
-    return formOk && hasApiary;
-  }
+  // A journey may be saved with an empty apiary plan (D-30, #428): only the
+  // name is required; the pre-selected apiary can be deselected and the plan
+  // filled in later via edit ([JourneysRepository.create] documents
+  // `apiaryIds` may be empty).
+  bool _validate() => _formKey.currentState!.validate();
 
   Future<void> _create() async {
     final l10n = AppLocalizations.of(context);
-    if (!_validate(l10n)) return;
+    if (!_validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       final repo = await ref.read(journeysRepositoryProvider.future);
       final name = _nameController.text.trim();
+      final defaultAttributes = _defaultAttributes.build(
+        widget.mainActivityType,
+      );
       final id = await repo.create(
         name: name,
         mainActivityType: widget.mainActivityType,
         apiaryIds: _apiaryIds.toList(),
+        defaultAttributes: defaultAttributes,
       );
       if (!mounted) return;
-      Navigator.of(context).pop((id: id, name: name));
+      Navigator.of(
+        context,
+      ).pop((id: id, name: name, defaultAttributes: defaultAttributes));
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -145,8 +161,7 @@ class _JourneyQuickCreateSheetState
         // viewport, and a single scroll view around EVERYTHING would push
         // Save/Cancel below the fold where a user in the field can't reach
         // them. Keeping the actions outside the scrollable keeps them
-        // reachable at any screen size, text scale, or future field count —
-        // the same structure todo_quick_create_sheet.dart uses.
+        // reachable at any screen size, text scale, or future field count.
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -207,25 +222,18 @@ class _JourneyQuickCreateSheetState
                           ),
                         ),
                       ),
+                      JourneyDefaultAttributesSection(
+                        type: widget.mainActivityType,
+                        controller: _defaultAttributes,
+                        onChanged: () => setState(() {}),
+                      ),
                       const SizedBox(height: BrandDimens.gapField),
                       ApiaryMultiSelectField(
                         selectedApiaryIds: _apiaryIds,
                         onChanged: (ids) => setState(() {
                           _apiaryIds = ids;
-                          _apiaryIdsError = null;
                         }),
                       ),
-                      if (_apiaryIdsError != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6, left: 4),
-                          child: Text(
-                            _apiaryIdsError!,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),

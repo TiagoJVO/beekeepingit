@@ -57,6 +57,32 @@ class _ApiaryMultiSelectFieldState
     widget.onChanged(next);
   }
 
+  /// Bulk-selects every apiary in [filtered] — the set currently visible
+  /// under the active search query (#425, FR-JO-4). Scoped to the filter (not
+  /// the whole org) so "select all" means "select what I'm looking at",
+  /// matching the search box directly above it.
+  void _selectAll(List<Apiary> filtered) {
+    _emitIfChanged(filtered.map((a) => a.id).toSet());
+  }
+
+  /// Clears the whole selection (#425, FR-JO-4).
+  void _clearAll() {
+    _emitIfChanged(const <String>{});
+  }
+
+  /// Notifies the owning form only when [next] actually differs from the
+  /// current selection. A bulk tap that computes an identical set (e.g.
+  /// "Clear all" on an already-empty selection, or "Select all" when the
+  /// filtered set is already fully selected) is a no-op, so it must NOT fire
+  /// [onChanged] — the form's callback arms the unsaved-changes leave-guard
+  /// unconditionally, and a spurious "discard changes?" prompt on a no-op tap
+  /// is exactly the surprise we avoid here.
+  void _emitIfChanged(Set<String> next) {
+    final current = widget.selectedApiaryIds;
+    if (next.length == current.length && next.containsAll(current)) return;
+    widget.onChanged(next);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -104,34 +130,73 @@ class _ApiaryMultiSelectFieldState
             if (filtered.isEmpty) {
               return EmptyState(message: l10n.apiariesSearchNoResults);
             }
-            return Container(
-              key: const Key('journey-apiaries-list'),
-              constraints: const BoxConstraints(maxHeight: 280),
-              decoration: BoxDecoration(
-                color: context.brand.cardColor,
-                border: Border.all(color: context.brand.cardBorder),
-                borderRadius: BrandDimens.borderCard,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: filtered.length,
-                separatorBuilder: (_, _) => Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: context.brand.cardBorder,
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Bulk select-all / clear-all controls (#425, FR-JO-4).
+                // "Select all" acts on the filtered set above; both are
+                // kMinTapTarget-tall for gloved/field use and expose their
+                // own button semantics via their label text. A [Wrap] (not a
+                // [Row]) so the two buttons drop to a second line instead of
+                // RenderFlex-overflowing on a narrow phone or at a large OS
+                // text scale (FR-AX-1 text-scaling).
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    TextButton.icon(
+                      key: const Key('journey-apiaries-select-all'),
+                      onPressed: () => _selectAll(filtered),
+                      icon: const Icon(Icons.done_all),
+                      label: Text(l10n.journeyApiariesSelectAll),
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, kMinTapTarget),
+                      ),
+                    ),
+                    TextButton.icon(
+                      key: const Key('journey-apiaries-clear-all'),
+                      onPressed: _clearAll,
+                      icon: const Icon(Icons.remove_done),
+                      label: Text(l10n.journeyApiariesClearAll),
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, kMinTapTarget),
+                      ),
+                    ),
+                  ],
                 ),
-                itemBuilder: (context, i) {
-                  final apiary = filtered[i];
-                  final selected = widget.selectedApiaryIds.contains(apiary.id);
-                  return _ApiaryCheckTile(
-                    key: Key('journey-apiary-option-${apiary.id}'),
-                    label: apiary.name,
-                    selected: selected,
-                    onTap: () => _toggle(apiary.id),
-                  );
-                },
-              ),
+                const SizedBox(height: 4),
+                Container(
+                  key: const Key('journey-apiaries-list'),
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  decoration: BoxDecoration(
+                    color: context.brand.cardColor,
+                    border: Border.all(color: context.brand.cardBorder),
+                    borderRadius: BrandDimens.borderCard,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, _) => Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: context.brand.cardBorder,
+                    ),
+                    itemBuilder: (context, i) {
+                      final apiary = filtered[i];
+                      final selected = widget.selectedApiaryIds.contains(
+                        apiary.id,
+                      );
+                      return _ApiaryCheckTile(
+                        key: Key('journey-apiary-option-${apiary.id}'),
+                        label: apiary.name,
+                        selected: selected,
+                        onTap: () => _toggle(apiary.id),
+                      );
+                    },
+                  ),
+                ),
+              ],
             );
           },
         ),
@@ -200,7 +265,7 @@ class _ApiaryCheckTile extends StatelessWidget {
                           ? Icons.check_box
                           : Icons.check_box_outline_blank,
                       color: selected
-                          ? theme.colorScheme.secondary
+                          ? theme.colorScheme.tertiary
                           : theme.colorScheme.onSurfaceVariant,
                     ),
                   ],

@@ -1,8 +1,8 @@
 # Dependency scanning half of the CI supply-chain story (EPIC-13 #88 / EPIC-14 #89): Dependabot
 # opens a PR per update for each ecosystem below. It bumps the SHA-pinned `uses:` refs (and the
 # version comment) for Actions, `go.mod`/`go.sum` for Go, and `pubspec.yaml`/`pubspec.lock` for
-# the Flutter client, and base images for the per-service `Dockerfile`s. Add `npm` (admin app)
-# when it lands.
+# the Flutter client, `package.json`/`package-lock.json` for the React admin app (#72), and
+# base images for the per-service `Dockerfile`s.
 #
 # `commit-message.prefix` keeps PR titles Conventional-Commits-compliant so they pass the
 # "PR Title Semantics" check (`ci:` for Actions, `build:` for app dependencies).
@@ -40,6 +40,18 @@ updates:
   # Flutter client (#21).
   - package-ecosystem: "pub"
     directory: "/client"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "build"
+    labels:
+      - "type/chore"
+
+  # React admin app (#72). Only the npm ecosystem here; the admin/ Dockerfile's base-image
+  # bumps are tracked with the other Docker ecosystems (below is per-service; admin's is
+  # deferred to the same follow-up that env-templates its nginx config, #89).
+  - package-ecosystem: "npm"
+    directory: "/admin"
     schedule:
       interval: "weekly"
     commit-message:

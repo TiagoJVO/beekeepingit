@@ -62,3 +62,37 @@ JourneyPickerCandidates splitJourneyCandidates(List<Journey> candidates) {
   }
   return JourneyPickerCandidates(open: open, closed: closed);
 }
+
+/// The relaxed candidate set for the picker's "attach to a journey that
+/// didn't plan this apiary" toggle (D-31, #440) — distinct from
+/// [splitJourneyCandidates]'s planned-apiary matches. Filters [unplanned]
+/// (the repository's [JourneysRepository.watchTypeMatchingUnplanned] result:
+/// OPEN, type-matching journeys whose plan does NOT include the current
+/// apiary, org-scoped, newest-first) down to what the picker actually
+/// reveals:
+///
+/// - OPEN journeys only — defensive, mirroring [splitJourneyCandidates]'s own
+///   trust-but-verify status split (a closed journey never belongs in this
+///   relaxed set: closing a journey moves it behind the separate
+///   "show hidden journeys" toggle, D-21).
+/// - with any journey already present in [planned] removed, so the same
+///   journey never appears in BOTH the default planned-matches list and this
+///   relaxed list. There is no overlap by construction — a journey either
+///   plans the apiary (surfaced by [JourneysRepository.watchMatching]) or it
+///   doesn't (surfaced by [JourneysRepository.watchTypeMatchingUnplanned]),
+///   never both — but a brief local-write/sync race between the two live
+///   queries could momentarily surface one in both; this keeps the two lists
+///   provably disjoint for the UI.
+///
+/// Order is preserved (newest-first, as the query returns it), matching every
+/// other picker list.
+List<Journey> unplannedPickerCandidates(
+  List<Journey> unplanned, {
+  required Iterable<Journey> planned,
+}) {
+  final plannedIds = {for (final journey in planned) journey.id};
+  return [
+    for (final journey in unplanned)
+      if (journey.isOpen && !plannedIds.contains(journey.id)) journey,
+  ];
+}

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/sync/powersync_schema.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/app_theme.dart';
 import '../../theming/brand_dimens.dart';
@@ -12,6 +13,7 @@ import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
 import '../activities/activity_types.dart';
 import '../apiaries/apiaries_repository.dart';
+import '../history/history_section.dart';
 import 'journey_stats_section.dart';
 import 'journey_status.dart';
 import 'journeys_repository.dart';
@@ -93,6 +95,11 @@ class _JourneyDetailBody extends StatelessWidget {
         journey.mainActivityType;
     final statusLabel =
         journeyStatusLabel(l10n, journey.status) ?? journey.status;
+    final defaultAttributesSummary = _defaultAttributesSummary(
+      l10n,
+      journey.mainActivityType,
+      journey.defaultAttributes,
+    );
 
     return Center(
       child: ConstrainedBox(
@@ -134,6 +141,19 @@ class _JourneyDetailBody extends StatelessWidget {
                         ),
                       ],
                     ),
+                    // Journey-level subtype attribute defaults (#385) — only
+                    // rendered when the journey actually has any set.
+                    if (defaultAttributesSummary != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        defaultAttributesSummary,
+                        key: const Key('journey-detail-default-attributes'),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: brand.onHeroSurfaceMuted,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -144,12 +164,56 @@ class _JourneyDetailBody extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               _JourneyApiariesSection(journey: journey),
+              const SizedBox(height: 14),
+              // Per-journey change history (#315, FR-HIS-1) — the same shared,
+              // capped preview the apiary/activity detail screens embed,
+              // pointed at this journey and linking out to the full-screen
+              // timeline (same preview-then-full-screen split, for the same
+              // virtualization reason a shrink-wrapped preview can't).
+              HistorySection(
+                entityType: journeyEntityType,
+                entityId: journey.id,
+                onViewAll: () => context.go('/journeys/${journey.id}/history'),
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+/// The muted "Defaults: Apivar/amitraz · Varroose" summary line under the
+/// [HeroCard]'s type label (#385) — one value per set default key, in the
+/// same per-type field order journey_default_attributes_section.dart shows
+/// them, skipping any key with no value set. Returns null (caller skips
+/// rendering the line) when the journey has no defaults at all, or its
+/// `main_activity_type` carries none (generic).
+String? _defaultAttributesSummary(
+  AppLocalizations l10n,
+  String mainActivityType,
+  Map<String, dynamic> defaultAttributes,
+) {
+  final values = <String>[];
+  switch (mainActivityType) {
+    case activityTypeTreatment:
+      final context = defaultAttributes['treatment_context'] as String?;
+      if (context != null) {
+        values.add(treatmentContextLabel(l10n, context) ?? context);
+      }
+      final type = defaultAttributes['treatment_type'] as String?;
+      if (type != null) values.add(type);
+      final disease = defaultAttributes['disease'] as String?;
+      if (disease != null) values.add(disease);
+    case activityTypeFeeding:
+      final feedType = defaultAttributes['feed_type'] as String?;
+      if (feedType != null) values.add(feedType);
+    case activityTypeHarvest:
+      final lotBatch = defaultAttributes['lot_batch'] as String?;
+      if (lotBatch != null && lotBatch.isNotEmpty) values.add(lotBatch);
+  }
+  if (values.isEmpty) return null;
+  return l10n.journeyDetailDefaultAttributesLabel(values.join(' · '));
 }
 
 /// Open/closed pill sitting ON the plum [HeroCard] — styled exactly like
@@ -250,6 +314,7 @@ class _JourneyApiariesSection extends ConsumerWidget {
               style: TextStyle(color: theme.colorScheme.error),
             ),
             data: (activities) => _ApiaryEntries(
+              journeyId: journey.id,
               plannedApiaryIds: plannedApiaryIds,
               activities: activities,
               apiaryNames: apiaryNames,
@@ -267,11 +332,13 @@ class _JourneyApiariesSection extends ConsumerWidget {
 /// seen-ids guard against a duplicate entry when an id appears in both.
 class _ApiaryEntries extends StatelessWidget {
   const _ApiaryEntries({
+    required this.journeyId,
     required this.plannedApiaryIds,
     required this.activities,
     required this.apiaryNames,
   });
 
+  final String journeyId;
   final List<String> plannedApiaryIds;
   final List<Activity> activities;
   final Map<String, String> apiaryNames;
@@ -304,6 +371,7 @@ class _ApiaryEntries extends StatelessWidget {
       children: [
         for (final apiaryId in apiaryIds) ...[
           _ApiaryCard(
+            journeyId: journeyId,
             apiaryId: apiaryId,
             // A raw internal id would leak into user-facing text if this
             // apiary isn't in the currently-loaded list (deleted since, or
@@ -331,12 +399,14 @@ class _ApiaryEntries extends StatelessWidget {
 /// an activity list (there's nothing to list yet).
 class _ApiaryCard extends StatelessWidget {
   const _ApiaryCard({
+    required this.journeyId,
     required this.apiaryId,
     required this.apiaryName,
     required this.isPlanned,
     required this.activities,
   });
 
+  final String journeyId;
   final String apiaryId;
   final String apiaryName;
   final bool isPlanned;
@@ -394,6 +464,13 @@ class _ApiaryCard extends StatelessWidget {
               // state.
               emptyText: '',
               shrinkWrap: true,
+              // #384: keep a tap on this journey's own activity inside the
+              // Journeys branch (see ActivityListView's own doc comment) —
+              // apiaryId travels as a query parameter for
+              // journeyActivityDetail's own route (app_router.dart).
+              detailLocationBuilder: (activity) =>
+                  '/journeys/$journeyId/activities/${activity.id}'
+                  '?apiaryId=${activity.apiaryId}',
             ),
           ] else ...[
             const SizedBox(height: 4),

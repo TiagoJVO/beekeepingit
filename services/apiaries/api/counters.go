@@ -50,6 +50,13 @@ const (
 	// const here + a knownCounterTypes entry, mirrored in the client's
 	// counter_types.dart, with no schema migration.
 	counterTypeSuper = "super"
+	// counterTypeEmptyHive is a hive box present at the apiary with no active
+	// colony (#392). Mirrored in the client's counter_types.dart.
+	counterTypeEmptyHive = "empty_hive"
+	// counterTypeSwarm (Portuguese "enxames") is a captured/hived swarm, distinct
+	// from counterTypeHive: a captured colony not yet established as a counted
+	// hive (#392). Mirrored in the client's counter_types.dart.
+	counterTypeSwarm = "swarm"
 )
 
 // knownCounterTypes is the extensible set counter_type is validated against
@@ -57,8 +64,10 @@ const (
 // with no apiaries-table migration"). validateCounterOp (sync.go) rejects
 // anything outside this set with the standard RFC 9457 error format.
 var knownCounterTypes = map[string]bool{
-	counterTypeHive:  true,
-	counterTypeSuper: true,
+	counterTypeHive:      true,
+	counterTypeSuper:     true,
+	counterTypeEmptyHive: true,
+	counterTypeSwarm:     true,
 }
 
 // isKnownCounterType reports whether t is in the known, server-validated set

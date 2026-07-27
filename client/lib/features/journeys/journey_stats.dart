@@ -14,7 +14,15 @@
 /// another activity's already-recorded link or this computation) — then
 /// hand the already-scoped result to [computeJourneyStats]. This file only
 /// does the arithmetic.
+///
+/// [computePerApiaryJourneyStats] (#391) is this file's second pure
+/// function: the "More stats" per-apiary breakdown screen's own arithmetic,
+/// kept here for the same reason — the screen composes already-live
+/// providers (activities/plan/apiaries) and hands this file plain,
+/// already-scoped data, never a database dependency of its own.
 library;
+
+import '../activities/activity_types.dart';
 
 /// One harvest-type activity's numeric contribution to a journey's
 /// aggregation (#49, D-2) — just the three attributes
@@ -57,6 +65,8 @@ class JourneyStats {
     required this.hivesHarvested,
     required this.honeyCollectedKg,
     required this.averageSupersPerHive,
+    required this.hivesWorked,
+    required this.hivesPlanned,
   });
 
   /// The all-zero baseline for a brand-new journey with no plan and no
@@ -69,6 +79,8 @@ class JourneyStats {
     hivesHarvested: 0,
     honeyCollectedKg: 0,
     averageSupersPerHive: null,
+    hivesWorked: 0,
+    hivesPlanned: null,
   );
 
   /// The journey's current plan size (its apiaries-to-visit list).
@@ -100,6 +112,24 @@ class JourneyStats {
   /// [apiariesVisited] only counts planned apiaries that DO have a match.
   int get apiariesMissing => apiariesPlanned - apiariesVisited;
 
+  /// Σ `hives_involved` across the journey's activities of EVERY type
+  /// (#391) — harvest, feeding, and treatment activities all carry
+  /// `hives_involved` (activity_attributes.dart's schemas), so this is
+  /// "hive-level completion" across the whole journey, distinct from
+  /// [hivesHarvested] (D-2's harvest-only sum, unchanged by this).
+  final int hivesWorked;
+
+  /// Σ hive count (the apiary_counters `hive` counter) across the journey's
+  /// CURRENTLY PLANNED apiaries (#391) — the denominator for hive-level
+  /// completion, paired with [hivesWorked]. Null when NONE of the planned
+  /// apiaries has a hive counter row yet (a genuine "no data" state — render
+  /// "—" rather than a fake 0/0 — mirroring [averageSupersPerHive]'s own
+  /// no-divide-by-zero/no-fake-zero convention). Once at least one planned
+  /// apiary has a counter, a planned apiary WITHOUT one contributes 0 to the
+  /// sum, matching apiaries_repository.dart's "hive count always displays, 0
+  /// default" rule used everywhere else in the app.
+  final int? hivesPlanned;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -108,7 +138,9 @@ class JourneyStats {
           other.apiariesVisited == apiariesVisited &&
           other.hivesHarvested == hivesHarvested &&
           other.honeyCollectedKg == honeyCollectedKg &&
-          other.averageSupersPerHive == averageSupersPerHive);
+          other.averageSupersPerHive == averageSupersPerHive &&
+          other.hivesWorked == hivesWorked &&
+          other.hivesPlanned == hivesPlanned);
 
   @override
   int get hashCode => Object.hash(
@@ -117,6 +149,8 @@ class JourneyStats {
     hivesHarvested,
     honeyCollectedKg,
     averageSupersPerHive,
+    hivesWorked,
+    hivesPlanned,
   );
 
   @override
@@ -124,7 +158,8 @@ class JourneyStats {
       'JourneyStats(apiariesPlanned: $apiariesPlanned, '
       'apiariesVisited: $apiariesVisited, hivesHarvested: $hivesHarvested, '
       'honeyCollectedKg: $honeyCollectedKg, '
-      'averageSupersPerHive: $averageSupersPerHive)';
+      'averageSupersPerHive: $averageSupersPerHive, '
+      'hivesWorked: $hivesWorked, hivesPlanned: $hivesPlanned)';
 }
 
 /// Pure aggregation (#49, FR-JO-1, D-2, D-21) — no database/repository
@@ -143,10 +178,24 @@ class JourneyStats {
 /// run across ALL of them regardless of plan membership, per the AC's own
 /// wording ("across the harvest activities whose stored journey_id matches
 /// the journey").
+///
+/// [activityHivesInvolved] (#391) is `attributes.hives_involved` from EVERY
+/// activity attributed to this journey, regardless of type — one entry per
+/// activity, null when that activity never recorded a hive count — summed
+/// into [JourneyStats.hivesWorked] the same "regardless of plan membership"
+/// way [harvestTotals] feeds [JourneyStats.hivesHarvested]. [
+/// plannedApiaryHiveCounts] (#391) is the CURRENTLY PLANNED apiaries' hive
+/// counter values, keyed by apiary id — only apiaries that actually have a
+/// counter row appear as a key (an apiary with none is simply absent, not a
+/// zero entry), which is what lets [JourneyStats.hivesPlanned] tell "no
+/// counter data at all yet" (empty map → null) apart from "some planned
+/// apiaries have 0 hives" (present, contributes 0).
 JourneyStats computeJourneyStats({
   required List<String> plannedApiaryIds,
   required Set<String> visitedApiaryIds,
   required List<HarvestActivityTotals> harvestTotals,
+  required List<int?> activityHivesInvolved,
+  required Map<String, int> plannedApiaryHiveCounts,
 }) {
   final planned = plannedApiaryIds.toSet();
   final visited = planned.intersection(visitedApiaryIds).length;
@@ -160,11 +209,257 @@ JourneyStats computeJourneyStats({
     supers += totals.honeySupers ?? 0;
   }
 
+  var hivesWorked = 0;
+  for (final value in activityHivesInvolved) {
+    hivesWorked += value ?? 0;
+  }
+
+  int? hivesPlanned;
+  if (plannedApiaryHiveCounts.isNotEmpty) {
+    var total = 0;
+    for (final apiaryId in planned) {
+      total += plannedApiaryHiveCounts[apiaryId] ?? 0;
+    }
+    hivesPlanned = total;
+  }
+
   return JourneyStats(
     apiariesPlanned: planned.length,
     apiariesVisited: visited,
     hivesHarvested: hives,
     honeyCollectedKg: honey,
     averageSupersPerHive: hives > 0 ? supers / hives : null,
+    hivesWorked: hivesWorked,
+    hivesPlanned: hivesPlanned,
+  );
+}
+
+/// One activity's minimal shape for [computePerApiaryJourneyStats] (#391) —
+/// apiary id, type, and already-decoded attributes — decoupled from the full
+/// `Activity` model (activities_repository.dart) so this file stays
+/// dependency-free (this file's own stated convention, see its doc comment).
+/// The caller (journey_stats_detail_screen.dart) maps its `Activity` list to
+/// these before calling.
+class JourneyActivityRecord {
+  const JourneyActivityRecord({
+    required this.apiaryId,
+    required this.type,
+    required this.attributes,
+  });
+
+  final String apiaryId;
+  final String type;
+  final Map<String, dynamic> attributes;
+}
+
+/// One apiary's contribution to a journey (#391's "More stats" per-apiary
+/// breakdown screen): whether it's in the current plan and/or visited, how
+/// many activities it has, its hive count, and — per activity type — the
+/// numeric metrics the breakdown screen renders. Every sum defaults to 0
+/// (never null) so a zero-activity apiary reads as "nothing recorded yet",
+/// not a rendering gap; only the derived per-hive ratios ([kgPerHive],
+/// [supersPerHive]) are nullable, for the same no-divide-by-zero reason
+/// [JourneyStats.averageSupersPerHive] is nullable.
+class ApiaryJourneyStats {
+  const ApiaryJourneyStats({
+    required this.apiaryId,
+    required this.isPlanned,
+    required this.isVisited,
+    required this.activityCount,
+    required this.hiveCount,
+    required this.harvestHoneyKg,
+    required this.harvestHoneySupers,
+    required this.harvestHivesInvolved,
+    required this.feedingAmountTotal,
+    required this.treated,
+    required this.treatmentHivesInvolved,
+  });
+
+  final String apiaryId;
+
+  /// Still in the journey's current plan.
+  final bool isPlanned;
+
+  /// Has at least one activity (any type) attributed to this journey (D-21's
+  /// stored-`journey_id` rule, same membership test [JourneyStats.
+  /// apiariesVisited] and journey_detail_screen.dart's own apiary cards use).
+  final bool isVisited;
+
+  /// Every activity attributed to this journey for this apiary, any type.
+  final int activityCount;
+
+  /// The apiary's current hive counter value (0 default — the same
+  /// always-displays convention [Apiary.hiveCount] already applies).
+  final int hiveCount;
+
+  /// Σ `honey_kg` across this apiary's harvest activities in the journey.
+  final num harvestHoneyKg;
+
+  /// Σ `honey_supers` across this apiary's harvest activities in the journey.
+  final int harvestHoneySupers;
+
+  /// Σ `hives_involved` across this apiary's harvest activities in the
+  /// journey — the denominator for [kgPerHive]/[supersPerHive].
+  final int harvestHivesInvolved;
+
+  /// Σ `feed_amount` across this apiary's feeding activities in the journey.
+  final num feedingAmountTotal;
+
+  /// Has at least one treatment-type activity attributed to this journey for
+  /// this apiary (the breakdown screen's "apiaries treated" summary counts
+  /// this flag, not [activityCount]).
+  final bool treated;
+
+  /// Σ `hives_involved` across this apiary's treatment activities in the
+  /// journey.
+  final int treatmentHivesInvolved;
+
+  /// [harvestHoneyKg] ÷ [harvestHivesInvolved], or null when there's no hive
+  /// denominator yet (no harvest activity, or every one has a null/zero
+  /// `hives_involved`) — never a divide-by-zero, mirroring
+  /// [JourneyStats.averageSupersPerHive]'s own rule.
+  double? get kgPerHive =>
+      harvestHivesInvolved > 0 ? harvestHoneyKg / harvestHivesInvolved : null;
+
+  /// [harvestHoneySupers] ÷ [harvestHivesInvolved], same null-safety rule as
+  /// [kgPerHive].
+  double? get supersPerHive => harvestHivesInvolved > 0
+      ? harvestHoneySupers / harvestHivesInvolved
+      : null;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ApiaryJourneyStats &&
+          other.apiaryId == apiaryId &&
+          other.isPlanned == isPlanned &&
+          other.isVisited == isVisited &&
+          other.activityCount == activityCount &&
+          other.hiveCount == hiveCount &&
+          other.harvestHoneyKg == harvestHoneyKg &&
+          other.harvestHoneySupers == harvestHoneySupers &&
+          other.harvestHivesInvolved == harvestHivesInvolved &&
+          other.feedingAmountTotal == feedingAmountTotal &&
+          other.treated == treated &&
+          other.treatmentHivesInvolved == treatmentHivesInvolved);
+
+  @override
+  int get hashCode => Object.hash(
+    apiaryId,
+    isPlanned,
+    isVisited,
+    activityCount,
+    hiveCount,
+    harvestHoneyKg,
+    harvestHoneySupers,
+    harvestHivesInvolved,
+    feedingAmountTotal,
+    treated,
+    treatmentHivesInvolved,
+  );
+
+  @override
+  String toString() =>
+      'ApiaryJourneyStats(apiaryId: $apiaryId, isPlanned: $isPlanned, '
+      'isVisited: $isVisited, activityCount: $activityCount, '
+      'hiveCount: $hiveCount, harvestHoneyKg: $harvestHoneyKg, '
+      'harvestHoneySupers: $harvestHoneySupers, '
+      'harvestHivesInvolved: $harvestHivesInvolved, '
+      'feedingAmountTotal: $feedingAmountTotal, treated: $treated, '
+      'treatmentHivesInvolved: $treatmentHivesInvolved)';
+}
+
+/// Pure per-apiary aggregation (#391) — the "More stats" breakdown screen's
+/// own arithmetic, mirroring [computeJourneyStats]'s "no database
+/// dependency" convention. [plannedApiaryIds] is the journey's current plan
+/// (de-duped, order preserved). [activities] is every activity attributed to
+/// this journey (any apiary, D-21's stored-`journey_id` scoping — the caller
+/// already did that query via `activitiesByJourneyProvider`). [hiveCounts]
+/// is every apiary's current hive counter value, keyed by apiary id (an
+/// apiary absent from this map reads as 0 — [ApiaryJourneyStats.hiveCount]'s
+/// own always-displays convention).
+///
+/// Returns one entry per apiary in the union of "planned" and "has an
+/// attributed activity" — planned apiaries first (in the plan's own order),
+/// then any visited-but-unplanned apiary in the order it first appears in
+/// [activities] — mirroring journey_detail_screen.dart's `_ApiaryEntries`
+/// ordering convention.
+List<ApiaryJourneyStats> computePerApiaryJourneyStats({
+  required List<String> plannedApiaryIds,
+  required List<JourneyActivityRecord> activities,
+  required Map<String, int> hiveCounts,
+}) {
+  final plannedSeen = <String>{};
+  final planned = <String>[
+    for (final id in plannedApiaryIds)
+      if (plannedSeen.add(id)) id,
+  ];
+
+  final byApiary = <String, List<JourneyActivityRecord>>{};
+  final visitOrder = <String>[];
+  for (final activity in activities) {
+    if (!byApiary.containsKey(activity.apiaryId)) {
+      visitOrder.add(activity.apiaryId);
+    }
+    (byApiary[activity.apiaryId] ??= []).add(activity);
+  }
+
+  final orderedIds = <String>[
+    ...planned,
+    for (final id in visitOrder)
+      if (!plannedSeen.contains(id)) id,
+  ];
+
+  return [
+    for (final apiaryId in orderedIds)
+      _computeOneApiary(
+        apiaryId: apiaryId,
+        isPlanned: plannedSeen.contains(apiaryId),
+        activities: byApiary[apiaryId] ?? const [],
+        hiveCount: hiveCounts[apiaryId] ?? 0,
+      ),
+  ];
+}
+
+ApiaryJourneyStats _computeOneApiary({
+  required String apiaryId,
+  required bool isPlanned,
+  required List<JourneyActivityRecord> activities,
+  required int hiveCount,
+}) {
+  num honeyKg = 0;
+  var honeySupers = 0;
+  var harvestHives = 0;
+  num feedAmount = 0;
+  var treated = false;
+  var treatmentHives = 0;
+
+  for (final activity in activities) {
+    final attrs = activity.attributes;
+    switch (activity.type) {
+      case activityTypeHarvest:
+        honeyKg += (attrs['honey_kg'] as num?) ?? 0;
+        honeySupers += (attrs['honey_supers'] as num?)?.toInt() ?? 0;
+        harvestHives += (attrs['hives_involved'] as num?)?.toInt() ?? 0;
+      case activityTypeFeeding:
+        feedAmount += (attrs['feed_amount'] as num?) ?? 0;
+      case activityTypeTreatment:
+        treated = true;
+        treatmentHives += (attrs['hives_involved'] as num?)?.toInt() ?? 0;
+    }
+  }
+
+  return ApiaryJourneyStats(
+    apiaryId: apiaryId,
+    isPlanned: isPlanned,
+    isVisited: activities.isNotEmpty,
+    activityCount: activities.length,
+    hiveCount: hiveCount,
+    harvestHoneyKg: honeyKg,
+    harvestHoneySupers: honeySupers,
+    harvestHivesInvolved: harvestHives,
+    feedingAmountTotal: feedAmount,
+    treated: treated,
+    treatmentHivesInvolved: treatmentHives,
   );
 }

@@ -48,15 +48,17 @@ class FakeLocalStore implements LocalStoreEngine {
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
     if (normalized.startsWith('INSERT INTO $journeysTable'.toUpperCase())) {
-      // (id, name, main_activity_type, status, created_at, updated_at)
+      // (id, name, main_activity_type, status, default_attributes,
+      //  created_at, updated_at)
       rows.add({
         'id': args[0],
         'organization_id': null,
         'name': args[1],
         'main_activity_type': args[2],
         'status': args[3],
-        'created_at': args[4],
-        'updated_at': args[5],
+        'default_attributes': args[4],
+        'created_at': args[5],
+        'updated_at': args[6],
       });
     } else if (normalized.startsWith(
       'INSERT INTO $journeyPlanItemsTable'.toUpperCase(),
@@ -69,14 +71,16 @@ class FakeLocalStore implements LocalStoreEngine {
         'created_at': args[3],
       });
     } else if (normalized.startsWith('UPDATE $journeysTable'.toUpperCase())) {
-      // SET name = ?, main_activity_type = ?, status = ?, updated_at = ?
-      // WHERE id = ?
-      final id = args[4];
+      // SET name = ?, main_activity_type = ?, status = ?,
+      //     default_attributes = ?, updated_at = ? WHERE id = ?
+      journeysUpdateCalls++;
+      final id = args[5];
       final row = rows.firstWhere((r) => r['id'] == id);
       row['name'] = args[0];
       row['main_activity_type'] = args[1];
       row['status'] = args[2];
-      row['updated_at'] = args[3];
+      row['default_attributes'] = args[3];
+      row['updated_at'] = args[4];
     } else if (normalized.startsWith(
       'DELETE FROM $journeyPlanItemsTable'.toUpperCase(),
     )) {
@@ -92,6 +96,11 @@ class FakeLocalStore implements LocalStoreEngine {
     }
     _notify();
   }
+
+  /// Count of UPDATE executions against the journeys table — used to assert
+  /// a no-op update()/close() genuinely performs no write (#378), not just
+  /// that the row's own fields happen to end up unchanged.
+  int journeysUpdateCalls = 0;
 
   @override
   Future<void> clear() async {
@@ -120,6 +129,39 @@ class FakeLocalStore implements LocalStoreEngine {
       return planRows
           .where((p) => matchingJourneyIds.contains(p['journey_id']))
           .toList();
+    }
+    // watchTypeMatchingUnplanned's query (#440, D-31) mentions
+    // journey_plan_items only inside a NOT EXISTS subquery (no JOIN) —
+    // detected by that keyword and checked BEFORE the plain
+    // journeyPlanItemsTable branch below (which would otherwise return raw
+    // plan-item rows). Args order matches the query's own:
+    // [organizationId, activityType, status(open), apiaryId].
+    if (normalized.contains('NOT EXISTS')) {
+      final orgId = args[0];
+      final activityType = args[1];
+      final status = args[2];
+      final apiaryId = args[3];
+      final plannedJourneyIds = planRows
+          .where((p) => p['apiary_id'] == apiaryId)
+          .map((p) => p['journey_id'])
+          .toSet();
+      final results =
+          rows
+              .where(
+                (r) =>
+                    r['main_activity_type'] == activityType &&
+                    r['status'] == status &&
+                    (r['organization_id'] == orgId ||
+                        r['organization_id'] == null) &&
+                    !plannedJourneyIds.contains(r['id']),
+              )
+              .toList()
+            ..sort(
+              (a, b) => (b['created_at'] as String).compareTo(
+                a['created_at'] as String,
+              ),
+            );
+      return results;
     }
     // watchMatching's join query (#46) mentions BOTH tables — check for the
     // JOIN shape first so it doesn't fall into the plain
@@ -151,7 +193,17 @@ class FakeLocalStore implements LocalStoreEngine {
     }
     if (normalized.contains(journeyPlanItemsTable.toUpperCase())) {
       var results = List<Map<String, Object?>>.from(planRows);
-      if (normalized.contains('WHERE JOURNEY_ID = ?')) {
+      // addApiaryToPlan's idempotency pre-check (#440, D-31) filters on BOTH
+      // journey_id AND apiary_id — checked first so it doesn't degrade to the
+      // journey_id-only filter below (which would wrongly report "already
+      // planned" for any other apiary in the same journey).
+      if (normalized.contains('WHERE JOURNEY_ID = ? AND APIARY_ID = ?')) {
+        results = results
+            .where(
+              (r) => r['journey_id'] == args[0] && r['apiary_id'] == args[1],
+            )
+            .toList();
+      } else if (normalized.contains('WHERE JOURNEY_ID = ?')) {
         results = results.where((r) => r['journey_id'] == args[0]).toList();
       }
       results.sort(
@@ -242,6 +294,34 @@ void main() {
       );
       expect(store.planRows, isEmpty);
     });
+
+    test(
+      'an omitted default_attributes stores NULL, not "{}"  (#385)',
+      () async {
+        await repo.create(
+          name: 'Journey',
+          mainActivityType: 'harvest',
+          apiaryIds: const [],
+        );
+        expect(store.rows.single['default_attributes'], isNull);
+      },
+    );
+
+    test('a non-empty default_attributes stores JSON text (#385)', () async {
+      await repo.create(
+        name: 'Journey',
+        mainActivityType: 'treatment',
+        apiaryIds: const [],
+        defaultAttributes: const {
+          'treatment_context': 'disease_specific',
+          'disease': 'Varroose',
+        },
+      );
+      expect(
+        store.rows.single['default_attributes'],
+        '{"treatment_context":"disease_specific","disease":"Varroose"}',
+      );
+    });
   });
 
   group('JourneysRepository.getById()', () {
@@ -264,6 +344,32 @@ void main() {
       expect(journey.status, journeyStatusOpen);
       expect(journey.isOpen, isTrue);
       expect(journey.apiaryIds.toSet(), {'a1', 'a2'});
+    });
+
+    test('a journey with no defaults set round-trips an empty map '
+        '(#385)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      final journey = await repo.getById(id);
+
+      expect(journey!.defaultAttributes, isEmpty);
+    });
+
+    test('round-trips default_attributes (#385)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'feeding',
+        apiaryIds: const [],
+        defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+      );
+
+      final journey = await repo.getById(id);
+
+      expect(journey!.defaultAttributes, {'feed_type': 'Xarope 1:1'});
     });
   });
 
@@ -309,6 +415,7 @@ void main() {
         mainActivityType: 'harvest',
         status: journeyStatusOpen,
         apiaryIds: const [],
+        defaultAttributes: const {},
       );
       await pumpEventQueue();
 
@@ -349,6 +456,7 @@ void main() {
         mainActivityType: 'harvest',
         status: journeyStatusOpen,
         apiaryIds: const ['a1'],
+        defaultAttributes: const {},
       );
 
       final journey = await repo.getById(id);
@@ -368,6 +476,7 @@ void main() {
         mainActivityType: 'harvest',
         status: journeyStatusOpen,
         apiaryIds: const ['a1', 'a2'],
+        defaultAttributes: const {},
       );
 
       final journey = await repo.getById(id);
@@ -391,6 +500,7 @@ void main() {
         mainActivityType: 'harvest',
         status: journeyStatusOpen,
         apiaryIds: const ['a1', 'a3'], // a2 removed, a3 added, a1 unchanged
+        defaultAttributes: const {},
       );
 
       final a1Row = store.planRows.firstWhere((r) => r['apiary_id'] == 'a1');
@@ -410,11 +520,135 @@ void main() {
         mainActivityType: 'feeding',
         status: journeyStatusOpen,
         apiaryIds: const [],
+        defaultAttributes: const {},
       );
 
       final journey = await repo.getById(id);
       expect(journey!.name, 'New name');
       expect(journey.mainActivityType, 'feeding');
+    });
+
+    test('replaces default_attributes wholesale (#385)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'treatment',
+        apiaryIds: const [],
+        defaultAttributes: const {'treatment_context': 'general_preventive'},
+      );
+
+      await repo.update(
+        id,
+        name: 'Journey',
+        mainActivityType: 'treatment',
+        status: journeyStatusOpen,
+        apiaryIds: const [],
+        defaultAttributes: const {
+          'treatment_context': 'disease_specific',
+          'disease': 'Varroose',
+        },
+      );
+
+      final journey = await repo.getById(id);
+      expect(journey!.defaultAttributes, {
+        'treatment_context': 'disease_specific',
+        'disease': 'Varroose',
+      });
+    });
+
+    test('an empty default_attributes clears any previously-stored '
+        'defaults back to NULL (#385)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'feeding',
+        apiaryIds: const [],
+        defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+      );
+
+      await repo.update(
+        id,
+        name: 'Journey',
+        mainActivityType: 'feeding',
+        status: journeyStatusOpen,
+        apiaryIds: const [],
+        defaultAttributes: const {},
+      );
+
+      expect(store.rows.single['default_attributes'], isNull);
+      final journey = await repo.getById(id);
+      expect(journey!.defaultAttributes, isEmpty);
+    });
+
+    test('with identical name/main_activity_type/status performs no '
+        'journeys-table write at all (#378 — a saved-but-unchanged edit must '
+        'not queue a sync op)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+
+      await repo.update(
+        id,
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+        apiaryIds: const ['a1'], // plan unchanged too
+        defaultAttributes: const {},
+      );
+
+      expect(store.journeysUpdateCalls, 0, reason: 'no write means no sync op');
+    });
+
+    test(
+      'with identical default_attributes ALSO performs no journeys-table '
+      'write (#378+#385: defaults participate in the no-op check too)',
+      () async {
+        final id = await repo.create(
+          name: 'Journey',
+          mainActivityType: 'feeding',
+          apiaryIds: const [],
+          defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+        );
+
+        await repo.update(
+          id,
+          name: 'Journey',
+          mainActivityType: 'feeding',
+          status: journeyStatusOpen,
+          apiaryIds: const [],
+          defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+        );
+
+        expect(
+          store.journeysUpdateCalls,
+          0,
+          reason: 'no write means no sync op',
+        );
+      },
+    );
+
+    test('a default_attributes-only change still triggers the '
+        'journeys-table write (#378+#385: must not be masked by the '
+        'no-op-detection unchanged name/type/status)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'feeding',
+        apiaryIds: const [],
+        defaultAttributes: const {'feed_type': 'Xarope 1:1'},
+      );
+
+      await repo.update(
+        id,
+        name: 'Journey',
+        mainActivityType: 'feeding',
+        status: journeyStatusOpen,
+        apiaryIds: const [],
+        defaultAttributes: const {'feed_type': 'Candi'},
+      );
+
+      expect(store.journeysUpdateCalls, 1);
+      final journey = await repo.getById(id);
+      expect(journey!.defaultAttributes, {'feed_type': 'Candi'});
     });
   });
 
@@ -435,9 +669,40 @@ void main() {
       expect(journey.apiaryIds, ['a1']);
     });
 
+    test('preserves default_attributes unchanged (#385)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+        defaultAttributes: const {'lot_batch': 'LOTE-2026-07'},
+      );
+
+      await repo.close(id);
+
+      final journey = await repo.getById(id);
+      expect(journey!.defaultAttributes, {'lot_batch': 'LOTE-2026-07'});
+    });
+
     test('is a no-op for an unknown id', () async {
       await repo.close('missing'); // must not throw
       expect(store.rows, isEmpty);
+    });
+
+    test('closing an already-closed journey performs no journeys-table write '
+        '(#378 — close() resubmits name/type unchanged, must not needlessly '
+        'queue a sync op on a repeat close)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+      await repo.close(id);
+      final callsAfterFirstClose = store.journeysUpdateCalls;
+      expect(callsAfterFirstClose, greaterThan(0));
+
+      await repo.close(id); // already closed
+
+      expect(store.journeysUpdateCalls, callsAfterFirstClose);
     });
   });
 
@@ -515,6 +780,7 @@ void main() {
       String status = journeyStatusOpen,
       String? organizationId = 'org-a',
       String createdAt = '2026-06-01T00:00:00Z',
+      String? defaultAttributes,
     }) {
       store.rows.add({
         'id': id,
@@ -522,6 +788,7 @@ void main() {
         'name': 'Journey $id',
         'main_activity_type': mainActivityType,
         'status': status,
+        'default_attributes': defaultAttributes,
         'created_at': createdAt,
         'updated_at': createdAt,
       });
@@ -565,6 +832,28 @@ void main() {
         expect(matches.map((j) => j.id), ['j1']);
       },
     );
+
+    test('carries a matched journey\'s default_attributes through (#385, '
+        'the prefill flow\'s data source)', () async {
+      seedJourney(
+        id: 'j1',
+        mainActivityType: 'treatment',
+        defaultAttributes: '{"treatment_context":"general_preventive"}',
+      );
+      seedPlanItem('j1', 'a1');
+
+      final matches = await repo
+          .watchMatching(
+            apiaryId: 'a1',
+            activityType: 'treatment',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches.single.defaultAttributes, {
+        'treatment_context': 'general_preventive',
+      });
+    });
 
     test('excludes a journey on the SAME apiary but a DIFFERENT main activity '
         'type (auto-match miss by type)', () async {
@@ -651,6 +940,208 @@ void main() {
         expect(matches, isEmpty);
       },
     );
+  });
+
+  group('JourneysRepository.watchTypeMatchingUnplanned() (#440, D-31)', () {
+    void seedJourney({
+      required String id,
+      required String mainActivityType,
+      String status = journeyStatusOpen,
+      String? organizationId = 'org-a',
+      String createdAt = '2026-06-01T00:00:00Z',
+    }) {
+      store.rows.add({
+        'id': id,
+        'organization_id': organizationId,
+        'name': 'Journey $id',
+        'main_activity_type': mainActivityType,
+        'status': status,
+        'default_attributes': null,
+        'created_at': createdAt,
+        'updated_at': createdAt,
+      });
+    }
+
+    void seedPlanItem(String journeyId, String apiaryId) {
+      store.planRows.add({
+        'id': 'plan-$journeyId-$apiaryId',
+        'journey_id': journeyId,
+        'apiary_id': apiaryId,
+        'created_at': '2026-06-01T00:00:00Z',
+      });
+    }
+
+    test('returns an empty stream when the organization id is null', () async {
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: null,
+          )
+          .first;
+      expect(matches, isEmpty);
+    });
+
+    test('matches an open, type-matching journey whose plan does NOT include '
+        'the apiary', () async {
+      seedJourney(id: 'j1', mainActivityType: 'harvest');
+      seedPlanItem('j1', 'a-other');
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches.map((j) => j.id), ['j1']);
+    });
+
+    test('surfaces a zero-apiary journey (D-30 — empty plan matches no '
+        'apiary, so it always qualifies)', () async {
+      seedJourney(id: 'empty-plan', mainActivityType: 'harvest');
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches.map((j) => j.id), ['empty-plan']);
+    });
+
+    test('EXCLUDES a journey that already plans the apiary (that is '
+        'watchMatching\'s job, not this relaxed query)', () async {
+      seedJourney(id: 'j1', mainActivityType: 'harvest');
+      seedPlanItem('j1', 'a1');
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+
+    test('excludes a journey with a DIFFERENT main activity type', () async {
+      seedJourney(id: 'j1', mainActivityType: 'feeding');
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+
+    test('excludes CLOSED journeys (those stay behind the show-hidden '
+        'toggle, D-21)', () async {
+      seedJourney(
+        id: 'closed-1',
+        mainActivityType: 'harvest',
+        status: journeyStatusClosed,
+      );
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+
+    test('excludes another organization\'s journey (FR-TEN-2)', () async {
+      seedJourney(
+        id: 'foreign',
+        mainActivityType: 'harvest',
+        organizationId: 'org-b',
+      );
+
+      final matches = await repo
+          .watchTypeMatchingUnplanned(
+            apiaryId: 'a1',
+            activityType: 'harvest',
+            organizationId: 'org-a',
+          )
+          .first;
+
+      expect(matches, isEmpty);
+    });
+  });
+
+  group('JourneysRepository.addApiaryToPlan() (#440, D-31)', () {
+    test(
+      'adds the apiary to a journey whose plan did not include it',
+      () async {
+        final id = await repo.create(
+          name: 'Journey',
+          mainActivityType: 'harvest',
+          apiaryIds: const [],
+        );
+
+        await repo.addApiaryToPlan(id, 'a1');
+
+        final journey = await repo.getById(id);
+        expect(journey!.apiaryIds, ['a1']);
+      },
+    );
+
+    test('is idempotent — adding an already-planned apiary inserts no '
+        'duplicate row', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+      expect(store.planRows, hasLength(1));
+
+      await repo.addApiaryToPlan(id, 'a1');
+
+      expect(store.planRows, hasLength(1));
+      final journey = await repo.getById(id);
+      expect(journey!.apiaryIds, ['a1']);
+    });
+
+    test('a repeat call for the same new apiary is also a no-op', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      await repo.addApiaryToPlan(id, 'a1');
+      await repo.addApiaryToPlan(id, 'a1');
+
+      expect(store.planRows.where((r) => r['apiary_id'] == 'a1'), hasLength(1));
+    });
+
+    test('reuses the same plan-item write path — the added apiary shows in '
+        'watchPlanApiariesByJourney (so journey stats recompute)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      await repo.addApiaryToPlan(id, 'a1');
+
+      final planByJourney = await repo
+          .watchPlanApiariesByJourney(organizationId: 'org-a')
+          .first;
+      expect(planByJourney[id], ['a1']);
+    });
   });
 
   group('JourneysRepository.watchPlanApiariesByJourney() (#47, FR-JO-2)', () {
@@ -763,6 +1254,7 @@ void main() {
         mainActivityType: 'harvest',
         status: journeyStatusOpen,
         apiaryIds: const ['a1', 'a2'],
+        defaultAttributes: const {},
       );
       await pumpEventQueue();
 
