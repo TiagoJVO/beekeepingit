@@ -950,6 +950,54 @@ abstract class AppLocalizations {
   /// **'Individual notification types will appear here.'**
   String get settingsNotificationEventsComingSoon;
 
+  /// Per-event toggle row title for the todo due-date reminder event (notification_events.dart's notificationEventTodoDueReminder, #82, D-24, FR-TD-1, #288)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo due-date reminders'**
+  String get notificationEventTodoDueLabel;
+
+  /// Explanatory subtitle under the todo due-date reminders toggle (#288)
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when a todo is due soon or overdue.'**
+  String get notificationEventTodoDueHint;
+
+  /// Per-event toggle row title for the sync-failure event (notification_events.dart's notificationEventSyncFailure, #82, D-24, FR-OF-2, #288)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync failures'**
+  String get notificationEventSyncFailureLabel;
+
+  /// Explanatory subtitle under the sync failures toggle (#288)
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when a change is rejected and needs fixing.'**
+  String get notificationEventSyncFailureHint;
+
+  /// Per-event toggle row title for the sync-success event (notification_events.dart's notificationEventSyncSuccess, #82, D-24, #288)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync completed'**
+  String get notificationEventSyncSuccessLabel;
+
+  /// Explanatory subtitle under the sync completed toggle (#288)
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when all your changes finish syncing.'**
+  String get notificationEventSyncSuccessHint;
+
+  /// Per-event toggle row title for the sync-conflict event (notification_events.dart's notificationEventSyncConflict, #82, D-24, sync.md §4.2/§8, #288)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync conflicts'**
+  String get notificationEventSyncConflictLabel;
+
+  /// Explanatory subtitle under the sync conflicts toggle (#288)
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when an offline edit is overwritten by a newer change.'**
+  String get notificationEventSyncConflictHint;
+
   /// Apiary detail screen app bar title (#32)
   ///
   /// In en, this message translates to:

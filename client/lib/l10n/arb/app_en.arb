@@ -681,6 +681,38 @@
   "@settingsNotificationEventsComingSoon": {
     "description": "Placeholder shown in the per-event notification-toggle list's container until #288 supplies the real list"
   },
+  "notificationEventTodoDueLabel": "Todo due-date reminders",
+  "@notificationEventTodoDueLabel": {
+    "description": "Per-event toggle row title for the todo due-date reminder event (notification_events.dart's notificationEventTodoDueReminder, #82, D-24, FR-TD-1, #288)"
+  },
+  "notificationEventTodoDueHint": "Notify when a todo is due soon or overdue.",
+  "@notificationEventTodoDueHint": {
+    "description": "Explanatory subtitle under the todo due-date reminders toggle (#288)"
+  },
+  "notificationEventSyncFailureLabel": "Sync failures",
+  "@notificationEventSyncFailureLabel": {
+    "description": "Per-event toggle row title for the sync-failure event (notification_events.dart's notificationEventSyncFailure, #82, D-24, FR-OF-2, #288)"
+  },
+  "notificationEventSyncFailureHint": "Notify when a change is rejected and needs fixing.",
+  "@notificationEventSyncFailureHint": {
+    "description": "Explanatory subtitle under the sync failures toggle (#288)"
+  },
+  "notificationEventSyncSuccessLabel": "Sync completed",
+  "@notificationEventSyncSuccessLabel": {
+    "description": "Per-event toggle row title for the sync-success event (notification_events.dart's notificationEventSyncSuccess, #82, D-24, #288)"
+  },
+  "notificationEventSyncSuccessHint": "Notify when all your changes finish syncing.",
+  "@notificationEventSyncSuccessHint": {
+    "description": "Explanatory subtitle under the sync completed toggle (#288)"
+  },
+  "notificationEventSyncConflictLabel": "Sync conflicts",
+  "@notificationEventSyncConflictLabel": {
+    "description": "Per-event toggle row title for the sync-conflict event (notification_events.dart's notificationEventSyncConflict, #82, D-24, sync.md §4.2/§8, #288)"
+  },
+  "notificationEventSyncConflictHint": "Notify when an offline edit is overwritten by a newer change.",
+  "@notificationEventSyncConflictHint": {
+    "description": "Explanatory subtitle under the sync conflicts toggle (#288)"
+  },
   "apiaryDetailTitle": "Apiary",
   "@apiaryDetailTitle": {
     "description": "Apiary detail screen app bar title (#32)"

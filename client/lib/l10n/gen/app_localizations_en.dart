@@ -549,6 +549,34 @@ class AppLocalizationsEn extends AppLocalizations {
       'Individual notification types will appear here.';
 
   @override
+  String get notificationEventTodoDueLabel => 'Todo due-date reminders';
+
+  @override
+  String get notificationEventTodoDueHint =>
+      'Notify when a todo is due soon or overdue.';
+
+  @override
+  String get notificationEventSyncFailureLabel => 'Sync failures';
+
+  @override
+  String get notificationEventSyncFailureHint =>
+      'Notify when a change is rejected and needs fixing.';
+
+  @override
+  String get notificationEventSyncSuccessLabel => 'Sync completed';
+
+  @override
+  String get notificationEventSyncSuccessHint =>
+      'Notify when all your changes finish syncing.';
+
+  @override
+  String get notificationEventSyncConflictLabel => 'Sync conflicts';
+
+  @override
+  String get notificationEventSyncConflictHint =>
+      'Notify when an offline edit is overwritten by a newer change.';
+
+  @override
   String get apiaryDetailTitle => 'Apiary';
 
   @override
