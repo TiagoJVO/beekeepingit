@@ -33,6 +33,23 @@ const kProfileCacheKey = 'bk.profile';
 /// (`OrganizationRepository.fetchMine()`) — see [kProfileCacheKey].
 const kOrganizationCacheKey = 'bk.organization';
 
+/// Settings key (FR-ST-1, #81) for the "auto-sync" preference —
+/// `features/settings/sync_settings_repository.dart` reads/writes it, and
+/// `core/sync/powersync_service.dart` honors it (EPIC-06's sync layer).
+/// Public for the same reason as [kProfileCacheKey]: `AuthController.logout()`
+/// purges it so a second user on a shared device doesn't inherit the prior
+/// user's device-local sync preference.
+const kAutoSyncEnabledKey = 'bk.settings.auto_sync_enabled';
+
+/// Settings key (FR-ST-1, #81) for the notifications master switch —
+/// `features/settings/notification_settings_repository.dart` reads/writes it.
+/// This gates (but is currently independent of) the notification engine's own
+/// per-event preferences below ([kNotificationPreferencesKey]) — reconciling
+/// the master switch with the per-event contract is #288's job when it wires
+/// the toggle list into `notification_settings_section.dart`'s
+/// `eventTogglesSlot`. Purged on logout — see [kAutoSyncEnabledKey].
+const kNotificationsEnabledKey = 'bk.settings.notifications_enabled';
+
 /// Cache key for the notification engine's per-event preference map (#82's
 /// preference-key contract, D-24, FR-ST-1) — see
 /// `features/notifications/notification_preferences_repository.dart`. Purged

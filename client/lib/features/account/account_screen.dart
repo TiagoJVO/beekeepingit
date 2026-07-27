@@ -15,6 +15,8 @@ import '../../theming/brand_tokens.dart';
 import '../../theming/brand_widgets.dart';
 import '../organization/organization_repository.dart';
 import '../profile/profile_repository.dart';
+import '../settings/notification_settings_section.dart';
+import '../settings/sync_settings_repository.dart';
 import '../sync/sync_rejected_repository.dart';
 import 'account_platform.dart';
 
@@ -37,6 +39,12 @@ import 'account_platform.dart';
 /// History recording (FR-HIS-1) for profile updates made from here is the
 /// same deferred seam as `features/profile` (#165) — no separate handling
 /// needed, since both paths go through the same `PATCH /v1/profile`.
+///
+/// Also the settings screen (FR-ST-1, #81): there is only one settings/
+/// account destination in the app today (the shell's sync pill and account
+/// icon both route here), so sync settings and notification preferences
+/// extend this screen rather than forking a new `/settings` route — see the
+/// Sync section's auto-sync toggle and [NotificationSettingsSection] below.
 class AccountScreen extends ConsumerStatefulWidget {
   const AccountScreen({super.key});
 
@@ -248,6 +256,13 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
+                    // Notification preferences (FR-ST-1, D-24, #81): the
+                    // container the per-event toggle list renders into
+                    // (#288) — see notification_settings_section.dart.
+                    const NotificationSettingsSection(),
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
                     SectionHeader(l10n.accountSecuritySectionTitle),
                     const SizedBox(height: 8),
                     Text(
@@ -380,6 +395,22 @@ class _SyncSection extends ConsumerWidget {
           icon: Icons.sync,
           busy: syncing,
           onPressed: onSyncNow,
+        ),
+        const SizedBox(height: 8),
+        // Auto-sync setting (FR-ST-1, FR-OF-3, #81): honored by the EPIC-06
+        // sync layer's connection-quality gate (`core/sync/powersync_service
+        // .dart`'s `applyAutoSyncSetting`). Turning it off never disables
+        // "Sync now" above — the manual override always works regardless
+        // (sync.md §7.1) — so there is no invalid combination to prevent
+        // between these two controls.
+        SwitchListTile(
+          key: const Key('settings-auto-sync-toggle'),
+          contentPadding: EdgeInsets.zero,
+          title: Text(l10n.settingsAutoSyncLabel),
+          subtitle: Text(l10n.settingsAutoSyncHint),
+          value: ref.watch(autoSyncEnabledProvider),
+          onChanged: (value) =>
+              ref.read(autoSyncEnabledProvider.notifier).setEnabled(value),
         ),
       ],
     );

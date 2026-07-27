@@ -528,6 +528,27 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get settingsAutoSyncLabel => 'Auto-sync';
+
+  @override
+  String get settingsAutoSyncHint =>
+      'Sync automatically over a good connection. Turn off to only sync when you tap “Sync now”.';
+
+  @override
+  String get accountNotificationsSectionTitle => 'Notifications';
+
+  @override
+  String get settingsNotificationsEnabledLabel => 'Enable notifications';
+
+  @override
+  String get settingsNotificationsEnabledHint =>
+      'Show in-app reminders for due todos and sync results.';
+
+  @override
+  String get settingsNotificationEventsComingSoon =>
+      'Individual notification types will appear here.';
+
+  @override
   String get apiaryDetailTitle => 'Apiary';
 
   @override
