@@ -432,7 +432,11 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// verifier/state written but never exchanged) can't leave stale entries.
   /// Also purges the onboarding gate's cached profile/organization snapshot
   /// (#390, `core/storage/local_prefs.dart`) so a second user on the same
-  /// shared browser never sees a prior user's cached onboarding state.
+  /// shared browser never sees a prior user's cached onboarding state, and
+  /// the device-local sync/notification settings (#81) for the same
+  /// shared-device reason — both are per-installation preferences, not
+  /// server-synced, so logout is the only point that can reset them for the
+  /// next person to sign in on this device.
   ///
   /// Swallows `UnsupportedError` from the non-web stub [AuthPlatform] (widget
   /// tests run on the VM, where `_platform` is a working object but every
@@ -454,6 +458,8 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     final prefs = _localPrefs();
     prefs.remove(kProfileCacheKey);
     prefs.remove(kOrganizationCacheKey);
+    prefs.remove(kAutoSyncEnabledKey);
+    prefs.remove(kNotificationsEnabledKey);
   }
 
   /// A valid access token, refreshed if within 30s of expiry, or null when

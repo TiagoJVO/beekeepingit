@@ -748,6 +748,25 @@ void main() {
       },
     );
 
+    // #81: sync/notification settings are device-local (LocalPrefs), not the
+    // server-synced Profile resource — same shared-device privacy stance as
+    // the onboarding cache above, so they're purged the same way.
+    test('clears the device-local sync/notification settings (#81)', () async {
+      final prefs = FakeLocalPrefs();
+      prefs.write(kAutoSyncEnabledKey, 'false');
+      prefs.write(kNotificationsEnabledKey, 'false');
+      final client = MockClient((req) async => _tokenResponse(req));
+      final (_, _, notifier) = await buildLoggedInContainer(
+        client: client,
+        localStore: FakeLocalStoreEngine(),
+        localPrefs: prefs,
+      );
+
+      await notifier.logout();
+
+      expect(prefs.isEmpty, isTrue);
+    });
+
     test(
       'logging out with no session (already logged out) does not redirect',
       () async {
