@@ -16,7 +16,12 @@ dependencies:
   go_router: ^17.2.3
   intl: 0.20.2
   http: ^1.6.0
-  powersync: ^1.18.0
+  powersync: ^2.3.2
+  # Direct dependency so powersync_local_store.dart can import
+  # package:sqlite3/common.dart (the Row type) directly — powersync 2.x
+  # deprecated its package:powersync/sqlite3_common.dart re-export;
+  # otherwise only a transitive dep of powersync.
+  sqlite3: ^3.5.0
   crypto: ^3.0.7
   meta: ^1.18.0
   web: ^1.1.1
@@ -40,7 +45,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
   # Direct dev dependency so tests can fake GeolocatorPlatform.instance
   # (apiary_map_screen_test.dart, #34) — otherwise only a transitive dep of
   # geolocator.
