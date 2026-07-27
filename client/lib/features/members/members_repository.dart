@@ -173,7 +173,7 @@ class MembersRepository {
   static String _pagedPath(String path, {String? cursor, int? limit}) {
     final params = <String, String>{
       if (limit != null) 'limit': '$limit',
-      if (cursor != null) 'cursor': cursor,
+      'cursor': ?cursor,
     };
     if (params.isEmpty) return path;
     final query = params.entries

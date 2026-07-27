@@ -491,7 +491,7 @@ class MenuRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (trailing != null) trailing!,
+                ?trailing,
                 if (trailing == null && showChevron && onTap != null)
                   Icon(Icons.chevron_right, color: brand.trailingIcon),
               ],

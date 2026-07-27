@@ -64,7 +64,7 @@ class SyncNeedsFixScreen extends ConsumerWidget {
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: ops.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 4),
+            separatorBuilder: (_, _) => const SizedBox(height: 4),
             itemBuilder: (context, i) => _RejectedTile(op: ops[i]),
           );
         },

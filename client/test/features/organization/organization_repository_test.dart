@@ -204,7 +204,7 @@ void main() {
         final authed = StateProvider<bool>((_) => false);
         final container = buildContainer(authed);
 
-        container.listen(organizationProvider, (_, __) {});
+        container.listen(organizationProvider, (_, _) {});
         // Drain microtasks so any (wrongly) started fetch gets a chance to run.
         await Future<void>.delayed(Duration.zero);
         await Future<void>.delayed(Duration.zero);
@@ -218,7 +218,7 @@ void main() {
       final authed = StateProvider<bool>((_) => false);
       final container = buildContainer(authed);
 
-      container.listen(organizationProvider, (_, __) {});
+      container.listen(organizationProvider, (_, _) {});
       await Future<void>.delayed(Duration.zero);
       expect(requests, 0, reason: 'still logged out — no fetch yet');
 

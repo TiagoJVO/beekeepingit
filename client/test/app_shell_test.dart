@@ -3,11 +3,16 @@ import 'dart:async';
 import 'package:beekeepingit_client/app.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/geo/device_location.dart';
+import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
+import 'package:beekeepingit_client/features/notifications/notification_check_provider.dart';
+import 'package:beekeepingit_client/features/notifications/notification_dedup_store.dart';
+import 'package:beekeepingit_client/features/notifications/notification_events.dart';
+import 'package:beekeepingit_client/features/notifications/notification_preferences_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
@@ -105,6 +110,25 @@ class _EmptyRejectedStore implements LocalStoreEngine {
   Future<void> clear() async {}
 }
 
+/// An in-memory [LocalPrefs] fake for the notification engine's own
+/// per-device state (#82) — mirrors profile_repository_test.dart's own
+/// `_FakeLocalPrefs` convention. Each shell test gets its own fresh instance
+/// (via [_buildShellApp]'s params below) rather than relying on the VM's
+/// silently-no-op stub (`local_prefs_stub.dart`), so a test can pre-seed a
+/// disabled preference deterministically.
+class _FakeLocalPrefs implements LocalPrefs {
+  final Map<String, String> _store = {};
+
+  @override
+  String? read(String key) => _store[key];
+
+  @override
+  void write(String key, String value) => _store[key] = value;
+
+  @override
+  void remove(String key) => _store.remove(key);
+}
+
 /// Builds the full app (shell included) as an authenticated, onboarded user —
 /// the app shell (FR-UX-2, #197) only appears once onboarding is done, so
 /// every shell test needs the same auth/profile/org stubbing as
@@ -116,8 +140,16 @@ class _EmptyRejectedStore implements LocalStoreEngine {
 /// Defaults to "online, nothing pending" so tests that don't care about sync
 /// state see the same fixed status #197's stub used to provide.
 /// [supersededChanges] similarly overrides the notify-and-fix event stream.
+/// [todos] feeds both the Todos tab AND the notification engine's app-open
+/// check (#82) — defaults to none. [notificationPreferences]/
+/// [notificationDedupPrefs] override the notification engine's own
+/// per-device state (#82): a fresh, isolated [_FakeLocalPrefs]-backed
+/// instance per test by default, so a test can pre-seed a disabled
+/// preference deterministically without depending on the VM's silently-
+/// no-op [LocalPrefs] stub.
 Widget _buildShellApp({
   List<Apiary>? apiaries,
+  List<Todo>? todos,
   SyncStatus? syncStatus,
   Stream<SupersededChange>? supersededChanges,
   Stream<RejectedChange>? rejectedChanges,
@@ -127,6 +159,8 @@ Widget _buildShellApp({
   // needs-fix banner's own auto-clear regression guard needs a 1-then-0
   // transition, which a one-shot needsFixCount can't express).
   Stream<int>? needsFixCountStream,
+  NotificationPreferencesRepository? notificationPreferences,
+  LocalPrefs? notificationDedupPrefs,
 }) {
   return ProviderScope(
     overrides: [
@@ -152,8 +186,22 @@ Widget _buildShellApp({
       ),
       // The main Todos tab (#53) similarly now renders real content in
       // place of the old ComingSoonScreen placeholder — same rationale as
-      // the activities/journeys overrides above.
-      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
+      // the activities/journeys overrides above. Also feeds the
+      // notification engine's app-open check (#82).
+      todosStreamProvider.overrideWith(
+        (ref) => Stream.value(todos ?? const <Todo>[]),
+      ),
+      // #82: an isolated per-test store/repository so the notification
+      // engine's dedup/preference state never leaks between shell tests.
+      notificationDedupStoreProvider.overrideWithValue(
+        NotificationDedupStore(
+          prefs: notificationDedupPrefs ?? _FakeLocalPrefs(),
+        ),
+      ),
+      notificationPreferencesRepositoryProvider.overrideWithValue(
+        notificationPreferences ??
+            NotificationPreferencesRepository(prefs: _FakeLocalPrefs()),
+      ),
       // The full todo create/edit form's assignee picker (#293, now also
       // reachable from the FAB flows below since #389 retired #52's
       // quick-create sheet) watches memberNamesProvider — overridden so
@@ -864,6 +912,133 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'a disabled sync_conflict preference suppresses the superseded toast '
+    '(#82, D-24)',
+    (tester) async {
+      final controller = StreamController<SupersededChange>();
+      addTearDown(controller.close);
+      final preferences = NotificationPreferencesRepository(
+        prefs: _FakeLocalPrefs(),
+      )..setEnabled(notificationEventSyncConflict, false);
+
+      await tester.pumpWidget(
+        _buildShellApp(
+          supersededChanges: controller.stream,
+          notificationPreferences: preferences,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      controller.add(
+        const SupersededChange(entityType: 'apiary', entityId: 'a1'),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.text(
+          'One of your offline changes was overwritten by a newer edit.',
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  group('notification engine toasts (#82, D-24)', () {
+    testWidgets(
+      'a newly-overdue todo surfaces an in-app toast, org-wide regardless '
+      'of assignee',
+      (tester) async {
+        const overdueTodo = Todo(
+          id: 't1',
+          title: 'Feed the hives',
+          priority: 'medium',
+          status: 'open',
+          dueDate: '2020-01-01',
+          assigneeId: 'someone-else',
+        );
+
+        await tester.pumpWidget(_buildShellApp(todos: [overdueTodo]));
+        await tester.pumpAndSettle();
+
+        expect(find.text('"Feed the hives" is overdue.'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a disabled todo_due_reminder preference suppresses the todo-due toast',
+      (tester) async {
+        const overdueTodo = Todo(
+          id: 't1',
+          title: 'Feed the hives',
+          priority: 'medium',
+          status: 'open',
+          dueDate: '2020-01-01',
+        );
+        final preferences = NotificationPreferencesRepository(
+          prefs: _FakeLocalPrefs(),
+        )..setEnabled(notificationEventTodoDueReminder, false);
+
+        await tester.pumpWidget(
+          _buildShellApp(
+            todos: [overdueTodo],
+            notificationPreferences: preferences,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('"Feed the hives" is overdue.'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the same overdue todo does not re-toast on a later app-open once '
+      'already notified for that condition',
+      (tester) async {
+        const overdueTodo = Todo(
+          id: 't1',
+          title: 'Feed the hives',
+          priority: 'medium',
+          status: 'open',
+          dueDate: '2020-01-01',
+        );
+        // The SAME dedup-backing store across both pumps — simulates the
+        // durable, survives-restarts state the once-per-condition-change
+        // policy depends on (#82 AC).
+        final dedupPrefs = _FakeLocalPrefs();
+
+        await tester.pumpWidget(
+          _buildShellApp(
+            todos: [overdueTodo],
+            notificationDedupPrefs: dedupPrefs,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('"Feed the hives" is overdue.'), findsOneWidget);
+
+        // Tear the whole app down first (a bare placeholder widget), so the
+        // next pump is a genuinely fresh `ProviderScope`/container — not an
+        // in-place update of the still-live one (which would just reuse the
+        // already-created `notificationCheckProvider` and never re-run its
+        // check at all). This is what actually simulates "the app reopened".
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+
+        // A second "app open": same underlying dedup state, unchanged todo.
+        await tester.pumpWidget(
+          _buildShellApp(
+            todos: [overdueTodo],
+            notificationDedupPrefs: dedupPrefs,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('"Feed the hives" is overdue.'), findsNothing);
+      },
+    );
+  });
 
   group('needs-fix banner (#379: replaces the one-shot rejected-change toast — '
       'see app_shell.dart\'s _listenForSyncToasts doc for why)', () {

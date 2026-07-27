@@ -65,9 +65,9 @@ final routerProvider = Provider<GoRouter>((ref) {
   // equal the loading-time default — see profileProvider's own note).
   final refresh = ValueNotifier<int>(0);
   ref.onDispose(refresh.dispose);
-  ref.listen(isAuthenticatedProvider, (_, __) => refresh.value++);
-  ref.listen(profileProvider, (_, __) => refresh.value++);
-  ref.listen(organizationProvider, (_, __) => refresh.value++);
+  ref.listen(isAuthenticatedProvider, (_, _) => refresh.value++);
+  ref.listen(profileProvider, (_, _) => refresh.value++);
+  ref.listen(organizationProvider, (_, _) => refresh.value++);
 
   return GoRouter(
     // Tasks (Tarefas) is the app's home screen (#427, D-29): the daily field
