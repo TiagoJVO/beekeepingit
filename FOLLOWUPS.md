@@ -12,8 +12,6 @@
 Post-merge hardening (NOT merge blockers — the blueprint provisioning is complete and the
 `beekeepingit-admin` login/aud/iss is pinned by the helm-e2e admin-login gate):
 
-- Assert the admin token's claim SHAPE in e2e + guard which providers may carry
-  `scope-admin-audience` → #460 (both promoted from this #456 security review).
 - **Harden the admin OIDC redirect set for staging/prod** — the gateway `adminHost` route and the
   staging/prod `global.adminOrigin` overrides are now in place (#449), so the admin app IS
   gateway-served per environment. What remains is blueprint-side: the `http://localhost:.*` redirect
@@ -36,29 +34,6 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
 ## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
 
 - Re-invite reactivation on removal → #459
-
-## `feat/notification-toggle-list` (#288 — per-event notification toggle list)
-
-**Not a merge blocker for #288** (its own AC — "an event type" toggle honored immediately —
-is satisfied: `NotificationChecker.check` already re-reads `NotificationPreferencesRepository`
-fresh on every call). Discovered while implementing #288, out of this story's assigned scope
-(render the per-event list backed by #82's contract; do not merge/refactor the two settings
-repositories):
-
-- **The master "Enable notifications" switch (#81,
-  `notification_settings_repository.dart`'s `kNotificationsEnabledKey`) does not actually gate
-  delivery.** Neither `NotificationChecker.check` (`features/notifications/
-notification_checker.dart`) nor `notification_check_provider.dart`'s `runCheck`, nor
-  `shell/app_shell.dart`'s real-time sync-conflict toast listener, ever read
-  `NotificationSettingsRepository`/`notificationsEnabledProvider` — only the per-event map is
-  consulted. So turning the master switch off only dims/disables the settings-screen toggle
-  list UI; todo-due/sync-result/sync-conflict notifications keep firing regardless. Flagged
-  explicitly as "#288's job" in `core/storage/local_prefs.dart`'s `kNotificationsEnabledKey`
-  doc comment, but reconciling it means touching #82's engine + `shell/app_shell.dart` (outside
-  #288's scoped diff) — needs a small follow-up story: gate `NotificationChecker.check`'s
-  result (and the `app_shell.dart` conflict listener) on the master switch, alongside the
-  existing per-event filter, keeping the "condition still tracked while muted" dedup semantics
-  intact.
 
 ---
 
