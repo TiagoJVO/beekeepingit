@@ -503,7 +503,16 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   the PWA phase, so **push notifications are deferred to the native phase** (M10/M11, EPIC-15).
   Because there's no background service in the PWA phase, the notification check runs **when
   the app is opened or brought to the foreground**, not on a timer or poll.
-- **Supersedes:** Q-NOTIF. **Touches:** FR-ST-1, FR-TD-1, FR-OF-2, #82.
+- _Refined (2026-07-27, user-confirmed, milestone-planning pass on M9):_ two gaps D-24 left open,
+  now resolved. **Reminder audience is org-wide, not assignee-restricted:** a todo due-date
+  reminder fires for every org member who opens the app, consistent with D-23's "assignment isn't
+  an access boundary — every member sees every todo"; the assignee is not a notification filter.
+  **Repeat policy is once per condition change:** a given todo-due or sync-result condition
+  notifies once when it first becomes true and does not re-fire on every subsequent app-open while
+  the same condition persists unchanged — only a genuine state change (a new failure, a todo newly
+  crossing into due-soon/overdue) re-fires it. Also: the native-phase push channel this decision
+  defers had no tracking issue; **#489** (M10 · Android) now owns it.
+- **Supersedes:** Q-NOTIF. **Touches:** FR-ST-1, FR-TD-1, FR-OF-2, #82, #489.
 
 ## D-25 — Import semantics: apiaries-only, merged with assisted matching, deferred to M12
 
