@@ -16,14 +16,14 @@ work needs them), so each service epic implements _against a committed contract_
 | Path                                      | What                                                                                                                                                                                                                                                                     |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `openapi/_shared/components.openapi.yaml` | The reusable **contract template**: security scheme (OIDC JWT — Authentik in v1), pagination params, standard headers, the RFC 9457 `Problem` error schema, and shared responses. Every service spec `$ref`s this — it is _not_ a deployable API on its own (a partial). |
+| `openapi/identity.openapi.yaml`           | The **identity** service (FR-ONB-1) — client-facing profile surface: `GET`/`PATCH /v1/profile`. Validated by `services/identity/profile_test.go`.                                                                                                                        |
 | `openapi/apiaries.openapi.yaml`           | Skeleton for the **apiaries** service (FR-AP) — the walking-skeleton's "create" target (#110).                                                                                                                                                                           |
 | `openapi/organizations.openapi.yaml`      | Skeleton for the **organizations** service (onboarding + admin surface, FR-ONB / NFR-ROL).                                                                                                                                                                               |
 | `openapi/sync.openapi.yaml`               | The **sync** service (#23) — the offline write-back seam: `GET /v1/sync/token` (PowerSync `fetchCredentials`) + `POST /v1/sync/batch` (`uploadData`). See [sync.md](../docs/architecture/sync.md) §3.4/§6.                                                               |
 
-The remaining services from the [service decomposition](../docs/architecture/service-decomposition.md)
-(`activities`, `journeys`, `todos`, `ai`, `history`) are stamped from the same template as
-their epics start. (`identity`/`organizations` expose only internal resolve endpoints in the
-skeleton, so they have no client-facing spec yet beyond the `organizations` skeleton above.)
+The remaining domain services from the [service decomposition](../docs/architecture/service-decomposition.md)
+(`activities`, `journeys`, `todos`, `ai`) are stamped from the same template as their epics
+start.
 
 ## Working with the specs
 
@@ -44,7 +44,11 @@ skeleton, so they have no client-facing spec yet beyond the `organizations` skel
 
 - **Lint + the breaking-change gate run in CI** (`task openapi:lint` in `task ci`;
   `contracts-ci.yml` runs `task openapi:breaking-diff` on PRs touching `contracts/openapi/**`)
-  — see [`taskfiles/openapi.yml`](../taskfiles/openapi.yml). Go server-stub/model codegen
+  — see [`taskfiles/openapi.yml`](../taskfiles/openapi.yml). A sanctioned, user-confirmed breaking
+  change can be recorded (never silently) in
+  [`contracts/openapi/.oasdiff-ignore`](openapi/.oasdiff-ignore) (`oasdiff --err-ignore`, one
+  entry per line, each citing its decision) — see D-28 in `requirements/decisions.md`. Go
+  server-stub/model codegen
   (`task openapi:generate-go`, `oapi-codegen`) is wired too but no-ops until a service adds
   `internal/api/oapi-codegen.yaml`. Dart/TS typed-client codegen is deferred — no client
   consumes a generated client yet and no tool is decided.

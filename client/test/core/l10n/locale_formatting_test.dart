@@ -41,10 +41,13 @@ void main() {
       expect(formatting.decimal(1234.5), '1,234.5');
     });
 
-    test('formats a decimal with Portuguese (,) grouping/decimal separators', () {
-      const formatting = LocaleFormatting.forLocale('pt');
-      expect(formatting.decimal(1234.5), '1.234,5');
-    });
+    test(
+      'formats a decimal with Portuguese (,) grouping/decimal separators',
+      () {
+        const formatting = LocaleFormatting.forLocale('pt');
+        expect(formatting.decimal(1234.5), '1.234,5');
+      },
+    );
 
     test('dateTime appends a localized time (24h "Hm") to the date', () {
       const formatting = LocaleFormatting.forLocale('en');
@@ -55,30 +58,31 @@ void main() {
   });
 
   group('LocaleFormatting.of (BuildContext)', () {
-    testWidgets('reads the active locale from the widget tree, matching AppLocalizations', (
-      tester,
-    ) async {
-      LocaleFormatting? formatting;
-      AppLocalizations? l10n;
+    testWidgets(
+      'reads the active locale from the widget tree, matching AppLocalizations',
+      (tester) async {
+        LocaleFormatting? formatting;
+        AppLocalizations? l10n;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          locale: const Locale('pt'),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: Builder(
-            builder: (context) {
-              formatting = LocaleFormatting.of(context);
-              l10n = AppLocalizations.of(context);
-              return const SizedBox.shrink();
-            },
+        await tester.pumpWidget(
+          MaterialApp(
+            locale: const Locale('pt'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Builder(
+              builder: (context) {
+                formatting = LocaleFormatting.of(context);
+                l10n = AppLocalizations.of(context);
+                return const SizedBox.shrink();
+              },
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      expect(l10n!.localeName, 'pt');
-      expect(formatting!.decimal(1234.5), '1.234,5');
-    });
+        expect(l10n!.localeName, 'pt');
+        expect(formatting!.decimal(1234.5), '1.234,5');
+      },
+    );
   });
 }

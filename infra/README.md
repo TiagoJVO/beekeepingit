@@ -19,12 +19,13 @@ infra/cluster/dev-down.sh  # uninstalls the releases, then deletes the k3d clust
 Requires `k3d`, `kubectl`, `helm`, `flux`, and `flock` on `PATH`. On Windows, run these from the
 WSL2 environment (see the local-dev-environment notes) — the scripts are plain POSIX `bash`.
 
-`dev-up.sh` does NOT apply `infra/gitops/clusters/dev/` (the one-time GitOps bootstrap that makes
-Flux auto-sync from this repo's `main` branch) — that would deploy the umbrella chart from
+`dev-up.sh` does NOT bootstrap GitOps (apply the `beekeepingit-gitops` repo's `clusters/dev/`, the
+one-time wiring that makes Flux auto-sync from `main`) — that would deploy the umbrella chart from
 `main`, ignoring whatever's checked out locally, the opposite of what a pre-merge dev/test loop
 needs. It also skips the observability stack (`#87`) — not one of `#22`'s components, and its
-HelmRelease depends on that same bootstrap `GitRepository`. See
-[`infra/gitops/README.md`](gitops/README.md) for the post-merge bootstrap step.
+HelmRelease depends on that same bootstrap `GitRepository`. The Flux manifests live in the separate
+[`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo now (D-27/ADR-0018);
+see its README for the post-merge bootstrap step.
 
 ### Step-by-step (what `dev-up.sh`/`dev-down.sh` actually do)
 
@@ -35,8 +36,9 @@ HelmRelease depends on that same bootstrap `GitRepository`. See
 infra/cluster/up.sh
 
 # 2. Install/upgrade the Flux controllers (idempotent) — authentik/minio below are
-#    Flux HelmReleases, so this is a real prerequisite, not optional.
-flux install --components-extra=image-reflector-controller,image-automation-controller
+#    Flux HelmReleases, so this is a real prerequisite, not optional. Base
+#    controllers only: Flux is read-only (D-27/ADR-0018 dropped image-automation).
+flux install
 
 # 3. Fetch chart dependencies (local + vendored third-party, see the chart's README) —
 #    re-run after cloning, after changing a dependency version, AND after editing any
@@ -64,16 +66,18 @@ kubectl -n beekeepingit-dev wait --for=condition=ready pod \
   -l cnpg.io/cluster=beekeepingit-postgres --timeout=180s
 
 # 6. Authentik/MinIO are separate Flux HelmReleases (ADR-0012/ADR-0016), not part
-#    of the umbrella release above — either let Flux reconcile them (if bootstrapped,
-#    see infra/gitops/README.md) or apply them directly for local-only testing. Their
-#    `dependsOn: [beekeepingit]` targets a HelmRelease *object* that only exists
-#    once bootstrapped, so strip it for this direct-apply path (committed files
-#    untouched) — step 4's install already guarantees what dependsOn was
-#    protecting (the config/Postgres Secrets + blueprint ConfigMap these reference
-#    are created synchronously when the release's resources are applied, independent
-#    of `--wait`):
+#    of the umbrella release above, and their manifests live in the beekeepingit-gitops
+#    repo now (D-27/ADR-0018). dev-up.sh resolves a checkout via gitops-dir.sh (a
+#    shallow clone, or a BEEKEEPINGIT_GITOPS_DIR override); apply them directly for
+#    local-only testing. Their `dependsOn: [beekeepingit]` targets a HelmRelease
+#    *object* that only exists once bootstrapped, so strip it for this direct-apply
+#    path (committed files untouched) — step 4's install already guarantees what
+#    dependsOn was protecting (the config/Postgres Secrets + blueprint ConfigMap
+#    these reference are created synchronously when the release's resources are
+#    applied, independent of `--wait`):
+gitops_dir="$(infra/cluster/gitops-dir.sh)"
 for f in authentik-helmrelease.yaml minio-helmrelease.yaml; do
-  sed '/^  dependsOn:$/,+1d' "infra/gitops/apps/dev/$f" \
+  sed '/^  dependsOn:$/,+1d' "$gitops_dir/apps/dev/$f" \
     | infra/cluster/with-lock.sh kubectl apply -f -
 done
 
@@ -92,8 +96,8 @@ helm test beekeepingit --namespace beekeepingit-dev
 
 # 9. Tear down
 infra/cluster/with-lock.sh kubectl delete --ignore-not-found \
-  -f infra/gitops/apps/dev/authentik-helmrelease.yaml \
-  -f infra/gitops/apps/dev/minio-helmrelease.yaml
+  -f "$gitops_dir/apps/dev/authentik-helmrelease.yaml" \
+  -f "$gitops_dir/apps/dev/minio-helmrelease.yaml"
 infra/cluster/with-lock.sh helm uninstall beekeepingit --namespace beekeepingit-dev
 infra/cluster/down.sh
 ```
@@ -108,8 +112,9 @@ kubectl -n beekeepingit-dev exec beekeepingit-postgres-1 -- \
   psql -U postgres -d beekeepingit -c "SELECT postgis_version();"
 
 # Authentik: seeded OIDC provider's discovery doc reachable through the gateway on
-# the dedicated auth host (add BOTH app.beekeepingit.local and auth.beekeepingit.local
-# to /etc/hosts pointing at 127.0.0.1, or use --resolve like this). The issuer is
+# the dedicated auth host (add app.beekeepingit.local, auth.beekeepingit.local AND
+# admin.beekeepingit.local — the admin app's host, #449 — to /etc/hosts pointing at
+# 127.0.0.1, or use --resolve like this). The issuer is
 # https://auth.beekeepingit.local:8443/application/o/beekeepingit/ (oidc-integration.md §6).
 curl -sk --resolve auth.beekeepingit.local:8443:127.0.0.1 \
   https://auth.beekeepingit.local:8443/application/o/beekeepingit/.well-known/openid-configuration
@@ -123,9 +128,12 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9000/minio/health/live
 kubectl -n beekeepingit-dev get pods -l app.kubernetes.io/name=powersync
 kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=powersync --tail=50
 
-# Gateway: routes to backend services on two hosts (ADR-0016) — the auth host to
-# Authentik (the curl above exercises this) and the app host to the PWA + Go APIs
-# (/v1/*) + PowerSync (/sync-stream).
+# Gateway: routes to backend services on three hosts (ADR-0016, #449) — the auth host
+# to Authentik (the curl above exercises this), the app host to the PWA + Go APIs
+# (/v1/*) + PowerSync (/sync-stream), and the admin host to the React admin app.
+# The admin app is cross-origin from the app-host API, so the Go services answer its
+# browser CORS (Access-Control-Expose-Headers: ETag) via the servicetemplate CORS
+# middleware — origins set per environment (global.adminOrigin).
 ```
 
 PowerSync's real org-scoped Sync Rules + the `sync`-service JWKS connector landed with
@@ -159,16 +167,74 @@ GitHub-hosted runner is a fresh, isolated machine that shares no filesystem with
 other concurrent runs, so the `flock` serialization simply no-ops there — the lock protects the one
 shared local cluster, and CI has no such shared resource to protect.
 
+## Secrets & remote cluster operations
+
+**In-cluster secrets provision themselves.** Every secret the platform needs at runtime —
+per-service Postgres credentials, PowerSync credentials, Authentik's secret key/bootstrap
+identity/DB password, MinIO root credentials — is generated _inside_ the cluster by the umbrella
+chart (Helm `lookup` + `randAlphaNum`, preserved across upgrades; `NFR-SEC`). They are never
+stored in git, GitHub, or on disk, and no bring-up script needs to supply them. The one
+out-of-band exception is `beekeepingit-authentik-email-credentials` (an external SMTP relay's
+credentials, #361), which `scaleway-up.sh` creates when the variables below are set.
+
+**External credentials are plain environment variables, sourced from two places:**
+
+- **Local runs**: `infra/cluster/.env` (gitignored), loaded by every `infra/cluster` script via
+  `env.sh` — copy [`.env.example`](cluster/.env.example) and fill in what you need. Values already
+  exported in your shell win over the file.
+- **GitHub Actions**: the same variable names, injected from GitHub secrets/variables by
+  [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml). GitHub secrets are **write-only** — a
+  local run cannot read them back — which is why the `.env` file exists at all. Treat GitHub as
+  the canonical store; the `.env` file is a local working copy.
+
+| Name                                                     | Kind                     | Used for                                                           |
+| -------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------ |
+| `SCW_ACCESS_KEY` / `SCW_SECRET_KEY`                      | environment secret       | Scaleway API auth (`scaleway-up.sh`/`scaleway-down.sh`)            |
+| `SCW_DEFAULT_PROJECT_ID` / `SCW_DEFAULT_ORGANIZATION_ID` | environment secret       | Scaleway project/org scoping                                       |
+| `CF_API_TOKEN` / `CF_ZONE_ID`                            | environment secret       | Cloudflare dynamic DNS on bring-up (optional)                      |
+| `AUTHENTIK_EMAIL_USERNAME` / `AUTHENTIK_EMAIL_PASSWORD`  | environment secret       | out-of-band SMTP relay Secret (optional, #361)                     |
+| `APP_HOST` / `AUTH_HOST`                                 | environment **variable** | per-environment public hostnames (scoped to each gate environment) |
+
+Store the secrets **scoped to the gate environments** (`staging-gate`/`production-gate`), not
+repo-wide: the workflow's `run` job carries the gate environment, so environment secrets resolve
+first — and the ungated staging path then never holds prod-capable credentials. Ideally issue a
+separate, IAM-restricted Scaleway API key per environment. (Repo-level secrets also work as a
+single-maintainer fallback, at the cost of that separation.) Create them once (manual — an agent
+must not handle the values):
+
+```sh
+gh secret set SCW_ACCESS_KEY --env staging-gate    # paste when prompted; repeat for the others
+gh variable set APP_HOST --env staging-gate --body beekeepingit-rc.melargil.pt
+gh variable set AUTH_HOST --env staging-gate --body auth.beekeepingit-rc.melargil.pt
+```
+
+(The `staging-gate`/`production-gate` environments are D-27's release-approval gates; create one
+under _Settings → Environments_ first if it doesn't exist yet.)
+
+**On-demand runs from GitHub**: the [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml)
+`workflow_dispatch` workflow runs `scaleway-up.sh`/`scaleway-down.sh` with those
+secrets — pick `environment` (staging/prod) and `action` (up/down) in the Actions tab. Staging
+runs immediately; prod waits for `production-gate`'s required reviewer; `down` also requires
+typing the exact cluster name into the `confirm` input, since it deletes a real, billed cluster.
+Note the D-26 scope guard: bringing up the prod _cluster_ is fine (it holds no user data), but
+deployments stay staging-grade until DR (`Q-DR`) and GDPR export/erasure (#90) land.
+
+`scaleway-up.sh` ends fully **GitOps-bootstrapped** (it applies the
+[`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo's `clusters/<env>/`
+— Flux sources + the cert-manager `ClusterIssuer`), so a fresh cluster converges on its own;
+`SKIP_GITOPS_BOOTSTRAP=1` opts out. This is the opposite of `dev-up.sh`, which deliberately skips
+bootstrap so the local checkout (not `main`) is what gets deployed.
+
 ## Layout
 
-| Path                                                         | What it is                                                                                                                                                 |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`) |
-| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                        |
-| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                 |
-| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                 |
-| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                             |
-| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                 |
+| Path                                                         | What it is                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`); Scaleway Kapsule staging/prod bring-up/teardown (`scaleway-up.sh`/`scaleway-down.sh`, D-26) with env/secrets loading (`env.sh` + `.env.example`) |
+| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                                                                                                                                                                          |
+| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                                                                                                                                                                   |
+| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                                                                                                                                                                   |
+| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                                                                                                                                                                               |
+| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                                                                                                                                                                   |
 
 Postgres+PostGIS, the OIDC provider (Authentik — [ADR-0016](../docs/adr/0016-replace-keycloak-with-authentik.md),
 originally Keycloak at **#84**), MinIO and the gateway are the umbrella chart's first real

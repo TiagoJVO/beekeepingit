@@ -55,10 +55,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('organization-name-field')), findsOneWidget);
-    expect(
-      find.byKey(const Key('organization-address-field')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('organization-address-field')), findsOneWidget);
     expect(
       find.text('Create your organization to start managing apiaries.'),
       findsOneWidget,
@@ -143,9 +140,6 @@ void main() {
     await tester.tap(find.byKey(const Key('organization-save-button')));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('name must be at most 200 characters'),
-      findsOneWidget,
-    );
+    expect(find.text('name must be at most 200 characters'), findsOneWidget);
   });
 }

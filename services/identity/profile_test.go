@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -23,6 +25,7 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/config"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/contracttest"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/health"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 )
 
@@ -39,6 +42,15 @@ type profileFixture struct {
 // TestIdentityService_ResolveBySub's setup in main_test.go (same
 // testcontainers-go Postgres + createSchema pattern, reused from that file).
 func newProfileFixture(t *testing.T) *profileFixture {
+	t.Helper()
+	return newProfileFixtureWithLogger(t, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+// newProfileFixtureWithLogger is newProfileFixture with an injectable
+// logger, so a test can capture what gets logged (e.g. before a generic 500
+// — #274 review, HIGH #1: no auth-adjacent failure should be swallowed
+// unlogged) by passing one that writes to a buffer instead of io.Discard.
+func newProfileFixtureWithLogger(t *testing.T, logger *slog.Logger) *profileFixture {
 	t.Helper()
 	ctx := context.Background()
 
@@ -90,7 +102,6 @@ func newProfileFixture(t *testing.T) *profileFixture {
 	}
 
 	cfg := config.Config{ServiceName: "identity-test", HTTPAddr: ":0", LogLevel: slog.LevelInfo, DB: dbCfg}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	checks := health.NewRegistry()
 	checks.Register("db", func(ctx context.Context) error { return pool.Ping(ctx) })
 
@@ -583,5 +594,184 @@ func TestProfile_History_UnknownSubReturns404WithoutWritingAudit(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("audit_log rows = %d, want 0 (no profile was ever created in this fixture)", n)
+	}
+}
+
+// TestProfile_AuthClaimsMissing_LogsBeforeInternal500 covers the code-review
+// HIGH #1 finding for the defensive "claims missing from context" branch in
+// both getProfile and updateProfile: it must log before returning the
+// generic 500, not swallow the failure silently. This branch mirrors
+// authz.go's RequireRole misconfigured-middleware safety net - it is never
+// reachable through the real deployed chain (authnMW 401s first), so it is
+// exercised here by mounting api.PublicRouter directly, without the authn
+// middleware in front of it, over a request-scoped logger writing to a
+// buffer. No real Postgres is needed: this defensive branch returns before
+// any query is issued, so a nil pool is enough to build the router.
+func TestProfile_AuthClaimsMissing_LogsBeforeInternal500(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		body   any
+	}{
+		{name: "GET", method: http.MethodGet, body: nil},
+		{name: "PATCH", method: http.MethodPatch, body: map[string]string{"name": "x"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+			r := chi.NewRouter()
+			r.Use(logging.RequestLogger(logger))
+			r.Mount("/v1", api.PublicRouter(nil))
+
+			var body io.Reader
+			if tt.body != nil {
+				b, err := json.Marshal(tt.body)
+				if err != nil {
+					t.Fatalf("marshal body: %v", err)
+				}
+				body = bytes.NewReader(b)
+			}
+			req := httptest.NewRequest(tt.method, "/v1/profile", body)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500, body = %s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(buf.String(), "auth claims missing") {
+				t.Fatalf("log output = %q, want it to mention the missing-claims failure", buf.String())
+			}
+		})
+	}
+}
+
+// TestProfile_GetProfile_DBFailure_LogsBeforeInternal500 covers the
+// code-review HIGH #1 finding for getProfile's GetUserByOidcSub existence
+// check: a genuine (non-ErrNoRows) DB error must be logged before the
+// generic 500, not discarded. Forced deterministically by closing the pool
+// before the request, rather than racing a canceled context.
+func TestProfile_GetProfile_DBFailure_LogsBeforeInternal500(t *testing.T) {
+	var buf bytes.Buffer
+	f := newProfileFixtureWithLogger(t, slog.New(slog.NewTextHandler(&buf, nil)))
+	sub := "eeeeeeee-5555-4eee-8eee-eeeeeeeeeeee"
+	bearer := f.token(t, sub)
+
+	f.pool.Close()
+
+	rec := f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(buf.String(), "get user by oidc sub failed") {
+		t.Fatalf("log output = %q, want it to mention the get-user-by-oidc-sub failure", buf.String())
+	}
+}
+
+// TestProfile_UpdateProfile_DBFailure_LogsBeforeInternal500 covers the
+// code-review HIGH #1 finding for updateProfile's pool.Begin call: a
+// transaction-start failure must be logged before the generic 500.
+func TestProfile_UpdateProfile_DBFailure_LogsBeforeInternal500(t *testing.T) {
+	var buf bytes.Buffer
+	f := newProfileFixtureWithLogger(t, slog.New(slog.NewTextHandler(&buf, nil)))
+	sub := "ffffffff-6666-4fff-8fff-ffffffffffff"
+	bearer := f.token(t, sub)
+
+	f.pool.Close()
+
+	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"name": "Someone"})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(buf.String(), "begin update transaction failed") {
+		t.Fatalf("log output = %q, want it to mention the begin-transaction failure", buf.String())
+	}
+}
+
+// TestProfile_PatchInvalidFields_Returns422 is table-driven coverage for the
+// PATCH /v1/profile validation branches missing from the single-scenario
+// tests above (code-review MEDIUM #5): name too long, email too long, and
+// empty locale.
+func TestProfile_PatchInvalidFields_Returns422(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      map[string]string
+		wantField string
+		wantCode  string
+	}{
+		{
+			name:      "name too long (201 runes)",
+			body:      map[string]string{"name": strings.Repeat("a", 201)},
+			wantField: "name",
+			wantCode:  "too_long",
+		},
+		{
+			name:      "email too long (over 320 chars)",
+			body:      map[string]string{"email": strings.Repeat("a", 315) + "@example.com"},
+			wantField: "email",
+			wantCode:  "invalid",
+		},
+		{
+			name:      "empty locale",
+			body:      map[string]string{"locale": "   "},
+			wantField: "locale",
+			wantCode:  "required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newProfileFixture(t)
+			sub := uuid.NewString()
+			bearer := f.token(t, sub)
+			f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+
+			rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, tt.body)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status = %d, want 422, body = %s", rec.Code, rec.Body.String())
+			}
+			var p struct {
+				Errors []struct {
+					Field string `json:"field"`
+					Code  string `json:"code"`
+				} `json:"errors"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(p.Errors) != 1 || p.Errors[0].Field != tt.wantField || p.Errors[0].Code != tt.wantCode {
+				t.Fatalf("errors = %+v, want one error on field %q with code %q", p.Errors, tt.wantField, tt.wantCode)
+			}
+		})
+	}
+}
+
+// TestProfile_PatchNameWithAccentedRunes_CountsRunesNotBytes is the
+// regression test for code-review MEDIUM #2: the name-length check used to
+// count bytes (len(name)), not runes, so a 200-character PT name using
+// multi-byte accented letters (e.g. "a" with a tilde is 2 bytes in UTF-8)
+// was wrongly rejected as too long even though it is exactly at the
+// 200-character limit. 200 runes of a 2-byte character is 400 bytes - well
+// over the old byte-based check, but must be accepted once length is
+// measured in runes (utf8.RuneCountInString).
+func TestProfile_PatchNameWithAccentedRunes_CountsRunesNotBytes(t *testing.T) {
+	f := newProfileFixture(t)
+	sub := uuid.NewString()
+	bearer := f.token(t, sub)
+	f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+
+	name := strings.Repeat("ã", 200) // 200 runes, 400 UTF-8 bytes
+	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"name": name})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (a 200-rune name must be accepted regardless of its byte length), body = %s", rec.Code, rec.Body.String())
+	}
+	var p api.ProfileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if p.Name != name {
+		t.Errorf("name = %q, want %q", p.Name, name)
 	}
 }

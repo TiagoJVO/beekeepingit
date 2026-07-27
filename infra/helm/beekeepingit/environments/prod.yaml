@@ -1,6 +1,18 @@
-# Prod overlay — not deployed anywhere yet (NFR-ARC-2: design for future
-# cloud/environment integration without forcing it). Demonstrates the
-# per-environment override convention future service subcharts follow.
+# Prod overlay — NOT deployed anywhere yet, and deliberately so: D-26 scopes
+# the first real cloud deployment to staging-grade only, until Q-DR
+# (backup/DR targets, still open) and #90 (GDPR data export/erasure UI) land
+# — both scheduled at M6 · Export in the D-14 phase plan. Standing up a real
+# prod environment before then would mean real user data with no DR/export
+# story yet.
+#
+# Structurally mirrors environments/staging.yaml (see that file's comments
+# and the beekeepingit-gitops repo's apps/staging/beekeepingit-helmrelease.yaml
+# for the full rationale behind each shape) so the two stay easy to diff, but
+# every host/hostname-shaped value below is a clearly-marked placeholder — there
+# is no prod cluster, IP, or domain yet. Fill these in for real when prod
+# actually gets built (the beekeepingit-gitops repo's clusters/prod/ and
+# apps/prod/ already exist, mirroring staging's — their hostname placeholders
+# need the same fill-in).
 global:
   environment: prod
   namespace: beekeepingit-prod
@@ -14,3 +26,78 @@ global:
     large:
       requests: { cpu: 500m, memory: 512Mi }
       limits: { cpu: "1", memory: 1Gi }
+  # TODO: real prod domain, once one exists — not nip.io (that's a staging
+  # convenience; prod needs a real, owned, brandable domain).
+  appOrigin: https://app.beekeepingit.example # TODO: real domain
+  # Admin app origin (#449) — its own host, cross-origin from the API; the
+  # services' CORS_ALLOWED_ORIGINS derives from this. Placeholder until prod exists.
+  adminOrigin: https://admin.beekeepingit.example # TODO: real domain
+
+gateway:
+  appHost: app.beekeepingit.example # TODO: real domain
+  authHost: auth.beekeepingit.example # TODO: real domain
+  adminHost: admin.beekeepingit.example # TODO: real domain
+  certManager:
+    enabled: true
+    clusterIssuer: letsencrypt-prod # TODO: confirm this ClusterIssuer exists in prod's cluster
+
+services:
+  oidc:
+    issuerUrl: https://auth.beekeepingit.example/application/o/beekeepingit/ # TODO: real domain
+    discoveryUrl: http://authentik-server/application/o/beekeepingit/
+    audience: beekeepingit-pwa
+  # Same 7 services as environments/staging.yaml — see that file's comment.
+  # Tags are promoted by an approval-gated release's tag-bump PR (D-27,
+  # ADR-0018), never a floating `latest`; the placeholder tags here matter only
+  # once a real prod cluster exists (deferred per D-26).
+  services:
+    identity:
+      tag: latest
+    organizations:
+      tag: latest
+    apiaries:
+      tag: latest
+    activities:
+      tag: latest
+    journeys:
+      tag: latest
+    todos:
+      tag: latest
+    sync:
+      tag: latest
+
+pwa:
+  image:
+    tag: latest # TODO: a real per-environment CI-built image — see FOLLOWUPS.md
+
+admin:
+  image:
+    # Vite bakes VITE_* at build time (#449), so prod needs its own image built
+    # with the real prod URLs (release-deploy.yml's publish-admin). Placeholder
+    # tag until a real prod domain + release exist (D-26), same as pwa above.
+    tag: latest # TODO: a real per-environment CI-built image
+
+networkpolicy:
+  # Unset (defaults to `kube-system`, charts/networkpolicy/values.yaml) —
+  # prod's own cluster bring-up hasn't been designed yet, so which namespace
+  # its ingress controller lives in isn't known. Revisit alongside
+  # infra/cluster/scaleway-up.sh once prod's cluster script exists — see
+  # that script's own gatewayNamespace: traefik override for the pattern.
+
+# No mail sink in prod (#361): verification email must actually reach real
+# inboxes, via a real relay. Placeholder connection values below; the relay's
+# username/password are NEVER values — create the out-of-band Secret
+# `beekeepingit-authentik-email-credentials` (keys: username, password) in the
+# prod namespace and charts/authentik's config-secret template merges it via
+# `lookup` (NFR-SEC-1).
+mailpit:
+  enabled: false
+
+authentik:
+  email:
+    host: smtp.beekeepingit.example # TODO: real relay host once prod exists
+    port: 587
+    useTls: true
+    useSsl: false
+    timeout: 10
+    from: no-reply@beekeepingit.example # TODO: real domain

@@ -9,8 +9,11 @@ import (
 func TestComputeChange_Create_BaselineIsFullFields(t *testing.T) {
 	updated := map[string]any{"name": "Encosta Nova", "hive_count": int32(0)}
 
-	changedFields, change := ComputeChange(ChangeCreate, nil, updated)
+	changedFields, change, err := ComputeChange(ChangeCreate, nil, updated)
 
+	if err != nil {
+		t.Fatalf("ComputeChange() error = %v, want nil", err)
+	}
 	if changedFields != nil {
 		t.Fatalf("create changedFields = %v, want nil", changedFields)
 	}
@@ -22,7 +25,10 @@ func TestComputeChange_Create_BaselineIsFullFields(t *testing.T) {
 
 func TestComputeChange_Create_ReturnsACopyNotAnAlias(t *testing.T) {
 	updated := map[string]any{"name": "Encosta Nova"}
-	_, change := ComputeChange(ChangeCreate, nil, updated)
+	_, change, err := ComputeChange(ChangeCreate, nil, updated)
+	if err != nil {
+		t.Fatalf("ComputeChange() error = %v, want nil", err)
+	}
 
 	change["name"] = "mutated"
 	if updated["name"] != "Encosta Nova" {
@@ -34,7 +40,10 @@ func TestComputeChange_Update_OnlyChangedFieldsAppear(t *testing.T) {
 	old := map[string]any{"name": "Encosta Nova", "hive_count": int32(0)}
 	updated := map[string]any{"name": "Encosta Nova", "hive_count": int32(12)}
 
-	changedFields, change := ComputeChange(ChangeUpdate, old, updated)
+	changedFields, change, err := ComputeChange(ChangeUpdate, old, updated)
+	if err != nil {
+		t.Fatalf("ComputeChange() error = %v, want nil", err)
+	}
 
 	if !reflect.DeepEqual(changedFields, []string{"hive_count"}) {
 		t.Fatalf("changedFields = %v, want [hive_count]", changedFields)
@@ -52,7 +61,10 @@ func TestComputeChange_Update_MultipleFieldsChanged(t *testing.T) {
 	old := map[string]any{"name": "A", "hive_count": int32(1)}
 	updated := map[string]any{"name": "B", "hive_count": int32(2)}
 
-	changedFields, change := ComputeChange(ChangeUpdate, old, updated)
+	changedFields, change, err := ComputeChange(ChangeUpdate, old, updated)
+	if err != nil {
+		t.Fatalf("ComputeChange() error = %v, want nil", err)
+	}
 
 	sort.Strings(changedFields)
 	if !reflect.DeepEqual(changedFields, []string{"hive_count", "name"}) {
@@ -70,7 +82,10 @@ func TestComputeChange_Update_NoFieldsChanged_EmptyDelta(t *testing.T) {
 	old := map[string]any{"name": "same", "hive_count": int32(5)}
 	updated := map[string]any{"name": "same", "hive_count": int32(5)}
 
-	changedFields, change := ComputeChange(ChangeUpdate, old, updated)
+	changedFields, change, err := ComputeChange(ChangeUpdate, old, updated)
+	if err != nil {
+		t.Fatalf("ComputeChange() error = %v, want nil", err)
+	}
 
 	if len(changedFields) != 0 {
 		t.Fatalf("changedFields = %v, want empty", changedFields)
@@ -84,7 +99,10 @@ func TestComputeChange_Update_FieldAddedOrRemovedCountsAsChanged(t *testing.T) {
 	old := map[string]any{"name": "A"}
 	updated := map[string]any{"name": "A", "note": "new field"}
 
-	changedFields, change := ComputeChange(ChangeUpdate, old, updated)
+	changedFields, change, err := ComputeChange(ChangeUpdate, old, updated)
+	if err != nil {
+		t.Fatalf("ComputeChange() error = %v, want nil", err)
+	}
 
 	if !reflect.DeepEqual(changedFields, []string{"note"}) {
 		t.Fatalf("changedFields = %v, want [note]", changedFields)
@@ -98,7 +116,10 @@ func TestComputeChange_Update_FieldAddedOrRemovedCountsAsChanged(t *testing.T) {
 func TestComputeChange_Delete_TombstoneOnlyNoFieldValues(t *testing.T) {
 	old := map[string]any{"name": "Encosta Nova", "hive_count": int32(12)}
 
-	changedFields, change := ComputeChange(ChangeDelete, old, nil)
+	changedFields, change, err := ComputeChange(ChangeDelete, old, nil)
+	if err != nil {
+		t.Fatalf("ComputeChange() error = %v, want nil", err)
+	}
 
 	if changedFields != nil {
 		t.Fatalf("delete changedFields = %v, want nil", changedFields)
@@ -125,7 +146,10 @@ func TestComputeChange_IsAFaithfulMirrorOfGivenFields(t *testing.T) {
 	old := map[string]any{"assignee_id": "11111111-1111-1111-1111-111111111111"}
 	updated := map[string]any{"assignee_id": "22222222-2222-2222-2222-222222222222"}
 
-	_, change := ComputeChange(ChangeUpdate, old, updated)
+	_, change, err := ComputeChange(ChangeUpdate, old, updated)
+	if err != nil {
+		t.Fatalf("ComputeChange() error = %v, want nil", err)
+	}
 
 	fc, ok := change["assignee_id"].(FieldChange)
 	if !ok {
@@ -133,5 +157,27 @@ func TestComputeChange_IsAFaithfulMirrorOfGivenFields(t *testing.T) {
 	}
 	if fc.From != old["assignee_id"] || fc.To != updated["assignee_id"] {
 		t.Fatalf("assignee_id delta = %#v, want soft IDs preserved verbatim", fc)
+	}
+}
+
+// TestComputeChange_UnknownChangeType_ReturnsError is the regression test for
+// a silent-corruption bug: an unrecognized changeType (a typo, or a future
+// change type this package hasn't been taught yet) used to fall through to a
+// default branch returning (nil, map[string]any{}, no error) — every calling
+// service would then commit an empty/wrong audit row to its append-only,
+// immutable audit_log (history.md §7.1) with no signal anything went wrong.
+// ComputeChange must instead surface this as an error so callers can refuse
+// to write the row.
+func TestComputeChange_UnknownChangeType_ReturnsError(t *testing.T) {
+	changedFields, change, err := ComputeChange("bogus", map[string]any{"a": 1}, map[string]any{"a": 2})
+
+	if err == nil {
+		t.Fatal("ComputeChange(\"bogus\", ...) error = nil, want a non-nil error")
+	}
+	if changedFields != nil {
+		t.Fatalf("changedFields = %v, want nil", changedFields)
+	}
+	if len(change) != 0 {
+		t.Fatalf("change = %#v, want nil/empty", change)
 	}
 }

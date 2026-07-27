@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -354,6 +355,94 @@ func TestRevokeInvitation_ThenReinvite(t *testing.T) {
 	}
 }
 
+// TestListMemberNames_AnyMemberResolvesRealNames is the #44 follow-up core
+// AC: the /members/names roster is readable by ANY active member (not just an
+// admin, unlike /members), and resolves each member's user_id to their real
+// display name via identity — the capability that lets activity attribution
+// show a name instead of a short id fragment. It also asserts the contrast
+// that makes the new endpoint necessary: the same non-admin member is still
+// 403 on the admin-only /members list, and a caller from another org gets 404
+// (ADR-0002), and the 200 body conforms to the OpenAPI contract.
+func TestListMemberNames_AnyMemberResolvesRealNames(t *testing.T) {
+	adminSub := "c1111111-1111-4111-8111-111111111111"
+	adminUserID := "a0000000-0000-7000-8000-0000000000c1"
+	memberSub := "c2222222-2222-4222-8222-222222222222"
+	memberUserID := "a0000000-0000-7000-8000-0000000000c2"
+	memberEmail := "worker@example.com"
+
+	f := newOrgFixtureWithEmailClaims(t,
+		map[string]stubUser{
+			adminSub:  {UserID: adminUserID, Name: "Ana Admin"},
+			memberSub: {UserID: memberUserID, Email: memberEmail, Name: "Bruno Worker"},
+		},
+		map[string]tokenClaim{
+			memberSub: {Email: memberEmail, EmailVerified: true},
+		},
+	)
+	adminBearer := f.token(t, adminSub)
+	memberBearer := f.token(t, memberSub)
+
+	orgID := "b0000000-0000-7000-8000-000000000c01"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{
+		"id": orgID, "name": "Names Co.",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{
+		"email": memberEmail, "role": "user",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("invite status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	// The invitee logs in (auto-join) — now an active, non-admin member.
+	if rec := f.do(t, http.MethodGet, "/v1/organizations/me", memberBearer, nil); rec.Code != http.StatusOK {
+		t.Fatalf("member accept-on-login status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// The non-admin member is still 403 on the admin-only members list — the
+	// exact gap the names endpoint exists to close.
+	if rec := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/members", memberBearer, nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("non-admin GET /members status = %d, want 403, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// ...but CAN read /members/names, resolving every member to a real name.
+	recNames := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/members/names", memberBearer, nil)
+	if recNames.Code != http.StatusOK {
+		t.Fatalf("non-admin GET /members/names status = %d, want 200, body = %s", recNames.Code, recNames.Body.String())
+	}
+	var names struct {
+		Data []api.MemberNameResponse `json:"data"`
+	}
+	if err := json.Unmarshal(recNames.Body.Bytes(), &names); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	got := map[string]string{}
+	for _, m := range names.Data {
+		got[m.UserID] = m.Name
+	}
+	if got[adminUserID] != "Ana Admin" {
+		t.Errorf("admin name = %q, want %q (full map: %v)", got[adminUserID], "Ana Admin", got)
+	}
+	if got[memberUserID] != "Bruno Worker" {
+		t.Errorf("member name = %q, want %q (full map: %v)", got[memberUserID], "Bruno Worker", got)
+	}
+
+	// Contract conformance of the 200 body (#153 boundary convention).
+	doc, err := contracttest.Load("../../contracts/openapi/organizations.openapi.yaml")
+	if err != nil {
+		t.Fatalf("load contract: %v", err)
+	}
+	doc.ValidateResponseBody(t, http.MethodGet, "/v1/organizations/"+orgID+"/members/names", http.StatusOK, recNames.Body.Bytes())
+
+	// A caller who is not a member of this org is refused with 404, never
+	// shown the roster (ADR-0002 — the path never widens scope). This sub is
+	// unknown to the stub identity, so it resolves to the same handler-level
+	// "no org for the caller" 404 a genuine outsider hits.
+	outsiderSub := "c3333333-3333-4333-8333-333333333333"
+	if rec := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/members/names", f.token(t, outsiderSub), nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("outsider GET /members/names status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestCreateInvitation_InvalidEmail_Returns422 covers required-field
 // validation on the invite request.
 func TestCreateInvitation_InvalidEmail_Returns422(t *testing.T) {
@@ -647,6 +736,171 @@ func TestInvitations_History_ChangePayloadNeverEmbedsActorPersonalData(t *testin
 			if _, err := uuid.Parse(s); err != nil {
 				t.Fatalf("change payload invited_by = %q, want a valid UUID (soft ID, not a name): %v", s, err)
 			}
+		}
+	}
+}
+
+// TestCreateInvitation_InvalidRole_Returns422 covers the invalid-role
+// validation branch (MEDIUM review finding: previously untested).
+func TestCreateInvitation_InvalidRole_Returns422(t *testing.T) {
+	adminSub := "d1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1"
+	f := newOrgFixture(t, map[string]string{adminSub: "a0000000-0000-7000-8000-0000000000d1"})
+	adminBearer := f.token(t, adminSub)
+
+	orgID := "c4000000-0000-7000-8000-000000000001"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{"id": orgID, "name": "Org"}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{
+		"email": "someone@example.com", "role": "superadmin",
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %s", rec.Code, rec.Body.String())
+	}
+	var p struct {
+		Errors []struct {
+			Field string `json:"field"`
+			Code  string `json:"code"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	found := false
+	for _, e := range p.Errors {
+		if e.Field == "role" && e.Code == "invalid" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("errors = %+v, want an invalid error on role", p.Errors)
+	}
+}
+
+// TestCreateInvitation_EmailTooLong_Returns422 covers the email length cap
+// validation branch (MEDIUM review finding: previously untested).
+func TestCreateInvitation_EmailTooLong_Returns422(t *testing.T) {
+	adminSub := "d2d2d2d2-d2d2-4d2d-8d2d-d2d2d2d2d2d2"
+	f := newOrgFixture(t, map[string]string{adminSub: "a0000000-0000-7000-8000-0000000000d2"})
+	adminBearer := f.token(t, adminSub)
+
+	orgID := "c4000000-0000-7000-8000-000000000002"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{"id": orgID, "name": "Org"}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	longLocal := strings.Repeat("a", 310) // local part alone already exceeds maxEmailLength=320 once @example.com is appended
+	rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{
+		"email": longLocal + "@example.com",
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422, body = %s", rec.Code, rec.Body.String())
+	}
+	var p struct {
+		Errors []struct {
+			Field string `json:"field"`
+			Code  string `json:"code"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	found := false
+	for _, e := range p.Errors {
+		if e.Field == "email" && e.Code == "invalid" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("errors = %+v, want an invalid error on email", p.Errors)
+	}
+}
+
+// TestListInvitations_Pagination_NextCursor covers the next_cursor response
+// path (MEDIUM review finding: previously untested): with more rows than the
+// requested limit, the first page carries a non-nil next_cursor, and
+// following it returns the remaining row with no further cursor.
+func TestListInvitations_Pagination_NextCursor(t *testing.T) {
+	adminSub := "d3d3d3d3-d3d3-4d3d-8d3d-d3d3d3d3d3d3"
+	f := newOrgFixture(t, map[string]string{adminSub: "a0000000-0000-7000-8000-0000000000d3"})
+	adminBearer := f.token(t, adminSub)
+
+	orgID := "c4000000-0000-7000-8000-000000000003"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{"id": orgID, "name": "Org"}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	emails := []string{"page-a@example.com", "page-b@example.com", "page-c@example.com"}
+	for _, email := range emails {
+		if rec := f.do(t, http.MethodPost, "/v1/organizations/"+orgID+"/invitations", adminBearer, map[string]string{"email": email}); rec.Code != http.StatusCreated {
+			t.Fatalf("invite %s status = %d, want 201, body = %s", email, rec.Code, rec.Body.String())
+		}
+	}
+
+	recPage1 := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/invitations?limit=2", adminBearer, nil)
+	if recPage1.Code != http.StatusOK {
+		t.Fatalf("page 1 status = %d, want 200, body = %s", recPage1.Code, recPage1.Body.String())
+	}
+	var page1 struct {
+		Data []api.InvitationResponse `json:"data"`
+		Page struct {
+			NextCursor *string `json:"next_cursor"`
+			Limit      int     `json:"limit"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(recPage1.Body.Bytes(), &page1); err != nil {
+		t.Fatalf("decode page 1: %v", err)
+	}
+	if len(page1.Data) != 2 {
+		t.Fatalf("page 1 data = %+v, want 2 rows", page1.Data)
+	}
+	if page1.Page.NextCursor == nil {
+		t.Fatalf("page 1 next_cursor = nil, want a cursor (3 rows exist, limit=2)")
+	}
+	if page1.Page.Limit != 2 {
+		t.Errorf("page 1 limit = %d, want 2", page1.Page.Limit)
+	}
+
+	recPage2 := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/invitations?limit=2&cursor="+*page1.Page.NextCursor, adminBearer, nil)
+	if recPage2.Code != http.StatusOK {
+		t.Fatalf("page 2 status = %d, want 200, body = %s", recPage2.Code, recPage2.Body.String())
+	}
+	var page2 struct {
+		Data []api.InvitationResponse `json:"data"`
+		Page struct {
+			NextCursor *string `json:"next_cursor"`
+		} `json:"page"`
+	}
+	if err := json.Unmarshal(recPage2.Body.Bytes(), &page2); err != nil {
+		t.Fatalf("decode page 2: %v", err)
+	}
+	if len(page2.Data) != 1 {
+		t.Fatalf("page 2 data = %+v, want 1 remaining row", page2.Data)
+	}
+	if page2.Page.NextCursor != nil {
+		t.Errorf("page 2 next_cursor = %v, want nil (no more rows)", *page2.Page.NextCursor)
+	}
+}
+
+// TestListInvitations_InvalidLimit_Returns422 covers the parsePage
+// consistency fix (MEDIUM review finding): a non-numeric or non-positive
+// limit used to silently fall back to the default instead of 422'ing, unlike
+// an equally malformed cursor. Both must now behave the same way.
+func TestListInvitations_InvalidLimit_Returns422(t *testing.T) {
+	adminSub := "d4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4"
+	f := newOrgFixture(t, map[string]string{adminSub: "a0000000-0000-7000-8000-0000000000d4"})
+	adminBearer := f.token(t, adminSub)
+
+	orgID := "c4000000-0000-7000-8000-000000000004"
+	if rec := f.do(t, http.MethodPost, "/v1/organizations", adminBearer, map[string]string{"id": orgID, "name": "Org"}); rec.Code != http.StatusCreated {
+		t.Fatalf("create org status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	for _, limit := range []string{"not-a-number", "0", "-1"} {
+		rec := f.do(t, http.MethodGet, "/v1/organizations/"+orgID+"/invitations?limit="+limit, adminBearer, nil)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("limit=%q status = %d, want 422, body = %s", limit, rec.Code, rec.Body.String())
 		}
 	}
 }

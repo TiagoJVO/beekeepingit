@@ -12,6 +12,12 @@ abstract interface class ConnectivityProbe {
   /// Attempts one probe and reports whether the link is currently usable.
   /// Must never throw — a failed/timed-out probe resolves to `false`.
   Future<bool> check();
+
+  /// Releases any resources the probe owns (e.g. [HttpConnectivityProbe]'s
+  /// `http.Client` — HIGH finding: it was never closed, leaking a client on
+  /// every logout/membership-purge cycle). A no-op default so fakes that
+  /// don't own resources (e.g. tests' scripted probes) need not implement it.
+  void dispose() {}
 }
 
 /// The real probe: a `GET` against PowerSync's own liveness endpoint,
@@ -59,4 +65,10 @@ class HttpConnectivityProbe implements ConnectivityProbe {
       return false;
     }
   }
+
+  /// Closes the injected `http.Client` (HIGH finding: this was previously
+  /// never called, leaking a client on every logout/membership-purge
+  /// cycle). Wired from `powersync_service.dart`'s provider teardown.
+  @override
+  void dispose() => _http.close();
 }

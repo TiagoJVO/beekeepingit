@@ -1,7 +1,9 @@
 package servicetemplate_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -72,6 +74,118 @@ func TestMount_ServesMountedHandler(t *testing.T) {
 	srv.Router().ServeHTTP(rec, req)
 	if rec.Code != http.StatusTeapot {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusTeapot)
+	}
+}
+
+// TestNew_PanicRecoveryLogsRequestID is a regression test for the
+// middleware chain losing request_id on panic-recovery logs: RequestID must
+// run ahead of RecoverMiddleware so a panic caught deep in a mounted handler
+// is logged with the same request_id an operator would use to correlate it
+// with the rest of that request's logs.
+func TestNew_PanicRecoveryLogsRequestID(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	srv, err := servicetemplate.New(config.Config{ServiceName: "example", HTTPAddr: ":0"}, nil, logger, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	srv.Mount("/boom", http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic("kaboom")
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	var found bool
+	for _, line := range bytes.Split(buf.Bytes(), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var entry map[string]any
+		if err := json.Unmarshal(line, &entry); err != nil {
+			t.Fatalf("decode log line %q: %v", line, err)
+		}
+		if entry["msg"] != "panic recovered" {
+			continue
+		}
+		found = true
+		if id, _ := entry["request_id"].(string); id == "" {
+			t.Errorf("panic-recovered log line missing request_id: %v", entry)
+		}
+	}
+	if !found {
+		t.Fatal(`no "panic recovered" log line found`)
+	}
+}
+
+// TestNew_CORSExposesETagThroughChain proves the CORS middleware is wired into
+// the shared server chain (not just unit-tested in isolation): a cross-origin GET
+// to a mounted, resource-versioned handler must come back with the ETag exposed
+// (#449, FR-TEN-2). Exercises the real New() router, so a regression that drops
+// the middleware from the chain fails here.
+func TestNew_CORSExposesETagThroughChain(t *testing.T) {
+	const origin = "https://admin.beekeepingit.local:8443"
+	srv, err := servicetemplate.New(
+		config.Config{ServiceName: "example", HTTPAddr: ":0", CORSAllowedOrigins: []string{origin}},
+		nil, testLogger(), nil,
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	srv.Mount("/v1/organizations", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("ETag", `"v1"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/organizations/me", nil)
+	req.Header.Set("Origin", origin)
+	srv.Router().ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
+		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, origin)
+	}
+	if got := rec.Header().Get("Access-Control-Expose-Headers"); got != "ETag" {
+		t.Errorf("Access-Control-Expose-Headers = %q, want ETag", got)
+	}
+}
+
+// TestNew_CORSPreflightShortCircuitsBeforeMountedHandler asserts a preflight is
+// answered by the chain with 204 without reaching a mounted handler — the
+// property that lets CORS sit ahead of JWT auth (a preflight carries no bearer
+// token, #449).
+func TestNew_CORSPreflightShortCircuitsBeforeMountedHandler(t *testing.T) {
+	const origin = "https://admin.beekeepingit.local:8443"
+	srv, err := servicetemplate.New(
+		config.Config{ServiceName: "example", HTTPAddr: ":0", CORSAllowedOrigins: []string{origin}},
+		nil, testLogger(), nil,
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	reached := false
+	srv.Mount("/v1/organizations", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodOptions, "/v1/organizations/org-1", nil)
+	req.Header.Set("Origin", origin)
+	req.Header.Set("Access-Control-Request-Method", http.MethodPatch)
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("preflight status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	if reached {
+		t.Error("preflight reached the mounted handler; CORS must short-circuit ahead of it")
 	}
 }
 

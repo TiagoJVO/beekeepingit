@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// auth_controller_test.dart's fuller [AuthPlatform] fake.
 class _FakeSessionPlatform implements AuthPlatform {
   final Map<String, String> _session = {};
+  final Map<String, String> _local = {};
 
   @override
   String get redirectUri => 'https://app.example/';
@@ -33,6 +34,15 @@ class _FakeSessionPlatform implements AuthPlatform {
 
   @override
   void removeSession(String key) => _session.remove(key);
+
+  @override
+  String? readLocal(String key) => _local[key];
+
+  @override
+  void writeLocal(String key, String value) => _local[key] = value;
+
+  @override
+  void removeLocal(String key) => _local.remove(key);
 }
 
 /// A fake [LocalStoreEngine] so the purge's `clear()` call can be asserted
@@ -52,6 +62,12 @@ class _FakeLocalStoreEngine implements LocalStoreEngine {
     String sql, [
     List<Object?> args = const [],
   ]) async => null;
+
+  @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async => const [];
 
   @override
   Stream<List<Map<String, Object?>>> watch(

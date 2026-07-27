@@ -7,6 +7,7 @@ AccountPlatform makeAccountPlatform() => _StubAccountPlatform();
 
 class _StubAccountPlatform implements AccountPlatform {
   @override
-  void openInNewTab(String url) =>
-      throw UnsupportedError('Opening an external URL is only available on web');
+  void openInNewTab(String url) => throw UnsupportedError(
+    'Opening an external URL is only available on web',
+  );
 }

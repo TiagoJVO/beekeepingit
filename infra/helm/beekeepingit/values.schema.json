@@ -6,7 +6,7 @@
   "properties": {
     "global": {
       "type": "object",
-      "required": ["environment", "namespace", "resources"],
+      "required": ["environment", "namespace", "resources", "appOrigin", "adminOrigin"],
       "properties": {
         "environment": {
           "type": "string",
@@ -15,6 +15,14 @@
         "namespace": {
           "type": "string",
           "minLength": 1
+        },
+        "appOrigin": {
+          "type": "string",
+          "pattern": "^https?://[^/]+$"
+        },
+        "adminOrigin": {
+          "type": "string",
+          "pattern": "^https?://[^/]+$"
         },
         "resources": {
           "type": "object",

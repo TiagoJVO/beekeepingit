@@ -134,15 +134,18 @@ The throwaway manifests/scripts (kind bootstrap, Postgres, PowerSync, backend, t
 Playwright driver) lived in the session scratchpad and were torn down; the essentials above are
 sufficient to rebuild it.
 
-## 5. Handoff to #106 (still open)
+## 5. Handoff to #106 (resolved — shipped)
 
-- **Cross-service write-back atomicity** (D-12): the PowerSync queue is one `uploadData` batch, but our
-  write-back **fans out to multiple owning services** (no cross-schema transaction) → saga/coordinator
-  design is #106's; the engine does not solve it.
-- **Org-scoped Sync Rules** (the real client slice), the **sync-publication contract** each service
-  honors, tombstones/deletes, client↔server validation parity, and the **"synced" status + notify-and-fix
-  UX** (FR-OF-2).
-- **iOS PWA storage durability** — validate when iOS is in scope (D-10).
+`#106` is closed; the items below landed as part of the M0-M2 walking skeleton:
+
+- **Cross-service write-back atomicity** (D-12): implemented as the `sync` service's
+  validate-then-apply write-back coordinator (`services/sync/api/coordinator.go`) — see
+  [sync.md](../architecture/sync.md) §6.
+- **Org-scoped Sync Rules** (the real client slice), the **sync-publication contract** each
+  service honors, tombstones/deletes, client↔server validation parity, and the **notify-and-fix
+  UX** (FR-OF-2, D-12) — all shipped; see [infra/README.md](../../infra/README.md) and the
+  rejected-writes UI (#256, #260-268).
+- **iOS PWA storage durability** — still open; validate when iOS is in scope (D-10).
 
 ## 6. Sources
 

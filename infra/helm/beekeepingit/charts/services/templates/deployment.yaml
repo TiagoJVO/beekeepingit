@@ -47,10 +47,10 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-          # Per-service `tag` overrides the shared `image.tag` when set — so Flux
-          # image-automation can bump each service independently (they publish on
-          # their own path-filtered CI legs). Defaults to the shared tag (`latest`
-          # locally), so the manual dev deploy is unaffected. See #23 / #88.
+          # Per-service `tag` overrides the shared `image.tag` when set — so each
+          # service can be bumped independently by a release's tag-bump PR (D-27,
+          # ADR-0018). Defaults to the shared tag (`latest` locally), so the manual
+          # dev deploy is unaffected. See #23 / #88.
           image: "{{ $root.Values.image.registry }}/{{ $svc.component }}:{{ $svc.tag | default $root.Values.image.tag }}"
           imagePullPolicy: {{ $root.Values.image.pullPolicy }}
           ports:
@@ -71,6 +71,23 @@ spec:
             {{- if $root.Values.oidc.discoveryUrl }}
             - name: OIDC_DISCOVERY_URL
               value: {{ $root.Values.oidc.discoveryUrl | quote }}
+            {{- end }}
+            {{- /*
+              CORS allowed origins for the cross-origin admin app (#449, FR-TEN-2).
+              Prefer an explicit services.cors.allowedOrigins list; otherwise fall
+              back to the shared global.adminOrigin (the common case — every
+              service allows the one admin origin). Rendered as a comma-separated
+              CORS_ALLOWED_ORIGINS the servicetemplate config parses; omitted
+              entirely when neither is set, leaving CORS disabled (same-origin only).
+            */}}
+            {{- $corsOrigins := list }}
+            {{- if $root.Values.cors }}{{- with $root.Values.cors.allowedOrigins }}{{- $corsOrigins = . }}{{- end }}{{- end }}
+            {{- if and (not $corsOrigins) $root.Values.global.adminOrigin }}
+            {{- $corsOrigins = list $root.Values.global.adminOrigin }}
+            {{- end }}
+            {{- if $corsOrigins }}
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ join "," $corsOrigins | quote }}
             {{- end }}
             {{- if $svc.db.enabled }}
             - name: DB_HOST

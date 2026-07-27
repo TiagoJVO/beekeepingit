@@ -24,47 +24,20 @@ where there's a sensible one.
 
 ## Tier 2 — Functional gaps to close
 
-### Q-AICLOUD — Cloud AI privacy & GDPR (now near-term per D-8)
-
-- **Affects:** FR-AI-1, NFR-AI-1, NFR-CMP. The PWA phase sends org data to a hosted
-  LLM. Needed before building the AI feature: **provider choice** (e.g. Claude API),
-  a **DPA**, a **no-training** guarantee, **EU data residency**, an **explicit
-  consent** UX, and **PII minimization** (what may leave the device).
-
-### Q-JOUR — Journey planned-vs-actual model
-
-- **Affects:** FR-JO-1, FR-JO-4. "How much is missing" needs a **plan** (intended
-  apiaries/activities) compared against **executed** activities. Define how
-  activities link to a journey (manual selection, or auto-match by
-  apiary+type+date window).
-
-### Q-TODO — Todo lifecycle & associations
-
-- **Affects:** FR-TD-1, FR-AI-1. Only create + list are specified. Need: complete /
-  reopen / edit / delete, assignment to a user, and association to an **apiary or
-  area** (the AI example "todos pending for the area of apiary X" requires it).
-
-### Q-MAP — Offline-tile caching strategy & tile provider (narrowed, was: map provider & offline tiles)
+### Q-MAP — Offline-tile caching strategy & production-traffic tile provider (narrowed, was: map provider & offline tiles)
 
 - **Affects:** FR-AP-3, FR-OF-1. The map _interaction_ shape (markers, user location, measure
-  overlay) and the base library (`flutter_map` + MapLibre/OSM) are **resolved** — see
+  overlay), the base library (`flutter_map` + MapLibre/OSM), and — as of #257 — which **online**
+  tile sources render by default and how they're toggled/attributed (satellite/Esri World
+  Imagery default, OSM streets alternative, both attributed) are **resolved** — see
   [D-16](decisions.md#d-16--map-flutter_map-markers--user-location--measure-overlay-tile-provider-deferred).
-  Still open: a field-first map that works **offline** needs **cached map tiles** — which tile
-  _provider_ to use at production traffic (the public OSM/MapLibre demo endpoint isn't meant for
-  that) and the **offline-tile caching strategy** (what to pre-cache, storage budget, refresh).
-  This has licensing and cost implications; does not block M2 (online-only map ships first).
-
-### Q-IMP — Import semantics
-
-- **Affects:** FR-IE-2. Merge vs. replace, ID preservation, duplicate handling, and
-  how import interacts with sync/history.
-
-### Q-NOTIF — Notifications
-
-- **Affects:** FR-ST-1, FR-TD-1. "Notification preferences" implies a notification
-  system, but none is otherwise specified. What events (todo due, sync results),
-  what channel (in-app, push), and does push require a backend service + store
-  registration?
+  Still open: a field-first map that works **offline** needs **cached map tiles** — which is not
+  the same question as the ONLINE default decided above. Two things remain undecided: (1) the
+  **production-traffic tile provider** — the public Esri/OSM demo endpoints this app uses today
+  are not meant for production-scale load, so a paid/self-hosted provider decision is still
+  needed before real traffic; and (2) the **offline-tile caching strategy** (what to pre-cache,
+  storage budget, refresh). This has licensing and cost implications; does not block M2/M3
+  (online-only map ships first).
 
 ---
 
@@ -90,9 +63,6 @@ where there's a sensible one.
 
 ## Tier 4 — Smaller clarifications
 
-- **Q-TEN** — Confirm the tenancy interpretation: isolation is at the
-  **organization** level (resolved in FR-TEN-2), not per-user as frs line 28 reads
-  literally.
 - **Q-EXPORT-PII** — Export (FR-IE-1) of activities tied to users may include PII;
   confirm what's allowed under GDPR.
 - **Units & formats** — confirm metric units (kg/L) and Portuguese locale defaults

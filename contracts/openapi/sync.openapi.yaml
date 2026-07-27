@@ -119,7 +119,12 @@ components:
           enum: [put, patch, delete]
         entity_type:
           type: string
-          description: Owning entity, e.g. `apiary`.
+          description: >-
+            Owning entity — `apiary`, or `apiary_counter` (#256: a typed per-apiary
+            counter row; its `data` carries `apiary_id`, `counter_type` from the owning
+            service's known set, and a non-negative `value`; `delete` is not valid for
+            it). Deliberately not an enum: owning services validate their own types, and
+            new syncable entities are additive (api-contracts.md §8).
         id:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
         data:

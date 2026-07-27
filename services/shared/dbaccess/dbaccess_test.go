@@ -2,6 +2,7 @@ package dbaccess_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,6 +12,37 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/shared/dbaccess/sqlc/gen"
 )
+
+// TestMigrate_InvalidDSN proves Migrate fails fast and with a wrapped,
+// descriptive error when given a DSN goose/pgx cannot even parse — MEDIUM
+// item #2: the only prior coverage of Migrate was the happy path inside
+// TestConnectMigrateQuery. No Postgres instance is needed here: pgx's stdlib
+// driver parses the DSN lazily on first use (not at sql.Open), and that
+// parse failure surfaces synchronously, before any network call.
+func TestMigrate_InvalidDSN(t *testing.T) {
+	err := dbaccess.Migrate(context.Background(), "not-a-valid-dsn :: at all", dbaccess.MigrationsFS())
+	if err == nil {
+		t.Fatal("Migrate() error = nil, want a non-nil error for an unparseable DSN")
+	}
+	if !strings.Contains(err.Error(), "dbaccess:") {
+		t.Errorf("Migrate() error = %q, want it wrapped with a dbaccess: prefix", err.Error())
+	}
+}
+
+// TestMigrate_ConnectionFailure proves Migrate also fails (rather than
+// hanging or panicking) when the DSN parses fine but the target is
+// unreachable — the other half of MEDIUM item #2's "not just the happy
+// path" ask, distinct from the parse-failure case above. connect_timeout=1
+// keeps this fast and deterministic without a real Postgres instance.
+func TestMigrate_ConnectionFailure(t *testing.T) {
+	err := dbaccess.Migrate(context.Background(), "postgres://u:p@127.0.0.1:1/d?sslmode=disable&connect_timeout=1", dbaccess.MigrationsFS())
+	if err == nil {
+		t.Fatal("Migrate() error = nil, want a non-nil error for an unreachable host")
+	}
+	if !strings.Contains(err.Error(), "dbaccess:") {
+		t.Errorf("Migrate() error = %q, want it wrapped with a dbaccess: prefix", err.Error())
+	}
+}
 
 // TestConnectMigrateQuery proves the full pgx+goose+sqlc pipeline end-to-end
 // against a real Postgres: migrate the schema, then run a typed query

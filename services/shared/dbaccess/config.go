@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 )
 
 // Config holds the connection details for a Postgres database. Populate it
@@ -57,9 +58,25 @@ func (c Config) DSN() string {
 	return u.String()
 }
 
+// validSchemaName matches a plain Postgres identifier: this is deliberately
+// stricter than what Postgres itself allows (e.g. it rejects quoted
+// identifiers/mixed case-preserving forms) because SearchPath's only
+// legitimate values here are the schema-per-service names this repo itself
+// assigns (D-6), never arbitrary user input.
+var validSchemaName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
 func (c Config) validate() error {
 	if c.Host == "" || c.User == "" || c.Database == "" {
 		return fmt.Errorf("dbaccess: host, user and database are required")
+	}
+	// SearchPath is concatenated into DSN's `options=-c search_path=<value>`
+	// query parameter, which libpq/pgx pass straight through as extra
+	// connection-time options. An unvalidated value (e.g. containing a
+	// space) lets a caller inject additional `-c ...` flags into the
+	// connection string (HIGH #3) — reject anything that isn't a plain
+	// schema identifier before it ever reaches DSN().
+	if c.SearchPath != "" && !validSchemaName.MatchString(c.SearchPath) {
+		return fmt.Errorf("dbaccess: search path %q is not a valid schema identifier", c.SearchPath)
 	}
 	return nil
 }

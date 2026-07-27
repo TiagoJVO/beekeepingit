@@ -2,6 +2,8 @@ import 'package:beekeepingit_client/core/geo/device_location.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_list_screen.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
+import 'package:beekeepingit_client/theming/brand_widgets.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +22,57 @@ class _FakeDeviceLocationService implements DeviceLocationService {
   Future<DeviceLocation> current() async => result;
 }
 
+/// Like [_FakeDeviceLocationService] but counts every [current] call and lets
+/// the test mutate [result] between calls — so the periodic (#422) and
+/// pull-to-refresh re-fetches can be asserted (the timer actually fired a new
+/// fetch) and the re-sort verified (moving the device flips the order).
+class _CountingDeviceLocationService implements DeviceLocationService {
+  _CountingDeviceLocationService(this.result);
+  DeviceLocation result;
+  int callCount = 0;
+
+  @override
+  Future<DeviceLocation> current() async {
+    callCount++;
+    return result;
+  }
+}
+
+/// The apiary titles in their current rendered order — several tests assert
+/// on the nearest-first ordering, so factor the extraction out.
+List<String> _cardTitles(WidgetTester tester) => tester
+    .widgetList<BrandRowCard>(find.byType(BrandRowCard))
+    .map((c) => c.title)
+    .toList(growable: false);
+
+/// Drive the app to the background through the valid intermediate lifecycle
+/// states — Flutter's [AppLifecycleListener] asserts on illegal jumps (e.g.
+/// resumed straight to paused), so send the real sequence a real backgrounding
+/// would.
+Future<void> _backgroundApp(WidgetTester tester) async {
+  for (final state in const [
+    AppLifecycleState.inactive,
+    AppLifecycleState.hidden,
+    AppLifecycleState.paused,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  await tester.pump();
+}
+
+/// Drive the app back to the foreground through the valid intermediate
+/// lifecycle states (the reverse of [_backgroundApp]).
+Future<void> _foregroundApp(WidgetTester tester) async {
+  for (final state in const [
+    AppLifecycleState.hidden,
+    AppLifecycleState.inactive,
+    AppLifecycleState.resumed,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  await tester.pump();
+}
+
 /// Wraps [ApiariesListScreen] with just enough scaffolding (router for the
 /// row-tap navigation, l10n, a ProviderScope with the apiaries stream and
 /// device-location fixed) to test it in isolation — this screen has no own
@@ -28,13 +81,29 @@ class _FakeDeviceLocationService implements DeviceLocationService {
 Widget _buildScreen({
   required List<Apiary> apiaries,
   DeviceLocation location = const DeviceLocationUnavailable(),
+  DeviceLocationService? service,
+  ValueListenable<bool>? tabVisible,
 }) {
   final router = GoRouter(
     initialLocation: '/apiaries',
     routes: [
       GoRoute(
         path: '/apiaries',
-        builder: (context, state) => const Scaffold(body: ApiariesListScreen()),
+        // When [tabVisible] is supplied, wrap the screen in a toggleable
+        // [TickerMode] — exactly how StatefulShellRoute.indexedStack disables
+        // the ticker on offstage branches (go_router route.dart), the signal
+        // the screen gates its periodic refresh on (#422). Flipping the
+        // listenable simulates switching to/from the Apiaries tab.
+        builder: (context, state) {
+          const screen = Scaffold(body: ApiariesListScreen());
+          if (tabVisible == null) return screen;
+          return ValueListenableBuilder<bool>(
+            valueListenable: tabVisible,
+            builder: (context, visible, child) =>
+                TickerMode(enabled: visible, child: child!),
+            child: screen,
+          );
+        },
       ),
       GoRoute(
         path: '/apiaries/:id',
@@ -47,7 +116,7 @@ Widget _buildScreen({
     overrides: [
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
       deviceLocationServiceProvider.overrideWithValue(
-        _FakeDeviceLocationService(location),
+        service ?? _FakeDeviceLocationService(location),
       ),
     ],
     child: MaterialApp.router(
@@ -64,12 +133,14 @@ Apiary _apiary(
   int hiveCount = 0,
   double? lon,
   double? lat,
+  String? placeLabel,
 }) => Apiary(
   id: id,
   name: name,
   hiveCount: hiveCount,
   locationLon: lon,
   locationLat: lat,
+  placeLabel: placeLabel,
 );
 
 void main() {
@@ -164,6 +235,51 @@ void main() {
       expect(find.text('Serra Norte'), findsOneWidget);
       expect(find.text('Vale Sul'), findsOneWidget);
     });
+
+    testWidgets(
+      'a query matching only the place label (not the name) still finds the '
+      'apiary (#252/#254)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [
+              _apiary('a1', 'Colmeia 3', placeLabel: 'Montargil'),
+              _apiary('a2', 'Colmeia 4', placeLabel: 'Alcácer'),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiaries-search-field')),
+          'montargil',
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Colmeia 3'), findsOneWidget);
+        expect(find.text('Colmeia 4'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the place label match is diacritic-insensitive (PT "São" ≈ "sao", #254 AC)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Colmeia 1', placeLabel: 'São Domingos')],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('apiaries-search-field')),
+          'sao domingos',
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Colmeia 1'), findsOneWidget);
+      },
+    );
   });
 
   group('proximity ordering (FR-AP-2, #33)', () {
@@ -182,12 +298,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tiles = tester
-            .widgetList<ListTile>(find.byType(ListTile))
+        final cards = tester
+            .widgetList<BrandRowCard>(find.byType(BrandRowCard))
             .toList();
-        final titles = tiles
-            .map((t) => (t.title as Text).data)
-            .toList(growable: false);
+        final titles = cards.map((c) => c.title).toList(growable: false);
         expect(titles, ['Near', 'Far']);
       },
     );
@@ -203,12 +317,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tiles = tester
-            .widgetList<ListTile>(find.byType(ListTile))
+        final cards = tester
+            .widgetList<BrandRowCard>(find.byType(BrandRowCard))
             .toList();
-        final titles = tiles
-            .map((t) => (t.title as Text).data)
-            .toList(growable: false);
+        final titles = cards.map((c) => c.title).toList(growable: false);
         expect(titles, ['Alpha', 'Zulu']);
 
         expect(
@@ -275,13 +387,68 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final tiles = tester
-            .widgetList<ListTile>(find.byType(ListTile))
+        final cards = tester
+            .widgetList<BrandRowCard>(find.byType(BrandRowCard))
             .toList();
-        final titles = tiles
-            .map((t) => (t.title as Text).data)
-            .toList(growable: false);
+        final titles = cards.map((c) => c.title).toList(growable: false);
         expect(titles, ['Near', 'No Location']);
+      },
+    );
+  });
+
+  group('distance display (FR-AP-2, #253)', () {
+    testWidgets(
+      'a located apiary shows its distance from the device location',
+      (tester) async {
+        // ~1.1km east at the equator (0.01° longitude ≈ 1.11km).
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('near', 'Near', lon: 0.01, lat: 0.0)],
+            location: const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final card = tester.widget<BrandRowCard>(find.byType(BrandRowCard));
+        final subtitle = card.subtitle!;
+        expect(subtitle, contains('km away'));
+        // Also still shows the hive count (distance is appended, not
+        // replacing the existing subtitle content, #253 AC).
+        expect(subtitle, contains('hives'));
+      },
+    );
+
+    testWidgets(
+      'an apiary without a location shows no distance (no placeholder noise, #253 AC)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('none', 'No Location')],
+            location: const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final card = tester.widget<BrandRowCard>(find.byType(BrandRowCard));
+        final subtitle = card.subtitle!;
+        expect(subtitle, isNot(contains('km away')));
+      },
+    );
+
+    testWidgets(
+      'no distance is shown when the device location is unavailable (#253 AC)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte', lon: 0.01, lat: 0.0)],
+            location: const DeviceLocationPermissionDenied(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final card = tester.widget<BrandRowCard>(find.byType(BrandRowCard));
+        final subtitle = card.subtitle!;
+        expect(subtitle, isNot(contains('km away')));
       },
     );
   });
@@ -432,6 +599,44 @@ void main() {
     });
 
     test(
+      'filterApiariesByQuery also matches place_label, diacritic-insensitively '
+      '(FR-AP-6, #252/#254)',
+      () {
+        final apiaries = [
+          _apiary('a', 'Colmeia 1', placeLabel: 'Montargil'),
+          _apiary('b', 'Colmeia 2', placeLabel: 'São Domingos'),
+          _apiary('c', 'Colmeia 3'), // no place_label
+        ];
+        expect(filterApiariesByQuery(apiaries, 'montargil').map((a) => a.id), [
+          'a',
+        ]);
+        // PT "São" ≈ "sao" — case AND diacritic-insensitive (#254 AC).
+        expect(
+          filterApiariesByQuery(apiaries, 'sao domingos').map((a) => a.id),
+          ['b'],
+        );
+        expect(filterApiariesByQuery(apiaries, 'SÃO').map((a) => a.id), ['b']);
+        // An apiary with no place_label never throws/matches spuriously.
+        expect(filterApiariesByQuery(apiaries, 'zzz'), isEmpty);
+      },
+    );
+
+    test('filterApiariesByQuery matches either name OR place_label — a query '
+        'need not appear in both', () {
+      final apiaries = [_apiary('a', 'Encosta Norte', placeLabel: 'Alcácer')];
+      expect(
+        filterApiariesByQuery(apiaries, 'encosta').map((a) => a.id),
+        ['a'],
+        reason: 'name-only match still works',
+      );
+      expect(
+        filterApiariesByQuery(apiaries, 'alcacer').map((a) => a.id),
+        ['a'],
+        reason: 'place_label-only match, diacritic-folded',
+      );
+    });
+
+    test(
       'sortApiariesByDistance orders ascending and puts no-location entries last',
       () {
         final apiaries = [
@@ -453,5 +658,282 @@ void main() {
       final sorted = sortApiariesByName(apiaries);
       expect(sorted.map((a) => a.id).toList(), ['a', 'z']);
     });
+  });
+
+  group('apiariesViewModelProvider memoization (HIGH #2)', () {
+    test('an unrelated provider change (the list/map view toggle) does not '
+        'recompute the filtered/sorted list — only the actual inputs '
+        '(stream, query, location) do', () async {
+      final container = ProviderContainer(
+        overrides: [
+          apiariesStreamProvider.overrideWith(
+            (ref) =>
+                Stream.value([_apiary('z', 'Zulu'), _apiary('a', 'Alpha')]),
+          ),
+          // Avoids touching the real geolocator plugin (no platform
+          // channel under a plain test(), unlike testWidgets()) — this
+          // test only cares about apiariesViewModelProvider's own caching
+          // behavior, not the resolved location value.
+          deviceLocationServiceProvider.overrideWithValue(
+            const _FakeDeviceLocationService(DeviceLocationUnavailable()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // Establish a listener so the stream provider is actually evaluated
+      // (a bare container.read of a StreamProvider's own .future can hang
+      // without an active listener keeping it subscribed), then let its
+      // first emission flow through the event queue before reading —
+      // otherwise the first read could observe AsyncLoading, which is a
+      // different AsyncValue instance every time regardless of
+      // memoization. Mirrors apiaries_repository_test.dart's own
+      // listen()+pumpEventQueue() pattern for watch()-backed streams.
+      container.listen(apiariesStreamProvider, (previous, next) {});
+      await pumpEventQueue();
+
+      final first = container.read(apiariesViewModelProvider);
+
+      // Before the fix, this computation ran straight inside build(), so
+      // ANY rebuild of ApiariesListScreen — including one triggered by an
+      // unrelated provider like this view toggle — redid the O(n)
+      // filter+haversine-sort. Hoisted into its own Provider, Riverpod
+      // caches the result: reading it again without touching one of its
+      // three real inputs (stream/query/location) must return the exact
+      // same object.
+      container.read(apiariesViewProvider.notifier).state = ApiariesView.map;
+      final second = container.read(apiariesViewModelProvider);
+
+      expect(
+        identical(first, second),
+        isTrue,
+        reason:
+            'unrelated apiariesViewProvider change must not recompute '
+            'apiariesViewModelProvider',
+      );
+
+      // Changing an actual input (the search query) DOES recompute.
+      container.read(apiariesSearchQueryProvider.notifier).state = 'zulu';
+      final third = container.read(apiariesViewModelProvider);
+
+      expect(
+        identical(first, third),
+        isFalse,
+        reason: 'a real input change (search query) must recompute it',
+      );
+    });
+  });
+
+  group('error state (HIGH #4: no test previously drove the error branch)', () {
+    testWidgets(
+      'shows an error state (not a crash) when the apiaries stream errors',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              apiariesStreamProvider.overrideWith(
+                (ref) => Stream<List<Apiary>>.error('boom'),
+              ),
+              deviceLocationServiceProvider.overrideWithValue(
+                const _FakeDeviceLocationService(
+                  DeviceLocationServicesDisabled(),
+                ),
+              ),
+            ],
+            child: const MaterialApp(
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: Scaffold(body: ApiariesListScreen()),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('Could not load apiaries'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
+  group('location refresh (#422)', () {
+    // A device that starts east of centre — nearest to "East" — then moves
+    // west; used to prove a re-fetch actually re-sorts the list, not just
+    // that current() was called again.
+    List<Apiary> eastWestApiaries() => [
+      _apiary('east', 'East', lon: 10.0, lat: 0.0),
+      _apiary('west', 'West', lon: -10.0, lat: 0.0),
+    ];
+
+    testWidgets(
+      'the periodic timer re-acquires the location about every 10s and re-sorts',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 9.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(apiaries: eastWestApiaries(), service: service),
+        );
+        await tester.pumpAndSettle();
+
+        // Device starts east, so East sorts first.
+        expect(_cardTitles(tester), ['East', 'West']);
+        final fetchesBeforeTick = service.callCount;
+
+        // The user walks west; the next ~10s tick must re-fetch and re-sort.
+        service.result = const DeviceLocationAvailable(lon: -9.0, lat: 0.0);
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+
+        expect(service.callCount, greaterThan(fetchesBeforeTick));
+        expect(_cardTitles(tester), ['West', 'East']);
+
+        // Dispose so the still-live periodic timer doesn't outlive the test.
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets(
+      'the periodic refresh timer is cancelled when the screen is disposed',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final fetchesBeforeDispose = service.callCount;
+
+        // Tearing down the screen must cancel the timer in State.dispose —
+        // if it didn't, flutter_test would itself fail the test for a pending
+        // timer, and the later tick would push callCount up.
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 30));
+
+        expect(service.callCount, fetchesBeforeDispose);
+      },
+    );
+
+    testWidgets('pull-to-refresh re-acquires the location and re-sorts', (
+      tester,
+    ) async {
+      final service = _CountingDeviceLocationService(
+        const DeviceLocationAvailable(lon: 9.0, lat: 0.0),
+      );
+      await tester.pumpWidget(
+        _buildScreen(apiaries: eastWestApiaries(), service: service),
+      );
+      await tester.pumpAndSettle();
+      expect(_cardTitles(tester), ['East', 'West']);
+
+      // Move west, then pull down on the list to force a refresh.
+      service.result = const DeviceLocationAvailable(lon: -9.0, lat: 0.0);
+      await tester.fling(
+        find.byKey(const Key('apiaries-list-refresh-indicator')),
+        const Offset(0, 300),
+        1000,
+      );
+      await tester.pumpAndSettle();
+
+      expect(service.callCount, greaterThan(1));
+      expect(_cardTitles(tester), ['West', 'East']);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+      'polling is suspended while the tab is offstage and resumes with a '
+      'catch-up fetch when it becomes visible again',
+      (tester) async {
+        final visible = ValueNotifier<bool>(true);
+        addTearDown(visible.dispose);
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+            tabVisible: visible,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch away from the Apiaries tab: its indexedStack branch goes
+        // offstage (TickerMode disabled). The screen stays mounted, but must
+        // stop polling — no new fetch, no matter how much time elapses.
+        visible.value = false;
+        await tester.pump();
+        final countWhileHidden = service.callCount;
+        await tester.pump(const Duration(seconds: 30));
+        expect(service.callCount, countWhileHidden);
+
+        // Return to the Apiaries tab: an immediate catch-up fetch, then the
+        // ~10s polling resumes.
+        visible.value = true;
+        await tester.pump();
+        expect(
+          service.callCount,
+          greaterThan(countWhileHidden),
+          reason: 'a catch-up fetch fires when the tab becomes visible',
+        );
+        final countAfterReturn = service.callCount;
+
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+        expect(
+          service.callCount,
+          greaterThan(countAfterReturn),
+          reason: 'the periodic timer resumed once the tab is visible again',
+        );
+
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+
+    testWidgets(
+      'polling stops when the app is backgrounded and resumes with a catch-up '
+      'fetch when it is foregrounded',
+      (tester) async {
+        final service = _CountingDeviceLocationService(
+          const DeviceLocationAvailable(lon: 0.0, lat: 0.0),
+        );
+        await tester.pumpWidget(
+          _buildScreen(
+            apiaries: [_apiary('a1', 'Serra Norte')],
+            service: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Background the app: the timer must stop firing.
+        await _backgroundApp(tester);
+        final countWhilePaused = service.callCount;
+        await tester.pump(const Duration(seconds: 30));
+        expect(service.callCount, countWhilePaused);
+
+        // Foreground again: an immediate catch-up fetch, then polling resumes.
+        await _foregroundApp(tester);
+        expect(
+          service.callCount,
+          greaterThan(countWhilePaused),
+          reason: 'a catch-up fetch fires on foreground',
+        );
+        final countAfterResume = service.callCount;
+
+        await tester.pump(const Duration(seconds: 11));
+        await tester.pumpAndSettle();
+        expect(
+          service.callCount,
+          greaterThan(countAfterResume),
+          reason: 'the periodic timer resumed once foregrounded',
+        );
+
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
   });
 }

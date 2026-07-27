@@ -1,0 +1,31 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by
+# the `mailpit:` key in the parent's values.yaml/environments/*.yaml.
+enabled: true
+
+image:
+  repository: axllent/mailpit
+  tag: "v1.30.5"
+
+# Container ports. The Service publishes both under the stable name `mailpit`
+# (charts/authentik's `email.host` default and the NetworkPolicy edges both
+# reference it). 1025 receives SMTP from Authentik; 8025 serves the message
+# API/UI — in-cluster only (no gateway route): CI reads it by exec-ing curl in
+# the authentik-server pod, humans via `kubectl port-forward svc/mailpit 8025`.
+smtpPort: 1025
+httpPort: 8025
+
+# Ring buffer of captured messages (MP_MAX_MESSAGES) — oldest are dropped, so a
+# long-lived dev cluster can't grow unbounded.
+maxMessages: 500
+
+resourceTier: small
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit
+  resources:
+    small:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { cpu: 100m, memory: 64Mi }

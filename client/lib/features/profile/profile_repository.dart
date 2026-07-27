@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/storage/local_prefs.dart';
 
 /// The authenticated caller's own profile
 /// (contracts/openapi/identity.openapi.yaml's Profile schema, FR-ONB-1).
@@ -33,19 +37,66 @@ class Profile {
   final bool profileComplete;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  // Value equality (MEDIUM-2): profileProvider is watched by the router's
+  // redirect logic (app_router.dart) — without this, a re-fetch that
+  // returns the same profile compares unequal (default identity equality)
+  // and can trigger a redundant redirect re-evaluation/rebuild.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Profile &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          email == other.email &&
+          locale == other.locale &&
+          profileComplete == other.profileComplete &&
+          createdAt == other.createdAt &&
+          updatedAt == other.updatedAt);
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    email,
+    locale,
+    profileComplete,
+    createdAt,
+    updatedAt,
+  );
 }
 
 /// Reads/writes the caller's profile via `GET`/`PATCH /v1/profile`. GET
 /// lazily get-or-creates the row server-side on first login; PATCH is a
 /// partial update — only the fields passed are sent.
+///
+/// Caches the last-known-good [fetch] response in durable local storage
+/// (#390) so the onboarding gate (`routing/app_router.dart`) stays passable
+/// offline for a previously-onboarded user: [fetch] serves that cached
+/// snapshot when the request fails with [ApiNetworkException] rather than
+/// bouncing them to `/profile`; a genuine server response (200 or an
+/// [ApiException]) always wins over the cache.
 class ProfileRepository {
-  ProfileRepository(this._api);
+  ProfileRepository(this._api, {LocalPrefs? prefs})
+    : _prefs = prefs ?? createLocalPrefs();
 
   final ApiClient _api;
+  final LocalPrefs _prefs;
 
   Future<Profile> fetch() async {
-    final json = await _api.getJson('/profile');
-    return Profile.fromJson(json);
+    try {
+      final json = await _api.getJson('/profile');
+      _prefs.write(kProfileCacheKey, jsonEncode(json));
+      return Profile.fromJson(json);
+    } on ApiNetworkException {
+      final cached = _prefs.read(kProfileCacheKey);
+      // No cache (never fetched successfully before, or already cleared by
+      // logout) → nothing to fall back to; the network failure is the real,
+      // actionable answer, so rethrow rather than fabricating a profile.
+      if (cached == null) rethrow;
+      return Profile.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+    }
   }
 
   Future<Profile> update({String? name, String? email, String? locale}) async {
@@ -69,6 +120,18 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
 class ProfileController extends AsyncNotifier<Profile> {
   @override
   Future<Profile> build() {
+    // Logged out: stay pending (a never-completing future) WITHOUT touching
+    // the network. This provider has eager initializers that exist for other
+    // reasons — the router's redirect listens (app_router.dart) and
+    // localeProvider (core/l10n) — and without this gate each of them fires
+    // an unauthenticated 401 `GET /v1/profile` at boot, which Riverpod's
+    // default policy then retries ~10x (the "401 storm"). Gating here, in
+    // the one place the fetch originates, keeps every watcher safe by
+    // construction; the isAuthenticated watch re-runs build the moment a
+    // session appears, so login still fetches exactly as before.
+    if (!ref.watch(isAuthenticatedProvider)) {
+      return Completer<Profile>().future;
+    }
     return ref.watch(profileRepositoryProvider).fetch();
   }
 

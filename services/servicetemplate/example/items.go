@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/shared/dbaccess/sqlc/gen"
 )
@@ -16,11 +16,21 @@ import (
 // response is a plain array — illustrative only; real domain endpoints
 // follow docs/architecture/api-contracts.md's cursor-paginated Page
 // envelope.
-func itemsHandler(pool *pgxpool.Pool) http.HandlerFunc {
-	queries := sqlcgen.New(pool)
+//
+// db is sqlcgen.DBTX rather than a concrete *pgxpool.Pool so the DB-failure
+// path below is unit-testable with a fake DBTX; *pgxpool.Pool still
+// satisfies this interface, so callers are unaffected.
+//
+// This is the literal reference every domain service's own handlers are
+// copy-pasted from: a DB error is always logged server-side (never silently
+// dropped) before returning the standard generic 500 problem+json body — the
+// raw driver error must never reach the client.
+func itemsHandler(db sqlcgen.DBTX) http.HandlerFunc {
+	queries := sqlcgen.New(db)
 	return func(w http.ResponseWriter, r *http.Request) {
 		items, err := queries.ListItems(r.Context())
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list items failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}

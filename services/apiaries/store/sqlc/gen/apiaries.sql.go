@@ -12,10 +12,13 @@ import (
 )
 
 const getApiary = `-- name: GetApiary :one
-SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
-FROM apiaries.apiaries
-WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
+       COALESCE(hc.value, 0)::integer AS hive_count,
+       COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
+FROM apiaries.apiaries a
+LEFT JOIN apiaries.apiary_counters hc
+    ON hc.apiary_id = a.id AND hc.counter_type = 'hive'
+WHERE a.organization_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
 `
 
 type GetApiaryParams struct {
@@ -27,13 +30,17 @@ type GetApiaryRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	Name            string             `json:"name"`
-	HiveCount       int32              `json:"hive_count"`
 	Notes           pgtype.Text        `json:"notes"`
+	PlaceLabel      pgtype.Text        `json:"place_label"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	HiveCount       int32              `json:"hive_count"`
 	LocationGeojson string             `json:"location_geojson"`
 }
 
+// hive_count (#256): LEFT JOIN'd from apiary_counters, same convention as
+// ListApiaries above. place_label (#252): same plain column as ListApiaries
+// above.
 func (q *Queries) GetApiary(ctx context.Context, arg GetApiaryParams) (GetApiaryRow, error) {
 	row := q.db.QueryRow(ctx, getApiary, arg.OrganizationID, arg.ID)
 	var i GetApiaryRow
@@ -41,10 +48,11 @@ func (q *Queries) GetApiary(ctx context.Context, arg GetApiaryParams) (GetApiary
 		&i.ID,
 		&i.OrganizationID,
 		&i.Name,
-		&i.HiveCount,
 		&i.Notes,
+		&i.PlaceLabel,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HiveCount,
 		&i.LocationGeojson,
 	)
 	return i, err
@@ -107,11 +115,14 @@ func (q *Queries) GetApiaryDistance(ctx context.Context, arg GetApiaryDistancePa
 }
 
 const getApiaryForUpdate = `-- name: GetApiaryForUpdate :one
-SELECT id, organization_id, name, hive_count, notes, created_at, updated_at, deleted_at,
-       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
-FROM apiaries.apiaries
-WHERE organization_id = $1 AND id = $2
-FOR UPDATE
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at, a.deleted_at,
+       COALESCE(hc.value, 0)::integer AS hive_count,
+       COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
+FROM apiaries.apiaries a
+LEFT JOIN apiaries.apiary_counters hc
+    ON hc.apiary_id = a.id AND hc.counter_type = 'hive'
+WHERE a.organization_id = $1 AND a.id = $2
+FOR UPDATE OF a
 `
 
 type GetApiaryForUpdateParams struct {
@@ -123,16 +134,22 @@ type GetApiaryForUpdateRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	Name            string             `json:"name"`
-	HiveCount       int32              `json:"hive_count"`
 	Notes           pgtype.Text        `json:"notes"`
+	PlaceLabel      pgtype.Text        `json:"place_label"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	HiveCount       int32              `json:"hive_count"`
 	LocationGeojson string             `json:"location_geojson"`
 }
 
 // Locks the row (or reports its absence) for the LWW apply / REST
-// create-or-update transaction.
+// create-or-update transaction. hive_count (#256): LEFT JOIN'd the same way
+// as GetApiary — FOR UPDATE only locks apiaries.apiaries itself (the row
+// being written); the counter row is separately locked/upserted by
+// UpsertApiaryCounter's own ON CONFLICT (atomic per-row, no extra lock
+// needed for a single-row upsert). place_label (#252): same plain column as
+// GetApiary above.
 func (q *Queries) GetApiaryForUpdate(ctx context.Context, arg GetApiaryForUpdateParams) (GetApiaryForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getApiaryForUpdate, arg.OrganizationID, arg.ID)
 	var i GetApiaryForUpdateRow
@@ -140,55 +157,76 @@ func (q *Queries) GetApiaryForUpdate(ctx context.Context, arg GetApiaryForUpdate
 		&i.ID,
 		&i.OrganizationID,
 		&i.Name,
-		&i.HiveCount,
 		&i.Notes,
+		&i.PlaceLabel,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.HiveCount,
 		&i.LocationGeojson,
 	)
 	return i, err
 }
 
 const insertApiary = `-- name: InsertApiary :exec
-INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, notes, updated_at, deleted_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO apiaries.apiaries (id, organization_id, name, notes, place_label, updated_at, deleted_at, location)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7,
+    CASE WHEN $8::double precision IS NULL THEN NULL
+         ELSE public.ST_SetSRID(public.ST_MakePoint($8::double precision, $9::double precision), 4326)::public.geography
+    END
+)
 `
 
 type InsertApiaryParams struct {
 	ID             pgtype.UUID        `json:"id"`
 	OrganizationID pgtype.UUID        `json:"organization_id"`
 	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
 	Notes          pgtype.Text        `json:"notes"`
+	PlaceLabel     pgtype.Text        `json:"place_label"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	Lon            pgtype.Float8      `json:"lon"`
+	Lat            pgtype.Float8      `json:"lat"`
 }
 
-// Sync-apply create (no location — the sync wire shape carries only
-// name/hive_count/notes, sync.go's apiaryData). REST create uses InsertApiaryWithLocation.
+// Sync-apply create. Historically this omitted location entirely (the sync
+// wire shape carried only name/hive_count/notes) — #252 closes that gap: the
+// field client's offline-created apiary now writes its map-pin/current-
+// location coordinates through this same path, matching the REST path's
+// InsertApiaryWithLocation (both write the same apiaries.apiaries table and
+// must apply the same rules, write.go's package doc comment). Location
+// shape/params match InsertApiaryWithLocation exactly (both-or-neither
+// lon/lat; api/geo.go's geoPointInput.lon/lat already produce this for
+// either caller). hive_count (#256) is still not a column here — the caller
+// (sync.go's applyOp) upserts it into apiary_counters via UpsertApiaryCounter
+// in the same transaction, mirroring how the REST path (write.go's
+// createApiary) does the same. place_label (#252): plain nullable text,
+// alongside notes.
 func (q *Queries) InsertApiary(ctx context.Context, arg InsertApiaryParams) error {
 	_, err := q.db.Exec(ctx, insertApiary,
 		arg.ID,
 		arg.OrganizationID,
 		arg.Name,
-		arg.HiveCount,
 		arg.Notes,
+		arg.PlaceLabel,
 		arg.UpdatedAt,
 		arg.DeletedAt,
+		arg.Lon,
+		arg.Lat,
 	)
 	return err
 }
 
 const insertApiaryWithLocation = `-- name: InsertApiaryWithLocation :one
-INSERT INTO apiaries.apiaries (id, organization_id, name, hive_count, notes, updated_at, location)
+INSERT INTO apiaries.apiaries (id, organization_id, name, notes, place_label, updated_at, location)
 VALUES (
     $1, $2, $3, $4, $5, $6,
     CASE WHEN $7::double precision IS NULL THEN NULL
          ELSE public.ST_SetSRID(public.ST_MakePoint($7::double precision, $8::double precision), 4326)::public.geography
     END
 )
-RETURNING id, organization_id, name, hive_count, notes, created_at, updated_at,
+RETURNING id, organization_id, name, notes, place_label, created_at, updated_at,
           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
 `
 
@@ -196,8 +234,8 @@ type InsertApiaryWithLocationParams struct {
 	ID             pgtype.UUID        `json:"id"`
 	OrganizationID pgtype.UUID        `json:"organization_id"`
 	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
 	Notes          pgtype.Text        `json:"notes"`
+	PlaceLabel     pgtype.Text        `json:"place_label"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	Lon            pgtype.Float8      `json:"lon"`
 	Lat            pgtype.Float8      `json:"lat"`
@@ -207,8 +245,8 @@ type InsertApiaryWithLocationRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	Name            string             `json:"name"`
-	HiveCount       int32              `json:"hive_count"`
 	Notes           pgtype.Text        `json:"notes"`
+	PlaceLabel      pgtype.Text        `json:"place_label"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	LocationGeojson string             `json:"location_geojson"`
@@ -217,13 +255,22 @@ type InsertApiaryWithLocationRow struct {
 // REST create (POST /v1/apiaries, #31): full row including the optional
 // GeoJSON location. sqlc.narg('lon')/sqlc.narg('lat') are both-or-neither —
 // callers pass either both valid or both NULL (api/apiaries.go's toPoint).
+// hive_count (#256): returned as a literal 0 here (COALESCE over a join that
+// can never match yet — the row was just inserted, so no counter row exists
+// until the caller's follow-up UpsertApiaryCounter call in the same
+// transaction) rather than a real join, since there is nothing to join
+// against for a brand-new id; the caller (write.go's createApiary) always
+// upserts the real value immediately after and uses ITS result, not this
+// one, for hive_count in the response it builds. place_label (#252): plain
+// nullable text, alongside notes — no join/derivation, so it's read back
+// straight from the just-inserted row like every other scalar column here.
 func (q *Queries) InsertApiaryWithLocation(ctx context.Context, arg InsertApiaryWithLocationParams) (InsertApiaryWithLocationRow, error) {
 	row := q.db.QueryRow(ctx, insertApiaryWithLocation,
 		arg.ID,
 		arg.OrganizationID,
 		arg.Name,
-		arg.HiveCount,
 		arg.Notes,
+		arg.PlaceLabel,
 		arg.UpdatedAt,
 		arg.Lon,
 		arg.Lat,
@@ -233,8 +280,8 @@ func (q *Queries) InsertApiaryWithLocation(ctx context.Context, arg InsertApiary
 		&i.ID,
 		&i.OrganizationID,
 		&i.Name,
-		&i.HiveCount,
 		&i.Notes,
+		&i.PlaceLabel,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LocationGeojson,
@@ -312,13 +359,16 @@ func (q *Queries) InsertConflict(ctx context.Context, arg InsertConflictParams) 
 }
 
 const listApiaries = `-- name: ListApiaries :many
-SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-       COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
-FROM apiaries.apiaries
-WHERE organization_id = $1
-  AND deleted_at IS NULL
-  AND ($3::uuid IS NULL OR id > $3::uuid)
-ORDER BY id
+SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
+       COALESCE(hc.value, 0)::integer AS hive_count,
+       COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson
+FROM apiaries.apiaries a
+LEFT JOIN apiaries.apiary_counters hc
+    ON hc.apiary_id = a.id AND hc.counter_type = 'hive'
+WHERE a.organization_id = $1
+  AND a.deleted_at IS NULL
+  AND ($3::uuid IS NULL OR a.id > $3::uuid)
+ORDER BY a.id
 LIMIT $2
 `
 
@@ -332,10 +382,11 @@ type ListApiariesRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	Name            string             `json:"name"`
-	HiveCount       int32              `json:"hive_count"`
 	Notes           pgtype.Text        `json:"notes"`
+	PlaceLabel      pgtype.Text        `json:"place_label"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	HiveCount       int32              `json:"hive_count"`
 	LocationGeojson string             `json:"location_geojson"`
 }
 
@@ -344,6 +395,17 @@ type ListApiariesRow struct {
 // Used when the contract's `near` param is absent (FR-AP-2/#33);
 // ListApiariesByProximity below is the `near`-supplied, distance-ordered
 // variant.
+//
+// hive_count (#256): LEFT JOIN'd from apiary_counters rather than a column on
+// this table — one JOIN over the page (not one query per row, avoiding N+1)
+// resolves every row's hive count in the same round trip; COALESCE(...,0)
+// gives the "0 when no counter row exists" default every read path shares
+// (FR-AP-7 AC), matching how apiaries.hive_count's own NOT NULL DEFAULT 0
+// behaved before the column was retired.
+//
+// place_label (#252): a plain nullable text column, selected alongside notes
+// — no join/derivation needed, unlike location (GeoJSON) or hive_count
+// (counters join).
 func (q *Queries) ListApiaries(ctx context.Context, arg ListApiariesParams) ([]ListApiariesRow, error) {
 	rows, err := q.db.Query(ctx, listApiaries, arg.OrganizationID, arg.Limit, arg.Cursor)
 	if err != nil {
@@ -357,10 +419,11 @@ func (q *Queries) ListApiaries(ctx context.Context, arg ListApiariesParams) ([]L
 			&i.ID,
 			&i.OrganizationID,
 			&i.Name,
-			&i.HiveCount,
 			&i.Notes,
+			&i.PlaceLabel,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.HiveCount,
 			&i.LocationGeojson,
 		); err != nil {
 			return nil, err
@@ -375,9 +438,10 @@ func (q *Queries) ListApiaries(ctx context.Context, arg ListApiariesParams) ([]L
 
 const listApiariesByProximity = `-- name: ListApiariesByProximity :many
 WITH ranked AS (
-    SELECT id, organization_id, name, hive_count, notes, created_at, updated_at,
-           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson,
-           public.ST_Distance(location, public.ST_SetSRID(public.ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography) AS distance_m,
+    SELECT a.id, a.organization_id, a.name, a.notes, a.place_label, a.created_at, a.updated_at,
+           COALESCE(hc.value, 0)::integer AS hive_count,
+           COALESCE(public.ST_AsGeoJSON(a.location), '')::text AS location_geojson,
+           public.ST_Distance(a.location, public.ST_SetSRID(public.ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography) AS distance_m,
            -- The KNN operator itself is schema-qualified the same way the
            -- functions above are (#221): ` + "`" + `<->` + "`" + ` is also defined by the
            -- postgis extension in ` + "`" + `public` + "`" + `, not just its functions/types, so
@@ -385,12 +449,14 @@ WITH ranked AS (
            -- too (SQLSTATE 42883 "operator does not exist"). Postgres
            -- operators use OPERATOR(schema.op) to schema-qualify, unlike
            -- functions/types which take a plain schema. prefix.
-           location OPERATOR(public.<->) public.ST_SetSRID(public.ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography AS knn_distance
-    FROM apiaries.apiaries
-    WHERE organization_id = $1
-      AND deleted_at IS NULL
+           a.location OPERATOR(public.<->) public.ST_SetSRID(public.ST_MakePoint($4::double precision, $5::double precision), 4326)::public.geography AS knn_distance
+    FROM apiaries.apiaries a
+    LEFT JOIN apiaries.apiary_counters hc
+        ON hc.apiary_id = a.id AND hc.counter_type = 'hive'
+    WHERE a.organization_id = $1
+      AND a.deleted_at IS NULL
 )
-SELECT id, organization_id, name, hive_count, notes, created_at, updated_at, location_geojson, distance_m
+SELECT id, organization_id, name, notes, place_label, created_at, updated_at, hive_count, location_geojson, distance_m
 FROM ranked
 ORDER BY knn_distance ASC NULLS LAST, id
 LIMIT $2
@@ -409,10 +475,11 @@ type ListApiariesByProximityRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	Name            string             `json:"name"`
-	HiveCount       int32              `json:"hive_count"`
 	Notes           pgtype.Text        `json:"notes"`
+	PlaceLabel      pgtype.Text        `json:"place_label"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	HiveCount       int32              `json:"hive_count"`
 	LocationGeojson string             `json:"location_geojson"`
 	DistanceM       interface{}        `json:"distance_m"`
 }
@@ -454,6 +521,9 @@ type ListApiariesByProximityRow struct {
 // verified: ST_Distance and `<->` differ by ~0.1% at ~100km), fine for
 // ordering; the selected `distance_m` column still uses the exact
 // ST_Distance for the value actually returned to the client.
+//
+// hive_count (#256): same LEFT JOIN as ListApiaries above. place_label
+// (#252): same plain column as ListApiaries above.
 func (q *Queries) ListApiariesByProximity(ctx context.Context, arg ListApiariesByProximityParams) ([]ListApiariesByProximityRow, error) {
 	rows, err := q.db.Query(ctx, listApiariesByProximity,
 		arg.OrganizationID,
@@ -473,10 +543,11 @@ func (q *Queries) ListApiariesByProximity(ctx context.Context, arg ListApiariesB
 			&i.ID,
 			&i.OrganizationID,
 			&i.Name,
-			&i.HiveCount,
 			&i.Notes,
+			&i.PlaceLabel,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.HiveCount,
 			&i.LocationGeojson,
 			&i.DistanceM,
 		); err != nil {
@@ -587,8 +658,11 @@ type ListEntityTimelineRow struct {
 // audit_log rows and the {winning_payload, losing_payload, winner} conflict
 // payload for sync_conflict_log rows — the two tables' change shapes differ
 // by design (§3 vs §4.2), so callers branch on event_kind to interpret it.
-// Like ListAuditLog, not yet exposed via HTTP — typed groundwork for the
-// entity-detail "history" screen (history.md §8/§10).
+// Exposed via HTTP since #60 (GET /v1/apiaries/{apiaryId}/history, api/
+// history.go), which is what the entity-detail "history" screen
+// (history.md §8) reads when a device has no local slice to render from.
+// It was typed groundwork with no HTTP surface between #61 and #60;
+// ListAuditLog still is.
 func (q *Queries) ListEntityTimeline(ctx context.Context, arg ListEntityTimelineParams) ([]ListEntityTimelineRow, error) {
 	rows, err := q.db.Query(ctx, listEntityTimeline, arg.OrganizationID, arg.EntityType, arg.EntityID)
 	if err != nil {
@@ -635,7 +709,12 @@ type SoftDeleteApiaryParams struct {
 // REST delete (DELETE /v1/apiaries/{id}, #31): tombstone, matching the sync
 // path's deleted_at convention so the delete propagates to devices
 // (data-model.md). :execrows so the caller can distinguish "already gone"
-// (0 rows) from success without a separate SELECT.
+// (0 rows) from success without a separate SELECT. Counter rows are left in
+// place (not cascaded) — soft-delete is not a real DELETE, so the FK's ON
+// DELETE CASCADE never fires; they simply stop being reachable through any
+// read path once the apiary itself is filtered out by deleted_at IS NULL,
+// matching apiaries.audit_log/sync_conflict_log's own "orphaned but inert"
+// treatment of a soft-deleted entity's history.
 func (q *Queries) SoftDeleteApiary(ctx context.Context, arg SoftDeleteApiaryParams) (int64, error) {
 	result, err := q.db.Exec(ctx, softDeleteApiary, arg.OrganizationID, arg.ID, arg.DeletedAt)
 	if err != nil {
@@ -646,7 +725,15 @@ func (q *Queries) SoftDeleteApiary(ctx context.Context, arg SoftDeleteApiaryPara
 
 const updateApiary = `-- name: UpdateApiary :exec
 UPDATE apiaries.apiaries
-SET name = $3, hive_count = $4, notes = $5, updated_at = $6, deleted_at = $7, recorded_at = now()
+SET name = $3,
+    notes = $4,
+    place_label = $5,
+    updated_at = $6,
+    deleted_at = $7,
+    location = CASE WHEN $8::double precision IS NULL THEN NULL
+                     ELSE public.ST_SetSRID(public.ST_MakePoint($8::double precision, $9::double precision), 4326)::public.geography
+               END,
+    recorded_at = now()
 WHERE organization_id = $1 AND id = $2
 `
 
@@ -654,23 +741,33 @@ type UpdateApiaryParams struct {
 	OrganizationID pgtype.UUID        `json:"organization_id"`
 	ID             pgtype.UUID        `json:"id"`
 	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
 	Notes          pgtype.Text        `json:"notes"`
+	PlaceLabel     pgtype.Text        `json:"place_label"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	Lon            pgtype.Float8      `json:"lon"`
+	Lat            pgtype.Float8      `json:"lat"`
 }
 
-// Sync-apply update (name/hive_count/notes/tombstone only — location is not
-// part of the sync wire shape yet). REST update uses UpdateApiaryWithLocation.
+// Sync-apply update. Historically name/notes/tombstone only — #252 adds
+// location here too (same both-or-neither lon/lat shape as
+// UpdateApiaryWithLocation below), closing the same sync-apply location gap
+// InsertApiary's doc comment describes: an offline edit that moves an
+// apiary's pin now applies through this path exactly like a name/notes edit
+// already did. hive_count (#256) is still upserted separately into
+// apiary_counters by the caller in the same transaction. place_label (#252):
+// plain nullable text, alongside notes.
 func (q *Queries) UpdateApiary(ctx context.Context, arg UpdateApiaryParams) error {
 	_, err := q.db.Exec(ctx, updateApiary,
 		arg.OrganizationID,
 		arg.ID,
 		arg.Name,
-		arg.HiveCount,
 		arg.Notes,
+		arg.PlaceLabel,
 		arg.UpdatedAt,
 		arg.DeletedAt,
+		arg.Lon,
+		arg.Lat,
 	)
 	return err
 }
@@ -678,15 +775,15 @@ func (q *Queries) UpdateApiary(ctx context.Context, arg UpdateApiaryParams) erro
 const updateApiaryWithLocation = `-- name: UpdateApiaryWithLocation :one
 UPDATE apiaries.apiaries
 SET name = $3,
-    hive_count = $4,
-    notes = $5,
+    notes = $4,
+    place_label = $5,
     updated_at = $6,
     location = CASE WHEN $7::double precision IS NULL THEN NULL
                      ELSE public.ST_SetSRID(public.ST_MakePoint($7::double precision, $8::double precision), 4326)::public.geography
                END,
     recorded_at = now()
 WHERE organization_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, organization_id, name, hive_count, notes, created_at, updated_at,
+RETURNING id, organization_id, name, notes, place_label, created_at, updated_at,
           COALESCE(public.ST_AsGeoJSON(location), '')::text AS location_geojson
 `
 
@@ -694,8 +791,8 @@ type UpdateApiaryWithLocationParams struct {
 	OrganizationID pgtype.UUID        `json:"organization_id"`
 	ID             pgtype.UUID        `json:"id"`
 	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
 	Notes          pgtype.Text        `json:"notes"`
+	PlaceLabel     pgtype.Text        `json:"place_label"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	Lon            pgtype.Float8      `json:"lon"`
 	Lat            pgtype.Float8      `json:"lat"`
@@ -705,8 +802,8 @@ type UpdateApiaryWithLocationRow struct {
 	ID              pgtype.UUID        `json:"id"`
 	OrganizationID  pgtype.UUID        `json:"organization_id"`
 	Name            string             `json:"name"`
-	HiveCount       int32              `json:"hive_count"`
 	Notes           pgtype.Text        `json:"notes"`
+	PlaceLabel      pgtype.Text        `json:"place_label"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	LocationGeojson string             `json:"location_geojson"`
@@ -714,14 +811,18 @@ type UpdateApiaryWithLocationRow struct {
 
 // REST update (PATCH /v1/apiaries/{id}, #31): the caller computes the full
 // desired row first (matching sync.go's mergeOp pattern), so this always
-// sets every mutable column.
+// sets every mutable column. hive_count (#256) is upserted separately by the
+// caller (write.go's updateApiary) via UpsertApiaryCounter in the same
+// transaction — not returned here (the caller already has the value it
+// wants to write and uses that for the response, not a re-read). place_label
+// (#252): plain nullable text, alongside notes.
 func (q *Queries) UpdateApiaryWithLocation(ctx context.Context, arg UpdateApiaryWithLocationParams) (UpdateApiaryWithLocationRow, error) {
 	row := q.db.QueryRow(ctx, updateApiaryWithLocation,
 		arg.OrganizationID,
 		arg.ID,
 		arg.Name,
-		arg.HiveCount,
 		arg.Notes,
+		arg.PlaceLabel,
 		arg.UpdatedAt,
 		arg.Lon,
 		arg.Lat,
@@ -731,8 +832,8 @@ func (q *Queries) UpdateApiaryWithLocation(ctx context.Context, arg UpdateApiary
 		&i.ID,
 		&i.OrganizationID,
 		&i.Name,
-		&i.HiveCount,
 		&i.Notes,
+		&i.PlaceLabel,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LocationGeojson,

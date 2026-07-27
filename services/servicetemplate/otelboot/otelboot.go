@@ -41,11 +41,42 @@ type Providers struct {
 	LoggerProvider *sdklog.LoggerProvider
 }
 
+// shutdowner is satisfied by every OTel SDK provider Bootstrap creates —
+// narrowed here so a partial-startup failure can clean up whichever
+// providers were already built before the failure, regardless of type.
+type shutdowner interface {
+	Shutdown(ctx context.Context) error
+}
+
+// shutdownAll shuts down every non-nil provider in providers, joining any
+// errors. Used both by Bootstrap's partial-startup cleanup and by
+// Providers.Shutdown.
+func shutdownAll(ctx context.Context, providers ...shutdowner) error {
+	var errs []error
+	for _, p := range providers {
+		if p == nil {
+			continue
+		}
+		if err := p.Shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.Join(errs...)
+}
+
 // Bootstrap builds the Resource and the three OTLP-gRPC exporters/providers,
 // registers the tracer/meter providers and a W3C tracecontext+baggage
 // propagator globally, and returns Providers for the caller to pass to
 // logging.NewLogger and to Shutdown on exit.
-func Bootstrap(ctx context.Context, cfg Config) (*Providers, error) {
+//
+// If a later exporter/provider fails to start, every provider already
+// created earlier in this call is shut down before the error is returned,
+// so a partial startup failure never leaks a running provider (with its own
+// background batching goroutines) that the caller has no reference to.
+func Bootstrap(ctx context.Context, cfg Config) (_ *Providers, err error) {
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceName(cfg.ServiceName),
@@ -56,6 +87,15 @@ func Bootstrap(ctx context.Context, cfg Config) (*Providers, error) {
 		return nil, fmt.Errorf("otelboot: build resource: %w", err)
 	}
 
+	var created []shutdowner
+	defer func() {
+		if err != nil {
+			if shutErr := shutdownAll(context.Background(), created...); shutErr != nil {
+				err = errors.Join(err, fmt.Errorf("otelboot: shutting down partially-started providers: %w", shutErr))
+			}
+		}
+	}()
+
 	traceExp, err := otlptracegrpc.New(ctx, grpcOpts(cfg, otlptracegrpc.WithEndpoint, otlptracegrpc.WithInsecure)...)
 	if err != nil {
 		return nil, fmt.Errorf("otelboot: new trace exporter: %w", err)
@@ -64,6 +104,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*Providers, error) {
 		sdktrace.WithBatcher(traceExp),
 		sdktrace.WithResource(res),
 	)
+	created = append(created, tp)
 
 	metricExp, err := otlpmetricgrpc.New(ctx, grpcOpts(cfg, otlpmetricgrpc.WithEndpoint, otlpmetricgrpc.WithInsecure)...)
 	if err != nil {
@@ -73,6 +114,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*Providers, error) {
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp)),
 		sdkmetric.WithResource(res),
 	)
+	created = append(created, mp)
 
 	logExp, err := otlploggrpc.New(ctx, grpcOpts(cfg, otlploggrpc.WithEndpoint, otlploggrpc.WithInsecure)...)
 	if err != nil {
@@ -82,6 +124,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*Providers, error) {
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
 		sdklog.WithResource(res),
 	)
+	created = append(created, lp)
 
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mp)

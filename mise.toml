@@ -11,13 +11,13 @@
 
 [tools]
 # --- Language toolchains (baseline for the first services/apps) ---
-go = "1.25.12"   # patch-pinned for GO-2026-5856 (crypto/tls stdlib CVE, fixed in 1.25.12); 1.25+ needed since #85 (pgx v5/minio-go v7)
-node = "22"
-flutter = "3.44.4"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed. Bumped from 3.35.5 for #23: PowerSync's powersync_core needs a Dart with `Deprecated.subclass` (>=3.10), which 3.35.5's Dart 3.9.2 lacks.
+go = "1.26.5"   # patch-pinned for GO-2026-5856 (crypto/tls stdlib CVE, fixed in 1.25.12); 1.25+ needed since #85 (pgx v5/minio-go v7)
+node = "24"
+flutter = "3.44.8"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed. Bumped from 3.35.5 for #23: PowerSync's powersync_core needs a Dart with `Deprecated.subclass` (>=3.10), which 3.35.5's Dart 3.9.2 lacks.
 
 # --- Task runner & git hooks ---
 task = "3"          # go-task — the monorepo task runner (Taskfile.yml)
-lefthook = "1"      # fast, cross-platform git hooks (lefthook.yml)
+lefthook = "2.1.10"      # fast, cross-platform git hooks (lefthook.yml)
 
 # --- Per-language linters/formatters ---
 golangci-lint = "2.12.2"   # Go meta-linter (see .golangci.yml). v2 (ADR-0008 follow-up, #85:
@@ -26,13 +26,14 @@ golangci-lint = "2.12.2"   # Go meta-linter (see .golangci.yml). v2 (ADR-0008 fo
 
 # --- Go backend service tooling (services/shared — #85; grows with each service) ---
 sqlc = "1.31.1"                                          # typed SQL query codegen (pgx/sqlc)
-"go:github.com/pressly/goose/v3/cmd/goose" = "3.24.3"    # versioned Postgres migrations
+"go:github.com/pressly/goose/v3/cmd/goose" = "3.27.3"    # versioned Postgres migrations
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"        # Go vuln scanner (`task go:vuln`, CI #88)
 
 # --- Repo-hygiene linters/formatters (run today, no code packages needed) ---
 actionlint = "latest"        # GitHub Actions workflow linter
 shellcheck = "latest"        # shell script linter
 gitleaks = "latest"          # secret scanning
+yq = "4"                     # YAML query/extraction (scripts/check-deploy-url-drift.sh — #369)
 "npm:prettier" = "3"                 # Markdown / YAML / JSON formatter
 "npm:markdownlint-cli2" = "latest"   # Markdown linter
 
@@ -42,9 +43,10 @@ gitleaks = "latest"          # secret scanning
 "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "2.7.1"  # Go server-stub + models codegen (no-ops until a service adds internal/api/oapi-codegen.yaml)
 
 # --- Infra toolchain (infra/ — single-cluster k8s platform, #83/EPIC-13) ---
-helm = "3.21.2"     # pinned to match .github/workflows/helm-ci.yml
+helm = "4.2.3"     # pinned to match .github/workflows/helm-ci.yml
 kubectl = "latest"
 k3d = "latest"
+"aqua:scaleway/scaleway-cli" = "2.59.0"   # `scw` — Kapsule staging/prod cluster ops (D-26; infra/cluster/scaleway-*.sh, cluster-ops.yml)
 
 [settings]
 # Trust this config without an interactive prompt in CI/agent contexts.

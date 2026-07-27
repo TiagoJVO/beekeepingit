@@ -7,12 +7,13 @@ a multi-organization path kept open.
 
 > **Status:** Requirements captured (incl. an **intended** stack/architecture) and a
 > **backlog** filed as [GitHub Issues](https://github.com/TiagoJVO/beekeepingit/issues).
-> The single-cluster k8s platform + Helm umbrella chart (`infra/`) is built; `services/` has
-> landed starting with the `shared` Go library (object storage + DB access abstractions,
-> `#85`) and the `servicetemplate` shared service template (health, config, logging, OTel,
-> JWT auth, error format, `#20`); `client/` has landed as the Flutter PWA skeleton (`#21`);
-> domain services and the walking-skeleton slice are still pending. Source of truth (intent)
-> is [requirements/](requirements/); `docs/` documents the system as it's built.
+> The **M0-M2 walking skeleton has landed end-to-end**: the single-cluster k8s platform + Helm
+> umbrella chart (`infra/`), contract-first OpenAPI specs (`contracts/`), all four domain
+> services — `identity`, `organizations`, `apiaries`, `sync` — plus the shared
+> `servicetemplate`/`shared` libraries, and the Flutter PWA client (`client/`) with OIDC login,
+> offline-first sync, and apiary CRUD. The **React + TS web admin app** (`admin/`) has begun
+> (M7): OIDC login + an admin-role guard scaffold (`#72`). Source of truth (intent) is
+> [requirements/](requirements/); `docs/` documents the system as it's built.
 
 ## Intended stack (not final)
 
@@ -27,12 +28,14 @@ decisions behind it: [requirements/decisions.md](requirements/decisions.md) (`D-
 
 ```text
 beekeepingit/
-├── requirements/      # Source of truth: context, FRs, NFRs, decisions, open questions
-├── docs/              # Intended architecture, tech stack, ADRs
+├── requirements/      # Source of truth (intent): context, FRs, NFRs, decisions, open questions
+├── docs/              # As-built architecture, tech stack, ADRs, CODEMAPS (see docs/README.md)
 ├── infra/             # k8s cluster bring-up/teardown + Helm umbrella chart (EPIC-13)
-├── services/          # Go backend; shared/ = infra library (#85), servicetemplate/ = shared
-│                      #   service template (#20) — see services/*/README.md
-├── client/            # Flutter PWA — shell, routing, theming, state mgmt, i18n scaffold (#21)
+├── contracts/         # Contract-first OpenAPI specs (identity/organizations/apiaries/sync)
+├── services/          # Go backend: identity, organizations, apiaries, activities, sync + shared/ (infra
+│                      #   library, #85) + servicetemplate/ (shared service template, #20)
+├── client/            # Flutter PWA — shell, routing, theming, state mgmt, sync, i18n (#21)
+├── admin/             # React + TS web admin app — online-only, OIDC + admin-role guard (#72)
 ├── .claude/           # AI rules + settings (SessionStart workflow hook)
 ├── .github/           # Issue templates, PR template, label taxonomy
 ├── taskfiles/         # Per-language task definitions (go-task)
@@ -43,7 +46,7 @@ beekeepingit/
 └── CONTRIBUTING.md    # Branching, commits, PR process
 ```
 
-Code directories (`services/`, `apps/`, `client/`, `infra/`) appear as work needs them
+Code directories (`services/`, `client/`, `admin/`, `infra/`) appear as work needs them
 (`D-9`) — nothing is pre-scaffolded.
 
 ## Development

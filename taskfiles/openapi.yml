@@ -36,6 +36,11 @@ tasks:
       - |
         set -e
         base="{{.BASE}}"
+        # Sanctioned/accepted breaking changes (e.g. pre-launch, product-owner-confirmed) live
+        # here, one per non-empty non-'#' line; oasdiff suppresses a breaking change when a line
+        # is a case-insensitive substring of its rendered message. See the file's own header and
+        # requirements/decisions.md for the policy this implements.
+        ignore="$(git rev-parse --show-toplevel)/contracts/openapi/.oasdiff-ignore"
         changed=$(git diff --name-only "$base"...HEAD -- 'contracts/openapi/*.openapi.yaml' | grep -v '/_shared/' || true)
         if [ -z "$changed" ]; then echo "› [openapi] no service spec changed vs $base — skipping"; exit 0; fi
 
@@ -51,7 +56,14 @@ tasks:
           redocly bundle "$workdir/base-tree/$spec" -o "$workdir/base.yaml"
           redocly bundle "$spec" -o "$workdir/head.yaml"
           git worktree remove -f "$workdir/base-tree"
-          if ! oasdiff breaking "$workdir/base.yaml" "$workdir/head.yaml" --fail-on ERR; then
+          if [ -f "$ignore" ]; then
+            diff_ok=0
+            oasdiff breaking "$workdir/base.yaml" "$workdir/head.yaml" --fail-on ERR --err-ignore "$ignore" || diff_ok=1
+          else
+            diff_ok=0
+            oasdiff breaking "$workdir/base.yaml" "$workdir/head.yaml" --fail-on ERR || diff_ok=1
+          fi
+          if [ "$diff_ok" -ne 0 ]; then
             echo "::error file=${spec}::breaking change detected vs $base"
             fail=1
           fi

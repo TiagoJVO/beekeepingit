@@ -3,10 +3,39 @@ SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
 WHERE oidc_sub = $1;
 
--- name: GetUserByID :one
+-- name: GetUserByEmail :one
+-- Case-insensitive email -> identity.users lookup, backing the internal
+-- GET /internal/users/by-email/{email} endpoint (#468's platform
+-- cross-organization membership-lookup support tool, D-7: this stays a
+-- LOCAL query against identity's own mirrored profile data -- no new IdP
+-- integration). identity.users.email has NO uniqueness constraint (it is
+-- the free-text profile field PATCH /v1/profile lets a caller set to
+-- anything, #25 -- see organizations/api/organizations.go's ResolvedUser
+-- doc comment for why it must never be used for anything
+-- security-sensitive); the earliest-created match wins on the rare chance
+-- two profiles share one address, the same "oldest wins" convention
+-- organizations' own GetPendingInvitationByEmail uses for its analogous
+-- ambiguity. Empty-string emails (UpsertUserOnFirstSeen's default for an
+-- incomplete profile) are excluded explicitly so a blank query can never
+-- match every never-completed profile in one row.
 SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
-WHERE id = $1;
+WHERE email <> '' AND lower(email) = lower(sqlc.arg(email))
+ORDER BY created_at
+LIMIT 1;
+
+-- name: GetUsersByNames :many
+-- Batch resolve app user_ids -> display name, backing the internal
+-- GET /internal/users/names endpoint the organizations service composes to
+-- turn a member roster (user_ids) into display names (#44 follow-up to
+-- per-user attribution, FR-TEN-2). Only rows that exist are returned; a
+-- caller treats a missing id as "no name" (a removed or never-provisioned
+-- user) and falls back to a short id fragment. Returns name only — never the
+-- IdP-verified email: names are org-shareable app data (FR-TEN-2), the email
+-- is not.
+SELECT id, name
+FROM identity.users
+WHERE id = ANY(@ids::uuid[]);
 
 -- name: UpsertUserOnFirstSeen :one
 -- Get-or-create on first authenticated profile read (#25, FR-ONB-1): if no row

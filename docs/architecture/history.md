@@ -76,6 +76,19 @@ finalizes the `AUDIT_LOG` shape from [data-model.md](data-model.md) §3.
 | `changed_fields`  | `text[]`       | on `update`, the columns that changed — drives the timeline UI and lets a reader filter                                                                                                                                                                     |
 | `change`          | `jsonb`        | the **delta**, not a full snapshot: on `create` the initial field values (the baseline); on `update` `{ field: { from, to } }` for **changed columns only**; on `delete` just the tombstone marker. Soft ID refs only, **no embedded personal data** (§7.3) |
 
+**As built (`organizations` only, #470, migration `00005`):** `organizations.audit_log` carries one
+additional column, `actor_scope text` (`'member'` \| `'platform_operator'`), recorded **explicitly,
+at write time, in the same INSERT** as the rest of the row (never inferred afterwards by
+cross-referencing `memberships` — a platform-operator write has no membership row to
+cross-reference against in the first place). It distinguishes a row written by an ordinary
+organization member/admin from one written by a verified **platform operator** acting on an
+organization it is not a member of (`services/organizations/api/platform_authz.go`, #466,
+[ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)) — "the app owner edited someone
+else's organization" is a materially more sensitive event than an ordinary member edit, and this
+column is what makes it distinguishable after the fact (FR-HIS-1, NFR-SEC-1, FR-TEN-2). No other
+service's `audit_log` has this column: the platform-operator carve-out is `organizations`-specific
+today.
+
 **Notes**
 
 - **Actor is an opaque internal ID.** The audit row records _that user `<uuid>` changed it_, never
@@ -251,12 +264,24 @@ never stores personal data in the first place:
   consistent with **FR-TEN-2** (members share all of the org's data). No admin-only gate is added in
   v1; history visibility follows the entity's own access, adding no new authz surface. (An
   admin-scoped global feed can come with the §5.1 projection if ever needed.)
-- **Actor names** shown in the timeline are resolved by joining `actor_user_id` to the org **roster
-  slice** already on the device ([sync.md](sync.md) §3.2), so recent history renders offline; a
+- **Actor names** shown in the timeline are resolved from `actor_user_id` against the org roster; a
   since-erased actor simply shows as unknown/removed (§7.3).
+  **As built (#60):** the roster is _not_ a synced device slice — it comes from the online-only
+  `GET /organizations/{orgId}/members/names` endpoint via the client's `memberNamesProvider`, the
+  same source activity attribution already uses. The timeline itself still renders fully offline
+  (its rows come from the local `audit_log`/`sync_conflict_log` tables); only the _display names_
+  need the network, and they degrade to a short, stable id fragment (`Member <last-8>`) offline or
+  before the roster loads — never to a blank or an error. Should the roster ever become a genuinely
+  synced slice ([sync.md](sync.md) §3.2), this resolution swaps behind `memberNamesProvider` with no
+  change to the timeline.
 - The concrete screens (diff rendering, EN/PT strings, WCAG 2.2 AA, gloves-friendly) belong to the
   entity EPICs (EPIC-02/03/04) and the history build (EPIC-07 #8); this doc fixes the data + rules
   they render.
+  **As built (#60):** one entity-agnostic component pair —
+  `client/lib/features/history/history_section.dart` (embedded, capped preview) and
+  `history_screen.dart` (full, virtualized) — serves every entity type, keyed by
+  `(entity_type, entity_id)`. Apiaries and activities are wired today; journeys (#315) and todos
+  (EPIC-05) attach to the same component with no new UI.
 
 ---
 
@@ -264,13 +289,13 @@ never stores personal data in the first place:
 
 FR-HIS-1 is **all entities**. In v1 that is:
 
-| Entity                                                 | Owning service | History source                            |
-| ------------------------------------------------------ | -------------- | ----------------------------------------- |
-| `apiaries`                                             | apiaries       | `apiaries.audit_log`                      |
-| `activities`                                           | activities     | `activities.audit_log`                    |
-| `journeys`, `journey_plan_items`, `journey_activities` | journeys       | `journeys.audit_log`                      |
-| `todos`                                                | todos          | `todos.audit_log`                         |
-| `memberships`, `organizations`, `invitations`          | organizations  | `organizations.audit_log` (admin actions) |
+| Entity                                        | Owning service | History source                            |
+| --------------------------------------------- | -------------- | ----------------------------------------- |
+| `apiaries`                                    | apiaries       | `apiaries.audit_log`                      |
+| `activities`                                  | activities     | `activities.audit_log`                    |
+| `journeys`, `journey_plan_items`              | journeys       | `journeys.audit_log`                      |
+| `todos`                                       | todos          | `todos.audit_log`                         |
+| `memberships`, `organizations`, `invitations` | organizations  | `organizations.audit_log` (admin actions) |
 
 `identity.users` records only minimal self-profile changes; it is global (not org-owned) and carries
 no `organization_id`. The `ai` service **records no domain history** — a confirmed AI action executes
@@ -281,14 +306,14 @@ so the AI write-safety guarantee and the audit trail reinforce each other.
 
 ## 10. Open items, deferred scope & hand-offs
 
-| Item                                                                                                                            | Status                                                                                                 | Where                                      |
-| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| Global / cross-entity audit timeline (outbox → projection)                                                                      | **Reserved, not built** — API composition suffices for v1; projection behind the boundary later (§5.1) | future; EPIC-07 if needed                  |
-| Configurable retention window / automatic purge / legal-hold                                                                    | **Deferred** — v1 retains indefinitely (§7.2)                                                          | EPIC-14 (#15)                              |
-| Diff / `changed_fields` presentation in the timeline                                                                            | **Design hand-off** — shape fixed here (§3)                                                            | EPIC-07 (#8), entity EPICs                 |
-| Build: in-tx audit append on each service write + sync-apply path; INSERT-only grant; append-only + pseudonymity contract tests | **Depends-on**                                                                                         | EPIC-07 (#8), per-service EPIC-02/03/04/05 |
-| History view screens (per-entity timeline, EN/PT, a11y)                                                                         | **Design hand-off** — data + states fixed here                                                         | EPIC-02/03/04, EPIC-07 (#8)                |
-| `sync_conflict_log` surfaced as `superseded` timeline events                                                                    | Shape fixed here (§6)                                                                                  | EPIC-06 (#7) / EPIC-07 (#8)                |
+| Item                                                                                                                            | Status                                                                                                                                                                   | Where                                      |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| Global / cross-entity audit timeline (outbox → projection)                                                                      | **Reserved, not built** — API composition suffices for v1; projection behind the boundary later (§5.1)                                                                   | future; EPIC-07 if needed                  |
+| Configurable retention window / automatic purge / legal-hold                                                                    | **Deferred** — v1 retains indefinitely (§7.2)                                                                                                                            | EPIC-14 (#15)                              |
+| Diff / `changed_fields` presentation in the timeline                                                                            | **Built** (#60) — rendered as a localized "Changed: Name, Notes" sub-line; unmapped columns fall through to their raw server name                                        | EPIC-07 (#8), entity EPICs                 |
+| Build: in-tx audit append on each service write + sync-apply path; INSERT-only grant; append-only + pseudonymity contract tests | **Built** for `identity`/`organizations`/`apiaries` (in-tx append on both the REST and sync-apply paths); remaining domain services follow the same pattern as they land | EPIC-07 (#8), per-service EPIC-02/03/04/05 |
+| History view screens (per-entity timeline, EN/PT, a11y)                                                                         | **Built** for apiaries + activities (#60) — one entity-agnostic component pair (§8), local-first with a REST fallback; journeys #315, todos EPIC-05 reuse it             | EPIC-02/03/04, EPIC-07 (#8)                |
+| `sync_conflict_log` surfaced as `superseded` timeline events                                                                    | **Built** (#60) — folded into the same timeline via a UNION, labelled "Superseded" with an explanatory sub-line (§6)                                                     | EPIC-06 (#7) / EPIC-07 (#8)                |
 
 ---
 

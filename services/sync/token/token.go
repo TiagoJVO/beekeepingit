@@ -26,10 +26,13 @@ type Minter struct {
 	issuer   string
 	audience string
 	ttl      time.Duration
+	signer   jose.Signer
 }
 
 // NewMinter builds a Minter. The kid is the key's RFC 7638 thumbprint so it is
-// stable for a given key and changes when the key rotates.
+// stable for a given key and changes when the key rotates. The signer is
+// built once here (it is safe for concurrent use across Mint calls) rather
+// than on every Mint call.
 func NewMinter(priv *rsa.PrivateKey, issuer, audience string, ttl time.Duration) (*Minter, error) {
 	if priv == nil {
 		return nil, fmt.Errorf("token: private key is required")
@@ -45,25 +48,26 @@ func NewMinter(priv *rsa.PrivateKey, issuer, audience string, ttl time.Duration)
 	if err != nil {
 		return nil, fmt.Errorf("token: compute key thumbprint: %w", err)
 	}
+	kid := base64.RawURLEncoding.EncodeToString(tp)
+	signer, err := jose.NewSigner(
+		jose.SigningKey{Algorithm: jose.RS256, Key: priv},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("token: new signer: %w", err)
+	}
 	return &Minter{
 		priv:     priv,
-		kid:      base64.RawURLEncoding.EncodeToString(tp),
+		kid:      kid,
 		issuer:   issuer,
 		audience: audience,
 		ttl:      ttl,
+		signer:   signer,
 	}, nil
 }
 
 // Mint returns a signed sync token for sub scoped to orgID, plus its expiry.
 func (m *Minter) Mint(sub, orgID string) (raw string, expiresAt time.Time, err error) {
-	signer, err := jose.NewSigner(
-		jose.SigningKey{Algorithm: jose.RS256, Key: m.priv},
-		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", m.kid),
-	)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("token: new signer: %w", err)
-	}
-
 	now := time.Now()
 	exp := now.Add(m.ttl)
 	claims := jwt.Claims{
@@ -77,7 +81,7 @@ func (m *Minter) Mint(sub, orgID string) (raw string, expiresAt time.Time, err e
 	// (sync.md §3.4); the org bucket is keyed by it.
 	extra := map[string]any{"organization_id": orgID}
 
-	raw, err = jwt.Signed(signer).Claims(claims).Claims(extra).Serialize()
+	raw, err = jwt.Signed(m.signer).Claims(claims).Claims(extra).Serialize()
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("token: serialize: %w", err)
 	}

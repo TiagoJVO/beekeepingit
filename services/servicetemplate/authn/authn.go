@@ -46,7 +46,14 @@ func NewMiddleware(ctx context.Context, cfg Config) (func(http.Handler) http.Han
 	if err != nil {
 		return nil, fmt.Errorf("authn: discover issuer %q: %w", cfg.IssuerURL, err)
 	}
-	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.Audience})
+	// SupportedSigningAlgs is pinned to RS256 explicitly rather than left to
+	// go-oidc's implicit default: absent an explicit value, Provider.Verifier
+	// defaults to whatever the issuer's discovery document advertises in
+	// id_token_signing_alg_values_supported (falling back to RS256 only when
+	// discovery declares nothing) — so a misconfigured or compromised
+	// discovery document would otherwise silently control the accepted
+	// signing algorithm.
+	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.Audience, SupportedSigningAlgs: []string{oidc.RS256}})
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +80,16 @@ func NewMiddleware(ctx context.Context, cfg Config) (func(http.Handler) http.Han
 			}
 			if verified, ok := raw["email_verified"].(bool); ok {
 				claims.EmailVerified = verified
+			}
+			// platform_operator (#465/#466): a literal JSON boolean only —
+			// a type assertion failure (absent, string, number, array, ...)
+			// leaves PlatformOperator at its zero value (false), the
+			// documented fail-closed outcome (oidc-integration.md §3.2).
+			// raw is decoded from idToken.Claims, which only succeeds after
+			// verifier.Verify has already checked the signature/iss/aud/exp
+			// above — this claim is never trusted before that point.
+			if operator, ok := raw["platform_operator"].(bool); ok {
+				claims.PlatformOperator = operator
 			}
 
 			ctx := context.WithValue(r.Context(), claimsKey{}, claims)

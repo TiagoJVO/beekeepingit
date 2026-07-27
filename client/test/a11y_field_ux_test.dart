@@ -92,10 +92,7 @@ class _EmptyMembersController extends MembersController {
 // `List<Object>` + `.cast()` below because Riverpod 3 no longer exports the
 // `Override` type by name — `cast()`'s target is inferred from
 // `ProviderScope.overrides`' own declared type.
-Widget _withMaterial(
-  Widget child, {
-  List<Object> overrides = const [],
-}) {
+Widget _withMaterial(Widget child, {List<Object> overrides = const []}) {
   return ProviderScope(
     overrides: overrides.cast(),
     child: MaterialApp(
@@ -248,82 +245,84 @@ void main() {
     });
   });
 
-  group('semantics labels — #79 AC "screens expose proper semantics/labels"', () {
-    testWidgets('login button announces its action', (tester) async {
-      await tester.pumpWidget(_withMaterial(const LoginScreen()));
-      await tester.pumpAndSettle();
+  group(
+    'semantics labels — #79 AC "screens expose proper semantics/labels"',
+    () {
+      testWidgets('login button announces its action', (tester) async {
+        await tester.pumpWidget(_withMaterial(const LoginScreen()));
+        await tester.pumpAndSettle();
 
-      expectHasSemanticsLabel(tester, const Key('login-button'));
-    });
+        expectHasSemanticsLabel(tester, const Key('login-button'));
+      });
 
-    testWidgets('apiaries view toggle segments announce list/map', (
-      tester,
-    ) async {
-      final router = GoRouter(
-        initialLocation: '/apiaries',
-        routes: [
-          GoRoute(
-            path: '/apiaries',
-            builder: (context, state) =>
-                const Scaffold(body: ApiariesListScreen()),
-          ),
-        ],
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            apiariesStreamProvider.overrideWith(
-              (ref) => Stream.value(const []),
-            ),
-            deviceLocationServiceProvider.overrideWithValue(
-              const _FakeDeviceLocationService(),
-            ),
-          ],
-          child: MaterialApp.router(
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            routerConfig: router,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expectHasSemanticsLabel(
+      testWidgets('apiaries view toggle segments announce list/map', (
         tester,
-        const Key('apiaries-view-list-button'),
-      );
-      expectHasSemanticsLabel(tester, const Key('apiaries-view-map-button'));
-    });
-
-    testWidgets('account screen logout announces as a button', (tester) async {
-      await tester.pumpWidget(
-        _withMaterial(
-          const AccountScreen(),
-          overrides: [
-            isAuthenticatedProvider.overrideWithValue(true),
-            profileProvider.overrideWith(_CompleteProfileController.new),
-            organizationProvider.overrideWith(
-              _ExistingOrganizationController.new,
+      ) async {
+        final router = GoRouter(
+          initialLocation: '/apiaries',
+          routes: [
+            GoRoute(
+              path: '/apiaries',
+              builder: (context, state) =>
+                  const Scaffold(body: ApiariesListScreen()),
             ),
-            syncStatusProvider.overrideWithValue(
-              const SyncStatus(
-                connectivity: SyncConnectivity.online,
-                pendingCount: 0,
-              ),
-            ),
-            syncNowProvider.overrideWithValue(() async {}),
           ],
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              apiariesStreamProvider.overrideWith(
+                (ref) => Stream.value(const []),
+              ),
+              deviceLocationServiceProvider.overrideWithValue(
+                const _FakeDeviceLocationService(),
+              ),
+            ],
+            child: MaterialApp.router(
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              routerConfig: router,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await tester.ensureVisible(
-        find.byKey(const Key('account-logout-button')),
-      );
-      await tester.pumpAndSettle();
-      expectHasSemanticsLabel(tester, const Key('account-logout-button'));
-    });
-  });
+        expectHasSemanticsLabel(tester, const Key('apiaries-view-list-button'));
+        expectHasSemanticsLabel(tester, const Key('apiaries-view-map-button'));
+      });
+
+      testWidgets('account screen logout announces as a button', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _withMaterial(
+            const AccountScreen(),
+            overrides: [
+              isAuthenticatedProvider.overrideWithValue(true),
+              profileProvider.overrideWith(_CompleteProfileController.new),
+              organizationProvider.overrideWith(
+                _ExistingOrganizationController.new,
+              ),
+              syncStatusProvider.overrideWithValue(
+                const SyncStatus(
+                  connectivity: SyncConnectivity.online,
+                  pendingCount: 0,
+                ),
+              ),
+              syncNowProvider.overrideWithValue(() async {}),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(
+          find.byKey(const Key('account-logout-button')),
+        );
+        await tester.pumpAndSettle();
+        expectHasSemanticsLabel(tester, const Key('account-logout-button'));
+      });
+    },
+  );
 
   group('keyboard focus order — #79 AC "reachable and operable by keyboard '
       'with ... a logical focus order"', () {

@@ -22,8 +22,14 @@ vars:
 
 tasks:
   lint:
-    desc: "Analyze Dart/Flutter packages (flutter analyze / dart analyze)"
+    desc: "Analyze Dart/Flutter packages (flutter analyze / dart analyze) + verify formatting"
     cmds:
+      # format-check runs first: unlike analyze, it needs no pub get and isn't
+      # skipped for deployable components (see format-check below), so it's the
+      # only repo-wide `task ci` step that actually checks client/'s formatting
+      # today — build-publish.yml's per-component job runs analyze/test for
+      # client but never a format check.
+      - task: format-check
       # Skip deployable components (a dir with a Dockerfile, e.g. client/): they
       # are analyzed/tested per-component in build-publish.yml, not repo-wide in
       # `task ci` (#23) — mirrors go.yml.
@@ -39,6 +45,22 @@ tasks:
           else
             (cd "$d" && dart pub get && dart analyze)
           fi
+        done
+
+  format-check:
+    desc: "Verify Dart packages are dart-format-clean"
+    cmds:
+      # No Dockerfile filter (unlike lint/test): dart format needs no dependency
+      # resolution, so it's cheap enough to cover every package including
+      # deployable components — mirrors format's scope, not lint's.
+      - |
+        set -e
+        pkgs=$({{.FIND_DART_PKGS}})
+        if [ -z "$pkgs" ]; then echo "› [dart] no pubspec.yaml yet — skipping"; exit 0; fi
+        for p in $pkgs; do
+          d=$(dirname "$p")
+          echo "› [dart] format-check $d"
+          (cd "$d" && dart format --output=none --set-exit-if-changed .)
         done
 
   format:

@@ -11,14 +11,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getUserByID = `-- name: GetUserByID :one
+const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
-WHERE id = $1
+WHERE email <> '' AND lower(email) = lower($1)
+ORDER BY created_at
+LIMIT 1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (IdentityUser, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
+// Case-insensitive email -> identity.users lookup, backing the internal
+// GET /internal/users/by-email/{email} endpoint (#468's platform
+// cross-organization membership-lookup support tool, D-7: this stays a
+// LOCAL query against identity's own mirrored profile data -- no new IdP
+// integration). identity.users.email has NO uniqueness constraint (it is
+// the free-text profile field PATCH /v1/profile lets a caller set to
+// anything, #25 -- see organizations/api/organizations.go's ResolvedUser
+// doc comment for why it must never be used for anything
+// security-sensitive); the earliest-created match wins on the rare chance
+// two profiles share one address, the same "oldest wins" convention
+// organizations' own GetPendingInvitationByEmail uses for its analogous
+// ambiguity. Empty-string emails (UpsertUserOnFirstSeen's default for an
+// incomplete profile) are excluded explicitly so a blank query can never
+// match every never-completed profile in one row.
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i IdentityUser
 	err := row.Scan(
 		&i.ID,
@@ -51,6 +67,45 @@ func (q *Queries) GetUserByOidcSub(ctx context.Context, oidcSub string) (Identit
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getUsersByNames = `-- name: GetUsersByNames :many
+SELECT id, name
+FROM identity.users
+WHERE id = ANY($1::uuid[])
+`
+
+type GetUsersByNamesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+}
+
+// Batch resolve app user_ids -> display name, backing the internal
+// GET /internal/users/names endpoint the organizations service composes to
+// turn a member roster (user_ids) into display names (#44 follow-up to
+// per-user attribution, FR-TEN-2). Only rows that exist are returned; a
+// caller treats a missing id as "no name" (a removed or never-provisioned
+// user) and falls back to a short id fragment. Returns name only — never the
+// IdP-verified email: names are org-shareable app data (FR-TEN-2), the email
+// is not.
+func (q *Queries) GetUsersByNames(ctx context.Context, ids []pgtype.UUID) ([]GetUsersByNamesRow, error) {
+	rows, err := q.db.Query(ctx, getUsersByNames, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersByNamesRow
+	for rows.Next() {
+		var i GetUsersByNamesRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertAuditLog = `-- name: InsertAuditLog :exec

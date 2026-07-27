@@ -1,8 +1,12 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:http/http.dart' as http;
 import 'package:openid_client/openid_client.dart';
 
 import '../config/app_config.dart';
+import '../storage/local_prefs.dart';
 import '../sync/local_store.dart';
 import '../sync/powersync_service.dart';
 import 'auth_platform.dart';
@@ -13,6 +17,16 @@ const _kState = 'bk.oauth_state';
 const _kRefresh = 'bk.refresh_token';
 const _kIdToken = 'bk.id_token';
 
+/// Bounds OIDC discovery + the refresh-token grant during boot session
+/// restore ([AuthController.build]) so a slow/dead link doesn't park the user
+/// on a hanging screen (#390) — a [TimeoutException] is not an
+/// [OpenIdException], so it falls into the same offline-grace branch as a
+/// network/DNS failure. Deliberately NOT applied to [AuthController.login] —
+/// that user-initiated flow already surfaces failures via [loginErrorProvider]
+/// and a bounded timeout there would just add an artificial delay before the
+/// (already-fast) real failure surfaces.
+const _kAuthNetworkTimeout = Duration(seconds: 5);
+
 /// Cached OIDC discovery: fetches the provider's `.well-known` document once
 /// (its endpoints — authorize, token, end-session, JWKS — are read from here,
 /// never hard-coded) and memoizes the resulting [Issuer] for the app's
@@ -22,17 +36,36 @@ const _kIdToken = 'bk.id_token';
 /// Injectable: unit tests override this with a fake [Issuer] built from an
 /// in-memory metadata map, so they exercise the real [AuthController] flow
 /// without touching the network / `.well-known`.
+///
+/// `retry: null` (never retry) is deliberate: Riverpod 3's container-level
+/// default retry policy would otherwise silently re-attempt a failed
+/// discovery fetch up to 10 times with exponential backoff (up to ~1 minute
+/// total) *inside* this provider before `oidcIssuerProvider.future` ever
+/// rejects — which would make a beekeeper tapping "Sign in" (or the app
+/// silently trying to refresh) while offline appear to hang for up to a
+/// minute before [AuthController.login]/[AuthController._refresh] ever get a
+/// chance to run their own (immediate) offline-friendly fallback. Discovery
+/// failures should surface promptly so those callers' own handling — not a
+/// generic background-retry policy meant for best-effort data fetches — is
+/// what decides how to degrade offline.
 final oidcIssuerProvider = FutureProvider<Issuer>((ref) {
   return Issuer.discover(Uri.parse(AppConfig.oidcIssuer));
-});
+}, retry: (retryCount, error) => null);
 
-/// A logged-in session (OIDC tokens). Tokens live in per-tab session storage —
-/// acceptable for the dev/CI skeleton; a hardened BFF/httpOnly-cookie flow is a
-/// later concern (auth.md, EPIC-14).
+/// A logged-in session (OIDC tokens). The refresh + id token live in durable
+/// `localStorage` (survives a browser restart, #390) — acceptable for the
+/// dev/CI skeleton; a hardened BFF/httpOnly-cookie flow is a later concern
+/// (auth.md, EPIC-14).
 ///
 /// [idToken] is retained (not just access/refresh) because RP-initiated logout
 /// needs it as the `id_token_hint` for the provider's `end_session_endpoint`
 /// (docs/architecture/oidc-integration.md §7).
+///
+/// A restored-but-unrefreshable session (offline boot, #390) is represented
+/// by an empty [accessToken] with [isExpired] forced true by construction — a
+/// "stale placeholder" ([AuthController._staleSession]) that lets the app
+/// open into the local-data shell while [AuthController.accessToken] retries
+/// the refresh lazily on each call.
 class AuthSession {
   const AuthSession({
     required this.accessToken,
@@ -48,6 +81,24 @@ class AuthSession {
 
   bool get isExpired =>
       DateTime.now().isAfter(expiresAt.subtract(const Duration(seconds: 30)));
+
+  // Value equality (MEDIUM-2): without this, two structurally-identical
+  // sessions (e.g. the same one re-persisted by _persist) compare unequal
+  // (default identity equality), causing redundant AsyncData emissions/
+  // rebuilds for consumers watching authControllerProvider.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AuthSession &&
+          runtimeType == other.runtimeType &&
+          accessToken == other.accessToken &&
+          refreshToken == other.refreshToken &&
+          idToken == other.idToken &&
+          expiresAt == other.expiresAt);
+
+  @override
+  int get hashCode =>
+      Object.hash(accessToken, refreshToken, idToken, expiresAt);
 }
 
 final authControllerProvider =
@@ -57,6 +108,14 @@ final authControllerProvider =
 final isAuthenticatedProvider = Provider<bool>((ref) {
   return ref.watch(authControllerProvider).value != null;
 });
+
+/// Non-null when the most recent [AuthController.login] attempt failed (e.g.
+/// OIDC discovery unreachable while tapping "Sign in" offline). Surfaced
+/// through state — rather than letting the failure throw into an unhandled
+/// zone error with no user feedback — so [LoginScreen] can watch it and show
+/// an error message; the button itself is the retry affordance, since every
+/// new [AuthController.login] attempt resets this to null first.
+final loginErrorProvider = StateProvider<Object?>((ref) => null);
 
 /// Drives the OIDC Authorization Code + PKCE flow (auth.md §3.2) for the PWA
 /// public client via `package:openid_client` (discovery-driven, so no provider
@@ -78,13 +137,27 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     AuthPlatform? platform,
     http.Client? httpClient,
     Future<LocalStoreEngine> Function()? clearLocalStore,
+    LocalPrefs? localPrefs,
+    Duration? authNetworkTimeout,
   }) : _injectedPlatform = platform,
        _http = httpClient,
-       _injectedLocalStore = clearLocalStore;
+       _injectedLocalStore = clearLocalStore,
+       _injectedLocalPrefs = localPrefs,
+       _authNetworkTimeout = authNetworkTimeout ?? _kAuthNetworkTimeout;
 
   final AuthPlatform? _injectedPlatform;
   AuthPlatform? _platform;
   final Future<LocalStoreEngine> Function()? _injectedLocalStore;
+  final LocalPrefs? _injectedLocalPrefs;
+  LocalPrefs? _prefs;
+
+  /// Test-only seam (defaults to [_kAuthNetworkTimeout]) so the boot
+  /// discovery/refresh timeout path (#390) can be exercised with a short
+  /// duration instead of the real 5s.
+  final Duration _authNetworkTimeout;
+
+  LocalPrefs _localPrefs() =>
+      _prefs ??= _injectedLocalPrefs ?? createLocalPrefs();
 
   /// Injected only in tests; production lets `openid_client` create its own
   /// per-request client. Not closed here — a `MockClient` needs none and a
@@ -110,14 +183,86 @@ class AuthController extends AsyncNotifier<AuthSession?> {
         platform.replaceLocation(uri.replace(queryParameters: {}));
         return session;
       }
-      final refresh = platform.readSession(_kRefresh);
+      // Durable storage (localStorage, #390) is the primary source; a
+      // one-time migration fallback restores (and rewrites) a refresh token
+      // still sitting in the pre-#390 sessionStorage location so an existing
+      // session isn't silently dropped by the storage move.
+      final refresh = _readLocalWithMigration(platform, _kRefresh);
       if (refresh != null) {
-        return await _refresh(platform, refresh);
+        try {
+          return await _refresh(
+            platform,
+            refresh,
+            timeout: _authNetworkTimeout,
+          );
+        } on Exception catch (e, st) {
+          // _refresh() already handles a genuine provider rejection
+          // (OpenIdException) internally — wiping the stored tokens and
+          // returning null — so anything that reaches here is a network/
+          // discovery/timeout failure while restoring the session on boot.
+          // The refresh token itself was never rejected: keep the app usable
+          // against local PowerSync data (a stale placeholder session,
+          // expired by construction so the next accessToken() call retries
+          // the refresh) rather than bouncing an offline beekeeper to
+          // /login just because they lack signal right now (#390).
+          developer.log(
+            'build(): session restore failed (offline?) — falling back to '
+            'a stale local session so the shell stays reachable',
+            name: 'auth',
+            error: e,
+            stackTrace: st,
+          );
+          return _staleSession(platform, refresh);
+        }
       }
-    } catch (_) {
-      // Non-web target (widget tests) or a transient failure: logged out.
+    } catch (e, st) {
+      // Deliberately catch-all (not narrowed to Exception): the non-web
+      // stub AuthPlatform (widget tests) throws UnsupportedError — an
+      // Error, not an Exception — by design (auth_platform_stub.dart), and
+      // that must resolve to logged-out here just like a real transient
+      // failure would.
+      developer.log(
+        'AuthController.build() failed (non-web target, or a transient '
+        'failure) — resolving logged-out',
+        name: 'auth',
+        error: e,
+        stackTrace: st,
+      );
     }
     return null;
+  }
+
+  /// A restored-but-unrefreshable session (#390): an expired-by-construction
+  /// placeholder carrying the stored refresh token (so `accessToken()`
+  /// retries the refresh lazily on the next call) and an **empty**
+  /// [AuthSession.accessToken] — `isAuthenticatedProvider` only checks for a
+  /// non-null session, so this is enough to unblock the router into the
+  /// local-data shell, and `accessToken()` is guarded to hand back `null`
+  /// (never this empty string) as the bearer token while it stays
+  /// unrefreshed.
+  AuthSession _staleSession(AuthPlatform platform, String refreshToken) {
+    final idToken = _readLocalWithMigration(platform, _kIdToken) ?? '';
+    return AuthSession(
+      accessToken: '',
+      refreshToken: refreshToken,
+      idToken: idToken,
+      expiresAt: DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+
+  /// Reads [key] from durable local storage, falling back to (and migrating
+  /// from) the old per-tab sessionStorage location the refresh/id token used
+  /// before #390 — so an existing logged-in session isn't silently dropped by
+  /// the sessionStorage→localStorage move on the first boot after upgrade.
+  String? _readLocalWithMigration(AuthPlatform platform, String key) {
+    final local = platform.readLocal(key);
+    if (local != null) return local;
+    final legacy = platform.readSession(key);
+    if (legacy != null) {
+      platform.writeLocal(key, legacy);
+      platform.removeSession(key);
+    }
+    return legacy;
   }
 
   /// Starts login by redirecting the browser to the provider's authorize
@@ -126,23 +271,41 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// CSRF `state`, so the callback — a fresh page load — can reconstruct the
   /// same flow and let openid_client validate the state + complete the exchange.
   Future<void> login() async {
-    final platform = _platform ??= _injectedPlatform ?? createAuthPlatform();
-    final issuer = await _issuer();
-    final verifier = randomVerifier();
-    final flow = Flow.authorizationCodeWithPKCE(
-      _client(issuer),
-      codeVerifier: verifier,
-      // `offline_access` is required for the provider to issue a refresh token;
-      // build() restores a session on (re)load only from a persisted refresh
-      // token, so without it a full page reload logs the user out (auth.md §7,
-      // #236). The Authentik blueprint already maps offline_access + the
-      // refresh_token grant, so requesting it here is all that's needed.
-      scopes: const ['openid', 'profile', 'email', 'offline_access'],
-    )..redirectUri = Uri.parse(platform.redirectUri);
+    // Reset any previous failure at the start of every attempt — tapping
+    // "Sign in" again is the retry affordance.
+    ref.read(loginErrorProvider.notifier).state = null;
+    try {
+      final platform = _platform ??= _injectedPlatform ?? createAuthPlatform();
+      final issuer = await _issuer();
+      final verifier = randomVerifier();
+      final flow = Flow.authorizationCodeWithPKCE(
+        _client(issuer),
+        codeVerifier: verifier,
+        // `offline_access` is required for the provider to issue a refresh
+        // token; build() restores a session on (re)load only from a
+        // persisted refresh token, so without it a full page reload logs the
+        // user out (auth.md §7, #236). The Authentik blueprint already maps
+        // offline_access + the refresh_token grant, so requesting it here is
+        // all that's needed.
+        scopes: const ['openid', 'profile', 'email', 'offline_access'],
+      )..redirectUri = Uri.parse(platform.redirectUri);
 
-    platform.writeSession(_kVerifier, verifier);
-    platform.writeSession(_kState, flow.state);
-    platform.assignLocation(flow.authenticationUri.toString());
+      platform.writeSession(_kVerifier, verifier);
+      platform.writeSession(_kState, flow.state);
+      platform.assignLocation(flow.authenticationUri.toString());
+    } on Exception catch (e, st) {
+      // Most commonly OIDC discovery failing while offline (tapping "Sign
+      // in" with no signal) — surface it through state so LoginScreen can
+      // show an error/retry affordance instead of this throwing into an
+      // unhandled zone error with no user feedback.
+      developer.log(
+        'login() failed (network/discovery failure while offline?)',
+        name: 'auth',
+        error: e,
+        stackTrace: st,
+      );
+      ref.read(loginErrorProvider.notifier).state = e;
+    }
   }
 
   /// Logs out via **RP-initiated (front-channel) logout**: clears all local
@@ -189,9 +352,19 @@ class AuthController extends AsyncNotifier<AuthSession?> {
           await (_injectedLocalStore ??
               () => ref.read(localStoreProvider.future))();
       await store.clear();
-    } catch (_) {
-      // PowerSync was never opened this session, or the wipe failed — local
-      // session-token clearing below still logs the user out.
+    } catch (e, st) {
+      // Deliberately catch-all (not narrowed to Exception): a test double's
+      // wipe failure (or a real PowerSync failure) can surface as a
+      // StateError — an Error, not an Exception — and this must stay
+      // best-effort either way: PowerSync was never opened this session, or
+      // the wipe failed — local session-token clearing below still logs the
+      // user out.
+      developer.log(
+        'logout(): local-store wipe failed (best-effort, continuing)',
+        name: 'auth',
+        error: e,
+        stackTrace: st,
+      );
     }
     // `ref.mounted` guards against the async gap above racing this
     // controller's own disposal (e.g. a test container torn down mid-await;
@@ -218,8 +391,14 @@ class AuthController extends AsyncNotifier<AuthSession?> {
             idToken: session.idToken.isNotEmpty ? session.idToken : null,
           );
           await cred.revoke();
-        } catch (_) {
+        } on Exception catch (e, st) {
           // Non-fatal: front-channel end-session below still ends the session.
+          developer.log(
+            'logout(): best-effort refresh-token revocation failed',
+            name: 'auth',
+            error: e,
+            stackTrace: st,
+          );
         }
       }
 
@@ -234,16 +413,26 @@ class AuthController extends AsyncNotifier<AuthSession?> {
         );
         platform.assignLocation(logoutUrl.toString());
       }
-    } catch (_) {
+    } on Exception catch (e, st) {
       // Offline / discovery failure: local state is already cleared above, so
       // the user is logged out locally. The provider SSO session/cookie will
       // outlive this device until it expires naturally.
+      developer.log(
+        'logout(): discovery/front-channel end-session failed — already '
+        'logged out locally',
+        name: 'auth',
+        error: e,
+        stackTrace: st,
+      );
     }
   }
 
   /// Defensive sweep of every local-storage key this controller ever writes —
   /// not just the refresh/id token — so an abandoned mid-flow login (PKCE
   /// verifier/state written but never exchanged) can't leave stale entries.
+  /// Also purges the onboarding gate's cached profile/organization snapshot
+  /// (#390, `core/storage/local_prefs.dart`) so a second user on the same
+  /// shared browser never sees a prior user's cached onboarding state.
   ///
   /// Swallows `UnsupportedError` from the non-web stub [AuthPlatform] (widget
   /// tests run on the VM, where `_platform` is a working object but every
@@ -252,15 +441,19 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// non-web handling.
   void _clearLocalSession() {
     final platform = _platform;
-    if (platform == null) return;
-    try {
-      platform.removeSession(_kVerifier);
-      platform.removeSession(_kState);
-      platform.removeSession(_kRefresh);
-      platform.removeSession(_kIdToken);
-    } on UnsupportedError {
-      // Non-web target: there is no real session storage to clear.
+    if (platform != null) {
+      try {
+        platform.removeSession(_kVerifier);
+        platform.removeSession(_kState);
+        platform.removeLocal(_kRefresh);
+        platform.removeLocal(_kIdToken);
+      } on UnsupportedError {
+        // Non-web target: there is no real session storage to clear.
+      }
     }
+    final prefs = _localPrefs();
+    prefs.remove(kProfileCacheKey);
+    prefs.remove(kOrganizationCacheKey);
   }
 
   /// A valid access token, refreshed if within 30s of expiry, or null when
@@ -271,9 +464,30 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     if (session == null || platform == null) return null;
     if (!session.isExpired) return session.accessToken;
 
-    final refreshed = await _refresh(platform, session.refreshToken);
-    state = AsyncData(refreshed);
-    return refreshed?.accessToken;
+    try {
+      final refreshed = await _refresh(platform, session.refreshToken);
+      state = AsyncData(refreshed);
+      return refreshed?.accessToken;
+    } on Exception catch (e, st) {
+      // Network/discovery failure while offline (see _refresh's own note):
+      // keep the existing, now-expired session rather than logging the user
+      // out just because they lack connectivity right now. The (stale)
+      // access token is handed back so an offline-tolerant caller (e.g. a
+      // request that will itself queue/fail gracefully) can still proceed;
+      // the next accessToken() call retries the refresh.
+      developer.log(
+        'accessToken(): refresh failed (offline?) — keeping stale session',
+        name: 'auth',
+        error: e,
+        stackTrace: st,
+      );
+      // A "stale placeholder" session (offline boot restore, #390 —
+      // AuthController._staleSession) carries an empty accessToken: hand
+      // back null rather than that empty string, so callers never send a
+      // bogus `Authorization: Bearer ` header. A genuinely-expired-but-once-
+      // real token is still worth retrying the request with.
+      return session.accessToken.isEmpty ? null : session.accessToken;
+    }
   }
 
   /// Completes the redirect callback: reconstructs the [Flow] with the persisted
@@ -307,25 +521,46 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     return _persist(platform, token);
   }
 
+  /// [timeout], when given, bounds discovery + the token fetch together (only
+  /// passed by [build]'s boot-time restore path, #390 — see
+  /// `_kAuthNetworkTimeout`'s own doc comment). `accessToken()`'s lazy
+  /// mid-session refresh calls this unbounded, matching its pre-#390
+  /// behavior — a stale access token is already being handed back to the
+  /// caller in that path regardless of how long the retry takes.
   Future<AuthSession?> _refresh(
     AuthPlatform platform,
-    String refreshToken,
-  ) async {
+    String refreshToken, {
+    Duration? timeout,
+  }) async {
     try {
-      final issuer = await _issuer();
-      final idToken = platform.readSession(_kIdToken);
-      final credential = _client(
-        issuer,
-      ).createCredential(refreshToken: refreshToken, idToken: idToken);
-      final token = await credential.getTokenResponse(true);
+      Future<TokenResponse> fetchToken() async {
+        final issuer = await _issuer();
+        final idToken = _readLocalWithMigration(platform, _kIdToken);
+        final credential = _client(
+          issuer,
+        ).createCredential(refreshToken: refreshToken, idToken: idToken);
+        return credential.getTokenResponse(true);
+      }
+
+      final token = timeout == null
+          ? await fetchToken()
+          : await fetchToken().timeout(timeout);
       return _persist(platform, token);
-    } catch (_) {
-      // A rejected/expired refresh token (or discovery failure): drop the
-      // persisted session so we resolve to logged-out rather than looping.
-      platform.removeSession(_kRefresh);
-      platform.removeSession(_kIdToken);
+    } on OpenIdException {
+      // A genuine rejection (invalid_grant/expired) from the provider — the
+      // refresh token itself is no longer good, so it's safe (and correct)
+      // to drop the persisted session and resolve to logged-out rather than
+      // looping.
+      platform.removeLocal(_kRefresh);
+      platform.removeLocal(_kIdToken);
       return null;
     }
+    // Any other failure (network/discovery timeout, DNS failure, a
+    // TimeoutException from [timeout] above, etc. while offline)
+    // intentionally propagates rather than being swallowed here: the refresh
+    // token was never actually rejected, so wiping it would strand an
+    // offline beekeeper — they'd have to log in again even once signal
+    // returns. Callers (accessToken()/build()) decide how to degrade.
   }
 
   AuthSession? _persist(AuthPlatform platform, TokenResponse token) {
@@ -337,22 +572,24 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     // stored one so a refresh that doesn't re-issue it keeps the session alive.
     final effectiveRefresh = refresh.isNotEmpty
         ? refresh
-        : (platform.readSession(_kRefresh) ?? '');
+        : (platform.readLocal(_kRefresh) ?? '');
     // Read `id_token` off the raw response (not the typed `.idToken` getter,
     // which throws when absent): a refresh often omits it, so fall back to the
     // previously-stored value to keep it available for RP-initiated logout.
     final rawIdToken = token['id_token'] as String?;
     final idToken = (rawIdToken != null && rawIdToken.isNotEmpty)
         ? rawIdToken
-        : (platform.readSession(_kIdToken) ?? '');
+        : (platform.readLocal(_kIdToken) ?? '');
     final expiresAt =
         token.expiresAt ??
         DateTime.now().add(token.expiresIn ?? const Duration(minutes: 5));
 
+    // Durable storage (localStorage, #390) so the session survives a
+    // browser restart — see AuthPlatform.readLocal/writeLocal's own doc.
     if (effectiveRefresh.isNotEmpty) {
-      platform.writeSession(_kRefresh, effectiveRefresh);
+      platform.writeLocal(_kRefresh, effectiveRefresh);
     }
-    if (idToken.isNotEmpty) platform.writeSession(_kIdToken, idToken);
+    if (idToken.isNotEmpty) platform.writeLocal(_kIdToken, idToken);
     return AuthSession(
       accessToken: access,
       refreshToken: effectiveRefresh,

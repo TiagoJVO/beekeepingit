@@ -1,0 +1,175 @@
+{
+  "app": {
+    "title": "Administração BeekeepingIT",
+    "signOut": "Terminar sessão",
+    "manageAccount": "Gerir conta"
+  },
+  "login": {
+    "heading": "Inicie sessão na aplicação de administração",
+    "intro": "Use a sua conta BeekeepingIT para gerir a sua organização, membros e funções.",
+    "signIn": "Iniciar sessão",
+    "accountNote": "A conta e a palavra-passe são geridas no seu fornecedor de identidade."
+  },
+  "loading": {
+    "authenticating": "A iniciar a sua sessão…",
+    "checkingAccess": "A verificar o seu acesso…"
+  },
+  "shell": {
+    "signedInAs": "Sessão iniciada como {{name}} · {{org}}",
+    "roleBadge": "Sessão iniciada como administrador"
+  },
+  "orgSettings": {
+    "heading": "Detalhes da organização",
+    "intro": "Atualize o nome e a morada da sua organização. As alterações aplicam-se a todos os membros da organização.",
+    "loading": "A carregar a sua organização…",
+    "fields": {
+      "name": "Nome da organização",
+      "address": "Morada"
+    },
+    "save": "Guardar alterações",
+    "saving": "A guardar…",
+    "discard": "Descartar alterações",
+    "saved": "Detalhes da organização guardados.",
+    "conflict": {
+      "body": "Outra pessoa alterou esta organização enquanto a estava a editar. Recarregue para obter os detalhes mais recentes e volte a aplicar as suas alterações.",
+      "reload": "Recarregar detalhes mais recentes"
+    },
+    "errors": {
+      "nameRequired": "O nome da organização é obrigatório.",
+      "nameTooLong": "O nome da organização deve ter no máximo {{max}} caracteres.",
+      "addressTooLong": "A morada deve ter no máximo {{max}} caracteres.",
+      "saveFailed": "Não foi possível guardar as suas alterações. Por favor, tente novamente.",
+      "loadFailed": "Não foi possível carregar a sua organização. Por favor, tente novamente.",
+      "versionUnavailable": "Não foi possível confirmar a versão atual da sua organização, por isso não guardámos para evitar sobrepor as alterações de outra pessoa. Recarregue e tente novamente."
+    }
+  },
+  "members": {
+    "heading": "Membros",
+    "intro": "Veja quem pertence à sua organização, convide novos membros por email e remova membros que já não devam ter acesso.",
+    "invite": {
+      "heading": "Convidar um membro",
+      "emailLabel": "Endereço de email",
+      "roleLabel": "Função",
+      "submit": "Enviar convite",
+      "sending": "A enviar…",
+      "sent": "Convite enviado para {{email}}.",
+      "errors": {
+        "emailRequired": "O endereço de email é obrigatório.",
+        "invalidEmail": "Introduza um endereço de email válido.",
+        "alreadyInvited": "Essa pessoa já tem um convite pendente ou já é membro.",
+        "failed": "Não foi possível enviar o convite. Por favor, tente novamente."
+      }
+    },
+    "roster": {
+      "heading": "Membros atuais",
+      "loading": "A carregar membros…",
+      "loadFailed": "Não foi possível carregar os membros. Por favor, tente novamente.",
+      "empty": "Ainda não há membros.",
+      "loadMore": "Carregar mais membros",
+      "loadingMore": "A carregar…",
+      "columns": {
+        "member": "Membro",
+        "role": "Função",
+        "status": "Estado",
+        "actions": "Ações"
+      }
+    },
+    "roles": {
+      "admin": "Administrador",
+      "user": "Membro"
+    },
+    "statuses": {
+      "active": "Ativo",
+      "invited": "Convidado",
+      "removed": "Removido"
+    },
+    "remove": {
+      "action": "Remover",
+      "ariaLabel": "Remover o membro {{member}}",
+      "confirm": {
+        "title": "Remover este membro?",
+        "body": "O membro {{member}} perderá o acesso a esta organização. Esta ação não pode ser anulada aqui.",
+        "confirm": "Remover membro",
+        "removing": "A remover…",
+        "cancel": "Cancelar"
+      },
+      "errors": {
+        "lastAdmin": "Não pode remover o último administrador. Promova outro membro a administrador primeiro e tente novamente.",
+        "notMember": "Essa pessoa já não é membro desta organização.",
+        "failed": "Não foi possível remover o membro. Por favor, tente novamente."
+      }
+    },
+    "changeRole": {
+      "selectLabel": "Alterar a função do membro {{member}}",
+      "success": "O membro {{member}} é agora {{role}}.",
+      "confirm": {
+        "title": "Alterar a função deste membro?",
+        "body": "O membro {{member}} passará de {{from}} para {{to}}. As novas permissões entram em vigor no próximo pedido.",
+        "confirm": "Alterar função",
+        "changing": "A alterar…",
+        "cancel": "Cancelar"
+      },
+      "errors": {
+        "lastAdmin": "Não pode despromover o último administrador. Promova outro membro a administrador primeiro e tente novamente.",
+        "notMember": "Essa pessoa já não é membro desta organização.",
+        "forbidden": "Não tem permissão para alterar funções nesta organização.",
+        "failed": "Não foi possível alterar a função do membro. Por favor, tente novamente."
+      }
+    },
+    "roleCapabilities": {
+      "heading": "O que pode fazer cada função?",
+      "intro": "Cada membro desta organização tem uma de duas funções. Os administradores gerem a organização; os membros trabalham com os dados partilhados do apiário. Estas funções aplicam-se apenas a esta organização.",
+      "allowed": "Permitido",
+      "notAllowed": "Não permitido",
+      "columns": {
+        "capability": "Capacidade"
+      },
+      "capabilities": {
+        "data": "Acesso total a apiários, atividades, jornadas e tarefas",
+        "aiHistory": "Usar o assistente de IA e ver o histórico",
+        "members": "Convidar e remover membros",
+        "roles": "Atribuir funções aos membros (promover ou despromover administrador / membro)",
+        "orgSettings": "Editar as definições da organização e gerir convites pendentes"
+      }
+    }
+  },
+  "quotasSeam": {
+    "navLabel": "Quotas e limites de taxa (em breve)"
+  },
+  "orgPicker": {
+    "heading": "Escolha uma organização para administrar",
+    "intro": "Sessão iniciada como {{name}}. É um operador da plataforma — pesquise uma organização e selecione-a para gerir os seus detalhes, membros e funções.",
+    "searchLabel": "Pesquisar organizações por nome",
+    "search": "Pesquisar",
+    "loading": "A carregar organizações…",
+    "loadFailed": "Não foi possível carregar as organizações. Por favor, tente novamente.",
+    "empty": "Nenhuma organização corresponde à sua pesquisa.",
+    "listLabel": "Organizações",
+    "memberCount_one": "{{count}} membro",
+    "memberCount_other": "{{count}} membros",
+    "loadMore": "Carregar mais organizações",
+    "loadingMore": "A carregar…"
+  },
+  "operatorBanner": {
+    "message": "Vista de operador da plataforma — está a administrar \"{{org}}\", uma organização da qual não é membro.",
+    "switch": "Mudar de organização"
+  },
+  "denied": {
+    "heading": "Acesso de administrador necessário",
+    "body": "A sua conta não tem a função de administrador nesta organização, por isso não pode usar a aplicação de administração. Peça a um administrador da organização para lhe atribuir a função de administrador e inicie sessão novamente.",
+    "noOrg": "A sua conta ainda não é membro de nenhuma organização. Junte-se ou crie uma organização primeiro na aplicação de campo.",
+    "signOut": "Terminar sessão"
+  },
+  "error": {
+    "authHeading": "Falha ao iniciar sessão",
+    "accessHeading": "Não foi possível verificar o seu acesso",
+    "network": "Não foi possível contactar o servidor. Verifique a sua ligação e tente novamente.",
+    "generic": "Ocorreu um erro. Por favor, tente novamente.",
+    "retry": "Tentar novamente"
+  },
+  "config": {
+    "heading": "Erro de configuração",
+    "body": "Faltam configurações obrigatórias à aplicação de administração. Defina as seguintes variáveis de ambiente e reconstrua:",
+    "seeExample": "Consulte admin/.env.example para mais detalhes."
+  }
+}

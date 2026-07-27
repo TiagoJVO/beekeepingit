@@ -44,6 +44,18 @@ const EventSuperseded = "superseded"
 // Fields carry only opaque IDs (OrganizationID, EntityID, ActorUserID) and a
 // delta payload built from IDs, never denormalized personal data (§7.3) —
 // callers must not put names/emails into Change.
+//
+// NOTE: this type is documentation-only today — no caller constructs an
+// Entry directly. Every current service (identity/profile.go, organizations/
+// audit.go, apiaries/write.go+sync.go) builds its own sqlcgen.
+// InsertAuditLogParams straight from ComputeChange's outputs, since each
+// service's audit_log lives in its own schema with its own sqlc-generated
+// row type (package doc: "a shared library can never hold a DB connection
+// spanning services"). Entry exists so this package still has one
+// canonical, field-commented description of the row shape every one of
+// those per-service params structs must independently match. If a future
+// caller wants to build one, add it there — nothing here needs to change to
+// support that.
 type Entry struct {
 	// OrganizationID scopes the row to a tenant (FR-TEN-2). Every audit row
 	// is org-scoped consistently with the entity it describes.

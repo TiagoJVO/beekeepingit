@@ -1,14 +1,28 @@
 {
   "@@locale": "pt",
   "appTitle": "BeekeepingIT",
-  "loginPrompt": "Inicie sessão para gerir os seus apiários.",
+  "loginPrompt": "Inicie sessão para gerir os seus apiários. É a primeira vez? Toque em Iniciar sessão — pode criar a sua conta no ecrã seguinte.",
   "loginButton": "Iniciar sessão",
+  "loginError": "Não foi possível iniciar sessão — verifique a ligação e tente novamente.",
   "logout": "Terminar sessão",
   "apiariesTitle": "Apiários",
   "apiariesEmpty": "Ainda não há apiários. Toque em “Adicionar apiário” para criar um.",
   "apiariesError": "Não foi possível carregar os apiários: {error}",
   "addApiary": "Adicionar apiário",
+  "actionsMenuLabel": "Ações",
   "hiveCountValue": "{count, plural, =0{Sem colmeias} =1{1 colmeia} other{{count} colmeias}}",
+  "superCountValue": "{count, plural, =0{Sem alças} =1{1 alça} other{{count} alças}}",
+  "counterTypeHiveLabel": "Colmeias",
+  "counterTypeSuperLabel": "Alças",
+  "emptyHiveCountValue": "{count, plural, =0{Sem colmeias vazias} =1{1 colmeia vazia} other{{count} colmeias vazias}}",
+  "swarmCountValue": "{count, plural, =0{Sem enxames} =1{1 enxame} other{{count} enxames}}",
+  "counterTypeEmptyHiveLabel": "Colmeias vazias",
+  "counterTypeSwarmLabel": "Enxames",
+  "apiaryAddCounterAction": "Adicionar contador",
+  "apiaryAddCounterTitle": "Adicionar um contador",
+  "apiaryNoCountersToAdd": "Já existem contadores de todos os tipos.",
+  "counterDecrementLabel": "Diminuir",
+  "counterIncrementLabel": "Aumentar",
   "newApiaryTitle": "Novo apiário",
   "editApiaryTitle": "Editar apiário",
   "apiaryNameLabel": "Nome",
@@ -28,6 +42,7 @@
   "profileSaveButton": "Guardar perfil",
   "profileSaveSuccess": "Perfil guardado.",
   "profileSaveError": "Não foi possível guardar o seu perfil: {error}",
+  "profileGenericError": "Ocorreu um erro. Tente novamente.",
   "organizationTitle": "A sua organização",
   "organizationOnboardingIntro": "Crie a sua organização para começar a gerir apiários.",
   "organizationNameLabel": "Nome da organização",
@@ -40,6 +55,7 @@
   "membersLoadError": "Não foi possível carregar os membros: {error}",
   "membersInviteEmailLabel": "Email a convidar",
   "membersInviteEmailRequired": "Introduza um endereço de email.",
+  "membersInviteEmailInvalid": "Introduza um endereço de email válido.",
   "membersInviteButton": "Convidar",
   "membersInviteSuccess": "Convite enviado.",
   "membersInviteError": "Não foi possível concluir o pedido: {error}",
@@ -49,6 +65,16 @@
   "invitationsEmpty": "Ainda não há convites.",
   "membersRevokeButton": "Revogar convite",
   "membersRevokeSuccess": "Convite revogado.",
+  "memberRoleAdmin": "Administrador",
+  "memberRoleUser": "Membro",
+  "memberStatusActive": "Ativo",
+  "memberStatusInvited": "Convidado",
+  "memberStatusRemoved": "Removido",
+  "invitationStatusPending": "Pendente",
+  "invitationStatusAccepted": "Aceite",
+  "invitationStatusExpired": "Expirado",
+  "invitationStatusRevoked": "Revogado",
+  "membersLoadMoreButton": "Carregar mais",
   "manageMembers": "Gerir membros",
   "accountTitle": "Definições da conta",
   "accountProfileSectionTitle": "Perfil",
@@ -71,6 +97,9 @@
   "offlineBannerMessage": "{count, plural, =0{Sem ligação — alterações guardadas localmente} =1{Sem ligação — alterações guardadas localmente (1 por sincronizar)} other{Sem ligação — alterações guardadas localmente ({count} por sincronizar)}}",
   "apiarySaveSuccess": "Apiário guardado.",
   "apiaryDeleteSuccess": "Apiário eliminado.",
+  "apiarySaveError": "Não foi possível guardar o apiário: {error}",
+  "apiaryDeleteError": "Não foi possível eliminar o apiário: {error}",
+  "apiaryLoadError": "Não foi possível carregar o apiário: {error}",
   "apiariesSearchHint": "Pesquisar apiários por nome",
   "apiariesSearchNoResults": "Nenhum apiário corresponde à pesquisa.",
   "apiariesLocationServicesDisabled": "Os serviços de localização estão desativados — a mostrar apiários por nome.",
@@ -82,14 +111,37 @@
   "apiariesViewMapAction": "Vista de mapa",
   "syncStatusSyncing": "A sincronizar…",
   "syncStatusWaitingForSignal": "A aguardar melhor sinal",
+  "syncStatusError": "Erro de sincronização",
+  "offlineBannerErrorMessage": "Algumas alterações ainda não foram sincronizadas — a tentar novamente.",
   "syncSupersededNotice": "Uma das suas alterações offline foi substituída por uma edição mais recente.",
+  "syncRejectedNotice": "Uma das suas alterações foi rejeitada e precisa de correção.",
+  "syncNeedsFixTitle": "Alterações a corrigir",
+  "syncNeedsFixEmpty": "Não há alterações a corrigir.",
+  "syncNeedsFixLoadError": "Não foi possível carregar as alterações a corrigir: {error}",
+  "syncNeedsFixCount": "{count, plural, =1{1 alteração a corrigir} other{{count} alterações a corrigir}}",
+  "syncNeedsFixApiaryLabel": "Alteração de apiário",
+  "syncNeedsFixCounterLabel": "Alteração de nº de colmeias",
+  "syncNeedsFixActivityLabel": "Alteração de atividade",
+  "syncNeedsFixJourneyLabel": "Alteração de jornada",
+  "syncNeedsFixJourneyPlanLabel": "Alteração do plano da jornada",
+  "syncNeedsFixTodoLabel": "Alteração de tarefa",
+  "syncNeedsFixTitleWithName": "{label} · {name}",
+  "syncNeedsFixGenericProblem": "Esta alteração foi rejeitada e precisa da sua atenção.",
+  "syncNeedsFixFixAction": "Corrigir",
+  "syncNeedsFixDismissAction": "Dispensar",
   "accountSyncSectionTitle": "Sincronização",
   "accountSyncStatusLabel": "Estado: {status}",
   "accountSyncPendingCount": "{count, plural, =0{Tudo sincronizado.} =1{1 alteração por sincronizar.} other{{count} alterações por sincronizar.}}",
+  "accountSyncNeedsFixStatus": "{count, plural, =1{1 alteração foi rejeitada e precisa de correção.} other{{count} alterações foram rejeitadas e precisam de correção.}}",
   "accountSyncNowButton": "Sincronizar agora",
   "accountSyncNowTriggered": "Sincronização pedida.",
   "accountSyncNowError": "Não foi possível sincronizar agora: {error}",
   "apiaryDetailTitle": "Apiário",
+  "activityDetailTitle": "Atividade",
+  "activityDetailAttributesHeader": "Detalhes",
+  "activityPerformedByLabel": "Realizada por",
+  "editActivityAction": "Editar atividade",
+  "editActivityTitle": "Editar atividade",
   "apiaryLocationValue": "{lat}, {lon}",
   "apiaryLocationNotSet": "Sem localização definida",
   "apiaryNotesLabel": "Notas",
@@ -102,10 +154,50 @@
   "apiaryMapMeasureHintSelectSecond": "Selecionado {name}. Toque noutro apiário para medir.",
   "apiaryMapMeasureResult": "{from} a {to}: {distanceKm} km",
   "apiaryMapMeasureClear": "Limpar seleção",
+  "apiaryMapLayerToggleLabel": "Camada do mapa",
+  "apiaryMapLayerSatelliteAction": "Satélite",
+  "apiaryMapLayerStreetsAction": "Ruas",
+  "apiaryMapAttributionEsri": "Powered by Esri — Fonte: Esri, Maxar, Earthstar Geographics e a comunidade de utilizadores GIS",
+  "apiaryMapAttributionOsm": "© Colaboradores do OpenStreetMap",
+  "apiaryMapRulerToggleAction": "Medir distância",
+  "apiaryMapMeasureFromMyLocation": "Usar a minha localização",
+  "apiaryMapRecenterAction": "Centrar na minha localização",
+  "apiaryMapInfoOpenTodos": "{count, plural, =0{Nenhuma tarefa em aberto} one{1 tarefa em aberto} other{{count} tarefas em aberto}}",
+  "apiaryMapInfoViewApiary": "Ver apiário",
+  "apiaryPlaceLabelLabel": "Nome do local",
+  "apiaryPlaceLabelHint": "ex.: Montargil",
+  "apiaryLocationSectionLabel": "Localização",
+  "apiaryUseCurrentLocationAction": "Usar localização atual",
+  "apiarySetOnMapAction": "Definir no mapa",
+  "apiaryHideMapAction": "Ocultar mapa",
+  "apiaryLocationClearAction": "Limpar localização",
+  "apiaryFormLocationPermissionDenied": "Acesso à localização negado — ainda pode colocar um alfinete no mapa.",
+  "apiaryFormLocationSet": "Localização definida: {lat}, {lon}",
+  "apiaryFormLocationNotSet": "Sem localização definida — toque no mapa para colocar um alfinete",
+  "apiaryLocationRequired": "Defina a localização do apiário antes de guardar.",
+  "apiaryMapPickerLabel": "Mapa: toque para colocar o alfinete do apiário",
+  "apiaryMapPickerRecenterAction": "Centrar no marcador",
+  "apiaryMapPickerMaximizeAction": "Maximizar mapa",
+  "apiaryLocationPickerFullScreenTitle": "Colocar o alfinete do apiário",
+  "apiaryLocationPickerConfirmAction": "Confirmar localização",
+  "apiaryLocationPickerCancelAction": "Cancelar",
+  "apiaryLocationPickerFullScreenLabel": "Mapa em ecrã inteiro: toque para colocar o alfinete do apiário",
+  "apiaryDistanceValue": "a {distanceKm} km",
+  "deleteApiaryConfirmTitle": "Eliminar apiário?",
+  "deleteApiaryConfirmMessage": "Isto elimina permanentemente “{name}”. Esta ação não pode ser desfeita.",
+  "deleteApiaryConfirmAction": "Eliminar",
+  "deleteApiaryCancelAction": "Cancelar",
   "@apiaryMapMeasureHintSelectSecond": {
     "placeholders": {
       "name": {
         "type": "String"
+      }
+    }
+  },
+  "@apiaryMapInfoOpenTodos": {
+    "placeholders": {
+      "count": {
+        "type": "int"
       }
     }
   },
@@ -121,5 +213,419 @@
         "type": "String"
       }
     }
-  }
+  },
+  "@apiaryFormLocationSet": {
+    "placeholders": {
+      "lat": {
+        "type": "String"
+      },
+      "lon": {
+        "type": "String"
+      }
+    }
+  },
+  "@apiaryDistanceValue": {
+    "placeholders": {
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  },
+  "@deleteApiaryConfirmMessage": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "activityTypeHarvestLabel": "Cresta",
+  "activityTypeFeedingLabel": "Alimentação",
+  "activityTypeTreatmentLabel": "Tratamento",
+  "activityTypeGenericLabel": "Genérica",
+  "treatmentContextGeneralLabel": "Geral / preventivo",
+  "treatmentContextDiseaseSpecificLabel": "Doença/condição específica",
+  "treatmentContextDetectionOnlyLabel": "Deteção apenas (sem tratamento ainda)",
+  "newActivityTitle": "Adicionar atividade",
+  "addActivityAction": "Adicionar atividade",
+  "activityTypeFieldLabel": "Tipo de atividade",
+  "activityOccurredAtLabel": "Data",
+  "activityHoneySupersLabel": "Alças de mel colhidas",
+  "activityHoneyKgLabel": "Mel colhido (kg)",
+  "activityHivesInvolvedLabel": "Colmeias envolvidas",
+  "activityFeedTypeLabel": "Tipo de alimento",
+  "activityFeedAmountLabel": "Quantidade de alimento",
+  "activityTreatmentContextFieldLabel": "Contexto do tratamento",
+  "activityTreatmentTypeLabel": "Produto de tratamento",
+  "activityDiseaseLabel": "Doença / condição",
+  "activityTreatmentTypeOptionalForDetectionHint": "Opcional para um registo de deteção apenas",
+  "activityLotBatchLabel": "Identificador de lote",
+  "activityNotesLabel": "Notas",
+  "activityFieldRequired": "Este campo é obrigatório",
+  "activityFieldInvalid": "Este valor não é válido",
+  "activitySaveSuccess": "Atividade guardada",
+  "activitySaveError": "Não foi possível guardar a atividade: {error}",
+  "@activitySaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryActivitiesEmpty": "Ainda não há atividades registadas para este apiário.",
+  "apiaryActivitiesViewAll": "Ver todas as {count} atividades",
+  "activitiesEmpty": "Ainda não há atividades.",
+  "activitiesFilterNoResults": "Nenhuma atividade corresponde aos filtros.",
+  "activitiesError": "Não foi possível carregar as atividades: {error}",
+  "@activitiesError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterTypeLabel": "Tipo",
+  "activityFilterTypeAll": "Todos os tipos",
+  "activityFilterDateRangeLabel": "Intervalo de datas",
+  "activityFilterDateRangeUnset": "Qualquer data",
+  "activityFilterDateRangeValue": "{start} – {end}",
+  "@activityFilterDateRangeValue": {
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterClearAction": "Limpar filtros",
+  "activityPerformedByYou": "Você",
+  "activityPerformedByMember": "Membro {id}",
+  "@activityPerformedByMember": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "activityPerformedByUnknown": "Desconhecido",
+  "activityPerformedBySemanticLabel": "Realizada por: {who}",
+  "@activityPerformedBySemanticLabel": {
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "activityNoAttributesSummary": "Sem detalhes adicionais",
+  "activityLoadError": "Não foi possível carregar a atividade: {error}",
+  "deleteActivity": "Eliminar atividade",
+  "activityDeleteSuccess": "Atividade eliminada",
+  "activityDeleteError": "Não foi possível eliminar a atividade: {error}",
+  "deleteActivityConfirmTitle": "Eliminar atividade?",
+  "deleteActivityConfirmMessage": "Isto elimina permanentemente esta atividade. Esta ação não pode ser desfeita.",
+  "deleteActivityConfirmAction": "Eliminar",
+  "deleteActivityCancelAction": "Cancelar",
+  "addJourney": "Nova jornada",
+  "newJourneyTitle": "Nova jornada",
+  "editJourneyTitle": "Editar jornada",
+  "journeysEmpty": "Ainda não há jornadas. Toque em “Nova jornada” para criar uma.",
+  "journeysError": "Não foi possível carregar as jornadas: {error}",
+  "journeysFilterNoResults": "Nenhuma jornada corresponde aos filtros.",
+  "journeyFilterTypeLabel": "Tipo",
+  "journeyFilterTypeAll": "Todos os tipos",
+  "journeyFilterDateRangeLabel": "Intervalo de datas",
+  "journeyFilterDateRangeUnset": "Qualquer data",
+  "journeyFilterDateRangeValue": "{start} – {end}",
+  "journeyFilterClearAction": "Limpar filtros",
+  "journeyProgressBadge": "{done}/{planned} apiários visitados",
+  "journeyNameLabel": "Nome",
+  "journeyNameRequired": "O nome é obrigatório",
+  "journeyMainActivityTypeLabel": "Atividade principal",
+  "journeyApiariesLabel": "Apiários a visitar",
+  "journeyApiariesNoneAvailable": "Ainda não há apiários — adicione um no separador Apiários primeiro.",
+  "journeyApiariesSelectAll": "Selecionar todos",
+  "journeyApiariesClearAll": "Limpar tudo",
+  "journeyApiariesSelectedCount": "{count, plural, =0{Nenhum apiário selecionado} =1{1 apiário selecionado} other{{count} apiários selecionados}}",
+  "journeyDefaultAttributesSectionLabel": "Predefinições para atividades",
+  "journeyDefaultsNotSetOption": "Não definido",
+  "journeyLoadError": "Não foi possível carregar a jornada: {error}",
+  "journeySaveSuccess": "Jornada guardada",
+  "journeySaveError": "Não foi possível guardar a jornada: {error}",
+  "closeJourneyAction": "Fechar jornada",
+  "journeyCloseSuccess": "Jornada fechada",
+  "journeyCloseError": "Não foi possível fechar a jornada: {error}",
+  "journeyStatusOpenLabel": "Aberta",
+  "journeyStatusClosedLabel": "Fechada",
+  "journeyStatusSemanticLabel": "Estado: {label}",
+  "deleteJourney": "Eliminar jornada",
+  "journeyDeleteSuccess": "Jornada eliminada",
+  "journeyDeleteError": "Não foi possível eliminar a jornada: {error}",
+  "deleteJourneyConfirmTitle": "Eliminar jornada?",
+  "deleteJourneyConfirmMessage": "Isto elimina permanentemente esta jornada. Esta ação não pode ser desfeita.",
+  "deleteJourneyConfirmAction": "Eliminar",
+  "deleteJourneyCancelAction": "Cancelar",
+  "journeyAttachmentLabel": "Jornada",
+  "journeyAttachmentNone": "Nenhuma jornada associada",
+  "journeyAttachmentAutoSelectedHint": "Selecionada automaticamente — corresponde a este apiário e tipo de atividade",
+  "journeyAttachmentChangeAction": "Alterar",
+  "journeyAttachmentRemoveAction": "Remover",
+  "journeyPickerTitle": "Escolher uma jornada",
+  "journeyPickerError": "Não foi possível carregar as jornadas: {error}",
+  "journeyPickerNoneOption": "Nenhuma jornada",
+  "journeyPickerNoOpenMatches": "Ainda não há jornadas abertas correspondentes a este apiário e tipo de atividade.",
+  "journeyPickerShowHiddenToggle": "Mostrar jornadas ocultas",
+  "journeyPickerShowUnplannedToggle": "Mostrar jornadas que não planearam este apiário",
+  "journeyPickerUnplannedOptionSemanticLabel": "{name}, irá adicionar este apiário ao plano",
+  "journeyPickerAddsApiaryBadge": "Adiciona apiário",
+  "journeyPickerClosedOptionSemanticLabel": "{name}, jornada fechada",
+  "journeyPickerCreateNewAction": "Criar nova jornada",
+  "journeyQuickCreateTitle": "Nova jornada",
+  "journeyQuickCreateCancelAction": "Cancelar",
+  "closedJourneyConfirmTitle": "Esta jornada está fechada",
+  "closedJourneyConfirmMessage": "\"{journeyName}\" está fechada. Adicionar esta atividade mesmo assim?",
+  "closedJourneyConfirmCancelAction": "Cancelar",
+  "closedJourneyConfirmAddAction": "Adicionar mesmo assim",
+  "journeyRelinkConfirmTitle": "Alterar a jornada associada?",
+  "journeyRelinkConfirmMessage": "Esta atividade vai passar de \"{oldJourneyName}\" para \"{newJourneyName}\".",
+  "journeyRelinkConfirmCancelAction": "Cancelar",
+  "journeyRelinkConfirmConfirmAction": "Confirmar",
+  "journeyStatsSectionTitle": "Estatísticas da jornada",
+  "journeyStatsError": "Não foi possível carregar as estatísticas da jornada: {error}",
+  "journeyStatsApiariesVisitedLabel": "Apiários visitados",
+  "journeyStatsApiariesVisitedValue": "{done}/{planned}",
+  "journeyStatsHivesHarvestedLabel": "Colmeias trabalhadas",
+  "journeyStatsHoneyCollectedLabel": "Mel colhido",
+  "journeyStatsHoneyCollectedValue": "{kg} kg",
+  "journeyStatsAverageSupersLabel": "Média alças/colmeia",
+  "journeyStatsAverageSupersNoData": "Ainda sem dados",
+  "journeyStatsMissingLabel": "{count, plural, =0{Todos os apiários planeados foram visitados} =1{Falta 1 apiário} other{Faltam {count} apiários}}",
+  "journeyStatsHivesWorkedLabel": "Colmeias trabalhadas (total)",
+  "journeyStatsHivesWorkedValue": "{worked}/{planned}",
+  "journeyStatsHivesWorkedNoData": "—",
+  "journeyStatsMoreAction": "Mais estatísticas",
+  "journeyStatsDetailTitle": "Mais estatísticas",
+  "journeyStatsDetailFilterAll": "Todos",
+  "journeyStatsDetailFilterVisited": "Visitados",
+  "journeyStatsDetailFilterNotVisited": "Não visitados",
+  "journeyStatsDetailSortLabel": "Ordenar por",
+  "journeyStatsDetailSortName": "Nome",
+  "journeyStatsDetailSortKgPerHive": "Kg/colmeia",
+  "journeyStatsDetailSortSupersPerHive": "Alças/colmeia",
+  "journeyStatsDetailSortFeedAmount": "Quantidade de alimento",
+  "journeyStatsDetailSortHivesInvolved": "Colmeias envolvidas",
+  "journeyStatsDetailEmpty": "Nenhum apiário corresponde ao filtro atual.",
+  "journeyStatsDetailHiveCountLabel": "Colmeias",
+  "journeyStatsDetailHoneyKgLabel": "Mel (kg)",
+  "journeyStatsDetailSupersLabel": "Alças",
+  "journeyStatsDetailKgPerHiveLabel": "Kg/colmeia",
+  "journeyStatsDetailSupersPerHiveLabel": "Alças/colmeia",
+  "journeyStatsDetailFeedAmountLabel": "Quantidade de alimento",
+  "journeyStatsDetailHivesInvolvedLabel": "Colmeias envolvidas",
+  "journeyStatsDetailNoDataValue": "—",
+  "journeyStatsDetailFeedingSummary": "Quantidade total de alimento: {amount}",
+  "journeyStatsDetailTreatedSummary": "{treated}/{planned} apiários tratados",
+  "journeyDetailTitle": "Jornada",
+  "editJourneyAction": "Editar jornada",
+  "journeyDetailDefaultAttributesLabel": "Predefinições: {values}",
+  "journeyDetailApiariesTitle": "Apiários",
+  "journeyDetailApiaryNameUnknown": "Apiário desconhecido",
+  "journeyDetailApiaryVisitedBadge": "Visitado",
+  "journeyDetailApiaryPlannedBadge": "Planeado",
+  "journeyDetailApiaryNotVisitedYet": "Ainda não visitado",
+  "journeyDetailApiariesEmpty": "Ainda não há apiários nesta jornada.",
+  "todosEmpty": "Ainda não há tarefas.",
+  "todosFilterNoResults": "Nenhuma tarefa corresponde aos filtros.",
+  "todosError": "Não foi possível carregar as tarefas: {error}",
+  "todoFilterStatusLabel": "Estado",
+  "todoFilterStatusAll": "Todas",
+  "todoFilterStatusOpen": "Em aberto",
+  "todoFilterStatusOverdue": "Atrasada",
+  "todoFilterStatusDone": "Concluída",
+  "todoFilterPriorityLabel": "Prioridade",
+  "todoFilterPriorityAll": "Todas as prioridades",
+  "todoPriorityLowLabel": "Baixa",
+  "todoPriorityMediumLabel": "Média",
+  "todoPriorityHighLabel": "Alta",
+  "todoFilterDueLabel": "Prazo",
+  "todoFilterDueAny": "Qualquer data",
+  "todoFilterDueToday": "Vence hoje",
+  "todoFilterDueThisWeek": "Vence esta semana",
+  "todoFilterDueThisMonth": "Vence este mês",
+  "todoFilterClearAction": "Limpar filtros",
+  "todoSortFieldLabel": "Ordenar por",
+  "todoSortFieldDueDate": "Prazo",
+  "todoSortFieldPriority": "Prioridade",
+  "todoSortFieldStatus": "Estado",
+  "todoSortDirectionAscendingLabel": "Crescente",
+  "todoSortDirectionDescendingLabel": "Decrescente",
+  "todoDueDateUnset": "Sem prazo",
+  "todoOverdueBadge": "Atrasada",
+  "todoStatusSemanticLabel": "Estado: {status}",
+  "addTodo": "Nova tarefa",
+  "newTodoTitle": "Nova tarefa",
+  "todoDetailTitle": "Tarefa",
+  "editTodoTitle": "Editar tarefa",
+  "editTodoAction": "Editar tarefa",
+  "todoTitleLabel": "Título",
+  "todoTitleRequired": "O título é obrigatório",
+  "todoDescriptionLabel": "Descrição",
+  "todoDescriptionUnset": "Sem descrição",
+  "todoDueDateFieldLabel": "Prazo",
+  "todoDueDateClearAction": "Limpar prazo",
+  "todoPriorityFieldLabel": "Prioridade",
+  "todoAssigneeFieldLabel": "Responsável",
+  "todoApiaryFieldLabel": "Apiário",
+  "todoAssigneeUnassigned": "Sem responsável",
+  "todoAssigneeUnknown": "Membro {id}",
+  "todoAssigneeNoneAvailable": "Ainda não há membros disponíveis.",
+  "todoApiaryNone": "Sem apiário",
+  "todoApiaryUnknown": "Apiário desconhecido",
+  "todoDetailFieldsHeader": "Detalhes",
+  "todoCompletedAtLabel": "Concluída em",
+  "todoCompleteAction": "Marcar como concluída",
+  "todoReopenAction": "Reabrir",
+  "todoCompleteSuccess": "Tarefa concluída",
+  "todoCompleteError": "Não foi possível atualizar a tarefa: {error}",
+  "todoReopenSuccess": "Tarefa reaberta",
+  "todoReopenError": "Não foi possível atualizar a tarefa: {error}",
+  "todoSaveSuccess": "Tarefa guardada",
+  "todoSaveError": "Não foi possível guardar a tarefa: {error}",
+  "todoLoadError": "Não foi possível carregar a tarefa: {error}",
+  "deleteTodo": "Eliminar tarefa",
+  "todoDeleteSuccess": "Tarefa eliminada",
+  "todoDeleteError": "Não foi possível eliminar a tarefa: {error}",
+  "deleteTodoConfirmTitle": "Eliminar tarefa?",
+  "deleteTodoConfirmMessage": "Isto elimina permanentemente esta tarefa. Esta ação não pode ser desfeita.",
+  "deleteTodoConfirmAction": "Eliminar",
+  "deleteTodoCancelAction": "Cancelar",
+  "@activityLoadError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@activityDeleteError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todosError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoStatusSemanticLabel": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoAssigneeUnknown": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoCompleteError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoReopenError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoSaveError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoLoadError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@todoDeleteError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "historySectionTitle": "Histórico",
+  "historyScreenTitle": "Histórico",
+  "historyEmpty": "Ainda não há alterações registadas",
+  "historyError": "Não foi possível carregar o histórico: {error}",
+  "@historyError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "historyViewAllAction": "Ver tudo",
+  "historyEventCreated": "Criado",
+  "historyEventUpdated": "Atualizado",
+  "historyEventDeleted": "Eliminado",
+  "historyEventSuperseded": "Substituído",
+  "historyEventUnknown": "Alterado",
+  "historyChangedFieldsValue": "Alterado: {fields}",
+  "@historyChangedFieldsValue": {
+    "placeholders": {
+      "fields": {
+        "type": "String"
+      }
+    }
+  },
+  "historySupersededDetail": "Substituído por uma versão mais recente de outro dispositivo",
+  "historyActorYou": "Você",
+  "historyActorMember": "Membro {id}",
+  "@historyActorMember": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "historyActorUnknown": "Desconhecido",
+  "historyEntrySemanticLabel": "{event} por {actor}, {timestamp}",
+  "@historyEntrySemanticLabel": {
+    "placeholders": {
+      "event": {
+        "type": "String"
+      },
+      "actor": {
+        "type": "String"
+      },
+      "timestamp": {
+        "type": "String"
+      }
+    }
+  },
+  "historyFieldLocation": "Localização",
+  "historyFieldActivityType": "Tipo de atividade",
+  "historyFieldAttributes": "Detalhes",
+  "historyFieldApiary": "Apiário",
+  "historyFieldStatus": "Estado",
+  "discardChangesTitle": "Descartar alterações?",
+  "discardChangesMessage": "Tem alterações por guardar. Se sair agora, serão perdidas.",
+  "discardChangesConfirmAction": "Descartar",
+  "discardChangesCancelAction": "Continuar a editar"
 }

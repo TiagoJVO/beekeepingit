@@ -4,13 +4,17 @@
   "@appTitle": {
     "description": "App title, shown in the browser tab and app switcher"
   },
-  "loginPrompt": "Sign in to manage your apiaries.",
+  "loginPrompt": "Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.",
   "@loginPrompt": {
-    "description": "Text above the login button"
+    "description": "Text above the login button. Mentions account creation (#366): the sign-up entry point is the identity provider's own login page (its \"Sign up\" link starts the enrollment flow with the OIDC redirect context preserved), so the app deliberately keeps a single auth action and points new users at it"
   },
   "loginButton": "Sign in",
   "@loginButton": {
     "description": "Primary login action — starts the OIDC redirect to the identity provider"
+  },
+  "loginError": "Couldn't sign in — check your connection and try again.",
+  "@loginError": {
+    "description": "Shown on the login screen when starting sign-in fails (e.g. OIDC discovery unreachable while offline); tapping \"Sign in\" again retries"
   },
   "logout": "Sign out",
   "@logout": {
@@ -37,6 +41,10 @@
   "@addApiary": {
     "description": "Floating action button to create an apiary"
   },
+  "actionsMenuLabel": "Actions",
+  "@actionsMenuLabel": {
+    "description": "Label for the single expandable quick-actions button (FR-UX-2) that, when tapped, reveals the contextual actions available on the current screen; also its screen-reader name, whose expanded/collapsed state is announced."
+  },
   "hiveCountValue": "{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}",
   "@hiveCountValue": {
     "description": "Hive count subtitle on a list row",
@@ -45,6 +53,69 @@
         "type": "int"
       }
     }
+  },
+  "superCountValue": "{count, plural, =0{No supers} =1{1 super} other{{count} supers}}",
+  "@superCountValue": {
+    "description": "Supers counter value badge on the apiary detail screen (#346, D-20)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "counterTypeHiveLabel": "Hives",
+  "@counterTypeHiveLabel": {
+    "description": "The name of the hive counter type, used by the detail screen's add-counter picker and inline value editor (#346)"
+  },
+  "counterTypeSuperLabel": "Supers",
+  "@counterTypeSuperLabel": {
+    "description": "The name of the supers counter type, used by the detail screen's add-counter picker and inline value editor (#346)"
+  },
+  "emptyHiveCountValue": "{count, plural, =0{No empty hives} =1{1 empty hive} other{{count} empty hives}}",
+  "@emptyHiveCountValue": {
+    "description": "Empty-hive counter value badge on the apiary detail screen (#392)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "swarmCountValue": "{count, plural, =0{No swarms} =1{1 swarm} other{{count} swarms}}",
+  "@swarmCountValue": {
+    "description": "Swarm counter value badge on the apiary detail screen (#392)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "counterTypeEmptyHiveLabel": "Empty hives",
+  "@counterTypeEmptyHiveLabel": {
+    "description": "The name of the empty-hive counter type, used by the detail screen's add-counter picker and inline value editor (#392)"
+  },
+  "counterTypeSwarmLabel": "Swarms",
+  "@counterTypeSwarmLabel": {
+    "description": "The name of the swarm counter type, used by the detail screen's add-counter picker and inline value editor (#392)"
+  },
+  "apiaryAddCounterAction": "Add counter",
+  "@apiaryAddCounterAction": {
+    "description": "Button on the apiary detail screen that opens the add-counter type picker (#346)"
+  },
+  "apiaryAddCounterTitle": "Add a counter",
+  "@apiaryAddCounterTitle": {
+    "description": "Title of the add-counter type picker sheet on the apiary detail screen (#346)"
+  },
+  "apiaryNoCountersToAdd": "Every counter type is already here.",
+  "@apiaryNoCountersToAdd": {
+    "description": "Empty state in the add-counter picker when the apiary already has a counter of every known type (#346)"
+  },
+  "counterDecrementLabel": "Decrease",
+  "@counterDecrementLabel": {
+    "description": "Accessibility label for the minus button in the inline counter value editor (#346)"
+  },
+  "counterIncrementLabel": "Increase",
+  "@counterIncrementLabel": {
+    "description": "Accessibility label for the plus button in the inline counter value editor (#346)"
   },
   "newApiaryTitle": "New apiary",
   "@newApiaryTitle": {
@@ -127,6 +198,10 @@
       }
     }
   },
+  "profileGenericError": "Something went wrong. Please try again.",
+  "@profileGenericError": {
+    "description": "Fixed, non-interpolated message shown when the profile fails to load, or a save fails with something other than a structured ApiException — never the raw exception text (avoids leaking internal error details to the field user)"
+  },
   "organizationTitle": "Your organization",
   "@organizationTitle": {
     "description": "Organization creation screen app bar title"
@@ -185,6 +260,10 @@
   "@membersInviteEmailRequired": {
     "description": "Validation message for an empty invite email"
   },
+  "membersInviteEmailInvalid": "Enter a valid email address.",
+  "@membersInviteEmailInvalid": {
+    "description": "Validation message for a malformed invite email"
+  },
   "membersInviteButton": "Invite",
   "@membersInviteButton": {
     "description": "Submit button to send an invitation"
@@ -225,6 +304,46 @@
   "membersRevokeSuccess": "Invitation revoked.",
   "@membersRevokeSuccess": {
     "description": "Snackbar shown after successfully revoking an invitation"
+  },
+  "memberRoleAdmin": "Admin",
+  "@memberRoleAdmin": {
+    "description": "Localized label for the 'admin' member/invitation role (organizations migration 00001/00002: role IN ('admin', 'user'))"
+  },
+  "memberRoleUser": "Member",
+  "@memberRoleUser": {
+    "description": "Localized label for the 'user' member/invitation role"
+  },
+  "memberStatusActive": "Active",
+  "@memberStatusActive": {
+    "description": "Localized label for a membership's 'active' status (organizations migration 00001: status IN ('active', 'invited', 'removed'))"
+  },
+  "memberStatusInvited": "Invited",
+  "@memberStatusInvited": {
+    "description": "Localized label for a membership's 'invited' status"
+  },
+  "memberStatusRemoved": "Removed",
+  "@memberStatusRemoved": {
+    "description": "Localized label for a membership's 'removed' status"
+  },
+  "invitationStatusPending": "Pending",
+  "@invitationStatusPending": {
+    "description": "Localized label for an invitation's 'pending' status (organizations migration 00002: status IN ('pending', 'accepted', 'expired', 'revoked'))"
+  },
+  "invitationStatusAccepted": "Accepted",
+  "@invitationStatusAccepted": {
+    "description": "Localized label for an invitation's 'accepted' status"
+  },
+  "invitationStatusExpired": "Expired",
+  "@invitationStatusExpired": {
+    "description": "Localized label for an invitation's 'expired' status"
+  },
+  "invitationStatusRevoked": "Revoked",
+  "@invitationStatusRevoked": {
+    "description": "Localized label for an invitation's 'revoked' status"
+  },
+  "membersLoadMoreButton": "Load more",
+  "@membersLoadMoreButton": {
+    "description": "Action to fetch the next cursor-paginated page of members/invitations (server: limit/cursor/page.next_cursor)"
   },
   "manageMembers": "Manage members",
   "@manageMembers": {
@@ -329,6 +448,33 @@
   "@apiaryDeleteSuccess": {
     "description": "Toast shown after successfully deleting an apiary (#197)"
   },
+  "apiarySaveError": "Could not save the apiary: {error}",
+  "@apiarySaveError": {
+    "description": "Toast shown after a failed apiary create/update — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryDeleteError": "Could not delete the apiary: {error}",
+  "@apiaryDeleteError": {
+    "description": "Toast shown after a failed apiary delete — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryLoadError": "Could not load the apiary: {error}",
+  "@apiaryLoadError": {
+    "description": "Toast shown when the edit form's initial load of the existing apiary fails — resets the form's busy state rather than leaving an indefinite spinner",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "apiariesSearchHint": "Search apiaries by name",
   "@apiariesSearchHint": {
     "description": "Placeholder text in the apiaries list search field (FR-AP-6, #36)"
@@ -373,9 +519,95 @@
   "@syncStatusWaitingForSignal": {
     "description": "App-shell header sync-status pill / account screen status label while the connection-quality gate is backing off after a failed probe (FR-OF-3, sync.md §7.1, #55)"
   },
+  "syncStatusError": "Sync error",
+  "@syncStatusError": {
+    "description": "App-shell header sync-status pill label when the last upload/download attempt errored and PowerSync is waiting to retry (SyncStatus.hasError) — distinct from merely offline, so a beekeeper whose uploads keep failing isn't shown the same pill as someone who simply has no signal"
+  },
+  "offlineBannerErrorMessage": "Some changes couldn't sync yet — retrying.",
+  "@offlineBannerErrorMessage": {
+    "description": "Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)"
+  },
   "syncSupersededNotice": "One of your offline changes was overwritten by a newer edit.",
   "@syncSupersededNotice": {
     "description": "Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)"
+  },
+  "syncRejectedNotice": "One of your changes was rejected and needs fixing.",
+  "@syncRejectedNotice": {
+    "description": "Non-blocking toast (with a Fix action) shown when an offline write was permanently rejected on upload (sync.md §8 notify-and-fix, D-12, #256/#260)"
+  },
+  "syncNeedsFixTitle": "Changes to fix",
+  "@syncNeedsFixTitle": {
+    "description": "App bar title of the needs-fix list — offline writes the server rejected that the user must correct and re-save"
+  },
+  "syncNeedsFixEmpty": "No changes need fixing.",
+  "@syncNeedsFixEmpty": {
+    "description": "Empty state of the needs-fix list when there are no rejected offline writes"
+  },
+  "syncNeedsFixLoadError": "Couldn't load the changes to fix: {error}",
+  "@syncNeedsFixLoadError": {
+    "description": "Error state of the needs-fix list when the local read fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "syncNeedsFixCount": "{count, plural, =1{1 change needs fixing} other{{count} changes need fixing}}",
+  "@syncNeedsFixCount": {
+    "description": "Count of offline writes awaiting a fix — the account-screen entry, header account-badge tooltip, and needs-fix link label (D-12 notify-and-fix)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncNeedsFixApiaryLabel": "Apiary change",
+  "@syncNeedsFixApiaryLabel": {
+    "description": "Needs-fix list row title for a rejected apiary write"
+  },
+  "syncNeedsFixCounterLabel": "Hive count change",
+  "@syncNeedsFixCounterLabel": {
+    "description": "Needs-fix list row title for a rejected apiary hive-counter write (#256)"
+  },
+  "syncNeedsFixActivityLabel": "Activity change",
+  "@syncNeedsFixActivityLabel": {
+    "description": "Needs-fix list row title for a rejected activity write (#379)"
+  },
+  "syncNeedsFixJourneyLabel": "Journey change",
+  "@syncNeedsFixJourneyLabel": {
+    "description": "Needs-fix list row title for a rejected journey write (#379)"
+  },
+  "syncNeedsFixJourneyPlanLabel": "Journey plan change",
+  "@syncNeedsFixJourneyPlanLabel": {
+    "description": "Needs-fix list row title for a rejected journey plan item write (#379)"
+  },
+  "syncNeedsFixTodoLabel": "Todo change",
+  "@syncNeedsFixTodoLabel": {
+    "description": "Needs-fix list row title for a rejected todo write (#379)"
+  },
+  "syncNeedsFixTitleWithName": "{label} · {name}",
+  "@syncNeedsFixTitleWithName": {
+    "description": "Needs-fix list row title combined with the record's own display name (its name/title/type field, read from the rejected op's stored payload) when one is available (#379)",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "syncNeedsFixGenericProblem": "This change was rejected and needs your attention.",
+  "@syncNeedsFixGenericProblem": {
+    "description": "Needs-fix list row fallback message when the server returned no field-level detail"
+  },
+  "syncNeedsFixFixAction": "Fix",
+  "@syncNeedsFixFixAction": {
+    "description": "Needs-fix action (and rejection toast action) that opens the offending record's edit screen to correct and re-save it"
+  },
+  "syncNeedsFixDismissAction": "Dismiss",
+  "@syncNeedsFixDismissAction": {
+    "description": "Needs-fix action that discards a rejected offline write the user chooses not to fix"
   },
   "accountSyncSectionTitle": "Sync",
   "@accountSyncSectionTitle": {
@@ -392,7 +624,16 @@
   },
   "accountSyncPendingCount": "{count, plural, =0{Everything is synced.} =1{1 change waiting to sync.} other{{count} changes waiting to sync.}}",
   "@accountSyncPendingCount": {
-    "description": "Pending-change count line on the account screen (#58)",
+    "description": "Pending-change count line on the account screen (#58). Only shown when there are no rejected offline writes awaiting a fix — see accountSyncNeedsFixStatus (#379)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "accountSyncNeedsFixStatus": "{count, plural, =1{1 change was rejected and needs fixing.} other{{count} changes were rejected and need fixing.}}",
+  "@accountSyncNeedsFixStatus": {
+    "description": "Account screen sync-section status line shown INSTEAD OF accountSyncPendingCount whenever there are rejected offline writes awaiting a fix (D-12 notify-and-fix, #379) — replaces the misleading \"Everything is synced.\" line the dead-letter queue could otherwise show alongside a non-zero needs-fix count",
     "placeholders": {
       "count": {
         "type": "int"
@@ -419,6 +660,26 @@
   "apiaryDetailTitle": "Apiary",
   "@apiaryDetailTitle": {
     "description": "Apiary detail screen app bar title (#32)"
+  },
+  "activityDetailTitle": "Activity",
+  "@activityDetailTitle": {
+    "description": "Activity detail screen app bar title (#310, FR-AC-3/5/6)"
+  },
+  "activityDetailAttributesHeader": "Details",
+  "@activityDetailAttributesHeader": {
+    "description": "Section header above an activity's per-type attributes on the detail screen (#310)"
+  },
+  "activityPerformedByLabel": "Performed by",
+  "@activityPerformedByLabel": {
+    "description": "Visible field label preceding an activity's performer on the detail screen (#310, FR-TEN-2)"
+  },
+  "editActivityAction": "Edit activity",
+  "@editActivityAction": {
+    "description": "Edit FAB label on the activity detail screen (#310, FR-AC-3)"
+  },
+  "editActivityTitle": "Edit activity",
+  "@editActivityTitle": {
+    "description": "App bar title for the activity edit form, reached from the detail screen (#310, FR-AC-3)"
   },
   "apiaryLocationValue": "{lat}, {lon}",
   "@apiaryLocationValue": {
@@ -491,5 +752,1389 @@
   "apiaryMapMeasureClear": "Clear selection",
   "@apiaryMapMeasureClear": {
     "description": "Action to clear the current two-apiary measurement selection (#37 AC: selection must be clear and usable)"
+  },
+  "apiaryMapLayerToggleLabel": "Map layer",
+  "@apiaryMapLayerToggleLabel": {
+    "description": "Semantics container label for the satellite/streets layer toggle on the map (#257 AC: gloves-friendly toggle with semantics labels)"
+  },
+  "apiaryMapLayerSatelliteAction": "Satellite",
+  "@apiaryMapLayerSatelliteAction": {
+    "description": "Tooltip/label for the satellite segment of the map layer toggle (#257)"
+  },
+  "apiaryMapLayerStreetsAction": "Streets",
+  "@apiaryMapLayerStreetsAction": {
+    "description": "Tooltip/label for the streets (OSM) segment of the map layer toggle (#257)"
+  },
+  "apiaryMapAttributionEsri": "Powered by Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+  "@apiaryMapAttributionEsri": {
+    "description": "Attribution overlay text shown when the satellite (Esri World Imagery) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by Esri's World Imagery terms of use)"
+  },
+  "apiaryMapAttributionOsm": "© OpenStreetMap contributors",
+  "@apiaryMapAttributionOsm": {
+    "description": "Attribution overlay text shown when the streets (OSM) layer is active (#257 AC: proper attribution overlay for the active tile source; text required by the OSM tile usage policy)"
+  },
+  "apiaryMapRulerToggleAction": "Measure distance",
+  "@apiaryMapRulerToggleAction": {
+    "description": "Tooltip/semantics label for the ruler toggle that switches the map between apiary-info (tap opens a quick info sheet) and tap-to-measure modes (#388)"
+  },
+  "apiaryMapMeasureFromMyLocation": "Use my location",
+  "@apiaryMapMeasureFromMyLocation": {
+    "description": "Chip/button shown in the measure overlay (ruler ON, current location available, not yet selected) that adds the user's current location as one of the two measurement endpoints (#388)"
+  },
+  "apiaryMapRecenterAction": "Center on my location",
+  "@apiaryMapRecenterAction": {
+    "description": "Tooltip/semantics label for the 'my location' recenter control on the full-screen apiary map that reads a fresh device fix and moves the camera onto it at street zoom (#420)"
+  },
+  "apiaryMapInfoOpenTodos": "{count, plural, =0{No open todos} one{1 open todo} other{{count} open todos}}",
+  "@apiaryMapInfoOpenTodos": {
+    "description": "Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "apiaryMapInfoViewApiary": "View apiary",
+  "@apiaryMapInfoViewApiary": {
+    "description": "Action on the map's apiary info sheet that navigates to the full apiary detail screen (#388)"
+  },
+  "apiaryPlaceLabelLabel": "Place label",
+  "@apiaryPlaceLabelLabel": {
+    "description": "Optional free-text place name field label on the apiary form, and its label on the detail screen (#252, e.g. \"Montargil\")"
+  },
+  "apiaryPlaceLabelHint": "e.g. Montargil",
+  "@apiaryPlaceLabelHint": {
+    "description": "Placeholder hint text in the apiary form's place label field (#252)"
+  },
+  "apiaryLocationSectionLabel": "Location",
+  "@apiaryLocationSectionLabel": {
+    "description": "Section label above the map-pin picker on the apiary form (#252)"
+  },
+  "apiaryUseCurrentLocationAction": "Use current location",
+  "@apiaryUseCurrentLocationAction": {
+    "description": "Button on the apiary form that sets the location to the device's current position (#252)"
+  },
+  "apiarySetOnMapAction": "Set on map",
+  "@apiarySetOnMapAction": {
+    "description": "Button on the apiary form that expands the embedded map-pin picker (collapsed by default so the Save action stays reachable) (#252)"
+  },
+  "apiaryHideMapAction": "Hide map",
+  "@apiaryHideMapAction": {
+    "description": "Button on the apiary form that collapses the expanded map-pin picker (#252)"
+  },
+  "apiaryLocationClearAction": "Clear location",
+  "@apiaryLocationClearAction": {
+    "description": "Button on the apiary form that clears the currently-set location (#252 AC: the location is editable and clearable)"
+  },
+  "apiaryFormLocationPermissionDenied": "Location access denied — you can still place a pin on the map.",
+  "@apiaryFormLocationPermissionDenied": {
+    "description": "Shown on the apiary form when \"use current location\" fails because location permission was denied or is unavailable — the map-pin picker is offered as the fallback (#252 AC: graceful permission handling)"
+  },
+  "apiaryFormLocationSet": "Location set: {lat}, {lon}",
+  "@apiaryFormLocationSet": {
+    "description": "Status text on the apiary form's map-pin picker when a location is currently set (#252)",
+    "placeholders": {
+      "lat": {
+        "type": "String"
+      },
+      "lon": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryFormLocationNotSet": "No location set — tap the map to place a pin",
+  "@apiaryFormLocationNotSet": {
+    "description": "Status text on the apiary form's map-pin picker when no location is set yet (#252)"
+  },
+  "apiaryLocationRequired": "Set the apiary's location before saving.",
+  "@apiaryLocationRequired": {
+    "description": "Validation error on the apiary form when the user tries to save without a location — location is mandatory (FR-AP-7, #341)"
+  },
+  "apiaryMapPickerLabel": "Map: tap to place the apiary's pin",
+  "@apiaryMapPickerLabel": {
+    "description": "Semantics label for the embedded map-pin picker on the apiary form (#252)"
+  },
+  "apiaryMapPickerRecenterAction": "Recenter on the pin",
+  "@apiaryMapPickerRecenterAction": {
+    "description": "Tooltip/semantics label for the recenter control on the apiary form's map picker that moves the camera back onto the placed pin at street zoom after panning away (#420)"
+  },
+  "apiaryMapPickerMaximizeAction": "Maximize map",
+  "@apiaryMapPickerMaximizeAction": {
+    "description": "Tooltip/semantics label for the control on the apiary form's map picker that opens the full-screen map picker so the pin can be placed precisely (#421)"
+  },
+  "apiaryLocationPickerFullScreenTitle": "Place the apiary's pin",
+  "@apiaryLocationPickerFullScreenTitle": {
+    "description": "App bar title of the full-screen apiary location picker opened from the form's maximize control (#421)"
+  },
+  "apiaryLocationPickerConfirmAction": "Confirm location",
+  "@apiaryLocationPickerConfirmAction": {
+    "description": "Tooltip/semantics label for the confirm control in the full-screen apiary location picker that returns the chosen location to the form (#421)"
+  },
+  "apiaryLocationPickerCancelAction": "Cancel",
+  "@apiaryLocationPickerCancelAction": {
+    "description": "Tooltip/semantics label for the cancel/close control in the full-screen apiary location picker that discards any change and returns to the form (#421)"
+  },
+  "apiaryLocationPickerFullScreenLabel": "Full-screen map: tap to place the apiary's pin",
+  "@apiaryLocationPickerFullScreenLabel": {
+    "description": "Semantics label for the map in the full-screen apiary location picker (#421)"
+  },
+  "apiaryDistanceValue": "{distanceKm} km away",
+  "@apiaryDistanceValue": {
+    "description": "Distance from the device's current location shown on an apiaries list row, locale-formatted (FR-AP-2, #253)",
+    "placeholders": {
+      "distanceKm": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteApiaryConfirmTitle": "Delete apiary?",
+  "@deleteApiaryConfirmTitle": {
+    "description": "Title of the confirmation dialog shown before deleting an apiary (#255)"
+  },
+  "deleteApiaryConfirmMessage": "This permanently deletes “{name}”. This cannot be undone.",
+  "@deleteApiaryConfirmMessage": {
+    "description": "Body of the confirmation dialog shown before deleting an apiary, naming it (#255 AC)",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteApiaryConfirmAction": "Delete",
+  "@deleteApiaryConfirmAction": {
+    "description": "Confirm action in the delete-apiary confirmation dialog (#255)"
+  },
+  "deleteApiaryCancelAction": "Cancel",
+  "@deleteApiaryCancelAction": {
+    "description": "Cancel action in the delete-apiary confirmation dialog (#255 AC: cancel is a no-op)"
+  },
+  "activityTypeHarvestLabel": "Honey harvest",
+  "@activityTypeHarvestLabel": {
+    "description": "Display label for the harvest activity type (#38, FR-AC-1)"
+  },
+  "activityTypeFeedingLabel": "Feeding",
+  "@activityTypeFeedingLabel": {
+    "description": "Display label for the feeding activity type (#38, FR-AC-1)"
+  },
+  "activityTypeTreatmentLabel": "Treatment",
+  "@activityTypeTreatmentLabel": {
+    "description": "Display label for the treatment activity type (#38, FR-AC-1)"
+  },
+  "activityTypeGenericLabel": "Generic",
+  "@activityTypeGenericLabel": {
+    "description": "Display label for the generic (date + notes only) activity type (#38, FR-AC-1)"
+  },
+  "treatmentContextGeneralLabel": "General / preventive",
+  "@treatmentContextGeneralLabel": {
+    "description": "Display label for a treatment with no disease tied to it (#38, FR-AC-1, D-19)"
+  },
+  "treatmentContextDiseaseSpecificLabel": "Specific disease/condition",
+  "@treatmentContextDiseaseSpecificLabel": {
+    "description": "Display label for a treatment tied to a named disease/condition (#38, FR-AC-1, D-19)"
+  },
+  "treatmentContextDetectionOnlyLabel": "Detection only (no treatment yet)",
+  "@treatmentContextDetectionOnlyLabel": {
+    "description": "Display label for a disease-detection report with no treatment applied yet (#38, FR-AC-1, D-19)"
+  },
+  "newActivityTitle": "Add activity",
+  "@newActivityTitle": {
+    "description": "Screen header title for the add-activity form (#39, FR-AC-2)"
+  },
+  "addActivityAction": "Add activity",
+  "@addActivityAction": {
+    "description": "Button on the apiary detail page that opens the add-activity form (#39, FR-AC-2)"
+  },
+  "activityTypeFieldLabel": "Activity type",
+  "@activityTypeFieldLabel": {
+    "description": "Field label for the activity-type selector on the add-activity form (#39, FR-AC-2)"
+  },
+  "activityOccurredAtLabel": "Date",
+  "@activityOccurredAtLabel": {
+    "description": "Field label for an activity's date on the add-activity form (#39, FR-AC-2)"
+  },
+  "activityHoneySupersLabel": "Honey supers harvested",
+  "@activityHoneySupersLabel": {
+    "description": "Field label for the harvest activity's honey_supers attribute — the primary yield metric (#38/#39, FR-AC-1)"
+  },
+  "activityHoneyKgLabel": "Honey harvested (kg)",
+  "@activityHoneyKgLabel": {
+    "description": "Field label for the harvest activity's optional honey_kg attribute (#38/#39, FR-AC-1)"
+  },
+  "activityHivesInvolvedLabel": "Hives involved",
+  "@activityHivesInvolvedLabel": {
+    "description": "Field label for the optional hives_involved attribute shared by harvest/feeding/treatment (#38/#39, FR-AC-1, D-2)"
+  },
+  "activityFeedTypeLabel": "Feed type",
+  "@activityFeedTypeLabel": {
+    "description": "Field label for the feeding activity's feed_type attribute (#38/#39, FR-AC-1)"
+  },
+  "activityFeedAmountLabel": "Feed amount",
+  "@activityFeedAmountLabel": {
+    "description": "Field label for the feeding activity's feed_amount attribute (#38/#39, FR-AC-1)"
+  },
+  "activityTreatmentContextFieldLabel": "Treatment context",
+  "@activityTreatmentContextFieldLabel": {
+    "description": "Field label for the treatment activity's treatment_context selector (#38/#39, FR-AC-1, D-19)"
+  },
+  "activityTreatmentTypeLabel": "Treatment product",
+  "@activityTreatmentTypeLabel": {
+    "description": "Field label for the treatment activity's treatment_type attribute (#38/#39, FR-AC-1)"
+  },
+  "activityDiseaseLabel": "Disease / condition",
+  "@activityDiseaseLabel": {
+    "description": "Field label for the treatment activity's conditionally-required disease attribute (#38/#39, FR-AC-1, D-19)"
+  },
+  "activityTreatmentTypeOptionalForDetectionHint": "Optional for a detection-only report",
+  "@activityTreatmentTypeOptionalForDetectionHint": {
+    "description": "Helper text shown under the treatment_type field once the detection-only context is selected, clarifying it isn't required (#291 AC: a detection can be logged with no treatment applied yet)"
+  },
+  "activityLotBatchLabel": "Lot / batch identifier",
+  "@activityLotBatchLabel": {
+    "description": "Field label for the harvest activity's optional lot_batch attribute (#292, FR-AC-1, D-19)"
+  },
+  "activityNotesLabel": "Notes",
+  "@activityNotesLabel": {
+    "description": "Field label for an activity's free-text notes attribute, shared by every type (#38/#39, FR-AC-1)"
+  },
+  "activityFieldRequired": "This field is required",
+  "@activityFieldRequired": {
+    "description": "Validation message for a required activity attribute left empty (#39, FR-AC-2 AC: required attributes are validated before save)"
+  },
+  "activityFieldInvalid": "This value isn't valid",
+  "@activityFieldInvalid": {
+    "description": "Generic validation message for an activity attribute the client-side mirror (activity_attributes.dart) rejects for a reason other than being required (#39)"
+  },
+  "activitySaveSuccess": "Activity saved",
+  "@activitySaveSuccess": {
+    "description": "Confirmation toast after successfully saving a new activity, offline or online (#39, FR-OF-1)"
+  },
+  "activitySaveError": "Couldn't save the activity: {error}",
+  "@activitySaveError": {
+    "description": "Error toast when saving a new activity throws (#39)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiaryActivitiesEmpty": "No activities logged for this apiary yet.",
+  "@apiaryActivitiesEmpty": {
+    "description": "Empty state on the apiary detail page's activities section when the apiary has no activities at all yet (#42, FR-AC-5)"
+  },
+  "apiaryActivitiesViewAll": "View all {count} activities",
+  "@apiaryActivitiesViewAll": {
+    "description": "Action at the foot of the apiary detail page's activities preview when it is capped — opens the full per-apiary activities list (#42, FR-AC-5). {count} is the total number of activities matching the current filters.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "activitiesEmpty": "No activities yet.",
+  "@activitiesEmpty": {
+    "description": "Empty state on the main Activities tab when the organization has no activities at all yet (#43, FR-AC-6)"
+  },
+  "activitiesFilterNoResults": "No activities match your filters.",
+  "@activitiesFilterNoResults": {
+    "description": "Shown instead of the plain empty state when type/date-range filters are active but match nothing (#42/#43 AC: combined filters + empty/no-results state)"
+  },
+  "activitiesError": "Could not load activities: {error}",
+  "@activitiesError": {
+    "description": "Error state on an activities list (#42/#43)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterTypeLabel": "Type",
+  "@activityFilterTypeLabel": {
+    "description": "Field label for the activity-type filter dropdown (#42/#43, FR-AC-5/FR-AC-6)"
+  },
+  "activityFilterTypeAll": "All types",
+  "@activityFilterTypeAll": {
+    "description": "The activity-type filter's cleared/default option — no type filter applied (#42/#43)"
+  },
+  "activityFilterDateRangeLabel": "Date range",
+  "@activityFilterDateRangeLabel": {
+    "description": "Field label for the date-range filter control (#42/#43, FR-AC-5/FR-AC-6)"
+  },
+  "activityFilterDateRangeUnset": "Any date",
+  "@activityFilterDateRangeUnset": {
+    "description": "The date-range filter's cleared/default state — no date filter applied (#42/#43)"
+  },
+  "activityFilterDateRangeValue": "{start} – {end}",
+  "@activityFilterDateRangeValue": {
+    "description": "The selected date range, both bounds already locale-formatted by the caller (#42/#43)",
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "activityFilterClearAction": "Clear filters",
+  "@activityFilterClearAction": {
+    "description": "Button that resets both the type and date-range filters at once (#42/#43)"
+  },
+  "activityPerformedByYou": "You",
+  "@activityPerformedByYou": {
+    "description": "Attribution shown on an activity performed by the current caller (#44, FR-TEN-2) — matches the map screen's own 'You' marker label (apiaryMapUserLocationLabel) for consistency"
+  },
+  "activityPerformedByMember": "Member {id}",
+  "@activityPerformedByMember": {
+    "description": "Attribution shown on an activity performed by another org member, identified by a short id fragment — there is no member-display-name lookup available anywhere in the app for a non-admin caller (#44, see activity_display.dart's doc comment)",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "activityPerformedByUnknown": "Unknown",
+  "@activityPerformedByUnknown": {
+    "description": "Fallback attribution for the brief local-only window before a freshly-created activity round-trips through sync and performed_by is populated server-side (#44)"
+  },
+  "activityPerformedBySemanticLabel": "Performed by: {who}",
+  "@activityPerformedBySemanticLabel": {
+    "description": "Screen-reader label wrapping an activity row's attribution chip (#44, WCAG 2.2 AA)",
+    "placeholders": {
+      "who": {
+        "type": "String"
+      }
+    }
+  },
+  "activityNoAttributesSummary": "No additional details",
+  "@activityNoAttributesSummary": {
+    "description": "Fallback list-row summary for an activity with no type-specific attributes to show (e.g. a generic activity with no notes) (#42/#43)"
+  },
+  "activityLoadError": "Couldn't load the activity: {error}",
+  "@activityLoadError": {
+    "description": "Error toast when loading an existing activity for editing throws (#40)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteActivity": "Delete activity",
+  "@deleteActivity": {
+    "description": "Destructive button on the edit-activity form that opens the delete confirmation dialog (#41, FR-AC-4)"
+  },
+  "activityDeleteSuccess": "Activity deleted",
+  "@activityDeleteSuccess": {
+    "description": "Confirmation toast after successfully deleting an activity, offline or online (#41, FR-OF-1)"
+  },
+  "activityDeleteError": "Couldn't delete the activity: {error}",
+  "@activityDeleteError": {
+    "description": "Error toast when deleting an activity throws (#41)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteActivityConfirmTitle": "Delete activity?",
+  "@deleteActivityConfirmTitle": {
+    "description": "Title of the confirmation dialog shown before deleting an activity (#41 AC: a confirmation step to prevent accidental deletion)"
+  },
+  "deleteActivityConfirmMessage": "This permanently deletes this activity. This cannot be undone.",
+  "@deleteActivityConfirmMessage": {
+    "description": "Body of the confirmation dialog shown before deleting an activity (#41)"
+  },
+  "deleteActivityConfirmAction": "Delete",
+  "@deleteActivityConfirmAction": {
+    "description": "Confirm action in the delete-activity confirmation dialog (#41)"
+  },
+  "deleteActivityCancelAction": "Cancel",
+  "@deleteActivityCancelAction": {
+    "description": "Cancel action in the delete-activity confirmation dialog (#41 AC: cancel is a no-op)"
+  },
+  "addJourney": "New journey",
+  "@addJourney": {
+    "description": "Floating action button to create a journey (#45, FR-JO-4)"
+  },
+  "newJourneyTitle": "New journey",
+  "@newJourneyTitle": {
+    "description": "Create form app bar title (#45)"
+  },
+  "editJourneyTitle": "Edit journey",
+  "@editJourneyTitle": {
+    "description": "Edit form app bar title (#45)"
+  },
+  "journeysEmpty": "No journeys yet. Tap “New journey” to create one.",
+  "@journeysEmpty": {
+    "description": "Empty state on the main Journeys tab when the organization has no journeys at all yet (#45, FR-JO-4)"
+  },
+  "journeysError": "Could not load journeys: {error}",
+  "@journeysError": {
+    "description": "Error state on the Journeys tab (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeysFilterNoResults": "No journeys match your filters.",
+  "@journeysFilterNoResults": {
+    "description": "Shown instead of the plain empty state when date-range/activity-type filters are active but match nothing (#47 AC: combined filters + empty/no-results state)"
+  },
+  "journeyFilterTypeLabel": "Type",
+  "@journeyFilterTypeLabel": {
+    "description": "Field label for the Journeys tab's activity-type filter dropdown (#47, FR-JO-2)"
+  },
+  "journeyFilterTypeAll": "All types",
+  "@journeyFilterTypeAll": {
+    "description": "The Journeys tab's activity-type filter's cleared/default option — no type filter applied (#47)"
+  },
+  "journeyFilterDateRangeLabel": "Date range",
+  "@journeyFilterDateRangeLabel": {
+    "description": "Field label for the Journeys tab's date-range filter control (#47, FR-JO-2)"
+  },
+  "journeyFilterDateRangeUnset": "Any date",
+  "@journeyFilterDateRangeUnset": {
+    "description": "The Journeys tab's date-range filter's cleared/default state — no date filter applied (#47)"
+  },
+  "journeyFilterDateRangeValue": "{start} – {end}",
+  "@journeyFilterDateRangeValue": {
+    "description": "The Journeys tab's selected date range, both bounds already locale-formatted by the caller (#47)",
+    "placeholders": {
+      "start": {
+        "type": "String"
+      },
+      "end": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyFilterClearAction": "Clear filters",
+  "@journeyFilterClearAction": {
+    "description": "Button that resets both the Journeys tab's type and date-range filters at once (#47)"
+  },
+  "journeyProgressBadge": "{done}/{planned} apiaries visited",
+  "@journeyProgressBadge": {
+    "description": "Per-row plan-vs-done progress badge on the Journeys tab (#47, FR-JO-2 — 'feitos/planeados'): how many of the journey's planned apiaries already have a matching recorded activity, out of the total planned. Only shown when planned > 0.",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyNameLabel": "Name",
+  "@journeyNameLabel": {
+    "description": "Field label for a journey's name on the create/edit form (#45, FR-JO-4)"
+  },
+  "journeyNameRequired": "Name is required",
+  "@journeyNameRequired": {
+    "description": "Validation message when a journey's name is left empty (#45)"
+  },
+  "journeyMainActivityTypeLabel": "Main activity type",
+  "@journeyMainActivityTypeLabel": {
+    "description": "Field label for a journey's one main activity type on the create/edit form (#45, FR-JO-4, D-21)"
+  },
+  "journeyApiariesLabel": "Apiaries to visit",
+  "@journeyApiariesLabel": {
+    "description": "Section label above the apiary multi-select picker on the journey create/edit form (#45, FR-JO-4)"
+  },
+  "journeyApiariesNoneAvailable": "No apiaries yet — add one from the Apiaries tab first.",
+  "@journeyApiariesNoneAvailable": {
+    "description": "Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)"
+  },
+  "journeyApiariesSelectAll": "Select all",
+  "@journeyApiariesSelectAll": {
+    "description": "Bulk action in the journey apiary picker that selects every apiary matching the current search filter (#425, FR-JO-4)"
+  },
+  "journeyApiariesClearAll": "Clear all",
+  "@journeyApiariesClearAll": {
+    "description": "Bulk action in the journey apiary picker that clears the whole apiary selection (#425, FR-JO-4)"
+  },
+  "journeyApiariesSelectedCount": "{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}",
+  "@journeyApiariesSelectedCount": {
+    "description": "Running count below the apiary multi-select picker (#45)",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyDefaultAttributesSectionLabel": "Defaults for activities",
+  "@journeyDefaultAttributesSectionLabel": {
+    "description": "Section header on the journey create/edit form and quick-create sheet above the optional subtype attribute defaults (#385)"
+  },
+  "journeyDefaultsNotSetOption": "Not set",
+  "@journeyDefaultsNotSetOption": {
+    "description": "Dropdown option that clears an optional journey default-attribute field (#385)"
+  },
+  "journeyLoadError": "Couldn't load the journey: {error}",
+  "@journeyLoadError": {
+    "description": "Error toast when loading an existing journey for editing throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeySaveSuccess": "Journey saved",
+  "@journeySaveSuccess": {
+    "description": "Success toast after creating or updating a journey (#45)"
+  },
+  "journeySaveError": "Couldn't save the journey: {error}",
+  "@journeySaveError": {
+    "description": "Error toast when saving a journey throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "closeJourneyAction": "Close journey",
+  "@closeJourneyAction": {
+    "description": "Button on the edit-journey form that closes an open journey (#45, D-21)"
+  },
+  "journeyCloseSuccess": "Journey closed",
+  "@journeyCloseSuccess": {
+    "description": "Success toast after closing a journey (#45, D-21)"
+  },
+  "journeyCloseError": "Couldn't close the journey: {error}",
+  "@journeyCloseError": {
+    "description": "Error toast when closing a journey throws (#45, D-21)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatusOpenLabel": "Open",
+  "@journeyStatusOpenLabel": {
+    "description": "Display label for a journey's open status (#45, D-21)"
+  },
+  "journeyStatusClosedLabel": "Closed",
+  "@journeyStatusClosedLabel": {
+    "description": "Display label for a journey's closed status (#45, D-21)"
+  },
+  "journeyStatusSemanticLabel": "Status: {label}",
+  "@journeyStatusSemanticLabel": {
+    "description": "Screen-reader label for the journey edit form's status chip (#45, D-21)",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteJourney": "Delete journey",
+  "@deleteJourney": {
+    "description": "Destructive button on the edit-journey form that opens the delete confirmation dialog (#45, FR-JO-4)"
+  },
+  "journeyDeleteSuccess": "Journey deleted",
+  "@journeyDeleteSuccess": {
+    "description": "Success toast after deleting a journey (#45)"
+  },
+  "journeyDeleteError": "Couldn't delete the journey: {error}",
+  "@journeyDeleteError": {
+    "description": "Error toast when deleting a journey throws (#45)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteJourneyConfirmTitle": "Delete journey?",
+  "@deleteJourneyConfirmTitle": {
+    "description": "Title of the confirmation dialog shown before deleting a journey (#45, mirrors deleteActivityConfirmTitle)"
+  },
+  "deleteJourneyConfirmMessage": "This permanently deletes this journey. This cannot be undone.",
+  "@deleteJourneyConfirmMessage": {
+    "description": "Body of the confirmation dialog shown before deleting a journey (#45)"
+  },
+  "deleteJourneyConfirmAction": "Delete",
+  "@deleteJourneyConfirmAction": {
+    "description": "Confirm action in the delete-journey confirmation dialog (#45)"
+  },
+  "deleteJourneyCancelAction": "Cancel",
+  "@deleteJourneyCancelAction": {
+    "description": "Cancel action in the delete-journey confirmation dialog (#45 AC: cancel is a no-op)"
+  },
+  "journeyAttachmentLabel": "Journey",
+  "@journeyAttachmentLabel": {
+    "description": "Section label above the journey attachment summary on the add-activity form (#46, FR-JO-1, D-21)"
+  },
+  "journeyAttachmentNone": "No journey attached",
+  "@journeyAttachmentNone": {
+    "description": "Shown in the journey attachment summary when no journey is currently selected (either an auto-match miss, or the user explicitly deselected) (#46)"
+  },
+  "journeyAttachmentAutoSelectedHint": "Auto-selected — matches this apiary and activity type",
+  "@journeyAttachmentAutoSelectedHint": {
+    "description": "Small hint shown under the attached journey's name when it was auto-selected by the app (not explicitly chosen by the user) (#46, FR-JO-1, D-21)"
+  },
+  "journeyAttachmentChangeAction": "Change",
+  "@journeyAttachmentChangeAction": {
+    "description": "Button that opens the journey picker to switch/select a journey on the add-activity form (#46)"
+  },
+  "journeyAttachmentRemoveAction": "Remove",
+  "@journeyAttachmentRemoveAction": {
+    "description": "Button that deselects the currently-attached journey on the add-activity form (#46 AC: the user can deselect the pre-filled journey)"
+  },
+  "journeyPickerTitle": "Choose a journey",
+  "@journeyPickerTitle": {
+    "description": "Title of the journey picker bottom sheet (#46)"
+  },
+  "journeyPickerError": "Couldn't load journeys: {error}",
+  "@journeyPickerError": {
+    "description": "Error state inside the journey picker bottom sheet (#46)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyPickerNoneOption": "No journey",
+  "@journeyPickerNoneOption": {
+    "description": "The explicit \"no journey\" option, always the first row in the journey picker (#46 AC: the user can deselect the pre-filled journey)"
+  },
+  "journeyPickerNoOpenMatches": "No open journeys match this apiary and activity type yet.",
+  "@journeyPickerNoOpenMatches": {
+    "description": "Shown in the journey picker when there are no open matching journeys to list (auto-match miss) and \"show hidden journeys\" is off (#46)"
+  },
+  "journeyPickerShowHiddenToggle": "Show hidden journeys",
+  "@journeyPickerShowHiddenToggle": {
+    "description": "Toggle in the journey picker that reveals closed matching journeys, normally hidden by default (#46, D-21)"
+  },
+  "journeyPickerShowUnplannedToggle": "Show journeys that didn't plan this apiary",
+  "@journeyPickerShowUnplannedToggle": {
+    "description": "Toggle in the journey picker that reveals open, type-matching journeys whose plan does not include the current apiary; picking one attaches the activity and adds the apiary to that journey's plan (#440, D-31)"
+  },
+  "journeyPickerUnplannedOptionSemanticLabel": "{name}, will add this apiary to the plan",
+  "@journeyPickerUnplannedOptionSemanticLabel": {
+    "description": "Screen-reader label for a journey's row in the relaxed \"didn't plan this apiary\" list, disclosing that picking it also adds the current apiary to the journey's plan (#440, D-31)",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyPickerAddsApiaryBadge": "Adds apiary",
+  "@journeyPickerAddsApiaryBadge": {
+    "description": "Short visual badge on a journey row in the relaxed \"didn't plan this apiary\" list, marking that picking it adds the current apiary to that journey's plan (#440, D-31)"
+  },
+  "journeyPickerClosedOptionSemanticLabel": "{name}, closed journey",
+  "@journeyPickerClosedOptionSemanticLabel": {
+    "description": "Screen-reader label for a closed journey's row in the picker, once revealed via the show-hidden toggle (#46, D-21)",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyPickerCreateNewAction": "Create a new journey",
+  "@journeyPickerCreateNewAction": {
+    "description": "The inline create-new-journey shortcut row at the bottom of the journey picker (#46 AC)"
+  },
+  "journeyQuickCreateTitle": "New journey",
+  "@journeyQuickCreateTitle": {
+    "description": "Title of the inline quick-create-journey bottom sheet, opened from the journey picker (#46 AC)"
+  },
+  "journeyQuickCreateCancelAction": "Cancel",
+  "@journeyQuickCreateCancelAction": {
+    "description": "Cancel action on the inline quick-create-journey sheet — closes it without creating anything (#46)"
+  },
+  "closedJourneyConfirmTitle": "This journey is closed",
+  "@closedJourneyConfirmTitle": {
+    "description": "Title of the confirm-to-proceed dialog shown when saving an activity against a closed journey (#46 AC, D-21)"
+  },
+  "closedJourneyConfirmMessage": "\"{journeyName}\" is closed. Add this activity to it anyway?",
+  "@closedJourneyConfirmMessage": {
+    "description": "Body of the confirm-to-proceed dialog shown when saving an activity against a closed journey (#46 AC: \"this journey is closed — add anyway?\")",
+    "placeholders": {
+      "journeyName": {
+        "type": "String"
+      }
+    }
+  },
+  "closedJourneyConfirmCancelAction": "Cancel",
+  "@closedJourneyConfirmCancelAction": {
+    "description": "Cancel action in the closed-journey confirm dialog — stays on the form, nothing is saved (#46)"
+  },
+  "closedJourneyConfirmAddAction": "Add anyway",
+  "@closedJourneyConfirmAddAction": {
+    "description": "Confirm action in the closed-journey confirm dialog — proceeds with saving the activity against the closed journey (#46 AC)"
+  },
+  "journeyRelinkConfirmTitle": "Change journey attachment?",
+  "@journeyRelinkConfirmTitle": {
+    "description": "Title of the confirm-to-proceed dialog shown when saving an EDITED activity whose journey attachment differs from the one it was loaded with (#387)"
+  },
+  "journeyRelinkConfirmMessage": "This activity will move from \"{oldJourneyName}\" to \"{newJourneyName}\".",
+  "@journeyRelinkConfirmMessage": {
+    "description": "Body of the journey-relink confirm dialog, naming both the old and new journey (#387) — either may be the localized \"No journey\" string (journeyPickerNoneOption) rather than a real journey name",
+    "placeholders": {
+      "oldJourneyName": {
+        "type": "String"
+      },
+      "newJourneyName": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyRelinkConfirmCancelAction": "Cancel",
+  "@journeyRelinkConfirmCancelAction": {
+    "description": "Cancel action in the journey-relink confirm dialog — stays on the form, the activity's journey attachment is left unchanged (#387)"
+  },
+  "journeyRelinkConfirmConfirmAction": "Confirm",
+  "@journeyRelinkConfirmConfirmAction": {
+    "description": "Confirm action in the journey-relink confirm dialog — proceeds with saving the activity's new journey attachment (#387)"
+  },
+  "journeyStatsSectionTitle": "Journey stats",
+  "@journeyStatsSectionTitle": {
+    "description": "Heading above the journey stats section (#49, FR-JO-1) — apiaries visited, hives harvested, honey collected, média alças/colmeia"
+  },
+  "journeyStatsError": "Couldn't load journey stats: {error}",
+  "@journeyStatsError": {
+    "description": "Error state when loading a journey's aggregated stats throws (#49)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsApiariesVisitedLabel": "Apiaries visited",
+  "@journeyStatsApiariesVisitedLabel": {
+    "description": "Stat card label for the apiaries-visited-vs-planned metric (#49, FR-JO-1), matching the Melargil prototype's \"apiários visitados\" card"
+  },
+  "journeyStatsApiariesVisitedValue": "{done}/{planned}",
+  "@journeyStatsApiariesVisitedValue": {
+    "description": "Value shown on the apiaries-visited stat card, e.g. \"3/5\" (#49, FR-JO-1)",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyStatsHivesHarvestedLabel": "Hives harvested",
+  "@journeyStatsHivesHarvestedLabel": {
+    "description": "Stat card label for Σ hives_involved across the journey's harvest activities (#49, D-2), matching the prototype's \"colmeias trabalhadas\" card"
+  },
+  "journeyStatsHoneyCollectedLabel": "Honey collected",
+  "@journeyStatsHoneyCollectedLabel": {
+    "description": "Stat card label for Σ honey_kg across the journey's harvest activities (#49), matching the prototype's \"mel colhido\" card"
+  },
+  "journeyStatsHoneyCollectedValue": "{kg} kg",
+  "@journeyStatsHoneyCollectedValue": {
+    "description": "Value shown on the honey-collected stat card, e.g. \"12.5 kg\" — kg is already locale-formatted by the caller (LocaleFormatting) (#49)",
+    "placeholders": {
+      "kg": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsAverageSupersLabel": "Avg. supers/hive",
+  "@journeyStatsAverageSupersLabel": {
+    "description": "Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49). Localized like every other stat label (#382) — previously left in Portuguese by mistake."
+  },
+  "journeyStatsAverageSupersNoData": "No data yet",
+  "@journeyStatsAverageSupersNoData": {
+    "description": "Shown instead of a number on the média alças/colmeia stat card when there is no hive-count denominator yet — zero harvest activities, or every one has a null/zero hives_involved (#49, NFR-TST-1's no-divide-by-zero case)"
+  },
+  "journeyStatsMissingLabel": "{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}",
+  "@journeyStatsMissingLabel": {
+    "description": "Summary line below the stat cards showing how many planned apiaries have no matching activity yet (#49, FR-JO-1: \"how much is still missing, planned vs. done\")",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyStatsHivesWorkedLabel": "Hives worked",
+  "@journeyStatsHivesWorkedLabel": {
+    "description": "Stat card label for hive-level completion (#391): Σ hives_involved across the journey's activities of every type vs. the total hive count of the currently-planned apiaries"
+  },
+  "journeyStatsHivesWorkedValue": "{worked}/{planned}",
+  "@journeyStatsHivesWorkedValue": {
+    "description": "Value on the hives-worked stat card (#391), e.g. \"12/40\" — planned is already the localized \"no data\" placeholder or a plain number by the time it reaches this template",
+    "placeholders": {
+      "worked": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsHivesWorkedNoData": "—",
+  "@journeyStatsHivesWorkedNoData": {
+    "description": "Placeholder standing in for the hives-planned denominator (#391) when none of the journey's currently-planned apiaries has a hive counter row yet — a genuine \"no data\" state, never a fake 0"
+  },
+  "journeyStatsMoreAction": "More stats",
+  "@journeyStatsMoreAction": {
+    "description": "Button at the foot of the #49 stats section that opens the #391 per-apiary breakdown screen"
+  },
+  "journeyStatsDetailTitle": "More stats",
+  "@journeyStatsDetailTitle": {
+    "description": "Shell app bar title for the #391 per-apiary breakdown route (/journeys/:id/stats)"
+  },
+  "journeyStatsDetailFilterAll": "All",
+  "@journeyStatsDetailFilterAll": {
+    "description": "The #391 breakdown screen's visited-filter segment showing every apiary in the journey's scope"
+  },
+  "journeyStatsDetailFilterVisited": "Visited",
+  "@journeyStatsDetailFilterVisited": {
+    "description": "The #391 breakdown screen's visited-filter segment showing only visited apiaries"
+  },
+  "journeyStatsDetailFilterNotVisited": "Not visited",
+  "@journeyStatsDetailFilterNotVisited": {
+    "description": "The #391 breakdown screen's visited-filter segment showing only apiaries with no attributed activity yet"
+  },
+  "journeyStatsDetailSortLabel": "Sort by",
+  "@journeyStatsDetailSortLabel": {
+    "description": "Label on the #391 breakdown screen's sort field"
+  },
+  "journeyStatsDetailSortName": "Name",
+  "@journeyStatsDetailSortName": {
+    "description": "The #391 breakdown screen's sort option: alphabetical by apiary name (always offered, every journey type)"
+  },
+  "journeyStatsDetailSortKgPerHive": "Kg/hive",
+  "@journeyStatsDetailSortKgPerHive": {
+    "description": "The #391 breakdown screen's sort option for a harvest journey: kg of honey per hive, descending, nulls last"
+  },
+  "journeyStatsDetailSortSupersPerHive": "Supers/hive",
+  "@journeyStatsDetailSortSupersPerHive": {
+    "description": "The #391 breakdown screen's sort option for a harvest journey: honey supers per hive, descending, nulls last"
+  },
+  "journeyStatsDetailSortFeedAmount": "Feed amount",
+  "@journeyStatsDetailSortFeedAmount": {
+    "description": "The #391 breakdown screen's sort option for a feeding journey: total feed amount, descending"
+  },
+  "journeyStatsDetailSortHivesInvolved": "Hives involved",
+  "@journeyStatsDetailSortHivesInvolved": {
+    "description": "The #391 breakdown screen's sort option for a treatment journey: hives involved in treatment, descending"
+  },
+  "journeyStatsDetailEmpty": "No apiaries match the current filter.",
+  "@journeyStatsDetailEmpty": {
+    "description": "The #391 breakdown screen's empty state when the visited/not-visited filter matches nothing"
+  },
+  "journeyStatsDetailHiveCountLabel": "Hives",
+  "@journeyStatsDetailHiveCountLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's current hive count"
+  },
+  "journeyStatsDetailHoneyKgLabel": "Honey (kg)",
+  "@journeyStatsDetailHoneyKgLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's Σ honey_kg (harvest journeys)"
+  },
+  "journeyStatsDetailSupersLabel": "Supers",
+  "@journeyStatsDetailSupersLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's Σ honey_supers (harvest journeys)"
+  },
+  "journeyStatsDetailKgPerHiveLabel": "Kg/hive",
+  "@journeyStatsDetailKgPerHiveLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's own kg-of-honey-per-hive average (harvest journeys)"
+  },
+  "journeyStatsDetailSupersPerHiveLabel": "Supers/hive",
+  "@journeyStatsDetailSupersPerHiveLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's own supers-per-hive average (harvest journeys)"
+  },
+  "journeyStatsDetailFeedAmountLabel": "Feed amount",
+  "@journeyStatsDetailFeedAmountLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's Σ feed_amount (feeding journeys)"
+  },
+  "journeyStatsDetailHivesInvolvedLabel": "Hives involved",
+  "@journeyStatsDetailHivesInvolvedLabel": {
+    "description": "The #391 breakdown screen's per-apiary card metric label for the apiary's Σ hives_involved across treatment activities (treatment journeys)"
+  },
+  "journeyStatsDetailNoDataValue": "—",
+  "@journeyStatsDetailNoDataValue": {
+    "description": "Placeholder for a per-apiary card's kg/hive or supers/hive metric (#391) when the apiary has no hive-count denominator yet — never a fake 0"
+  },
+  "journeyStatsDetailFeedingSummary": "Total feed amount: {amount}",
+  "@journeyStatsDetailFeedingSummary": {
+    "description": "The #391 breakdown screen's header summary row for a feeding journey: Σ feed_amount across every apiary",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyStatsDetailTreatedSummary": "{treated}/{planned} apiaries treated",
+  "@journeyStatsDetailTreatedSummary": {
+    "description": "The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity",
+    "placeholders": {
+      "treated": {
+        "type": "int"
+      },
+      "planned": {
+        "type": "int"
+      }
+    }
+  },
+  "journeyDetailTitle": "Journey",
+  "@journeyDetailTitle": {
+    "description": "Shell app bar title for the journey detail route (#48, FR-JO-3) — a generic, not per-instance, title mirroring apiaryDetailTitle/activityDetailTitle's own convention; the specific journey's name renders in the page body itself"
+  },
+  "editJourneyAction": "Edit journey",
+  "@editJourneyAction": {
+    "description": "Floating action button on the journey detail page that opens the existing edit form (#48) — mirrors editApiaryAction"
+  },
+  "journeyDetailDefaultAttributesLabel": "Defaults: {values}",
+  "@journeyDetailDefaultAttributesLabel": {
+    "description": "Muted summary line under the type label on the journey detail page's hero card, listing the journey's set subtype attribute defaults (#385) — e.g. \"Defaults: Apivar/amitraz · Varroose\"; not rendered at all when the journey has none set",
+    "placeholders": {
+      "values": {
+        "type": "String"
+      }
+    }
+  },
+  "journeyDetailApiariesTitle": "Apiaries",
+  "@journeyDetailApiariesTitle": {
+    "description": "Section heading above the journey detail page's per-apiary list (#48, FR-JO-3)"
+  },
+  "journeyDetailApiaryNameUnknown": "Unknown apiary",
+  "@journeyDetailApiaryNameUnknown": {
+    "description": "Placeholder apiary card title when an activity's apiary_id can't be resolved against the currently-loaded apiary list — e.g. the apiary was deleted since, or apiariesStreamProvider hasn't emitted yet (#48) — never a raw internal id"
+  },
+  "journeyDetailApiaryVisitedBadge": "Visited",
+  "@journeyDetailApiaryVisitedBadge": {
+    "description": "Badge on a journey detail apiary card once it has at least one activity attributed to this journey via the stored journey_id (#48 AC: planned vs. actual)"
+  },
+  "journeyDetailApiaryPlannedBadge": "Planned",
+  "@journeyDetailApiaryPlannedBadge": {
+    "description": "Badge on a journey detail apiary card that's in the journey's plan but has no attributed activity yet (#48 AC: planned vs. actual)"
+  },
+  "journeyDetailApiaryNotVisitedYet": "Not visited yet",
+  "@journeyDetailApiaryNotVisitedYet": {
+    "description": "Placeholder shown under a planned-only apiary card on the journey detail page, in place of an activity list (#48 AC: planned items clearly distinguished from completed ones)"
+  },
+  "journeyDetailApiariesEmpty": "No apiaries in this journey yet.",
+  "@journeyDetailApiariesEmpty": {
+    "description": "Empty state on the journey detail page's apiaries section — the edge case of a journey with no plan and no attributed activities (#48)"
+  },
+  "todosEmpty": "No todos yet.",
+  "@todosEmpty": {
+    "description": "Empty state on the main Todos tab when the organization has no todos at all yet (#53, FR-TD-1)"
+  },
+  "todosFilterNoResults": "No todos match your filters.",
+  "@todosFilterNoResults": {
+    "description": "Shown instead of the plain empty state when status/priority/due-date filters are active but match nothing (#53 AC: combined filters + empty/no-results state)"
+  },
+  "todosError": "Could not load todos: {error}",
+  "@todosError": {
+    "description": "Error state on the main Todos tab (#53)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "todoFilterStatusLabel": "Status",
+  "@todoFilterStatusLabel": {
+    "description": "Field label for the Todos tab's status filter dropdown (#53, FR-TD-1)"
+  },
+  "todoFilterStatusAll": "All",
+  "@todoFilterStatusAll": {
+    "description": "The status filter's cleared/default option — no status filter applied (#53)"
+  },
+  "todoFilterStatusOpen": "Open",
+  "@todoFilterStatusOpen": {
+    "description": "Status filter option / status word for a todo that is neither done nor overdue (#53 AC: distinguishes open, completed, overdue)"
+  },
+  "todoFilterStatusOverdue": "Overdue",
+  "@todoFilterStatusOverdue": {
+    "description": "Status filter option / status word for an open todo whose due date has passed (#53 AC: overdue, feeds FR-AI-1's later \"overdue todos\" example)"
+  },
+  "todoFilterStatusDone": "Completed",
+  "@todoFilterStatusDone": {
+    "description": "Status filter option / status word for a done todo — the display label for the underlying 'done' status value (#50/#53)"
+  },
+  "todoFilterPriorityLabel": "Priority",
+  "@todoFilterPriorityLabel": {
+    "description": "Field label for the Todos tab's priority filter dropdown (#53, FR-TD-1)"
+  },
+  "todoFilterPriorityAll": "All priorities",
+  "@todoFilterPriorityAll": {
+    "description": "The priority filter's cleared/default option — no priority filter applied (#53)"
+  },
+  "todoPriorityLowLabel": "Low",
+  "@todoPriorityLowLabel": {
+    "description": "Display label for the 'low' todo priority level (#50/#53, D-20)"
+  },
+  "todoPriorityMediumLabel": "Medium",
+  "@todoPriorityMediumLabel": {
+    "description": "Display label for the 'medium' todo priority level (#50/#53, D-20)"
+  },
+  "todoPriorityHighLabel": "High",
+  "@todoPriorityHighLabel": {
+    "description": "Display label for the 'high' todo priority level (#50/#53, D-20)"
+  },
+  "todoFilterDueLabel": "Due",
+  "@todoFilterDueLabel": {
+    "description": "Field label for the Todos tab's due-date filter dropdown (#53, FR-TD-1)"
+  },
+  "todoFilterDueAny": "Any date",
+  "@todoFilterDueAny": {
+    "description": "The due-date filter's cleared/default option — no due-date filter applied (#53)"
+  },
+  "todoFilterDueToday": "Due today",
+  "@todoFilterDueToday": {
+    "description": "Due-date filter preset matching todos due today (#53)"
+  },
+  "todoFilterDueThisWeek": "Due this week",
+  "@todoFilterDueThisWeek": {
+    "description": "Due-date filter preset matching todos due within the current calendar week, Monday–Sunday (#53, feeds FR-AI-1's later \"due in the next week\" example)"
+  },
+  "todoFilterDueThisMonth": "Due this month",
+  "@todoFilterDueThisMonth": {
+    "description": "Due-date filter preset matching todos due within the current calendar month (#53)"
+  },
+  "todoFilterClearAction": "Clear filters",
+  "@todoFilterClearAction": {
+    "description": "Button that resets the status/priority/due-date filters at once, without touching the sort selection (#53, mirrors activityFilterClearAction)"
+  },
+  "todoSortFieldLabel": "Sort by",
+  "@todoSortFieldLabel": {
+    "description": "Field label for the Todos tab's sort-field dropdown (#53 AC: sortable by due date, priority, and status)"
+  },
+  "todoSortFieldDueDate": "Due date",
+  "@todoSortFieldDueDate": {
+    "description": "Sort-field option: order by due date (#53)"
+  },
+  "todoSortFieldPriority": "Priority",
+  "@todoSortFieldPriority": {
+    "description": "Sort-field option: order by priority level (#53)"
+  },
+  "todoSortFieldStatus": "Status",
+  "@todoSortFieldStatus": {
+    "description": "Sort-field option: order by lifecycle status — overdue, then open, then completed (#53)"
+  },
+  "todoSortDirectionAscendingLabel": "Ascending",
+  "@todoSortDirectionAscendingLabel": {
+    "description": "Current sort direction — also the direction-toggle button's tooltip/semantic label while ascending is active (#53)"
+  },
+  "todoSortDirectionDescendingLabel": "Descending",
+  "@todoSortDirectionDescendingLabel": {
+    "description": "Current sort direction — also the direction-toggle button's tooltip/semantic label while descending is active (#53)"
+  },
+  "todoDueDateUnset": "No due date",
+  "@todoDueDateUnset": {
+    "description": "Shown in a todo row's subtitle in place of a formatted date when the todo has no due date (#53)"
+  },
+  "todoOverdueBadge": "Overdue",
+  "@todoOverdueBadge": {
+    "description": "Text of the overdue badge on a todo row — paired with a warning icon, never color alone (#53 AC, WCAG 2.2 AA 1.4.1)"
+  },
+  "todoStatusSemanticLabel": "Status: {status}",
+  "@todoStatusSemanticLabel": {
+    "description": "Screen-reader label for a todo row's leading status icon — an open (not overdue, not done) row has no other visible status text (#53, WCAG 2.2 AA). {status} is one of todoFilterStatusOpen/Overdue/Done, already localized.",
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "addTodo": "New todo",
+  "@addTodo": {
+    "description": "Floating action button label to quick-create a todo (#52, FR-TD-1) — shown on the Todos tab's own FAB, the Apiaries tab's secondary FAB, and the apiary detail page's add-todo action"
+  },
+  "newTodoTitle": "New todo",
+  "@newTodoTitle": {
+    "description": "Header title for the standalone todo-create route (#293) — reachable by direct navigation/deep-linking, distinct from #52's own quick-create sheet"
+  },
+  "todoDetailTitle": "Todo",
+  "@todoDetailTitle": {
+    "description": "Header title for the todo detail route (#293, FR-TD-1)"
+  },
+  "editTodoTitle": "Edit todo",
+  "@editTodoTitle": {
+    "description": "Header title for the todo edit route (#293, FR-TD-1)"
+  },
+  "editTodoAction": "Edit todo",
+  "@editTodoAction": {
+    "description": "Label of the todo detail screen's edit FAB, routing to the edit form (#293)"
+  },
+  "todoTitleLabel": "Title",
+  "@todoTitleLabel": {
+    "description": "Field label for a todo's required title, on the create/edit form (#293, FR-TD-1)"
+  },
+  "todoTitleRequired": "Title is required",
+  "@todoTitleRequired": {
+    "description": "Validation message when a todo's title is left blank on save (#293)"
+  },
+  "todoDescriptionLabel": "Description",
+  "@todoDescriptionLabel": {
+    "description": "Field label for a todo's optional free-text description, on the form and the detail screen (#293, FR-TD-1)"
+  },
+  "todoDescriptionUnset": "No description",
+  "@todoDescriptionUnset": {
+    "description": "Fallback shown on the todo detail screen when the todo has no description (#293)"
+  },
+  "todoDueDateFieldLabel": "Due date",
+  "@todoDueDateFieldLabel": {
+    "description": "Field label for a todo's optional due date, on the form and the detail screen (#293, FR-TD-1) — due dates may be in the future, unlike an activity's occurred-at date"
+  },
+  "todoDueDateClearAction": "Clear due date",
+  "@todoDueDateClearAction": {
+    "description": "Tooltip/semantic label for the icon button that clears a set due date on the todo form (#293)"
+  },
+  "todoPriorityFieldLabel": "Priority",
+  "@todoPriorityFieldLabel": {
+    "description": "Field label for a todo's priority dropdown, on the form and the detail screen (#293, FR-TD-1, D-20) — distinct from todoFilterPriorityLabel, the Todos tab's own filter dropdown"
+  },
+  "todoAssigneeFieldLabel": "Assignee",
+  "@todoAssigneeFieldLabel": {
+    "description": "Field label for a todo's assignee picker, on the form and the detail screen (#293, FR-TD-1)"
+  },
+  "todoApiaryFieldLabel": "Apiary",
+  "@todoApiaryFieldLabel": {
+    "description": "Field label for a todo's apiary-association picker, on the form and the detail screen (#293, #51, FR-TD-1)"
+  },
+  "todoAssigneeUnassigned": "Unassigned",
+  "@todoAssigneeUnassigned": {
+    "description": "The assignee picker's clear row label, and the detail screen's fallback when a todo has no assignee (#293, FR-TD-1)"
+  },
+  "todoAssigneeUnknown": "Member {id}",
+  "@todoAssigneeUnknown": {
+    "description": "Fallback label for an assignee id not (yet) resolvable to a real name — offline, pre-first-fetch, or a removed member (#293, mirrors activityPerformedByMember). {id} is a short, non-spoofable id fragment, not the full id.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "todoAssigneeNoneAvailable": "No members available yet.",
+  "@todoAssigneeNoneAvailable": {
+    "description": "Shown in the assignee picker when the org member roster hasn't loaded yet (offline / pre-first-fetch) — the Unassigned clear row still renders alongside this (#293)"
+  },
+  "todoApiaryNone": "No apiary",
+  "@todoApiaryNone": {
+    "description": "The apiary picker's clear row label, and the detail screen's fallback for a general, org-level todo with no apiary association (#293, #51, FR-TD-1)"
+  },
+  "todoApiaryUnknown": "Unknown apiary",
+  "@todoApiaryUnknown": {
+    "description": "Fallback label on the todo detail screen for an apiary id no longer in the locally-synced apiary set — a stale reference to a since-deleted apiary (#293, mirrors todos_repository.dart's own doc comment on this exact case)"
+  },
+  "todoDetailFieldsHeader": "Details",
+  "@todoDetailFieldsHeader": {
+    "description": "Heading above the todo detail screen's read-only field list (#293, mirrors activityDetailAttributesHeader)"
+  },
+  "todoCompletedAtLabel": "Completed at",
+  "@todoCompletedAtLabel": {
+    "description": "Detail-screen row label for a done todo's completion timestamp (#293) — worded distinctly from the plain status word todoFilterStatusDone (\"Completed\") so the two never collide on the same screen"
+  },
+  "todoCompleteAction": "Mark as complete",
+  "@todoCompleteAction": {
+    "description": "Label of the complete/reopen toggle button while the todo is open (#293, FR-TD-1) — on both the detail screen and the form"
+  },
+  "todoReopenAction": "Reopen",
+  "@todoReopenAction": {
+    "description": "Label of the complete/reopen toggle button while the todo is done (#293, FR-TD-1) — on both the detail screen and the form"
+  },
+  "todoCompleteSuccess": "Todo marked complete",
+  "@todoCompleteSuccess": {
+    "description": "Success toast after completing a todo via the toggle (#293)"
+  },
+  "todoCompleteError": "Couldn't update the todo: {error}",
+  "@todoCompleteError": {
+    "description": "Error toast when completing a todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "todoReopenSuccess": "Todo reopened",
+  "@todoReopenSuccess": {
+    "description": "Success toast after reopening a todo via the toggle (#293)"
+  },
+  "todoReopenError": "Couldn't update the todo: {error}",
+  "@todoReopenError": {
+    "description": "Error toast when reopening a todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "todoSaveSuccess": "Todo saved",
+  "@todoSaveSuccess": {
+    "description": "Success toast after creating or editing a todo (#293, mirrors activitySaveSuccess's own create-and-update-share-one-message precedent)"
+  },
+  "todoSaveError": "Couldn't save the todo: {error}",
+  "@todoSaveError": {
+    "description": "Error toast when creating or editing a todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "todoLoadError": "Couldn't load the todo: {error}",
+  "@todoLoadError": {
+    "description": "Error toast when the edit form's initial load of an existing todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteTodo": "Delete todo",
+  "@deleteTodo": {
+    "description": "Label of the delete button on the todo form (#293 AC: delete the todo from the form)"
+  },
+  "todoDeleteSuccess": "Todo deleted",
+  "@todoDeleteSuccess": {
+    "description": "Success toast after deleting a todo (#293)"
+  },
+  "todoDeleteError": "Couldn't delete the todo: {error}",
+  "@todoDeleteError": {
+    "description": "Error toast when deleting a todo fails (#293)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteTodoConfirmTitle": "Delete todo?",
+  "@deleteTodoConfirmTitle": {
+    "description": "Title of the delete-confirmation dialog on the todo form (#293)"
+  },
+  "deleteTodoConfirmMessage": "This permanently deletes this todo. This cannot be undone.",
+  "@deleteTodoConfirmMessage": {
+    "description": "Body of the delete-confirmation dialog on the todo form (#293)"
+  },
+  "deleteTodoConfirmAction": "Delete",
+  "@deleteTodoConfirmAction": {
+    "description": "Confirm action of the todo delete-confirmation dialog (#293)"
+  },
+  "deleteTodoCancelAction": "Cancel",
+  "@deleteTodoCancelAction": {
+    "description": "Cancel action of the todo delete-confirmation dialog (#293) — always a no-op"
+  },
+  "historySectionTitle": "History",
+  "@historySectionTitle": {
+    "description": "Header of the per-entity change-history timeline section on an apiary/activity detail screen (#60, FR-HIS-1)"
+  },
+  "historyScreenTitle": "History",
+  "@historyScreenTitle": {
+    "description": "App-bar title of the full per-entity history screen reached from the detail-screen section's view-all link (#60, FR-HIS-1)"
+  },
+  "historyEmpty": "No changes recorded yet",
+  "@historyEmpty": {
+    "description": "Empty state of the history timeline (#60) — also what an offline device with no synced history slice shows, which is a legitimate empty result, not an error"
+  },
+  "historyError": "Could not load history: {error}",
+  "@historyError": {
+    "description": "Error state of the history timeline (#60)",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "historyViewAllAction": "View all",
+  "@historyViewAllAction": {
+    "description": "Link from the capped history section on a detail screen to the full history screen (#60) — mirrors the activities section's own view-all affordance (#42)"
+  },
+  "historyEventCreated": "Created",
+  "@historyEventCreated": {
+    "description": "Timeline label for an audit_log change_type=create row (#60, history.md §3)"
+  },
+  "historyEventUpdated": "Updated",
+  "@historyEventUpdated": {
+    "description": "Timeline label for an audit_log change_type=update row (#60, history.md §3)"
+  },
+  "historyEventDeleted": "Deleted",
+  "@historyEventDeleted": {
+    "description": "Timeline label for an audit_log change_type=delete row — a soft-delete tombstone (#60, history.md §3)"
+  },
+  "historyEventSuperseded": "Superseded",
+  "@historyEventSuperseded": {
+    "description": "Timeline label for a sync_conflict_log row: an offline edit that lost last-write-wins and was preserved rather than dropped (#60, history.md §6)"
+  },
+  "historyEventUnknown": "Changed",
+  "@historyEventUnknown": {
+    "description": "Fallback timeline label for an event kind this client version doesn't recognize (#60) — the vocabulary is extensible server-side (D-20), so an unknown kind degrades to a generic label instead of breaking the timeline"
+  },
+  "historyChangedFieldsValue": "Changed: {fields}",
+  "@historyChangedFieldsValue": {
+    "description": "Sub-line of an update entry listing which fields changed (#60) — fields is already localized and comma-joined by the caller",
+    "placeholders": {
+      "fields": {
+        "type": "String"
+      }
+    }
+  },
+  "historySupersededDetail": "Replaced by a newer version from another device",
+  "@historySupersededDetail": {
+    "description": "Sub-line of a superseded entry (#60, history.md §6 'your offline change was superseded by a newer value') — explains that the edit was kept in the record, not lost"
+  },
+  "historyActorYou": "You",
+  "@historyActorYou": {
+    "description": "History-entry actor when it is the signed-in user (#60) — mirrors activityPerformedByYou"
+  },
+  "historyActorMember": "Member {id}",
+  "@historyActorMember": {
+    "description": "History-entry actor fallback when the org roster has no display name for the user id (#60) — mirrors activityPerformedByMember; id is a short trailing id fragment",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "historyActorUnknown": "Unknown",
+  "@historyActorUnknown": {
+    "description": "History-entry actor when the row carries no actor_user_id at all (#60) — history.md §3 allows a null actor"
+  },
+  "historyEntrySemanticLabel": "{event} by {actor}, {timestamp}",
+  "@historyEntrySemanticLabel": {
+    "description": "Screen-reader label for one history timeline entry (#60, WCAG 2.2 AA) — collapses the visually-separate event/actor/time into one announcement; all three parts are already localized and formatted by the caller",
+    "placeholders": {
+      "event": {
+        "type": "String"
+      },
+      "actor": {
+        "type": "String"
+      },
+      "timestamp": {
+        "type": "String"
+      }
+    }
+  },
+  "historyFieldLocation": "Location",
+  "@historyFieldLocation": {
+    "description": "Localized name of the apiaries.location column when it appears in an update entry's changed-fields list (#60). Columns whose user-facing name already has a form label reuse that key instead (name, notes, place_label, hive_count, occurred_at) — only the gaps get a historyField* key of their own"
+  },
+  "historyFieldActivityType": "Activity type",
+  "@historyFieldActivityType": {
+    "description": "Localized name of the activities.type column in a changed-fields list (#60)"
+  },
+  "historyFieldAttributes": "Details",
+  "@historyFieldAttributes": {
+    "description": "Localized name of the activities.attributes column (the per-type attribute bag) in a changed-fields list (#60)"
+  },
+  "historyFieldApiary": "Apiary",
+  "@historyFieldApiary": {
+    "description": "Localized name of the activities.apiary_id column in a changed-fields list (#60)"
+  },
+  "historyFieldStatus": "Status",
+  "@historyFieldStatus": {
+    "description": "Localized name of the journeys.status column in a changed-fields list (#315)"
+  },
+  "discardChangesTitle": "Discard changes?",
+  "@discardChangesTitle": {
+    "description": "Title of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345, FR-UX-1/FR-UX-2)"
+  },
+  "discardChangesMessage": "You have unsaved changes. If you leave now, they will be lost.",
+  "@discardChangesMessage": {
+    "description": "Body of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345)"
+  },
+  "discardChangesConfirmAction": "Discard",
+  "@discardChangesConfirmAction": {
+    "description": "Confirm action in the discard-changes dialog: leave the screen and lose unsaved edits (#345)"
+  },
+  "discardChangesCancelAction": "Keep editing",
+  "@discardChangesCancelAction": {
+    "description": "Cancel action in the discard-changes dialog: stay on the screen, keeping unsaved edits (#345)"
   }
 }

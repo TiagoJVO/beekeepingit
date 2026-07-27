@@ -1,17 +1,20 @@
 # client/e2e — walking-skeleton end-to-end test
 
 Playwright test of the M0 slice ([#23](https://github.com/TiagoJVO/beekeepingit/issues/23) §7.3):
-**log in → create an apiary → go offline → edit → reconnect → assert it synced
-server-side → reload → assert the local state converged → a fresh client
-converges via download sync → log out.** It drives the deployed Flutter Web PWA
+**log in → create an apiary (with free-text notes, FR-AP-8) → go offline → edit →
+reconnect → assert it synced server-side → reload → assert the local state
+converged → a fresh client converges via download sync (hive count and notes) →
+log out.** It drives the deployed Flutter Web PWA
 through the gateway and asserts against the `apiaries` service, so it needs the
 **full slice deployed** (see [`infra/README.md`](../../infra/README.md) for the
 k3d bring-up).
 
 Runs in CI (`.github/workflows/helm-e2e.yml`, NFR-TST-1, `#162`) against a fresh
 k3d cluster the workflow itself brings up — no separate deployed environment
-needed. Gated on changes under `infra/**` or `client/e2e/**` (dorny/paths-filter),
-same as the rest of that job. The **PWA image is built in-job from the checked-out
+needed. Gated on changes under `infra/**` or `client/**` (dorny/paths-filter),
+same as the rest of that job — any client change re-runs the slice, not just
+edits to this e2e, precisely because the image under test comes from the same
+commit (below). The **PWA image is built in-job from the checked-out
 commit** and imported into the cluster (#236) — not pulled as the last-published
 `client:latest`, which only updates on merge to main and would make the e2e test
 main's client bundle instead of the commit under test. The apiary the create step
@@ -21,6 +24,27 @@ API the app uses.
 The server-side apply semantics (LWW, conflict log, idempotency, tombstones) and
 the sync coordinator are additionally covered by fast **Go integration tests**
 (`services/apiaries`, `services/sync`) that run in CI without a browser.
+
+A second spec, **`tests/verification.spec.ts`** (#361, NFR-SEC-1), covers the
+login-time email-verification flow end to end: unverified login held at the
+IdP's email stage → one-time link read from the **Mailpit** sink's API → real
+`email_verified: true` claim → the **invitation accept-on-login** path
+(FR-ONB-3/#170: an admin-created invitation stays `pending` while the login is
+held and is auto-claimed once verified) → and an email-change attempt through
+Authentik's real user-settings flow executor being **rejected**
+(`default_user_change_email` is off — the upstream default at the pinned
+version and not blueprint-pinnable, so this assertion is the live pin on the
+control that closes the #170 shape). It needs a **fresh blueprint-seeded
+stack** plus `E2E_MAILPIT_URL` (helm-e2e.yml port-forwards the sink and sets
+it) and self-skips when the env is absent; its tests are order-dependent
+within the file.
+
+The fresh-client **notes** assertion doubles as the regression guard for the
+PowerSync sync-rules column list
+(`infra/helm/beekeepingit/charts/powersync/values.yaml`): the
+`apiaries.apiaries` SELECT there is an explicit list, and a column missing from
+it (as `notes` once was, FR-AP-8/#196) silently stays `NULL` on fresh devices —
+no other layer surfaces that.
 
 ## Skipped guards (`test.fixme`) — real bugs found by wiring this e2e
 

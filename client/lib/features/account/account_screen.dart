@@ -5,11 +5,17 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
+import '../../core/validation/email.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../shell/sync_status.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_tokens.dart';
+import '../../theming/brand_widgets.dart';
 import '../organization/organization_repository.dart';
 import '../profile/profile_repository.dart';
+import '../sync/sync_rejected_repository.dart';
 import 'account_platform.dart';
 
 /// Account settings screen (FR-AU-1, #29): update profile information
@@ -132,48 +138,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     }
   }
 
-  // Prototype's "Definições / Sync": current status (mirrors the header
-  // pill's state, sync.md §8's vocabulary generalized to the connection),
-  // the pending-change count (AC: "see that there are queued/unsynced local
-  // changes and roughly how many"), and the manual "Sincronizar agora"
-  // override (AC: "a failed sync can be retried"; sync.md §7.1).
-  List<Widget> _buildSyncSection(BuildContext context, AppLocalizations l10n) {
-    final syncStatus = ref.watch(syncStatusProvider);
-    final statusLabel = syncStatus.syncing
-        ? l10n.syncStatusSyncing
-        : syncStatus.isOnline
-        ? l10n.syncStatusOnline
-        : syncStatus.isWaitingForSignal
-        ? l10n.syncStatusWaitingForSignal
-        : l10n.syncStatusOffline;
-    return [
-      Text(
-        l10n.accountSyncSectionTitle,
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      const SizedBox(height: 8),
-      Text(
-        l10n.accountSyncStatusLabel(statusLabel),
-        key: const Key('account-sync-status-text'),
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 4),
-      Text(
-        l10n.accountSyncPendingCount(syncStatus.pendingCount),
-        key: const Key('account-sync-pending-text'),
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 16),
-      SecondaryActionButton(
-        key: const Key('account-sync-now-button'),
-        label: l10n.accountSyncNowButton,
-        icon: Icons.sync,
-        busy: _syncing,
-        onPressed: () => _syncNow(l10n),
-      ),
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -182,8 +146,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
+          key: const Key('account-back-button'),
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/apiaries'),
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+          // Back to the app home, which is the Tasks tab now (D-29, #427).
+          onPressed: () => context.go('/todos'),
         ),
         title: Text(l10n.accountTitle),
       ),
@@ -200,10 +167,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      l10n.accountProfileSectionTitle,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                    _AccountAvatarCard(profile: profile),
+                    const SizedBox(height: 24),
+                    SectionHeader(l10n.accountProfileSectionTitle),
                     const SizedBox(height: 16),
                     Form(
                       key: _formKey,
@@ -215,7 +181,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                             controller: _nameController,
                             decoration: InputDecoration(
                               labelText: l10n.profileNameLabel,
-                              border: const OutlineInputBorder(),
                               errorText: _fieldErrors['name'],
                             ),
                             validator: (v) => (v == null || v.trim().isEmpty)
@@ -229,7 +194,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                             keyboardType: TextInputType.emailAddress,
                             decoration: InputDecoration(
                               labelText: l10n.profileEmailLabel,
-                              border: const OutlineInputBorder(),
                               errorText: _fieldErrors['email'],
                             ),
                             validator: (v) {
@@ -237,7 +201,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                               if (value.isEmpty) {
                                 return l10n.profileEmailRequired;
                               }
-                              if (!_looksLikeEmail(value)) {
+                              if (!looksLikeEmail(value)) {
                                 return l10n.profileEmailInvalid;
                               }
                               return null;
@@ -249,7 +213,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                             initialValue: _locale,
                             decoration: InputDecoration(
                               labelText: l10n.profileLocaleLabel,
-                              border: const OutlineInputBorder(),
                             ),
                             items: const [
                               DropdownMenuItem(
@@ -278,14 +241,14 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
-                    ..._buildSyncSection(context, l10n),
+                    _SyncSection(
+                      syncing: _syncing,
+                      onSyncNow: () => _syncNow(l10n),
+                    ),
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
-                    Text(
-                      l10n.accountSecuritySectionTitle,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                    SectionHeader(l10n.accountSecuritySectionTitle),
                     const SizedBox(height: 8),
                     Text(
                       l10n.accountChangePasswordHint,
@@ -311,10 +274,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       const SizedBox(height: 32),
                       const Divider(),
                       const SizedBox(height: 16),
-                      Text(
-                        l10n.accountOrganizationSectionTitle,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+                      SectionHeader(l10n.accountOrganizationSectionTitle),
                       const SizedBox(height: 16),
                       SecondaryActionButton(
                         key: const Key('account-manage-members-button'),
@@ -343,8 +303,167 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       ),
     );
   }
+}
 
-  bool _looksLikeEmail(String value) {
-    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
+/// The account screen's "Sync" section (prototype's "Definições / Sync"):
+/// current status (mirrors the header pill's state, sync.md §8's vocabulary
+/// generalized to the connection), the pending-change count (AC: "see that
+/// there are queued/unsynced local changes and roughly how many"), and the
+/// manual "Sincronizar agora" override (AC: "a failed sync can be retried";
+/// sync.md §7.1). A proper widget class (not a private `_build*()` helper on
+/// [_AccountScreenState]) so it reads its own providers directly and keeps
+/// [_AccountScreenState.build] from growing further — [_syncing] and the
+/// [_syncNow] handler stay on the state (they need `setState`/`mounted`/
+/// `ScaffoldMessenger`), passed down as plain data + a callback.
+class _SyncSection extends ConsumerWidget {
+  const _SyncSection({required this.syncing, required this.onSyncNow});
+
+  /// Whether a manual "sync now" request is currently in flight.
+  final bool syncing;
+
+  final VoidCallback onSyncNow;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final syncStatus = ref.watch(syncStatusProvider);
+    final needsFixCount = ref.watch(syncNeedsFixCountProvider).value ?? 0;
+    final statusLabel = syncStatus.syncing
+        ? l10n.syncStatusSyncing
+        : syncStatus.isOnline
+        ? l10n.syncStatusOnline
+        : syncStatus.isWaitingForSignal
+        ? l10n.syncStatusWaitingForSignal
+        : l10n.syncStatusOffline;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(l10n.accountSyncSectionTitle),
+        const SizedBox(height: 8),
+        Text(
+          l10n.accountSyncStatusLabel(statusLabel),
+          key: const Key('account-sync-status-text'),
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 4),
+        // #379: "Everything is synced." is a lie while the dead-letter queue
+        // is non-empty — PowerSync's own upload queue has already completed()
+        // a rejected op (handleUploadResponse retains it locally but still
+        // lets the transaction complete, so it doesn't wedge the queue), so
+        // pendingCount reads 0 even though there's a rejected write sitting
+        // right below needing the user's attention. Show the needs-fix count
+        // instead whenever there is one; the plain pending-count line only
+        // when there truly is nothing outstanding.
+        Text(
+          needsFixCount > 0
+              ? l10n.accountSyncNeedsFixStatus(needsFixCount)
+              : l10n.accountSyncPendingCount(syncStatus.pendingCount),
+          key: const Key('account-sync-pending-text'),
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        // Rejected offline writes awaiting a fix (D-12 notify-and-fix): a
+        // call-to-action into the needs-fix list, shown only when there are
+        // any.
+        if (needsFixCount > 0) ...[
+          const SizedBox(height: 12),
+          SecondaryActionButton(
+            key: const Key('account-needs-fix-button'),
+            label: l10n.syncNeedsFixCount(needsFixCount),
+            icon: Icons.sync_problem_outlined,
+            onPressed: () => context.go('/sync-needs-fix'),
+          ),
+        ],
+        const SizedBox(height: 16),
+        SecondaryActionButton(
+          key: const Key('account-sync-now-button'),
+          label: l10n.accountSyncNowButton,
+          icon: Icons.sync,
+          busy: syncing,
+          onPressed: onSyncNow,
+        ),
+      ],
+    );
+  }
+}
+
+/// The prototype's account header: a plum avatar circle with the member's
+/// Playfair honey initials next to their name and email. Purely presentational
+/// (derives from the already-loaded [Profile]); no new state or requests.
+class _AccountAvatarCard extends StatelessWidget {
+  const _AccountAvatarCard({required this.profile});
+
+  final Profile profile;
+
+  String get _initials {
+    final parts = profile.name.trim().split(RegExp(r'\s+'));
+    final letters = parts
+        .where((p) => p.isNotEmpty)
+        .map((p) => p.characters.first.toUpperCase())
+        .toList();
+    if (letters.isEmpty) return '?';
+    if (letters.length == 1) return letters.first;
+    return '${letters.first}${letters.last}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return BrandCard(
+      padding: const EdgeInsets.all(18),
+      radius: BrandDimens.borderCardLarge,
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: BrandTokens.plum700,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              _initials,
+              style: const TextStyle(
+                fontFamily: AppTheme.displayFontFamily,
+                fontWeight: FontWeight.w700,
+                fontSize: 22,
+                color: BrandTokens.honey,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  profile.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppTheme.bodyFontFamily,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  profile.email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppTheme.bodyFontFamily,
+                    fontSize: 14,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -13,8 +13,8 @@ import (
 
 const insertAuditLog = `-- name: InsertAuditLog :exec
 INSERT INTO organizations.audit_log
-    (id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, changed_fields, change)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    (id, organization_id, entity_type, entity_id, change_type, actor_user_id, actor_scope, occurred_at, changed_fields, change)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 `
 
 type InsertAuditLogParams struct {
@@ -24,6 +24,7 @@ type InsertAuditLogParams struct {
 	EntityID       pgtype.UUID        `json:"entity_id"`
 	ChangeType     string             `json:"change_type"`
 	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	ActorScope     string             `json:"actor_scope"`
 	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
 	ChangedFields  []string           `json:"changed_fields"`
 	Change         []byte             `json:"change"`
@@ -32,7 +33,10 @@ type InsertAuditLogParams struct {
 // Append-only history row (history.md §3-§4, #165): one row per applied
 // organization/membership/invitation create/update, written in the same
 // local transaction as the domain write. changed_fields is null for create
-// (only update carries it).
+// (only update carries it). actor_scope (#470, ADR-0021) is written
+// explicitly by every caller -- 'member' for the ordinary membership path,
+// 'platform_operator' for a verified platform-operator write -- never left
+// to the column's DEFAULT (api/audit.go's writeAuditLog).
 func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
 	_, err := q.db.Exec(ctx, insertAuditLog,
 		arg.ID,
@@ -41,6 +45,7 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		arg.EntityID,
 		arg.ChangeType,
 		arg.ActorUserID,
+		arg.ActorScope,
 		arg.OccurredAt,
 		arg.ChangedFields,
 		arg.Change,
@@ -49,7 +54,7 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 }
 
 const listAuditLog = `-- name: ListAuditLog :many
-SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, actor_scope, occurred_at, recorded_at, changed_fields, change
 FROM organizations.audit_log
 WHERE organization_id = $1 AND entity_type = $2 AND entity_id = $3
 ORDER BY recorded_at, id
@@ -65,6 +70,8 @@ type ListAuditLogParams struct {
 // for one entity, oldest first. Not yet exposed via HTTP (no AC in this
 // milestone requires the view screens, history.md §8/§10) — kept as typed
 // groundwork for the org/member/invitation-detail "history" screen.
+// actor_scope (#470) is included so a future history view can render the
+// platform-operator distinction without a second query.
 func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]OrganizationsAuditLog, error) {
 	rows, err := q.db.Query(ctx, listAuditLog, arg.OrganizationID, arg.EntityType, arg.EntityID)
 	if err != nil {
@@ -81,6 +88,7 @@ func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]O
 			&i.EntityID,
 			&i.ChangeType,
 			&i.ActorUserID,
+			&i.ActorScope,
 			&i.OccurredAt,
 			&i.RecordedAt,
 			&i.ChangedFields,

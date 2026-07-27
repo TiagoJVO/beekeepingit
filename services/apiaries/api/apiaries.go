@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sqlcgen "github.com/TiagoJVO/beekeepingit/services/apiaries/store/sqlc/gen"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
@@ -48,13 +50,17 @@ type geoPointDTO struct {
 // object, no null variant) doesn't allow for a present-but-null value.
 // `distance_m` (FR-AP-2, #33) is only set on a `near`-ordered list; other
 // reads (get, cursor-paginated list) omit it, matching the contract's
-// "only on proximity lists" note on the Apiary schema.
+// "only on proximity lists" note on the Apiary schema. `place_label` (#252)
+// is an optional free-text place name (e.g. "Montargil"), independent of
+// `location`'s coordinates and of the apiary's own `name` — omitempty like
+// `notes`.
 type apiaryDTO struct {
 	ID             string       `json:"id"`
 	OrganizationID string       `json:"organization_id"`
 	Name           string       `json:"name"`
 	HiveCount      int32        `json:"hive_count"`
 	Location       *geoPointDTO `json:"location,omitempty"`
+	PlaceLabel     *string      `json:"place_label,omitempty"`
 	Notes          *string      `json:"notes,omitempty"`
 	DistanceM      *float64     `json:"distance_m,omitempty"`
 	CreatedAt      time.Time    `json:"created_at"`
@@ -96,6 +102,7 @@ func ReadRouter(pool *pgxpool.Pool) http.Handler {
 	r.Get("/", listApiaries(q))
 	r.Get("/{apiaryId}", getApiary(q))
 	r.Get("/{apiaryId}/distance", getApiaryDistance(q))
+	r.Get("/{apiaryId}/history", getApiaryHistory(q))
 	return r
 }
 
@@ -111,6 +118,7 @@ func Router(pool *pgxpool.Pool) http.Handler {
 	r.Get("/", listApiaries(q))
 	r.Get("/{apiaryId}", getApiary(q))
 	r.Get("/{apiaryId}/distance", getApiaryDistance(q))
+	r.Get("/{apiaryId}/history", getApiaryHistory(q))
 	r.Post("/", createApiary(pool))
 	r.Patch("/{apiaryId}", updateApiary(pool))
 	r.Delete("/{apiaryId}", deleteApiary(pool))
@@ -160,6 +168,7 @@ func listApiaries(q *sqlcgen.Queries) http.HandlerFunc {
 			Cursor:         cursor,
 		})
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "list apiaries failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -179,12 +188,13 @@ func listApiaries(q *sqlcgen.Queries) http.HandlerFunc {
 				Name:           row.Name,
 				HiveCount:      row.HiveCount,
 				Location:       parseGeoJSONPoint(row.LocationGeojson),
+				PlaceLabel:     textPtr(row.PlaceLabel),
 				Notes:          textPtr(row.Notes),
 				CreatedAt:      row.CreatedAt.Time,
 				UpdatedAt:      row.UpdatedAt.Time,
 			})
 		}
-		writeJSON(w, http.StatusOK, listDTO{Data: data, Page: page})
+		writeJSON(w, r, http.StatusOK, listDTO{Data: data, Page: page})
 	}
 }
 
@@ -205,6 +215,7 @@ func listApiariesByProximity(w http.ResponseWriter, r *http.Request, q *sqlcgen.
 		Offset:         0,
 	})
 	if err != nil {
+		logging.FromContext(r.Context()).ErrorContext(r.Context(), "list apiaries by proximity failed", slog.Any("error", err))
 		problem.Write(w, r, problem.Internal())
 		return
 	}
@@ -222,13 +233,14 @@ func listApiariesByProximity(w http.ResponseWriter, r *http.Request, q *sqlcgen.
 			Name:           row.Name,
 			HiveCount:      row.HiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
+			PlaceLabel:     textPtr(row.PlaceLabel),
 			Notes:          textPtr(row.Notes),
 			DistanceM:      distancePtr(row.DistanceM),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,
 		})
 	}
-	writeJSON(w, http.StatusOK, listDTO{Data: data, Page: page})
+	writeJSON(w, r, http.StatusOK, listDTO{Data: data, Page: page})
 }
 
 // distancePtr's input is untyped (`interface{}`) in ListApiariesByProximityRow: its SQL
@@ -292,17 +304,19 @@ func getApiary(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "get apiary failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
 
 		w.Header().Set("ETag", etagFor(row.UpdatedAt))
-		writeJSON(w, http.StatusOK, apiaryDTO{
+		writeJSON(w, r, http.StatusOK, apiaryDTO{
 			ID:             uuidString(row.ID),
 			OrganizationID: uuidString(row.OrganizationID),
 			Name:           row.Name,
 			HiveCount:      row.HiveCount,
 			Location:       parseGeoJSONPoint(row.LocationGeojson),
+			PlaceLabel:     textPtr(row.PlaceLabel),
 			Notes:          textPtr(row.Notes),
 			CreatedAt:      row.CreatedAt.Time,
 			UpdatedAt:      row.UpdatedAt.Time,
@@ -354,6 +368,7 @@ func getApiaryDistance(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 		if err != nil {
+			logging.FromContext(r.Context()).ErrorContext(r.Context(), "get apiary distance failed", slog.Any("error", err))
 			problem.Write(w, r, problem.Internal())
 			return
 		}
@@ -365,7 +380,7 @@ func getApiaryDistance(q *sqlcgen.Queries) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, distanceDTO{
+		writeJSON(w, r, http.StatusOK, distanceDTO{
 			From:      uuidString(row.FromID),
 			To:        uuidString(row.ToID),
 			DistanceM: row.DistanceM,

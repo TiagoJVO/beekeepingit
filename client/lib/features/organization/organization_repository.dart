@@ -1,8 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/storage/local_prefs.dart';
 
 /// The caller's organization
 /// (contracts/openapi/organizations.openapi.yaml's Organization schema,
@@ -38,6 +42,27 @@ class Organization {
   final String role;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  // Value equality (MEDIUM-2): organizationProvider is watched by the
+  // router's redirect logic (app_router.dart) — without this, a re-fetch
+  // that returns the same organization compares unequal (default identity
+  // equality) and can trigger a redundant redirect re-evaluation/rebuild.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Organization &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          address == other.address &&
+          createdBy == other.createdBy &&
+          role == other.role &&
+          createdAt == other.createdAt &&
+          updatedAt == other.updatedAt);
+
+  @override
+  int get hashCode =>
+      Object.hash(id, name, address, createdBy, role, createdAt, updatedAt);
 }
 
 /// Reads/creates the caller's organization via `GET /v1/organizations/me` and
@@ -45,17 +70,33 @@ class Organization {
 /// PowerSync-mediated: organization creation is a one-off onboarding step
 /// (like profile), not a field-recorded, offline-first entity — there is
 /// nothing to sync until an org (and its replicated slice) exists.
+///
+/// Caches the last-known-good [fetchMine] response in durable local storage
+/// (#390) — see [ProfileRepository]'s own doc for the same rationale: the
+/// onboarding gate (`routing/app_router.dart`) stays passable offline for a
+/// previously-onboarded user, falling back to the cache only on
+/// [ApiNetworkException] (never on the 404 "no org yet" [ApiException] —
+/// that is a real, resolved answer, not a network failure).
 class OrganizationRepository {
-  OrganizationRepository(this._api);
+  OrganizationRepository(this._api, {LocalPrefs? prefs})
+    : _prefs = prefs ?? createLocalPrefs();
 
   final ApiClient _api;
+  final LocalPrefs _prefs;
   static const _uuid = Uuid();
 
   /// Fetches the caller's own organization, or throws [ApiException] (404)
   /// if they have none yet — the signal the org-completion gate probes for.
   Future<Organization> fetchMine() async {
-    final json = await _api.getJson('/organizations/me');
-    return Organization.fromJson(json);
+    try {
+      final json = await _api.getJson('/organizations/me');
+      _prefs.write(kOrganizationCacheKey, jsonEncode(json));
+      return Organization.fromJson(json);
+    } on ApiNetworkException {
+      final cached = _prefs.read(kOrganizationCacheKey);
+      if (cached == null) rethrow;
+      return Organization.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+    }
   }
 
   /// Creates an organization with the caller as its first admin (D-3). The
@@ -83,6 +124,14 @@ final organizationRepositoryProvider = Provider<OrganizationRepository>((ref) {
 class OrganizationController extends AsyncNotifier<Organization?> {
   @override
   Future<Organization?> build() async {
+    // Same logged-out gate as ProfileController.build (see its comment):
+    // stay pending without fetching so this provider's eager initializers
+    // (the router's redirect listens, app.dart's membership-loss purge
+    // listener) can't fire unauthenticated 401 `GET /v1/organizations/me`
+    // retry storms at boot; the watch re-runs build on login.
+    if (!ref.watch(isAuthenticatedProvider)) {
+      return Completer<Organization?>().future;
+    }
     final repo = ref.watch(organizationRepositoryProvider);
     try {
       return await repo.fetchMine();

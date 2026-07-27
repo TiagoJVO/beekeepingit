@@ -66,6 +66,9 @@ docs(requirements): clarify journey stats (FR-JO-1)
   `Closes #<issue>`.
 - One logical change per PR. Link the requirement IDs and epic/issue it implements.
 - Include tests for the change; update docs when behavior or scope changes.
+- If the change adds/removes a route, table, or top-level dependency, re-run
+  `/ecc:update-codemaps` and include the updated [docs/CODEMAPS/](docs/CODEMAPS/) files in
+  the same PR — otherwise the maps silently drift from the as-built system.
 - Meet the [Definition of Done](.claude/rules/definition-of-done.md).
 
 ## Tests

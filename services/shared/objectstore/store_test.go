@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,11 +15,12 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/shared/objectstore"
 )
 
-// TestStore_PutGetDelete proves the adapter works end-to-end against a real
-// S3-compatible endpoint. It only ever constructs the Store from a Config —
-// pointing it at a different S3-compatible provider (see ../README.md) needs
-// no code change here, just different Config values.
-func TestStore_PutGetDelete(t *testing.T) {
+// newTestStore starts a MinIO test container and returns a Store connected
+// to it. Factored out of TestStore_PutGetDelete so other tests (e.g. the
+// EnsureBucket concurrency test below) can get a real S3-compatible backend
+// without duplicating the container-setup boilerplate.
+func newTestStore(t *testing.T) *objectstore.Store {
+	t.Helper()
 	ctx := context.Background()
 
 	// The minio module's default wait strategy is wait.ForHTTP("/minio/health/live"):
@@ -57,6 +59,16 @@ func TestStore_PutGetDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new store: %v", err)
 	}
+	return store
+}
+
+// TestStore_PutGetDelete proves the adapter works end-to-end against a real
+// S3-compatible endpoint. It only ever constructs the Store from a Config —
+// pointing it at a different S3-compatible provider (see ../README.md) needs
+// no code change here, just different Config values.
+func TestStore_PutGetDelete(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
 
 	const bucket = "beekeepingit-test"
 	// Belt-and-suspenders around the readiness gate: the very first S3 call can still
@@ -102,6 +114,53 @@ func TestStore_PutGetDelete(t *testing.T) {
 	defer deletedObj.Close()
 	if _, err := io.ReadAll(deletedObj); err == nil {
 		t.Fatal("expected error reading deleted object, got nil")
+	}
+}
+
+// TestEnsureBucket_ConcurrentCallsAllSucceed is the regression test for
+// HIGH #1: EnsureBucket's old implementation checked BucketExists then
+// called MakeBucket as two separate round trips, not atomically. When two
+// callers race — both see "doesn't exist", both call MakeBucket — the loser
+// gets MinIO's native "BucketAlreadyOwnedByYou"/"BucketAlreadyExists" error
+// back as a hard failure, even though EnsureBucket is documented as
+// idempotent. This drives many goroutines at a fresh bucket name
+// concurrently (via a start barrier, so they race on network latency rather
+// than serialize) against a real MinIO backend — against the pre-fix code
+// this reliably surfaces the race as a real error from at least one
+// goroutine; the fix (attempt MakeBucket unconditionally, treat the
+// already-exists error codes as success) must make every call succeed.
+func TestEnsureBucket_ConcurrentCallsAllSucceed(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	// Warm up past MinIO's brief post-startup "not initialized yet" window
+	// (see the comment in newTestStore) so the concurrent calls below race
+	// on a real "does this bucket exist" question, not on server startup.
+	if err := retry(t, func() error { return store.EnsureBucket(ctx, "warmup") }); err != nil {
+		t.Fatalf("warm up: %v", err)
+	}
+
+	const bucket = "beekeepingit-concurrent-test"
+	const goroutines = 10
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make([]error, goroutines)
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = store.EnsureBucket(ctx, bucket)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d: EnsureBucket() error = %v, want nil (a TOCTOU race between BucketExists and MakeBucket must not surface as a hard error)", i, err)
+		}
 	}
 }
 

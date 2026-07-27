@@ -9,7 +9,8 @@
 **Requirements:** NFR-SEC-1, NFR-ROL-1, NFR-ROL-2, FR-TEN-1, FR-TEN-2, FR-ONB-1/2/3, FR-OF-1, NFR-AI-4
 **Decisions:** [D-7](../../requirements/decisions.md#d-7) (Authentik, IdP-agnostic OIDC boundary),
 [D-3](../../requirements/decisions.md) (org creator = admin, invite by email),
-[D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-10](../../requirements/decisions.md) (PWA-first)
+[D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-10](../../requirements/decisions.md) (PWA-first),
+[D-32](../../requirements/decisions.md) (two administration tiers — §5.3; platform tier **claim built (#465), authorization built (#466, ADR-0021)**, EPIC-18 #463)
 **Resolves:** [Q-AUTH](../../requirements/open-questions.md), [Q-ROLE](../../requirements/open-questions.md)
 **Depends on:** #104, #105, #108 · **ADR:** [0004-authn-authz](../adr/0004-authn-authz.md),
 [0016-replace-keycloak-with-authentik](../adr/0016-replace-keycloak-with-authentik.md)
@@ -110,6 +111,10 @@ no provider secrets live in the repo (NFR-SEC, EPIC-14).
 
 The provider client id the services expect is **`beekeepingit-pwa`** — Authentik's default `aud`
 is the client id, so `OIDC_AUDIENCE=beekeepingit-pwa` ([oidc-integration.md §4](oidc-integration.md#4-subject--audience--the-two-claim-decisions)).
+The **`beekeepingit-admin`** client is provisioned as its own provider/application (#456); a
+claim-override scope mapping rewrites its tokens' `iss`/`aud` to the same beekeepingit issuer +
+`beekeepingit-pwa` audience, so the services accept admin tokens **without** any per-client change
+([oidc-integration.md §3.1](oidc-integration.md#3-provider-authentik-application--oauth2-provider)).
 
 **Domain services are OAuth2 _resource servers_, not login clients** — they **validate** bearer
 tokens (§4) and never initiate a login. A **confidential service-account client** would be introduced
@@ -118,16 +123,35 @@ provider-side invite email, if we ever choose the IdP over our own SMTP for invi
 needed). Public clients + PKCE (no embedded secret) is the correct choice for a SPA/PWA and a mobile
 app, where a client secret cannot be kept confidential.
 
-### 3.3 Roles — coarse in the IdP, org-scoped in the app
+### 3.3 Roles — coarse in the IdP, org-scoped in the app (+ a platform tier)
 
 > **Key decision.** The IdP carries only a **coarse, global** marker; the **admin/user distinction
 > that matters is per-organization** and lives in `organizations.memberships.role`, **not** in the
-> token. See [ADR-0004](../adr/0004-authn-authz.md).
+> token. See [ADR-0004](../adr/0004-authn-authz.md). The **platform tier** below
+> ([D-32](../../requirements/decisions.md) — EPIC-18
+> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463)) is the one authority that _does_
+> come from the IdP; it sits **above** membership and does not change the membership role model.
+> Its token claim ships in [#465](https://github.com/TiagoJVO/beekeepingit/issues/465); the
+> services that **act** on it are [#466](https://github.com/TiagoJVO/beekeepingit/issues/466).
 
-- **IdP groups/roles** are kept minimal: every end user is simply an **authenticated user**. An
-  optional **`platform-operator`** — an Authentik **group** (not a realm role, not an app role) —
-  exists for **operations/superadmin** (managing the IdP/infra); it is an **ops concern, not a v1
-  application role**, and the app's authZ path never reads it.
+- **IdP groups/roles** are kept minimal: every end user is simply an **authenticated user**. A
+  **`platform-operator`** — an Authentik **group** (not a realm role, not a membership role) — is
+  declared in the blueprint; the dev/CI seed user has been a member since the Authentik cut-over
+  (#191), and it is also the **ops/infra marker** (managing the IdP/cluster).
+  - **Built (#465):** it is the **platform tier's** source of authority
+    ([D-32](../../requirements/decisions.md), §5.3.2) — surfaced as the verified
+    **`platform_operator`** claim on **admin-app** tokens only
+    ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)).
+    The claim is minted from real IdP group membership and can neither be requested nor injected
+    by a client; it is **never** emitted for `beekeepingit-pwa`.
+  - **Built (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)):** the
+    `organizations` service's authorization path that **reads** the claim and carves out the
+    tenancy rule for five existing routes (get/update organization, list/remove members, change
+    role) — `requirePlatformOperatorOrOrgAdmin`/`requirePlatformOperatorOrOrgMember`, additive to
+    the pre-existing `requireOrgMember`/`requireOrgAdmin` chokepoint. A caller without the claim is
+    unaffected (same 404-not-403, proven by regression tests run unmodified).
+  - The group **never** participates in the org-scoped `admin`/`user` decision below, and the
+    **PWA**'s authZ path never reads it.
 - **The application role `admin` / `user` (NFR-ROL-1) is the _membership_ role** — a property of the
   **(user, organization)** pair in `organizations.memberships` (see
   [data-model.md §3](data-model.md#3-entityrelationship-model)). It is **resolved per request**
@@ -137,20 +161,24 @@ app, where a client secret cannot be kept confidential.
   role/group assignment for end users. (The IdP's own group admin is an ops/console task.)
 
 This satisfies NFR-ROL-1 ("every user has a role; roles `admin`/`user`; manage role assignment")
-while keeping the **org-scoped** semantics FR-TEN needs, and leaves NFR-ROL-1's "more roles may exist
-later" open (add membership roles, or adopt ReBAC — §5.5 — without re-plumbing authN).
+while keeping the **org-scoped** semantics FR-TEN needs. NFR-ROL-1's "more roles may exist later"
+hook is **now in use**: [D-32](../../requirements/decisions.md) spends it on the **platform tier**
+above — a tier, not a third membership role — so the membership enum stays `admin`/`user` and authN
+is unchanged. Further expansion (extra membership roles, or ReBAC — §5.5) remains open on the same
+hook.
 
 ### 3.4 Token & claims
 
 Services consume the **access token** (JWT, **RS256**). We rely on **standard OIDC claims** and
 **deliberately keep org/role _out_ of the token**:
 
-| Claim                                          | Use                                                                                                                                                                                                                      |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `sub`                                          | OIDC subject → maps to `identity.users.oidc_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity. Set via Authentik `sub_mode: user_upn` = an **app-assigned UUID** (contract §4) |
-| `email`, `email_verified`                      | profile (FR-ONB-1); gate on verification if required (`email_verified` caveat below)                                                                                                                                     |
-| `preferred_username`, `name`, `groups`         | profile / i18n (EN-PT, NFR-I18N); `groups` carries the ops-only marker (§3.3)                                                                                                                                            |
-| `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4)                                                                                                                                                                                                   |
+| Claim                                          | Use                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sub`                                          | OIDC subject → maps to `identity.users.oidc_sub` ([data-model.md](data-model.md#3-entityrelationship-model)) — the stable user identity. Set via Authentik `sub_mode: user_upn` = an **app-assigned UUID** (contract §4)                                                                                                                                                                                                       |
+| `email`, `email_verified`                      | profile (FR-ONB-1); gate on verification if required (`email_verified` caveat below)                                                                                                                                                                                                                                                                                                                                           |
+| `preferred_username`, `name`, `groups`         | profile / i18n (EN-PT, NFR-I18N); `groups` carries the `platform-operator` marker but is **informational only** — it is emitted on **both** clients, so services must **never** authorize on it (§3.3)                                                                                                                                                                                                                         |
+| `platform_operator`                            | **Admin-client tokens only** (#465): verified `platform-operator` membership as a boolean — the platform tier's authority ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)). Absent ⇒ **false**. Emitted, and **read** by the `organizations` service on its platform-path-enabled routes (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)) |
+| `iss`, `aud`/`azp`, `exp`, `nbf`, `iat`, `kid` | validation inputs (§4)                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 **Why no `organization_id` / org-role claim:** membership is **domain data that changes** and a token
 is **long-ish lived and cached offline** — an embedded org/role would go **stale** (e.g. a removed
@@ -289,7 +317,20 @@ graph TD
     H -- yes --> I["execute — org-scoped query<br/>(+ optional RLS)"]
 ```
 
-### 5.3 Role capabilities — `admin` vs `user` (resolves Q-ROLE)
+### 5.3 Role capabilities — two administration tiers (resolves Q-ROLE)
+
+Administration is **two-tier** ([D-32](../../requirements/decisions.md)). The tiers are distinct in
+_who_ grants the authority and _how far_ it reaches:
+
+| Tier                      | Authority comes from                                                            | Reaches                   | Status                                                                                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Organization** (§5.3.1) | the caller's **membership role** `admin` in `organizations.memberships` (D-3)   | that **one** organization | **Built** (EPIC-10)                                                                                                                                                                                                                                                                                 |
+| **Platform** (§5.3.2)     | membership of the IdP **`platform-operator`** group, as a verified claim (§3.3) | **every** organization    | **Built:** the five existing organization-scoped routes (#466, [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)), `GET /organizations` (list organizations, #467), and the cross-org membership lookup (#468) — EPIC-18 ([#463](https://github.com/TiagoJVO/beekeepingit/issues/463)) |
+
+They are independent: a platform operator is **not** a member of the organizations it administers,
+and an organization admin gains nothing outside its own org.
+
+#### 5.3.1 Organization tier (built) — `admin` vs `user`
 
 **`admin` is org-scoped** (D-3: the org creator is its first admin). Within an organization:
 
@@ -307,10 +348,62 @@ PWA/native client focuses on field features. **Admin-only operations are rejecte
 ([#28](https://github.com/TiagoJVO/beekeepingit/issues/28) AC) — the **organizations** OpenAPI
 contract already encodes this: `role` is the open enum `[admin, user]` and the member/invitation
 endpoints are admin-only (`403` for a `user`), with `{orgId}` asserted against membership
-([`organizations.openapi.yaml`](../../contracts/openapi/organizations.openapi.yaml)). There is **no system-wide application
-admin** in v1 — a platform super-admin is the **`platform-operator`** ops group (§3.3), not an app
-role; NFR-ROL-1's "more roles later" can add one when needed. _This resolves
-[Q-ROLE](../../requirements/open-questions.md) (admin = org-scoped)._
+([`organizations.openapi.yaml`](../../contracts/openapi/organizations.openapi.yaml)). **One deliberate
+exception:** `GET .../members/names` — a least-privilege roster (`user_id` + display `name` only, no
+role/status/email) — is readable by **any active member**, not just admins, because per-user
+attribution (FR-TEN-2, [#44](https://github.com/TiagoJVO/beekeepingit/issues/44)) must resolve another
+member's id to a real name and org data is shared across all members anyway; a non-member still gets
+`404` (ADR-0002, never `403`).
+
+#### 5.3.2 Platform tier (EPIC-18 #463 — authority minted, existing routes carved out, both new endpoints built)
+
+> **Claim + enforcement built for this story's scope; one new endpoint now built too.** The
+> **source of authority** shipped ([#465](https://github.com/TiagoJVO/beekeepingit/issues/465)): an
+> admin-app token carries the verified **`platform_operator`** boolean, minted from real
+> `platform-operator` group membership and never emitted for the PWA client
+> ([oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)).
+> The **organizations service reads it**
+> ([#466](https://github.com/TiagoJVO/beekeepingit/issues/466),
+> [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)): a verified operator can reach
+> `GET`/`PATCH /organizations/{orgId}`, `GET /organizations/{orgId}/members`, and
+> `PATCH`/`DELETE /organizations/{orgId}/members/{userId}` for an organization it does not belong
+> to, additive to the pre-existing membership-derived path (unchanged for everyone else — proven by
+> regression tests run unmodified). **Also built:** `GET /organizations`
+> ([#467](https://github.com/TiagoJVO/beekeepingit/issues/467)) — a NEW endpoint with no `{orgId}`
+> to carve an exception into, so it calls `isPlatformOperator` directly and rejects a non-operator
+> with an ordinary **`403`** (not `404` — there is no specific organization's existence to hide
+> here; ADR-0021's Follow-ups section). It lists every organization's `id`/`name`/`member_count`
+> only — no member roster, no invitation data, nothing from inside any organization. **Also
+> built:** the cross-org membership lookup,
+> `GET /organizations/platform/memberships?email=|user_id=` ([#468](https://github.com/TiagoJVO/beekeepingit/issues/468))
+> — the same `isPlatformOperator`/`403` pattern, returning organization id/name/role/status
+> only, never credentials or IdP internals (D-7). **Also built:** the persisted,
+> distinguishable history record ([#470](https://github.com/TiagoJVO/beekeepingit/issues/470)) —
+> `organizations.audit_log.actor_scope`, derived from `AuthorizedVia` (ADR-0021's
+> Follow-ups). The rest of this section records the **intended** model
+> ([D-32](../../requirements/decisions.md)) so the org tier above is not read as the whole story.
+
+A **platform operator** — a member of the IdP **`platform-operator`** group (§3.3), typically **not
+a member of any organization** — administers the platform **across** organizations: list
+organizations, look up their members, and manage membership roles, expanding to further
+administration features later. The intended shape:
+
+| Property            | Platform tier                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source of authority | IdP group membership, surfaced as the **verified `platform_operator` boolean** on **admin-app** tokens only (**built**, [#465](https://github.com/TiagoJVO/beekeepingit/issues/465); shape in [oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)) — never client-asserted, never derived from org membership. **Authorize on that claim, never on the `groups` array** (§3.4): `groups` is emitted on the PWA client too                                                                                                                                                                                                                   |
+| Scope               | **Built:** the five existing organization-scoped routes (get/update organization, list/remove members, change role) — carved out per endpoint, [#466](https://github.com/TiagoJVO/beekeepingit/issues/466)/[ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md) — `GET /organizations`, the list-all-organizations endpoint ([#467](https://github.com/TiagoJVO/beekeepingit/issues/467)) — and the cross-org membership lookup, `GET /organizations/platform/memberships` ([#468](https://github.com/TiagoJVO/beekeepingit/issues/468)) — all reusing the same `isPlatformOperator(r)` claim check and rejecting a non-operator with `403` (no `{orgId}` to hide) on the two new endpoints |
+| May do              | Administer organizations, their members and their **membership roles** (the same `admin`/`user` model, applied on behalf of an org)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| May **not** do      | Touch **accounts or credentials** — create/disable, password reset, MFA all stay at the IdP ([D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary), unchanged)                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Accountability      | Platform actions are recorded in history, attributed to the operator's own identity (not the target org's admin — proven by test); a persisted, **distinguishable** marker on the history row itself is [#470](https://github.com/TiagoJVO/beekeepingit/issues/470) (FR-HIS-1), **done** — `organizations.audit_log.actor_scope`, derived from `AuthorizedVia` (ADR-0021's Follow-ups)                                                                                                                                                                                                                                                                                                                |
+| Tenancy risk        | ADR-0002 returns **`404`, never `403`**, across org boundaries. The operator carve-out is deliberate, **narrow, per-endpoint and test-proven** — a **non**-operator still gets `404` on every carved-out route (regression-tested, #466). Its ADR is [ADR-0021](../adr/0021-platform-operator-tenancy-carve-out.md)                                                                                                                                                                                                                                                                                                                                                                                   |
+
+**The organization tier is unaffected** — customers keep self-service member management exactly as
+EPIC-10 shipped. The platform tier sits **above** it.
+
+_This resolves [Q-ROLE](../../requirements/open-questions.md): **two tiers** — org-scoped `admin`
+membership (built) plus a cross-organization `platform-operator` (its token claim built in #465,
+its services-side enforcement still #466). It **supersedes** the earlier answer that there is no
+system-wide application admin ([D-32](../../requirements/decisions.md))._
 
 ### 5.4 Resource ownership (FR-TEN-2)
 
@@ -389,6 +482,9 @@ The grace window is a **local UX affordance, not server authorization.** Queued 
   membership and **rejects** unauthorized pushes (notify-and-fix, FR-OF-2). This trade-off is
   explicit and acceptable for a field-first app.
 - Tokens live **only** in the secure enclave; a compromised device is the threat model EPIC-14 owns.
+  (Today, ahead of that EPIC-14 hardening: the refresh/id token persist in browser `localStorage`,
+  not yet a secure enclave — an accepted interim trade-off for the offline-first boot flow, #390,
+  oidc-integration.md §7.)
 - **The local-data replica is bounded separately from the token grace window:** losing org
   membership also **purges the on-device local store** (not just the cached token) at the next
   app start or reconnect — [sync.md §3.5](sync.md#35-local-data-lifecycle--purge-on-logout--membership-loss-125)
@@ -427,20 +523,21 @@ sequenceDiagram
 
 The remaining open items in [Q-AUTH](../../requirements/open-questions.md) (beyond the D-7 mechanism)
 are settled by **using the provider's built-in flows** plus the token policy above — **no custom auth
-build**. Under Authentik, verification/recovery/SMTP are **provider flows configured in EPIC-14**
-(not yet built); the fixed contract values are in
+build**. Under Authentik, **email verification + SMTP (#361, §8.10) and self-service registration
+(#366, §8.11) are built**;
+recovery/password-reset remains **provider flow config in EPIC-14**; the fixed contract values are in
 [oidc-integration.md §5, §7](oidc-integration.md#7-client-contract-flutter-web-pwa):
 
-| Item                          | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Email verification**        | An **Authentik flow** (EPIC-14, not built yet); App may gate sensitive flows on `email_verified`. **Caveat:** Authentik's default email mapping hardcodes `email_verified: true` (**cosmetic** — it does not reflect true verification state). With **registration disabled** and admin/invite-provisioned accounts, **registration-disabled is the actual control**; a mapping reflecting real state + SMTP land in EPIC-14.                                                                                                                            |
-| **Password reset**            | An **Authentik recovery flow** (self-service, email link) — **not built in v1**; provisioned in EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) with SMTP. No recovery flow ships by default.                                                                                                                                                                                                                                                                                                                                        |
-| **Registration**              | Credential auth via the provider; **registration is disabled** (no app-bound enrollment flow). **First login** triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on.                                                                                                                                                                                                                                                                      |
-| **Account / password change** | The client links out to Authentik's user settings — **`OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings`** (a config value, not a derived path), replacing Keycloak's `/account` console.                                                                                                                                                                                                                                                                                                                                    |
-| **Access-token lifetime**     | **short, ≈ 15 min** (limits exposure; forces refresh). Blueprint validity **`minutes=15`** (Django-timedelta string). _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                            |
-| **Refresh / SSO session**     | **≈ 30 days** (field convenience). Blueprint validity **`days=30`**. _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **Offline grace window**      | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._ Native-phase (D-10) — out of scope for the PWA-phase hardening pass.                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **Logout**                    | **Front-channel `end_session` redirect** — a **GET** to the provider's `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing the **server-side SSO cookie** at the IdP. Local state is cleared **first** so offline logout still degrades to locally-logged-out. This **replaces Keycloak's refresh-token POST**. Logout also invalidates the local PowerSync database so a second user on the same shared device doesn't see the previous session's replicated rows before the next sync. |
+| Item                          | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Email verification**        | **Built (#361, §8.10):** a login-time **email stage** in the authentication flow gates unverified, non-superuser users on an emailed one-time link; completion stamps the `email_verified` user attribute, and a **custom scope mapping** emits that genuine state as the `email_verified` claim (replacing the built-in's hardcoded constant — `true` before Authentik 2025.10, `false` since, either way cosmetic). SMTP is wired via `AUTHENTIK_EMAIL__*` (dev/CI: the Mailpit sink; prod: a real relay, credentials as infra config). App flows gate on `email_verified` (§3.4) — it now means something. |
+| **Password reset**            | An **Authentik recovery flow** (self-service, email link) — **not built in v1**; provisioned in EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) with SMTP. No recovery flow ships by default.                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Registration**              | **Built (#366, §8.11):** self-service username/email/password **enrollment flow** at the provider, linked from the login page. A fresh registration is held **unverified** on an emailed one-time link (§8.10's machinery) — no session, and no invitation match, before inbox control is proven; "registration disabled" is no longer the control, the **real `email_verified` signal is**. **First login** (unchanged) triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on.                 |
+| **Account / password change** | The client links out to Authentik's user settings — **`OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings`** (a config value, not a derived path), replacing Keycloak's `/account` console.                                                                                                                                                                                                                                                                                                                                                                                         |
+| **Access-token lifetime**     | **short, ≈ 15 min** (limits exposure; forces refresh). Blueprint validity **`minutes=15`** (Django-timedelta string). _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Refresh / SSO session**     | **≈ 30 days** (field convenience). Blueprint validity **`days=30`**. _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Offline grace window**      | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._ Native-phase (D-10) — out of scope for the PWA-phase hardening pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Logout**                    | **Front-channel `end_session` redirect** — a **GET** to the provider's `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing the **server-side SSO cookie** at the IdP. Local state is cleared **first** so offline logout still degrades to locally-logged-out. This **replaces Keycloak's refresh-token POST**. Logout also invalidates the local PowerSync database so a second user on the same shared device doesn't see the previous session's replicated rows before the next sync.                                                      |
 
 > Lifetimes are **starting points**, to be confirmed against a **security review** (EPIC-14, #15) and
 > field-UX testing — not hard requirements. The blueprint sets these as concrete validities rather
@@ -453,7 +550,7 @@ build**. Under Authentik, verification/recovery/SMTP are **provider flows config
 | Item                                           | Effect on this design                                                | Resolved / built in                                                                                                     |
 | ---------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | [Q-AUTH](../../requirements/open-questions.md) | mechanism (D-7) + offline login, token lifetimes, verification/reset | **Resolved here** (§4, §6, §7)                                                                                          |
-| [Q-ROLE](../../requirements/open-questions.md) | admin org-scoped vs system-wide; capability split                    | **Resolved here** (§5.3) — org-scoped                                                                                   |
+| [Q-ROLE](../../requirements/open-questions.md) | admin org-scoped vs system-wide; capability split                    | **Resolved here** (§5.3) — **two tiers** (D-32): org-scoped `admin` **built**, platform operator **planned** (#463)     |
 | **Token-lifetime / grace values**              | exact minutes/days need security sign-off                            | EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15))                                                     |
 | **PWA token persistence (iOS)**                | durability of cached session in a PWA                                | SP-1 (PWA persistence), [#54](https://github.com/TiagoJVO/beekeepingit/issues/54)                                       |
 | **Membership read path**                       | services call `organizations` vs read a replicated projection        | [#108](https://github.com/TiagoJVO/beekeepingit/issues/108) / [#28](https://github.com/TiagoJVO/beekeepingit/issues/28) |
@@ -480,17 +577,17 @@ security review). The middleware here is also the **producer** of the `organizat
 > rename), and **client** (WS-C discovery-driven OIDC + front-channel logout). The rows below reflect
 > the Authentik reality; the frozen values are in [oidc-integration.md](oidc-integration.md).
 
-| §7/§3.3 item                                    | Where it landed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Logout — server-side SSO revoke (NFR-SEC-1)** | [`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) `logout()` revokes the **server-side SSO session**, not just local tokens, and degrades to local-only clearing offline (D-10). It performs a **front-channel `end_session` GET** to the **discovered** `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing local state first — driven off OIDC discovery, not a hard-coded path (replacing #24's refresh-token POST to Keycloak's logout endpoint). |
-| **PowerSync disconnect on logout**              | Same `logout()` invalidates [`powerSyncProvider`](../../client/lib/core/sync/powersync_service.dart) (its existing `onDispose` already calls `disconnect()`+`close()`) so a second user on shared hardware doesn't see stale replicated rows before the next sync                                                                                                                                                                                                                                                                                                  |
-| **Defensive local-session sweep**               | `logout()` clears all local session-storage keys (PKCE verifier, OAuth state, tokens), not just the refresh token, covering an abandoned mid-flow login                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **`platform-operator` group**                   | The Authentik **blueprint** ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)) declares a `platform-operator` **group** — unassigned, ops-only, per §3.3 (**not** an app role, and **not** literal `admin`/`user` roles — see the AC note below)                                                                                                                                                                                                                           |
-| **Email verification (mapping)**                | Authentik's default email mapping hardcodes `email_verified: true` (**cosmetic**, §7); **registration disabled** is the real control. A mapping reflecting true state + SMTP land in EPIC-14 (#15)                                                                                                                                                                                                                                                                                                                                                                 |
-| **Token lifetimes (blueprint validities)**      | Provider validity **`minutes=15`** (access) / **`days=30`** (refresh) in the blueprint (Django-timedelta strings) — the §7 proposed defaults, now concrete values; still subject to EPIC-14 security sign-off                                                                                                                                                                                                                                                                                                                                                      |
-| **Branding (narrow scope)**                     | Blueprint application title/branding; a custom login-flow theme is **out of scope** (design-owned effort, follow-up if needed)                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **TLS to the IdP**                              | Local k3d dev serves the auth host over HTTPS at the gateway (`auth.beekeepingit.local:8443`, self-signed); some redirect URIs still allow plain `http://localhost` for dev. Trusted-CA TLS is EPIC-14                                                                                                                                                                                                                                                                                                                                                             |
-| **Client-side tests**                           | [`client/test/core/auth/auth_controller_test.dart`](../../client/test/core/auth/auth_controller_test.dart) (login/PKCE, code exchange incl. CSRF-state rejection, token refresh, refresh-rejected, logout incl. session-revoke + offline-degrade); logout widget interaction in `client/test/widget_test.dart`; logout e2e in [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts)                                                                                                                                                             |
+| §7/§3.3 item                                    | Where it landed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Logout — server-side SSO revoke (NFR-SEC-1)** | [`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) `logout()` revokes the **server-side SSO session**, not just local tokens, and degrades to local-only clearing offline (D-10). It performs a **front-channel `end_session` GET** to the **discovered** `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing local state first — driven off OIDC discovery, not a hard-coded path (replacing #24's refresh-token POST to Keycloak's logout endpoint).                                                                                                                 |
+| **PowerSync disconnect on logout**              | Same `logout()` invalidates [`powerSyncProvider`](../../client/lib/core/sync/powersync_service.dart) (its existing `onDispose` already calls `disconnect()`+`close()`) so a second user on shared hardware doesn't see stale replicated rows before the next sync                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Defensive local-session sweep**               | `logout()` clears all local session-storage keys (PKCE verifier, OAuth state, tokens), not just the refresh token, covering an abandoned mid-flow login                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **`platform-operator` group**                   | The Authentik **blueprint** ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)) declares a `platform-operator` **group** — ops-only, per §3.3 (**not** an app role, and **not** literal `admin`/`user` roles — see the AC note below). It is **not empty**: the dev/CI seed user has been a member since the Authentik cut-over (#191), and since **#465** that membership is surfaced to the admin app as the verified `platform_operator` claim (EPIC-18's platform tier — [oidc-integration.md §3.2](oidc-integration.md#32-platform-operator-claim-platform_operator-465--epic-18-463)) |
+| **Email verification (mapping)**                | ~~Cosmetic default mapping~~ → **real state since #361 (§8.10)**: a custom scope mapping emits the `email_verified` **user attribute** the login-time verification flow sets; self-service registration (since #366, §8.11) reuses the same stages, so the attribute's only writer stays the restored-flow-token stamp                                                                                                                                                                                                                                                                                                                                                             |
+| **Token lifetimes (blueprint validities)**      | Provider validity **`minutes=15`** (access) / **`days=30`** (refresh) in the blueprint (Django-timedelta strings) — the §7 proposed defaults, now concrete values; still subject to EPIC-14 security sign-off                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Branding (narrow scope)**                     | Blueprint application title/branding; a custom login-flow theme is **out of scope** (design-owned effort, follow-up if needed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **TLS to the IdP**                              | Local k3d dev serves the auth host over HTTPS at the gateway (`auth.beekeepingit.local:8443`, self-signed); some redirect URIs still allow plain `http://localhost` for dev. Trusted-CA TLS is EPIC-14                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Client-side tests**                           | [`client/test/core/auth/auth_controller_test.dart`](../../client/test/core/auth/auth_controller_test.dart) (login/PKCE, code exchange incl. CSRF-state rejection, token refresh, refresh-rejected, logout incl. session-revoke + offline-degrade); logout widget interaction in `client/test/widget_test.dart`; logout e2e in [`client/e2e/tests/slice.spec.ts`](../../client/e2e/tests/slice.spec.ts)                                                                                                                                                                                                                                                                             |
 
 **AC note (roles).** Issue #24's acceptance criteria literally reads "`admin` and `user` roles are
 defined." Per §3.3's already-settled design (and ADR-0004), `admin`/`user` is the
@@ -568,8 +665,8 @@ admin-only routes and one accept-on-login step:
   **not** built — D-3 and FR-ONB-3 both flag these as open detail beyond "implement the core
   invite/join now." `DELETE .../invitations/{id}` only revokes a still-**pending** invitation
   (not a way to remove an active member).
-- History recording (FR-HIS-1) for invite/accept/revoke is deferred, same as #26; tracked in
-  #165.
+- History recording (FR-HIS-1) for invite/accept/revoke landed with #165 (closed) — audit
+  rows are written for these events; the deferral this bullet originally recorded is done.
 
 ## 8.8 As built (#28)
 
@@ -654,6 +751,201 @@ on rather than building it fresh, and making the one call this design left open.
   cannot read or modify organization B's data" AC across the services that own real domain data
   today. `activities`/`journeys`/`todos` don't exist yet (future EPICs) — their own cross-org
   tests land with those services, following this same pattern.
+
+## 8.10 As built (#361) — real `email_verified` + outbound email
+
+Closes §7's email-verification caveat (NFR-SEC-1, NFR-CMP-1, NFR-I18N-1; [ADR-0019](../adr/0019-outbound-email-and-real-email-verified.md)).
+The forcing fact: on the pinned Authentik 2026.5.4 the built-in email scope mapping hardcodes
+`email_verified: false` (changed from `true` in Authentik 2025.10 upstream) — so the #170
+invitation accept-on-login gate (§8.7), which only matches invitations for a **verified** token
+email, could never fire in a live environment. Either hardcoded constant is cosmetic; this issue
+makes the claim mean something and revives that gate.
+
+- **Claim = genuine state.** A custom scope mapping in the blueprint
+  ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml))
+  replaces the managed `scope-email` on the provider and emits
+  `request.user.attributes.get("email_verified", False) is True` — a strict boolean check, so
+  attribute junk fails closed. The Go side already parsed the claim fail-closed
+  (`servicetemplate/authn`); `TestMiddleware_EmailVerifiedClaim_FailsClosed` now pins that a
+  missing/non-boolean claim parses as unverified.
+- **Verification happens at login, for existing accounts.** When #361 shipped, registration was
+  disabled and accounts were invite/admin-provisioned, so verification couldn't ride an enrollment
+  flow. (#366 has since added a self-service enrollment flow that **rides these same stages** —
+  §8.11 — and this login-time gate doubles as its abandoned-registration recovery path: the next
+  login attempt re-sends a fresh link.) Instead the default
+  authentication flow gains an **email stage** (order 40) + **user_write stage** (order 45), both
+  policy-gated at stage time: an unverified, non-superuser login is held on an emailed one-time
+  link (Authentik's built-in account-confirmation template, 30-min token), and the write stage
+  stamps `attributes.email_verified: true` — **only** when the plan carries the restored
+  flow-token evidence (`is_restored`) that the link was actually used, so no partial failure can
+  mark an address verified without inbox control. Superusers bypass the stage (operator-lockout
+  guard if SMTP is down; they never log into the PWA).
+- **Self-service email change is disabled — the #170-shape guard.** A verified user re-pointing
+  their own IdP email at a victim's pending invitation while keeping `email_verified: true` (the
+  #170 shape one layer down) is blocked at the source: the default user-settings flow's own
+  validation policy rejects any email change ("Not allowed to change email address.") unless
+  `Tenant.default_user_change_email` is enabled, and on the pinned 2026.5.4 that setting
+  **defaults to false** (`authentik/tenants/models.py` lines 64–66 — found live by this PR's
+  e2e, whose email-change attempt was rejected by exactly this control). The setting **cannot be
+  pinned in the blueprint**: the Tenant model subclasses `InternallyManagedMixin`, which
+  `blueprints/v1/importer.py`'s `is_model_allowed` excludes from blueprint management; it exists
+  on neither the Brand model nor any `AUTHENTIK_*` env at this version. The pin is therefore the
+  **version pin + the live e2e** (which asserts the rejection through the real flow executor and
+  that a same-email submit still completes) + the [oidc-integration.md §8](oidc-integration.md)
+  watch-list. An earlier revision carried a reset-on-change policy on that flow's write binding
+  (upstream identifiers verified: order 100 at 2026.5.4); it was removed as dead config — the
+  validation rejects the change before the write stage could ever see a different address. If
+  `default_user_change_email` is ever deliberately enabled, that reset policy becomes mandatory
+  again (recover from PR #411 history; re-verify the binding identifiers first). **Accepted
+  operator-trust boundary:** admin-driven email changes (admin API/UI) bypass the settings flow
+  and do not reset verification — admins on this deployment are ops who could equally set the
+  attribute directly; re-provisioned addresses verified out-of-band follow the documented seeding
+  escape hatch.
+- **SMTP as config, secrets out of git (NFR-SEC-1).** The upstream Authentik chart env-mounts every
+  key of the `beekeepingit-authentik-config` Secret, so the umbrella's authentik subchart now
+  renders `AUTHENTIK_EMAIL__*` connection keys from per-environment values — no change to the
+  external gitops HelmRelease. Relay **credentials** are never values: when the out-of-band
+  `beekeepingit-authentik-email-credentials` Secret exists in the namespace (created by ops for a
+  real relay), the template merges `username`/`password` in via `lookup`, the same
+  cluster-state-not-git idiom as the generated credentials.
+- **Dev/CI mail sink.** New `charts/mailpit` subchart (SMTP `:1025`, message API/UI `:8025`,
+  in-cluster only) captures all outbound mail — the flow is exercisable end to end with zero risk
+  of dev/CI mail reaching real inboxes. Staging keeps the sink until a real relay/domain exists;
+  prod disables it (`environments/prod.yaml`). NetworkPolicy grew an `ingressOnly` edge kind for
+  it (Authentik's pods are excluded from default-deny, so only the sink-side ingress allow may
+  render — the mirror of `egressOnly`).
+- **EN/PT email content (NFR-I18N-1) — English-only today; a verified upstream limitation.**
+  Authentik 2026.5.4 ships complete `en` **and `pt_PT`** catalogs for the account-confirmation
+  template, and the stage subject is deliberately the catalog msgid `Account Confirmation`
+  (pt_PT: "Confirmação de Conta") so translation engages the moment it can. But source-verifying
+  the pinned 2026.5.4 (during the #361 review) shows flow-triggered mail **cannot render pt_PT**:
+  the send translates per the **request's** negotiated language, not the recipient's saved locale
+  (`stages/email/stage.py` renders with `language=pending_user.locale(request)`, and
+  `core/models.py`'s `User.locale()` returns `request.LANGUAGE_CODE` whenever a request is
+  present — the `attributes.settings.locale` fallback only applies to non-request sends), and a
+  `pt-PT Accept-Language` can never negotiate to the shipped catalog (Django's default `LANGUAGES`
+  has `pt`/`pt-br` but no `pt-pt`; Authentik ships a `pt_PT` catalog but no plain `pt` one) — so
+  verification emails render in English regardless of browser or user locale. Fixing PT mail needs
+  an upstream fix or a `LANGUAGES` override in the deployment — tracked in
+  [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check on every version bump
+  (the msgid subject choice stands either way). **Limitation (deliberate):** the mail is also
+  Authentik-branded, not BeekeepingIT-branded — custom templates would have to be volume-mounted
+  into the Authentik pods via the external HelmRelease; deferred until branding matters.
+- **Seed users.** `test.beekeeper@…` is seeded **verified** (a dev/CI-provisioned trusted account;
+  the walking-skeleton e2e login stays linear) — also the documented escape hatch for
+  ops-provisioned, out-of-band-verified accounts. A second seed user `unverified.beekeeper@…`
+  stays unverified for the verification-flow e2e.
+- **Tests.** Go: the fail-closed claim-parsing table test (above) plus the existing #170
+  verified/unverified invitation-gate suites (`organizations/invitations_test.go`) — unchanged,
+  still green, now backed by a claim that reflects reality. Live e2e (`helm-e2e.yml`): the
+  walking-skeleton spec asserts the seed user's id_token carries `email_verified: true` (proof the
+  custom mapping applied); `verification.spec.ts` drives the full unverified journey — login held
+  at the email stage → link fetched from Mailpit's (port-forwarded) API → flow completes →
+  id_token claim true → a second fresh login sails through with no new email — **integrated with
+  the invitation accept-on-login path** (the seeded admin invites the unverified address up
+  front; the invitation stays `pending` while the login is held, and is auto-claimed by the first
+  verified `GET /v1/organizations/me`, which the same run asserts from both sides), and a second
+  test **attempts an email change through Authentik's real user-settings flow executor** (session
+  - CSRF, the same API the settings UI posts to) and asserts it is **rejected** by the
+    `default_user_change_email` control while a same-email submit completes — the live pin on the
+    disabled-self-service-email-change control — and that a fresh login afterwards is untouched
+    (still verified, no re-verification email). A workflow step additionally
+    delivers a probe message through Authentik's configured Django email path (`ak shell` in the
+    worker) and asserts Mailpit received it, isolating SMTP wiring from flow logic.
+
+## 8.11 As built (#366) — self-service registration (verified-email gated)
+
+Completes the registration story for users who don't use Google federation (FR-ONB-1/2/3,
+FR-AU-1, NFR-SEC-1, NFR-I18N-1, NFR-TST-1): sign up with username/email/password at the IdP,
+prove inbox control, then onboard exactly like any first sign-in. §7's "Registration" row is
+updated accordingly — "registration disabled" is **no longer the control**; the control is the
+**real `email_verified` signal** #361 built (§8.10): nothing issues a session, and nothing
+matches an invitation, before the emailed one-time link is used.
+
+- **Enrollment flow, config-as-code.** The blueprint
+  ([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml))
+  declares flow `beekeepingit-enrollment` (designation `enrollment`, `require_unauthenticated`):
+  a prompt stage (username / email / password / repeat, with a **length-only ≥ 12** password
+  policy — deterministic static rule; HIBP/zxcvbn deliberately off, and the final strength
+  policy is EPIC-14 [#15](https://github.com/TiagoJVO/beekeepingit/issues/15) security-review
+  scope) → `user_write` in `always_create` mode → the **same email stage** as §8.10's login-time
+  verification (safe to share: at the pinned 2026.5.4 each send mints a flow token whose
+  identifier embeds a fresh uuid4, so enrollment and login-time links never collide) → the
+  **same policy-gated `user_write` stamp** (`attributes.email_verified: true` only on
+  restored-flow-token proof) → the default user-login stage (session behavior identical to a
+  normal login). Surfaced by setting the default identification stage's `enrollment_flow`: the
+  login page renders "Need an account? Sign up.", and at 2026.5.4 that link **preserves the
+  executor's stored `?next`** (`reverse_with_qs`), so a registration started from the app's
+  OIDC redirect finishes **back in the app**, straight into onboarding — the client keeps its
+  single sign-in action and only its login copy changed (pointing new users at that link).
+- **Unverified at creation, guaranteed.** The prompt stage's declared field list is the write
+  boundary: the prompt serializer only admits declared `field_key`s, and `user_write` blocks
+  `groups`/`pk` writes and discards unknown keys (both source-verified at the pinned version).
+  No declared field is an `attributes.*` key, so a registrant cannot inject
+  `attributes.email_verified` (the #170 shape at enrollment); the upn policy strips it
+  defensively anyway. The account is created **active but unverified** — deliberately not the
+  upstream example's inactive-until-verified: an abandoned registration self-heals through
+  §8.10's login-time gate (the next login re-sends a link) instead of dead-ending an account
+  that can neither log in nor re-register with no recovery flow built yet (EPIC-14 #15). The
+  session gate is the email stages, not `is_active` — both paths hold until the link is used.
+- **`sub` assignment — closes [oidc-integration.md §4](oidc-integration.md)'s
+  forward-requirement.** An expression policy on the enrollment `user_write` binding assigns
+  `attributes.upn = uuid4()` at creation (the provider's `sub_mode: user_upn` reads it). Fail
+  closed: a policy error skips `user_write`, so no account is ever created without a `upn`.
+  (Relying on Authentik's silent `user.uuid` fallback instead would let a later admin-set `upn`
+  change the user's `sub` and orphan their app identity.)
+- **Collision posture (AC 2).** Duplicate **usernames** are rejected by the prompt's `username`
+  field type — the account-existence signal that leaks is Authentik's own default for the field,
+  accepted as-is. Duplicate **emails** are allowed (also the upstream default; adding a
+  uniqueness policy would only create a NEW existence signal): the result is a second, unrelated
+  account that can never produce a verified session without inbox control, and — with account
+  linking not built ([#364](https://github.com/TiagoJVO/beekeepingit/issues/364)) — it never
+  links to or merges with the original. E2e-pinned (below), including that the original account
+  stays untouched. Known upstream caveat, watch-listed in [oidc-integration.md §8](oidc-integration.md):
+  with duplicate emails, identification by email resolves first-match; accounts registered here
+  always have a unique username to identify by.
+- **Onboarding (AC 4).** After verification, the ordinary first-sign-in path takes
+  over: `identity` creates the profile row on first sight (FR-ONB-1), and the org gate
+  auto-claims a pending invitation for the now-verified address (FR-ONB-3, §8.7) or routes to
+  org creation (FR-ONB-2; creator becomes `admin`, D-3). **No Go service code changed for
+  #366** — the gates already keyed on the real claim. One client-side fix was needed for the
+  brand-new-user case this issue made reachable: at boot the router's org fetch
+  (`GET /v1/organizations/me`) races the identity-row-creating first `GET /v1/profile`, and the
+  organizations service answers "can't resolve caller" with the same 404 as "no org" — a
+  resolved answer the app caches, which permanently routed a freshly-registered invitee to org
+  creation instead of auto-joining (trace-evidenced by the registration e2e's first red run).
+  `profile_screen.dart`'s save now invalidates `organizationProvider` on completion — the first
+  moment the identity row is guaranteed — so the org gate always recomputes from a resolvable
+  caller (widget-tested; the e2e proves the journey). Org-creation
+  policy for self-registered users is deliberately NOT restricted (spike
+  [#362](https://github.com/TiagoJVO/beekeepingit/issues/362) exists but does not block this).
+- **i18n (NFR-I18N-1) — same limitation class as §8.10's email finding.** Prompt
+  labels/placeholders and flow titles are DB strings Authentik renders without a gettext
+  lookup, and the flow executor UI's own strings translate only into the shipped **web**
+  catalogs — which at the pinned 2026.5.4 include `pt-BR` but **no `pt-PT`** — so the
+  registration screens render in English for a pt-PT browser today (tracked with the email
+  limitation, [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check on version
+  bumps). The verification email is §8.10's stage (msgid subject; English-rendering limitation
+  documented there). The app's own screens (login copy, onboarding) are fully EN/PT via
+  gen-l10n.
+- **A11y (D-18).** The registration UI is Authentik's flow executor (PatternFly) — the same
+  surface as §8.10's verification pages; its conformance is upstream's, documented as the
+  accepted posture rather than re-audited per release. The app-side changes are copy plus a
+  non-visual org-state refresh (no new tap targets; the login screen's single 56px primary
+  action stands).
+- **Tests (NFR-TST-1).** Live e2e
+  ([`client/e2e/tests/registration.spec.ts`](../../client/e2e/tests/registration.spec.ts), run
+  by `helm-e2e.yml` with the Mailpit port-forward; shared plumbing extracted to
+  `client/e2e/tests/helpers.ts`): **(1)** register with no invitation → held at the email stage
+  → a pre-created pending invitation stays `pending` and a plain login attempt with the new
+  credentials is also held (and re-sends a link — the recovery path, proven live) → the emailed
+  link completes enrollment → the id_token carries the real `email_verified: true` → profile
+  onboarding → the invitation is auto-claimed (`role: user`, asserted from both the user's and
+  the admin's side); **(2)** register → verify → full onboarding to a **new** organization →
+  `role: admin` (D-3); **(3)** register with an existing account's email → distinct `sub`,
+  `GET /v1/organizations/me` 404 (nothing inherited), and the original account still logs in
+  unchanged (same `sub`, no forced re-verification). Go tests are unchanged (no service code
+  touched); the #170 invitation-gate suites keep pinning the server side.
 
 ## 9. Acceptance-criteria traceability (#109)
 

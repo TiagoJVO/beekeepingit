@@ -44,7 +44,7 @@ same way k3d itself bundles Traefik. See `charts/postgres/Chart.yaml` and ADR-00
 ### Standalone Flux release (a maintained upstream chart exists, but Flux can't resolve it nested — e.g. `authentik`, `minio`)
 
 **Don't** nest a vendored chart as a Helm dependency of anything in this umbrella if the umbrella
-itself is deployed by Flux straight from Git (see [`infra/gitops/`](../../gitops/)) — its
+itself is deployed by Flux straight from Git (see the [`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo) — its
 source-controller only resolves the umbrella's own top-level dependencies from what's checked
 into Git, it does not recursively resolve a subchart's own nested vendored dependency (confirmed
 directly: a pristine checkout without one, tried once, rendered zero of the vendored chart's
@@ -52,7 +52,7 @@ actual resources, silently — see ADR-0012, which supersedes the wrapper-chart 
 repo used at first).
 
 Instead: deploy the vendored chart as its **own standalone Flux `HelmRepository` + `HelmRelease`**
-under [`infra/gitops/apps/dev/`](../../gitops/apps/dev/) (`authentik-helmrelease.yaml`,
+under the beekeepingit-gitops repo's [`apps/dev/`](https://github.com/TiagoJVO/beekeepingit-gitops/tree/main/apps/dev) (`authentik-helmrelease.yaml`,
 `minio-helmrelease.yaml` are live examples), with `dependsOn: [beekeepingit]` if it needs a
 Secret/ConfigMap this umbrella creates. If the service needs supplementary resources the vendored
 chart can't own itself (a generated-credential Secret — the standard `lookup` + `randAlphaNum`
@@ -97,6 +97,7 @@ and the three resource tiers (`requests`/`limits` × `cpu`/`memory`) — enforce
 | `minio`         | Generated root-credentials Secret for S3-compatible object storage (NFR-ARC-2) — MinIO itself is a separate Flux `HelmRelease` (ADR-0012)                                                                                                                                                                                                                     |
 | `gateway`       | Ingress + self-signed TLS (SAN covers both hosts), reusing k3d's Traefik; the app host fans path-based routes out to the services + PWA, the auth host routes to Authentik (#23, ADR-0016)                                                                                                                                                                    |
 | `powersync`     | Self-hosted PowerSync sync engine (D-6/ADR-0005), Postgres storage backend — real org-scoped Sync Rules + the `sync` service's JWKS connector (#23/#106)                                                                                                                                                                                                      |
+| `mailpit`       | Dev/CI SMTP sink (#361, ADR-0019) capturing Authentik's outbound email (verification mail) — SMTP `:1025`, message API/UI `:8025` (in-cluster only; `kubectl port-forward svc/mailpit 8025`). Disabled in prod, where Authentik points at a real relay (`charts/authentik` `email.*` values; credentials via the out-of-band email-credentials Secret)        |
 | `services`      | The Go domain/platform services (#23) — `identity`/`organizations`/`apiaries`/`sync`, rendered from one values-driven Deployment+Service template                                                                                                                                                                                                             |
 | `pwa`           | The Flutter Web PWA static bundle (#21/#23) served behind nginx at the gateway's `/`                                                                                                                                                                                                                                                                          |
 | `networkpolicy` | Default-deny + explicit-allow `NetworkPolicy` objects (#89, NFR-SEC-1) — no workload of its own; enforced for real on k3d/k3s (embedded kube-router netpol controller). Covers this umbrella's pods AND Authentik's (same namespace, other `HelmRelease`); observability/MinIO are excluded pending live-verified edges — see the chart's `default-deny.yaml` |

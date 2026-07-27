@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/l10n/locale_provider.dart';
 import 'core/sync/local_data_purge.dart';
 import 'l10n/gen/app_localizations.dart';
 import 'routing/app_router.dart';
@@ -17,11 +18,16 @@ class BeekeepingitApp extends ConsumerWidget {
     // it (local_data_purge.dart), independent of which screen is on top.
     ref.watch(membershipLossPurgeProvider);
 
+    // The stored preferred language (NFR-I18N-1, FR-ST-1, #340). `null` while
+    // unset/loading, so MaterialApp falls back to the system locale.
+    final locale = ref.watch(localeProvider);
+
     return MaterialApp.router(
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: ThemeMode.system,
+      locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: router,

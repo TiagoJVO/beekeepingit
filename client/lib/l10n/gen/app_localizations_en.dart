@@ -12,10 +12,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
-  String get loginPrompt => 'Sign in to manage your apiaries.';
+  String get loginPrompt =>
+      'Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.';
 
   @override
   String get loginButton => 'Sign in';
+
+  @override
+  String get loginError =>
+      'Couldn\'t sign in — check your connection and try again.';
 
   @override
   String get logout => 'Sign out';
@@ -36,6 +41,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addApiary => 'Add apiary';
 
   @override
+  String get actionsMenuLabel => 'Actions';
+
+  @override
   String hiveCountValue(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -46,6 +54,69 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String superCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count supers',
+      one: '1 super',
+      zero: 'No supers',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeHiveLabel => 'Hives';
+
+  @override
+  String get counterTypeSuperLabel => 'Supers';
+
+  @override
+  String emptyHiveCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count empty hives',
+      one: '1 empty hive',
+      zero: 'No empty hives',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String swarmCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count swarms',
+      one: '1 swarm',
+      zero: 'No swarms',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeEmptyHiveLabel => 'Empty hives';
+
+  @override
+  String get counterTypeSwarmLabel => 'Swarms';
+
+  @override
+  String get apiaryAddCounterAction => 'Add counter';
+
+  @override
+  String get apiaryAddCounterTitle => 'Add a counter';
+
+  @override
+  String get apiaryNoCountersToAdd => 'Every counter type is already here.';
+
+  @override
+  String get counterDecrementLabel => 'Decrease';
+
+  @override
+  String get counterIncrementLabel => 'Increase';
 
   @override
   String get newApiaryTitle => 'New apiary';
@@ -108,6 +179,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get profileGenericError => 'Something went wrong. Please try again.';
+
+  @override
   String get organizationTitle => 'Your organization';
 
   @override
@@ -149,6 +223,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get membersInviteEmailRequired => 'Enter an email address.';
 
   @override
+  String get membersInviteEmailInvalid => 'Enter a valid email address.';
+
+  @override
   String get membersInviteButton => 'Invite';
 
   @override
@@ -176,6 +253,36 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get membersRevokeSuccess => 'Invitation revoked.';
+
+  @override
+  String get memberRoleAdmin => 'Admin';
+
+  @override
+  String get memberRoleUser => 'Member';
+
+  @override
+  String get memberStatusActive => 'Active';
+
+  @override
+  String get memberStatusInvited => 'Invited';
+
+  @override
+  String get memberStatusRemoved => 'Removed';
+
+  @override
+  String get invitationStatusPending => 'Pending';
+
+  @override
+  String get invitationStatusAccepted => 'Accepted';
+
+  @override
+  String get invitationStatusExpired => 'Expired';
+
+  @override
+  String get invitationStatusRevoked => 'Revoked';
+
+  @override
+  String get membersLoadMoreButton => 'Load more';
 
   @override
   String get manageMembers => 'Manage members';
@@ -258,6 +365,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiaryDeleteSuccess => 'Apiary deleted.';
 
   @override
+  String apiarySaveError(String error) {
+    return 'Could not save the apiary: $error';
+  }
+
+  @override
+  String apiaryDeleteError(String error) {
+    return 'Could not delete the apiary: $error';
+  }
+
+  @override
+  String apiaryLoadError(String error) {
+    return 'Could not load the apiary: $error';
+  }
+
+  @override
   String get apiariesSearchHint => 'Search apiaries by name';
 
   @override
@@ -294,8 +416,74 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncStatusWaitingForSignal => 'Waiting for better signal';
 
   @override
+  String get syncStatusError => 'Sync error';
+
+  @override
+  String get offlineBannerErrorMessage =>
+      'Some changes couldn\'t sync yet — retrying.';
+
+  @override
   String get syncSupersededNotice =>
       'One of your offline changes was overwritten by a newer edit.';
+
+  @override
+  String get syncRejectedNotice =>
+      'One of your changes was rejected and needs fixing.';
+
+  @override
+  String get syncNeedsFixTitle => 'Changes to fix';
+
+  @override
+  String get syncNeedsFixEmpty => 'No changes need fixing.';
+
+  @override
+  String syncNeedsFixLoadError(String error) {
+    return 'Couldn\'t load the changes to fix: $error';
+  }
+
+  @override
+  String syncNeedsFixCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes need fixing',
+      one: '1 change needs fixing',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get syncNeedsFixApiaryLabel => 'Apiary change';
+
+  @override
+  String get syncNeedsFixCounterLabel => 'Hive count change';
+
+  @override
+  String get syncNeedsFixActivityLabel => 'Activity change';
+
+  @override
+  String get syncNeedsFixJourneyLabel => 'Journey change';
+
+  @override
+  String get syncNeedsFixJourneyPlanLabel => 'Journey plan change';
+
+  @override
+  String get syncNeedsFixTodoLabel => 'Todo change';
+
+  @override
+  String syncNeedsFixTitleWithName(String label, String name) {
+    return '$label · $name';
+  }
+
+  @override
+  String get syncNeedsFixGenericProblem =>
+      'This change was rejected and needs your attention.';
+
+  @override
+  String get syncNeedsFixFixAction => 'Fix';
+
+  @override
+  String get syncNeedsFixDismissAction => 'Dismiss';
 
   @override
   String get accountSyncSectionTitle => 'Sync';
@@ -318,6 +506,17 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String accountSyncNeedsFixStatus(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes were rejected and need fixing.',
+      one: '1 change was rejected and needs fixing.',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get accountSyncNowButton => 'Sync now';
 
   @override
@@ -330,6 +529,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryDetailTitle => 'Apiary';
+
+  @override
+  String get activityDetailTitle => 'Activity';
+
+  @override
+  String get activityDetailAttributesHeader => 'Details';
+
+  @override
+  String get activityPerformedByLabel => 'Performed by';
+
+  @override
+  String get editActivityAction => 'Edit activity';
+
+  @override
+  String get editActivityTitle => 'Edit activity';
 
   @override
   String apiaryLocationValue(String lat, String lon) {
@@ -374,4 +588,986 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryMapMeasureClear => 'Clear selection';
+
+  @override
+  String get apiaryMapLayerToggleLabel => 'Map layer';
+
+  @override
+  String get apiaryMapLayerSatelliteAction => 'Satellite';
+
+  @override
+  String get apiaryMapLayerStreetsAction => 'Streets';
+
+  @override
+  String get apiaryMapAttributionEsri =>
+      'Powered by Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
+
+  @override
+  String get apiaryMapAttributionOsm => '© OpenStreetMap contributors';
+
+  @override
+  String get apiaryMapRulerToggleAction => 'Measure distance';
+
+  @override
+  String get apiaryMapMeasureFromMyLocation => 'Use my location';
+
+  @override
+  String get apiaryMapRecenterAction => 'Center on my location';
+
+  @override
+  String apiaryMapInfoOpenTodos(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count open todos',
+      one: '1 open todo',
+      zero: 'No open todos',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get apiaryMapInfoViewApiary => 'View apiary';
+
+  @override
+  String get apiaryPlaceLabelLabel => 'Place label';
+
+  @override
+  String get apiaryPlaceLabelHint => 'e.g. Montargil';
+
+  @override
+  String get apiaryLocationSectionLabel => 'Location';
+
+  @override
+  String get apiaryUseCurrentLocationAction => 'Use current location';
+
+  @override
+  String get apiarySetOnMapAction => 'Set on map';
+
+  @override
+  String get apiaryHideMapAction => 'Hide map';
+
+  @override
+  String get apiaryLocationClearAction => 'Clear location';
+
+  @override
+  String get apiaryFormLocationPermissionDenied =>
+      'Location access denied — you can still place a pin on the map.';
+
+  @override
+  String apiaryFormLocationSet(String lat, String lon) {
+    return 'Location set: $lat, $lon';
+  }
+
+  @override
+  String get apiaryFormLocationNotSet =>
+      'No location set — tap the map to place a pin';
+
+  @override
+  String get apiaryLocationRequired =>
+      'Set the apiary\'s location before saving.';
+
+  @override
+  String get apiaryMapPickerLabel => 'Map: tap to place the apiary\'s pin';
+
+  @override
+  String get apiaryMapPickerRecenterAction => 'Recenter on the pin';
+
+  @override
+  String get apiaryMapPickerMaximizeAction => 'Maximize map';
+
+  @override
+  String get apiaryLocationPickerFullScreenTitle => 'Place the apiary\'s pin';
+
+  @override
+  String get apiaryLocationPickerConfirmAction => 'Confirm location';
+
+  @override
+  String get apiaryLocationPickerCancelAction => 'Cancel';
+
+  @override
+  String get apiaryLocationPickerFullScreenLabel =>
+      'Full-screen map: tap to place the apiary\'s pin';
+
+  @override
+  String apiaryDistanceValue(String distanceKm) {
+    return '$distanceKm km away';
+  }
+
+  @override
+  String get deleteApiaryConfirmTitle => 'Delete apiary?';
+
+  @override
+  String deleteApiaryConfirmMessage(String name) {
+    return 'This permanently deletes “$name”. This cannot be undone.';
+  }
+
+  @override
+  String get deleteApiaryConfirmAction => 'Delete';
+
+  @override
+  String get deleteApiaryCancelAction => 'Cancel';
+
+  @override
+  String get activityTypeHarvestLabel => 'Honey harvest';
+
+  @override
+  String get activityTypeFeedingLabel => 'Feeding';
+
+  @override
+  String get activityTypeTreatmentLabel => 'Treatment';
+
+  @override
+  String get activityTypeGenericLabel => 'Generic';
+
+  @override
+  String get treatmentContextGeneralLabel => 'General / preventive';
+
+  @override
+  String get treatmentContextDiseaseSpecificLabel =>
+      'Specific disease/condition';
+
+  @override
+  String get treatmentContextDetectionOnlyLabel =>
+      'Detection only (no treatment yet)';
+
+  @override
+  String get newActivityTitle => 'Add activity';
+
+  @override
+  String get addActivityAction => 'Add activity';
+
+  @override
+  String get activityTypeFieldLabel => 'Activity type';
+
+  @override
+  String get activityOccurredAtLabel => 'Date';
+
+  @override
+  String get activityHoneySupersLabel => 'Honey supers harvested';
+
+  @override
+  String get activityHoneyKgLabel => 'Honey harvested (kg)';
+
+  @override
+  String get activityHivesInvolvedLabel => 'Hives involved';
+
+  @override
+  String get activityFeedTypeLabel => 'Feed type';
+
+  @override
+  String get activityFeedAmountLabel => 'Feed amount';
+
+  @override
+  String get activityTreatmentContextFieldLabel => 'Treatment context';
+
+  @override
+  String get activityTreatmentTypeLabel => 'Treatment product';
+
+  @override
+  String get activityDiseaseLabel => 'Disease / condition';
+
+  @override
+  String get activityTreatmentTypeOptionalForDetectionHint =>
+      'Optional for a detection-only report';
+
+  @override
+  String get activityLotBatchLabel => 'Lot / batch identifier';
+
+  @override
+  String get activityNotesLabel => 'Notes';
+
+  @override
+  String get activityFieldRequired => 'This field is required';
+
+  @override
+  String get activityFieldInvalid => 'This value isn\'t valid';
+
+  @override
+  String get activitySaveSuccess => 'Activity saved';
+
+  @override
+  String activitySaveError(String error) {
+    return 'Couldn\'t save the activity: $error';
+  }
+
+  @override
+  String get apiaryActivitiesEmpty =>
+      'No activities logged for this apiary yet.';
+
+  @override
+  String apiaryActivitiesViewAll(int count) {
+    return 'View all $count activities';
+  }
+
+  @override
+  String get activitiesEmpty => 'No activities yet.';
+
+  @override
+  String get activitiesFilterNoResults => 'No activities match your filters.';
+
+  @override
+  String activitiesError(String error) {
+    return 'Could not load activities: $error';
+  }
+
+  @override
+  String get activityFilterTypeLabel => 'Type';
+
+  @override
+  String get activityFilterTypeAll => 'All types';
+
+  @override
+  String get activityFilterDateRangeLabel => 'Date range';
+
+  @override
+  String get activityFilterDateRangeUnset => 'Any date';
+
+  @override
+  String activityFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get activityFilterClearAction => 'Clear filters';
+
+  @override
+  String get activityPerformedByYou => 'You';
+
+  @override
+  String activityPerformedByMember(String id) {
+    return 'Member $id';
+  }
+
+  @override
+  String get activityPerformedByUnknown => 'Unknown';
+
+  @override
+  String activityPerformedBySemanticLabel(String who) {
+    return 'Performed by: $who';
+  }
+
+  @override
+  String get activityNoAttributesSummary => 'No additional details';
+
+  @override
+  String activityLoadError(String error) {
+    return 'Couldn\'t load the activity: $error';
+  }
+
+  @override
+  String get deleteActivity => 'Delete activity';
+
+  @override
+  String get activityDeleteSuccess => 'Activity deleted';
+
+  @override
+  String activityDeleteError(String error) {
+    return 'Couldn\'t delete the activity: $error';
+  }
+
+  @override
+  String get deleteActivityConfirmTitle => 'Delete activity?';
+
+  @override
+  String get deleteActivityConfirmMessage =>
+      'This permanently deletes this activity. This cannot be undone.';
+
+  @override
+  String get deleteActivityConfirmAction => 'Delete';
+
+  @override
+  String get deleteActivityCancelAction => 'Cancel';
+
+  @override
+  String get addJourney => 'New journey';
+
+  @override
+  String get newJourneyTitle => 'New journey';
+
+  @override
+  String get editJourneyTitle => 'Edit journey';
+
+  @override
+  String get journeysEmpty =>
+      'No journeys yet. Tap “New journey” to create one.';
+
+  @override
+  String journeysError(String error) {
+    return 'Could not load journeys: $error';
+  }
+
+  @override
+  String get journeysFilterNoResults => 'No journeys match your filters.';
+
+  @override
+  String get journeyFilterTypeLabel => 'Type';
+
+  @override
+  String get journeyFilterTypeAll => 'All types';
+
+  @override
+  String get journeyFilterDateRangeLabel => 'Date range';
+
+  @override
+  String get journeyFilterDateRangeUnset => 'Any date';
+
+  @override
+  String journeyFilterDateRangeValue(String start, String end) {
+    return '$start – $end';
+  }
+
+  @override
+  String get journeyFilterClearAction => 'Clear filters';
+
+  @override
+  String journeyProgressBadge(int done, int planned) {
+    return '$done/$planned apiaries visited';
+  }
+
+  @override
+  String get journeyNameLabel => 'Name';
+
+  @override
+  String get journeyNameRequired => 'Name is required';
+
+  @override
+  String get journeyMainActivityTypeLabel => 'Main activity type';
+
+  @override
+  String get journeyApiariesLabel => 'Apiaries to visit';
+
+  @override
+  String get journeyApiariesNoneAvailable =>
+      'No apiaries yet — add one from the Apiaries tab first.';
+
+  @override
+  String get journeyApiariesSelectAll => 'Select all';
+
+  @override
+  String get journeyApiariesClearAll => 'Clear all';
+
+  @override
+  String journeyApiariesSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries selected',
+      one: '1 apiary selected',
+      zero: 'No apiaries selected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get journeyDefaultAttributesSectionLabel => 'Defaults for activities';
+
+  @override
+  String get journeyDefaultsNotSetOption => 'Not set';
+
+  @override
+  String journeyLoadError(String error) {
+    return 'Couldn\'t load the journey: $error';
+  }
+
+  @override
+  String get journeySaveSuccess => 'Journey saved';
+
+  @override
+  String journeySaveError(String error) {
+    return 'Couldn\'t save the journey: $error';
+  }
+
+  @override
+  String get closeJourneyAction => 'Close journey';
+
+  @override
+  String get journeyCloseSuccess => 'Journey closed';
+
+  @override
+  String journeyCloseError(String error) {
+    return 'Couldn\'t close the journey: $error';
+  }
+
+  @override
+  String get journeyStatusOpenLabel => 'Open';
+
+  @override
+  String get journeyStatusClosedLabel => 'Closed';
+
+  @override
+  String journeyStatusSemanticLabel(String label) {
+    return 'Status: $label';
+  }
+
+  @override
+  String get deleteJourney => 'Delete journey';
+
+  @override
+  String get journeyDeleteSuccess => 'Journey deleted';
+
+  @override
+  String journeyDeleteError(String error) {
+    return 'Couldn\'t delete the journey: $error';
+  }
+
+  @override
+  String get deleteJourneyConfirmTitle => 'Delete journey?';
+
+  @override
+  String get deleteJourneyConfirmMessage =>
+      'This permanently deletes this journey. This cannot be undone.';
+
+  @override
+  String get deleteJourneyConfirmAction => 'Delete';
+
+  @override
+  String get deleteJourneyCancelAction => 'Cancel';
+
+  @override
+  String get journeyAttachmentLabel => 'Journey';
+
+  @override
+  String get journeyAttachmentNone => 'No journey attached';
+
+  @override
+  String get journeyAttachmentAutoSelectedHint =>
+      'Auto-selected — matches this apiary and activity type';
+
+  @override
+  String get journeyAttachmentChangeAction => 'Change';
+
+  @override
+  String get journeyAttachmentRemoveAction => 'Remove';
+
+  @override
+  String get journeyPickerTitle => 'Choose a journey';
+
+  @override
+  String journeyPickerError(String error) {
+    return 'Couldn\'t load journeys: $error';
+  }
+
+  @override
+  String get journeyPickerNoneOption => 'No journey';
+
+  @override
+  String get journeyPickerNoOpenMatches =>
+      'No open journeys match this apiary and activity type yet.';
+
+  @override
+  String get journeyPickerShowHiddenToggle => 'Show hidden journeys';
+
+  @override
+  String get journeyPickerShowUnplannedToggle =>
+      'Show journeys that didn\'t plan this apiary';
+
+  @override
+  String journeyPickerUnplannedOptionSemanticLabel(String name) {
+    return '$name, will add this apiary to the plan';
+  }
+
+  @override
+  String get journeyPickerAddsApiaryBadge => 'Adds apiary';
+
+  @override
+  String journeyPickerClosedOptionSemanticLabel(String name) {
+    return '$name, closed journey';
+  }
+
+  @override
+  String get journeyPickerCreateNewAction => 'Create a new journey';
+
+  @override
+  String get journeyQuickCreateTitle => 'New journey';
+
+  @override
+  String get journeyQuickCreateCancelAction => 'Cancel';
+
+  @override
+  String get closedJourneyConfirmTitle => 'This journey is closed';
+
+  @override
+  String closedJourneyConfirmMessage(String journeyName) {
+    return '\"$journeyName\" is closed. Add this activity to it anyway?';
+  }
+
+  @override
+  String get closedJourneyConfirmCancelAction => 'Cancel';
+
+  @override
+  String get closedJourneyConfirmAddAction => 'Add anyway';
+
+  @override
+  String get journeyRelinkConfirmTitle => 'Change journey attachment?';
+
+  @override
+  String journeyRelinkConfirmMessage(
+    String oldJourneyName,
+    String newJourneyName,
+  ) {
+    return 'This activity will move from \"$oldJourneyName\" to \"$newJourneyName\".';
+  }
+
+  @override
+  String get journeyRelinkConfirmCancelAction => 'Cancel';
+
+  @override
+  String get journeyRelinkConfirmConfirmAction => 'Confirm';
+
+  @override
+  String get journeyStatsSectionTitle => 'Journey stats';
+
+  @override
+  String journeyStatsError(String error) {
+    return 'Couldn\'t load journey stats: $error';
+  }
+
+  @override
+  String get journeyStatsApiariesVisitedLabel => 'Apiaries visited';
+
+  @override
+  String journeyStatsApiariesVisitedValue(int done, int planned) {
+    return '$done/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesHarvestedLabel => 'Hives harvested';
+
+  @override
+  String get journeyStatsHoneyCollectedLabel => 'Honey collected';
+
+  @override
+  String journeyStatsHoneyCollectedValue(String kg) {
+    return '$kg kg';
+  }
+
+  @override
+  String get journeyStatsAverageSupersLabel => 'Avg. supers/hive';
+
+  @override
+  String get journeyStatsAverageSupersNoData => 'No data yet';
+
+  @override
+  String journeyStatsMissingLabel(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries missing',
+      one: '1 apiary still missing',
+      zero: 'All planned apiaries visited',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get journeyStatsHivesWorkedLabel => 'Hives worked';
+
+  @override
+  String journeyStatsHivesWorkedValue(int worked, String planned) {
+    return '$worked/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesWorkedNoData => '—';
+
+  @override
+  String get journeyStatsMoreAction => 'More stats';
+
+  @override
+  String get journeyStatsDetailTitle => 'More stats';
+
+  @override
+  String get journeyStatsDetailFilterAll => 'All';
+
+  @override
+  String get journeyStatsDetailFilterVisited => 'Visited';
+
+  @override
+  String get journeyStatsDetailFilterNotVisited => 'Not visited';
+
+  @override
+  String get journeyStatsDetailSortLabel => 'Sort by';
+
+  @override
+  String get journeyStatsDetailSortName => 'Name';
+
+  @override
+  String get journeyStatsDetailSortKgPerHive => 'Kg/hive';
+
+  @override
+  String get journeyStatsDetailSortSupersPerHive => 'Supers/hive';
+
+  @override
+  String get journeyStatsDetailSortFeedAmount => 'Feed amount';
+
+  @override
+  String get journeyStatsDetailSortHivesInvolved => 'Hives involved';
+
+  @override
+  String get journeyStatsDetailEmpty => 'No apiaries match the current filter.';
+
+  @override
+  String get journeyStatsDetailHiveCountLabel => 'Hives';
+
+  @override
+  String get journeyStatsDetailHoneyKgLabel => 'Honey (kg)';
+
+  @override
+  String get journeyStatsDetailSupersLabel => 'Supers';
+
+  @override
+  String get journeyStatsDetailKgPerHiveLabel => 'Kg/hive';
+
+  @override
+  String get journeyStatsDetailSupersPerHiveLabel => 'Supers/hive';
+
+  @override
+  String get journeyStatsDetailFeedAmountLabel => 'Feed amount';
+
+  @override
+  String get journeyStatsDetailHivesInvolvedLabel => 'Hives involved';
+
+  @override
+  String get journeyStatsDetailNoDataValue => '—';
+
+  @override
+  String journeyStatsDetailFeedingSummary(String amount) {
+    return 'Total feed amount: $amount';
+  }
+
+  @override
+  String journeyStatsDetailTreatedSummary(int treated, int planned) {
+    return '$treated/$planned apiaries treated';
+  }
+
+  @override
+  String get journeyDetailTitle => 'Journey';
+
+  @override
+  String get editJourneyAction => 'Edit journey';
+
+  @override
+  String journeyDetailDefaultAttributesLabel(String values) {
+    return 'Defaults: $values';
+  }
+
+  @override
+  String get journeyDetailApiariesTitle => 'Apiaries';
+
+  @override
+  String get journeyDetailApiaryNameUnknown => 'Unknown apiary';
+
+  @override
+  String get journeyDetailApiaryVisitedBadge => 'Visited';
+
+  @override
+  String get journeyDetailApiaryPlannedBadge => 'Planned';
+
+  @override
+  String get journeyDetailApiaryNotVisitedYet => 'Not visited yet';
+
+  @override
+  String get journeyDetailApiariesEmpty => 'No apiaries in this journey yet.';
+
+  @override
+  String get todosEmpty => 'No todos yet.';
+
+  @override
+  String get todosFilterNoResults => 'No todos match your filters.';
+
+  @override
+  String todosError(String error) {
+    return 'Could not load todos: $error';
+  }
+
+  @override
+  String get todoFilterStatusLabel => 'Status';
+
+  @override
+  String get todoFilterStatusAll => 'All';
+
+  @override
+  String get todoFilterStatusOpen => 'Open';
+
+  @override
+  String get todoFilterStatusOverdue => 'Overdue';
+
+  @override
+  String get todoFilterStatusDone => 'Completed';
+
+  @override
+  String get todoFilterPriorityLabel => 'Priority';
+
+  @override
+  String get todoFilterPriorityAll => 'All priorities';
+
+  @override
+  String get todoPriorityLowLabel => 'Low';
+
+  @override
+  String get todoPriorityMediumLabel => 'Medium';
+
+  @override
+  String get todoPriorityHighLabel => 'High';
+
+  @override
+  String get todoFilterDueLabel => 'Due';
+
+  @override
+  String get todoFilterDueAny => 'Any date';
+
+  @override
+  String get todoFilterDueToday => 'Due today';
+
+  @override
+  String get todoFilterDueThisWeek => 'Due this week';
+
+  @override
+  String get todoFilterDueThisMonth => 'Due this month';
+
+  @override
+  String get todoFilterClearAction => 'Clear filters';
+
+  @override
+  String get todoSortFieldLabel => 'Sort by';
+
+  @override
+  String get todoSortFieldDueDate => 'Due date';
+
+  @override
+  String get todoSortFieldPriority => 'Priority';
+
+  @override
+  String get todoSortFieldStatus => 'Status';
+
+  @override
+  String get todoSortDirectionAscendingLabel => 'Ascending';
+
+  @override
+  String get todoSortDirectionDescendingLabel => 'Descending';
+
+  @override
+  String get todoDueDateUnset => 'No due date';
+
+  @override
+  String get todoOverdueBadge => 'Overdue';
+
+  @override
+  String todoStatusSemanticLabel(String status) {
+    return 'Status: $status';
+  }
+
+  @override
+  String get addTodo => 'New todo';
+
+  @override
+  String get newTodoTitle => 'New todo';
+
+  @override
+  String get todoDetailTitle => 'Todo';
+
+  @override
+  String get editTodoTitle => 'Edit todo';
+
+  @override
+  String get editTodoAction => 'Edit todo';
+
+  @override
+  String get todoTitleLabel => 'Title';
+
+  @override
+  String get todoTitleRequired => 'Title is required';
+
+  @override
+  String get todoDescriptionLabel => 'Description';
+
+  @override
+  String get todoDescriptionUnset => 'No description';
+
+  @override
+  String get todoDueDateFieldLabel => 'Due date';
+
+  @override
+  String get todoDueDateClearAction => 'Clear due date';
+
+  @override
+  String get todoPriorityFieldLabel => 'Priority';
+
+  @override
+  String get todoAssigneeFieldLabel => 'Assignee';
+
+  @override
+  String get todoApiaryFieldLabel => 'Apiary';
+
+  @override
+  String get todoAssigneeUnassigned => 'Unassigned';
+
+  @override
+  String todoAssigneeUnknown(String id) {
+    return 'Member $id';
+  }
+
+  @override
+  String get todoAssigneeNoneAvailable => 'No members available yet.';
+
+  @override
+  String get todoApiaryNone => 'No apiary';
+
+  @override
+  String get todoApiaryUnknown => 'Unknown apiary';
+
+  @override
+  String get todoDetailFieldsHeader => 'Details';
+
+  @override
+  String get todoCompletedAtLabel => 'Completed at';
+
+  @override
+  String get todoCompleteAction => 'Mark as complete';
+
+  @override
+  String get todoReopenAction => 'Reopen';
+
+  @override
+  String get todoCompleteSuccess => 'Todo marked complete';
+
+  @override
+  String todoCompleteError(String error) {
+    return 'Couldn\'t update the todo: $error';
+  }
+
+  @override
+  String get todoReopenSuccess => 'Todo reopened';
+
+  @override
+  String todoReopenError(String error) {
+    return 'Couldn\'t update the todo: $error';
+  }
+
+  @override
+  String get todoSaveSuccess => 'Todo saved';
+
+  @override
+  String todoSaveError(String error) {
+    return 'Couldn\'t save the todo: $error';
+  }
+
+  @override
+  String todoLoadError(String error) {
+    return 'Couldn\'t load the todo: $error';
+  }
+
+  @override
+  String get deleteTodo => 'Delete todo';
+
+  @override
+  String get todoDeleteSuccess => 'Todo deleted';
+
+  @override
+  String todoDeleteError(String error) {
+    return 'Couldn\'t delete the todo: $error';
+  }
+
+  @override
+  String get deleteTodoConfirmTitle => 'Delete todo?';
+
+  @override
+  String get deleteTodoConfirmMessage =>
+      'This permanently deletes this todo. This cannot be undone.';
+
+  @override
+  String get deleteTodoConfirmAction => 'Delete';
+
+  @override
+  String get deleteTodoCancelAction => 'Cancel';
+
+  @override
+  String get historySectionTitle => 'History';
+
+  @override
+  String get historyScreenTitle => 'History';
+
+  @override
+  String get historyEmpty => 'No changes recorded yet';
+
+  @override
+  String historyError(String error) {
+    return 'Could not load history: $error';
+  }
+
+  @override
+  String get historyViewAllAction => 'View all';
+
+  @override
+  String get historyEventCreated => 'Created';
+
+  @override
+  String get historyEventUpdated => 'Updated';
+
+  @override
+  String get historyEventDeleted => 'Deleted';
+
+  @override
+  String get historyEventSuperseded => 'Superseded';
+
+  @override
+  String get historyEventUnknown => 'Changed';
+
+  @override
+  String historyChangedFieldsValue(String fields) {
+    return 'Changed: $fields';
+  }
+
+  @override
+  String get historySupersededDetail =>
+      'Replaced by a newer version from another device';
+
+  @override
+  String get historyActorYou => 'You';
+
+  @override
+  String historyActorMember(String id) {
+    return 'Member $id';
+  }
+
+  @override
+  String get historyActorUnknown => 'Unknown';
+
+  @override
+  String historyEntrySemanticLabel(
+    String event,
+    String actor,
+    String timestamp,
+  ) {
+    return '$event by $actor, $timestamp';
+  }
+
+  @override
+  String get historyFieldLocation => 'Location';
+
+  @override
+  String get historyFieldActivityType => 'Activity type';
+
+  @override
+  String get historyFieldAttributes => 'Details';
+
+  @override
+  String get historyFieldApiary => 'Apiary';
+
+  @override
+  String get historyFieldStatus => 'Status';
+
+  @override
+  String get discardChangesTitle => 'Discard changes?';
+
+  @override
+  String get discardChangesMessage =>
+      'You have unsaved changes. If you leave now, they will be lost.';
+
+  @override
+  String get discardChangesConfirmAction => 'Discard';
+
+  @override
+  String get discardChangesCancelAction => 'Keep editing';
 }
