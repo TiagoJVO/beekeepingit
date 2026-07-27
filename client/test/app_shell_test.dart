@@ -15,6 +15,7 @@ import 'package:beekeepingit_client/features/notifications/notification_events.d
 import 'package:beekeepingit_client/features/notifications/notification_preferences_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/settings/notification_settings_repository.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
@@ -142,11 +143,12 @@ class _FakeLocalPrefs implements LocalPrefs {
 /// [supersededChanges] similarly overrides the notify-and-fix event stream.
 /// [todos] feeds both the Todos tab AND the notification engine's app-open
 /// check (#82) — defaults to none. [notificationPreferences]/
-/// [notificationDedupPrefs] override the notification engine's own
-/// per-device state (#82): a fresh, isolated [_FakeLocalPrefs]-backed
-/// instance per test by default, so a test can pre-seed a disabled
-/// preference deterministically without depending on the VM's silently-
-/// no-op [LocalPrefs] stub.
+/// [notificationDedupPrefs]/[notificationSettings] override the notification
+/// engine's own per-device state (#82, and the master switch, #81/#500): a
+/// fresh, isolated [_FakeLocalPrefs]-backed instance per test by default, so
+/// a test can pre-seed a disabled preference/master-switch state
+/// deterministically without depending on the VM's silently-no-op
+/// [LocalPrefs] stub.
 Widget _buildShellApp({
   List<Apiary>? apiaries,
   List<Todo>? todos,
@@ -161,6 +163,7 @@ Widget _buildShellApp({
   Stream<int>? needsFixCountStream,
   NotificationPreferencesRepository? notificationPreferences,
   LocalPrefs? notificationDedupPrefs,
+  NotificationSettingsRepository? notificationSettings,
 }) {
   return ProviderScope(
     overrides: [
@@ -201,6 +204,14 @@ Widget _buildShellApp({
       notificationPreferencesRepositoryProvider.overrideWithValue(
         notificationPreferences ??
             NotificationPreferencesRepository(prefs: _FakeLocalPrefs()),
+      ),
+      // #500: an isolated per-test master-switch repository, mirroring the
+      // per-event preferences override above — defaults to enabled so
+      // existing tests that don't care about the master switch are
+      // unaffected.
+      notificationSettingsRepositoryProvider.overrideWithValue(
+        notificationSettings ??
+            NotificationSettingsRepository(prefs: _FakeLocalPrefs()),
       ),
       // The full todo create/edit form's assignee picker (#293, now also
       // reachable from the FAB flows below since #389 retired #52's
@@ -1035,6 +1046,119 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        expect(find.text('"Feed the hives" is overdue.'), findsNothing);
+      },
+    );
+  });
+
+  group('master notification switch gates delivery (#500, FR-ST-1, D-24)', () {
+    testWidgets(
+      'the master switch off suppresses the real-time sync-conflict toast '
+      'even though the sync_conflict preference is enabled',
+      (tester) async {
+        final controller = StreamController<SupersededChange>();
+        addTearDown(controller.close);
+        final settings = NotificationSettingsRepository(
+          prefs: _FakeLocalPrefs(),
+        )..setNotificationsEnabled(false);
+
+        await tester.pumpWidget(
+          _buildShellApp(
+            supersededChanges: controller.stream,
+            notificationSettings: settings,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        controller.add(
+          const SupersededChange(entityType: 'apiary', entityId: 'a1'),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          find.text(
+            'One of your offline changes was overwritten by a newer edit.',
+          ),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'the master switch off suppresses the polled todo-due toast even '
+      'though its per-event preference is enabled',
+      (tester) async {
+        const overdueTodo = Todo(
+          id: 't1',
+          title: 'Feed the hives',
+          priority: 'medium',
+          status: 'open',
+          dueDate: '2020-01-01',
+        );
+        final settings = NotificationSettingsRepository(
+          prefs: _FakeLocalPrefs(),
+        )..setNotificationsEnabled(false);
+
+        await tester.pumpWidget(
+          _buildShellApp(todos: [overdueTodo], notificationSettings: settings),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('"Feed the hives" is overdue.'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a condition that arose while the master switch was off does not '
+      'flood on re-enable — the dedup state kept tracking it while muted',
+      (tester) async {
+        const overdueTodo = Todo(
+          id: 't1',
+          title: 'Feed the hives',
+          priority: 'medium',
+          status: 'open',
+          dueDate: '2020-01-01',
+        );
+        final settingsPrefs = _FakeLocalPrefs();
+        final dedupPrefs = _FakeLocalPrefs();
+        final settings = NotificationSettingsRepository(prefs: settingsPrefs)
+          ..setNotificationsEnabled(false);
+
+        // First "app open" while muted: the overdue condition is newly true
+        // but must not surface, and its dedup state must still be recorded.
+        await tester.pumpWidget(
+          _buildShellApp(
+            todos: [overdueTodo],
+            notificationSettings: settings,
+            notificationDedupPrefs: dedupPrefs,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('"Feed the hives" is overdue.'), findsNothing);
+
+        // Re-enable, then simulate a fresh app open (a genuinely new
+        // ProviderScope, per the existing dedup-persistence test's own
+        // rationale above).
+        NotificationSettingsRepository(
+          prefs: settingsPrefs,
+        ).setNotificationsEnabled(true);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+
+        await tester.pumpWidget(
+          _buildShellApp(
+            todos: [overdueTodo],
+            notificationSettings: NotificationSettingsRepository(
+              prefs: settingsPrefs,
+            ),
+            notificationDedupPrefs: dedupPrefs,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The condition (this todo's overdue bucket) didn't change while
+        // muted, so re-enabling must not retroactively flood it.
         expect(find.text('"Feed the hives" is overdue.'), findsNothing);
       },
     );

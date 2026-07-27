@@ -1,3 +1,4 @@
+import '../settings/notification_settings_repository.dart';
 import '../todos/todos_repository.dart';
 import 'notification_dedup_store.dart';
 import 'notification_engine.dart';
@@ -22,10 +23,17 @@ class NotificationChecker {
   const NotificationChecker({
     required this.dedupStore,
     required this.preferences,
+    required this.settings,
   });
 
   final NotificationDedupStore dedupStore;
   final NotificationPreferencesRepository preferences;
+
+  /// The master "Enable notifications" switch (#81, FR-ST-1, D-24, #500) —
+  /// consulted in addition to [preferences]' per-event map. Gates delivery
+  /// of every event family this checker computes, not just the settings
+  /// screen's toggle-list UI.
+  final NotificationSettingsRepository settings;
 
   /// Runs one check. [todos] must be the caller's ENTIRE org-wide todo list
   /// (D-23) — this never filters by assignee itself, so passing an
@@ -34,10 +42,11 @@ class NotificationChecker {
   /// the caller's own device sync state (`shell/sync_status.dart`,
   /// `features/sync/sync_rejected_repository.dart`).
   ///
-  /// Preference-gating happens AFTER the dedup state is computed and
-  /// persisted — a disabled event's condition is still tracked (so
-  /// re-enabling it later doesn't flood the user with every change that
-  /// happened while it was muted), only its *display* is suppressed.
+  /// Preference-gating (both the master switch and the per-event map)
+  /// happens AFTER the dedup state is computed and persisted — a disabled/
+  /// muted condition is still tracked (so re-enabling notifications later
+  /// doesn't flood the user with every change that happened while it was
+  /// off, #500), only its *display* is suppressed.
   List<AppNotification> check({
     required List<Todo> todos,
     required DateTime today,
@@ -65,6 +74,11 @@ class NotificationChecker {
         wasFullySynced: syncResult.nextWasFullySynced,
       ),
     );
+
+    // The master switch short-circuits to no notifications (#500) — checked
+    // AFTER the dedup write above, so the "already notified" state keeps
+    // tracking conditions while muted.
+    if (!settings.isNotificationsEnabled()) return const [];
 
     return [
       ...todoResult.toNotify,

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shell/sync_status.dart';
+import '../settings/notification_settings_repository.dart';
 import '../sync/sync_rejected_repository.dart';
 import '../todos/todos_repository.dart';
 import 'notification_checker.dart';
@@ -57,6 +58,7 @@ final notificationCheckProvider = Provider<void>((ref) {
       final checker = NotificationChecker(
         dedupStore: ref.read(notificationDedupStoreProvider),
         preferences: ref.read(notificationPreferencesRepositoryProvider),
+        settings: ref.read(notificationSettingsRepositoryProvider),
       );
       final notifications = checker.check(
         todos: todos,
