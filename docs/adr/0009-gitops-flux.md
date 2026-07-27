@@ -6,8 +6,9 @@
 - **Requirements:** NFR-ARC-3, NFR-MNT-1
 - **Decisions:** [D-13](../../requirements/decisions.md#d-13--gitops-flux-hand-wired-not-flux-bootstrap),
   builds on [D-1](../../requirements/decisions.md) (single cluster)
-- **Design:** [`infra/gitops/README.md`](../../infra/gitops/README.md) (layout, operating it) ·
-  [platform.md](../architecture/platform.md) (as-built overview)
+- **Design:** the [`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo's
+  README (layout, operating it — the manifests moved there per D-27/ADR-0018; Flux + hand-wired,
+  this ADR's decision, is unchanged) · [platform.md](../architecture/platform.md) (as-built overview)
 
 ## Context
 

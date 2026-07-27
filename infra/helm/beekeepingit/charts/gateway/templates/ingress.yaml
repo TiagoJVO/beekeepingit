@@ -1,9 +1,13 @@
 {{/*
 Plain networking.k8s.io/v1 Ingress (not Traefik's IngressRoute CRD) so the
 controller can be swapped later (NFR-ARC-2) — k3d's bundled Traefik already
-satisfies `ingressClassName: traefik` today. Fans the single host out to the
-slice's services per `.Values.routes` (values.yaml); confirm the backend
-Service names at deploy and adjust if any differ.
+satisfies `ingressClassName: traefik` today. Three hosts (ADR-0016,
+oidc-integration.md §2, #449): the app host fans out to the slice's services per
+`.Values.routes`, the auth host routes everything to Authentik per
+`.Values.authRoutes`, and the admin host serves the React admin SPA per
+`.Values.adminRoutes`. One TLS Secret with all three hostnames in its SAN
+terminates them. Confirm the backend Service names at deploy and adjust if any
+differ.
 */}}
 {{- if .Values.enabled }}
 apiVersion: networking.k8s.io/v1
@@ -14,14 +18,26 @@ metadata:
   labels:
     {{- include "beekeepingit.labels" . | nindent 4 }}
     app.kubernetes.io/name: gateway
+  {{- if .Values.certManager.enabled }}
+  annotations:
+    # cert-manager's ingress-shim watches for this and creates a Certificate
+    # requesting the `tls.secretName` below via the named ClusterIssuer —
+    # templates/tls-secret.yaml steps aside entirely in this mode (see its
+    # own condition) so there's exactly one owner of that Secret.
+    cert-manager.io/cluster-issuer: {{ .Values.certManager.clusterIssuer }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingressClassName }}
   tls:
     - hosts:
-        - {{ .Values.host }}
+        - {{ .Values.appHost }}
+        - {{ .Values.authHost }}
+        {{- if .Values.adminHost }}
+        - {{ .Values.adminHost }}
+        {{- end }}
       secretName: {{ include "gateway.fullname" . }}-tls
   rules:
-    - host: {{ .Values.host }}
+    - host: {{ .Values.appHost }}
       http:
         paths:
           {{- range .Values.routes }}
@@ -33,4 +49,30 @@ spec:
                 port:
                   number: {{ .port }}
           {{- end }}
+    - host: {{ .Values.authHost }}
+      http:
+        paths:
+          {{- range .Values.authRoutes }}
+          - path: {{ .path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .service }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+    {{- if and .Values.adminHost .Values.adminRoutes }}
+    - host: {{ .Values.adminHost }}
+      http:
+        paths:
+          {{- range .Values.adminRoutes }}
+          - path: {{ .path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .service }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+    {{- end }}
 {{- end }}

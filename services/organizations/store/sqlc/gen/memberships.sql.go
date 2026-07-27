@@ -11,6 +11,120 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveAdmins = `-- name: CountActiveAdmins :one
+SELECT count(*)
+FROM organizations.memberships
+WHERE organization_id = $1 AND role = 'admin' AND status = 'active'
+`
+
+// Count an org's active admins for the last-admin guard (#290, D-3). Only ever
+// called after LockOrganizationForUpdate has serialized this org's lifecycle
+// writes, so the count can't change under us before the transaction commits.
+func (q *Queries) CountActiveAdmins(ctx context.Context, organizationID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveAdmins, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createMembership = `-- name: CreateMembership :one
+INSERT INTO organizations.memberships (id, organization_id, user_id, role, status)
+VALUES ($1, $2, $3, 'admin', 'active')
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at
+`
+
+type CreateMembershipParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+// Inserts the org creator's active admin membership (D-3). Called in the same
+// DB transaction as CreateOrganization (api/organizations.go).
+func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, createMembership, arg.ID, arg.OrganizationID, arg.UserID)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createMembershipWithRole = `-- name: CreateMembershipWithRole :one
+INSERT INTO organizations.memberships (id, organization_id, user_id, role, status)
+VALUES ($1, $2, $3, $4, 'active')
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at
+`
+
+type CreateMembershipWithRoleParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Role           string      `json:"role"`
+}
+
+// Inserts an active membership at the given role — the accept-invitation
+// path (#27, FR-ONB-3), where the role comes from the invitation rather
+// than always being 'admin'. Called in the same DB transaction as
+// AcceptInvitation (api/invitations.go acceptPendingInvitation), same D-3
+// atomicity pattern as CreateOrganization+CreateMembership.
+func (q *Queries) CreateMembershipWithRole(ctx context.Context, arg CreateMembershipWithRoleParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, createMembershipWithRole,
+		arg.ID,
+		arg.OrganizationID,
+		arg.UserID,
+		arg.Role,
+	)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getActiveMembership = `-- name: GetActiveMembership :one
+SELECT id, organization_id, user_id, role, status, created_at, updated_at
+FROM organizations.memberships
+WHERE organization_id = $1 AND user_id = $2 AND status = 'active'
+`
+
+type GetActiveMembershipParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+// The target member of a management action (#290): one org's active membership
+// for a given user. Org-scoped (organization_id = $1) so a cross-org caller can
+// never address another org's membership (ADR-0002). pgx.ErrNoRows means "no
+// such active member in this org" — the handler maps it to 404 (already removed,
+// never a member, or a different org's user).
+func (q *Queries) GetActiveMembership(ctx context.Context, arg GetActiveMembershipParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, getActiveMembership, arg.OrganizationID, arg.UserID)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getActiveMembershipByUser = `-- name: GetActiveMembershipByUser :one
 SELECT id, organization_id, user_id, role, status
 FROM organizations.memberships
@@ -57,6 +171,208 @@ func (q *Queries) GetOrganization(ctx context.Context, id pgtype.UUID) (Organiza
 		&i.Name,
 		&i.Address,
 		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listMembers = `-- name: ListMembers :many
+SELECT id, organization_id, user_id, role, status, created_at, updated_at
+FROM organizations.memberships
+WHERE organization_id = $1
+  AND status != 'removed'
+  AND ($3::uuid IS NULL OR id < $3::uuid)
+ORDER BY id DESC
+LIMIT $2
+`
+
+type ListMembersParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	Limit          int32       `json:"limit"`
+	Cursor         pgtype.UUID `json:"cursor"`
+}
+
+// Keyset-paginated by id — the admin-facing member list (NFR-ROL-1, #27 AC:
+// "membership is enforced for data access" / management surface). Excludes
+// 'removed' memberships (not built yet — #27 explicitly defers member
+// removal — but the CHECK constraint already allows the value and the
+// Member.status schema enum lists it, so this filter is future-proofed).
+func (q *Queries) ListMembers(ctx context.Context, arg ListMembersParams) ([]OrganizationsMembership, error) {
+	rows, err := q.db.Query(ctx, listMembers, arg.OrganizationID, arg.Limit, arg.Cursor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrganizationsMembership
+	for rows.Next() {
+		var i OrganizationsMembership
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.UserID,
+			&i.Role,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMembershipsByUser = `-- name: ListMembershipsByUser :many
+SELECT m.id, m.organization_id, o.name AS organization_name, m.role, m.status
+FROM organizations.memberships m
+JOIN organizations.organizations o ON o.id = m.organization_id
+WHERE m.user_id = $1
+  AND ($2::uuid IS NULL OR m.id < $2::uuid)
+ORDER BY m.id DESC
+LIMIT $3
+`
+
+type ListMembershipsByUserParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Cursor pgtype.UUID `json:"cursor"`
+	Limit  int32       `json:"limit"`
+}
+
+type ListMembershipsByUserRow struct {
+	ID               pgtype.UUID `json:"id"`
+	OrganizationID   pgtype.UUID `json:"organization_id"`
+	OrganizationName string      `json:"organization_name"`
+	Role             string      `json:"role"`
+	Status           string      `json:"status"`
+}
+
+// The #468 cross-organization membership lookup (FR-TEN-2, D-7, NFR-SEC-1):
+// every membership row for ONE user_id, across ALL organizations, joined with
+// each organization's name -- the only query in this service that reads
+// memberships without an organization_id already in scope, by design (the
+// support question this backs is "which org(s) does this person belong to").
+// Unlike ListMembers, this does NOT filter out status = 'removed': a
+// support operator needs the full picture, including orgs the person was
+// later removed from, not just their current one (the Member.status schema
+// enum already includes it). Keyset-paginated by membership id, newest
+// first (mirrors ListInvitations' newest-first convention -- the most
+// recent org relationship is the one a support case most likely cares
+// about). idx_memberships_user_id (migration 00006) backs the WHERE
+// clause.
+func (q *Queries) ListMembershipsByUser(ctx context.Context, arg ListMembershipsByUserParams) ([]ListMembershipsByUserRow, error) {
+	rows, err := q.db.Query(ctx, listMembershipsByUser, arg.UserID, arg.Cursor, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMembershipsByUserRow
+	for rows.Next() {
+		var i ListMembershipsByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.Role,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockOrganizationForUpdate = `-- name: LockOrganizationForUpdate :one
+SELECT id
+FROM organizations.organizations
+WHERE id = $1
+FOR UPDATE
+`
+
+// The last-admin guard's single per-org serialization point (#290, D-3): row-lock
+// the organization itself FOR UPDATE at the top of every remove/change-role
+// transaction. All such writes on one org therefore serialize on this single row,
+// so the CountActiveAdmins check below runs against a stable admin set that no
+// concurrent demote/remove/promote can change before this transaction commits —
+// closing the TOCTOU race that would otherwise let two concurrent demotions each
+// see "two admins" and together leave the org with zero. Locking the org row
+// (rather than the admin membership rows) also avoids spuriously blocking on / by
+// an unrelated promotion. The caller is already an admin of this exact org
+// (requireOrgAdmin), so the row always exists.
+func (q *Queries) LockOrganizationForUpdate(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockOrganizationForUpdate, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const removeMembership = `-- name: RemoveMembership :one
+UPDATE organizations.memberships
+SET status = 'removed', updated_at = now()
+WHERE organization_id = $1 AND user_id = $2 AND status = 'active'
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at
+`
+
+type RemoveMembershipParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+// Soft-removes an active member (#290, FR-TEN-2): status active -> removed, so
+// the user immediately stops resolving to this org on their next request
+// (GetActiveMembershipByUser filters status = 'active') and frees the
+// one-active-membership-per-user slot (idx_memberships_one_active_per_user,
+// 00004). The row is kept (not hard-deleted) so its history/audit trail and
+// UNIQUE(organization_id, user_id) identity survive. Org-scoped; updated_at
+// bumped explicitly. Same-transaction #165 audit row as the other writes.
+func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, removeMembership, arg.OrganizationID, arg.UserID)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateMembershipRole = `-- name: UpdateMembershipRole :one
+UPDATE organizations.memberships
+SET role = $3, updated_at = now()
+WHERE organization_id = $1 AND user_id = $2 AND status = 'active'
+RETURNING id, organization_id, user_id, role, status, created_at, updated_at
+`
+
+type UpdateMembershipRoleParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Role           string      `json:"role"`
+}
+
+// Changes an active member's role within the fixed admin/user model (#290,
+// NFR-ROL-1/2, auth.md §5.3). Org-scoped; updated_at is bumped explicitly (no
+// ON UPDATE trigger on this table). Called in the same transaction as its
+// #165 audit row, after the last-admin guard has run.
+func (q *Queries) UpdateMembershipRole(ctx context.Context, arg UpdateMembershipRoleParams) (OrganizationsMembership, error) {
+	row := q.db.QueryRow(ctx, updateMembershipRole, arg.OrganizationID, arg.UserID, arg.Role)
+	var i OrganizationsMembership
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

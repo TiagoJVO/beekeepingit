@@ -13,6 +13,9 @@ not a deployable service — it's a library other `services/*` modules import.
   `sqlc`) and versioned migrations (`goose`) behind a `Config`, instead of raw
   provider-specific calls scattered across services. `dbaccess/sqlc/` is a minimal reference
   migration + typed queries other services can pattern-match — not a real domain feature.
+  `dbaccess/tenancy.go`'s `UnscopedTables` is the automated tenancy check (FR-TEN-2, #30): a
+  service's own test suite calls it against its migrated schema to assert every owned table
+  carries `organization_id`, so a future migration can't silently drop it.
 
 Both packages take an explicit `Config` struct (dependency injection) rather than loading
 their own environment/config — that's [`services/servicetemplate`](../servicetemplate/README.md)'s

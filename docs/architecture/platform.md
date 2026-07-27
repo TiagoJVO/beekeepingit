@@ -20,9 +20,11 @@ starts deploying to a live cluster (`#86`/`#88`).
 - Teardown: [`infra/cluster/down.sh`](../../infra/cluster/down.sh) — deletes the cluster and
   flags any orphaned k3d docker volumes.
 
-Postgres+PostGIS, Keycloak, MinIO and the gateway landed with `#84` (see below); PowerSync's
+Postgres+PostGIS, the OIDC IdP, MinIO and the gateway landed with `#84` (see below); the IdP was
+**Keycloak** at `#84` and was later **replaced by Authentik** (D-7 revised,
+[ADR-0016](../adr/0016-replace-keycloak-with-authentik.md)). PowerSync's
 _infra_ (self-hosted service + Postgres storage backend, D-6/ADR-0005) landed with `#22`, with a
-placeholder sync-config and a Keycloak-JWKS stopgap since no domain tables/connector exist yet
+placeholder sync-config and an IdP-JWKS stopgap since no domain tables/connector exist yet
 (see `FOLLOWUPS.md`). The walking-skeleton Go services, the PWA, and PowerSync's real org-scoped
 Sync Rules + connector land with `#23`/`#106`. All deploy through the umbrella chart below rather
 than standing up their own release.
@@ -58,26 +60,51 @@ section covers the _why_.
   (`dev`/`staging`/`prod`), `global.namespace`, and the resource-tier shape, enforced by
   `helm lint`/`helm template`/`helm install`.
 - **Per-environment overrides**: `environments/{dev,staging,prod}.yaml` overlay `global.*` (`-f`
-  on top of `values.yaml`). Only `dev` is deployed anywhere today; `staging`/`prod` exist to
-  prove the override mechanism per `NFR-ARC-2` (don't force cloud/multi-env now, but don't block
-  it later either).
+  on top of `values.yaml`). `dev` (local k3d) and `staging` (Scaleway Kapsule, D-26, ADR-0017) are
+  both deployed; `prod` exists to prove the override mechanism per `NFR-ARC-2` and has its
+  own inert GitOps scaffold prepared (the beekeepingit-gitops repo's `clusters/prod/` + `apps/prod/`)
+  but is deliberately not deployed anywhere yet (D-26 defers it until `Q-DR`/`#90` land at M6).
 - **Vendored vs hand-rolled subcharts** (`#84`, [ADR-0010](../adr/0010-platform-backing-services-provisioning.md)):
   `postgres` (a CloudNativePG `Cluster` CR + per-service credential Secrets) and `gateway` (a
-  portable `Ingress` + self-signed TLS Secret, reusing k3d's Traefik) are hand-rolled — there's
-  nothing to vendor for either. `keycloak` and `minio` only hold what a vendored chart can't own
-  itself (a generated credential Secret; for Keycloak, also the dev/CI-grade realm import) — the
-  actual vendored charts (`codecentric/keycloakx`, the official `charts.min.io` MinIO chart) run as
-  their own standalone Flux `HelmRelease`s (`infra/gitops/apps/dev/`), not nested here, since
-  Flux's GitRepository-sourced charts don't recursively resolve a subchart's own vendored
-  dependency (the original nested-wrapper approach silently deployed zero of the vendored chart's
-  workload) — see [ADR-0012](../adr/0012-keycloak-minio-standalone-helmreleases.md), which
-  supersedes the wrapper-chart part of ADR-0010.
+  portable `Ingress` + a TLS Secret, reusing k3d's Traefik locally) are hand-rolled — there's
+  nothing to vendor for either. `authentik` and `minio` only hold what a vendored chart can't own
+  itself (generated config/credential Secrets; for the IdP, also the declarative **blueprint**
+  ConfigMap — the analogue of a realm import) — the actual vendored charts (the `authentik` chart
+  from `charts.goauthentik.io`, the official `charts.min.io` MinIO chart) run as their own
+  standalone Flux `HelmRelease`s (the beekeepingit-gitops repo's `apps/dev/`), not nested here, since Flux's
+  GitRepository-sourced charts don't recursively resolve a subchart's own vendored dependency (the
+  original nested-wrapper approach silently deployed zero of the vendored chart's workload) — see
+  [ADR-0012](../adr/0012-keycloak-minio-standalone-helmreleases.md) (which set this standalone
+  pattern for the then-Keycloak IdP + MinIO and supersedes the wrapper-chart part of ADR-0010) and
+  [ADR-0016](../adr/0016-replace-keycloak-with-authentik.md) (which swapped that IdP to Authentik,
+  same pattern).
 - `powersync` (`#22`, D-6/[ADR-0005](../adr/0005-sync-engine-choice.md)) is hand-rolled too —
   PowerSync's self-hosted Open Edition ships as a bare Docker image, not a Helm chart, and its
   bucket-storage backend is Postgres (not MongoDB, PowerSync's historical default), matching the
   SP-1 spike's proven config and avoiding a second datastore technology.
 - The former `charts/smoke/` placeholder (proved the umbrella→subchart wiring before any real
   service existed) was removed once `#84`/`#87` added the first real subcharts.
+- `networkpolicy` (EPIC-14 `#89`, `NFR-SEC-1`) is hand-rolled and holds no workload — just
+  `NetworkPolicy` objects (`networking.k8s.io/v1`, a namespace-scoped core API resource, not tied
+  to a Helm release). A **default-deny** baseline (all ingress + egress) plus one
+  **explicit-allow pair per real traffic edge**, generated from a single `values.yaml` edge list
+  (`.Values.edges`) rather than hand-duplicated YAML per flow — each edge renders both an egress
+  rule (on the caller) and an ingress rule (on the target), since default-deny blocks both
+  directions independently, and ports are **container** ports (netpol matches after Service
+  DNAT — e.g. Authentik's Service listens on 80 but its rules must say 9000). Edges cover
+  gateway→backends, service→service (from `charts/services/values.yaml`'s `INTERNAL_*_URL`
+  wiring), service→Postgres, powersync→Postgres, CNPG's own operational plumbing (instance→API
+  server, operator→instance status port — without which the `Cluster` never reconciles), and
+  Authentik's own internal topology (server/worker/bundled Postgres) — the last because
+  Authentik's Deployments live in the **same namespace** (its own standalone Flux `HelmRelease`,
+  ADR-0012) and are therefore governed by this chart's default-deny too, even though this chart
+  doesn't own their pods. **These policies are enforced on k3d/k3s**: k3s embeds kube-router's
+  network-policy controller, so NetworkPolicy is live even though the CNI itself is Flannel
+  (which has no netpol support of its own — an easy wrong assumption, made and corrected in
+  PR #224's first CI round). Two same-namespace releases are deliberately **excluded** from the
+  default-deny selector for now — the **observability stack** and **MinIO** — because their
+  internal flows span four vendored third-party charts whose pod labels/ports need live-cluster
+  verification before they can be enumerated as edges; tracked on `#89`.
 
 ## Observability
 
@@ -87,8 +114,8 @@ alerting) and contributing to `NFR-PER-1`.
 
 It is **its own chart** ([`infra/helm/observability/`](../../infra/helm/observability/)) +
 **its own Flux `HelmRelease`**
-([`infra/gitops/apps/dev/observability-helmrelease.yaml`](../../infra/gitops/apps/dev/observability-helmrelease.yaml),
-`dependsOn: [beekeepingit, minio]`), **not part of the beekeepingit umbrella** — its
+([`apps/dev/observability-helmrelease.yaml`](https://github.com/TiagoJVO/beekeepingit-gitops/blob/main/apps/dev/observability-helmrelease.yaml)
+in the beekeepingit-gitops repo, `dependsOn: [beekeepingit, minio]`), **not part of the beekeepingit umbrella** — its
 Loki/Tempo need MinIO's buckets at boot (Tempo hard-fails without its bucket, confirmed
 live), and MinIO's own `HelmRelease` depends on the umbrella for the `root-credentials`
 Secret; nesting the stack in the umbrella therefore deadlocks a fresh install
@@ -173,56 +200,74 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
 
 - [`ci.yml`](../../.github/workflows/ci.yml) — repo-wide `task ci` (hygiene + per-language lint +
   test), self-discovering and green before any code lands.
-- [`security-scan.yml`](../../.github/workflows/security-scan.yml) — supply-chain scanning:
-  **Trivy `fs`** (dependency + secret, blocking on HIGH,CRITICAL) + **`govulncheck`** over every Go
-  module, with **Trivy `config`** (IaC misconfig) report-only until #89 triages the baseline. This
-  is the scanning stage EPIC-14 #89 shares and tunes.
+- [`security-scan.yml`](../../.github/workflows/security-scan.yml) — supply-chain scanning, all
+  three gates **blocking on HIGH,CRITICAL**: **Trivy `fs`** (dependency + secret) +
+  **`govulncheck`** over every Go module + **Trivy `config`** (IaC misconfig — Helm/k8s/Actions/
+  Dockerfiles), the last flipped from report-only once #89 triaged the pre-existing baseline (see
+  the repo-root [`.trivyignore`](../../.trivyignore) for the individually-justified exceptions).
+  This is the scanning stage EPIC-14 #89 shares and tunes.
 - [`build-publish.yml`](../../.github/workflows/build-publish.yml) — a `detect` job emits a matrix
   of only the changed directories containing a `Dockerfile`; each builds → **Trivy image scan** →
-  on merge to `main`, publishes to **ghcr.io** tagged by commit. **Dormant** until the first
-  service ships a `Dockerfile` (empty matrix ⇒ skipped). macOS/iOS runners are deferred to M5 /
+  on merge to `main`, publishes to **ghcr.io** tagged by commit. **Active**: `client/` and all four
+  domain services (`identity`/`organizations`/`apiaries`/`sync`) each ship a `Dockerfile`, so the
+  matrix builds real components on every change. macOS/iOS runners are deferred to M5 /
   EPIC-15 (a disabled placeholder job records this).
 - [`helm-ci.yml`](../../.github/workflows/helm-ci.yml) — on any change under `infra/helm/**`:
   `helm dependency build`, `helm lint`, and `helm template` (base + each environment overlay) as a
   manifest-rendering dry-run. No live cluster is involved.
 - [`helm-e2e.yml`](../../.github/workflows/helm-e2e.yml) — the live-cluster counterpart (`#154`):
-  stands up an ephemeral k3d cluster via `infra/cluster/up.sh`, installs the umbrella release, runs
-  `helm test` (the `postgres` PostGIS smoke-query hook), and tears the cluster down regardless of
-  outcome. Like `helm-ci.yml` it runs on every PR/push and checks path-relevance _inside_ the job
-  (`dorny/paths-filter`) rather than on the trigger — so it can be a required check while still
-  skipping the (minutes-long) live bring-up on PRs that don't touch `infra/helm/**` or
-  `infra/cluster/**`, reporting success in seconds for those.
-- [`gitops-ci.yml`](../../.github/workflows/gitops-ci.yml) — kubeconform-validates the Flux
-  manifests under `infra/gitops/**` (including the image-automation templates).
+  stands up an ephemeral k3d cluster via `infra/cluster/up.sh`, installs the umbrella release, waits
+  for Postgres/Authentik/the domain-service Deployments, runs `helm test` (the `postgres` PostGIS
+  smoke-query hook), then the walking-skeleton Playwright e2e (`client/e2e`, NFR-TST-1, `#162`) —
+  login → create → offline edit → sync → convergence → logout — against that same cluster, and
+  tears the cluster down regardless of outcome. Like `helm-ci.yml` it runs on every PR/push and
+  checks path-relevance _inside_ the job (`dorny/paths-filter`) rather than on the trigger — so it
+  can be a required check while still skipping the (minutes-long) live bring-up on PRs that don't
+  touch `infra/helm/**`, `infra/cluster/**`, or `client/**`, reporting success in seconds for
+  those. The whole client tree gates the run (not just `client/e2e/**`) because the PWA image
+  under test is built in-job from the PR's own checkout (`#236`) — a client-only PR that skipped
+  the e2e would ship the one artifact the test exists to exercise unverified (`#245`).
+- GitOps-manifest validation (`kubeconform` against the Flux CRD schemas) moved to the
+  `beekeepingit-gitops` repo's own `gitops-ci.yml` when the manifests were split out (D-27/ADR-0018).
 
-Deploy is **not** done from CI: on merge, CI publishes an image and **Flux image-automation**
-commits the new tag into Git for Flux to reconcile — see GitOps below.
+Deploy is **not** done from CI: a published GitHub Release triggers CI to publish images and open a
+tag-bump **pull request** against the GitOps state; a human merges it and Flux reconciles (D-27,
+[ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md)) — see GitOps below.
 
 ## GitOps (Flux)
 
-[`infra/gitops/`](../../infra/gitops/) reconciles the umbrella chart above onto the `dev` cluster
-from this repo — a manual `helm install`/`upgrade` is no longer how `dev` gets updated once a
-change is merged to `main`. See the directory's own
-[README](../../infra/gitops/README.md) for layout and day-to-day operation, and
+The Flux manifests live in the separate
+[`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo (split out per
+D-27/[ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md)); Flux sources the umbrella
+**chart** from this repo and the **manifests** (HelmReleases, per-env overrides) from there, and
+reconciles them onto each cluster — a manual `helm install`/`upgrade` is no longer how `dev` gets
+updated once a change merges. See that repo's README for layout and day-to-day operation, and
 [ADR-0009](../adr/0009-gitops-flux.md) for why Flux and why hand-wired (not `flux bootstrap`).
 
-**Image-automation** closes the CI/CD loop (#88, [ADR-0014](../adr/0014-cicd-pipeline.md)): the
-image-reflector + image-automation controllers watch ghcr.io and commit each new commit-tagged
-image into `apps/dev/`, which Flux reconciles — so a merge deploys with no manual `kubectl`. The
-engine + per-service templates live in
-[`infra/gitops/image-automation/`](../../infra/gitops/image-automation/), **dormant** (outside the
-reconciled paths) until the first service publishes an image and a Git write-credential is
-provisioned (an EPIC-14 #89 secrets task).
+**Release-triggered promotion** closes the CI/CD loop (D-27,
+[ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md), superseding the image-automation plan
+in [ADR-0014](../adr/0014-cicd-pipeline.md) §4): a published Release makes CI build the release
+version's images and open a tag-bump **PR** against the GitOps manifests; a human merges it and Flux
+reconciles. Flux stays **read-only** — no image-automation controllers, no standing git-write
+credential. `-rc` releases target `staging`; un-suffixed releases target `prod` behind the
+`production-gate` GitHub Environment's approval. `dev` is out of this path (CI can't reach a local
+cluster) and stays a manual `helm ... -f environments/dev.yaml` loop. The `-gate` environments only
+record "approved to publish" — the plain `staging`/`production` environments on this repo instead
+record the real deploy, created by `beekeepingit-gitops`'s `notify-deploy` workflow when the
+tag-bump PR actually merges (ADR-0018 addendum).
 
 ## Not yet covered here
 
-- Production-grade Keycloak realm/RBAC hardening and trusted-CA TLS for the gateway (both
-  EPIC-14, `#15` — the `#84` seed is dev/CI-grade by design, see ADR-0010).
+- Production-grade IdP (Authentik) flow/RBAC hardening (EPIC-14, `#15` — the `#84` seed is dev/CI-
+  grade by design, see ADR-0010). Trusted-CA TLS for the gateway is now available (`gateway.
+certManager.enabled`, cert-manager + Let's Encrypt, ADR-0017) and live on `staging` — `dev`
+  still uses the self-signed cert, since a local k3d cluster has no public endpoint for an ACME
+  challenge to reach.
 - PowerSync's real org-scoped Sync Rules and per-org sync-token connector (`docs/architecture/sync.md`,
-  ADR-0006) — `#22` ships a placeholder sync-config and a Keycloak-JWKS stopgap (see
+  ADR-0006) — `#22` ships a placeholder sync-config and an IdP-JWKS stopgap (see
   `FOLLOWUPS.md`) since `apiaries`/`organizations` don't exist until `#23`/`#106`.
-- End-to-end **publish→deploy** from CI — the #88 pipeline publishes images and lets Flux
-  image-automation update manifests, but it is **dormant until the first service ships a
-  `Dockerfile`**; that path is exercised then (see [ADR-0014](../adr/0014-cicd-pipeline.md)). Note
-  the `postgres` subchart's `helm test` smoke-query hook _does_ now run against a live cluster in CI
-  (`helm-e2e.yml`, `#154`) — it's no longer local-only.
+- End-to-end **release→deploy** — the release-triggered PR-based promotion (D-27,
+  [ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md)) is designed but **not yet exercised
+  end-to-end**: `release-deploy.yml`'s tag-bump-PR step and the `beekeepingit-gitops` repo split are
+  in progress. Note the `postgres` subchart's `helm test` smoke-query hook _does_ now run against a
+  live cluster in CI (`helm-e2e.yml`, `#154`) — it's no longer local-only.

@@ -1,32 +1,35 @@
 # Technology Stack — _intended direction_
 
 > **Intention, not a rule.** This is the stack we currently intend to use; like the rest of
-> `requirements/`, it can be questioned and changed (with the user). **Nothing here is built
-> yet** — `docs/` will document the stack as it's actually implemented. The decisions behind
-> it are logged in [decisions.md](decisions.md) (`D-5`…`D-10`) and are revisitable. The
-> "Status: Decided" notes below mean a decision was recorded — not that anything is built.
+> `requirements/`, it can be questioned and changed (with the user). The M0/M1/M2 walking
+> skeleton has since implemented most of it — `docs/` (esp. [docs/CODEMAPS/](../docs/CODEMAPS/)
+> and `docs/architecture/`) documents the stack as actually built; this file stays the
+> intent record and isn't rewritten to track build status. The decisions behind it are logged
+> in [decisions.md](decisions.md) (`D-5`…`D-10`) and are revisitable. The "Status: Decided"
+> notes below mean a decision was recorded — not that anything is built.
 
 The reasoning behind the intended stack, and the input to a future service decomposition.
 
 ## Summary
 
-| Layer                 | Choice                                                                                | Status               |
-| --------------------- | ------------------------------------------------------------------------------------- | -------------------- |
-| Client                | **Flutter (Dart)** — Web/PWA first, native later                                      | Decided (D-5, D-10)  |
-| Backend microservices | **Go**                                                                                | Decided (D-5)        |
-| Admin web app         | **React + TypeScript**                                                                | Decided (D-5)        |
-| Primary database      | **PostgreSQL + PostGIS**                                                              | Decided (D-6)        |
-| On-device store       | **SQLite**                                                                            | Decided (D-6)        |
-| Offline sync engine   | **PowerSync** (self-hosted, Open Edition)                                             | Decided (SP-1 → D-6) |
-| Identity / auth       | **Keycloak (self-hosted, OIDC)**                                                      | Decided (D-7)        |
-| AI assistant          | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11)  |
-| API style             | REST + OpenAPI (client); gRPC optional (inter-service)                                | Proposed             |
-| Orchestration         | Kubernetes + Helm                                                                     | Decided (NFR-ARC)    |
-| Observability         | OpenTelemetry + Prometheus + Grafana + Loki/Tempo                                     | Proposed             |
-| Object storage        | MinIO (S3-compatible)                                                                 | Proposed             |
-| CI/CD                 | GitHub Actions                                                                        | Proposed             |
-| Repo                  | Monorepo                                                                              | Decided (D-9)        |
-| Platform rollout      | PWA → Android → iOS (native only when needed)                                         | Decided (D-10)       |
+| Layer                 | Choice                                                                                | Status                                      |
+| --------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Client                | **Flutter (Dart)** — Web/PWA first, native later                                      | Decided (D-5, D-10)                         |
+| Backend microservices | **Go**                                                                                | Decided (D-5)                               |
+| Admin web app         | **React + TypeScript**                                                                | Decided (D-5)                               |
+| Primary database      | **PostgreSQL + PostGIS**                                                              | Decided (D-6)                               |
+| On-device store       | **SQLite**                                                                            | Decided (D-6)                               |
+| Offline sync engine   | **PowerSync** (self-hosted, Open Edition)                                             | Decided (SP-1 → D-6)                        |
+| Identity / auth       | **Authentik (self-hosted, OIDC)** — provider-agnostic OIDC boundary                   | Decided (D-7, ADR-0016)                     |
+| AI assistant          | **NL→query & proposed actions; cloud model first (e.g. Claude API), on-device later** | Decided (D-8, D-11)                         |
+| API style             | REST + OpenAPI (client); gRPC optional (inter-service)                                | Implemented (`contracts/openapi/`)          |
+| Orchestration         | Kubernetes + Helm                                                                     | Decided (NFR-ARC)                           |
+| Cloud hosting         | **Scaleway Kapsule** (managed control plane, EU region)                               | Decided (D-26)                              |
+| Observability         | OpenTelemetry + Prometheus + Grafana + Loki/Tempo                                     | Implemented (ADR-0013)                      |
+| Object storage        | MinIO (S3-compatible)                                                                 | Implemented (`services/shared/objectstore`) |
+| CI/CD                 | GitHub Actions                                                                        | Implemented (`.github/workflows/`)          |
+| Repo                  | Monorepo                                                                              | Decided (D-9)                               |
+| Platform rollout      | PWA → Android → iOS (native only when needed)                                         | Decided (D-10)                              |
 
 > **Versions are intentionally unpinned here.** Pin them in each app/service manifest
 > when scaffolded.
@@ -60,8 +63,9 @@ codebase throughout.
 - **Maps:** `flutter_map` + MapLibre/OSM tiles (open licensing; Mapbox alternative);
   works on web and native. Drives map view, location, proximity, distance
   (`FR-AP-2/3/5`).
-- **Auth:** OIDC against Keycloak (web redirect flow via `openid_client`/`oauth2`;
-  `flutter_appauth` on native). Offline login is a **native-phase** concern.
+- **Auth:** OIDC via **discovery** against the configured issuer (Authentik in v1) — the
+  provider is a swappable detail, endpoints are read from `.well-known` (`openid_client`
+  core on web; `flutter_appauth` on native). Offline login is a **native-phase** concern.
 - **AI:** **cloud, online-only** in the PWA phase (calls the backend AI service — see
   below); on-device LLM arrives with native.
 - **i18n / a11y:** Flutter `intl` (EN + PT, `NFR-I18N`); large-tap-target,
@@ -73,8 +77,8 @@ codebase throughout.
 
 - **HTTP:** `chi` or `echo`; **Postgres:** `pgx` + `sqlc` (typed queries);
   **migrations:** `goose`/`golang-migrate`.
-- **AuthN:** validate Keycloak JWTs via JWKS (`coreos/go-oidc`); **authZ:**
-  org-scoped checks in a shared middleware.
+- **AuthN:** validate OIDC JWTs via JWKS (`coreos/go-oidc`) — **issuer-agnostic**,
+  discovery-driven; **authZ:** org-scoped checks in a shared middleware.
 - **Observability:** OpenTelemetry Go SDK (traces/metrics/logs) → OTel Collector.
 - **Contracts:** OpenAPI per service (client-facing); gRPC optional inter-service.
 - **Cross-cutting:** shared libs for audit/history (`FR-HIS`), tenancy context,
@@ -85,7 +89,7 @@ codebase throughout.
 - **Build:** Vite (or Next.js if SSR is wanted later).
 - **Speed-up options:** Refine or React-Admin for CRUD scaffolding, or shadcn/ui +
   TanStack Query/Table for full control.
-- **Auth:** `react-oidc-context` / `keycloak-js`. Online-only, no offline (`NFR-ROL-2`).
+- **Auth:** `react-oidc-context` (generic OIDC, discovery-driven). Online-only, no offline (`NFR-ROL-2`).
 - Scope: org/member management, roles & permissions, (later) quotas/rate limits.
 
 ## Data — PostgreSQL + PostGIS
@@ -98,15 +102,17 @@ codebase throughout.
 - **Tenancy:** every owned row carries `organization_id`; enforce in queries +
   optionally Postgres RLS.
 
-## Identity — Keycloak
+## Identity — Authentik (behind a provider-agnostic OIDC boundary)
 
-- Self-hosted on k8s; **realm** for the platform; **roles** `admin` / `user`
-  (`NFR-ROL`); ready for social/SSO later.
+- Self-hosted on k8s (its own bundled Postgres); an **application + OAuth2 provider** for the
+  platform, provisioned declaratively via **blueprints**; ready for social/SSO later. The app
+  depends only on **standard OIDC** (discovery + JWKS + standard claims) — the IdP is swappable
+  (`ADR-0016`, [`docs/architecture/oidc-integration.md`](../docs/architecture/oidc-integration.md)).
 - **Offline login:** cache access/refresh tokens + JWKS on device; validate locally
   within a grace window; require periodic online re-auth.
-- **Org authorization:** Keycloak handles authN + coarse roles; **org membership &
-  resource ownership** enforced at the app layer (FR-TEN); consider OpenFGA/Keto if
-  fine-grained sharing grows.
+- **Org authorization:** the IdP handles authN only; **roles `admin`/`user` and org membership &
+  resource ownership** are **app-side** (`organizations.memberships`, FR-TEN), never IdP roles;
+  consider OpenFGA/Keto if fine-grained sharing grows.
 
 ## AI assistant — NL→query & actions (cloud first, on-device later)
 
@@ -133,6 +139,11 @@ codebase throughout.
 
 - **k8s + Helm** (one cluster for v1, `NFR-ARC-3`); **GitOps: Flux** (`D-13`), hand-wired
   `Kustomization`/`HelmRelease` objects (not `flux bootstrap`), no ArgoCD.
+- **Cloud hosting: Scaleway Kapsule** (`D-26`) — managed Kubernetes control plane, EU region,
+  chosen over Hetzner/OVHcloud/DigitalOcean/IBM Cloud/hyperscalers on cost + low ops burden (the
+  `NFR-CMP-1` EU-region + DPA bar is satisfied by several candidates, per the `D-22` precedent — it
+  wasn't the deciding factor). No Scaleway-specific managed services are adopted; the self-hosted
+  stack (Postgres/Authentik/PowerSync/MinIO) deploys unchanged, keeping `NFR-ARC-2` portability.
 - **Gateway/ingress:** **Traefik** (settled by `#84`/[ADR-0010](../docs/adr/0010-platform-backing-services-provisioning.md)
   — k3d already bundles it as the cluster's ingress controller, so it's reused rather than
   installing NGINX as a second one) (+ a thin BFF if needed).

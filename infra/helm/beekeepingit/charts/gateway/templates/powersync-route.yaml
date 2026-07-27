@@ -44,10 +44,10 @@ spec:
   ingressClassName: {{ .Values.ingressClassName }}
   tls:
     - hosts:
-        - {{ .Values.host }}
+        - {{ .Values.appHost }}
       secretName: {{ include "gateway.fullname" . }}-tls
   rules:
-    - host: {{ .Values.host }}
+    - host: {{ .Values.appHost }}
       http:
         paths:
           - path: {{ .Values.powersyncRoute.path }}

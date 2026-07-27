@@ -1,8 +1,11 @@
-// Command organizations is the minimal organizations service for the M0
-// walking skeleton: it owns organizations + memberships and resolves a user
-// to its active membership — organization_id + role (auth.md §5.1 steps 2–3).
-// Its only route is the internal, in-cluster GET /internal/memberships/active;
-// it is never exposed via the gateway. Wiring follows
+// Command organizations owns organizations, memberships and invitations.
+// Besides the internal, in-cluster GET /internal/memberships/active (auth.md
+// §5.1 steps 2–3; never exposed via the gateway), it exposes the
+// client-facing organization surface: create/read (POST /organizations,
+// GET /organizations/me[/{orgId}], FR-ONB-2/FR-TEN-2/NFR-ROL-1, #26) and
+// admin-only membership + email invitations (GET .../members,
+// GET/POST .../invitations, DELETE .../invitations/{id}, FR-ONB-3, D-3, #27),
+// mounted behind the gateway. Wiring follows
 // services/servicetemplate/example/main.go.
 package main
 
@@ -67,6 +70,11 @@ func run(ctx context.Context) error {
 		logger.Info("seeded dev organizations data")
 	}
 
+	identityURL := os.Getenv("INTERNAL_IDENTITY_URL")
+	if identityURL == "" {
+		return fmt.Errorf("config: INTERNAL_IDENTITY_URL is required")
+	}
+
 	authnMW, err := authn.NewMiddleware(ctx, authn.Config{
 		IssuerURL:    cfg.OIDCIssuerURL,
 		Audience:     cfg.OIDCAudience,
@@ -84,6 +92,13 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("build server: %w", err)
 	}
 	srv.Mount("/internal", authnMW(api.InternalRouter(pool)))
+	// Client-facing organization surface (FR-ONB-2/FR-TEN-2/NFR-ROL-1, #26):
+	// authn only, no org resolver — see api/organizations.go's package doc
+	// for why (a brand-new caller must reach POST /organizations, and the
+	// GET routes resolve their own org directly rather than looping back
+	// into this same service over HTTP).
+	userResolver := api.NewHTTPUserResolver(identityURL, nil)
+	srv.Mount("/v1", authnMW(api.PublicRouter(pool, userResolver)))
 
 	return srv.Run(ctx)
 }

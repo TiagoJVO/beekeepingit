@@ -68,6 +68,60 @@ spec:
         passwordSecret:
           name: {{ . }}-svc-credentials
       {{- end }}
+      # `beekeepingit` already exists (created above by bootstrap.initdb.owner,
+      # not by this managed.roles list) — CNPG reconciles managed.roles by
+      # role NAME against actual Postgres state, not by "who created it", so
+      # adding an already-existing role here is supported and simply extends
+      # what's reconciled for it (confirmed: CNPG's own docs example lists
+      # `app`, its default initdb-owner role name, in `status.managedRolesStatus.reconciled`
+      # alongside user-defined managed roles — cloudnative-pg.io/documentation
+      # /current/declarative_role_management).
+      #
+      # CAUTION verified against CNPG's own reconciler source
+      # (internal/management/controller/roles/postgres.go's Update/
+      # appendRoleOptions): every reconcile issues a FULL `ALTER ROLE
+      # beekeepingit <every boolean attribute>`, so this entry must explicitly
+      # restate every attribute beekeepingit actually needs — an omitted
+      # boolean (e.g. `login`) is NOT "leave as-is", it reconciles to its
+      # Postgres/Go zero-value (NOLOGIN), which would break every Job/service
+      # using the `beekeepingit` credential. `login: true` below is therefore
+      # required, not redundant. The one exception is the password: per
+      # RoleConfiguration.PasswordSecret's doc ("if null, the password will be
+      # ignored unless DisablePassword is set") and confirmed in
+      # roles.go's DatabaseRoleFromConfiguration, omitting `passwordSecret`
+      # (as below) safely leaves beekeepingit's existing password — the
+      # `{{ include "postgres.fullname" . }}-app` Secret every Job/service
+      # already authenticates with — untouched.
+      #
+      # #62 (history.md §7.1): beekeepingit needs to be able to `ALTER TABLE
+      # ... OWNER TO beekeepingit` on each service's audit_log/
+      # sync_conflict_log (audit-immutability-job.yaml) after that service's
+      # own migration creates it (as `<schema>_svc`, making `<schema>_svc`
+      # the owner). `ALTER TABLE ... OWNER TO X` requires the acting role to
+      # be able to `SET ROLE X` — i.e. be a member of the NEW owner — so it's
+      # beekeepingit that needs membership in `<schema>_svc` (this direction),
+      # not the other way around. A manual `GRANT <schema>_svc TO
+      # beekeepingit` run BY beekeepingit itself does NOT work (confirmed:
+      # Postgres requires CREATEROLE + ADMIN OPTION on the target role to
+      # grant its membership, which beekeepingit — a plain login role — has
+      # neither of) — this must be reconciled by CNPG's own operator
+      # connection instead, exactly like `powersync`'s inRoles below already
+      # does for the identical reason ("neither the app owner nor a
+      # non-superuser can GRANT on" a `*_svc`-owned object, per that role's
+      # own comment). Plain membership (no adminOption/inherit override — see
+      # RoleConfiguration's InRoles docs) is enough: verified empirically
+      # that ALTER TABLE OWNER TO only needs INHERIT membership, not ADMIN
+      # OPTION or an active SET ROLE session (services/shared/dbaccess/
+      # audit_immutability_test.go). One-way and inert for `<schema>_svc`:
+      # it never gains beekeepingit's privileges from this (Postgres role
+      # membership doesn't flow backward).
+      - name: beekeepingit
+        ensure: present
+        login: true
+        inRoles:
+          {{- range .Values.schemas }}
+          - {{ . }}_svc
+          {{- end }}
       # One combined role for the PowerSync service: `replication` to open a
       # logical-replication connection to `beekeepingit` (the `powersync`
       # publication above), and it also owns/uses `powersync_storage` (granted

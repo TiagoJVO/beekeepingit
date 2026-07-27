@@ -43,18 +43,28 @@ func Write(w http.ResponseWriter, r *http.Request, p Problem) {
 // Canonical constructors, statuses and codes per
 // docs/architecture/api-contracts.md §4/§7.
 
+// Unauthorized builds a 401 Problem for a missing, malformed, invalid or
+// expired credential (the caller's identity was not established).
 func Unauthorized(detail string) Problem {
 	return Problem{Title: "Unauthorized", Status: http.StatusUnauthorized, Detail: detail, Code: "auth.unauthorized"}
 }
 
+// Forbidden builds a 403 Problem for an authenticated caller whose resolved
+// role or organization scope does not permit the requested action.
 func Forbidden(detail string) Problem {
 	return Problem{Title: "Forbidden", Status: http.StatusForbidden, Detail: detail, Code: "auth.forbidden"}
 }
 
+// NotFound builds a 404 Problem for a resource that doesn't exist — or that
+// the caller isn't allowed to know exists (e.g. another organization's
+// resource; ADR-0002, api-contracts.md §9 prefer 404 over 403 there).
 func NotFound(detail string) Problem {
 	return Problem{Title: "Not Found", Status: http.StatusNotFound, Detail: detail, Code: "resource.not_found"}
 }
 
+// Conflict builds a 409 Problem for a request that conflicts with the
+// resource's current state (e.g. a stale ETag / optimistic-concurrency
+// mismatch, or a uniqueness constraint violation).
 func Conflict(detail string) Problem {
 	return Problem{Title: "Conflict", Status: http.StatusConflict, Detail: detail, Code: "resource.conflict"}
 }

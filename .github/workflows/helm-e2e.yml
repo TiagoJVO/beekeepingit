@@ -5,13 +5,30 @@ name: Helm E2E
 # — so the `postgres` subchart's PostGIS smoke-query hook (#84) is exercised in CI, not
 # only manually against a developer's local cluster.
 #
+# Also runs the walking-skeleton Playwright e2e (`client/e2e`, NFR-TST-1, #162) against
+# that same live stack — login (OIDC) → create an apiary → offline edit → sync →
+# server-side assertion → reload convergence → fresh-client download convergence →
+# logout. It was a manual pre-merge gate until now; the domain-service readiness gate
+# added below (#215) means the slice reliably comes up authenticated in CI, so the e2e
+# can finally run unattended. Deliberately reuses this job's own bring-up (not a second
+# k3d cluster in a separate workflow) — cheaper and keeps one source of truth for "how
+# the slice comes up in CI".
+#
+# The PWA image the chart deploys is built IN-JOB from the checked-out commit and
+# imported into the k3d cluster — NOT pulled as the chart's default `client:latest`,
+# which build-publish.yml only publishes on push to main and therefore always lags the
+# commit under test (#236: the reload-persistence fix was invisible to this e2e —
+# the spec came from the PR, the app bundle from main — and even a main push races
+# build-publish's concurrent image build, landing one image behind).
+#
 # Like helm-ci.yml, this is designed to be a REQUIRED status check on `main`, so the job
 # runs on EVERY PR/push (no path filter on the trigger) — otherwise a PR that doesn't
 # touch infra/** would never start the job, its required "Expected" status would never
 # report, and it would block merging forever. Path-relevance is instead checked INSIDE
 # the job (dorny/paths-filter): on an irrelevant PR every real step is skipped — not
 # absent — so the check reports success in seconds without spinning up a cluster; only a
-# PR that changes the charts/cluster scripts pays for the (minutes-long) live bring-up.
+# PR that changes the charts/cluster scripts or the client app (whose image is built
+# from this checkout, above) pays for the (minutes-long) live bring-up.
 
 on:
   pull_request:
@@ -25,12 +42,52 @@ jobs:
   live-cluster-test:
     name: k3d cluster + helm test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Authentik + its own bundled Postgres is heavier to boot than the previous IdP
+    # (bootstrap migrations + blueprint apply), so the whole job gets more room
+    # (ADR-0016, oidc-integration.md §8). The in-job Flutter web build + image
+    # import (#236) adds a few more minutes on top of the cluster bring-up.
+    # Bumped 40 -> 45 (#50) to preserve the same slack after the domain-service
+    # readiness wait below grew by 5 minutes (900s). Bumped 45 -> 50 (#361
+    # review): the verification spec grew an invitation round-trip (one extra
+    # admin login) and a second test (two more logins) pinning the rejected
+    # email-change control — a few more minutes worst-case on a cold stack.
+    # Bumped 50 -> 60 (#366): the registration spec adds three ordered tests
+    # (five registrations/verifications plus ~six full OIDC logins and two
+    # in-app onboardings) on top of the existing suite.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
+      # Two outputs: `infra` (unchanged) gates the existing helm-test bring-up;
+      # `e2e` additionally covers the whole client app (`client/**` — source,
+      # pubspec, web/, not just the Playwright e2e): since #242 the PWA image
+      # under test is built in-job from this very checkout, so a client-only
+      # change IS visible to the e2e — but only if it also triggers it. The
+      # filter previously stopped at `client/e2e/**`, so a client-only PR
+      # skipped the live run entirely and shipped un-e2e'd (#244 did exactly
+      # that). This buys every client PR the ~30-40 min live bring-up — the
+      # accepted trade (NFR-TST-1, #162).
+      #
+      # `services/**` is now in the filter too (#245): the Go service images
+      # are built in-job from this checkout (the "Build the service images"
+      # step below), exactly like the PWA, and `--set services.image.tag`
+      # points the deployed pods at them — so a `services/**` change is finally
+      # exercised by the e2e against its OWN binaries, not main's stale
+      # `:latest`. #256 (typed apiary counters, a coordinated
+      # migration+service+sync-rules+client change) is the forcing case: its
+      # client uploaded a new op the deployed main server 422-rejected, and the
+      # e2e couldn't have caught it while services deployed from main.
+      # Cost trade-off (the "decide its trigger paths" half of #245): every
+      # `services/**` PR now pays the same ~30-40 min live run the client/infra
+      # PRs already do, plus a few minutes to build the Go service images (fast
+      # — a static `go build` + a distroless COPY, cached via buildx gha). The
+      # coverage is worth it: a service change reaching the sync/auth/apiary
+      # paths is exactly what only the live e2e can validate end to end.
+      # (Listed out flat rather than via a YAML anchor: the `filters` value is a
+      # literal block string that dorny/paths-filter re-parses on its own, and an
+      # anchor/alias in there would produce a nested list, not a flat pattern list.)
       - name: Check for relevant changes
         id: changes
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
@@ -40,26 +97,249 @@ jobs:
               - 'infra/helm/**'
               - 'infra/cluster/**'
               - '.github/workflows/helm-e2e.yml'
+            e2e:
+              - 'infra/helm/**'
+              - 'infra/cluster/**'
+              - '.github/workflows/helm-e2e.yml'
+              - 'client/**'
+              - 'services/**'
+              # The admin image is built in-job from this checkout below (#449),
+              # exactly like the PWA/services — so an admin-only change is visible
+              # to (and pays for) the live bring-up. Its Deployment carries the
+              # part-of=beekeepingit label the readiness gate waits on, so it must
+              # come up cleanly here.
+              - 'admin/**'
+
+      # The Authentik HelmRelease used to bring up the IdP below lives in the
+      # beekeepingit-gitops repo now (D-27/ADR-0018), not this one. Check it out
+      # into a subdir so the bring-up step can apply it. Public repo, so the
+      # default token suffices; a change to it there can't trigger this e2e
+      # (cross-repo) — the gitops repo's own CI validates it instead.
+      - name: Check out the GitOps manifests (Authentik HelmRelease)
+        if: steps.changes.outputs.e2e == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: TiagoJVO/beekeepingit-gitops
+          path: beekeepingit-gitops
 
       # helm/kubectl/k3d at the versions pinned in mise.toml — the same toolchain
-      # local dev (infra/cluster/*.sh) and the rest of CI use.
+      # local dev (infra/cluster/*.sh) and the rest of CI use. (mise installs
+      # everything mise.toml pins, so Flutter for the PWA build below comes from
+      # here too — no separate SDK setup.)
       - name: Set up toolchains from mise.toml
-        if: steps.changes.outputs.infra == 'true'
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        if: steps.changes.outputs.e2e == 'true'
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+
+      # Build the PWA image from THIS checkout (#236). The pwa subchart defaults
+      # to `client:latest`, which build-publish.yml only publishes on push to
+      # main — installing the chart as-is would run the e2e against MAIN's client
+      # bundle, so a PR's client change would be invisible to the very test meant
+      # to exercise it. Same artifact steps as build-publish.yml's client build
+      # (which also lint/tests it — this job only needs the deployable); the
+      # define-less build targets the dev hostnames via AppConfig defaults,
+      # exactly like the published image. Runs BEFORE the cluster bring-up so a
+      # broken client build fails fast without paying for the cluster.
+      - name: Build the PWA image from the checkout
+        id: pwa_image
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "repository=ghcr.io/${owner}/beekeepingit/client" >> "$GITHUB_OUTPUT"
+          echo "tag=e2e-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          ( cd client \
+            && flutter pub get \
+            && dart run powersync:setup_web \
+            && flutter build web --release --no-web-resources-cdn )
+          docker build -t "ghcr.io/${owner}/beekeepingit/client:e2e-${GITHUB_SHA}" client
+
+      # Build the admin image from THIS checkout (#449), same rationale as the PWA
+      # step above: the admin subchart defaults to `admin:latest` (published only on
+      # push to main), so installing the chart as-is would deploy MAIN's admin bundle
+      # — and worse, on a first-ever PR that tag may not exist, leaving the admin
+      # Deployment (labelled part-of=beekeepingit) in ImagePullBackOff so the
+      # domain-service readiness gate below never passes. Bake the dev VITE_* (Vite
+      # build-time constants, mirroring build-publish.yml's admin build) so the
+      # deployed SPA targets the dev hosts. The e2e specs don't drive the admin app
+      # today; this only needs to serve `/` for its readiness probe.
+      - name: Build the admin image from the checkout
+        id: admin_image
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          echo "repository=ghcr.io/${owner}/beekeepingit/admin" >> "$GITHUB_OUTPUT"
+          echo "tag=e2e-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          ( cd admin \
+            && npm ci \
+            && VITE_OIDC_ISSUER="https://auth.beekeepingit.local:8443/application/o/beekeepingit/" \
+               VITE_OIDC_CLIENT_ID="beekeepingit-admin" \
+               VITE_API_BASE_URL="https://app.beekeepingit.local:8443" \
+               VITE_ACCOUNT_URL="https://auth.beekeepingit.local:8443/if/user/#/settings" \
+               npm run build )
+          docker build -t "ghcr.io/${owner}/beekeepingit/admin:e2e-${GITHUB_SHA}" admin
+
+      # Build the Go SERVICE images from THIS checkout (#245) — the generalization
+      # of the PWA step above to the domain services (identity, organizations,
+      # apiaries, sync). The services subchart otherwise deploys
+      # `ghcr.io/<owner>/beekeepingit/services-<name>:latest`, which build-publish.yml
+      # publishes only on merge to main — so without this, a `services/**` PR would
+      # run the e2e against MAIN's binaries (exactly the staleness that made #256's
+      # cross-stack change untestable: its client sent an op the deployed main
+      # server rejected). Same recipe as build-publish.yml's Go leg: compile the
+      # static binary against the go.work workspace (the per-service Docker context
+      # can't resolve the sibling shared/servicetemplate modules — see each
+      # service's Dockerfile), then `docker build` the distroless image that just
+      # COPYs it. Every service shares the subchart's `image.tag`
+      # (deployment.yaml: `{{ image.registry }}/{{ component }}:{{ tag }}`), so one
+      # tag (`e2e-<sha>`) + the per-service `services-<name>` repo names cover them
+      # all — imported below and pointed at via `--set services.image.tag`.
+      # Runs BEFORE the cluster bring-up so a broken service build fails fast
+      # without paying for the cluster (same ordering rationale as the PWA build).
+      - name: Build the service images from the checkout
+        id: service_images
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          IMAGE_TAG: e2e-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          # Must match charts/services/values.yaml's image.registry so the
+          # imported tags line up with the refs the chart pulls.
+          registry="ghcr.io/${owner}/beekeepingit"
+          echo "tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+          # Discover the services as "every services/*/ dir with a Dockerfile" —
+          # the same rule build-publish.yml uses to decide what's buildable, and
+          # it matches the chart's deployed set (each maps to the chart's
+          # services-<name> component). No yq/extra tooling needed; a
+          # newly-added service is picked up automatically.
+          images=""
+          for dockerfile in services/*/Dockerfile; do
+            dir="$(dirname "${dockerfile}")"     # services/<name>
+            name="$(basename "${dir}")"
+            image="${registry}/services-${name}:${IMAGE_TAG}"
+            echo "::group::build ${image} (from ${dir})"
+            # Compile against the workspace root so go.work resolves the sibling
+            # modules, then build the image the same way build-publish.yml does.
+            ( cd "${dir}" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app . )
+            docker build -t "${image}" "${dir}"
+            images="${images} ${image}"
+            echo "::endgroup::"
+          done
+
+          # Space-separated list of built images, consumed by the import step.
+          echo "images=${images# }" >> "$GITHUB_OUTPUT"
 
       # Create the k3d cluster and install the CNPG operator by running the exact
       # script developers run locally, so CI validates the real bring-up path
       # rather than a CI-only copy that can silently drift from it. (`up.sh` takes a
       # flock lock — harmless here: an ephemeral runner is a single, isolated user.)
       - name: Bring up the cluster (k3d + CNPG operator)
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: infra/cluster/up.sh
+
+      # Make the just-built image visible to the cluster's containerd: it was
+      # never pushed to a registry (PR builds don't publish), so the kubelet
+      # couldn't pull it. The pwa chart's pullPolicy is IfNotPresent and the tag
+      # is unique per commit, so the imported copy is used as-is. Cluster name
+      # is pinned in infra/cluster/k3d-config.yaml.
+      #
+      # `k3d image import` races saving the image tarball to the shared image
+      # volume against the node's own `ctr image import` exec — under I/O
+      # contention on a loaded CI runner, the exec can run first, log an
+      # internal `ERRO ... open /k3d/images/*.tar: no such file or directory`,
+      # and STILL exit 0 (the per-node failure doesn't propagate to the
+      # command's own exit code), silently leaving the image un-imported. The
+      # first visible symptom then isn't here — it's `ImagePullBackOff` several
+      # minutes later in "Wait for domain-service deployments", once kubelet
+      # tries to pull the (never-registry-pushed) tag and 404s. Verify the
+      # image actually landed in the node's containerd after each import and
+      # retry on a miss instead of trusting the exit code.
+      - name: Import the PWA image into the cluster
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          PWA_IMAGE: ${{ steps.pwa_image.outputs.repository }}:${{ steps.pwa_image.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node="$(docker ps --filter 'name=k3d-beekeeping-server-' --format '{{.Names}}' | head -n1)"
+          for attempt in 1 2 3; do
+            echo "k3d image import attempt ${attempt}/3: $PWA_IMAGE"
+            k3d image import "$PWA_IMAGE" -c beekeeping
+            if docker exec "$node" ctr -n k8s.io images ls -q | grep -qxF "$PWA_IMAGE"; then
+              echo "verified: $PWA_IMAGE present in $node's containerd"
+              exit 0
+            fi
+            echo "warning: $PWA_IMAGE missing from $node's containerd after attempt ${attempt} — retrying"
+            sleep 5
+          done
+          echo "::error::k3d image import never landed $PWA_IMAGE in $node's containerd after 3 attempts"
+          exit 1
+
+      # Import the admin image the same way (#449) — built to the local daemon
+      # above, never pushed, so the cluster's containerd can't pull it; import so
+      # pullPolicy: IfNotPresent finds the imported copy. Same import-race
+      # hardening as the PWA import step (see its comment).
+      - name: Import the admin image into the cluster
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          ADMIN_IMAGE: ${{ steps.admin_image.outputs.repository }}:${{ steps.admin_image.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node="$(docker ps --filter 'name=k3d-beekeeping-server-' --format '{{.Names}}' | head -n1)"
+          for attempt in 1 2 3; do
+            echo "k3d image import attempt ${attempt}/3: $ADMIN_IMAGE"
+            k3d image import "$ADMIN_IMAGE" -c beekeeping
+            if docker exec "$node" ctr -n k8s.io images ls -q | grep -qxF "$ADMIN_IMAGE"; then
+              echo "verified: $ADMIN_IMAGE present in $node's containerd"
+              exit 0
+            fi
+            echo "warning: $ADMIN_IMAGE missing from $node's containerd after attempt ${attempt} — retrying"
+            sleep 5
+          done
+          echo "::error::k3d image import never landed $ADMIN_IMAGE in $node's containerd after 3 attempts"
+          exit 1
+
+      # Import the service images the same way (#245): they were built to the
+      # local daemon, never pushed (PR builds don't publish), so the cluster's
+      # containerd can't pull them — import each so pullPolicy: IfNotPresent
+      # finds the imported copy. One `k3d image import` call takes all four.
+      # Same import-race hardening as the PWA import step above (see its
+      # comment) — SERVICE_IMAGES is a space-separated list, so verify each one
+      # landed before trusting the (otherwise unreliable) exit code.
+      - name: Import the service images into the cluster
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          SERVICE_IMAGES: ${{ steps.service_images.outputs.images }}
+        run: |
+          set -euo pipefail
+          node="$(docker ps --filter 'name=k3d-beekeeping-server-' --format '{{.Names}}' | head -n1)"
+          for attempt in 1 2 3; do
+            echo "k3d image import attempt ${attempt}/3: $SERVICE_IMAGES"
+            # Intentional word-splitting: SERVICE_IMAGES is a space-separated list
+            # of image refs, each a separate argument to `k3d image import`.
+            # shellcheck disable=SC2086
+            k3d image import $SERVICE_IMAGES -c beekeeping
+            missing=0
+            for image in $SERVICE_IMAGES; do
+              if ! docker exec "$node" ctr -n k8s.io images ls -q | grep -qxF "$image"; then
+                echo "warning: $image missing from $node's containerd after attempt ${attempt}"
+                missing=1
+              fi
+            done
+            if [ "$missing" -eq 0 ]; then
+              echo "verified: all service images present in $node's containerd"
+              exit 0
+            fi
+            echo "retrying after a race..."
+            sleep 5
+          done
+          echo "::error::k3d image import never landed all service image(s) in $node's containerd after 3 attempts"
+          exit 1
 
       # Install the packaged subchart snapshots under charts/*.tgz (see the chart's
       # README) — the umbrella's deps are all local file:// / vendored, so no chart
       # repo network access is needed.
       - name: Fetch umbrella chart dependencies
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: helm dependency build infra/helm/beekeepingit
 
       # No --wait, matching dev-up.sh: with --wait, Helm blocks on the main resources
@@ -69,39 +349,339 @@ jobs:
       # which blocks (retrying) until Postgres is serving and the grants land — so by
       # the time this returns, Postgres is already up. A generous --timeout covers the
       # first CNPG/PostGIS image pull on a cold runner.
+      # `--set pwa.image.*` points the pwa subchart at the image built from this
+      # checkout and imported above (#236) instead of the chart's `latest` default.
+      # `--set services.image.tag` does the same for the four service images (#245):
+      # they were tagged `services-<name>:e2e-<sha>` under the same registry the
+      # services subchart already resolves (charts/services/values.yaml's
+      # image.registry), so overriding just the shared `image.tag` makes every
+      # service's `{{ registry }}/{{ component }}:{{ tag }}` ref land on its own
+      # in-job image — no per-service repository override needed.
       - name: Install the umbrella release
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          PWA_IMAGE_REPOSITORY: ${{ steps.pwa_image.outputs.repository }}
+          PWA_IMAGE_TAG: ${{ steps.pwa_image.outputs.tag }}
+          ADMIN_IMAGE_REPOSITORY: ${{ steps.admin_image.outputs.repository }}
+          ADMIN_IMAGE_TAG: ${{ steps.admin_image.outputs.tag }}
+          SERVICE_IMAGE_TAG: ${{ steps.service_images.outputs.tag }}
         run: |
           helm upgrade --install beekeepingit infra/helm/beekeepingit \
             -f infra/helm/beekeepingit/environments/dev.yaml \
+            --set "pwa.image.repository=${PWA_IMAGE_REPOSITORY}" \
+            --set "pwa.image.tag=${PWA_IMAGE_TAG}" \
+            --set "admin.image.repository=${ADMIN_IMAGE_REPOSITORY}" \
+            --set "admin.image.tag=${ADMIN_IMAGE_TAG}" \
+            --set "services.image.tag=${SERVICE_IMAGE_TAG}" \
             --namespace beekeepingit-dev --create-namespace \
-            --timeout 10m
+            --timeout 15m
 
       # Explicit readiness gate (the install above already blocked on the grants hook,
       # so the pod exists by now — but assert condition=ready before testing against it).
       - name: Wait for Postgres
-        if: steps.changes.outputs.infra == 'true'
+        if: steps.changes.outputs.e2e == 'true'
         run: |
           kubectl -n beekeepingit-dev wait --for=condition=ready pod \
             -l cnpg.io/cluster=beekeepingit-postgres --timeout=300s
 
-      # The AC: the postgres PostGIS smoke-query hook runs automatically. As
-      # keycloak/minio/gateway grow their own `helm test` liveness hooks, they run here
-      # too — those components are separate Flux HelmReleases today (see infra/README.md's
-      # step-by-step), so bring them up above first when their hooks land.
-      - name: helm test (PostGIS smoke query)
-        if: steps.changes.outputs.infra == 'true'
+      # Authentik is its own Flux HelmRelease (ADR-0012/0016), so — to exercise its
+      # `helm test` readiness hook below — bring it up here the same way dev-up.sh does
+      # for the local loop: install the Flux controllers, then apply the HelmRelease with
+      # its `dependsOn: [beekeepingit]` stripped (that guard targets a GitOps-bootstrapped
+      # HelmRelease object this direct-apply path doesn't create; the umbrella install
+      # above already created the config/Postgres Secrets + blueprint ConfigMap it needs).
+      - name: Set up Flux CLI
+        if: steps.changes.outputs.e2e == 'true'
+        uses: fluxcd/flux2/action@4a15fa6a023259353ef750acf1c98fe88407d4d0 # v2.7.2
+      - name: Bring up Authentik (Flux HelmRelease)
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          flux install
+          sed '/^  dependsOn:$/,+1d' beekeepingit-gitops/apps/dev/authentik-helmrelease.yaml \
+            | kubectl apply -f -
+          # The server Deployment is created by helm-controller a moment after the
+          # HelmRelease reconciles; wait for it to appear, then for the rollout (the
+          # server only goes ready once its Postgres is up, migrations have run, and the
+          # blueprint applied). Generous timeout for a cold image pull + bootstrap.
+          for _ in $(seq 1 60); do
+            kubectl -n beekeepingit-dev get deploy/authentik-server >/dev/null 2>&1 && break
+            sleep 5
+          done
+          kubectl -n beekeepingit-dev rollout status deployment/authentik-server --timeout=600s
+
+      # The server being Ready is NOT enough for the domain services: the WORKER applies
+      # the blueprint (provider/application/seed user) asynchronously after boot, and
+      # until it lands, OIDC discovery 404s and every Go service crash-restarts with a
+      # growing backoff (up to 5 min). So: wait for the worker rollout (it does the
+      # apply), poll discovery until it 200s, then restart the services once to clear the
+      # accumulated CrashLoopBackOff — otherwise the readiness gate below races pod
+      # backoff timers, not real readiness.
+      - name: Wait for the Authentik blueprint (OIDC discovery answers), reset backoffs
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          kubectl -n beekeepingit-dev rollout status deployment/authentik-worker --timeout=600s
+          # Poll discovery by exec-ing INTO the authentik-server pod and curling its own
+          # localhost. exec runs over the kube API (not pod networking) and localhost is
+          # loopback, so this is immune to the NetworkPolicy default-deny (#89) — a
+          # separate probe pod or a runner port-forward is not. 90×10s = 15 min, since a
+          # cold CI worker can be slow to finish applying the blueprint.
+          # Re-resolve the server pod EACH iteration: on a fresh cluster authentik-server
+          # can restart mid-poll (cold-DB migrations, startup-probe cycling), and a pod
+          # name captured once goes stale — every exec then fails forever and the poll
+          # times out even after discovery is actually serving on the new pod.
+          for i in $(seq 1 90); do
+            POD=$(kubectl -n beekeepingit-dev get pod \
+              -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
+              --field-selector=status.phase=Running \
+              -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            if [ -n "$POD" ] && kubectl -n beekeepingit-dev exec "$POD" -- \
+                 curl -sf http://localhost:9000/application/o/beekeepingit/.well-known/openid-configuration >/dev/null 2>&1; then
+              echo "discovery answered after ~$((i*10))s"
+              break
+            fi
+            if [ "$i" = "90" ]; then
+              echo "::error::blueprint never applied — discovery still 404 after 900s"
+              exit 1
+            fi
+            sleep 10
+          done
+          kubectl -n beekeepingit-dev rollout restart deployment \
+            -l app.kubernetes.io/part-of=beekeepingit
+
+      # Explicit readiness gate for the domain services (identity, organizations, apiaries,
+      # sync, pwa, powersync, ...) — not just Postgres/Authentik above. Without this, a
+      # service stuck in CrashLoopBackOff (e.g. a search_path-dependent SQL bug that only
+      # reproduces under that service's restricted DB role) passes the whole pipeline
+      # undetected, because nothing ever asserted the pods became Ready (#215). Every
+      # Deployment in the umbrella chart carries this label via `beekeepingit.labels`
+      # (infra/helm/beekeepingit/templates/_helpers.tpl), so one selector covers all of them.
+      - name: Wait for domain-service deployments
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          # Backoffs were just reset by the rollout restart above, so this is a clean
+          # boot: image start + probe warmup only.
+          #
+          # Bumped 600s -> 900s (#50): with `todos` as an 8th domain service now racing
+          # every other one to connect to Postgres right after the reset above, two
+          # separate live runs saw `todos` alone still crash-looping on a transient
+          # "connection refused" (Postgres momentarily not accepting connections, the
+          # same blip every service's own previous-instance logs show recovering from)
+          # right as the old 600s budget ran out, while every sibling service recovered
+          # in time. Nothing about `todos` itself is different from its siblings (same
+          # servicetemplate bootstrap, same probes/resources) — this is margin, not a
+          # code fix.
+          kubectl -n beekeepingit-dev wait --for=condition=available deployment \
+            -l app.kubernetes.io/part-of=beekeepingit --timeout=900s
+
+      # The AC: the postgres PostGIS smoke-query hook AND the authentik readiness hook run
+      # automatically. As minio/gateway grow their own `helm test` liveness hooks, they run
+      # here too (mailpit's readiness hook, #361, already does).
+      - name: helm test (PostGIS smoke query + Authentik readiness)
+        if: steps.changes.outputs.e2e == 'true'
         run: helm test beekeepingit --namespace beekeepingit-dev
+
+      # Outbound-email smoke (#361, NFR-SEC-1): prove the AUTHENTIK_EMAIL__* wiring
+      # actually DELIVERS, isolated from any flow logic — send one message through
+      # Authentik's configured Django email backend (`ak shell` in the worker: the
+      # exact config path the verification email stage uses) and assert Mailpit's
+      # API shows it. Both execs run inside the authentik pods (same
+      # NetworkPolicy-immune-over-kube-API trick as the discovery poll above; the
+      # pods' own path to mailpit:1025/:8025 is covered by the
+      # authentik-to-mailpit-* ingress allows, charts/networkpolicy).
+      - name: Verify outbound email (Authentik → Mailpit)
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          WORKER=$(kubectl -n beekeepingit-dev get pod \
+            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{.items[0].metadata.name}')
+          kubectl -n beekeepingit-dev exec "$WORKER" -- ak shell -c \
+            "from django.core.mail import send_mail; send_mail('helm-e2e smtp probe', 'outbound email works', None, ['probe@beekeepingit.local'])"
+          SERVER=$(kubectl -n beekeepingit-dev get pod \
+            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{.items[0].metadata.name}')
+          for i in $(seq 1 12); do
+            if kubectl -n beekeepingit-dev exec "$SERVER" -- \
+                 curl -sf http://mailpit:8025/api/v1/messages | grep -q "helm-e2e smtp probe"; then
+              echo "probe email delivered after ~$((i*5))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::probe email never arrived in Mailpit"
+          exit 1
+
+      # Node itself already came from "Set up toolchains from mise.toml" above
+      # (mise.toml pins node = 22, the same toolchain local dev uses) — no
+      # separate actions/setup-node needed.
+      - name: Install e2e dependencies
+        if: steps.changes.outputs.e2e == 'true'
+        working-directory: client/e2e
+        run: npm ci
+
+      # Chromium only (playwright.config.ts's one project) + its OS deps.
+      - name: Install Playwright browsers
+        if: steps.changes.outputs.e2e == 'true'
+        working-directory: client/e2e
+        run: npm run install-browsers
+
+      # Warm the gateway before the browser test. The domain-service readiness gate
+      # above asserts the pods are Available, but Traefik's route to the PWA can still
+      # answer 502 Bad Gateway for a short window after that (endpoints/first-request
+      # not warm) — and the e2e's first navigation landing on a static 502 page was a
+      # real flake (the spec now also retries, but warming here removes the window
+      # entirely). Poll the app origin (PWA) AND the auth host's OIDC discovery — both
+      # are on the k3d 8443 host port — until each answers, resolving the dev hostnames
+      # to loopback with --resolve (the browser uses --host-resolver-rules; curl needs
+      # this). Accept any HTTP response (even a redirect/401) as "warm" — a 5xx/000
+      # (connection refused) is not.
+      - name: Wait for the gateway to serve the PWA + OIDC discovery
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          warm() {
+            local name="$1" host="$2" path="$3"
+            for _ in $(seq 1 60); do
+              code=$(curl -sk -o /dev/null -w '%{http_code}' \
+                --resolve "$host:8443:127.0.0.1" "https://$host:8443$path" || echo 000)
+              if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then
+                echo "$name warm (HTTP $code)"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::$name never warmed (last HTTP $code)"
+            return 1
+          }
+          warm "PWA" app.beekeepingit.local /
+          warm "OIDC discovery" auth.beekeepingit.local \
+            /application/o/beekeepingit/.well-known/openid-configuration
+          # The admin app is its own gateway-served origin (#449); the admin-token
+          # claim-shape spec (#460) drives a real login through it, so warm its route
+          # too — same cold-stack 502 window as the PWA's.
+          warm "Admin app" admin.beekeepingit.local /
+
+      # The verification-flow e2e (#361, client/e2e/tests/verification.spec.ts)
+      # and the registration e2e (#366, registration.spec.ts) read the emailed
+      # one-time links out of Mailpit's API, which is deliberately
+      # in-cluster-only (no gateway route). kubectl port-forward
+      # bridges it to the runner — the tunnel rides the kube API, not pod
+      # networking, so NetworkPolicy doesn't apply; the background process
+      # outlives this step for the Playwright run below. E2E_MAILPIT_URL is
+      # also those specs' opt-in switch: they need THIS job's fresh
+      # blueprint-seeded state (the unverified seed user must still be
+      # unverified; registration creates its own per-run accounts), so they
+      # self-skip anywhere the env is absent.
+      - name: Port-forward Mailpit for the verification/registration e2e
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          kubectl -n beekeepingit-dev port-forward svc/mailpit 8025:8025 \
+            >/tmp/mailpit-port-forward.log 2>&1 &
+          for _ in $(seq 1 15); do
+            if curl -sf http://localhost:8025/readyz >/dev/null 2>&1; then
+              echo "mailpit reachable on localhost:8025"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::mailpit port-forward never became reachable"
+          cat /tmp/mailpit-port-forward.log || true
+          exit 1
+
+      # Runs the walking-skeleton spec (#23 §7.3, NFR-TST-1, #162) against the gateway
+      # this job just brought up, over the same host:8443 -> in-cluster:443 k3d port
+      # mapping local dev uses (k3d-config.yaml) — no port-forward needed. Defaults in
+      # playwright.config.ts already point at https://app.beekeepingit.local:8443 and
+      # map both dev hostnames to loopback via --host-resolver-rules, so no runner
+      # /etc/hosts edit either; the config also already sets ignoreHTTPSErrors /
+      # --ignore-certificate-errors for the dev gateway's self-signed cert. The seed
+      # user (test.beekeeper@beekeepingit.local) comes from the Authentik blueprint
+      # applied during bring-up above.
+      - name: Run the walking-skeleton e2e
+        if: steps.changes.outputs.e2e == 'true'
+        working-directory: client/e2e
+        env:
+          # Opts in the verification-flow (#361) and registration (#366)
+          # specs — see the port-forward step above. The walking-skeleton
+          # spec ignores it.
+          E2E_MAILPIT_URL: http://localhost:8025
+          # Opts in the admin-token claim-shape spec (#460): it drives a real
+          # login through the deployed admin app and asserts the minted token's
+          # iss/aud override. Absent locally → the spec self-skips. The admin
+          # host is warmed above and mapped to loopback in playwright.config.ts.
+          E2E_ADMIN_ORIGIN: https://admin.beekeepingit.local:8443
+        run: npm test
+
+      # Playwright's own trace/screenshot/HTML report (playwright.config.ts:
+      # trace: on-first-retry, screenshot: only-on-failure) — the fastest way to
+      # debug a red run without re-running the whole live cluster locally.
+      - name: Upload Playwright report
+        if: failure() && steps.changes.outputs.e2e == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: client/e2e/playwright-report/
+          retention-days: 7
+
+      # Test-data teardown (#162 AC): the spec's own afterAll deletes the apiary it
+      # created via the apiaries API (see slice.spec.ts) so re-runs against a
+      # longer-lived environment don't accumulate rows. Belt-and-braces here too,
+      # since this job's cluster is destroyed at the end regardless (Tear down the
+      # cluster, below) — so on THIS job the afterAll is defense in depth, not the
+      # only thing keeping runs isolated; the cluster teardown is.
 
       # Make a red run debuggable without re-running locally. Gated on the filter too:
       # on an irrelevant PR the tools were never installed, so these kubectl calls would
       # error on a missing binary rather than help.
       - name: Diagnostics (on failure)
-        if: failure() && steps.changes.outputs.infra == 'true'
+        if: failure() && steps.changes.outputs.e2e == 'true'
         run: |
-          kubectl get pods -A || true
+          kubectl get pods -A -o wide || true
           kubectl -n beekeepingit-dev describe pods || true
+          kubectl -n beekeepingit-dev get deployment -o wide || true
+          kubectl -n beekeepingit-dev describe deployment || true
           kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server --tail=120 --prefix || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker --tail=200 --prefix || true
+          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/part-of=beekeepingit --tail=50 --prefix || true
+          # PowerSync's own stdout is the only place a rejected/failing client
+          # sync-stream connection is named: the browser side of that connection
+          # runs inside a SharedWorker, invisible to Playwright's page-level
+          # trace (all the trace shows is the SDK's ~5s fetchCredentials retry
+          # loop — learned diagnosing #236's follow-up e2e failure, where the
+          # part-of dump above also happened to miss this pod's logs). Dump it,
+          # the sync service, and the gateway explicitly.
+          kubectl -n beekeepingit-dev logs deploy/beekeepingit-powersync --tail=300 || true
+          kubectl -n beekeepingit-dev logs deploy/sync --tail=150 || true
+          kubectl -n kube-system logs deploy/traefik --tail=150 || true
+          # Mailpit sink (#361): a red verification e2e usually means the email
+          # never arrived (SMTP wiring) or the flow never sent it (blueprint) —
+          # the sink's log + message count tells the two apart fast.
+          kubectl -n beekeepingit-dev logs deploy/beekeepingit-mailpit --tail=100 || true
+          # Blueprint instance status (#366): an INVALID blueprint file is only
+          # recorded on its BlueprintInstance (status "error" + stored apply
+          # logs) — the apply task finishes with exc:null and the sole outward
+          # symptom is OIDC discovery 404ing forever (exactly how PR #414's
+          # missing-user_fields regression presented). Dump every instance's
+          # path/status so an invalid blueprint names itself here; second
+          # query best-effort surfaces the stored per-task messages.
+          AK_WORKER=$(kubectl -n beekeepingit-dev get pod \
+            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker \
+            --field-selector=status.phase=Running \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          if [ -n "$AK_WORKER" ]; then
+            kubectl -n beekeepingit-dev exec "$AK_WORKER" -- ak shell -c \
+              "from authentik.blueprints.models import BlueprintInstance; [print('blueprint:', i.path, '| status:', i.status, '| last_applied:', i.last_applied) for i in BlueprintInstance.objects.all().order_by('path')]" || true
+            kubectl -n beekeepingit-dev exec "$AK_WORKER" -- ak shell -c \
+              "from authentik.tasks.models import Task; [print('task:', t.actor_name, '|', str(getattr(t, '_messages', ''))[:1500]) for t in Task.objects.filter(actor_name__icontains='blueprint').order_by('-mtime')[:10]]" || true
+          fi
+          # Crashlooping containers keep their crash output on the PREVIOUS instance;
+          # plain `logs` on a just-restarted container is usually empty.
+          for d in identity organizations apiaries activities journeys todos sync pwa admin beekeepingit-powersync; do
+            echo "=== previous logs: $d ==="
+            kubectl -n beekeepingit-dev logs "deploy/$d" --previous --tail=30 || true
+          done
+          kubectl get helmrelease -A || true
           kubectl -n beekeepingit-dev get events --sort-by=.lastTimestamp || true
 
       # Tear down regardless of pass/fail (AC). Gated on the filter (else down.sh runs on
@@ -109,5 +689,5 @@ jobs:
       # The runner is ephemeral, but deleting the cluster explicitly keeps the job honest
       # and mirrors down.sh's cleanup.
       - name: Tear down the cluster
-        if: always() && steps.changes.outputs.infra == 'true'
+        if: always() && steps.changes.outputs.e2e == 'true'
         run: infra/cluster/down.sh

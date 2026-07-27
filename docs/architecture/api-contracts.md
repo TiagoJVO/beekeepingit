@@ -10,7 +10,7 @@
 **Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)
 (microservices → inter-service contracts),
 [D-5](../../requirements/decisions.md) (Go/Flutter/React),
-[D-7](../../requirements/decisions.md) (Keycloak JWT)
+[D-7](../../requirements/decisions.md) (OIDC JWT — Authentik in v1)
 **Depends on:** #104, #105 · **ADR:** [0003-api-contract-conventions](../adr/0003-api-contract-conventions.md)
 **Contracts:** [`contracts/openapi/`](../../contracts/openapi/)
 
@@ -133,7 +133,7 @@ row's own id is the natural idempotency anchor for the sync upload (#106).
 
 - **Filtering** via explicit `snake_case` query params (`?type=harvest&from=…&to=…`), per the
   filterable lists the FRs call for (FR-AC-5/6, FR-JO-2). **Search** is `?q=` (FR-AP-6; scope
-  is [Q-SEARCH](../../requirements/open-questions.md)).
+  settled by **D-17** — client-side, apiaries-only, by name/location).
 - **Sorting** via `?sort=` with a documented allow-list per endpoint (e.g. apiaries support
   `?near=lon,lat` → distance order, FR-AP-2). No arbitrary client-driven sort.
 
@@ -192,8 +192,9 @@ Details** (`application/problem+json`). Canonical schema in
 
 ## 9. Auth & tenancy in the contract (D-7, ADR-0002)
 
-- **Every client-facing operation requires a Keycloak-issued JWT bearer** (`bearerAuth`,
-  D-7). The gateway and/or the owning service validate it via JWKS (#109).
+- **Every client-facing operation requires an OIDC-issued JWT bearer** (`bearerAuth`, D-7 —
+  Authentik in v1, behind a provider-agnostic boundary). The gateway and/or the owning service
+  validate it via JWKS (#109).
 - **Tenancy is derived server-side, never a client parameter.** The caller's
   `organization_id` comes from the **token + membership**, so it is **never** a path, query, or
   body field ([ADR-0002](../adr/0002-multi-tenancy.md)). Where an org id must appear in a path
@@ -203,6 +204,47 @@ Details** (`application/problem+json`). Canonical schema in
 - **AI confirmed writes reuse this surface unchanged:** the `ai` service never writes domain
   data; a user-confirmed action is executed by the **owning service via this same REST
   contract** (NFR-AI-4 / D-11) — so there is nothing AI-specific in the contract.
+
+### 9.1 CSRF posture (EPIC-14 #89, NFR-SEC-1)
+
+**No CSRF tokens are used, deliberately — the API is bearer-token authenticated, not
+cookie-authenticated, so the CSRF threat model doesn't apply to it.**
+
+CSRF works by getting a victim's browser to replay an **ambient credential** (a cookie the
+browser attaches automatically) toward a state-changing endpoint. Our client-facing APIs never
+rely on an ambient credential:
+
+- Every request to a domain service (`identity`/`organizations`/`apiaries`/`sync`/…) carries an
+  explicit **`Authorization: Bearer <access token>`** header (§9 above), read from the app's own
+  in-memory/secure-storage token cache
+  ([`client/lib/core/auth/auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart),
+  [`client/lib/core/api/`](../../client/lib/core/api/)). A forged cross-site request has no way
+  to attach that header — the browser doesn't send it automatically the way it would a cookie,
+  and a third-party page cannot read it out of the app's storage (same-origin policy).
+- Domain services and the gateway **set no session cookie of their own** — nothing here is
+  cookie-authenticated for the client to forget to protect.
+- **Authentik** (the IdP, `auth.beekeepingit.local`) does set its own server-side SSO session
+  cookie, scoped to **its own origin** — but that cookie is Authentik's login-session state, used
+  only during the OIDC redirect dance (`auth.md` §7 "Logout"). No BeekeepingIT domain service or
+  the gateway ever reads it; it never crosses to the app origin (`app.beekeepingit.local`) or
+  into a REST call. It's out of scope for our APIs' CSRF posture the same way a bank's SSO cookie
+  is out of scope for a third-party OAuth client it federates with.
+- The OIDC **Authorization Code + PKCE** flow itself already carries its own anti-forgery
+  mechanism — the `state` parameter, verified client-side on the redirect callback
+  (`auth_controller_test.dart` covers "CSRF-state rejection", `auth.md` §8.5) — a different,
+  already-solved problem from API CSRF.
+
+**What this is not:** this is not "we skipped CSRF protection" — a same-site/lax cookie policy
+or CSRF tokens would be **redundant** protection for a surface that never grants access via an
+ambient credential in the first place. If a future surface (e.g. a server-rendered admin
+console, or any endpoint that starts trusting a cookie) changes that assumption, it must add
+real CSRF protection (SameSite=Strict/Lax + a synchronizer token) at that time — this note
+applies only to the bearer-token REST APIs described in this document.
+
+**CORS**, by contrast, _is_ relevant (a different browser mechanism, unrelated to CSRF): the
+Authentik blueprint's OAuth2 provider `redirect_uris` double as its CORS-allowed-origins list
+(`infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml`, `auth.md` §8.5) —
+scoped to the app's own origin(s), not a wildcard.
 
 ---
 
@@ -247,24 +289,28 @@ flowchart TD
 - **The reusable contract template** is `_shared/components.openapi.yaml` — security scheme,
   pagination params, standard headers (`ETag`, `Idempotency-Key`, `If-Match`, `X-Request-Id`),
   the `Problem` error schema and standard responses. New services are stamped from it.
-- **To wire in CI (EPIC-13, tracked in [FOLLOWUPS.md](../../FOLLOWUPS.md)):** spec **lint**
-  (Redocly/Spectral), **breaking-change** diff (`oasdiff`) on PRs, **server-stub + typed-client
-  codegen** (Go `oapi-codegen`; Dart/TS clients), and **contract tests** at boundaries
-  (coding-standards / NFR-TST-1). Until then, lint locally (`npx @redocly/cli lint …`) — the two
-  committed skeletons pass the recommended ruleset.
+- **Wired in CI ([#153](https://github.com/TiagoJVO/beekeepingit/issues/153)):** spec **lint**
+  (Redocly, `task openapi:lint` in `task ci`) and a **breaking-change** diff (`oasdiff`,
+  `contracts-ci.yml`) on PRs touching `contracts/openapi/**` — see
+  [`taskfiles/openapi.yml`](../../taskfiles/openapi.yml). **Server-stub codegen** (Go
+  `oapi-codegen`) is wired but no-ops until a service adds an `oapi-codegen.yaml` config;
+  **Dart/TS typed-client codegen** is deferred (no consumer yet, tool undecided). **Contract
+  tests** at boundaries run inside the owning service's own integration tests via
+  `services/servicetemplate/contracttest`, which validates a real HTTP response against the
+  service's OpenAPI spec — see `services/apiaries/main_test.go`.
 
 ---
 
 ## 12. Open questions & hand-offs
 
-| Item                                                                                            | Effect on the contract                                                                                                                                                            | Resolved in                                                                     |
-| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Q-SYNC (**resolved**)                                                                           | The **sync write-back** protocol (offline queue → authoritative tables) layers on these REST writes + `Idempotency-Key`; atomic-push semantics (D-12) are defined there, not here | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106) |
-| Q-AUTH — **resolved**                                                                           | JWT validation (edge + per-service), org scope from token+membership, offline-token handling                                                                                      | [auth.md](auth.md) / [ADR-0004](../adr/0004-authn-authz.md) (#109)              |
-| Q-ROLE — **resolved**                                                                           | `admin` is **org-scoped**; member/invitation endpoints are admin-only                                                                                                             | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md) (#109)         |
-| [Q-SEARCH](../../requirements/open-questions.md)                                                | `?q=` scope (which entities, offline vs online, which attributes)                                                                                                                 | EPIC-02                                                                         |
-| [Q-JOUR](../../requirements/open-questions.md) / [Q-TODO](../../requirements/open-questions.md) | Exact journey/todo endpoints & payloads (attribution, lifecycle)                                                                                                                  | EPIC-04 / EPIC-05                                                               |
-| [NFR-RL-1](../../requirements/non-functional-requirements.md) (D-4)                             | `429` + quota/usage headers are **stubbed** now; enforced later via the Admin App                                                                                                 | deferred (D-4)                                                                  |
+| Item                                                                                            | Effect on the contract                                                                                                                                                                                                                                                                                                                                                                | Resolved in                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q-SYNC (**resolved**)                                                                           | The **sync write-back** protocol (offline queue → authoritative tables) layers on these REST writes + `Idempotency-Key`; atomic-push semantics (D-12) are defined there, not here                                                                                                                                                                                                     | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106)                                                                     |
+| Q-AUTH — **resolved**                                                                           | JWT validation (edge + per-service), org scope from token+membership, offline-token handling                                                                                                                                                                                                                                                                                          | [auth.md](auth.md) / [ADR-0004](../adr/0004-authn-authz.md) (#109)                                                                                  |
+| Q-ROLE — **resolved** (revised by D-32)                                                         | `admin` is **org-scoped**; member/invitation endpoints are admin-only. A second, **platform** tier (cross-organization operator) reuses the same claim check on five existing routes (#466) and now has its first new contract entry too — `GET /organizations/platform/memberships` (#468, `PlatformMembershipList` schema); list-all-organizations (#467) remains planned — EPIC-18 | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md) (#109); platform tier: [#463](https://github.com/TiagoJVO/beekeepingit/issues/463) |
+| Q-SEARCH (**resolved**)                                                                         | `?q=` scope (which entities, offline vs online, which attributes)                                                                                                                                                                                                                                                                                                                     | [D-17](../../requirements/decisions.md#d-17--apiary-search-client-side-apiaries-only-by-namelocation)                                               |
+| [Q-JOUR](../../requirements/open-questions.md) / [Q-TODO](../../requirements/open-questions.md) | Exact journey/todo endpoints & payloads (attribution, lifecycle)                                                                                                                                                                                                                                                                                                                      | EPIC-04 / EPIC-05                                                                                                                                   |
+| [NFR-RL-1](../../requirements/non-functional-requirements.md) (D-4)                             | `429` + quota/usage headers are **stubbed** now; enforced later via the Admin App                                                                                                                                                                                                                                                                                                     | deferred (D-4)                                                                                                                                      |
 
 ---
 

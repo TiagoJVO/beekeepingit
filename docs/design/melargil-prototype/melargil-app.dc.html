@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&amp;family=Playfair+Display:wght@500;600;700&amp;family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400..700,0..1,-50..200&amp;display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#221D31; font-family:Archivo,system-ui,sans-serif; }
+  a { color:#4A3F63; } a:hover { color:#F0A81F; }
+  input::placeholder, textarea::placeholder { color:#A79FB5; }
+  @keyframes ml-toast { from { opacity:0; transform:translate(-50%,10px);} to { opacity:1; transform:translate(-50%,0);} }
+</style>
+</helmet>
+
+<div style="display:flex;justify-content:center;min-height:100dvh;background:#221D31">
+<div style="position:relative;width:100%;max-width:430px;height:100dvh;display:flex;flex-direction:column;background:#F6F3EC;overflow:hidden">
+
+<!-- ============ AUTH FLOW ============ -->
+<sc-if value="{{ vAuth }}" hint-placeholder-val="{{ false }}">
+
+  <sc-if value="{{ vLogin }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:0;background:#4A3F63;padding:32px;overflow-y:auto">
+      <img src="uploads/pasted-1783722840603-0.png" alt="Melargil" style="width:120px;height:120px;border-radius:28px;margin-bottom:20px">
+      <div style="font:600 44px 'Playfair Display',serif;color:#FFFFFF;letter-spacing:.01em">Melargil</div>
+      <div style="font:600 12px Archivo,sans-serif;color:#F0A81F;letter-spacing:.22em;margin-top:8px">MEL DE MONTARGIL · PORTUGAL</div>
+      <div style="font:400 16px/1.5 Archivo,sans-serif;color:#CFC8DE;text-align:center;margin:28px 0 32px">Gestão de apiários, atividades e jornadas — mesmo sem ligação, no campo.</div>
+      <div style="display:flex;flex-direction:column;gap:14px;width:100%;max-width:340px">
+        <button onClick="{{ acao.entrar }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px" style-hover="background:#F7B637"><span style="font-family:'Material Symbols Outlined';font-size:24px">login</span>Iniciar sessão</button>
+        <button onClick="{{ acao.aRegisto }}" style="height:60px;border:1.5px solid #7A6F96;border-radius:16px;background:transparent;color:#FFFFFF;font:600 17px Archivo,sans-serif;cursor:pointer" style-hover="border-color:#F0A81F;color:#F0A81F">Criar conta</button>
+      </div>
+      <div style="font:400 12px Archivo,sans-serif;color:#8B81A6;margin-top:28px">Sessão segura através do fornecedor de identidade (OIDC)</div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ vRegisto }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:28px 24px">
+      <button onClick="{{ acao.aLogin }}" style="border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:6px;color:#4A3F63;font:600 15px Archivo,sans-serif;padding:8px 0"><span style="font-family:'Material Symbols Outlined';font-size:22px">arrow_back</span>Voltar</button>
+      <div style="font:600 32px 'Playfair Display',serif;color:#2B2438;margin:18px 0 6px">Criar conta</div>
+      <div style="font:400 15px/1.5 Archivo,sans-serif;color:#6E6680;margin-bottom:28px">Registe-se para gerir os apiários da sua organização.</div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Email</div>
+        <input onInput="{{ d.regEmail }}" type="email" placeholder="nome@exemplo.pt" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Palavra-passe</div>
+        <input onInput="{{ d.regPass }}" type="password" placeholder="Mínimo 8 caracteres" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <button onClick="{{ acao.registar }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:10px" style-hover="background:#F7B637">Continuar</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ vPerfil }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:28px 24px">
+      <div style="font:600 12px Archivo,sans-serif;color:#B0862B;letter-spacing:.14em;margin-top:8px">PASSO 1 DE 2</div>
+      <div style="font:600 32px 'Playfair Display',serif;color:#2B2438;margin:10px 0 6px">O seu perfil</div>
+      <div style="font:400 15px/1.5 Archivo,sans-serif;color:#6E6680;margin-bottom:28px">Fale-nos um pouco de si para começar.</div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Nome</div>
+        <input onInput="{{ d.perfilNome }}" defaultValue="{{ perfil.nome }}" placeholder="O seu nome" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Email</div>
+        <input onInput="{{ d.perfilEmail }}" defaultValue="{{ perfil.email }}" type="email" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Idioma preferido</div>
+        <select onChange="{{ d.perfilIdioma }}" defaultValue="pt" style="width:100%;box-sizing:border-box;height:58px;padding:0 12px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none">
+          <option value="pt">Português</option><option value="en">English</option>
+        </select></div>
+        <button onClick="{{ acao.guardarPerfil }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:10px" style-hover="background:#F7B637">Guardar perfil</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ vOrgEscolha }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:28px 24px">
+      <div style="font:600 12px Archivo,sans-serif;color:#B0862B;letter-spacing:.14em;margin-top:8px">PASSO 2 DE 2</div>
+      <div style="font:600 32px 'Playfair Display',serif;color:#2B2438;margin:10px 0 6px">Organização</div>
+      <div style="font:400 15px/1.5 Archivo,sans-serif;color:#6E6680;margin-bottom:28px">Os apiários pertencem a uma organização, partilhada por toda a equipa.</div>
+      <button onClick="{{ acao.aOrgNova }}" style="width:100%;text-align:left;background:#4A3F63;border:none;border-radius:18px;padding:22px 20px;cursor:pointer;display:flex;gap:16px;align-items:center;margin-bottom:14px" style-hover="background:#574B73">
+        <span style="font-family:'Material Symbols Outlined';font-size:32px;color:#F0A81F">add_business</span>
+        <span><span style="display:block;font:700 18px Archivo,sans-serif;color:#fff">Criar organização</span>
+        <span style="display:block;font:400 14px/1.4 Archivo,sans-serif;color:#CFC8DE;margin-top:4px">Será o administrador e poderá convidar membros.</span></span>
+      </button>
+      <button onClick="{{ acao.aOrgConvite }}" style="width:100%;text-align:left;background:#fff;border:1.5px solid #D8D1C0;border-radius:18px;padding:22px 20px;cursor:pointer;display:flex;gap:16px;align-items:center" style-hover="border-color:#4A3F63">
+        <span style="font-family:'Material Symbols Outlined';font-size:32px;color:#4A3F63">mail</span>
+        <span><span style="display:block;font:700 18px Archivo,sans-serif;color:#2B2438">Tenho um convite</span>
+        <span style="display:block;font:400 14px/1.4 Archivo,sans-serif;color:#6E6680;margin-top:4px">Junte-se a uma organização existente por convite de email.</span></span>
+      </button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ vOrgNova }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:28px 24px">
+      <button onClick="{{ acao.aOrgEscolha }}" style="border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:6px;color:#4A3F63;font:600 15px Archivo,sans-serif;padding:8px 0"><span style="font-family:'Material Symbols Outlined';font-size:22px">arrow_back</span>Voltar</button>
+      <div style="font:600 32px 'Playfair Display',serif;color:#2B2438;margin:18px 0 6px">Criar organização</div>
+      <div style="font:400 15px/1.5 Archivo,sans-serif;color:#6E6680;margin-bottom:28px">Crie a sua organização para começar a gerir apiários.</div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Nome da organização</div>
+        <input onInput="{{ d.orgNome }}" placeholder="Ex.: Melargil, Lda." style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Morada (opcional)</div>
+        <input onInput="{{ d.orgMorada }}" placeholder="Localidade, concelho" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <button onClick="{{ acao.criarOrg }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:10px" style-hover="background:#F7B637">Criar organização</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ vOrgConvite }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:28px 24px">
+      <button onClick="{{ acao.aOrgEscolha }}" style="border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:6px;color:#4A3F63;font:600 15px Archivo,sans-serif;padding:8px 0"><span style="font-family:'Material Symbols Outlined';font-size:22px">arrow_back</span>Voltar</button>
+      <div style="font:600 32px 'Playfair Display',serif;color:#2B2438;margin:18px 0 6px">Juntar-se por convite</div>
+      <div style="font:400 15px/1.5 Archivo,sans-serif;color:#6E6680;margin-bottom:28px">Introduza o código que recebeu por email.</div>
+      <input onInput="{{ d.convCodigo }}" placeholder="Código do convite" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none;letter-spacing:.1em" style-focus="border-color:#4A3F63">
+      <button onClick="{{ acao.aceitarConvite }}" style="width:100%;height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:20px" style-hover="background:#F7B637">Juntar-me</button>
+    </div>
+  </sc-if>
+
+</sc-if>
+
+<!-- ============ APP SHELL ============ -->
+<sc-if value="{{ vApp }}" hint-placeholder-val="{{ true }}">
+
+  <!-- Header -->
+  <div style="background:#4A3F63;padding:14px 16px 14px 12px;display:flex;align-items:center;gap:8px;flex:none">
+    <sc-if value="{{ mostraVoltar }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ acao.voltar }}" aria-label="Voltar" style="width:46px;height:46px;border:none;background:none;cursor:pointer;color:#fff;display:flex;align-items:center;justify-content:center;border-radius:12px" style-hover="background:rgba(255,255,255,.12)"><span style="font-family:'Material Symbols Outlined';font-size:26px">arrow_back</span></button>
+    </sc-if>
+    <sc-if value="{{ mostraMarca }}" hint-placeholder-val="{{ true }}">
+      <img src="uploads/pasted-1783722840603-0.png" alt="" style="width:34px;height:34px;border-radius:9px;margin-left:6px">
+    </sc-if>
+    <div style="flex:1;min-width:0;font:600 22px 'Playfair Display',serif;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:4px">{{ titulo }}</div>
+    <button onClick="{{ acao.aDefinicoes }}" aria-label="Estado de sincronização" style="height:40px;border:none;border-radius:20px;padding:0 12px;display:flex;align-items:center;gap:6px;cursor:pointer;background:rgba(255,255,255,.12);color:#fff;font:600 12px Archivo,sans-serif" style-hover="background:rgba(255,255,255,.2)">
+      <span style="width:9px;height:9px;border-radius:50%;background:{{ corLigacao }}"></span>{{ rotuloLigacao }}
+    </button>
+    <button onClick="{{ acao.aConta }}" aria-label="Conta" style="width:46px;height:46px;border:none;background:none;cursor:pointer;color:#fff;display:flex;align-items:center;justify-content:center;border-radius:12px" style-hover="background:rgba(255,255,255,.12)"><span style="font-family:'Material Symbols Outlined';font-size:26px">account_circle</span></button>
+  </div>
+
+  <!-- Offline banner -->
+  <sc-if value="{{ mostraBannerOffline }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:none;background:#3A3149;color:#E8E3F2;font:500 13px Archivo,sans-serif;padding:10px 16px;display:flex;align-items:center;gap:8px">
+      <span style="font-family:'Material Symbols Outlined';font-size:18px;color:#F0A81F">cloud_off</span>
+      Sem ligação — alterações guardadas localmente ({{ pendentes }} por sincronizar)
+    </div>
+  </sc-if>
+
+  <!-- ======== APIÁRIOS (lista) ======== -->
+  <sc-if value="{{ vApiarios }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1;overflow-y:auto;padding:16px 16px 120px">
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <div style="flex:1;display:flex;align-items:center;gap:8px;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;padding:0 14px;height:52px">
+          <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#6E6680">search</span>
+          <input onInput="{{ d.pesquisa }}" placeholder="Pesquisar apiários…" style="flex:1;border:none;outline:none;background:none;font:500 16px Archivo,sans-serif;color:#2B2438;min-width:0">
+        </div>
+        <button onClick="{{ acao.alternarMapa }}" style="width:52px;height:52px;border:1.5px solid #4A3F63;border-radius:14px;background:{{ mapaBtnBg }};color:{{ mapaBtnCor }};cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Alternar mapa"><span style="font-family:'Material Symbols Outlined';font-size:24px">{{ mapaBtnIcone }}</span></button>
+      </div>
+
+      <!-- Vista mapa -->
+      <sc-if value="{{ vMapa }}" hint-placeholder-val="{{ false }}">
+        <div style="position:relative;height:420px;border-radius:18px;overflow:hidden;border:1.5px solid #D8D1C0;background:repeating-linear-gradient(45deg,#EDE8DC 0 14px,#E6E0D2 14px 28px)">
+          <div style="position:absolute;top:12px;left:12px;right:12px;background:rgba(255,255,255,.92);border-radius:12px;padding:10px 12px;font:500 13px/1.4 Archivo,sans-serif;color:#4A3F63;display:flex;gap:8px;align-items:center;z-index:2">
+            <span style="font-family:'Material Symbols Outlined';font-size:18px">straighten</span>{{ dicaMapa }}
+          </div>
+          <div style="position:absolute;bottom:10px;right:12px;font:600 10px ui-monospace,monospace;color:#8B8270;letter-spacing:.08em">MAPA — MONTARGIL (dados de exemplo)</div>
+          <sc-for list="{{ marcadores }}" as="m" hint-placeholder-count="5">
+            <button onClick="{{ m.medir }}" style="position:absolute;left:{{ m.mx }};top:{{ m.my }};transform:translate(-50%,-100%);border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px">
+              <span style="width:38px;height:38px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:{{ m.cor }};border:3px solid #fff;box-shadow:0 2px 6px rgba(34,29,49,.35);display:flex;align-items:center;justify-content:center"><span style="transform:rotate(45deg);font:700 13px Archivo,sans-serif;color:#fff">{{ m.colmeias }}</span></span>
+              <span style="font:600 11px Archivo,sans-serif;color:#2B2438;background:rgba(255,255,255,.9);border-radius:6px;padding:2px 6px;white-space:nowrap">{{ m.nome }}</span>
+            </button>
+          </sc-for>
+          <div style="position:absolute;left:52%;top:62%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px">
+            <span style="width:16px;height:16px;border-radius:50%;background:#2A6FDB;border:3px solid #fff;box-shadow:0 0 0 6px rgba(42,111,219,.2)"></span>
+            <span style="font:600 10px Archivo,sans-serif;color:#2A6FDB">Você</span>
+          </div>
+        </div>
+        <sc-if value="{{ temMedicao }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:12px;background:#4A3F63;border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:10px">
+            <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#F0A81F">straighten</span>
+            <div style="flex:1;font:500 14px/1.4 Archivo,sans-serif;color:#fff">{{ textoMedicao }}</div>
+            <button onClick="{{ acao.limparMedicao }}" style="border:none;background:rgba(255,255,255,.15);color:#fff;border-radius:10px;height:38px;padding:0 12px;font:600 13px Archivo,sans-serif;cursor:pointer">Limpar</button>
+          </div>
+        </sc-if>
+      </sc-if>
+
+      <!-- Vista lista -->
+      <sc-if value="{{ vListaApiarios }}" hint-placeholder-val="{{ true }}">
+        <div style="font:600 12px Archivo,sans-serif;color:#8B8270;letter-spacing:.1em;margin:4px 2px 10px">ORDENADOS POR PROXIMIDADE</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ apiariosLista }}" as="a" hint-placeholder-count="4">
+            <button onClick="{{ a.abrir }}" style="text-align:left;background:#fff;border:1px solid #E7E1D3;border-radius:16px;padding:16px;cursor:pointer;display:flex;align-items:center;gap:14px;min-height:76px;box-sizing:border-box" style-hover="border-color:#4A3F63">
+              <span style="width:48px;height:48px;border-radius:14px;background:#F4EDDB;display:flex;align-items:center;justify-content:center;flex:none"><span style="font-family:'Material Symbols Outlined';font-size:26px;color:#B0862B">hive</span></span>
+              <span style="flex:1;min-width:0">
+                <span style="display:block;font:700 17px Archivo,sans-serif;color:#2B2438;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.nome }}</span>
+                <span style="display:block;font:400 14px Archivo,sans-serif;color:#6E6680;margin-top:3px">{{ a.local }} · {{ a.resumoColmeias }}</span>
+              </span>
+              <span style="flex:none;text-align:right">
+                <span style="display:block;font:700 15px Archivo,sans-serif;color:#4A3F63">{{ a.dist }}</span>
+                <span style="display:block;font:400 12px Archivo,sans-serif;color:#8B8270">km</span>
+              </span>
+              <span style="font-family:'Material Symbols Outlined';font-size:24px;color:#B7AFC7;flex:none">chevron_right</span>
+            </button>
+          </sc-for>
+        </div>
+        <sc-if value="{{ semApiarios }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center;color:#6E6680;font:400 15px Archivo,sans-serif;padding:40px 20px">Sem resultados para a pesquisa.</div>
+        </sc-if>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <!-- ======== APIÁRIO DETALHE ======== -->
+  <sc-if value="{{ vApiarioDetalhe }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:16px 16px 120px">
+      <div style="background:#4A3F63;border-radius:20px;padding:20px;color:#fff">
+        <div style="font:600 26px 'Playfair Display',serif">{{ apiario.nome }}</div>
+        <div style="font:400 14px Archivo,sans-serif;color:#CFC8DE;margin-top:4px;display:flex;align-items:center;gap:6px"><span style="font-family:'Material Symbols Outlined';font-size:17px">location_on</span>{{ apiario.local }} · a {{ apiario.dist }} km</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px">
+          <sc-for list="{{ contadoresDetalhe }}" as="cd" hint-placeholder-count="4">
+            <button onClick="{{ cd.abrir }}" style="text-align:left;border:1px solid {{ cd.borda }};border-radius:14px;padding:12px;background:{{ cd.bg }};cursor:pointer">
+              <span style="display:block;font:700 28px Archivo,sans-serif;color:{{ cd.corValor }}">{{ cd.valor }}</span>
+              <span style="display:block;font:600 12px Archivo,sans-serif;color:{{ cd.corRotulo }}">{{ cd.rotulo }}</span>
+            </button>
+          </sc-for>
+        </div>
+        <sc-if value="{{ temContadorAtivo }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:10px;margin-top:12px;background:rgba(255,255,255,.12);border-radius:14px;padding:10px 12px">
+            <span style="flex:1;font:600 14px Archivo,sans-serif;color:#fff">{{ contadorAtivo.rotulo }}</span>
+            <button onClick="{{ contadorAtivo.menos }}" style="width:50px;height:50px;border:1.5px solid rgba(255,255,255,.4);border-radius:12px;background:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Menos"><span style="font-family:'Material Symbols Outlined';font-size:24px">remove</span></button>
+            <span style="min-width:44px;text-align:center;font:700 24px Archivo,sans-serif;color:#F0A81F">{{ contadorAtivo.valor }}</span>
+            <button onClick="{{ contadorAtivo.mais }}" style="width:50px;height:50px;border:none;border-radius:12px;background:#fff;color:#4A3F63;cursor:pointer;display:flex;align-items:center;justify-content:center" aria-label="Mais"><span style="font-family:'Material Symbols Outlined';font-size:24px">add</span></button>
+            <button onClick="{{ acao.fecharContador }}" style="height:50px;padding:0 14px;border:none;border-radius:12px;background:#F0A81F;color:#3A2E14;font:700 14px Archivo,sans-serif;cursor:pointer">OK</button>
+          </div>
+        </sc-if>
+
+      </div>
+
+      <sc-if value="{{ temNotas }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#F4EDDB;border:1px solid #E3D5AE;border-radius:16px;padding:14px 16px;margin-top:14px;display:flex;gap:10px;align-items:flex-start">
+          <span style="font-family:'Material Symbols Outlined';font-size:20px;color:#B0862B;margin-top:1px">sticky_note_2</span>
+          <div style="flex:1;font:400 14px/1.5 Archivo,sans-serif;color:#5C4E1E">{{ apiario.notas }}</div>
+        </div>
+      </sc-if>
+      <div style="font:600 19px 'Playfair Display',serif;color:#2B2438;margin:22px 2px 12px">Atividades neste apiário</div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px">
+        <sc-for list="{{ chipsTipoDetalhe }}" as="c" hint-placeholder-count="5">
+          <button onClick="{{ c.escolher }}" style="flex:none;height:44px;padding:0 16px;border-radius:22px;border:1.5px solid {{ c.borda }};background:{{ c.bg }};color:{{ c.cor }};font:600 14px Archivo,sans-serif;cursor:pointer">{{ c.rotulo }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ atividadesApiario }}" as="at" hint-placeholder-count="3">
+          <button onClick="{{ at.editar }}" style="text-align:left;width:100%;box-sizing:border-box;cursor:pointer;background:#fff;border:1px solid #E7E1D3;border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start" style-hover="border-color:#4A3F63">
+            <span style="width:42px;height:42px;border-radius:12px;background:{{ at.corFundo }};display:flex;align-items:center;justify-content:center;flex:none;margin-top:2px"><span style="font-family:'Material Symbols Outlined';font-size:22px;color:{{ at.cor }}">{{ at.icone }}</span></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;gap:8px"><span style="font:700 15px Archivo,sans-serif;color:#2B2438">{{ at.tipoRotulo }}</span><span style="font:500 13px Archivo,sans-serif;color:#8B8270;flex:none">{{ at.dataFmt }}</span></div>
+              <div style="font:400 14px/1.45 Archivo,sans-serif;color:#6E6680;margin-top:3px">{{ at.resumo }}</div>
+              <div style="font:400 12px Archivo,sans-serif;color:#A79FB5;margin-top:5px">por {{ at.autor }}</div>
+            </div>
+          </button>
+        </sc-for>
+        <sc-if value="{{ semAtividadesApiario }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center;color:#6E6680;font:400 15px Archivo,sans-serif;padding:30px 20px">Sem atividades para este filtro.</div>
+        </sc-if>
+      </div>
+    </div>
+    <!-- FAB ações rápidas -->
+    <div style="position:absolute;right:16px;bottom:104px;display:flex;flex-direction:column;align-items:flex-end;gap:10px;z-index:6">
+      <sc-if value="{{ fabRapidoAberto }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ acao.novaAtividadeAqui }}" style="height:54px;padding:0 18px;border:none;border-radius:27px;background:#fff;color:#4A3F63;font:600 15px Archivo,sans-serif;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 6px 18px rgba(34,29,49,.3)" style-hover="background:#EDE7F2">
+          <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#B0862B">add_circle</span>Nova atividade
+        </button>
+        <button onClick="{{ acao.tarefaAqui }}" style="height:54px;padding:0 18px;border:none;border-radius:27px;background:#fff;color:#4A3F63;font:600 15px Archivo,sans-serif;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 6px 18px rgba(34,29,49,.3)" style-hover="background:#EDE7F2">
+          <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#B0862B">task_alt</span>Nova tarefa neste apiário
+        </button>
+        <button onClick="{{ acao.editarApiario }}" style="height:54px;padding:0 18px;border:none;border-radius:27px;background:#fff;color:#4A3F63;font:600 15px Archivo,sans-serif;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 6px 18px rgba(34,29,49,.3)" style-hover="background:#EDE7F2">
+          <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#B0862B">edit</span>Editar apiário
+        </button>
+      </sc-if>
+      <button onClick="{{ acao.alternarFabRapido }}" aria-label="Ações rápidas" style="width:60px;height:60px;border:none;border-radius:50%;background:#F0A81F;color:#3A2E14;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(58,46,20,.35)" style-hover="background:#F7B637">
+        <span style="font-family:'Material Symbols Outlined';font-size:28px">{{ fabRapidoIcone }}</span>
+      </button>
+    </div>
+  </sc-if>
+
+  <!-- ======== APIÁRIO FORM ======== -->
+  <sc-if value="{{ vApiarioForm }}" hint-placeholder-val="{{ false }}">
+    <div key="{{ formKey }}" style="flex:1;overflow-y:auto;padding:20px 20px 120px">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Nome do apiário</div>
+        <input onInput="{{ d.faNome }}" defaultValue="{{ fa.nome }}" placeholder="Ex.: Herdade da Ribeira" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Localidade</div>
+        <input onInput="{{ d.faLocal }}" defaultValue="{{ fa.local }}" placeholder="Ex.: Montargil" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:8px">Localização — toque ou arraste o marcador</div>
+          <div onPointerDown="{{ acao.mapaFormPtr }}" onPointerMove="{{ acao.mapaFormMove }}" onPointerUp="{{ acao.mapaFormUp }}" style="position:relative;height:260px;border-radius:16px;overflow:hidden;border:1.5px solid #D8D1C0;background:repeating-linear-gradient(45deg,#EDE8DC 0 14px,#E6E0D2 14px 28px);touch-action:none;cursor:crosshair">
+            <div style="position:absolute;bottom:8px;right:10px;font:600 10px ui-monospace,monospace;color:#8B8270;letter-spacing:.08em;pointer-events:none">MAPA — MONTARGIL</div>
+            <div style="position:absolute;left:52%;top:62%;transform:translate(-50%,-50%);pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:2px">
+              <span style="width:14px;height:14px;border-radius:50%;background:#2A6FDB;border:3px solid #fff;box-shadow:0 0 0 5px rgba(42,111,219,.2)"></span>
+              <span style="font:600 10px Archivo,sans-serif;color:#2A6FDB">Você</span>
+            </div>
+            <div style="position:absolute;left:{{ formMxPct }};top:{{ formMyPct }};transform:translate(-50%,-100%);pointer-events:none">
+              <span style="display:flex;width:44px;height:44px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:#F0A81F;border:3px solid #fff;box-shadow:0 3px 8px rgba(34,29,49,.4);align-items:center;justify-content:center"><span style="transform:rotate(45deg);font-family:'Material Symbols Outlined';font-size:20px;color:#3A2E14">hive</span></span>
+            </div>
+          </div>
+          <div style="font:500 13px Archivo,sans-serif;color:#6E6680;margin-top:8px;display:flex;align-items:center;gap:6px"><span style="font-family:'Material Symbols Outlined';font-size:17px;color:#B0862B">near_me</span>{{ formDistTexto }}</div>
+        </div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Notas (opcional)</div>
+        <textarea onInput="{{ d.faNotas }}" defaultValue="{{ fa.notas }}" rows="3" placeholder="Flora, acessos, observações…" style="width:100%;box-sizing:border-box;padding:14px 16px;font:500 16px/1.5 Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none;resize:vertical" style-focus="border-color:#4A3F63"></textarea></div>
+        <button onClick="{{ acao.guardarApiario }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:6px" style-hover="background:#F7B637">Guardar apiário</button>
+        <sc-if value="{{ fa.aEditar }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ acao.apagarApiario }}" style="height:56px;border:1.5px solid #B3423A;border-radius:16px;background:none;color:#B3423A;font:600 16px Archivo,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px" style-hover="background:#FBEeec"><span style="font-family:'Material Symbols Outlined';font-size:22px">delete</span>Apagar apiário</button>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== ATIVIDADES ======== -->
+  <sc-if value="{{ vAtividades }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:16px 16px 120px">
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px">
+        <sc-for list="{{ chipsTipo }}" as="c" hint-placeholder-count="5">
+          <button onClick="{{ c.escolher }}" style="flex:none;height:44px;padding:0 16px;border-radius:22px;border:1.5px solid {{ c.borda }};background:{{ c.bg }};color:{{ c.cor }};font:600 14px Archivo,sans-serif;cursor:pointer">{{ c.rotulo }}</button>
+        </sc-for>
+      </div>
+      <select onChange="{{ d.periodo }}" defaultValue="tudo" style="width:100%;box-sizing:border-box;height:50px;padding:0 12px;font:500 15px Archivo,sans-serif;color:#4A3F63;background:#fff;border:1.5px solid #D8D1C0;border-radius:12px;outline:none;margin-bottom:14px">
+        <option value="tudo">Período: tudo</option>
+        <option value="30d">Últimos 30 dias</option>
+        <option value="ano">Este ano (2026)</option>
+      </select>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ atividadesLista }}" as="at" hint-placeholder-count="5">
+          <button onClick="{{ at.editar }}" style="text-align:left;width:100%;box-sizing:border-box;cursor:pointer;background:#fff;border:1px solid #E7E1D3;border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start" style-hover="border-color:#4A3F63">
+            <span style="width:42px;height:42px;border-radius:12px;background:{{ at.corFundo }};display:flex;align-items:center;justify-content:center;flex:none;margin-top:2px"><span style="font-family:'Material Symbols Outlined';font-size:22px;color:{{ at.cor }}">{{ at.icone }}</span></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;gap:8px"><span style="font:700 15px Archivo,sans-serif;color:#2B2438">{{ at.tipoRotulo }}</span><span style="font:500 13px Archivo,sans-serif;color:#8B8270;flex:none">{{ at.dataFmt }}</span></div>
+              <div style="font:600 13px Archivo,sans-serif;color:#B0862B;margin-top:2px">{{ at.apiarioNome }}</div>
+              <div style="font:400 14px/1.45 Archivo,sans-serif;color:#6E6680;margin-top:3px">{{ at.resumo }}</div>
+            </div>
+          </button>
+        </sc-for>
+        <sc-if value="{{ semAtividades }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center;color:#6E6680;font:400 15px Archivo,sans-serif;padding:40px 20px">Sem atividades para estes filtros.</div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== ATIVIDADE FORM ======== -->
+  <sc-if value="{{ vAtividadeForm }}" hint-placeholder-val="{{ false }}">
+    <div key="{{ formKey }}" style="flex:1;overflow-y:auto;padding:20px 20px 120px">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Apiário</div>
+        <select onChange="{{ d.atApiario }}" defaultValue="{{ fat.apiarioId }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 12px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none">
+          <sc-for list="{{ apiariosOpcoes }}" as="o" hint-placeholder-count="5"><option value="{{ o.id }}">{{ o.nome }}</option></sc-for>
+        </select></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:8px">Tipo de atividade</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <sc-for list="{{ tiposForm }}" as="t" hint-placeholder-count="4">
+              <button onClick="{{ t.escolher }}" style="height:64px;border-radius:14px;border:1.5px solid {{ t.borda }};background:{{ t.bg }};color:{{ t.cor }};font:600 15px Archivo,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><span style="font-family:'Material Symbols Outlined';font-size:22px">{{ t.icone }}</span>{{ t.rotulo }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Data</div>
+        <input onInput="{{ d.atData }}" type="date" defaultValue="{{ fat.data }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none"></div>
+        <sc-if value="{{ ftCresta }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:12px">
+            <div style="flex:1"><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Colmeias crestadas</div>
+            <input value="{{ formColmeiasAt }}" onInput="{{ d.atColmeiasCtl }}" type="number" inputMode="numeric" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none"></div>
+            <div style="flex:1"><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Alças de mel</div>
+            <input value="{{ formAlcasAt }}" onInput="{{ d.atAlcasCtl }}" type="number" inputMode="numeric" placeholder="0" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none"></div>
+          </div>
+          <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Mel colhido (kg, opcional)</div>
+          <input onInput="{{ d.atMel }}" type="number" inputMode="numeric" placeholder="0" defaultValue="{{ fat.mel }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none"></div>
+        </sc-if>
+        <sc-if value="{{ ftAlimentacao }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:12px">
+            <div style="flex:1.3"><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Tipo de alimento</div>
+            <select onChange="{{ d.atAlimento }}" defaultValue="{{ fat.alimento }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 12px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none"><option>Xarope 1:1</option><option>Xarope 2:1</option><option>Candi</option><option>Pólen / proteico</option></select></div>
+            <div style="flex:1"><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Quantidade</div>
+            <input onInput="{{ d.atQuantidade }}" placeholder="Ex.: 40 L" defaultValue="{{ fat.quantidade }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none"></div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ ftTratamento }}" hint-placeholder-val="{{ false }}">
+          <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Tipo de tratamento</div>
+          <select onChange="{{ d.atTratamento }}" defaultValue="{{ fat.tratamento }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 12px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none"><option>Apivar (amitraz)</option><option>Ácido oxálico</option><option>Timol</option><option>Outro</option></select></div>
+        </sc-if>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Notas (opcional)</div>
+        <textarea onInput="{{ d.atNotas }}" rows="3" placeholder="Observações…" defaultValue="{{ fat.notas }}" style="width:100%;box-sizing:border-box;padding:14px 16px;font:500 16px/1.5 Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none;resize:vertical" style-focus="border-color:#4A3F63"></textarea></div>
+        <button onClick="{{ acao.guardarAtividade }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:6px" style-hover="background:#F7B637">{{ rotuloGuardarAtividade }}</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== JORNADAS ======== -->
+  <sc-if value="{{ vJornadas }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:16px 16px 120px">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ jornadasLista }}" as="j" hint-placeholder-count="2">
+          <button onClick="{{ j.abrir }}" style="text-align:left;background:#fff;border:1px solid #E7E1D3;border-radius:18px;padding:18px;cursor:pointer" style-hover="border-color:#4A3F63">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <span style="font:600 19px 'Playfair Display',serif;color:#2B2438">{{ j.nome }}</span>
+              <span style="flex:none;font:700 11px Archivo,sans-serif;color:{{ j.estadoCor }};background:{{ j.estadoBg }};border-radius:8px;padding:5px 9px;letter-spacing:.06em">{{ j.estado }}</span>
+            </div>
+            <div style="font:400 14px Archivo,sans-serif;color:#6E6680;margin-top:4px">{{ j.periodo }} · {{ j.tipoRotulo }}</div>
+            <div style="margin-top:14px">
+              <div style="display:flex;justify-content:space-between;font:600 13px Archivo,sans-serif;color:#4A3F63;margin-bottom:6px"><span>{{ j.feitos }} de {{ j.planeados }} apiários</span><span>{{ j.pct }}%</span></div>
+              <div style="height:10px;border-radius:5px;background:#EDE7D8;overflow:hidden"><div style="height:100%;width:{{ j.pctW }};background:#F0A81F;border-radius:5px"></div></div>
+            </div>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== JORNADA DETALHE ======== -->
+  <sc-if value="{{ vJornadaDetalhe }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:16px 16px 120px">
+      <div style="background:#4A3F63;border-radius:20px;padding:20px;color:#fff">
+        <div style="font:600 24px 'Playfair Display',serif">{{ jornada.nome }}</div>
+        <div style="font:400 14px Archivo,sans-serif;color:#CFC8DE;margin-top:4px">{{ jornada.periodo }} · {{ jornada.tipoRotulo }}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px">
+          <div style="background:rgba(255,255,255,.1);border-radius:14px;padding:14px"><div style="font:700 26px Archivo,sans-serif;color:#F0A81F">{{ jornada.feitos }}/{{ jornada.planeados }}</div><div style="font:500 12px Archivo,sans-serif;color:#CFC8DE">apiários visitados</div></div>
+          <div style="background:rgba(255,255,255,.1);border-radius:14px;padding:14px"><div style="font:700 26px Archivo,sans-serif;color:#F0A81F">{{ jornada.colmeias }}</div><div style="font:500 12px Archivo,sans-serif;color:#CFC8DE">colmeias trabalhadas</div></div>
+          <div style="background:rgba(255,255,255,.1);border-radius:14px;padding:14px"><div style="font:700 26px Archivo,sans-serif;color:#F0A81F">{{ jornada.mel }} kg</div><div style="font:500 12px Archivo,sans-serif;color:#CFC8DE">mel colhido</div></div>
+          <div style="background:rgba(255,255,255,.1);border-radius:14px;padding:14px"><div style="font:700 26px Archivo,sans-serif;color:#F0A81F">{{ jornada.mediaAlcas }}</div><div style="font:500 12px Archivo,sans-serif;color:#CFC8DE">alças por colmeia (média)</div></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin:22px 2px 12px">
+        <div style="flex:1;font:600 19px 'Playfair Display',serif;color:#2B2438">Apiários da jornada</div>
+        <sc-for list="{{ ordensJornada }}" as="oj" hint-placeholder-count="2">
+          <button onClick="{{ oj.escolher }}" style="height:40px;padding:0 14px;border-radius:20px;border:1.5px solid {{ oj.borda }};background:{{ oj.bg }};color:{{ oj.cor }};font:600 13px Archivo,sans-serif;cursor:pointer;flex:none">{{ oj.rotulo }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ jornadaApiarios }}" as="ja" hint-placeholder-count="5">
+          <div style="background:#fff;border:1px solid #E7E1D3;border-radius:16px;padding:16px;display:flex;align-items:center;gap:12px">
+            <span style="width:40px;height:40px;border-radius:50%;background:{{ ja.badgeBg }};display:flex;align-items:center;justify-content:center;flex:none"><span style="font-family:'Material Symbols Outlined';font-size:22px;color:{{ ja.badgeCor }}">{{ ja.badgeIcone }}</span></span>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+                <span style="font:700 16px Archivo,sans-serif;color:#2B2438">{{ ja.nome }}</span>
+                <sc-if value="{{ ja.temMedia }}" hint-placeholder-val="{{ false }}">
+                  <span style="flex:none;font:700 12px Archivo,sans-serif;color:#B0862B;background:#F4EDDB;border-radius:8px;padding:4px 8px">{{ ja.media }} alças/colmeia</span>
+                </sc-if>
+              </div>
+              <div style="font:400 13px Archivo,sans-serif;color:#6E6680;margin-top:2px">{{ ja.detalhe }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== JORNADA FORM ======== -->
+  <sc-if value="{{ vJornadaForm }}" hint-placeholder-val="{{ false }}">
+    <div key="{{ formKey }}" style="flex:1;overflow-y:auto;padding:20px 20px 120px">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Nome da jornada</div>
+        <input onInput="{{ d.jNome }}" placeholder="Ex.: Cresta de Verão 2026" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Atividade principal</div>
+        <select onChange="{{ d.jTipo }}" defaultValue="cresta" style="width:100%;box-sizing:border-box;height:58px;padding:0 12px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none">
+          <option value="cresta">Cresta de mel</option><option value="alimentacao">Alimentação</option><option value="tratamento">Tratamento</option><option value="generica">Genérica</option>
+        </select></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:8px">Apiários a visitar</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button onClick="{{ acao.fjTodos }}" style="text-align:left;min-height:58px;border-radius:14px;border:1.5px solid {{ fjTodosBorda }};background:{{ fjTodosBg }};cursor:pointer;display:flex;align-items:center;gap:12px;padding:0 16px">
+              <span style="font-family:'Material Symbols Outlined';font-size:24px;color:{{ fjTodosIconeCor }}">{{ fjTodosIcone }}</span>
+              <span style="flex:1;font:700 16px Archivo,sans-serif;color:#2B2438">Todos os apiários</span>
+              <span style="font:400 13px Archivo,sans-serif;color:#8B8270">{{ fjTodosResumo }}</span>
+            </button>
+            <sc-for list="{{ fjApiariosLista }}" as="fja" hint-placeholder-count="5">
+              <button onClick="{{ fja.alternar }}" style="text-align:left;min-height:58px;border-radius:14px;border:1.5px solid {{ fja.borda }};background:{{ fja.bg }};cursor:pointer;display:flex;align-items:center;gap:12px;padding:0 16px">
+                <span style="font-family:'Material Symbols Outlined';font-size:24px;color:{{ fja.iconeCor }}">{{ fja.icone }}</span>
+                <span style="flex:1;font:600 16px Archivo,sans-serif;color:#2B2438">{{ fja.nome }}</span>
+                <span style="font:400 13px Archivo,sans-serif;color:#8B8270">{{ fja.colmeias }} colmeias</span>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+        <button onClick="{{ acao.guardarJornada }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:6px" style-hover="background:#F7B637">Criar jornada</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== TAREFAS ======== -->
+  <sc-if value="{{ vTarefas }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:16px 16px 120px">
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px">
+        <sc-for list="{{ chipsPrioridade }}" as="c" hint-placeholder-count="4">
+          <button onClick="{{ c.escolher }}" style="flex:none;height:44px;padding:0 16px;border-radius:22px;border:1.5px solid {{ c.borda }};background:{{ c.bg }};color:{{ c.cor }};font:600 14px Archivo,sans-serif;cursor:pointer">{{ c.rotulo }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font:600 12px Archivo,sans-serif;color:#8B8270;letter-spacing:.06em">ORDENAR POR</span>
+        <sc-for list="{{ ordensTarefas }}" as="ot" hint-placeholder-count="2">
+          <button onClick="{{ ot.escolher }}" style="height:40px;padding:0 14px;border-radius:20px;border:1.5px solid {{ ot.borda }};background:{{ ot.bg }};color:{{ ot.cor }};font:600 13px Archivo,sans-serif;cursor:pointer;flex:none">{{ ot.rotulo }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ tarefasLista }}" as="t" hint-placeholder-count="4">
+          <div style="background:#fff;border:1px solid #E7E1D3;border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;opacity:{{ t.opacidade }}">
+            <button onClick="{{ t.alternar }}" aria-label="Concluir tarefa" style="width:46px;height:46px;border-radius:50%;border:2px solid {{ t.checkBorda }};background:{{ t.checkBg }};cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none"><span style="font-family:'Material Symbols Outlined';font-size:24px;color:{{ t.checkCor }}">{{ t.checkIcone }}</span></button>
+            <div style="flex:1;min-width:0">
+              <div style="font:700 16px Archivo,sans-serif;color:#2B2438;text-decoration:{{ t.risco }}">{{ t.titulo }}</div>
+              <div style="font:400 13px Archivo,sans-serif;color:#6E6680;margin-top:3px">{{ t.contexto }}</div>
+              <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                <span style="font:700 11px Archivo,sans-serif;color:{{ t.prioCor }};background:{{ t.prioBg }};border-radius:8px;padding:4px 8px;letter-spacing:.04em">{{ t.prioRotulo }}</span>
+                <span style="font:600 11px Archivo,sans-serif;color:{{ t.prazoCor }};background:{{ t.prazoBg }};border-radius:8px;padding:4px 8px;display:flex;align-items:center;gap:4px"><span style="font-family:'Material Symbols Outlined';font-size:14px">event</span>{{ t.prazoFmt }}</span>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+        <sc-if value="{{ semTarefas }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center;color:#6E6680;font:400 15px Archivo,sans-serif;padding:40px 20px">Sem tarefas para este filtro.</div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== TAREFA FORM ======== -->
+  <sc-if value="{{ vTarefaForm }}" hint-placeholder-val="{{ false }}">
+    <div key="{{ formKey }}" style="flex:1;overflow-y:auto;padding:20px 20px 120px">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Título</div>
+        <input onInput="{{ d.tTitulo }}" placeholder="Ex.: Substituir quadros velhos" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Apiário (opcional)</div>
+        <select onChange="{{ d.tApiario }}" defaultValue="{{ ftApiario }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 12px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none">
+          <option value="">Toda a organização</option>
+          <sc-for list="{{ apiariosOpcoes }}" as="o" hint-placeholder-count="5"><option value="{{ o.id }}">{{ o.nome }}</option></sc-for>
+        </select></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Prazo</div>
+        <input onInput="{{ d.tPrazo }}" type="date" defaultValue="2026-07-17" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:8px">Prioridade</div>
+          <div style="display:flex;gap:10px">
+            <sc-for list="{{ prioridadesForm }}" as="p" hint-placeholder-count="3">
+              <button onClick="{{ p.escolher }}" style="flex:1;height:56px;border-radius:14px;border:1.5px solid {{ p.borda }};background:{{ p.bg }};color:{{ p.cor }};font:600 15px Archivo,sans-serif;cursor:pointer">{{ p.rotulo }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Descrição (opcional)</div>
+        <textarea onInput="{{ d.tNotas }}" rows="3" placeholder="Detalhes…" style="width:100%;box-sizing:border-box;padding:14px 16px;font:500 16px/1.5 Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none;resize:vertical" style-focus="border-color:#4A3F63"></textarea></div>
+        <button onClick="{{ acao.guardarTarefa }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:6px" style-hover="background:#F7B637">Criar tarefa</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== ASSISTENTE ======== -->
+  <sc-if value="{{ vAssistente }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div style="flex:none;padding:12px 16px 0">
+        <select onChange="{{ d.chatCtx }}" defaultValue="org" style="width:100%;box-sizing:border-box;height:48px;padding:0 12px;font:600 14px Archivo,sans-serif;color:#4A3F63;background:#fff;border:1.5px solid #D8D1C0;border-radius:12px;outline:none">
+          <option value="org">Contexto: toda a organização</option>
+          <sc-for list="{{ apiariosOpcoes }}" as="o" hint-placeholder-count="5"><option value="{{ o.id }}">Contexto: apiário {{ o.nome }}</option></sc-for>
+          <option value="j1">Contexto: Cresta de Primavera 2026</option>
+        </select>
+        <sc-if value="{{ mostraAvisoIaOffline }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:10px;background:#F4EDDB;border:1px solid #E3D5AE;border-radius:12px;padding:10px 12px;font:500 13px/1.4 Archivo,sans-serif;color:#7A6320;display:flex;gap:8px;align-items:center"><span style="font-family:'Material Symbols Outlined';font-size:18px">cloud_off</span>O assistente precisa de ligação à Internet.</div>
+        </sc-if>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ mensagens }}" as="m" hint-placeholder-count="2">
+          <div style="display:flex;justify-content:{{ m.alinhar }}">
+            <div style="max-width:85%;border-radius:{{ m.raio }};padding:12px 15px;background:{{ m.bg }};color:{{ m.cor }};font:400 15px/1.5 Archivo,sans-serif;white-space:pre-line">{{ m.texto }}
+              <sc-if value="{{ m.temProposta }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:10px;background:#fff;border:1.5px solid #E3D5AE;border-radius:12px;padding:12px">
+                  <div style="font:700 13px Archivo,sans-serif;color:#7A6320;display:flex;align-items:center;gap:6px"><span style="font-family:'Material Symbols Outlined';font-size:17px">bolt</span>AÇÃO PROPOSTA</div>
+                  <div style="font:500 14px/1.4 Archivo,sans-serif;color:#2B2438;margin-top:6px">{{ m.propostaTexto }}</div>
+                  <sc-if value="{{ m.propostaPendente }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;gap:8px;margin-top:10px">
+                      <button onClick="{{ m.confirmar }}" style="flex:1;height:46px;border:none;border-radius:10px;background:#4A3F63;color:#fff;font:700 14px Archivo,sans-serif;cursor:pointer">Confirmar</button>
+                      <button onClick="{{ m.rejeitar }}" style="flex:1;height:46px;border:1.5px solid #D8D1C0;border-radius:10px;background:none;color:#6E6680;font:600 14px Archivo,sans-serif;cursor:pointer">Rejeitar</button>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ m.propostaResolvida }}" hint-placeholder-val="{{ false }}">
+                    <div style="font:600 13px Archivo,sans-serif;color:{{ m.resolvidaCor }};margin-top:8px;display:flex;align-items:center;gap:5px"><span style="font-family:'Material Symbols Outlined';font-size:16px">{{ m.resolvidaIcone }}</span>{{ m.resolvidaTexto }}</div>
+                  </sc-if>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="flex:none;padding:0 16px 10px;display:flex;gap:8px;overflow-x:auto">
+        <sc-for list="{{ chatSugestoes }}" as="s" hint-placeholder-count="3">
+          <button onClick="{{ s.enviar }}" style="flex:none;height:42px;padding:0 14px;border-radius:21px;border:1.5px solid #D8D1C0;background:#fff;color:#4A3F63;font:600 13px Archivo,sans-serif;cursor:pointer" style-hover="border-color:#4A3F63">{{ s.texto }}</button>
+        </sc-for>
+      </div>
+      <div key="{{ chatKey }}" style="flex:none;display:flex;gap:10px;padding:0 16px 14px">
+        <input onInput="{{ d.chatTexto }}" onKeyDown="{{ acao.chatTecla }}" placeholder="Pergunte sobre os seus dados…" style="flex:1;box-sizing:border-box;height:54px;padding:0 16px;font:500 15px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:27px;outline:none;min-width:0" style-focus="border-color:#4A3F63">
+        <button onClick="{{ acao.chatEnviar }}" aria-label="Enviar" style="width:54px;height:54px;border:none;border-radius:50%;background:#F0A81F;color:#3A2E14;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none" style-hover="background:#F7B637"><span style="font-family:'Material Symbols Outlined';font-size:24px">send</span></button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== CONTA ======== -->
+  <sc-if value="{{ vConta }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:20px 20px 120px">
+      <div style="background:#fff;border:1px solid #E7E1D3;border-radius:18px;padding:18px;display:flex;align-items:center;gap:14px">
+        <span style="width:56px;height:56px;border-radius:50%;background:#4A3F63;color:#F0A81F;display:flex;align-items:center;justify-content:center;font:700 22px 'Playfair Display',serif;flex:none">{{ perfilIniciais }}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font:700 18px Archivo,sans-serif;color:#2B2438">{{ perfil.nome }}</div>
+          <div style="font:400 14px Archivo,sans-serif;color:#6E6680">{{ perfil.email }} · {{ papelRotulo }}</div>
+        </div>
+      </div>
+      <div style="font:600 19px 'Playfair Display',serif;color:#2B2438;margin:22px 2px 10px">Organização</div>
+      <div style="background:#fff;border:1px solid #E7E1D3;border-radius:18px;overflow:hidden">
+        <button onClick="{{ acao.aOrgEditar }}" style="width:100%;border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 18px;text-align:left;border-bottom:1px solid #EFEAE0" style-hover="background:#FAF7F0">
+          <span style="flex:1;min-width:0">
+            <span style="display:block;font:700 16px Archivo,sans-serif;color:#2B2438">{{ org.nome }}</span>
+            <span style="display:block;font:400 14px Archivo,sans-serif;color:#6E6680;margin-top:2px">{{ org.morada }}</span>
+          </span>
+          <sc-if value="{{ ehAdmin }}" hint-placeholder-val="{{ false }}">
+            <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#B7AFC7">edit</span>
+          </sc-if>
+        </button>
+        <sc-if value="{{ ehAdmin }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ acao.aMembros }}" style="width:100%;border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 18px;text-align:left" style-hover="background:#FAF7F0">
+            <span style="font-family:'Material Symbols Outlined';font-size:24px;color:#4A3F63">group</span>
+            <span style="flex:1;font:600 16px Archivo,sans-serif;color:#2B2438">Membros e convites</span>
+            <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#B7AFC7">chevron_right</span>
+          </button>
+        </sc-if>
+      </div>
+      <div style="font:600 19px 'Playfair Display',serif;color:#2B2438;margin:22px 2px 10px">Dados e segurança</div>
+      <div style="background:#fff;border:1px solid #E7E1D3;border-radius:18px;overflow:hidden">
+        <button onClick="{{ acao.aDefinicoes }}" style="width:100%;border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 18px;text-align:left;border-bottom:1px solid #EFEAE0" style-hover="background:#FAF7F0">
+          <span style="font-family:'Material Symbols Outlined';font-size:24px;color:#4A3F63">sync</span>
+          <span style="flex:1;font:600 16px Archivo,sans-serif;color:#2B2438">Sincronização e definições</span>
+          <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#B7AFC7">chevron_right</span>
+        </button>
+        <button onClick="{{ acao.exportar }}" style="width:100%;border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 18px;text-align:left;border-bottom:1px solid #EFEAE0" style-hover="background:#FAF7F0">
+          <span style="font-family:'Material Symbols Outlined';font-size:24px;color:#4A3F63">download</span>
+          <span style="flex:1;font:600 16px Archivo,sans-serif;color:#2B2438">Exportar dados (CSV)</span>
+          <span style="font-family:'Material Symbols Outlined';font-size:22px;color:#B7AFC7">chevron_right</span>
+        </button>
+        <button onClick="{{ acao.mudarPass }}" style="width:100%;border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 18px;text-align:left" style-hover="background:#FAF7F0">
+          <span style="font-family:'Material Symbols Outlined';font-size:24px;color:#4A3F63">lock</span>
+          <span style="flex:1;font:600 16px Archivo,sans-serif;color:#2B2438">Alterar palavra-passe</span>
+          <span style="font:400 12px Archivo,sans-serif;color:#8B8270">no fornecedor</span>
+        </button>
+      </div>
+      <button onClick="{{ acao.sair }}" style="width:100%;height:56px;border:1.5px solid #B3423A;border-radius:16px;background:none;color:#B3423A;font:600 16px Archivo,sans-serif;cursor:pointer;margin-top:22px;display:flex;align-items:center;justify-content:center;gap:8px"><span style="font-family:'Material Symbols Outlined';font-size:22px">logout</span>Terminar sessão</button>
+    </div>
+  </sc-if>
+
+  <!-- ======== ORG EDITAR ======== -->
+  <sc-if value="{{ vOrgEditar }}" hint-placeholder-val="{{ false }}">
+    <div key="{{ formKey }}" style="flex:1;overflow-y:auto;padding:20px 20px 120px">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Nome da organização</div>
+        <input onInput="{{ d.orgNome }}" defaultValue="{{ org.nome }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <div><div style="font:600 13px Archivo,sans-serif;color:#6E6680;margin-bottom:6px">Morada (opcional)</div>
+        <input onInput="{{ d.orgMorada }}" defaultValue="{{ org.morada }}" style="width:100%;box-sizing:border-box;height:58px;padding:0 16px;font:500 16px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none" style-focus="border-color:#4A3F63"></div>
+        <button onClick="{{ acao.guardarOrg }}" style="height:60px;border:none;border-radius:16px;background:#F0A81F;color:#3A2E14;font:700 18px Archivo,sans-serif;cursor:pointer;margin-top:6px" style-hover="background:#F7B637">Guardar organização</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== MEMBROS ======== -->
+  <sc-if value="{{ vMembros }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:20px 20px 120px">
+      <div key="{{ formKey }}" style="display:flex;gap:10px">
+        <input onInput="{{ d.conviteEmail }}" type="email" placeholder="Email a convidar" style="flex:1;box-sizing:border-box;height:56px;padding:0 16px;font:500 15px Archivo,sans-serif;color:#2B2438;background:#fff;border:1.5px solid #D8D1C0;border-radius:14px;outline:none;min-width:0" style-focus="border-color:#4A3F63">
+        <button onClick="{{ acao.convidar }}" style="height:56px;padding:0 18px;border:none;border-radius:14px;background:#F0A81F;color:#3A2E14;font:700 15px Archivo,sans-serif;cursor:pointer;flex:none" style-hover="background:#F7B637">Convidar</button>
+      </div>
+      <div style="font:600 19px 'Playfair Display',serif;color:#2B2438;margin:24px 2px 10px">Membros</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ membrosLista }}" as="m" hint-placeholder-count="2">
+          <div style="background:#fff;border:1px solid #E7E1D3;border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px">
+            <span style="width:44px;height:44px;border-radius:50%;background:#EDE7F2;color:#4A3F63;display:flex;align-items:center;justify-content:center;font:700 16px Archivo,sans-serif;flex:none">{{ m.iniciais }}</span>
+            <div style="flex:1;min-width:0"><div style="font:600 15px Archivo,sans-serif;color:#2B2438">{{ m.nome }}</div><div style="font:400 13px Archivo,sans-serif;color:#6E6680">{{ m.email }}</div></div>
+            <span style="font:700 11px Archivo,sans-serif;color:{{ m.papelCor }};background:{{ m.papelBg }};border-radius:8px;padding:4px 8px;letter-spacing:.05em">{{ m.papel }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="font:600 19px 'Playfair Display',serif;color:#2B2438;margin:24px 2px 10px">Convites</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ convitesLista }}" as="c" hint-placeholder-count="1">
+          <div style="background:#fff;border:1px solid #E7E1D3;border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px">
+            <span style="font-family:'Material Symbols Outlined';font-size:24px;color:#B0862B">mail</span>
+            <div style="flex:1;min-width:0"><div style="font:600 15px Archivo,sans-serif;color:#2B2438">{{ c.email }}</div><div style="font:400 13px Archivo,sans-serif;color:#6E6680">{{ c.estado }}</div></div>
+            <sc-if value="{{ c.pendente }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ c.revogar }}" aria-label="Revogar convite" style="width:44px;height:44px;border:1.5px solid #D8D1C0;border-radius:12px;background:none;color:#B3423A;cursor:pointer;display:flex;align-items:center;justify-content:center" style-hover="border-color:#B3423A"><span style="font-family:'Material Symbols Outlined';font-size:22px">close</span></button>
+            </sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{ semConvites }}" hint-placeholder-val="{{ false }}">
+          <div style="color:#6E6680;font:400 14px Archivo,sans-serif;padding:6px 2px">Sem convites pendentes.</div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ======== DEFINIÇÕES / SYNC ======== -->
+  <sc-if value="{{ vDefinicoes }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;overflow-y:auto;padding:20px 20px 120px">
+      <div style="background:#4A3F63;border-radius:20px;padding:20px;color:#fff">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:12px;height:12px;border-radius:50%;background:{{ corLigacao }}"></span>
+          <span style="font:700 18px Archivo,sans-serif">{{ estadoLigacaoLongo }}</span>
+        </div>
+        <div style="font:400 14px/1.5 Archivo,sans-serif;color:#CFC8DE;margin-top:8px">{{ textoSync }}</div>
+        <button onClick="{{ acao.sincronizar }}" style="width:100%;height:56px;border:none;border-radius:14px;background:#F0A81F;color:#3A2E14;font:700 16px Archivo,sans-serif;cursor:pointer;margin-top:16px;display:flex;align-items:center;justify-content:center;gap:8px" style-hover="background:#F7B637"><span style="font-family:'Material Symbols Outlined';font-size:22px">sync</span>Sincronizar agora</button>
+        <div style="font:400 12px Archivo,sans-serif;color:#8B81A6;margin-top:10px;text-align:center">A sincronização automática aguarda por sinal 3G ou melhor.</div>
+      </div>
+      <div style="font:600 19px 'Playfair Display',serif;color:#2B2438;margin:22px 2px 10px">Notificações</div>
+      <div style="background:#fff;border:1px solid #E7E1D3;border-radius:18px;overflow:hidden">
+        <sc-for list="{{ definicoesNotif }}" as="n" hint-placeholder-count="3">
+          <button onClick="{{ n.alternar }}" style="width:100%;border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 18px;text-align:left;border-bottom:1px solid #EFEAE0">
+            <span style="flex:1;font:500 15px Archivo,sans-serif;color:#2B2438">{{ n.rotulo }}</span>
+            <span style="width:52px;height:30px;border-radius:15px;background:{{ n.trilhoBg }};position:relative;flex:none;transition:background .15s"><span style="position:absolute;top:3px;left:{{ n.bolaPos }};width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .15s"></span></span>
+          </button>
+        </sc-for>
+      </div>
+      <div style="font:400 13px/1.5 Archivo,sans-serif;color:#8B8270;margin-top:16px;padding:0 2px">Histórico de alterações: cada criação, edição e eliminação fica registada com autor e data, e é conservada para auditoria.</div>
+    </div>
+  </sc-if>
+
+  <!-- FAB -->
+  <sc-if value="{{ fabVisivel }}" hint-placeholder-val="{{ true }}">
+    <button onClick="{{ acao.fab }}" style="position:absolute;right:16px;bottom:104px;height:60px;padding:0 22px 0 18px;border:none;border-radius:30px;background:#F0A81F;color:#3A2E14;font:700 16px Archivo,sans-serif;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 6px 18px rgba(58,46,20,.35);z-index:5" style-hover="background:#F7B637">
+      <span style="font-family:'Material Symbols Outlined';font-size:26px">add</span>{{ fabRotulo }}
+    </button>
+  </sc-if>
+
+  <!-- Bottom nav -->
+  <div style="flex:none;background:#3D3454;display:flex;padding:6px 4px calc(6px + env(safe-area-inset-bottom))">
+    <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+      <button onClick="{{ t.ir }}" style="flex:1;min-height:68px;border:none;background:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:14px">
+        <span style="width:52px;height:30px;border-radius:15px;background:{{ t.pilBg }};display:flex;align-items:center;justify-content:center"><span style="font-family:'Material Symbols Outlined';font-size:24px;color:{{ t.cor }};font-variation-settings:'FILL' {{ t.fill }}">{{ t.icone }}</span></span>
+        <span style="font:600 12px Archivo,sans-serif;color:{{ t.cor }}">{{ t.rotulo }}</span>
+      </button>
+    </sc-for>
+  </div>
+
+</sc-if>
+
+<!-- Toast -->
+<sc-if value="{{ temToast }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;left:50%;bottom:110px;transform:translateX(-50%);background:#2B2438;color:#fff;font:600 14px Archivo,sans-serif;border-radius:14px;padding:14px 20px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:20;white-space:nowrap;max-width:90%;overflow:hidden;text-overflow:ellipsis;animation:ml-toast .2s ease-out">{{ toastMsg }}</div>
+</sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:430,&quot;height&quot;:900},&quot;inicio&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Direto à app&quot;,&quot;Fluxo completo (login)&quot;],&quot;default&quot;:&quot;Fluxo completo (login)&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Protótipo&quot;},&quot;ligacao&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Protótipo&quot;},&quot;papel&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Administrador&quot;,&quot;Membro&quot;],&quot;default&quot;:&quot;Administrador&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Protótipo&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.draft = {};
+    this.TIPOS = {
+      cresta:      { rotulo: 'Cresta de mel', icone: 'agriculture', cor: '#B0862B', corFundo: '#F4EDDB' },
+      alimentacao: { rotulo: 'Alimentação',   icone: 'restaurant',  cor: '#3E7D53', corFundo: '#E2EEE4' },
+      tratamento:  { rotulo: 'Tratamento',    icone: 'medication',  cor: '#B3564D', corFundo: '#F6E4E1' },
+      generica:    { rotulo: 'Genérica',      icone: 'edit_note',   cor: '#6E6680', corFundo: '#ECE8F0' },
+    };
+    this.state = {
+      view: null, mapa: false, medicao: [],
+      pesquisa: '',
+      filtroTipo: 'todos', filtroPeriodo: 'tudo', filtroTipoDetalhe: 'todos', filtroPrioridade: 'todas',
+      selApiario: null, selJornada: null, editApiario: null, fabRapido: false, tarefaApiario: null, jornadaOrdem: 'data', tarefasOrdem: 'data',
+      formKey: 0, chatKey: 0, formTipo: 'cresta', formColmeias: 12, formApovoadas: 0, formVazias: 0, formAlcas: 0, formPrioridade: 'media',
+      formMx: 50, formMy: 40, editContador: null,
+      formApiarioAt: 'a1', formColmeiasAt: '', formAlcasAt: '', editAtividade: null,
+      fjSel: {},
+      pendentes: 2, toast: null,
+      notif: { prazos: true, sync: true, convites: false },
+      chat: [{ de: 'ia', texto: 'Olá! Sou o assistente da Melargil. Pergunte-me sobre apiários, atividades, jornadas ou tarefas — ou peça uma ação, p. ex. «define Vale das Éguas para 18 colmeias».' }],
+      apiarios: [
+        { id: 'a1', nome: 'Herdade da Ribeira',    local: 'Montargil',            colmeias: 24, apovoadas: 3, vazias: 5, alcas: 40, dist: 1.2,  kx: 0.8,  ky: -0.9, mx: '38%', my: '48%', notas: 'Rosmaninho e eucalipto; acesso por caminho de terra.' },
+        { id: 'a2', nome: 'Montado do Zambujeiro', local: 'Foros do Mocho',       colmeias: 18, apovoadas: 2, vazias: 4, alcas: 28, dist: 3.8,  kx: -2.9, ky: 2.5,  mx: '20%', my: '74%', notas: 'Montado de sobro.' },
+        { id: 'a3', nome: 'Barragem Norte',        local: 'Margem da Albufeira',  colmeias: 30, apovoadas: 5, vazias: 6, alcas: 52, dist: 5.4,  kx: 4.3,  ky: 3.3,  mx: '72%', my: '30%', notas: 'Junto à albufeira de Montargil.' },
+        { id: 'a4', nome: 'Courela do Sobreiro',   local: 'Ponte de Sor',         colmeias: 12, apovoadas: 0, vazias: 3, alcas: 18, dist: 9.7,  kx: -6.2, ky: 7.5,  mx: '14%', my: '26%', notas: '' },
+        { id: 'a5', nome: 'Vale das Éguas',        local: 'Galveias',             colmeias: 16, apovoadas: 1, vazias: 4, alcas: 24, dist: 14.3, kx: 11.5, ky: 8.5,  mx: '84%', my: '66%', notas: 'Cerca elétrica.' },
+      ],
+      atividades: [
+        { id: 'ac3', apiarioId: 'a3', tipo: 'cresta',      ts: '2026-07-04', dataFmt: '4 jul 2026',  mel: 112, colmeias: 26, alcas: 48, notas: '', autor: 'Tiago Oliveira', jornadaId: 'j1' },
+        { id: 'ac2', apiarioId: 'a2', tipo: 'cresta',      ts: '2026-06-30', dataFmt: '30 jun 2026', mel: 54,  colmeias: 15, alcas: 26, notas: '', autor: 'Maria Santos',   jornadaId: 'j1' },
+        { id: 'ac1', apiarioId: 'a1', tipo: 'cresta',      ts: '2026-06-28', dataFmt: '28 jun 2026', mel: 86,  colmeias: 20, alcas: 36, notas: 'Mel de rosmaninho.', autor: 'Tiago Oliveira', jornadaId: 'j1' },
+        { id: 'ac7', apiarioId: 'a2', tipo: 'generica',    ts: '2026-05-12', dataFmt: '12 mai 2026', notas: 'Substituição de rainhas em 3 colmeias.', autor: 'Maria Santos' },
+        { id: 'ac4', apiarioId: 'a1', tipo: 'alimentacao', ts: '2026-03-15', dataFmt: '15 mar 2026', alimento: 'Xarope 1:1', quantidade: '40 L', notas: '', autor: 'Tiago Oliveira' },
+        { id: 'ac8', apiarioId: 'a3', tipo: 'alimentacao', ts: '2025-10-02', dataFmt: '2 out 2025',  alimento: 'Candi', quantidade: '25 kg', notas: '', autor: 'Maria Santos' },
+        { id: 'ac6', apiarioId: 'a5', tipo: 'tratamento',  ts: '2025-09-22', dataFmt: '22 set 2025', tratamento: 'Apivar (amitraz)', notas: '', autor: 'Tiago Oliveira', jornadaId: 'j2' },
+        { id: 'ac5', apiarioId: 'a4', tipo: 'tratamento',  ts: '2025-09-20', dataFmt: '20 set 2025', tratamento: 'Apivar (amitraz)', notas: '', autor: 'Tiago Oliveira', jornadaId: 'j2' },
+      ],
+      jornadas: [
+        { id: 'j1', nome: 'Cresta de Primavera 2026', tipo: 'cresta',     periodo: 'jun – jul 2026', apiarios: ['a1','a2','a3','a4','a5'], concluida: false },
+        { id: 'j2', nome: 'Tratamento de Varroa — Outono 2025', tipo: 'tratamento', periodo: 'set 2025', apiarios: ['a4','a5'], concluida: true },
+      ],
+      tarefas: [
+        { id: 't1', titulo: 'Substituir 6 quadros velhos', apiarioId: 'a3', prazo: '2026-07-08', prazoFmt: '8 jul', prioridade: 'alta',  feita: false, notas: '' },
+        { id: 't2', titulo: 'Levar xarope para reforço',   apiarioId: 'a5', prazo: '2026-07-14', prazoFmt: '14 jul', prioridade: 'media', feita: false, notas: '' },
+        { id: 't3', titulo: 'Declaração anual DGAV',       apiarioId: null, prazo: '2026-09-30', prazoFmt: '30 set', prioridade: 'alta',  feita: false, notas: '' },
+        { id: 't4', titulo: 'Reparar cerca elétrica',      apiarioId: 'a2', prazo: '2026-07-20', prazoFmt: '20 jul', prioridade: 'media', feita: false, notas: '' },
+        { id: 't5', titulo: 'Pintar alças novas',          apiarioId: null, prazo: '2026-07-01', prazoFmt: '1 jul',  prioridade: 'baixa', feita: true,  notas: '' },
+      ],
+      membros: [
+        { id: 'u1', nome: 'Tiago Oliveira', email: 'tiago@melargil.pt', papel: 'ADMIN' },
+        { id: 'u2', nome: 'Maria Santos',   email: 'maria@melargil.pt', papel: 'MEMBRO' },
+      ],
+      convites: [{ id: 'c1', email: 'joao.pires@exemplo.pt', estado: 'Pendente · enviado a 2 jul', pendente: true }],
+      org: { nome: 'Melargil, Lda.', morada: 'Montargil, Ponte de Sor' },
+      perfil: { nome: 'Tiago Oliveira', email: 'tiago@melargil.pt' },
+    };
+  }
+
+  fluxoCompleto() { return (this.props.inicio ?? 'Direto à app') === 'Fluxo completo (login)'; }
+  online() { return this.props.ligacao ?? true; }
+  ehAdmin() { return (this.props.papel ?? 'Administrador') === 'Administrador'; }
+
+  vista() { return this.state.view ?? (this.fluxoCompleto() ? 'login' : 'apiarios'); }
+
+  go(view, extra) { this.setState({ view, fabRapido: false, ...(extra || {}) }); }
+
+  avisar(msg) {
+    clearTimeout(this._toastT);
+    this.setState({ toast: msg });
+    this._toastT = setTimeout(() => this.setState({ toast: null }), 2600);
+  }
+
+  gravou(msgOnline) {
+    if (this.online()) { this.avisar(msgOnline); }
+    else { this.setState(s => ({ pendentes: s.pendentes + 1 })); this.avisar(msgOnline + ' — por sincronizar'); }
+  }
+
+  apiarioNome(id) { const a = this.state.apiarios.find(x => x.id === id); return a ? a.nome : '—'; }
+
+  // percent map coords -> km relative to user position (52%, 62%); map ~24km x 18km
+  kmDoPonto(mx, my) { return { kx: (mx - 52) / 100 * 24, ky: (my - 62) / 100 * 18 }; }
+  distDoPonto(mx, my) { const { kx, ky } = this.kmDoPonto(mx, my); return Math.sqrt(kx * kx + ky * ky); }
+
+  moverPino(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const mx = Math.min(96, Math.max(4, 100 * (e.clientX - r.left) / r.width));
+    const my = Math.min(92, Math.max(8, 100 * (e.clientY - r.top) / r.height));
+    this.setState({ formMx: Math.round(mx * 10) / 10, formMy: Math.round(my * 10) / 10 });
+  }
+
+  resumoAtividade(at) {
+    if (at.tipo === 'cresta') {
+      const partes = [];
+      if (at.mel != null) partes.push(at.mel + ' kg de mel');
+      if (at.colmeias != null) partes.push(at.colmeias + ' colmeias crestadas');
+      if (at.alcas != null) partes.push(at.alcas + ' alças');
+      if (at.notas) partes.push(at.notas);
+      return partes.join(' · ') || 'Cresta registada';
+    }
+    if (at.tipo === 'alimentacao') return (at.alimento || 'Alimento') + ' · ' + (at.quantidade || '—') + (at.notas ? ' · ' + at.notas : '');
+    if (at.tipo === 'tratamento') return (at.tratamento || '—') + (at.notas ? ' · ' + at.notas : '');
+    return at.notas || 'Sem notas';
+  }
+
+  augAtividade(at) {
+    const meta = this.TIPOS[at.tipo];
+    return { ...at, tipoRotulo: meta.rotulo, icone: meta.icone, cor: meta.cor, corFundo: meta.corFundo, apiarioNome: this.apiarioNome(at.apiarioId), resumo: this.resumoAtividade(at), editar: () => this.abrirAtividade(at) };
+  }
+
+  abrirAtividade(at) {
+    this.draft = {
+      atMel: at.mel != null ? String(at.mel) : '',
+      atAlimento: at.alimento || 'Xarope 1:1',
+      atQuantidade: at.quantidade || '',
+      atTratamento: at.tratamento || 'Apivar (amitraz)',
+      atNotas: at.notas || '',
+      atData: at.ts,
+    };
+    this.setState(st => ({
+      view: 'atividadeForm', editAtividade: at.id, formTipo: at.tipo, fabRapido: false,
+      formApiarioAt: at.apiarioId, formColmeiasAt: at.colmeias != null ? String(at.colmeias) : '', formAlcasAt: at.alcas != null ? String(at.alcas) : '',
+      formKey: st.formKey + 1,
+    }));
+  }
+
+  chatResponder(texto) {
+    const t = texto.toLowerCase();
+    const s = this.state;
+    // Ação proposta: "define <apiário> para N colmeias"
+    const num = t.match(/(\d+)\s*colmeias/);
+    const alvo = s.apiarios.find(a => t.includes(a.nome.toLowerCase().split(' ').pop()) || t.includes(a.nome.toLowerCase()));
+    if (num && alvo && (t.includes('define') || t.includes('altera') || t.includes('atualiza') || t.includes('poe') || t.includes('põe'))) {
+      const valor = parseInt(num[1], 10);
+      return { de: 'ia', texto: 'Encontrei o apiário «' + alvo.nome + '» (' + alvo.colmeias + ' colmeias). Confirma esta alteração?', proposta: { estado: 'pendente', apiarioId: alvo.id, valor, texto: 'Atualizar «' + alvo.nome + '» de ' + alvo.colmeias + ' para ' + valor + ' colmeias.' } };
+    }
+    if (t.includes('mel')) {
+      const crestas2026 = s.atividades.filter(a => a.tipo === 'cresta' && a.ts.startsWith('2026'));
+      const total = crestas2026.reduce((n, a) => n + (a.mel || 0), 0);
+      const linhas = crestas2026.map(a => '· ' + this.apiarioNome(a.apiarioId) + ' — ' + a.mel + ' kg (' + a.dataFmt + ')').join('\n');
+      return { de: 'ia', texto: 'Em 2026 foram colhidos ' + total + ' kg de mel, em ' + crestas2026.length + ' crestas:\n' + linhas + '\n\nNa Cresta de Primavera 2026 faltam ainda 2 apiários (Courela do Sobreiro e Vale das Éguas).' };
+    }
+    if (t.includes('atras') || t.includes('tarefa')) {
+      const pend = s.tarefas.filter(x => !x.feita);
+      const atrasadas = pend.filter(x => x.prazo < '2026-07-10');
+      let out = '';
+      if (atrasadas.length) out += 'Em atraso:\n' + atrasadas.map(x => '· ' + x.titulo + ' (' + x.prazoFmt + (x.apiarioId ? ', ' + this.apiarioNome(x.apiarioId) : '') + ')').join('\n') + '\n\n';
+      out += 'Pendentes:\n' + pend.filter(x => !atrasadas.includes(x)).map(x => '· ' + x.titulo + ' — até ' + x.prazoFmt).join('\n');
+      return { de: 'ia', texto: out };
+    }
+    if (t.includes('tratamento')) {
+      const tr = s.atividades.filter(a => a.tipo === 'tratamento');
+      return { de: 'ia', texto: 'Últimos tratamentos:\n' + tr.map(a => '· ' + this.apiarioNome(a.apiarioId) + ' — ' + a.tratamento + ' (' + a.dataFmt + ')').join('\n') + '\n\nSugestão: o próximo tratamento de varroa costuma fazer-se em setembro.' };
+    }
+    return { de: 'ia', texto: 'Posso responder sobre os dados da organização — por exemplo: «Quanto mel colhemos este ano?», «Tarefas em atraso» — ou propor ações, como «define Vale das Éguas para 18 colmeias».' };
+  }
+
+  enviarChat(texto) {
+    const msg = (texto || '').trim();
+    if (!msg) return;
+    if (!this.online()) { this.avisar('O assistente precisa de ligação à Internet'); return; }
+    const resposta = this.chatResponder(msg);
+    this.draft.chatTexto = '';
+    this.setState(s => ({ chat: [...s.chat, { de: 'eu', texto: msg }, resposta], chatKey: s.chatKey + 1 }));
+  }
+
+  resolverProposta(idx, aceitar) {
+    this.setState(s => {
+      const chat = s.chat.map((m, i) => {
+        if (i !== idx || !m.proposta) return m;
+        return { ...m, proposta: { ...m.proposta, estado: aceitar ? 'feita' : 'cancelada' } };
+      });
+      let apiarios = s.apiarios;
+      const p = s.chat[idx] && s.chat[idx].proposta;
+      if (aceitar && p) apiarios = s.apiarios.map(a => a.id === p.apiarioId ? { ...a, colmeias: p.valor } : a);
+      return { chat, apiarios };
+    });
+    if (aceitar) this.gravou('Apiário atualizado');
+  }
+
+  renderVals() {
+    const s = this.state;
+    const v = this.vista();
+    const online = this.online();
+    const authViews = ['login', 'registo', 'perfil', 'orgEscolha', 'orgNova', 'orgConvite'];
+    const vAuth = authViews.includes(v);
+
+    // ---- dotted-hole handler builders ----
+    const dset = (k) => (e) => { this.draft[k] = e.target.value; };
+    const d = {};
+    ['regEmail','regPass','perfilNome','perfilEmail','orgNome','orgMorada','convCodigo','faNome','faLocal','faNotas','atMel','atColmeias','atAlimento','atQuantidade','atTratamento','atNotas','atData','jNome','tTitulo','tNotas','tPrazo','conviteEmail','chatTexto'].forEach(k => { d[k] = dset(k); });
+    d.perfilIdioma = dset('perfilIdioma');
+    d.pesquisa = (e) => this.setState({ pesquisa: e.target.value });
+    d.periodo = (e) => this.setState({ filtroPeriodo: e.target.value });
+    d.atApiario = (e) => {
+      const id = e.target.value;
+      const ap = this.state.apiarios.find(x => x.id === id);
+      this.setState({ formApiarioAt: id, formColmeiasAt: ap ? String(ap.colmeias || 0) : '' });
+    };
+    d.atColmeiasCtl = (e) => this.setState({ formColmeiasAt: e.target.value });
+    d.atAlcasCtl = (e) => this.setState({ formAlcasAt: e.target.value });
+    d.jTipo = (e) => { this.draft.jTipo = e.target.value; };
+    d.tApiario = (e) => { this.draft.tApiario = e.target.value; };
+    d.chatCtx = () => {};
+
+    // ---- header ----
+    const titulos = {
+      apiarios: 'Apiários', apiarioDetalhe: 'Apiário', apiarioForm: s.editApiario ? 'Editar apiário' : 'Novo apiário',
+      atividades: 'Atividades', atividadeForm: s.editAtividade ? 'Editar atividade' : 'Registar atividade',
+      jornadas: 'Jornadas', jornadaDetalhe: 'Jornada', jornadaForm: 'Nova jornada',
+      tarefas: 'Tarefas', tarefaForm: 'Nova tarefa',
+      assistente: 'Assistente', conta: 'Conta', membros: 'Membros e convites', definicoes: 'Sincronização', orgEditar: 'Editar organização',
+    };
+    const raizes = ['apiarios', 'atividades', 'jornadas', 'tarefas', 'assistente'];
+    const mostraVoltar = !vAuth && !raizes.includes(v);
+    const paiDe = { apiarioDetalhe: 'apiarios', apiarioForm: s.selApiario ? 'apiarioDetalhe' : 'apiarios', atividadeForm: s.selApiario ? 'apiarioDetalhe' : 'atividades', jornadaDetalhe: 'jornadas', jornadaForm: 'jornadas', tarefaForm: s.tarefaApiario ? 'apiarioDetalhe' : 'tarefas', conta: 'apiarios', membros: 'conta', definicoes: 'conta', orgEditar: 'conta' };
+
+    // ---- apiários ----
+    const q = (s.pesquisa || '').toLowerCase();
+    const apiariosFiltrados = s.apiarios
+      .filter(a => !q || a.nome.toLowerCase().includes(q) || a.local.toLowerCase().includes(q))
+      .sort((a, b) => a.dist - b.dist);
+    const apiariosLista = apiariosFiltrados.map(a => ({
+      ...a, dist: a.dist.toFixed(1).replace('.', ','),
+      resumoColmeias: a.colmeias === 1 ? '1 colmeia' : a.colmeias + ' colmeias',
+      abrir: () => this.go('apiarioDetalhe', { selApiario: a.id, filtroTipoDetalhe: 'todos' }),
+    }));
+
+    // mapa + medição
+    const marcadores = apiariosFiltrados.map(a => ({
+      ...a, cor: s.medicao.includes(a.id) ? '#F0A81F' : '#4A3F63',
+      medir: () => {
+        this.setState(st => {
+          let m = st.medicao.includes(a.id) ? st.medicao.filter(x => x !== a.id) : [...st.medicao, a.id].slice(-2);
+          return { medicao: m };
+        });
+      },
+    }));
+    let textoMedicao = '';
+    if (s.medicao.length === 2) {
+      const [p, r] = s.medicao.map(id => s.apiarios.find(a => a.id === id));
+      const dist = Math.sqrt(Math.pow(p.kx - r.kx, 2) + Math.pow(p.ky - r.ky, 2));
+      textoMedicao = p.nome + ' ⇄ ' + r.nome + ': ' + dist.toFixed(1).replace('.', ',') + ' km em linha reta';
+    } else if (s.medicao.length === 1) {
+      textoMedicao = 'Selecionado: ' + this.apiarioNome(s.medicao[0]) + '. Toque noutro apiário para medir.';
+    }
+
+    // ---- apiário detalhe ----
+    const sel = s.apiarios.find(a => a.id === s.selApiario);
+    const atividadesDoApiario = sel ? s.atividades.filter(a => a.apiarioId === sel.id) : [];
+    const melAno = atividadesDoApiario.filter(a => a.tipo === 'cresta' && a.ts.startsWith('2026')).reduce((n, a) => n + (a.mel || 0), 0);
+    const apiario = sel ? { ...sel, dist: sel.dist.toFixed(1).replace('.', ','), nAtividades: atividadesDoApiario.length, melAno } : { nome: '', local: '', dist: '', colmeias: 0, apovoadas: 0, vazias: 0, alcas: 0, nAtividades: 0, melAno: 0 };
+    const atividadesApiario = atividadesDoApiario.filter(a => s.filtroTipoDetalhe === 'todos' || a.tipo === s.filtroTipoDetalhe).map(a => this.augAtividade(a));
+
+    const mkChips = (ativo, setKey) => {
+      const defs = [['todos', 'Todas'], ['cresta', 'Cresta'], ['alimentacao', 'Alimentação'], ['tratamento', 'Tratamento'], ['generica', 'Genérica']];
+      return defs.map(([id, rotulo]) => ({
+        id, rotulo, escolher: () => this.setState({ [setKey]: id }),
+        bg: ativo === id ? '#4A3F63' : '#fff', cor: ativo === id ? '#fff' : '#4A3F63', borda: ativo === id ? '#4A3F63' : '#D8D1C0',
+      }));
+    };
+
+    // ---- atividades globais ----
+    const dentroPeriodo = (a) => {
+      if (s.filtroPeriodo === '30d') return a.ts >= '2026-06-10';
+      if (s.filtroPeriodo === 'ano') return a.ts.startsWith('2026');
+      return true;
+    };
+    const atividadesLista = s.atividades.filter(a => (s.filtroTipo === 'todos' || a.tipo === s.filtroTipo) && dentroPeriodo(a)).map(a => this.augAtividade(a));
+
+    // ---- jornadas ----
+    const statsJornada = (j) => {
+      const acts = s.atividades.filter(a => a.jornadaId === j.id);
+      const visitados = [...new Set(acts.map(a => a.apiarioId))];
+      const colmeias = acts.reduce((n, a) => n + (a.colmeias || 0), 0);
+      const mel = acts.reduce((n, a) => n + (a.mel || 0), 0);
+      return { acts, visitados, colmeias, mel };
+    };
+    const jornadasLista = s.jornadas.map(j => {
+      const st = statsJornada(j);
+      const pct = Math.round(100 * st.visitados.length / j.apiarios.length);
+      return {
+        ...j, tipoRotulo: this.TIPOS[j.tipo].rotulo,
+        feitos: st.visitados.length, planeados: j.apiarios.length, pct, pctW: pct + '%',
+        estado: j.concluida ? 'CONCLUÍDA' : 'EM CURSO',
+        estadoCor: j.concluida ? '#3E7D53' : '#B0862B', estadoBg: j.concluida ? '#E2EEE4' : '#F4EDDB',
+        abrir: () => this.go('jornadaDetalhe', { selJornada: j.id }),
+      };
+    });
+    const jSel = s.jornadas.find(j => j.id === s.selJornada);
+    let jornada = { nome: '', periodo: '', tipoRotulo: '', feitos: 0, planeados: 0, colmeias: 0, mel: 0, emFalta: 0 };
+    let jornadaApiarios = [];
+    if (jSel) {
+      const st = statsJornada(jSel);
+      const alcasTotal = st.acts.reduce((n, a) => n + (a.alcas || 0), 0);
+      const mediaAlcas = st.colmeias ? (alcasTotal / st.colmeias).toFixed(1).replace('.', ',') : '—';
+      jornada = { ...jSel, tipoRotulo: this.TIPOS[jSel.tipo].rotulo, feitos: st.visitados.length, planeados: jSel.apiarios.length, colmeias: st.colmeias, mel: st.mel, mediaAlcas, emFalta: jSel.apiarios.length - st.visitados.length };
+      jornadaApiarios = jSel.apiarios.map(id => {
+        const a = s.apiarios.find(x => x.id === id);
+        const act = st.acts.find(x => x.apiarioId === id);
+        const mediaNum = act && act.colmeias && act.alcas != null ? act.alcas / act.colmeias : null;
+        return {
+          nome: a ? a.nome : id,
+          ts: act ? act.ts : '',
+          mediaNum,
+          temMedia: mediaNum != null,
+          media: mediaNum != null ? mediaNum.toFixed(1).replace('.', ',') : '',
+          detalhe: act ? this.resumoAtividade(act) + ' · ' + act.dataFmt : 'Por visitar',
+          badgeIcone: act ? 'check' : 'schedule', badgeCor: act ? '#3E7D53' : '#8B8270', badgeBg: act ? '#E2EEE4' : '#EFEAE0',
+        };
+      }).sort((x, y) => {
+        const xv = x.ts || x.mediaNum != null;
+        if (s.jornadaOrdem === 'media') {
+          if ((y.mediaNum ?? -1) !== (x.mediaNum ?? -1)) return (y.mediaNum ?? -1) - (x.mediaNum ?? -1);
+          return x.nome.localeCompare(y.nome);
+        }
+        if (!!y.ts !== !!x.ts) return y.ts ? 1 : -1;
+        return (y.ts || '').localeCompare(x.ts || '');
+      });
+    }
+    const fjApiariosLista = s.apiarios.map(a => {
+      const on = !!s.fjSel[a.id];
+      return { ...a, icone: on ? 'check_box' : 'check_box_outline_blank', iconeCor: on ? '#4A3F63' : '#B7AFC7', borda: on ? '#4A3F63' : '#D8D1C0', bg: on ? '#EDE7F2' : '#fff', alternar: () => this.setState(st => ({ fjSel: { ...st.fjSel, [a.id]: !st.fjSel[a.id] } })) };
+    });
+
+    // ---- tarefas ----
+    const hoje = '2026-07-10';
+    const pesoPrio = { alta: 0, media: 1, baixa: 2 };
+    const tarefasOrd = [...s.tarefas].sort((a, b) => {
+      if (a.feita !== b.feita) return a.feita ? 1 : -1;
+      if (s.tarefasOrdem === 'urgencia') {
+        const aAtraso = !a.feita && a.prazo < hoje ? 0 : 1;
+        const bAtraso = !b.feita && b.prazo < hoje ? 0 : 1;
+        if (aAtraso !== bAtraso) return aAtraso - bAtraso;
+        if (pesoPrio[a.prioridade] !== pesoPrio[b.prioridade]) return pesoPrio[a.prioridade] - pesoPrio[b.prioridade];
+      }
+      return a.prazo.localeCompare(b.prazo);
+    });
+    const prioMeta = { alta: ['ALTA', '#B3423A', '#F6E4E1'], media: ['MÉDIA', '#B0862B', '#F4EDDB'], baixa: ['BAIXA', '#3E7D53', '#E2EEE4'] };
+    const tarefasLista = tarefasOrd.filter(t => s.filtroPrioridade === 'todas' || t.prioridade === s.filtroPrioridade).map(t => {
+      const atrasada = !t.feita && t.prazo < hoje;
+      const [prioRotulo, prioCor, prioBg] = prioMeta[t.prioridade];
+      return {
+        ...t, opacidade: t.feita ? '.55' : '1', risco: t.feita ? 'line-through' : 'none',
+        contexto: t.apiarioId ? this.apiarioNome(t.apiarioId) : 'Toda a organização',
+        prioRotulo, prioCor, prioBg,
+        prazoFmt: atrasada ? t.prazoFmt + ' · em atraso' : t.prazoFmt,
+        prazoCor: atrasada ? '#fff' : '#6E6680', prazoBg: atrasada ? '#B3423A' : '#EFEAE0',
+        checkIcone: t.feita ? 'check' : '', checkCor: '#fff', checkBg: t.feita ? '#3E7D53' : '#fff', checkBorda: t.feita ? '#3E7D53' : '#B7AFC7',
+        alternar: () => { this.setState(st => ({ tarefas: st.tarefas.map(x => x.id === t.id ? { ...x, feita: !x.feita } : x) })); this.gravou(t.feita ? 'Tarefa reaberta' : 'Tarefa concluída'); },
+      };
+    });
+    const chipsPrioridade = [['todas', 'Todas'], ['alta', 'Alta'], ['media', 'Média'], ['baixa', 'Baixa']].map(([id, rotulo]) => ({
+      id, rotulo, escolher: () => this.setState({ filtroPrioridade: id }),
+      bg: s.filtroPrioridade === id ? '#4A3F63' : '#fff', cor: s.filtroPrioridade === id ? '#fff' : '#4A3F63', borda: s.filtroPrioridade === id ? '#4A3F63' : '#D8D1C0',
+    }));
+    const prioridadesForm = [['alta', 'Alta'], ['media', 'Média'], ['baixa', 'Baixa']].map(([id, rotulo]) => ({
+      id, rotulo, escolher: () => this.setState({ formPrioridade: id }),
+      bg: s.formPrioridade === id ? '#4A3F63' : '#fff', cor: s.formPrioridade === id ? '#fff' : '#4A3F63', borda: s.formPrioridade === id ? '#4A3F63' : '#D8D1C0',
+    }));
+
+    // ---- forms ----
+    const editA = s.apiarios.find(a => a.id === s.editApiario);
+    const fa = editA ? { nome: editA.nome, local: editA.local, notas: editA.notas, aEditar: true } : { nome: '', local: '', notas: '', aEditar: false };
+    const editAt = s.atividades.find(a => a.id === s.editAtividade);
+    const fat = {
+      apiarioId: s.formApiarioAt || 'a1',
+      data: editAt ? editAt.ts : '2026-07-10',
+      mel: editAt && editAt.mel != null ? editAt.mel : '',
+      alimento: editAt && editAt.alimento ? editAt.alimento : 'Xarope 1:1',
+      quantidade: editAt && editAt.quantidade ? editAt.quantidade : '',
+      tratamento: editAt && editAt.tratamento ? editAt.tratamento : 'Apivar (amitraz)',
+      notas: editAt ? editAt.notas || '' : '',
+    };
+    const tiposForm = Object.entries(this.TIPOS).map(([id, m]) => ({
+      id, rotulo: m.rotulo === 'Cresta de mel' ? 'Cresta' : m.rotulo, icone: m.icone,
+      escolher: () => this.setState({ formTipo: id }),
+      bg: s.formTipo === id ? '#4A3F63' : '#fff', cor: s.formTipo === id ? '#fff' : '#4A3F63', borda: s.formTipo === id ? '#4A3F63' : '#D8D1C0',
+    }));
+
+    // ---- chat ----
+    const mensagens = s.chat.map((m, i) => {
+      const eu = m.de === 'eu';
+      const p = m.proposta;
+      return {
+        ...m, alinhar: eu ? 'flex-end' : 'flex-start',
+        bg: eu ? '#4A3F63' : '#fff', cor: eu ? '#fff' : '#2B2438',
+        raio: eu ? '18px 18px 6px 18px' : '18px 18px 18px 6px',
+        temProposta: !!p, propostaTexto: p ? p.texto : '',
+        propostaPendente: !!p && p.estado === 'pendente',
+        propostaResolvida: !!p && p.estado !== 'pendente',
+        resolvidaCor: p && p.estado === 'feita' ? '#3E7D53' : '#8B8270',
+        resolvidaIcone: p && p.estado === 'feita' ? 'check_circle' : 'cancel',
+        resolvidaTexto: p && p.estado === 'feita' ? 'Alteração aplicada' : 'Ação rejeitada',
+        confirmar: () => this.resolverProposta(i, true),
+        rejeitar: () => this.resolverProposta(i, false),
+      };
+    });
+    const chatSugestoes = ['Quanto mel colhemos este ano?', 'Tarefas em atraso', 'Define Vale das Éguas para 18 colmeias'].map(texto => ({ texto, enviar: () => this.enviarChat(texto) }));
+
+    // ---- membros ----
+    const iniciais = (nome) => nome.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
+    const membrosLista = s.membros.map(m => ({ ...m, iniciais: iniciais(m.nome), papelCor: m.papel === 'ADMIN' ? '#fff' : '#4A3F63', papelBg: m.papel === 'ADMIN' ? '#4A3F63' : '#EDE7F2' }));
+    const convitesLista = s.convites.map(c => ({ ...c, revogar: () => { this.setState(st => ({ convites: st.convites.filter(x => x.id !== c.id) })); this.avisar('Convite revogado'); } }));
+
+    // ---- definições ----
+    const notifDefs = [['prazos', 'Prazos de tarefas'], ['sync', 'Falhas de sincronização'], ['convites', 'Novos membros e convites']];
+    const definicoesNotif = notifDefs.map(([k, rotulo]) => ({
+      rotulo, alternar: () => this.setState(st => ({ notif: { ...st.notif, [k]: !st.notif[k] } })),
+      trilhoBg: s.notif[k] ? '#4A3F63' : '#CFC8DE', bolaPos: s.notif[k] ? '25px' : '3px',
+    }));
+
+    // ---- nav / fab ----
+    const tabDefs = [['apiarios', 'hive', 'Apiários'], ['atividades', 'event_note', 'Atividades'], ['jornadas', 'route', 'Jornadas'], ['tarefas', 'task_alt', 'Tarefas'], ['assistente', 'forum', 'Assistente']];
+    const tabAtual = { apiarioDetalhe: 'apiarios', apiarioForm: 'apiarios', atividadeForm: 'atividades', jornadaDetalhe: 'jornadas', jornadaForm: 'jornadas', tarefaForm: 'tarefas', conta: '', membros: '', definicoes: '' }[v] ?? v;
+    const tabs = tabDefs.map(([id, icone, rotulo]) => {
+      const ativo = tabAtual === id;
+      return { id, icone, rotulo, fill: ativo ? 1 : 0, cor: ativo ? '#F0A81F' : '#B7AFC7', pilBg: ativo ? 'rgba(240,168,31,.16)' : 'transparent', ir: () => this.go(id, { selApiario: null, medicao: [] }) };
+    });
+    const fabDefs = { apiarios: ['Novo apiário', () => { this.draft = {}; this.setState(st => ({ view: 'apiarioForm', editApiario: null, selApiario: null, formMx: 50, formMy: 40, formKey: st.formKey + 1 })); }], atividades: ['Registar', () => { this.draft = {}; const ap = this.state.apiarios[0]; this.setState(st => ({ view: 'atividadeForm', formTipo: 'cresta', editAtividade: null, formApiarioAt: ap ? ap.id : 'a1', formColmeiasAt: ap ? String(ap.colmeias || 0) : '', formAlcasAt: '', formKey: st.formKey + 1 })); }], jornadas: ['Nova jornada', () => { this.draft = {}; this.setState(st => ({ view: 'jornadaForm', fjSel: {}, formKey: st.formKey + 1 })); }], tarefas: ['Nova tarefa', () => { this.draft = {}; this.setState(st => ({ view: 'tarefaForm', tarefaApiario: null, formPrioridade: 'media', formKey: st.formKey + 1 })); }] };
+    const fab = fabDefs[v];
+
+    // ---- ações ----
+    const acao = {
+      entrar: () => this.go('apiarios'),
+      aRegisto: () => this.go('registo'),
+      aLogin: () => this.go('login'),
+      registar: () => this.go('perfil'),
+      guardarPerfil: () => {
+        const nome = (this.draft.perfilNome || '').trim() || this.state.perfil.nome;
+        const email = (this.draft.perfilEmail || '').trim() || this.state.perfil.email;
+        this.setState({ perfil: { nome, email } });
+        this.avisar('Perfil guardado');
+        this.go('orgEscolha');
+      },
+      aOrgEscolha: () => this.go('orgEscolha'),
+      aOrgNova: () => this.go('orgNova'),
+      aOrgConvite: () => this.go('orgConvite'),
+      criarOrg: () => {
+        const nome = (this.draft.orgNome || '').trim();
+        if (!nome) { this.avisar('Indique o nome da organização'); return; }
+        this.setState({ org: { nome, morada: (this.draft.orgMorada || '').trim() || '—' } });
+        this.avisar('Organização criada — é o administrador');
+        this.go('apiarios');
+      },
+      aceitarConvite: () => { this.avisar('Juntou-se a «Melargil, Lda.»'); this.go('apiarios'); },
+      sair: () => this.go('login'),
+      voltar: () => this.go(paiDe[v] || 'apiarios'),
+      aConta: () => this.go('conta'),
+      aMembros: () => this.go('membros'),
+      aOrgEditar: () => { if (!this.ehAdmin()) return; this.draft = {}; this.setState(st => ({ view: 'orgEditar', formKey: st.formKey + 1 })); },
+      guardarOrg: () => {
+        const nome = (this.draft.orgNome ?? s.org.nome).trim();
+        if (!nome) { this.avisar('Indique o nome da organização'); return; }
+        this.setState(st => ({ org: { nome, morada: (this.draft.orgMorada ?? st.org.morada).trim() || '—' }, view: 'conta' }));
+        this.gravou('Organização atualizada');
+      },
+      aDefinicoes: () => this.go('definicoes'),
+      alternarMapa: () => this.setState(st => ({ mapa: !st.mapa, medicao: [] })),
+      limparMedicao: () => this.setState({ medicao: [] }),
+      editarApiario: () => { this.draft = {}; this.setState(st => ({ view: 'apiarioForm', editApiario: st.selApiario, formMx: (sel ? parseFloat(sel.mx) : 50), formMy: (sel ? parseFloat(sel.my) : 40), formKey: st.formKey + 1 })); },
+      novaAtividadeAqui: () => { this.draft = {}; this.setState(st => ({ view: 'atividadeForm', formTipo: 'cresta', fabRapido: false, editAtividade: null, formApiarioAt: st.selApiario, formColmeiasAt: sel ? String(sel.colmeias || 0) : '', formAlcasAt: '', formKey: st.formKey + 1 })); },
+      alternarFabRapido: () => this.setState(st => ({ fabRapido: !st.fabRapido })),
+      mapaFormPtr: (e) => { this._drag = true; if (e.currentTarget.setPointerCapture) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch (x) {} } this.moverPino(e); },
+      mapaFormMove: (e) => { if (this._drag) this.moverPino(e); },
+      mapaFormUp: () => { this._drag = false; },
+      fecharContador: () => { this.setState({ editContador: null }); this.gravou('Contagens atualizadas'); },
+      tarefaAqui: () => { this.draft = {}; this.setState(st => ({ view: 'tarefaForm', tarefaApiario: st.selApiario, formPrioridade: 'media', fabRapido: false, formKey: st.formKey + 1 })); },
+      colmeiasMais: () => this.setState(st => ({ formColmeias: st.formColmeias + 1 })),
+      colmeiasMenos: () => this.setState(st => ({ formColmeias: Math.max(0, st.formColmeias - 1) })),
+      guardarApiario: () => {
+        const nome = (this.draft.faNome ?? fa.nome).trim();
+        if (!nome) { this.avisar('Indique o nome do apiário'); return; }
+        const local = (this.draft.faLocal ?? fa.local).trim();
+        const notas = (this.draft.faNotas ?? fa.notas).trim();
+        const { kx, ky } = this.kmDoPonto(s.formMx, s.formMy);
+        const dist = Math.round(this.distDoPonto(s.formMx, s.formMy) * 10) / 10;
+        const pos = { mx: s.formMx + '%', my: s.formMy + '%', kx, ky, dist };
+        if (s.editApiario) {
+          this.setState(st => ({ apiarios: st.apiarios.map(a => a.id === st.editApiario ? { ...a, nome, local, notas, ...pos } : a), view: st.selApiario ? 'apiarioDetalhe' : 'apiarios' }));
+          this.gravou('Apiário atualizado');
+        } else {
+          const id = 'a' + Date.now();
+          this.setState(st => ({ apiarios: [...st.apiarios, { id, nome, local: local || '—', notas, colmeias: 0, apovoadas: 0, vazias: 0, alcas: 0, ...pos }], view: 'apiarios' }));
+          this.gravou('Apiário criado');
+        }
+      },
+      apagarApiario: () => {
+        this.setState(st => ({ apiarios: st.apiarios.filter(a => a.id !== st.editApiario), view: 'apiarios', selApiario: null, editApiario: null }));
+        this.gravou('Apiário apagado');
+      },
+      guardarAtividade: () => {
+        const tipo = s.formTipo;
+        const apiarioId = s.formApiarioAt || fat.apiarioId;
+        if (tipo === 'cresta') {
+          if (!String(s.formColmeiasAt).trim()) { this.avisar('Indique o número de colmeias crestadas'); return; }
+          if (!String(s.formAlcasAt).trim()) { this.avisar('Indique o número de alças de mel'); return; }
+        }
+        const ts = this.draft.atData || '2026-07-10';
+        const partes = ts.split('-');
+        const meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+        const dataFmt = parseInt(partes[2], 10) + ' ' + meses[parseInt(partes[1], 10) - 1] + ' ' + partes[0];
+        const antiga = editAt;
+        const nova = antiga
+          ? { ...antiga, apiarioId, tipo, ts, dataFmt, notas: (this.draft.atNotas || '').trim(), mel: undefined, colmeias: undefined, alcas: undefined, alimento: undefined, quantidade: undefined, tratamento: undefined }
+          : { id: 'ac' + Date.now(), apiarioId, tipo, ts, dataFmt, autor: s.perfil.nome, notas: (this.draft.atNotas || '').trim() };
+        if (tipo === 'cresta') { if (this.draft.atMel) nova.mel = parseInt(this.draft.atMel, 10); nova.colmeias = parseInt(s.formColmeiasAt, 10) || 0; nova.alcas = parseInt(s.formAlcasAt, 10) || 0; if (!nova.jornadaId) nova.jornadaId = 'j1'; }
+        if (tipo === 'alimentacao') { nova.alimento = this.draft.atAlimento || 'Xarope 1:1'; nova.quantidade = (this.draft.atQuantidade || '—').trim(); }
+        if (tipo === 'tratamento') { nova.tratamento = this.draft.atTratamento || 'Apivar (amitraz)'; }
+        this.setState(st => ({
+          atividades: (antiga ? st.atividades.map(a => a.id === antiga.id ? nova : a) : [nova, ...st.atividades]).sort((a, b) => b.ts.localeCompare(a.ts)),
+          view: st.selApiario ? 'apiarioDetalhe' : 'atividades', editAtividade: null,
+        }));
+        this.gravou(antiga ? 'Atividade atualizada' : 'Atividade registada');
+      },
+      fjTodos: () => this.setState(st => {
+        const todos = st.apiarios.every(a => st.fjSel[a.id]);
+        const fjSel = {};
+        if (!todos) st.apiarios.forEach(a => { fjSel[a.id] = true; });
+        return { fjSel };
+      }),
+      guardarJornada: () => {
+        const nome = (this.draft.jNome || '').trim();
+        if (!nome) { this.avisar('Indique o nome da jornada'); return; }
+        const aps = Object.keys(s.fjSel).filter(k => s.fjSel[k]);
+        if (!aps.length) { this.avisar('Selecione pelo menos um apiário'); return; }
+        this.setState(st => ({ jornadas: [{ id: 'j' + Date.now(), nome, tipo: this.draft.jTipo || 'cresta', periodo: 'jul 2026', apiarios: aps, concluida: false }, ...st.jornadas], view: 'jornadas' }));
+        this.gravou('Jornada criada');
+      },
+      guardarTarefa: () => {
+        const titulo = (this.draft.tTitulo || '').trim();
+        if (!titulo) { this.avisar('Indique o título da tarefa'); return; }
+        const prazo = this.draft.tPrazo || '2026-07-17';
+        const partes = prazo.split('-');
+        const meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+        this.setState(st => ({ tarefas: [...st.tarefas, { id: 't' + Date.now(), titulo, apiarioId: this.draft.tApiario !== undefined ? (this.draft.tApiario || null) : st.tarefaApiario, prazo, prazoFmt: parseInt(partes[2], 10) + ' ' + meses[parseInt(partes[1], 10) - 1], prioridade: st.formPrioridade, feita: false, notas: (this.draft.tNotas || '').trim() }], view: st.tarefaApiario ? 'apiarioDetalhe' : 'tarefas', tarefaApiario: null }));
+        this.gravou('Tarefa criada');
+      },
+      convidar: () => {
+        const email = (this.draft.conviteEmail || '').trim();
+        if (!email || !email.includes('@')) { this.avisar('Indique um email válido'); return; }
+        this.draft.conviteEmail = '';
+        this.setState(st => ({ convites: [...st.convites, { id: 'c' + Date.now(), email, estado: 'Pendente · enviado hoje', pendente: true }], formKey: st.formKey + 1 }));
+        this.avisar('Convite enviado');
+      },
+      sincronizar: () => {
+        if (!online) { this.avisar('Sem ligação — tentativa única falhou'); return; }
+        this.setState({ pendentes: 0 });
+        this.avisar('Sincronização concluída');
+      },
+      exportar: () => this.avisar('Exportação CSV preparada (apiários, atividades, jornadas)'),
+      mudarPass: () => this.avisar('Abre a página do fornecedor de identidade'),
+      chatEnviar: () => this.enviarChat(this.draft.chatTexto),
+      chatTecla: (e) => { if (e.key === 'Enter') this.enviarChat(this.draft.chatTexto); },
+      fab: fab ? fab[1] : () => {},
+    };
+
+    return {
+      d, acao,
+      // routing flags
+      vAuth, vApp: !vAuth,
+      vLogin: v === 'login', vRegisto: v === 'registo', vPerfil: v === 'perfil', vOrgEscolha: v === 'orgEscolha', vOrgNova: v === 'orgNova', vOrgConvite: v === 'orgConvite',
+      vApiarios: v === 'apiarios', vListaApiarios: v === 'apiarios' && !s.mapa, vMapa: v === 'apiarios' && s.mapa,
+      vApiarioDetalhe: v === 'apiarioDetalhe', vApiarioForm: v === 'apiarioForm',
+      vAtividades: v === 'atividades', vAtividadeForm: v === 'atividadeForm',
+      vJornadas: v === 'jornadas', vJornadaDetalhe: v === 'jornadaDetalhe', vJornadaForm: v === 'jornadaForm',
+      vTarefas: v === 'tarefas', vTarefaForm: v === 'tarefaForm',
+      vAssistente: v === 'assistente', vConta: v === 'conta', vMembros: v === 'membros', vDefinicoes: v === 'definicoes', vOrgEditar: v === 'orgEditar',
+      // header
+      titulo: titulos[v] || 'Melargil', mostraVoltar, mostraMarca: !mostraVoltar,
+      corLigacao: online ? '#7BC98A' : '#F0A81F',
+      rotuloLigacao: online ? 'Online' : 'Offline' + (s.pendentes ? ' · ' + s.pendentes : ''),
+      mostraBannerOffline: !online && raizes.includes(v),
+      pendentes: s.pendentes,
+      // apiários
+      apiariosLista, semApiarios: apiariosLista.length === 0,
+      mapaBtnIcone: s.mapa ? 'view_list' : 'map', mapaBtnBg: s.mapa ? '#4A3F63' : '#fff', mapaBtnCor: s.mapa ? '#fff' : '#4A3F63',
+      marcadores, dicaMapa: 'Toque em dois apiários para medir a distância entre eles.',
+      temMedicao: s.medicao.length > 0, textoMedicao,
+      apiario, atividadesApiario, semAtividadesApiario: !!sel && atividadesApiario.length === 0,
+      temNotas: !!(sel && sel.notas),
+      contadoresDetalhe: [['colmeias', 'colmeias povoadas'], ['apovoadas', 'apovoadas'], ['vazias', 'vazias'], ['alcas', 'alças']].map(([campo, rotulo]) => {
+        const ativo = s.editContador === campo;
+        const destaque = campo === 'colmeias';
+        return {
+          campo, rotulo, valor: sel ? (sel[campo] || 0) : 0,
+          bg: ativo ? 'rgba(255,255,255,.22)' : (destaque ? 'rgba(240,168,31,.16)' : 'rgba(255,255,255,.1)'),
+          borda: ativo ? '#F0A81F' : (destaque ? 'rgba(240,168,31,.4)' : 'transparent'),
+          corValor: destaque ? '#F0A81F' : '#fff', corRotulo: destaque ? '#F3D9A2' : '#CFC8DE',
+          abrir: () => this.setState(st => ({ editContador: st.editContador === campo ? null : campo })),
+        };
+      }),
+      temContadorAtivo: !!s.editContador && !!sel,
+      contadorAtivo: (() => {
+        if (!s.editContador || !sel) return { rotulo: '', valor: 0, mais: () => {}, menos: () => {} };
+        const campo = s.editContador;
+        const rotulos = { colmeias: 'Colmeias povoadas', apovoadas: 'Apovoadas', vazias: 'Vazias', alcas: 'Alças' };
+        const ajustar = (delta) => this.setState(st => ({ apiarios: st.apiarios.map(a => a.id === st.selApiario ? { ...a, [campo]: Math.max(0, (a[campo] || 0) + delta) } : a) }));
+        return { rotulo: rotulos[campo], valor: sel[campo] || 0, mais: () => ajustar(1), menos: () => ajustar(-1) };
+      })(),
+      chipsTipoDetalhe: mkChips(s.filtroTipoDetalhe, 'filtroTipoDetalhe'),
+      // atividades
+      chipsTipo: mkChips(s.filtroTipo, 'filtroTipo'),
+      atividadesLista, semAtividades: atividadesLista.length === 0,
+      apiariosOpcoes: s.apiarios.map(a => ({ id: a.id, nome: a.nome })),
+      tiposForm, ftCresta: s.formTipo === 'cresta', ftAlimentacao: s.formTipo === 'alimentacao', ftTratamento: s.formTipo === 'tratamento',
+      fat, fa, formKey: s.formKey, formColmeias: s.formColmeias,
+      formMxPct: s.formMx + '%', formMyPct: s.formMy + '%',
+      formDistTexto: 'A ' + this.distDoPonto(s.formMx, s.formMy).toFixed(1).replace('.', ',') + ' km da sua posição',
+      // jornadas
+      jornadasLista, jornada, jornadaApiarios, fjApiariosLista,
+      fjTodosIcone: s.apiarios.every(a => s.fjSel[a.id]) ? 'check_box' : 'check_box_outline_blank',
+      fjTodosIconeCor: s.apiarios.every(a => s.fjSel[a.id]) ? '#4A3F63' : '#B7AFC7',
+      fjTodosBorda: s.apiarios.every(a => s.fjSel[a.id]) ? '#4A3F63' : '#D8D1C0',
+      fjTodosBg: s.apiarios.every(a => s.fjSel[a.id]) ? '#EDE7F2' : '#fff',
+      fjTodosResumo: s.apiarios.reduce((n, a) => n + (a.colmeias || 0), 0) + ' colmeias',
+      ordensJornada: [['data', 'Data'], ['media', 'Média']].map(([id, rotulo]) => ({
+        id, rotulo, escolher: () => this.setState({ jornadaOrdem: id }),
+        bg: s.jornadaOrdem === id ? '#4A3F63' : '#fff', cor: s.jornadaOrdem === id ? '#fff' : '#4A3F63', borda: s.jornadaOrdem === id ? '#4A3F63' : '#D8D1C0',
+      })),
+      // tarefas
+      tarefasLista, semTarefas: tarefasLista.length === 0, chipsPrioridade, prioridadesForm,
+      ordensTarefas: [['data', 'Data'], ['urgencia', 'Urgência']].map(([id, rotulo]) => ({
+        id, rotulo, escolher: () => this.setState({ tarefasOrdem: id }),
+        bg: s.tarefasOrdem === id ? '#4A3F63' : '#fff', cor: s.tarefasOrdem === id ? '#fff' : '#4A3F63', borda: s.tarefasOrdem === id ? '#4A3F63' : '#D8D1C0',
+      })),
+      ftApiario: s.tarefaApiario || '', fabRapidoAberto: s.fabRapido, fabRapidoIcone: s.fabRapido ? 'close' : 'bolt',
+      formColmeiasAt: s.formColmeiasAt, formAlcasAt: s.formAlcasAt,
+      rotuloGuardarAtividade: s.editAtividade ? 'Guardar alterações' : 'Registar atividade',
+      // chat
+      mensagens, chatSugestoes, chatKey: s.chatKey, mostraAvisoIaOffline: !online,
+      // conta
+      perfil: s.perfil, perfilIniciais: iniciais(s.perfil.nome), org: s.org, ehAdmin: this.ehAdmin(),
+      papelRotulo: this.ehAdmin() ? 'Administrador' : 'Membro',
+      membrosLista, convitesLista, semConvites: convitesLista.length === 0,
+      // definições
+      estadoLigacaoLongo: online ? 'Ligado — sincronização em dia' : 'Sem ligação à rede',
+      textoSync: online
+        ? (s.pendentes ? s.pendentes + ' alterações locais aguardam envio. A última sincronização foi há 18 min.' : 'Todos os dados estão sincronizados com o servidor.')
+        : s.pendentes + ' alterações guardadas neste dispositivo. Serão enviadas quando houver sinal suficiente (3G ou melhor).',
+      definicoesNotif,
+      // fab & nav
+      fabVisivel: !!fab, fabRotulo: fab ? fab[0] : '', tabs,
+      // toast
+      temToast: !!s.toast, toastMsg: s.toast || '',
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,6 +1,8 @@
 # 0014 — CI/CD: path-filtered monorepo pipeline (build/scan/publish + GitOps image-automation)
 
-- **Status:** Accepted
+- **Status:** Accepted — **decision #4 (deploy via image-automation) superseded by
+  [ADR-0018](0018-release-triggered-deploy-pipeline.md) / [D-27](../../requirements/decisions.md)**;
+  the build/scan/publish stages (#1–3, 5) still stand
 - **Date:** 2026-07-05
 - **Issue / Epic:** #88 / EPIC-13 (#14) · **Milestone:** M0
 - **Requirements:** NFR-TST-1, NFR-MNT-1, NFR-ARC-3 · **Decisions:** D-9 (monorepo), D-10 (rollout)
@@ -25,6 +27,7 @@ mechanism EPIC-14 #89 shares and tunes; this story wires the stages.
 ## Decision
 
 1. **Two new workflows, splitting concerns like the existing `helm-ci.yml`/`gitops-ci.yml`:**
+
    - [`security-scan.yml`](../../.github/workflows/security-scan.yml) — repo-level supply-chain
      scanning on every PR/push: **Trivy `fs`** (dependency + secret, **blocking** on
      HIGH,CRITICAL, `ignore-unfixed`), **`govulncheck`** across every Go module (via `task go:vuln`,
@@ -43,15 +46,15 @@ mechanism EPIC-14 #89 shares and tunes; this story wires the stages.
    container-image, secret, and IaC scanning with a single severity gate — the shared mechanism
    #89 configures. `govulncheck` complements Trivy's SBOM scan with reachability analysis.
 
-4. **Deploy via Flux image-automation, not CI-commits-to-Git.** CI only publishes; the
-   image-reflector + image-automation controllers watch the registry and commit the new tag into
-   Git, which Flux then reconciles — the purest GitOps split (extends the #86 Flux install with
-   `--components-extra`). The engine + per-service templates live in
-   [`infra/gitops/image-automation/`](../../infra/gitops/image-automation/), **dormant** (outside
-   the reconciled Kustomization paths) until the first service publishes an image and a Git
-   write-credential (an EPIC-14 #89 secrets task) is provisioned. Main images carry an extra
-   `<YYYYMMDDHHMMSS>-<sha>` tag because commit SHAs are not chronologically orderable — the
-   `ImagePolicy` selects the newest build by that timestamp.
+4. **~~Deploy via Flux image-automation, not CI-commits-to-Git.~~** **SUPERSEDED by
+   [ADR-0018](0018-release-triggered-deploy-pipeline.md) / [D-27](../../requirements/decisions.md).**
+   The original plan had the image-reflector + image-automation controllers watch the registry and
+   auto-commit the new tag into Git for Flux to reconcile. Standing up the first real cluster
+   (ADR-0017) showed this requires a **standing git-write credential** the user rejected, and its
+   direct-push model can't satisfy this personal repo's PR-only branch protection anyway. Deploys
+   are now driven by a **published GitHub Release → CI opens a tag-bump PR → human merges → Flux
+   reconciles** (ADR-0018) — no standing credential. The image-automation objects, `$imagepolicy`
+   markers, and `--components-extra` Flux controllers have been removed.
 
 5. **macOS/iOS CI is explicitly deferred to M5 / EPIC-15** (D-10: PWA → Android → iOS, native only
    when needed) — recorded as a disabled `ios-build` placeholder job in `build-publish.yml`.
@@ -61,10 +64,10 @@ mechanism EPIC-14 #89 shares and tunes; this story wires the stages.
 - The pipeline is **green today with zero components to build**: the build matrix is empty, so
   `build-publish.yml` skips; `security-scan.yml` runs against `services/shared` and passes. It
   activates automatically the day a directory gains a `Dockerfile` — no workflow edit needed.
-- **Not exercised end-to-end yet.** A real publish → tag-bump → reconcile can only be proven once a
-  service ships an image (and the Git write-secret exists). The activation steps are documented in
-  [`infra/gitops/image-automation/README.md`](../../infra/gitops/image-automation/README.md) and
-  tracked in [`FOLLOWUPS.md`](../../FOLLOWUPS.md); this is the honest dormant boundary.
+- **Deploy path redesigned (ADR-0018).** The publish → deploy loop is no longer image-automation;
+  see [ADR-0018](0018-release-triggered-deploy-pipeline.md) for the release-triggered, PR-based
+  mechanism that replaced it, and [`release-deploy.yml`](../../.github/workflows/release-deploy.yml)
+  for the workflow. `build-publish.yml` remains the per-PR build/scan gate described above.
 - **Trivy `config` is report-only** so pre-existing Helm/k8s baseline findings don't fail unrelated
   PRs; #89 triages the baseline then flips it to blocking. Dependency + image scanning are blocking
   now, satisfying the AC.

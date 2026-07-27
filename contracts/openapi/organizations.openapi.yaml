@@ -1,16 +1,24 @@
-# Organizations service — client-facing REST contract (SKELETON).
+# Organizations service — client-facing REST contract.
 # Onboarding (FR-ONB) + the management surface the React Admin App consumes (NFR-ROL-2).
-# Demonstrates nested sub-resources (members, invitations) and the role model (NFR-ROL-1).
+# Organization create/read (#26), membership listing and email invitations (#27), organization
+# update (PATCH, #289), member removal + role changes (#290), and the platform-operator-only
+# cross-org list (GET /organizations, #467, D-32) are built. Invitation expiry/re-invite remain
+# still-open detail per D-3/FR-ONB-3.
 # Stamped from ./_shared/components.openapi.yaml; conventions in
-# docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email).
+# docs/architecture/api-contracts.md. Decisions: D-3 (creator=admin, invite by email),
+# D-32 (two-tier admin: organization + platform operator, ADR-0021).
 openapi: 3.1.0
 info:
   title: BeekeepingIT — Organizations API
   version: 0.1.0
   description: >-
     Organization CRUD, membership and email invitations. The user who creates an
-    organization becomes its admin and invites others by email (D-3). Org scope and role
-    are derived from the JWT (ADR-0002); `{orgId}` in the path must match the caller's org.
+    organization becomes its admin and invites others by email (D-3); an invited user who
+    logs in is auto-joined to the inviting organization on their first `GET /organizations/me`
+    poll rather than being prompted to create a new one (FR-ONB-3). Org scope and role
+    are derived from the JWT (ADR-0002); `{orgId}` in the path must match the caller's org --
+    except `GET /organizations`, which lists every organization for a verified platform
+    operator only (D-32, ADR-0021).
   license:
     name: AGPL-3.0-only
     identifier: AGPL-3.0-only
@@ -29,9 +37,49 @@ tags:
     description: Organization membership and roles (NFR-ROL-1).
   - name: Invitations
     description: Email invitations to join an organization (D-3, FR-ONB-3).
+  - name: Platform
+    description: >-
+      Platform-operator-only, cross-organization endpoints (D-32, ADR-0021, EPIC-18 #463)
+      -- restricted to a verified platform_operator claim, never an organization's own
+      admin or member.
 
 paths:
   /organizations:
+    get:
+      operationId: listOrganizations
+      summary: List all organizations (platform operator only)
+      description: >-
+        Enumerates every organization on the platform (D-32, EPIC-18 #463) --
+        not the caller's own org, unlike every other route in this contract.
+        Requires the caller's verified access token to carry the
+        `platform_operator` claim (ADR-0021); every other caller, including an
+        organization's own admin, is rejected with `403` -- there is no
+        `{orgId}` in this path to hide the existence of, so the ordinary
+        ADR-0002 `404`-not-`403` rule does not apply here (see #466's handoff
+        comment on this issue). The response is a minimal per-organization
+        summary only -- no member roster, no invitation data, nothing from
+        inside any organization.
+      tags: [Organizations]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive free-text search over organization name.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of organizations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationList'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
     post:
       operationId: createOrganization
       summary: Create an organization (caller becomes admin)
@@ -63,6 +111,33 @@ paths:
           $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
         '422':
           $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
+  /organizations/me:
+    get:
+      operationId: getMyOrganization
+      summary: Get the caller's own organization
+      description: >-
+        Resolves the organization from the caller's own active membership — no
+        {orgId} needed. `404` when the caller has no active membership yet
+        (FR-ONB-2): the client's org-completion gate (mirrors the profile
+        completeness probe, FR-ONB-1) uses this to learn whether onboarding
+        must still create or join an organization before the caller can reach
+        apiaries/main features.
+      tags: [Organizations]
+      responses:
+        '200':
+          description: The caller's organization.
+          headers:
+            ETag:
+              $ref: './_shared/components.openapi.yaml#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
 
   /organizations/{orgId}:
     parameters:
@@ -113,6 +188,8 @@ paths:
           $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
         '403':
           $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
         '409':
           $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
         '422':
@@ -123,7 +200,7 @@ paths:
       - $ref: '#/components/parameters/OrgId'
     get:
       operationId: listMembers
-      summary: List organization members
+      summary: List organization members (admin only)
       tags: [Members]
       parameters:
         - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
@@ -139,6 +216,104 @@ paths:
           $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
         '403':
           $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+
+  /organizations/{orgId}/members/names:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      operationId: listMemberNames
+      summary: List member display names (any member)
+      description: >-
+        A least-privilege member roster — `user_id` + display `name` only, no
+        role/status/email — readable by ANY active member of the organization,
+        unlike the admin-only `GET .../members`. Backs per-user attribution
+        display (FR-TEN-2, #44): the client resolves an activity's `performed_by`
+        id to a real name instead of a short id fragment. Names are composed
+        from the identity service; an id with no name yet (incomplete or
+        removed profile) is returned with an empty `name`, which the client
+        renders as a short id fragment. Any org member may read it since org
+        data is shared across all members (FR-TEN-2); a caller who is not an
+        active member of `{orgId}` gets 404 (ADR-0002, never 403).
+      tags: [Members]
+      parameters:
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: A page of member display names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberNameList'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+
+  # Member lifecycle (#290) — kept in its own path block so it rebases cleanly
+  # against the parallel organization-update (PATCH /organizations/{orgId}) work.
+  /organizations/{orgId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: userId
+        in: path
+        required: true
+        description: The member's user id (organizations.memberships.user_id).
+        schema:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+    patch:
+      operationId: changeMemberRole
+      summary: Change a member's role (admin only)
+      description: >-
+        Changes a member's role within the fixed `admin`/`user` model (auth.md §5.3,
+        NFR-ROL-1/2). Admin-only and org-scoped. Refuses to demote the organization's
+        last admin (`409`, D-3). A user who is not an active member of `{orgId}` is
+        `404` (ADR-0002 — never `403`).
+      tags: [Members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberRoleUpdate'
+      responses:
+        '200':
+          description: The member, with its updated role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+    delete:
+      operationId: removeMember
+      summary: Remove a member (admin only)
+      description: >-
+        Removes a member from the organization; the removed member immediately loses
+        access to the org's data (FR-TEN-2, NFR-ROL-1). Admin-only and org-scoped.
+        Refuses to remove the organization's last admin (`409`, D-3). A user who is
+        not an active member of `{orgId}` — already removed, never a member, or from
+        another org — is `404` (ADR-0002 — never `403`).
+      tags: [Members]
+      responses:
+        '204':
+          description: Removed (no content).
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
+        '409':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
 
   /organizations/{orgId}/invitations:
     parameters:
@@ -214,6 +389,58 @@ paths:
         '404':
           $ref: './_shared/components.openapi.yaml#/components/responses/NotFound'
 
+  # Platform-operator-only cross-organization lookup (#468, EPIC-18 #463, D-7, D-32).
+  # Deliberately NOT under /organizations/{orgId} -- there is no single org in scope, by
+  # design (the support question this answers spans every organization). Kept at
+  # /organizations/platform/... (not a new top-level /platform prefix) so the gateway's
+  # existing /v1/organizations path-prefix route reaches it with no infra change.
+  /organizations/platform/memberships:
+    get:
+      operationId: lookupPlatformMemberships
+      summary: Look up a person's memberships across every organization (platform operator only)
+      description: >-
+        Answers the support question "which organization(s) does this person belong to,
+        and with what role?" (#468). Restricted to a verified platform operator
+        (D-32, ADR-0021) -- every other caller, including an organization's own admin, is
+        `403` (never `404`: unlike the org-scoped routes ADR-0021 also carves out, there is
+        no `{orgId}` in this path to hide the existence of). Exactly one of `email` or
+        `user_id` must be supplied. Returns organization id + name, role and status
+        (`active`/`invited`/`removed`) only -- never the target's email, credentials, or
+        any other IdP account internal (D-7); an email or user_id that resolves to a
+        known person with no memberships, and one that resolves to no person at all, both
+        come back as an empty page rather than an error.
+      tags: [Platform]
+      parameters:
+        - name: email
+          in: query
+          description: >-
+            The person's email (mutually exclusive with user_id). Matched against the
+            profile email identity mirrors, case-insensitively -- a search key, not an
+            authorization-sensitive value.
+          schema:
+            type: string
+            format: email
+        - name: user_id
+          in: query
+          description: The person's user id (mutually exclusive with email).
+          schema:
+            $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/LimitParam'
+        - $ref: './_shared/components.openapi.yaml#/components/parameters/CursorParam'
+      responses:
+        '200':
+          description: A page of the resolved person's organization memberships.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformMembershipList'
+        '401':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: './_shared/components.openapi.yaml#/components/responses/UnprocessableEntity'
+
 components:
   # bearerAuth must resolve locally for the top-level `security` name reference; the
   # canonical definition stays in _shared (single source of truth), pulled in by $ref.
@@ -250,7 +477,52 @@ components:
                 - $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
               readOnly: true
               description: The first admin (D-3).
-          required: [id, name]
+            role:
+              allOf:
+                - $ref: '#/components/schemas/Role'
+              readOnly: true
+              description: >-
+                The caller's own membership role in this organization — not a property of the
+                organization itself (#172).
+          required: [id, name, role]
+
+    OrganizationSummary:
+      type: object
+      description: >-
+        The minimal per-organization shape `GET /organizations` returns
+        (#467, platform-operator only) -- deliberately NOT the full
+        `Organization` schema: no `address`, no `created_by`, and no `role`
+        (that field is the caller's own membership role in ONE org, #172 --
+        meaningless for a platform operator enumerating every organization,
+        who is a member of none of them). `member_count` is the only
+        member-related fact exposed; no member roster, invitation data, or
+        anything else from inside the organization is included.
+      allOf:
+        - $ref: './_shared/components.openapi.yaml#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id:
+              $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+            name:
+              type: string
+              minLength: 1
+              maxLength: 200
+            member_count:
+              type: integer
+              minimum: 0
+              description: Count of the organization's active members.
+          required: [id, name, member_count]
+
+    OrganizationList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrganizationSummary'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
 
     OrganizationCreate:
       type: object
@@ -304,6 +576,42 @@ components:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
       required: [data, page]
 
+    MemberRoleUpdate:
+      type: object
+      description: >-
+        Change-role request body (#290). Only the role field, constrained to the
+        fixed admin/user enum (NFR-ROL-1/2 — no new roles).
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+      required: [role]
+
+    MemberName:
+      type: object
+      description: >-
+        A member's display name for per-user attribution (#44) — deliberately
+        NOT the full Member (no role/status/email). `name` may be empty when
+        the member's profile has no name yet or the id no longer resolves; the
+        client falls back to a short id fragment in that case.
+      properties:
+        user_id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        name:
+          type: string
+          maxLength: 200
+      required: [user_id, name]
+
+    MemberNameList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberName'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
+
     Invitation:
       type: object
       allOf:
@@ -339,6 +647,44 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Invitation'
+        page:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
+      required: [data, page]
+
+    PlatformMembership:
+      type: object
+      description: >-
+        One organization membership in a #468 cross-organization lookup result --
+        deliberately NOT the org-scoped Member schema: it adds organization_id/
+        organization_name (there is no single {orgId} in scope here) and never carries
+        anything beyond role/status (D-7 -- no email, no credentials, no IdP internals).
+      properties:
+        organization_id:
+          $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
+        organization_name:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        status:
+          type: string
+          enum: [active, invited, removed]
+      required: [organization_id, organization_name, role, status]
+
+    PlatformMembershipList:
+      type: object
+      properties:
+        user_id:
+          type: [string, "null"]
+          format: uuid
+          description: >-
+            The resolved person's own user id, echoed back so an email-keyed caller can
+            confirm who the results are for. Null when the lookup key (email) matched no
+            known identity at all (#468 -- deliberately indistinguishable from "a known
+            person with zero memberships": data is an empty array either way).
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformMembership'
         page:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Page'
       required: [data, page]

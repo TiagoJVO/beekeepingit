@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/problem"
 )
 
@@ -27,6 +29,13 @@ type ResolveConfig struct {
 	// CacheTTL bounds how long a resolved (sub → user → org+role) result is
 	// reused per instance. Defaults to 60s when zero (§4.2).
 	CacheTTL time.Duration
+	// CacheMaxEntries bounds how many distinct subjects' resolutions are
+	// cached at once per instance. Expired entries are only pruned lazily
+	// (on the next read for that same subject), so without a bound a
+	// long-lived instance serving many distinct callers would otherwise
+	// grow this map unboundedly. Once full, resolving a new subject evicts
+	// one existing entry. Defaults to 10,000 when zero.
+	CacheMaxEntries int
 	// HTTPClient is the client used for the internal calls. When nil, a
 	// client with a 5s timeout and OTel transport (W3C traceparent
 	// propagation, §5.3) is used.
@@ -52,6 +61,10 @@ func NewOrgResolver(cfg ResolveConfig) (func(http.Handler) http.Handler, error) 
 	if ttl <= 0 {
 		ttl = 60 * time.Second
 	}
+	maxEntries := cfg.CacheMaxEntries
+	if maxEntries <= 0 {
+		maxEntries = defaultCacheMaxEntries
+	}
 	client := cfg.HTTPClient
 	if client == nil {
 		client = &http.Client{
@@ -64,6 +77,7 @@ func NewOrgResolver(cfg ResolveConfig) (func(http.Handler) http.Handler, error) 
 		identityURL:      cfg.IdentityBaseURL,
 		organizationsURL: cfg.OrganizationsBaseURL,
 		ttl:              ttl,
+		maxEntries:       maxEntries,
 		client:           client,
 		cache:            map[string]cacheEntry{},
 		now:              time.Now,
@@ -81,6 +95,23 @@ func NewOrgResolver(cfg ResolveConfig) (func(http.Handler) http.Handler, error) 
 
 			enriched, prob := r.resolve(req.Context(), claims, req.Header.Get("Authorization"))
 			if prob != nil {
+				// AC (#28): a denial here — no known user, or no active org
+				// membership — is logged, not just returned to the caller.
+				// sub is a verified JWT claim (safe to log, not
+				// client-controlled free text); no token/bearer material is
+				// ever logged. A transient upstream failure (500, e.g.
+				// identity/organizations unreachable) is logged too, but
+				// distinguished from a genuine denial so on-call doesn't
+				// mistake infra flakiness for an authz event.
+				msg := "authz denied: org resolution failed"
+				if prob.Status >= 500 {
+					msg = "org resolution failed: upstream error"
+				}
+				logging.FromContext(req.Context()).WarnContext(req.Context(), msg,
+					slog.String("sub", claims.Sub),
+					slog.Int("status", prob.Status),
+					slog.String("detail", prob.Detail),
+				)
 				problem.Write(w, req, *prob)
 				return
 			}
@@ -90,6 +121,10 @@ func NewOrgResolver(cfg ResolveConfig) (func(http.Handler) http.Handler, error) 
 		})
 	}, nil
 }
+
+// defaultCacheMaxEntries bounds the per-instance sub→org cache absent an
+// explicit ResolveConfig.CacheMaxEntries.
+const defaultCacheMaxEntries = 10_000
 
 type cacheEntry struct {
 	userID    string
@@ -102,6 +137,7 @@ type resolver struct {
 	identityURL      string
 	organizationsURL string
 	ttl              time.Duration
+	maxEntries       int
 	client           *http.Client
 	now              func() time.Time
 
@@ -143,9 +179,20 @@ func (r *resolver) get(sub string) (cacheEntry, bool) {
 	return e, true
 }
 
+// set records e for sub, evicting one existing entry first if the cache is
+// already at maxEntries and sub isn't already a key (so refreshing an
+// already-cached subject never evicts anything).
 func (r *resolver) set(sub string, e cacheEntry) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.maxEntries > 0 {
+		if _, exists := r.cache[sub]; !exists && len(r.cache) >= r.maxEntries {
+			for k := range r.cache {
+				delete(r.cache, k)
+				break
+			}
+		}
+	}
 	r.cache[sub] = e
 }
 

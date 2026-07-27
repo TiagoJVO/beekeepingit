@@ -15,8 +15,8 @@ generated `root-credentials` Secret). Nesting this stack inside the umbrella the
 **deadlocks a fresh install** (umbrella never `Ready` because of Tempo → MinIO never
 installs — found on the live dev cluster, not by `helm lint`/`template`). As its own
 release, the ordering is acyclic: umbrella → MinIO → this
-([`infra/gitops/apps/dev/observability-helmrelease.yaml`](../../gitops/apps/dev/observability-helmrelease.yaml),
-`dependsOn: [beekeepingit, minio]`).
+([`apps/dev/observability-helmrelease.yaml`](https://github.com/TiagoJVO/beekeepingit-gitops/blob/main/apps/dev/observability-helmrelease.yaml)
+in the beekeepingit-gitops repo, `dependsOn: [beekeepingit, minio]`).
 
 ## Structure
 
@@ -40,7 +40,8 @@ helm template observability infra/helm/observability
 
 No `environments/` overlays — per-environment config lives on the Flux `HelmRelease`'s
 `values:` (only `dev` deploys this today). Deploying without full GitOps mirrors the
-Keycloak/MinIO pattern (`infra/README.md`): apply its `HelmRelease` manifest directly.
+standalone-`HelmRelease` pattern of Authentik/MinIO (`infra/README.md`): apply its
+`HelmRelease` manifest directly.
 
 ## Credentials
 

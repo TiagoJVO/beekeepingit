@@ -12,11 +12,36 @@ type ApiariesApiary struct {
 	ID             pgtype.UUID        `json:"id"`
 	OrganizationID pgtype.UUID        `json:"organization_id"`
 	Name           string             `json:"name"`
-	HiveCount      int32              `json:"hive_count"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	Location       interface{}        `json:"location"`
+	Notes          pgtype.Text        `json:"notes"`
+	PlaceLabel     pgtype.Text        `json:"place_label"`
+}
+
+type ApiariesApiaryCounter struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	ApiaryID       pgtype.UUID        `json:"apiary_id"`
+	CounterType    string             `json:"counter_type"`
+	Value          int32              `json:"value"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ApiariesAuditLog struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	ChangeType     string             `json:"change_type"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
 }
 
 type ApiariesSyncConflictLog struct {

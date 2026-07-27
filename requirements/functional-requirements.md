@@ -32,29 +32,58 @@ ambiguities flagged inline link to `open-questions.md`.
   current location (closest first).
 - **FR-AP-3** — **Map view** showing a marker for each apiary's location and a
   marker for the user's current location.
+  - _Resolved (D-16):_ `flutter_map` markers + user location + measure overlay;
+    tile provider/offline-tile caching stays open (narrowed Q-MAP), doesn't block v1.
+  - _Refined (D-16, #257):_ satellite (Esri World Imagery) is the default layer, with a
+    gloves-friendly in-map toggle down to streets (OSM) — both attributed, choice persists
+    per session. Production-traffic tile provider + offline-tile caching remain open (Q-MAP).
 - **FR-AP-4** — Users can **switch** between map view and list view; both must be
   available.
 - **FR-AP-5** — Feature to **measure the distance between two apiaries**.
-  - _Open question (Q-DIST):_ straight-line vs. driving distance, and how the two
-    apiaries are selected.
+  - _Resolved (D-15):_ straight-line (haversine), offline, tap-two-pins selection;
+    driving distance deferred.
 - **FR-AP-6** — **Search** apiaries by **name, location, or other attributes**.
+  - _Resolved (D-17):_ client-side, apiaries-only, name + location; extending to
+    other entities deferred.
 - **FR-AP-7** — **Apiary detail page** showing name, location, number of hives,
   and other relevant details.
   - _Resolved (D-2):_ "number of hives" is a **count** on the apiary; hives are
     **not** a separate entity.
+  - _Refined (#341, product-owner-directed, 2026-07-21):_ an apiary's **location
+    is mandatory** — it can never be created or saved without coordinates.
+    Enforced at every layer: the create/edit form validation, the OpenAPI
+    `ApiaryCreate.required` + REST service validation, the offline sync-apply
+    validation (a location-less `put` is rejected), and a DB `NOT NULL`
+    constraint (`00008_apiary_location_not_null.sql`). This supersedes the
+    walking-skeleton-era "location optional" behavior the earlier
+    `00003_add_apiary_location.sql` migration and the original `ApiaryCreate`
+    schema assumed.
+- **FR-AP-8** — An apiary may carry optional **free-text notes**, editable
+  from the apiary form and shown on the detail page. Notes sync offline and
+  are **history-tracked** (FR-HIS) like other apiary edits.
+  - _Prototype:_ Melargil apiary detail (see
+    [`docs/design/prototype.md`](../docs/design/prototype.md)).
 
 ## Activities (FR-AC)
 
 - **FR-AC-1** — Activities have a **type**, and each type defines its **own set of
   attributes**. Types are well-defined and **extensible** in the future. Initial
   types:
-  - **Honey harvest** — date, amount of honey harvested, **number of hives
-    harvested**, notes.
+  - **Honey harvest** — date, amount of honey harvested, number of hives harvested,
+    **number of honey supers (alças) harvested**, notes. The supers count is the
+    **primary yield metric** (more reliably measured in the field than the kg
+    amount).
   - **Feeding** — date, type of feed, amount of feed, notes.
-  - **Treatment** — date, type of treatment, notes.
+  - **Treatment** — date, **treatment context**, type of treatment, notes. Treatment
+    context distinguishes: a general/preventive treatment (no disease tied to it);
+    a specific treatment tied to a named disease/condition (from a DGAV-DDO-informed
+    list); or a detection-only report (a disease observed, no treatment applied yet).
   - **Generic** — date, notes.
   - _Per D-2:_ relevant types (harvest, and optionally treatment/feeding) capture a
     **number-of-hives-involved** attribute; activities stay at the apiary level.
+  - _Confirmed 2026-07-16 (user):_ the honey-supers attribute and the treatment
+    context distinction (D-19 future-relevant data points) are now committed v1
+    scope, not deferred.
 - **FR-AC-2** — **Add** an activity to an apiary: select the activity type and
   fill in the relevant attributes.
 - **FR-AC-3** — **Edit** an existing activity, updating the relevant attributes.
@@ -80,21 +109,28 @@ harvest, which requires visiting all apiaries).
   range and activity type**.
 - **FR-JO-3** — **Journey detail page**: apiaries visited, activities performed at
   each apiary, and the aggregated statistics for that journey.
-- **FR-JO-4** — **Add a journey**: select the apiaries to be visited and the
-  activities to be performed at each apiary (or for all apiaries).
-  - _Open question (Q-JOUR):_ how do executed activities get **attributed** to a
-    journey (manual link, auto-match by date+type+apiary, etc.)? "How much is
-    missing" requires a planned-vs-actual model.
+- **FR-JO-4** — **Add a journey**: select the apiaries to be visited and **one main
+  activity type** to be performed (per-apiary activity lists are a deferred future
+  extension — see D-21).
+  - _Resolved (D-21):_ executed activities are attributed by **smart auto-select
+    with manual override** — the app pre-fills a matching open journey by default;
+    the user can deselect, switch, create a journey on the spot, or (with a
+    warning) attach to a closed journey. "How much is missing" derives from these
+    stored attributions.
 
 ## Todos (FR-TD)
 
-- **FR-TD-1** — Create **todos** with **title, description, due date, and priority
-  level**. Todos are easily accessible from the **main screen**, the **apiaries
-  list**, and the **apiary detail page**. Provide a list of all todos,
-  **filterable by due date and priority level**.
-  - _Open question (Q-TODO):_ todo lifecycle (complete/edit/delete), assignment to
-    a user, and association to an apiary/area (the AI examples reference "todos
-    pending for the area of apiary X").
+- **FR-TD-1** — Create **todos** with **title, description, due date, priority
+  level, and an optional assignee**. Todos support a full lifecycle — create, edit,
+  **complete/reopen**, delete — and may be associated with a specific **apiary**,
+  or left as a general, org-level todo (no separate "area" entity; the AI example
+  "todos pending for the area of apiary X" is served by the apiary association).
+  Todos are easily accessible from the **main screen**, the **apiaries list**, and
+  the **apiary detail page**. Provide a list of all todos, **filterable and
+  sortable by due date and priority level**.
+  - _Resolved (D-23):_ optional assignee (an org member), default unassigned;
+    assignment does not restrict visibility (FR-TEN-2 — every org member still
+    sees every todo).
 
 ## AI / Chatbot (FR-AI)
 
@@ -111,6 +147,9 @@ harvest, which requires visiting all apiaries).
   - _Constraints (D-8):_ scoped to the selected context; **cloud AI now**
     (online-only), **on-device later** — see `non-functional-requirements.md`
     (NFR-AI group) and `decisions.md` (D-8).
+  - _Resolved (D-22):_ provider selection (via a research spike), DPA requirement,
+    EU-residency requirement, no-training posture, and PII-minimization rule are
+    governed by D-22 (Q-AICLOUD resolved).
 - **FR-AI-2** — Beyond answering, the assistant can **propose actions** on the app's
   data from a natural-language (or **voice**) request — e.g. _"set apiary X to 12
   hives"_, _"mark the todo for apiary Y as done"_, _"log a 10 kg honey harvest at
@@ -152,10 +191,12 @@ harvest, which requires visiting all apiaries).
 
 - **FR-IE-1** — **Export** apiaries, activities, and journeys in a common format
   (e.g., CSV or JSON) for backup or analysis.
-- **FR-IE-2** — **Import** apiaries, activities, and journeys from a common format
-  (e.g., CSV or JSON) for backup or analysis.
-  - _Open question (Q-IMP):_ import semantics — merge vs. replace, ID preservation,
-    duplicate/conflict handling.
+- **FR-IE-2** — **Import apiaries** from a common format (e.g., CSV or JSON) for
+  backup or analysis. v1 scope is apiaries only (activities/journeys import is
+  deferred); delivered in its own milestone, M12, scheduled last in the rollout.
+  - _Resolved (D-25):_ merge with assisted name-matching (the app suggests a match,
+    the user decides merge-vs-create), imports always receive new IDs, and a
+    dry-run preview is mandatory before commit.
 
 ## Onboarding — Profile & Organization (FR-ONB)
 
@@ -212,8 +253,9 @@ harvest, which requires visiting all apiaries).
 
 - **FR-ST-1** — Allow users to **customize app settings**, including notification
   preferences, data sync settings, and other relevant options.
-  - _Open question (Q-NOTIF):_ what notifications exist (e.g., todo due dates) and
-    the delivery channel (in-app, push)?
+  - _Resolved (D-24):_ v1 notification events are todo due-date reminders and sync
+    results (failure-needs-fixing + completion); delivered **in-app only**, checked
+    when the app is opened; push is deferred to the native phase (M10/M11).
 
 ## Platforms & Devices (FR-PL)
 
@@ -228,10 +270,16 @@ harvest, which requires visiting all apiaries).
 - **FR-UX-1** — All features must use a **user-friendly interface** with clear
   navigation and intuitive controls — **especially field features**, where the
   user has limited time/attention and may be **wearing gloves**.
+- **FR-UX-2** — The client presents a **persistent app shell**: a **bottom
+  navigation** across the primary areas (apiaries, activities, journeys, todos,
+  assistant), a header with the screen title, a **sync-status indicator**, and
+  account access, plus a **contextual quick-add** (FAB) for the active area.
+  - _Prototype:_ Melargil app shell (see
+    [`docs/design/prototype.md`](../docs/design/prototype.md)).
 
 ## Accessibility (FR-AX)
 
 - **FR-AX-1** — Design with **accessibility** in mind: screen-reader support,
   keyboard navigation, and other accessibility features so the app is usable by
   everyone, including users with disabilities.
-  - _Open question (Q-AX):_ target standard/level (e.g., WCAG 2.2 AA).
+  - _Target standard:_ **WCAG 2.2 AA** (`D-18`).

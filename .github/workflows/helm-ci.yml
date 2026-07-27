@@ -49,9 +49,9 @@ jobs:
           version: "v3.21.2"
 
       # Every subchart is a local file:// dependency (postgres/gateway are
-      # hand-rolled; keycloak/minio only hold supplementary Secrets/ConfigMaps
+      # hand-rolled; authentik/minio only hold supplementary Secrets/ConfigMaps
       # now — the actual vendored charts are separate Flux HelmReleases, see
-      # ADR-0012), so this never needs network access to a chart repo.
+      # ADR-0012/ADR-0016), so this never needs network access to a chart repo.
       - name: helm dependency build
         if: steps.changes.outputs.helm == 'true'
         run: helm dependency build .

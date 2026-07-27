@@ -9,6 +9,34 @@ global:
   # `helm install ... --namespace <ns> --create-namespace`.
   namespace: beekeepingit
 
+  # Browser-facing origin of gateway.appHost (scheme + host + port, no trailing
+  # slash) — shared across subcharts (unlike gateway.appHost, a subchart can't
+  # read a sibling subchart's values, only global.*) because
+  # charts/authentik's blueprint needs it too: the OAuth2 provider's
+  # redirect_uris/CORS-allowed-origins must match wherever the PWA is actually
+  # served, or login fails with a redirect_uri mismatch (#193 follow-up,
+  # observed on the first staging bring-up, D-26). Dev's :8443 is k3d's
+  # host-port mapping (see charts/gateway/values.yaml) — other environments
+  # normally omit the port (standard 443 via a real LoadBalancer/Ingress).
+  appOrigin: https://app.beekeepingit.local:8443
+
+  # Browser-facing origin of the React admin app / gateway.adminHost (scheme + host +
+  # port, no trailing slash) — the counterpart of appOrigin, defined ONCE and used for
+  # two things:
+  #   - OIDC (#456, NFR-ROL-2): charts/authentik's blueprint templates the
+  #     `beekeepingit-admin` OAuth2 client's redirect_uris/CORS-allowed-origins from it,
+  #     so it must match wherever the admin app is served or login fails with a
+  #     redirect_uri mismatch (same D-26 lesson as appOrigin).
+  #   - CORS (#449, ADR-0016/ADR-0020): the `services` subchart reads it (a subchart can
+  #     only see global.*, not a sibling's values) to build each service's
+  #     CORS_ALLOWED_ORIGINS — the admin SPA is CROSS-origin from the app-host API, so
+  #     the API must allow this origin and expose ETag for it, or the admin edit path
+  #     (If-Match optimistic concurrency, FR-TEN-2) can't read the version stamp.
+  # The admin app is now gateway-served on this host (#449); local Vite dev still uses
+  # http://localhost, covered by the blueprint's localhost redirect entry. Dev's :8443 is
+  # k3d's host-port mapping. Override per environment.
+  adminOrigin: https://admin.beekeepingit.local:8443
+
   # Resource-request/limit presets every subchart should reference via
   # `.Values.global.resources.<tier>` instead of hardcoding numbers, so sizing is
   # tuned in one place per environment.
@@ -46,21 +74,44 @@ postgres:
     - todos
     - ai
 
-keycloak:
+authentik:
   enabled: true
-  # No workload of its own (just the admin-credential Secret + realm ConfigMap)
-  # — Keycloak itself is a separate Flux HelmRelease, see ADR-0012.
+  # No workload of its own (just the config/Postgres Secrets + blueprint ConfigMap)
+  # — Authentik itself is a separate Flux HelmRelease, see ADR-0012/ADR-0016.
+  # Outbound email (SMTP, #361): the subchart's `email:` defaults point at the
+  # mailpit sink below — override per environment for a real relay (see
+  # charts/authentik/values.yaml; credentials are never values, see the
+  # config-secret template's lookup of beekeepingit-authentik-email-credentials).
+
+# Dev/CI SMTP sink capturing Authentik's outbound email (#361, ADR-0019) — the
+# verification flow is exercisable end-to-end with zero risk of dev/CI mail
+# reaching real inboxes. Staging keeps it (no real relay/domain mailbox exists
+# yet — melargil.pt testers read verification mail via
+# `kubectl port-forward svc/mailpit 8025`); prod disables it and must configure
+# a real relay (environments/prod.yaml).
+mailpit:
+  enabled: true
 
 minio:
   enabled: true
   # No workload of its own (just the root-credentials Secret) — MinIO itself is
   # a separate Flux HelmRelease, see ADR-0012. Its buckets (loki/tempo, #87) are
   # configured on that standalone HelmRelease
-  # (infra/gitops/apps/dev/minio-helmrelease.yaml), not here.
+  # (the beekeepingit-gitops repo's apps/dev/minio-helmrelease.yaml), not here.
 
 gateway:
   enabled: true
-  host: keycloak.beekeepingit.local
+  # Two hosts now (ADR-0016, oidc-integration.md §2): the app origin (PWA + Go APIs
+  # + PowerSync) and a dedicated auth origin for Authentik — a separate origin keeps
+  # the app cross-origin-isolated (COOP/COEP → SharedArrayBuffer for PowerSync) and
+  # avoids Authentik's broad root paths (/api, /static, /if, /-, ...) colliding with
+  # the PWA `/` catch-all. The self-signed TLS Secret's SAN covers both.
+  appHost: app.beekeepingit.local
+  authHost: auth.beekeepingit.local
+  # Third host (#449, ADR-0016): the React admin app's own origin. Kept out of
+  # the PWA/API app host so it never collides with the PWA `/` catch-all; the
+  # self-signed TLS Secret's SAN covers all three.
+  adminHost: admin.beekeepingit.local
   # No workload of its own (just Ingress + a self-signed TLS Secret) — reuses
   # k3d's already-running Traefik, so there's no resourceTier to size here.
 
@@ -71,15 +122,39 @@ powersync:
     tag: "1.23.2"
   resourceTier: medium
   # Real org-scoped Sync Rules + the `sync` service's JWKS connector now wired
-  # in the subchart's own values.yaml (#23/#106) — the #22 stopgaps (Keycloak
+  # in the subchart's own values.yaml (#23/#106) — the #22 stopgaps (the OIDC
   # realm JWKS, pg_tables placeholder) are gone.
 
 # The Go services (#23) — identity/organizations/apiaries/sync. Image tag +
 # per-service wiring live in the subchart's own values.yaml; overlays/CI bump
-# the tag. On merge, Flux image-automation reconciles the published tag.
+# the tag. A release's tag-bump PR sets the deployed tag (D-27, ADR-0018).
 services:
   enabled: true
+  # Cross-origin CORS for the admin app (#449, FR-TEN-2, NFR-SEC-1). The admin
+  # SPA is served from its own origin (global.adminOrigin) and calls the
+  # app-host API, so every service must answer that origin's browser CORS
+  # (preflight + Access-Control-Expose-Headers: ETag). The services subchart
+  # injects CORS_ALLOWED_ORIGINS (charts/services/deployment.yaml) — by default
+  # global.adminOrigin (set above), so no per-environment wiring is needed here.
+  # To allow ADDITIONAL origins beyond the admin host, add an explicit list under
+  # this key, e.g.:
+  #   cors:
+  #     allowedOrigins:
+  #       - https://admin.beekeepingit.local:8443
+  #       - https://other-admin.example
+  # (an explicit list REPLACES the global.adminOrigin fallback). The
+  # servicetemplate CORS middleware (services/servicetemplate/cors) allows only
+  # exact-match origins — NOT `*`, since credentials are allowed.
 
 # The Flutter Web PWA static bundle (#21/#23), served behind the gateway's `/`.
 pwa:
+  enabled: true
+
+# The React admin app static bundle (#72/#73), served behind the gateway on its
+# own host admin.beekeepingit.local (#449, ADR-0016).
+admin:
+  enabled: true
+
+# Default-deny + explicit-allow NetworkPolicies (EPIC-14 #89, NFR-SEC-1).
+networkpolicy:
   enabled: true

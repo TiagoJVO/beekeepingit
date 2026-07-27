@@ -16,3 +16,9 @@
 *.gguf binary
 *.tflite binary
 *.bin binary
+
+# Bundled fonts (client/fonts/, #243) — never line-ending-normalize a font
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary

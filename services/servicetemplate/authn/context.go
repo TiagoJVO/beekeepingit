@@ -2,7 +2,7 @@ package authn
 
 import "context"
 
-// Claims is the verified caller identity extracted from a Keycloak access
+// Claims is the verified caller identity extracted from an OIDC access
 // token, optionally enriched with the request's org-scoped authorization.
 //
 // NewMiddleware populates only the authentication fields (Sub, Email, …).
@@ -13,7 +13,24 @@ type Claims struct {
 	Sub           string
 	Email         string
 	EmailVerified bool
-	Raw           map[string]any
+	// PlatformOperator is the verified `platform_operator` boolean claim
+	// (oidc-integration.md §3.2, EPIC-18 #465/#466): true only for a token
+	// minted by the `beekeepingit-admin` OIDC client for a caller in the
+	// IdP's `platform-operator` group. Populated by NewMiddleware from the
+	// SIGNATURE-VERIFIED token's decoded claims only — never from a
+	// client-supplied header/query param — mirroring EmailVerified's
+	// fail-closed extraction: absent, or present as anything other than a
+	// literal JSON boolean, parses as false.
+	//
+	// SECURITY: this is the ONLY claim a service may authorize platform-tier
+	// access on. The `groups` claim (in Raw) also lists `platform-operator`
+	// but is emitted on BOTH the pwa and admin OIDC clients (auth.md §3.4,
+	// oidc-integration.md §3.2) — authorizing on it would grant cross-tenant
+	// platform access to a long-lived, offline-cached PWA token on a
+	// beekeeper's phone. Never read Raw["groups"] or the literal string
+	// "platform-operator" for an authorization decision.
+	PlatformOperator bool
+	Raw              map[string]any
 
 	// Org-scoped authorization, resolved from membership by NewOrgResolver.
 	UserID         string

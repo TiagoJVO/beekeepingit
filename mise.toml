@@ -11,7 +11,7 @@
 
 [tools]
 # --- Language toolchains (baseline for the first services/apps) ---
-go = "1.25"   # bumped from 1.24 landing services/shared (#85): pgx v5/minio-go v7 require it
+go = "1.25.12"   # patch-pinned for GO-2026-5856 (crypto/tls stdlib CVE, fixed in 1.25.12); 1.25+ needed since #85 (pgx v5/minio-go v7)
 node = "22"
 flutter = "3.44.4"   # client/ (#21) — stable channel; bundles a matching Dart SDK, no separate pin needed. Bumped from 3.35.5 for #23: PowerSync's powersync_core needs a Dart with `Deprecated.subclass` (>=3.10), which 3.35.5's Dart 3.9.2 lacks.
 
@@ -33,13 +33,20 @@ sqlc = "1.31.1"                                          # typed SQL query codeg
 actionlint = "latest"        # GitHub Actions workflow linter
 shellcheck = "latest"        # shell script linter
 gitleaks = "latest"          # secret scanning
+yq = "4"                     # YAML query/extraction (scripts/check-deploy-url-drift.sh — #369)
 "npm:prettier" = "3"                 # Markdown / YAML / JSON formatter
 "npm:markdownlint-cli2" = "latest"   # Markdown linter
+
+# --- API contract tooling (contracts/openapi/ — #153, ADR-0003 §11) ---
+"npm:@redocly/cli" = "2.37.0"                                            # OpenAPI lint (recommended ruleset) + bundle (resolves split $ref before oasdiff/codegen)
+"go:github.com/oasdiff/oasdiff" = "1.22.0"                               # breaking-change diff gate on PRs touching contracts/openapi/**
+"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "2.7.1"  # Go server-stub + models codegen (no-ops until a service adds internal/api/oapi-codegen.yaml)
 
 # --- Infra toolchain (infra/ — single-cluster k8s platform, #83/EPIC-13) ---
 helm = "3.21.2"     # pinned to match .github/workflows/helm-ci.yml
 kubectl = "latest"
 k3d = "latest"
+"aqua:scaleway/scaleway-cli" = "2.59.0"   # `scw` — Kapsule staging/prod cluster ops (D-26; infra/cluster/scaleway-*.sh, cluster-ops.yml)
 
 [settings]
 # Trust this config without an interactive prompt in CI/agent contexts.

@@ -31,4 +31,14 @@ class _WebAuthPlatform implements AuthPlatform {
 
   @override
   void removeSession(String key) => web.window.sessionStorage.removeItem(key);
+
+  @override
+  String? readLocal(String key) => web.window.localStorage.getItem(key);
+
+  @override
+  void writeLocal(String key, String value) =>
+      web.window.localStorage.setItem(key, value);
+
+  @override
+  void removeLocal(String key) => web.window.localStorage.removeItem(key);
 }

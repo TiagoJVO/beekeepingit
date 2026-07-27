@@ -1,28 +1,32 @@
 #!/usr/bin/env bash
 # Single-command bring-up for the whole local dev environment (#22,
 # NFR-ARC-2/NFR-ARC-3): the k3d cluster + CNPG operator (up.sh), the Flux
-# controllers (a previously-manual prerequisite, see infra/gitops/README.md —
-# made idempotent here so this script is genuinely self-contained from an
+# controllers (a previously-manual prerequisite, see the beekeepingit-gitops
+# repo's README — made idempotent here so this script is genuinely self-contained from an
 # empty cluster), the beekeepingit umbrella release (Postgres+PostGIS,
-# Keycloak creds/realm, MinIO creds, gateway, PowerSync), the standalone
-# Keycloak/MinIO Flux HelmReleases (applied directly, not via the `main`-
-# tracking GitOps bootstrap — see the note below), and a smoke test.
+# Authentik config/Postgres creds + blueprint, MinIO creds, gateway, PowerSync),
+# the standalone Authentik/MinIO Flux HelmReleases (applied directly, not via the
+# `main`-tracking GitOps bootstrap — see the note below), and a smoke test.
 #
-# Deliberately does NOT apply `infra/gitops/clusters/dev/` (the one-time
-# GitOps bootstrap that makes Flux auto-sync from this repo's `main` branch):
+# Deliberately does NOT bootstrap GitOps (apply the beekeepingit-gitops repo's
+# `clusters/dev/`, the one-time wiring that makes Flux auto-sync from `main`):
 # that would deploy the umbrella chart from `main`, ignoring whatever's
 # checked out locally — the opposite of what a pre-merge dev/test loop needs.
-# See infra/gitops/README.md for the post-merge bootstrap step. Also skips the
-# observability stack (#87) — it's not one of #22's components and its
+# See the beekeepingit-gitops README for the post-merge bootstrap step. Also
+# skips the observability stack (#87) — it's not one of #22's components and its
 # HelmRelease depends on that same bootstrap `GitRepository`.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Optional local config from infra/cluster/.env (see .env.example) — e.g.
+# BEEKEEPINGIT_GITOPS_DIR for the gitops-dir.sh resolution below.
+# shellcheck disable=SC1091 # resolved at runtime next to this script
+. "$script_dir/env.sh"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 chart_dir="$repo_root/infra/helm/beekeepingit"
 namespace="beekeepingit-dev"
 
-for bin in k3d kubectl helm flux flock; do
+for bin in k3d kubectl helm flux flock git; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "error: '$bin' not found on PATH" >&2
     exit 1
@@ -54,7 +58,8 @@ wait_for_pod() {
 
 echo
 echo "installing/upgrading the Flux controllers (idempotent)"
-flux install --components-extra=image-reflector-controller,image-automation-controller
+# Base controllers only — Flux is read-only (D-27/ADR-0018 dropped image-automation).
+flux install
 flux check
 
 echo
@@ -80,19 +85,23 @@ echo "waiting for postgres"
 wait_for_pod cnpg.io/cluster=beekeepingit-postgres 180s
 
 echo
-echo "applying the Keycloak/MinIO Flux HelmReleases directly (local-only, not GitOps-synced)"
+echo "applying the Authentik/MinIO Flux HelmReleases directly (local-only, not GitOps-synced)"
+# These manifests live in the beekeepingit-gitops repo now (D-27/ADR-0018), not
+# this one — resolve a checkout (shallow clone, or a BEEKEEPINGIT_GITOPS_DIR
+# override for offline use). See gitops-dir.sh.
+gitops_dir="$("$script_dir/gitops-dir.sh")"
 # Both files' `dependsOn: [beekeepingit]` targets the *HelmRelease object*
 # named "beekeepingit" that only exists once the cluster is GitOps-bootstrapped
-# (infra/gitops/clusters/dev/) — which this script deliberately skips (see the
-# note above). Stripped here for this direct-apply path only (committed files
+# (the gitops repo's clusters/dev/) — which this script deliberately skips (see
+# the note above). Stripped here for this direct-apply path only (committed files
 # are untouched): the umbrella release install above already guarantees the
 # credential Secret/ConfigMap these reference exist (created synchronously as
 # part of applying the release's resources, independent of `--wait`), which is
 # all `dependsOn` was ensuring in the first place. Applied one file at a time
 # (not piped together) since neither file ends with its own trailing `---`, so
 # concatenating them loses the document boundary between the two.
-for f in keycloak-helmrelease.yaml minio-helmrelease.yaml; do
-  sed '/^  dependsOn:$/,+1d' "$repo_root/infra/gitops/apps/dev/$f" \
+for f in authentik-helmrelease.yaml minio-helmrelease.yaml; do
+  sed '/^  dependsOn:$/,+1d' "$gitops_dir/apps/dev/$f" \
     | "$script_dir/with-lock.sh" kubectl apply -f -
 done
 
@@ -101,11 +110,16 @@ echo "waiting for the PowerSync rollout"
 kubectl -n "$namespace" rollout status deployment/beekeepingit-powersync --timeout=180s
 
 echo
-echo "waiting for Keycloak/MinIO (Keycloak's JVM boot + realm import can take a couple of minutes)"
-# MinIO's vendored chart (see infra/gitops/apps/dev/minio-helmrelease.yaml) predates
-# the app.kubernetes.io/* label convention Keycloak's chart follows — it only sets
-# the legacy app=minio,release=<release-name> labels.
-wait_for_pod app.kubernetes.io/instance=keycloak 300s
+echo "waiting for Authentik (bundled-Postgres init + DB migrations + blueprint apply"
+echo "can take a few minutes on a cold pull) and MinIO"
+# Authentik's server Deployment is created by its Flux HelmRelease a moment after
+# the HelmRelease is applied; wait for the rollout to complete (the server pod only
+# goes ready once Postgres is up, migrations have run, and it can serve). A longer
+# timeout than the previous IdP's wait — Authentik + its own Postgres is heavier to
+# boot (ADR-0016). MinIO's vendored chart predates the app.kubernetes.io/* label
+# convention — it only sets the legacy app=minio,release=<release-name> labels.
+wait_for_pod app.kubernetes.io/instance=authentik 420s
+kubectl -n "$namespace" rollout status deployment/authentik-server --timeout=420s
 wait_for_pod app=minio,release=minio 180s
 
 echo
@@ -115,5 +129,5 @@ helm test beekeepingit --namespace "$namespace"
 cat <<EOF
 
 Local dev environment ready. See infra/README.md#verify-the-environment for
-the PostGIS/Keycloak/MinIO/PowerSync/gateway smoke checks.
+the PostGIS/Authentik/MinIO/PowerSync/gateway smoke checks.
 EOF

@@ -43,7 +43,8 @@ Language-scoped variants exist too: `task go:lint`, `task web:test`, `task dart:
 Per [D-9](../../requirements/decisions.md), packages are created as work needs them. The `go:` /
 `web:` / `dart:` targets **discover** their packages (`go.mod` / `package.json` / `pubspec.yaml`)
 and **no-op** with a message when none exist. The `repo:` hygiene targets (Prettier, Markdown,
-actionlint, shellcheck, gitleaks) run today, so `task lint` is meaningful from day one.
+actionlint, shellcheck, gitleaks, deploy-URL drift) run today, so `task lint` is meaningful from
+day one.
 
 ## Adding a package
 
@@ -69,14 +70,22 @@ Bypass in an emergency with `git commit --no-verify` (CI still enforces the same
 
 ## Linter/formatter configs
 
-| Language / area  | Config                                                           | Tool              |
-| ---------------- | ---------------------------------------------------------------- | ----------------- |
-| Go               | [`.golangci.yml`](../../.golangci.yml)                           | golangci-lint     |
-| Dart/Flutter     | [`analysis_options.yaml`](../../analysis_options.yaml)           | dart analyze      |
-| Markdown         | [`.markdownlint-cli2.yaml`](../../.markdownlint-cli2.yaml)       | markdownlint-cli2 |
-| MD/YAML/JSON fmt | [`.prettierrc.yaml`](../../.prettierrc.yaml) + `.prettierignore` | prettier          |
-| GitHub Actions   | —                                                                | actionlint        |
-| Secrets          | —                                                                | gitleaks          |
+| Language / area  | Config                                                                         | Tool              |
+| ---------------- | ------------------------------------------------------------------------------ | ----------------- |
+| Go               | [`.golangci.yml`](../../.golangci.yml)                                         | golangci-lint     |
+| Dart/Flutter     | [`analysis_options.yaml`](../../analysis_options.yaml)                         | dart analyze      |
+| Markdown         | [`.markdownlint-cli2.yaml`](../../.markdownlint-cli2.yaml)                     | markdownlint-cli2 |
+| MD/YAML/JSON fmt | [`.prettierrc.yaml`](../../.prettierrc.yaml) + `.prettierignore`               | prettier          |
+| GitHub Actions   | —                                                                              | actionlint        |
+| Secrets          | —                                                                              | gitleaks          |
+| Deploy URL drift | [`scripts/check-deploy-url-drift.sh`](../../scripts/check-deploy-url-drift.sh) | yq (+ bash)       |
+
+Note: the deploy-URL check exists because the PWA's OIDC/gateway/PowerSync URLs are Dart
+_compile-time_ constants, so they are written twice — once as `--dart-define`s in
+[`release-deploy.yml`](../../.github/workflows/release-deploy.yml)'s `publish-client` job, once as
+hostnames in `infra/helm/beekeepingit/environments/<env>.yaml`. There is no shared source; the
+check (`task repo:deploy-urls`) fails when the two copies disagree, so a one-sided edit can't ship
+a PWA pointed at the wrong host (#369, [D-27](../../requirements/decisions.md)).
 
 Note: `.prettierignore` excludes `infra/helm/**/templates/**` — Helm chart templates embed Go
 template syntax (`{{ .Values.x }}`) inside `.yaml` files, which is not valid standalone YAML and
@@ -113,5 +122,6 @@ needs `k3d`, `kubectl`, and `helm` on `PATH`; these are pinned in [`mise.toml`](
 The [`ci`](../../.github/workflows/ci.yml) workflow runs `task ci` (lint + test) on every PR
 via `mise-action`. It does **not** cover Helm charts — those have their own path-filtered
 [`helm-ci.yml`](../../.github/workflows/helm-ci.yml), triggered only when `infra/helm/**` changes.
-Per-language, path-filtered build/test matrices and the OpenAPI/contract tooling land in
-**EPIC-13** (see [FOLLOWUPS.md](../../FOLLOWUPS.md)).
+Per-language, path-filtered build/test matrices ([`build-publish.yml`](../../.github/workflows/build-publish.yml))
+and the OpenAPI/contract tooling ([`contracts-ci.yml`](../../.github/workflows/contracts-ci.yml),
+`task openapi:lint`/`breaking-diff`) shipped as part of **EPIC-13** (#88, closed).

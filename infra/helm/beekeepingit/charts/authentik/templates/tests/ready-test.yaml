@@ -1,0 +1,35 @@
+{{/*
+Liveness/readiness smoke for Authentik — run against a live cluster via
+`helm test <release> -n <namespace>`: automatically in CI on infra PRs
+(helm-e2e.yml, #154, which applies the Authentik Flux HelmRelease + waits for its
+rollout before `helm test`) and manually against the local k3d cluster. Probes the
+Authentik server's readiness endpoint (`/-/health/ready/`) through its in-cluster
+Service — confirming the server (its own separate Flux HelmRelease, ADR-0012/0016)
+is up and serving before anything downstream (OIDC discovery) is exercised.
+
+Kept in the umbrella's `authentik` subchart (not the standalone HelmRelease) so a
+single `helm test beekeepingit` covers it alongside the postgres PostGIS hook.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: beekeepingit-authentik-ready-test
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: authentik
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: authentik-ready-test
+      image: busybox:1.37
+      command:
+        - wget
+        - -qO-
+        - --spider
+        - http://authentik-server/-/health/ready/
+{{- end }}

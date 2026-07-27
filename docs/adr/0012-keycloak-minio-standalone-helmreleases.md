@@ -9,6 +9,13 @@
   in [ADR-0010](0010-platform-backing-services-provisioning.md) — everything else there
   (`postgres`/`gateway`/CNPG/Traefik/TLS) is unaffected.
 
+> **Partially superseded (2026-07-10) by [ADR-0016](0016-replace-keycloak-with-authentik.md):** the
+> **Keycloak** `HelmRelease` is replaced by an **Authentik** one (bundled Postgres, blueprint import,
+> `auth.beekeepingit.local` host). The **pattern** documented here — a standalone Flux `HelmRelease`
+> per upstream chart, **pinned `releaseName`**, and a wrapper subchart for the generated
+> Secrets/ConfigMap — is **unchanged** and now governs **Authentik** and **MinIO**. The MinIO half is
+> unaffected. Read `keycloak` below as `authentik` for the mechanics.
+
 ## Context
 
 ADR-0010 vendored `codecentric/keycloakx` and the official `charts.min.io` chart as **nested

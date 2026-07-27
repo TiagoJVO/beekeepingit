@@ -1,0 +1,10 @@
+# Sanctioned, accepted breaking changes for the oasdiff breaking-change gate (--err-ignore).
+# Pre-launch policy: no clients yet; cluster + DBs are recreated, so a break is acceptable now.
+# Each entry MUST cite an issue/decision and be revisited before GA. See D-28 in
+# requirements/decisions.md.
+#
+# M2.1 #341 (FR-AP-7): apiary `location` is now mandatory -> POST /apiaries marks the `location`
+# request property required. Product owner confirmed 2026-07-21.
+POST /apiaries the request property `location` became required
+the request property `location` became required
+request property location became required

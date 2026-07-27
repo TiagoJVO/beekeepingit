@@ -11,18 +11,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getUserByID = `-- name: GetUserByID :one
-SELECT id, keycloak_sub, name, email, locale, created_at, updated_at
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
-WHERE id = $1
+WHERE email <> '' AND lower(email) = lower($1)
+ORDER BY created_at
+LIMIT 1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (IdentityUser, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
+// Case-insensitive email -> identity.users lookup, backing the internal
+// GET /internal/users/by-email/{email} endpoint (#468's platform
+// cross-organization membership-lookup support tool, D-7: this stays a
+// LOCAL query against identity's own mirrored profile data -- no new IdP
+// integration). identity.users.email has NO uniqueness constraint (it is
+// the free-text profile field PATCH /v1/profile lets a caller set to
+// anything, #25 -- see organizations/api/organizations.go's ResolvedUser
+// doc comment for why it must never be used for anything
+// security-sensitive); the earliest-created match wins on the rare chance
+// two profiles share one address, the same "oldest wins" convention
+// organizations' own GetPendingInvitationByEmail uses for its analogous
+// ambiguity. Empty-string emails (UpsertUserOnFirstSeen's default for an
+// incomplete profile) are excluded explicitly so a blank query can never
+// match every never-completed profile in one row.
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i IdentityUser
 	err := row.Scan(
 		&i.ID,
-		&i.KeycloakSub,
+		&i.OidcSub,
 		&i.Name,
 		&i.Email,
 		&i.Locale,
@@ -32,18 +48,221 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (IdentityUser
 	return i, err
 }
 
-const getUserByKeycloakSub = `-- name: GetUserByKeycloakSub :one
-SELECT id, keycloak_sub, name, email, locale, created_at, updated_at
+const getUserByOidcSub = `-- name: GetUserByOidcSub :one
+SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
-WHERE keycloak_sub = $1
+WHERE oidc_sub = $1
 `
 
-func (q *Queries) GetUserByKeycloakSub(ctx context.Context, keycloakSub string) (IdentityUser, error) {
-	row := q.db.QueryRow(ctx, getUserByKeycloakSub, keycloakSub)
+func (q *Queries) GetUserByOidcSub(ctx context.Context, oidcSub string) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, getUserByOidcSub, oidcSub)
 	var i IdentityUser
 	err := row.Scan(
 		&i.ID,
-		&i.KeycloakSub,
+		&i.OidcSub,
+		&i.Name,
+		&i.Email,
+		&i.Locale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUsersByNames = `-- name: GetUsersByNames :many
+SELECT id, name
+FROM identity.users
+WHERE id = ANY($1::uuid[])
+`
+
+type GetUsersByNamesRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Name string      `json:"name"`
+}
+
+// Batch resolve app user_ids -> display name, backing the internal
+// GET /internal/users/names endpoint the organizations service composes to
+// turn a member roster (user_ids) into display names (#44 follow-up to
+// per-user attribution, FR-TEN-2). Only rows that exist are returned; a
+// caller treats a missing id as "no name" (a removed or never-provisioned
+// user) and falls back to a short id fragment. Returns name only — never the
+// IdP-verified email: names are org-shareable app data (FR-TEN-2), the email
+// is not.
+func (q *Queries) GetUsersByNames(ctx context.Context, ids []pgtype.UUID) ([]GetUsersByNamesRow, error) {
+	rows, err := q.db.Query(ctx, getUsersByNames, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersByNamesRow
+	for rows.Next() {
+		var i GetUsersByNamesRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const insertAuditLog = `-- name: InsertAuditLog :exec
+INSERT INTO identity.audit_log
+    (id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, changed_fields, change)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+`
+
+type InsertAuditLogParams struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	ChangeType     string             `json:"change_type"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
+}
+
+// Append-only history row (history.md §3-§4, #165): one row per applied
+// profile create/update, written in the same local transaction as the
+// domain write. organization_id is always NULL (identity.users is global,
+// history.md §9). changed_fields is null for create (only update carries
+// it).
+func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
+	_, err := q.db.Exec(ctx, insertAuditLog,
+		arg.ID,
+		arg.OrganizationID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.ChangeType,
+		arg.ActorUserID,
+		arg.OccurredAt,
+		arg.ChangedFields,
+		arg.Change,
+	)
+	return err
+}
+
+const listAuditLog = `-- name: ListAuditLog :many
+SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+FROM identity.audit_log
+WHERE entity_type = $1 AND entity_id = $2
+ORDER BY recorded_at, id
+`
+
+type ListAuditLogParams struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+}
+
+// The per-entity timeline read (FR-HIS-1, history.md §8): every history row
+// for one entity, oldest first. Not yet exposed via HTTP (no AC in this
+// milestone requires the view screens, history.md §8/§10) — kept as typed
+// groundwork for the profile-detail "history" screen.
+func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]IdentityAuditLog, error) {
+	rows, err := q.db.Query(ctx, listAuditLog, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IdentityAuditLog
+	for rows.Next() {
+		var i IdentityAuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ChangeType,
+			&i.ActorUserID,
+			&i.OccurredAt,
+			&i.RecordedAt,
+			&i.ChangedFields,
+			&i.Change,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE identity.users
+SET name       = CASE WHEN $1::bool THEN $2 ELSE name END,
+    email      = CASE WHEN $3::bool THEN $4 ELSE email END,
+    locale     = CASE WHEN $5::bool THEN $6 ELSE locale END,
+    updated_at = now()
+WHERE oidc_sub = $7
+RETURNING id, oidc_sub, name, email, locale, created_at, updated_at
+`
+
+type UpdateUserProfileParams struct {
+	SetName   bool   `json:"set_name"`
+	Name      string `json:"name"`
+	SetEmail  bool   `json:"set_email"`
+	Email     string `json:"email"`
+	SetLocale bool   `json:"set_locale"`
+	Locale    string `json:"locale"`
+	OidcSub   string `json:"oidc_sub"`
+}
+
+// Partial update backing PATCH /v1/profile: each column is set to the
+// provided value only when its companion `set_x` flag is true, otherwise it
+// keeps the current value (COALESCE-free — sqlc's CASE form makes an
+// all-optional partial update explicit at the call site).
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile,
+		arg.SetName,
+		arg.Name,
+		arg.SetEmail,
+		arg.Email,
+		arg.SetLocale,
+		arg.Locale,
+		arg.OidcSub,
+	)
+	var i IdentityUser
+	err := row.Scan(
+		&i.ID,
+		&i.OidcSub,
+		&i.Name,
+		&i.Email,
+		&i.Locale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertUserOnFirstSeen = `-- name: UpsertUserOnFirstSeen :one
+INSERT INTO identity.users (id, oidc_sub, name, email, locale)
+VALUES ($1, $2, '', '', 'en')
+ON CONFLICT (oidc_sub) DO UPDATE SET updated_at = identity.users.updated_at
+RETURNING id, oidc_sub, name, email, locale, created_at, updated_at
+`
+
+type UpsertUserOnFirstSeenParams struct {
+	ID      pgtype.UUID `json:"id"`
+	OidcSub string      `json:"oidc_sub"`
+}
+
+// Get-or-create on first authenticated profile read (#25, FR-ONB-1): if no row
+// exists yet for oidc_sub, insert one with empty name/email so the client
+// can detect an incomplete profile and prompt onboarding. The ON CONFLICT
+// branch is a no-op update (bumps nothing semantically — updated_at is
+// reassigned to itself) purely so RETURNING gives back the existing row.
+func (q *Queries) UpsertUserOnFirstSeen(ctx context.Context, arg UpsertUserOnFirstSeenParams) (IdentityUser, error) {
+	row := q.db.QueryRow(ctx, upsertUserOnFirstSeen, arg.ID, arg.OidcSub)
+	var i IdentityUser
+	err := row.Scan(
+		&i.ID,
+		&i.OidcSub,
 		&i.Name,
 		&i.Email,
 		&i.Locale,

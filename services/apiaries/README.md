@@ -1,31 +1,47 @@
 # services/apiaries
 
-The **apiaries** service — owner of the walking skeleton's trivial record
-([#23](https://github.com/TiagoJVO/beekeepingit/issues/23)). It owns the
-`apiaries.apiaries` table and its `apiaries.sync_conflict_log`, exposes the
-client-facing **read** surface, and implements the internal sync
-**validate/apply** path with server-authoritative last-write-wins (LWW),
-conflict logging, tombstones and idempotency
-([sync.md](../../docs/architecture/sync.md) §4–§5,
+The **apiaries** service — owner of apiary records
+([#23](https://github.com/TiagoJVO/beekeepingit/issues/23),
+[#31](https://github.com/TiagoJVO/beekeepingit/issues/31)). It owns the
+`apiaries.apiaries`, `apiaries.apiary_counters`, `apiaries.sync_conflict_log`
+and `apiaries.audit_log` tables, exposes the client-facing **REST CRUD**
+surface (FR-AP-1), and implements the internal sync **validate/apply** path
+with server-authoritative last-write-wins (LWW), conflict logging, tombstones
+and idempotency ([sync.md](../../docs/architecture/sync.md) §4–§5,
 [walking-skeleton.md](../../docs/architecture/walking-skeleton.md) §4.1/§4.6).
+`location` is PostGIS `geography(Point, 4326)` (D-6, data-model.md §6),
+GIST-indexed for proximity ordering (FR-AP-2, #33) — set via the client's
+map-pin picker/current-location capture (#252) through both the REST and
+sync-apply write paths. `notes` is optional free-text (FR-AP-8, #196);
+`place_label` (#252) is an independent optional free-text place name (e.g.
+"Montargil"); both are shown on the client's apiary detail screen when
+present. Hive count is a typed counter row in `apiary_counters` (FR-AP-7,
+D-20, #256), not a column on `apiaries.apiaries` — see `api/counters.go`.
 
 Stamped from [`services/servicetemplate`](../servicetemplate/README.md); DB
-access via [`services/shared/dbaccess`](../shared/README.md). Its own Go module,
-linked through the repo-root `go.work`.
+access via [`services/shared/dbaccess`](../shared/README.md); history
+recording via [`services/shared/history`](../shared/README.md). Its own Go
+module, linked through the repo-root `go.work`.
 
 ## Surface
 
-| Route                          | Auth                     | Purpose                                                                               |
-| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------- |
-| `GET /v1/apiaries`             | Keycloak JWT + org scope | Cursor-paginated list of the org's live apiaries (FR-AP-7).                           |
-| `GET /v1/apiaries/{apiaryId}`  | Keycloak JWT + org scope | One apiary, or 404.                                                                   |
-| `POST /internal/sync/validate` | JWT + org scope          | Dry-run a batch; 200 if all valid, else 422 RFC 9457 with field detail. **Internal.** |
-| `GET /healthz`, `GET /readyz`  | none                     | Liveness / readiness.                                                                 |
-| `POST /internal/sync/apply`    | JWT + org scope          | Apply a batch in one tx: LWW + conflict log + tombstones + idempotency. **Internal.** |
+| Route                                 | Auth                 | Purpose                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /v1/apiaries`                    | OIDC JWT + org scope | Cursor-paginated list of the org's live apiaries (FR-AP-7).                                                                                                                                                                                                                                                              |
+| `GET /v1/apiaries/{apiaryId}`         | OIDC JWT + org scope | One apiary, or 404.                                                                                                                                                                                                                                                                                                      |
+| `GET /v1/apiaries/{apiaryId}/history` | OIDC JWT + org scope | The apiary's combined change history — audit_log entries plus `superseded` conflict-log events, chronological, unpaginated (#60/FR-HIS-1); 404 if the apiary doesn't exist or belongs to another org. Online fallback only — a synced device renders history from its local PowerSync-replicated tables (history.md §6). |
+| `POST /v1/apiaries`                   | OIDC JWT + org scope | Create (client-supplied `id`); `Idempotency-Key`-safe re-send; 201 + `Location`/`ETag`.                                                                                                                                                                                                                                  |
+| `PATCH /v1/apiaries/{apiaryId}`       | OIDC JWT + org scope | Partial update; optional `If-Match`; 200 + `ETag`.                                                                                                                                                                                                                                                                       |
+| `DELETE /v1/apiaries/{apiaryId}`      | OIDC JWT + org scope | Soft-delete (tombstone); optional `If-Match`; 204.                                                                                                                                                                                                                                                                       |
+| `POST /internal/sync/validate`        | JWT + org scope      | Dry-run a batch; 200 if all valid, else 422 RFC 9457 with field detail. **Internal.**                                                                                                                                                                                                                                    |
+| `GET /healthz`, `GET /readyz`         | none                 | Liveness / readiness.                                                                                                                                                                                                                                                                                                    |
+| `POST /internal/sync/apply`           | JWT + org scope      | Apply a batch in one tx: LWW + conflict log + tombstones + idempotency. **Internal.**                                                                                                                                                                                                                                    |
 
-**No client-facing REST write handlers** (`POST/PATCH/DELETE /v1/apiaries`) —
-the field client is local-first through sync (§4.4); online writes are EPIC-02
-([#31](https://github.com/TiagoJVO/beekeepingit/issues/31)).
+The REST write routes (`POST`/`PATCH`/`DELETE`) are for **online-only/direct
+callers** (Admin App, scripts) — the field PWA never calls them directly;
+every client write rides the local-first sync path (§4.4). Both write paths
+(REST, `api/write.go`, and sync-apply, `api/sync.go`) validate identically
+and record history identically.
 
 ### Apply semantics (sync.md §4)
 
@@ -37,8 +53,14 @@ the field client is local-first through sync (§4.4); online writes are EPIC-02
   no conflict), so PowerSync's forward-retry is safe.
 - **Tombstones**: `delete` sets `deleted_at`; tombstoned rows drop out of reads
   and propagate down via sync.
-- **Audit seam**: the apply transaction has a clearly-marked point where EPIC-07
-  (#59/#61) adds the in-tx `audit_log` INSERT — history is out of scope here.
+- **History**: every applied create/update/delete, on both the REST and the
+  sync-apply write path, appends one `apiaries.audit_log` row in the same
+  local transaction as the domain write (FR-HIS-1, `services/shared/history`)
+  — idempotent replays and LWW losses write no domain audit row (history.md
+  §4/§6). The combined `audit_log` + `sync_conflict_log` timeline (LWW
+  losses surfaced as `superseded` events) is readable per-entity both via
+  `GET /v1/apiaries/{apiaryId}/history` above (#60) and, primarily, from the
+  client's own PowerSync-replicated local tables (history.md §6/§8).
 
 ## Configuration
 
@@ -56,5 +78,23 @@ in-cluster URLs of the resolve services:
 cd services/apiaries
 sqlc generate -f store/sqlc/sqlc.yaml
 go build ./...
-go test ./...   # httptest + testcontainers/Postgres; LWW/conflict/idempotency/tombstone matrix
+go test ./...   # httptest + testcontainers/Postgres (postgis/postgis image — the location
+                # column needs the extension); REST CRUD + LWW/conflict/idempotency/tombstone
+                # matrix, history (#59/#31/#60), cross-org access-denial (#28), and org-scoping
+                # schema check (#30)
 ```
+
+## Tenancy (FR-TEN-2, #28/#30)
+
+Every route runs behind OIDC authn + `authn.NewOrgResolver` + `authn.RequireRole` (#28), and
+every query is scoped by the server-derived `organization_id` (`api/common.go`'s `requireOrg` —
+never a client-supplied value). `apiaries.apiaries`, `apiaries.apiary_counters`,
+`apiaries.sync_conflict_log` and `apiaries.audit_log` all carry `organization_id`, verified both
+by reading the migrations and by an automated schema check
+(`TestApiariesSchema_EveryOwnedTableCarriesOrganizationID`, using
+[`dbaccess.UnscopedTables`](../shared/dbaccess/tenancy.go)) so a future migration can't drop the
+column unnoticed. Cross-organization access attempts (read, list, and both write paths — REST and
+sync-apply) are covered by `TestApiariesSlice_CrossOrg_*`/`TestApiariesRest_CrossOrg_*` in
+`main_test.go`. See
+[ADR-0002](../../docs/adr/0002-multi-tenancy.md) for the tenancy model and the RLS-deferral
+decision.

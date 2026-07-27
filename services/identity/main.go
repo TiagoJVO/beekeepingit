@@ -1,7 +1,8 @@
-// Command identity is the minimal identity service for the M0 walking
-// skeleton: it owns identity.users and resolves an OIDC subject to a user
-// (auth.md §5.1 step 1). Its only route is the internal, in-cluster
-// GET /internal/users/by-sub/{sub}; it is never exposed via the gateway.
+// Command identity is the identity service. It owns identity.users and
+// resolves an OIDC subject to a user (auth.md §5.1 step 1) via the internal,
+// in-cluster GET /internal/users/by-sub/{sub} — never exposed via the
+// gateway. It also exposes the client-facing profile surface
+// (GET/PATCH /v1/profile, FR-ONB-1, #25), mounted behind the gateway.
 // Wiring follows services/servicetemplate/example/main.go.
 package main
 
@@ -83,6 +84,9 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("build server: %w", err)
 	}
 	srv.Mount("/internal", authnMW(api.InternalRouter(pool)))
+	// Client-facing profile surface (FR-ONB-1, #25): authn only, no org
+	// resolver — a brand-new user has no membership yet (see api/profile.go).
+	srv.Mount("/v1", authnMW(api.PublicRouter(pool)))
 
 	return srv.Run(ctx)
 }

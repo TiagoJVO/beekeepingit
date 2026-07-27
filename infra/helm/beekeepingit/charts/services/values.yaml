@@ -11,15 +11,28 @@ image:
   pullPolicy: IfNotPresent
 
 # Shared wiring every service inherits (env below). `issuerUrl` is the token's
-# `iss` (the external HTTPS gateway URL, unreachable in-cluster); `discoveryUrl`
-# is the internal HTTP Keycloak Service where services actually fetch the OIDC
-# discovery document, trusting `issuerUrl` as the issuer (see #23 / dev.yaml).
+# `iss` (the external HTTPS auth-host issuer, unreachable in-cluster); `discoveryUrl`
+# is the internal HTTP Authentik Service where services actually fetch the OIDC
+# discovery document, trusting `issuerUrl` as the issuer (see #23 / dev.yaml,
+# ADR-0016, oidc-integration.md §6). `audience` is Authentik's default `aud` (the
+# client id).
 oidc:
-  issuerUrl: https://keycloak.beekeepingit.local:8443/realms/beekeepingit
-  discoveryUrl: http://keycloak-keycloakx-http/realms/beekeepingit
-  audience: beekeepingit
+  issuerUrl: https://auth.beekeepingit.local:8443/application/o/beekeepingit/
+  # Issuer BASE — go-oidc's NewProvider appends /.well-known/openid-configuration.
+  discoveryUrl: http://authentik-server/application/o/beekeepingit/
+  audience: beekeepingit-pwa
 otelEndpoint: otel-collector:4317
 logLevel: info
+
+# Cross-origin CORS allowlist for the admin app (#449, FR-TEN-2, NFR-SEC-1).
+# When set, every rendered service gets CORS_ALLOWED_ORIGINS with these exact
+# origins; when unset, deployment.yaml falls back to global.adminOrigin (the
+# umbrella injects it). Left empty here so a standalone `helm template` of this
+# subchart in isolation renders no CORS_ALLOWED_ORIGINS (CORS disabled) unless a
+# global.adminOrigin is provided — matching the servicetemplate default of
+# same-origin-only. Set explicitly only to allow additional origins.
+cors:
+  allowedOrigins: []
 
 # Postgres connection shared by the DB-backed services. `db.host` is the CNPG
 # primary (read-write) Service; confirm the exact name at deploy time.
@@ -49,6 +62,8 @@ services:
         schema: organizations,
       }
     seedDevData: true
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
   apiaries:
     component: services-apiaries
     port: 8080
@@ -56,6 +71,58 @@ services:
     env:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+  # #39: the first write path (REST create + internal sync validate/apply,
+  # api/write.go + api/sync.go) built on #38's data-model-only service —
+  # needs its own DB role/secret (activities schema, matching apiaries'
+  # shape) plus apiaries' URL for the cross-service apiary_id ownership
+  # check (api/apiaries_client.go).
+  activities:
+    component: services-activities
+    port: 8080
+    db:
+      {
+        enabled: true,
+        role: activities_svc,
+        secret: activities-svc-credentials,
+        schema: activities,
+      }
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
+      INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+      INTERNAL_APIARIES_URL: http://apiaries:8080
+      # #46: journeys' URL for the cross-service journey_id ownership check
+      # (api/journeys_client.go's JourneyVerifier) — the same rationale as
+      # INTERNAL_APIARIES_URL above, closing the IDOR gap where journey_id
+      # was previously accepted with no ownership verification at all.
+      INTERNAL_JOURNEYS_URL: http://journeys:8080
+  # #45: journeys (name, main activity type, apiaries-to-visit plan, D-21) —
+  # needs its own DB role/secret (journeys schema, matching activities'
+  # shape) plus apiaries' URL for the cross-service apiary_id ownership
+  # check (api/apiaries_client.go), same rationale as activities' own entry
+  # above.
+  journeys:
+    component: services-journeys
+    port: 8080
+    db: { enabled: true, role: journeys_svc, secret: journeys-svc-credentials, schema: journeys }
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
+      INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+      INTERNAL_APIARIES_URL: http://apiaries:8080
+  # #50: todo model + lifecycle (create/edit/complete/reopen/delete,
+  # api/write.go + api/sync.go) — needs its own DB role/secret (todos schema,
+  # matching activities'/apiaries' shape) plus organizations' URL for the
+  # cross-service assignee_id membership check (api/members_client.go).
+  # #51: also needs apiaries' URL for the cross-service apiary_id ownership
+  # check (api/apiaries_client.go) — a todo may be associated with a specific
+  # apiary, or left as a general, org-level todo (FR-TD-1).
+  todos:
+    component: services-todos
+    port: 8080
+    db: { enabled: true, role: todos_svc, secret: todos-svc-credentials, schema: todos }
+    env:
+      INTERNAL_IDENTITY_URL: http://identity:8080
+      INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
+      INTERNAL_APIARIES_URL: http://apiaries:8080
   sync:
     component: services-sync
     port: 8080
@@ -64,12 +131,26 @@ services:
       INTERNAL_IDENTITY_URL: http://identity:8080
       INTERNAL_ORGANIZATIONS_URL: http://organizations:8080
       INTERNAL_APIARIES_URL: http://apiaries:8080
+      # #39: routes "activity"-entity_type ops to the activities service's
+      # own internal sync validate/apply (api/coordinator.go's
+      # groupOpsByOwner) so an offline-created activity reconciles on sync.
+      INTERNAL_ACTIVITIES_URL: http://activities:8080
+      # #45: routes "journey"/"journey_plan_item"-entity_type ops to the
+      # journeys service the same way, via the coordinator's generalized
+      # entity_type -> service-URL routing table.
+      INTERNAL_JOURNEYS_URL: http://journeys:8080
+      # #50: routes "todo"-entity_type ops to the todos service's own
+      # internal sync validate/apply, same convention as INTERNAL_ACTIVITIES_URL.
+      INTERNAL_TODOS_URL: http://todos:8080
       SYNC_TOKEN_ISSUER: http://sync:8080
       SYNC_TOKEN_AUDIENCE: powersync
 
 # Placeholder for standalone rendering only — the umbrella injects real global.*.
 global:
   namespace: beekeepingit
+  # Admin app origin the CORS fallback uses (#449). Empty in standalone rendering
+  # so no CORS_ALLOWED_ORIGINS is emitted unless the umbrella provides it.
+  adminOrigin: ""
   resources:
     small:
       requests: { cpu: 25m, memory: 32Mi }

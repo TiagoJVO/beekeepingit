@@ -1,0 +1,46 @@
+# Defaults for standalone `helm template`/`helm lint` of this subchart in
+# isolation. When installed as part of the umbrella, these are overridden by the
+# `authentik:` key in the parent's values.yaml/environments/*.yaml.
+#
+# This chart only creates the supplementary config/Postgres Secrets and the
+# blueprint ConfigMap — Authentik itself is a separate Flux `HelmRelease`
+# (the beekeepingit-gitops repo's apps/dev/authentik-helmrelease.yaml) that references these
+# resources by name. See ADR-0012 (pattern) and ADR-0016 (the swap).
+enabled: true
+
+# Dev/CI-grade declarative blueprint (OAuth2 provider + application + group + seed
+# user) — the analogue of Keycloak's realm import, delivered as a ConfigMap the
+# Authentik worker discovers via `blueprints.configMaps`. Production
+# config/hardening is EPIC-14 (#15). See docs/architecture/oidc-integration.md §8.
+blueprintFile: beekeepingit.blueprint.yaml
+
+# Bootstrap admin identity seeded on first boot (AUTHENTIK_BOOTSTRAP_*). The
+# password/token are generated (never a literal in git — NFR-SEC); only the
+# non-secret email is a stable default here.
+bootstrapEmail: admin@beekeepingit.local
+
+# Outbound email (SMTP) connection for Authentik (#361, NFR-SEC-1) — rendered as
+# AUTHENTIK_EMAIL__* keys into the config Secret (templates/config-secret.yaml),
+# which the upstream chart env-mounts wholesale on server + worker. These are the
+# NON-secret connection facts only; relay credentials live exclusively in the
+# out-of-band `beekeepingit-authentik-email-credentials` Secret (merged via
+# `lookup` when present — see the template's comment). Defaults point at the
+# umbrella's Mailpit dev/CI sink (charts/mailpit); staging keeps the sink until a
+# real relay/domain exists, prod overrides in environments/prod.yaml.
+email:
+  host: mailpit
+  port: 1025
+  from: no-reply@beekeepingit.local
+  useTls: false
+  useSsl: false
+  timeout: 10
+
+# Placeholder for standalone rendering only — the umbrella always injects the
+# real global.* via its own values.yaml.
+global:
+  namespace: beekeepingit
+  appOrigin: https://app.beekeepingit.local:8443
+  # Admin App origin — templated into the beekeepingit-admin OAuth2 client's
+  # redirect_uris (#456). Placeholder for standalone rendering; the umbrella injects the
+  # real global.* from its own values.yaml.
+  adminOrigin: https://admin.beekeepingit.local:8443

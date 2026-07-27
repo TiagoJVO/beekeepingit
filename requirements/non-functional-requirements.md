@@ -26,8 +26,9 @@ to `open-questions.md`.
 
 - **NFR-SEC-1** — Secure **authentication and authorization**, **data encryption**,
   and protection against common threats including **SQL injection, XSS, and CSRF**.
-  - _Resolved (D-7, Q-AUTH):_ Keycloak / OIDC; email verification & password reset via Keycloak;
-    token lifetimes and **offline login** (cached tokens/JWKS + grace window) designed in
+  - _Resolved (D-7, Q-AUTH):_ OIDC (Authentik in v1, behind a provider-agnostic boundary — ADR-0016);
+    email verification & password reset via the IdP's flows (EPIC-14); token lifetimes and
+    **offline login** (cached tokens/JWKS + grace window) designed in
     [`docs/architecture/auth.md`](../docs/architecture/auth.md) / [ADR-0004](../docs/adr/0004-authn-authz.md).
 
 ## Scalability (NFR-SCA)
@@ -59,13 +60,26 @@ to `open-questions.md`.
   Initial roles: **admin** and **user**; more roles may exist later. Provide
   management of roles/permissions: create roles, assign permissions to roles,
   assign roles to users.
-  - _Resolved (Q-ROLE):_ **admin is organization-scoped** (the membership role; D-3) — manages
-    members, roles, org settings and invitations; `user` does field CRUD + AI + history. No
-    system-wide app admin in v1. See [`docs/architecture/auth.md`](../docs/architecture/auth.md)
-    §5.3 / [ADR-0004](../docs/adr/0004-authn-authz.md).
+  - _Resolved (Q-ROLE), revised by [D-32](decisions.md):_ administration is **two-tier**.
+    1. **Organization tier** — `admin` is the **organization-scoped membership role** (D-3):
+       manages members, roles, org settings and invitations within **one** organization; `user`
+       does field CRUD + AI + history. Unchanged from what EPIC-10 shipped.
+    2. **Platform tier** — a **`platform-operator`** (IdP group membership, surfaced as a
+       verified token claim; **not** an org membership) administers **every** organization, its
+       members and their roles. Intended product scope, being built in EPIC-18 (#463).
+
+    The earlier half of this answer — _"no system-wide app admin in v1"_ — **no longer holds**.
+    This is NFR-ROL-1's **"more roles may exist later" hook now in use**: the expansion lands as
+    a **tier above** membership, not as a third membership role, so the fixed `admin`/`user`
+    membership enum is untouched. See [`docs/architecture/auth.md`](../docs/architecture/auth.md)
+    §3.3/§5.3 / [ADR-0004](../docs/adr/0004-authn-authz.md).
+
 - **NFR-ROL-2** — A separate **Admin App** (web/browser only, **no offline
   support**) for role management, organization management, and other
   administrative tasks (including rate-limit/quota management — see NFR-RL-1).
+  - _Refined (D-32):_ the same app hosts **both tiers** of NFR-ROL-1 — the organization tier
+    customers self-serve (EPIC-10), and the cross-organization **platform** tier for the app
+    owners (EPIC-18 #463). "Admin App" is therefore not organization-only.
 
 ## Performance (NFR-PER)
 
@@ -98,12 +112,16 @@ to `open-questions.md`.
 
 ## Compliance (NFR-CMP)
 
-- **NFR-CMP-1** — Adherence to relevant regulations/standards. The source lists
-  **GDPR and HIPAA** among others.
-  - _Note (Q-CMP):_ **GDPR applies** (Portugal/EU). **HIPAA is US healthcare** and
-    is almost certainly **not applicable** to a beekeeping app — confirm and
-    remove if so. Portuguese/EU **beekeeping & food-traceability** regulation is
-    the more likely real obligation (see context C-2 / Q-REG).
+- **NFR-CMP-1** — Adherence to relevant regulations/standards: **GDPR** (Portugal/EU) and
+  the **Portuguese/EU beekeeping & honey-traceability regime** — DL 203/2005 (PT beekeeping
+  activity & sanitary rules, DGAV), Reg (EC) 178/2002 Art. 18 + Reg (EU) 931/2011 (food
+  traceability), Dir 2001/110/EC as amended by Dir (EU) 2024/1438 (honey composition/origin
+  labelling), Dir 2011/91/EU (lot marking), Reg (EU) 2019/6 (veterinary medicinal product
+  record-keeping). **HIPAA does not apply** (US human-healthcare law; bee-health data is also
+  not GDPR Art. 9 special-category data) — dropped.
+  - _Resolved (D-19):_ obligations enumerated in
+    [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
+    (#91); concrete FR/NFR schema changes triaged per feature epic, not applied here.
 
 ## Internationalization & Localization (NFR-I18N)
 

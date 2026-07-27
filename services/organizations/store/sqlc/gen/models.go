@@ -8,6 +8,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type OrganizationsAuditLog struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	ChangeType     string             `json:"change_type"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	ActorScope     string             `json:"actor_scope"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
+}
+
+type OrganizationsInvitation struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	Email          string             `json:"email"`
+	Role           string             `json:"role"`
+	Status         string             `json:"status"`
+	InvitedBy      pgtype.UUID        `json:"invited_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type OrganizationsMembership struct {
 	ID             pgtype.UUID        `json:"id"`
 	OrganizationID pgtype.UUID        `json:"organization_id"`

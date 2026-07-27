@@ -7,7 +7,7 @@
 
 **Issue:** #104 · **Epic:** #103 (EPIC-DESIGN) · **Milestone:** M0
 **Requirements:** NFR-ARC-1, NFR-ARC-2, NFR-ARC-3, FR-TEN, FR-HIS, NFR-ROL-1, NFR-OBS-1
-**Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture) (full microservices), [D-2](../../requirements/decisions.md) (hive count, not entity), [D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-6](../../requirements/decisions.md) (Postgres + schema-per-service + sync), [D-7](../../requirements/decisions.md) (Keycloak), [D-9](../../requirements/decisions.md) (monorepo), [D-10](../../requirements/decisions.md) (PWA-first)
+**Decisions:** [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture) (full microservices), [D-2](../../requirements/decisions.md) (hive count, not entity), [D-5](../../requirements/decisions.md) (Flutter/Go/React), [D-6](../../requirements/decisions.md) (Postgres + schema-per-service + sync), [D-7](../../requirements/decisions.md) (Authentik OIDC), [D-9](../../requirements/decisions.md) (monorepo), [D-10](../../requirements/decisions.md) (PWA-first)
 **ADR:** [0001-service-decomposition](../adr/0001-service-decomposition.md)
 
 ---
@@ -72,16 +72,20 @@ Per [D-1](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-arch
 named contexts. Each domain service is a **Go** service (D-5) owning **one Postgres schema**
 (D-6), exposing a **REST + OpenAPI** contract through the gateway (conventions → #108).
 
-| #   | Service (schema)                    | Responsibility                                                                                                                                                                                                            | Owns                                                                                     | Key requirements                                         |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| 1   | **identity** (`identity`)           | App-side user **profile** & account settings; maps the Keycloak subject → app user. AuthN itself is Keycloak. Holds the subscription **feature-toggle stub** (no billing).                                                | `users` (profile, keyed by Keycloak `sub`), account settings, feature-toggle flags       | FR-ONB-1, FR-AU-1, FR-AU-2 (stub, D-4)                   |
-| 2   | **organizations** (`organizations`) | Organization CRUD; **membership** (user↔org + role); **invitations**; system of record for **org-scoped authorization** (who is in which org, with what role).                                                            | `organizations`, `memberships`, `invitations`                                            | FR-ONB-2, FR-ONB-3, FR-TEN-1/2, NFR-ROL-1 (D-3)          |
-| 3   | **apiaries** (`apiaries`)           | Apiary CRUD; **hive count** (D-2); **geo** (PostGIS) for proximity ordering & distance; search.                                                                                                                           | `apiaries` (incl. `location geography(Point)`, `hive_count`)                             | FR-AP-1..7                                               |
-| 4   | **activities** (`activities`)       | Activity CRUD with **per-type JSONB attributes**; recorded against the **performing user** and referencing an apiary.                                                                                                     | `activities` (`apiary_id` ref, `performed_by` ref, `type`, `attributes jsonb`)           | FR-AC-1..6 (D-2)                                         |
-| 5   | **journeys** (`journeys`)           | Journey CRUD; **planned-vs-actual aggregation** (apiaries visited, hives harvested, honey collected, missing).                                                                                                            | `journeys`, journey↔activity attribution (model is **Q-JOUR**, open)                     | FR-JO-1..4                                               |
-| 6   | **todos** (`todos`)                 | Todo CRUD + lifecycle; association to apiary/area; filters.                                                                                                                                                               | `todos` (`org_id`, due date, priority, status, optional `apiary_id`/assignee)            | FR-TD-1 (lifecycle **Q-TODO**, open)                     |
-| 7   | **ai** (`ai`)                       | NL→**query & action** assistant; **cloud LLM** (D-8); org/apiary/journey-scoped. Reads are parameterized; writes are **proposed** (user-confirmed, owner-executed) — **no direct write access**. Online-only (PWA phase). | Minimal: consent records / query **+ action** logs. **Owns no domain data.**             | FR-AI-1/2, NFR-AI-1/4 (consent **Q-AICLOUD**, gating)    |
-| 8   | **history** (`history`)             | **Append-only** change history (actor + timestamp) for every create/update/delete; per-entity history views; must survive offline edits + sync.                                                                           | `audit_log` (append-only; `entity_type`, `entity_id`, `org_id`, `actor`, `change`, `ts`) | FR-HIS-1 (capture mechanism → #107; retention **Q-HIS**) |
+| #   | Service (schema)                    | Responsibility                                                                                                                                                                                                            | Owns                                                                                         | Key requirements                                      |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 1   | **identity** (`identity`)           | App-side user **profile** & account settings; maps the OIDC subject → app user. AuthN itself is the OIDC IdP (Authentik). Holds the subscription **feature-toggle stub** (no billing).                                    | `users` (profile, keyed by OIDC `sub` in `oidc_sub`), account settings, feature-toggle flags | FR-ONB-1, FR-AU-1, FR-AU-2 (stub, D-4)                |
+| 2   | **organizations** (`organizations`) | Organization CRUD; **membership** (user↔org + role); **invitations**; system of record for **org-scoped authorization** (who is in which org, with what role).                                                            | `organizations`, `memberships`, `invitations`                                                | FR-ONB-2, FR-ONB-3, FR-TEN-1/2, NFR-ROL-1 (D-3)       |
+| 3   | **apiaries** (`apiaries`)           | Apiary CRUD; **hive count** (D-2, as one of the typed **apiary_counters**, D-20); **geo** (PostGIS) for proximity ordering & distance; search.                                                                            | `apiaries` (incl. `location geography(Point)`), `apiary_counters` (1-N, e.g. `hive`)         | FR-AP-1..7                                            |
+| 4   | **activities** (`activities`)       | Activity CRUD with **per-type JSONB attributes**; recorded against the **performing user** and referencing an apiary.                                                                                                     | `activities` (`apiary_id` ref, `performed_by` ref, `type`, `attributes jsonb`)               | FR-AC-1..6 (D-2)                                      |
+| 5   | **journeys** (`journeys`)           | Journey CRUD; **planned-vs-actual aggregation** (apiaries visited, hives harvested, honey collected, missing).                                                                                                            | `journeys`, journey↔activity attribution (model is **Q-JOUR**, open)                         | FR-JO-1..4                                            |
+| 6   | **todos** (`todos`)                 | Todo CRUD + lifecycle; association to apiary/area; filters.                                                                                                                                                               | `todos` (`org_id`, due date, priority, status, optional `apiary_id`/assignee)                | FR-TD-1 (lifecycle **Q-TODO**, open)                  |
+| 7   | **ai** (`ai`)                       | NL→**query & action** assistant; **cloud LLM** (D-8); org/apiary/journey-scoped. Reads are parameterized; writes are **proposed** (user-confirmed, owner-executed) — **no direct write access**. Online-only (PWA phase). | Minimal: consent records / query **+ action** logs. **Owns no domain data.**                 | FR-AI-1/2, NFR-AI-1/4 (consent **Q-AICLOUD**, gating) |
+
+**Not its own service:** history (FR-HIS-1) is **not** a standalone `history` service — as
+implemented, each owning service holds its own append-only `audit_log` co-located in its own
+schema (`identity.audit_log`, `organizations.audit_log`, `apiaries.audit_log`), written in the
+same transaction as the domain write. See [history.md](history.md) §5 for the rationale.
 
 ### "admin" is a client, not a new domain service
 
@@ -147,17 +151,18 @@ graph TB
         core["Flutter PWA + React Admin App<br/>+ Go microservices on one k8s cluster"]
     end
 
-    keycloak["🔐 Keycloak<br/><i>Identity Provider (OIDC) — self-hosted</i>"]
+    idp["🔐 Authentik<br/><i>Identity Provider (OIDC) — self-hosted</i>"]
     llm["☁️ Cloud LLM provider<br/><i>e.g. Claude API — external processor</i>"]
 
     beekeeper -->|"manage apiaries, activities,<br/>journeys, todos — offline-first"| sys
     admin -->|"manage orgs, members, roles<br/>(online-only)"| sys
-    sys -->|"authenticate users (OIDC),<br/>cache tokens for field login"| keycloak
+    sys -->|"authenticate users (OIDC),<br/>cache tokens for field login"| idp
     sys -->|"NL→query/action assistant —<br/>consent-gated, online-only"| llm
 ```
 
 **Actors:** field **Beekeepers** (offline-first PWA) and **Organization Admins** (online-only
-web app). **Supporting systems:** **Keycloak** (authN; D-7) and an **external Cloud LLM**
+web app). **Supporting systems:** an **OIDC IdP** (Authentik; authN; D-7, behind a
+provider-agnostic boundary) and an **external Cloud LLM**
 (the AI assistant's processor; D-8 — gated by consent/DPA per
 [Q-AICLOUD](../../requirements/open-questions.md#q-aicloud--cloud-ai-privacy--gdpr-now-near-term-per-d-8)).
 
@@ -178,7 +183,7 @@ graph TB
 
     subgraph cluster["Single Kubernetes cluster (NFR-ARC-3)"]
         gw["🚪 API Gateway / Ingress<br/><i>Traefik/NGINX — TLS, routing, JWT</i>"]
-        keycloak["🔐 Keycloak<br/><i>OIDC IdP, realm + roles</i>"]
+        idp["🔐 Authentik<br/><i>OIDC IdP — application + provider</i>"]
 
         subgraph services["Domain services — Go (pgx/sqlc, OpenAPI)"]
             identity["identity"]
@@ -204,8 +209,8 @@ graph TB
     pwa <-->|"replicate org/user slice +<br/>upload offline writes"| sync
 
     gw -->|"REST (org-scoped, JWT)"| services
-    pwa -.->|"OIDC login"| keycloak
-    services -.->|"validate JWT via JWKS"| keycloak
+    pwa -.->|"OIDC login"| idp
+    services -.->|"validate JWT via JWKS"| idp
     services -->|"owns one schema<br/>(no cross-schema writes)"| pg
     sync -->|"publish slice / apply writes"| pg
     ai -->|"read-only, scoped"| pg
@@ -236,14 +241,15 @@ umbrella chart** (#83). This decomposition yields the umbrella's **subchart list
 hand-off #104 owes EPIC-13):
 
 **Domain service subcharts (Go):** `identity` · `organizations` · `apiaries` · `activities` ·
-`journeys` · `todos` · `ai` · `history`
+`journeys` · `todos` · `ai` (no separate `history` subchart — see the "Not its own service" note
+in §3)
 
 **Platform/infra subcharts:**
 
 | Subchart        | Purpose                                                                                   | Requirement / source                                                           |
 | --------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `gateway`       | Ingress, TLS, routing, edge JWT                                                           | NFR-ARC, #84                                                                   |
-| `keycloak`      | OIDC IdP, realm + roles                                                                   | D-7, #84                                                                       |
+| `authentik`     | OIDC IdP (application + provider, blueprint-provisioned)                                  | D-7, ADR-0016                                                                  |
 | `postgres`      | PostgreSQL + **PostGIS**, schema-per-service                                              | D-6, #84                                                                       |
 | `sync-engine`   | **PowerSync** (self-hosted, Open Edition)                                                 | D-6, ADR-0005 (SP-1 #54)                                                       |
 | `sync`          | Thin stateless Go service: sync-token mint + write-back coordinator (owns no domain data) | D-12, [sync.md](sync.md) §6.4, [walking-skeleton.md](walking-skeleton.md) §4.3 |
@@ -260,14 +266,14 @@ S3-compatible interface (MinIO now, cloud later) and DB access via a typed query
 
 ## 8. Open questions, risks & deferred scope
 
-| Item                                                                                                      | Impact on this design                                                                                                                                                             | Where it's resolved                                                                                             |
-| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)                 | Full microservices may be over-built for one org; mitigated by the schema-per-service **split-later** path + modular-monolith escape hatch                                        | [ADR-0001](../adr/0001-service-decomposition.md)                                                                |
-| Q-SYNC (**resolved**)                                                                                     | Write-back respects ownership **and is atomic per push** (validate-first + forward-retry) + client validation parity + notify-and-fix (D-12) — was the biggest cross-service risk | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106, SP-1 #54)                       |
-| [Q-AICLOUD](../../requirements/open-questions.md#q-aicloud--cloud-ai-privacy--gdpr-now-near-term-per-d-8) | `ai` sends org data to an external processor → consent/DPA/no-training/EU-residency gate **before** AI build                                                                      | EPIC-08, NFR-CMP                                                                                                |
-| [Q-JOUR](../../requirements/open-questions.md#q-jour--journey-planned-vs-actual-model)                    | `journeys`↔`activities` attribution (and "how much is missing") undefined                                                                                                         | EPIC-04 (#46) — journeys are outside the walking-skeleton slice ([walking-skeleton.md](walking-skeleton.md) §8) |
-| [Q-TODO](../../requirements/open-questions.md#q-todo--todo-lifecycle--associations)                       | `todos` lifecycle/assignment/area association                                                                                                                                     | EPIC-05                                                                                                         |
-| Q-ROLE (admin scope) — **resolved**                                                                       | "admin" is **org-scoped** (the membership role); shapes `organizations` authZ                                                                                                     | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md)                                                |
+| Item                                                                                                      | Impact on this design                                                                                                                                                             | Where it's resolved                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Q-SCALE](../../requirements/decisions.md#d-1--v1-uses-a-full-microservices-architecture)                 | Full microservices may be over-built for one org; mitigated by the schema-per-service **split-later** path + modular-monolith escape hatch                                        | [ADR-0001](../adr/0001-service-decomposition.md)                                                                                             |
+| Q-SYNC (**resolved**)                                                                                     | Write-back respects ownership **and is atomic per push** (validate-first + forward-retry) + client validation parity + notify-and-fix (D-12) — was the biggest cross-service risk | [sync.md](sync.md) / [ADR-0006](../adr/0006-sync-conflict-resolution.md) (#106, SP-1 #54)                                                    |
+| [Q-AICLOUD](../../requirements/open-questions.md#q-aicloud--cloud-ai-privacy--gdpr-now-near-term-per-d-8) | `ai` sends org data to an external processor → consent/DPA/no-training/EU-residency gate **before** AI build                                                                      | EPIC-08, NFR-CMP                                                                                                                             |
+| [Q-JOUR](../../requirements/open-questions.md#q-jour--journey-planned-vs-actual-model)                    | `journeys`↔`activities` attribution (and "how much is missing") undefined                                                                                                         | EPIC-04 (#46) — journeys are outside the walking-skeleton slice ([walking-skeleton.md](walking-skeleton.md) §8)                              |
+| [Q-TODO](../../requirements/open-questions.md#q-todo--todo-lifecycle--associations)                       | `todos` lifecycle/assignment/area association                                                                                                                                     | EPIC-05                                                                                                                                      |
+| Q-ROLE (admin scope) — **resolved** (revised by D-32)                                                     | "admin" is **org-scoped** (the membership role); shapes `organizations` authZ. A **platform** tier above it (cross-organization operator) is **planned** — EPIC-18                | [auth.md](auth.md) §5.3 / [ADR-0004](../adr/0004-authn-authz.md); platform tier: [#463](https://github.com/TiagoJVO/beekeepingit/issues/463) |
 
 **Coupling risk to watch:** `apiaries` + `activities` + `journeys` form one tightly-coupled
 **core domain** (activities belong to apiaries; journeys aggregate activities). They are split
@@ -278,7 +284,8 @@ first consolidation to consider (see [ADR-0001](../adr/0001-service-decompositio
 
 ## 9. Acceptance-criteria traceability (#104)
 
-- [x] Bounded contexts identified & mapped to services (the 8 domain services + admin-as-client) — §3
+- [x] Bounded contexts identified & mapped to services (the 7 domain services + admin-as-client;
+      history is co-located per service, not its own service) — §3
 - [x] Each service's responsibility, owned data, and public interface documented; no
       data-ownership ambiguity — §3 + §4
 - [x] C4 **context** and **container** diagrams committed — §5, §6

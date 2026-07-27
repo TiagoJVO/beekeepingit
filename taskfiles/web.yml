@@ -1,7 +1,14 @@
 # Web (TypeScript/React) tasks — discover every npm package (package.json) and delegate
 # to its own scripts. Each package owns its eslint/prettier/vite config; the root just
 # fans out. `--if-present` means a package without a given script is silently skipped.
-# No-ops until the first package is scaffolded (e.g. apps/admin/package.json).
+# No-ops until the first package is scaffolded (e.g. admin/package.json).
+#
+# Each loop installs the package's devDependencies (eslint/prettier/vitest/…) with
+# `npm ci` when `node_modules` is absent — CI (ci.yml) only sets up mise toolchains, it
+# never installs npm deps, so without this the very first `npm run <script>` fails with
+# `eslint: not found` (exit 127). Guarded on `node_modules` so a full `task ci`
+# (lint→test) installs once per package, not per task. `npm ci` needs the committed
+# lockfile; `--no-audit --no-fund` keeps CI logs quiet.
 version: "3"
 
 silent: true
@@ -28,7 +35,7 @@ tasks:
         set -e
         pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
-        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] lint $d"; (cd "$d" && npm run lint --if-present); done
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] lint $d"; (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run lint --if-present); done
 
   format:
     desc: "Format web packages (npm run format)"
@@ -37,7 +44,7 @@ tasks:
         set -e
         pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
-        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] format $d"; (cd "$d" && npm run format --if-present); done
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] format $d"; (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run format --if-present); done
 
   test:
     desc: "Test web packages (npm test)"
@@ -46,7 +53,7 @@ tasks:
         set -e
         pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
-        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] test $d"; (cd "$d" && npm test --if-present); done
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] test $d"; (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm test --if-present); done
 
   build:
     desc: "Build web packages (npm run build)"
@@ -55,4 +62,4 @@ tasks:
         set -e
         pkgs=$({{.FIND_WEB_PKGS}})
         if [ -z "$pkgs" ]; then echo "› [web] no package.json yet — skipping"; exit 0; fi
-        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] build $d"; (cd "$d" && npm run build --if-present); done
+        for p in $pkgs; do d=$(dirname "$p"); echo "› [web] build $d"; (cd "$d" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run build --if-present); done

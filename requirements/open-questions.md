@@ -24,56 +24,20 @@ where there's a sensible one.
 
 ## Tier 2 — Functional gaps to close
 
-### Q-AICLOUD — Cloud AI privacy & GDPR (now near-term per D-8)
+### Q-MAP — Offline-tile caching strategy & production-traffic tile provider (narrowed, was: map provider & offline tiles)
 
-- **Affects:** FR-AI-1, NFR-AI-1, NFR-CMP. The PWA phase sends org data to a hosted
-  LLM. Needed before building the AI feature: **provider choice** (e.g. Claude API),
-  a **DPA**, a **no-training** guarantee, **EU data residency**, an **explicit
-  consent** UX, and **PII minimization** (what may leave the device).
-
-### Q-JOUR — Journey planned-vs-actual model
-
-- **Affects:** FR-JO-1, FR-JO-4. "How much is missing" needs a **plan** (intended
-  apiaries/activities) compared against **executed** activities. Define how
-  activities link to a journey (manual selection, or auto-match by
-  apiary+type+date window).
-
-### Q-TODO — Todo lifecycle & associations
-
-- **Affects:** FR-TD-1, FR-AI-1. Only create + list are specified. Need: complete /
-  reopen / edit / delete, assignment to a user, and association to an **apiary or
-  area** (the AI example "todos pending for the area of apiary X" requires it).
-
-### Q-DIST — Distance measurement semantics
-
-- **Affects:** FR-AP-5. Straight-line (works offline) vs. driving distance (needs a
-  routing service, online). How are the two apiaries chosen? Is distance also shown
-  from the user's current location (FR-AP-2 already orders by proximity)?
-- **Recommended default:** straight-line (haversine) offline; optional driving
-  distance when online.
-
-### Q-MAP — Map provider & offline tiles
-
-- **Affects:** FR-AP-3, FR-OF-1. A field-first map that works **offline** needs
-  cached map tiles. Decision: provider (Google Maps, Mapbox, OpenStreetMap/MapLibre)
-  and offline-tile strategy. This has licensing and cost implications.
-
-### Q-IMP — Import semantics
-
-- **Affects:** FR-IE-2. Merge vs. replace, ID preservation, duplicate handling, and
-  how import interacts with sync/history.
-
-### Q-NOTIF — Notifications
-
-- **Affects:** FR-ST-1, FR-TD-1. "Notification preferences" implies a notification
-  system, but none is otherwise specified. What events (todo due, sync results),
-  what channel (in-app, push), and does push require a backend service + store
-  registration?
-
-### Q-SEARCH — Search scope
-
-- **Affects:** FR-AP-6. Offline or online? Apiaries only, or activities/journeys/
-  todos too? What are the "other attributes"?
+- **Affects:** FR-AP-3, FR-OF-1. The map _interaction_ shape (markers, user location, measure
+  overlay), the base library (`flutter_map` + MapLibre/OSM), and — as of #257 — which **online**
+  tile sources render by default and how they're toggled/attributed (satellite/Esri World
+  Imagery default, OSM streets alternative, both attributed) are **resolved** — see
+  [D-16](decisions.md#d-16--map-flutter_map-markers--user-location--measure-overlay-tile-provider-deferred).
+  Still open: a field-first map that works **offline** needs **cached map tiles** — which is not
+  the same question as the ONLINE default decided above. Two things remain undecided: (1) the
+  **production-traffic tile provider** — the public Esri/OSM demo endpoints this app uses today
+  are not meant for production-scale load, so a paid/self-hosted provider decision is still
+  needed before real traffic; and (2) the **offline-tile caching strategy** (what to pre-cache,
+  storage budget, refresh). This has licensing and cost implications; does not block M2/M3
+  (online-only map ships first).
 
 ---
 
@@ -84,14 +48,6 @@ where there's a sensible one.
 - **Affects:** NFR-AI-2/3, FR-AI-1. The PWA phase uses **cloud AI**, so on-device is
   no longer near-term. Revisit at the native phase (model, device specs, size,
   quality) via **SP-2**.
-
-### Q-CMP / Q-REG — Compliance & Portuguese regulation
-
-- **Affects:** NFR-CMP-1, Context C-2. Confirm **GDPR** scope (data export/erasure,
-  consent for cloud AI per NFR-AI-1). **HIPAA is very likely not applicable** —
-  confirm and drop. Enumerate the actual **Portuguese/EU beekeeping & food
-  (honey) traceability** obligations (e.g., apiary registration, treatment
-  records) that may become real requirements.
 
 ### Q-DR — Backup/DR targets
 
@@ -107,10 +63,6 @@ where there's a sensible one.
 
 ## Tier 4 — Smaller clarifications
 
-- **Q-TEN** — Confirm the tenancy interpretation: isolation is at the
-  **organization** level (resolved in FR-TEN-2), not per-user as frs line 28 reads
-  literally.
-- **Q-AX** — Accessibility target standard/level (recommend **WCAG 2.2 AA**).
 - **Q-EXPORT-PII** — Export (FR-IE-1) of activities tied to users may include PII;
   confirm what's allowed under GDPR.
 - **Units & formats** — confirm metric units (kg/L) and Portuguese locale defaults

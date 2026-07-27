@@ -23,7 +23,7 @@ map an item to its requirement IDs first — see the **requirements-folder** ski
 ## The hierarchy & the native mechanisms
 
 ```text
-Milestone (M0…M5)            time-boxed delivery target
+Milestone (M0…M11)           thin, incremental, per-feature delivery slice (D-14)
 └─ Epic                      issue, label type/epic, titled "EPIC-XX — Name"
    └─ Story / Task           issue, linked as a native SUB-ISSUE of the epic
       └─ Sub-task            sub-issue of a story (only when a story needs breaking down)
@@ -41,6 +41,12 @@ Each mechanism has **one** job — never re-implement one in prose:
 
 The Milestone view is **flat** — it can't nest or show "only epics". Hierarchy comes from
 sub-issues (on the epic page) and the Project, not the milestone.
+
+**Streams (D-14).** Cross-cutting epics — offline/sync, history/audit, i18n/a11y,
+security/compliance, platform rollout — are **continuous streams, not milestones**: they carry the
+`stream` label and **no** milestone, and their sub-issues take the **milestone of first need**.
+Feature epics still sit in their first milestone. This keeps each milestone an independently
+buildable feature slice instead of waiting on a whole cross-cutting epic.
 
 ## Golden rule: don't duplicate a native field in the title or body
 
@@ -98,9 +104,10 @@ history-audit admin-app import-export maps-geo i18n-a11y infra observability sec
 
 The bar is just closed ÷ total of assigned issues. **Recommended:** assign **leaf issues**
 (stories/tasks) to a milestone for an honest burndown, and read epic progress from the Sub-issues
-bar + the Project grouped by epic. Pick one assignment policy and apply it consistently. An epic
-stays in its **first** milestone; per-phase work is carried by the **sub-issues' own** milestones —
-that is exactly what `**Spans:**` documents.
+bar + the Project grouped by epic. Pick one assignment policy and apply it consistently. A
+**feature** epic stays in its **first** milestone; per-phase work is carried by the **sub-issues'
+own** milestones — that is exactly what `**Spans:**` documents. A **cross-cutting** epic instead
+carries the `stream` label and **no** milestone at all (D-14) — only its sub-issues are milestoned.
 
 ## Tooling recipes (`gh` has no first-class sub-issue commands)
 

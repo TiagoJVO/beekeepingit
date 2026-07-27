@@ -1,7 +1,7 @@
 # Apiaries service — client-facing REST contract (SKELETON).
 # First domain service and the walking-skeleton's "create" target (#110).
 # Stamped from ./_shared/components.openapi.yaml; conventions in
-# docs/architecture/api-contracts.md. Requirements: FR-AP-1..7 (D-2).
+# docs/architecture/api-contracts.md. Requirements: FR-AP-1..8 (D-2).
 openapi: 3.1.0
 info:
   title: BeekeepingIT — Apiaries API
@@ -243,6 +243,16 @@ components:
               type: integer
               minimum: 0
               description: Number of hives at the apiary (D-2).
+            place_label:
+              type: [string, "null"]
+              maxLength: 200
+              description: >-
+                Optional free-text place name (e.g. "Montargil"), independent of `location`'s
+                coordinates and of the apiary's own `name` (#252).
+            notes:
+              type: [string, "null"]
+              maxLength: 10000
+              description: Optional free-text notes (FR-AP-8), shown on the apiary detail when present.
             distance_m:
               type: [number, "null"]
               readOnly: true
@@ -251,7 +261,10 @@ components:
 
     ApiaryCreate:
       type: object
-      description: Create payload. `id` is client-supplied (offline UUID); no `organization_id`.
+      description: >-
+        Create payload. `id` is client-supplied (offline UUID); no `organization_id`.
+        `location` is REQUIRED (FR-AP-7, #341 — the product owner's directed change:
+        an apiary can never be created without coordinates).
       properties:
         id:
           $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
@@ -265,7 +278,17 @@ components:
           type: integer
           minimum: 0
           default: 0
-      required: [id, name]
+        place_label:
+          type: [string, "null"]
+          maxLength: 200
+          description: >-
+            Optional free-text place name (e.g. "Montargil"), independent of `location`'s
+            coordinates and of the apiary's own `name` (#252).
+        notes:
+          type: [string, "null"]
+          maxLength: 10000
+          description: Optional free-text notes (FR-AP-8).
+      required: [id, name, location]
 
     ApiaryUpdate:
       type: object
@@ -280,6 +303,16 @@ components:
         hive_count:
           type: integer
           minimum: 0
+        place_label:
+          type: [string, "null"]
+          maxLength: 200
+          description: >-
+            Optional free-text place name (e.g. "Montargil"), independent of `location`'s
+            coordinates and of the apiary's own `name` (#252).
+        notes:
+          type: [string, "null"]
+          maxLength: 10000
+          description: Optional free-text notes (FR-AP-8).
       minProperties: 1
 
     ApiaryList:

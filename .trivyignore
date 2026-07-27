@@ -1,0 +1,64 @@
+# Trivy IaC/misconfig ignore list — EPIC-14 #89 baseline triage.
+#
+# Read before adding an entry: this file makes `trivy-config` in
+# .github/workflows/security-scan.yml BLOCKING (exit-code 1, #89). Every entry
+# below is a specific, already-triaged finding with a stated reason it's an
+# accepted risk or a false positive — not a blanket suppression. New findings
+# introduced by future changes are NOT covered by anything here and will fail
+# CI as intended; add a new dated, justified entry only after the same triage
+# rigor, or fix the underlying misconfig instead.
+
+# KSV-0109 (ConfigMap with secrets) — infra/helm/beekeepingit/charts/authentik/
+# templates/blueprint-configmap.yaml, flagging the Authentik declarative
+# blueprint's seed-user `password: dev-password123`
+# (infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml).
+# Accepted: this is a fixed, non-secret dev/CI login for the
+# `test.beekeeper@beekeepingit.local` seed account used only by the local k3d
+# dev cluster and the ephemeral CI k3d job (helm-e2e.yml) — both
+# world-disposable environments with no real user data, torn down after every
+# run. It grants no access to anything outside that ephemeral cluster. Moving
+# it to a generated Secret would need the blueprint's YAML templating to
+# reference a Secret key (Authentik blueprints don't support that natively —
+# only ConfigMap-delivered file content), a nontrivial rework out of scope for
+# this triage pass. Production-grade IdP hardening (real accounts, no seed
+# user) is explicitly deferred to EPIC-14 (docs/architecture/platform.md "Not
+# yet covered here").
+KSV-0109
+
+# DS-0002 (image user should not be 'root') — client/Dockerfile (the pwa's
+# nginx image). Deferred to #235: making stock nginx run non-root reliably
+# under a read-only root filesystem in the CI k3d job proved fragile and cost
+# ~5 iterations on PR #224 (pidfile/temp-dir writes, then a liveness-probe
+# crash-loop). The substantive #89 security work — CSP headers, NetworkPolicy,
+# blocking trivy-config, securityContext on all Go services — is done and
+# valuable; this one vendored-web-image hardening item was deferred rather than
+# hold #89/M0 hostage. The Go service images (services/*/Dockerfile) already
+# run non-root, so this is scoped to the nginx web image alone. Tracked in
+# #235 (Harden pwa container) — fix and delete this entry then.
+DS-0002
+
+# KSV-0014 (root filesystem not read-only) + KSV-0118 (default security
+# context) — fire on two Deployments, both DEFERRED for the same "fragile
+# vendored-image hardening" reason:
+#   - powersync (charts/powersync/templates/deployment.yaml): `journeyapps/
+#     powersync-service` is a third-party image with no in-repo Dockerfile;
+#     its runtime user / on-disk writes aren't verified against a live cluster,
+#     so runAsNonRoot/readOnlyRootFilesystem risk a silent crash-loop. The
+#     safe container-level bits (allowPrivilegeEscalation: false, drop ALL
+#     caps) ARE applied there.
+#   - pwa (charts/pwa/templates/deployment.yaml): the nginx web image — same
+#     defer decision as DS-0002 above (#235). Reverted to the stock-nginx
+#     config main proved green after the readOnlyRootFilesystem hardening
+#     crash-looped repeatedly in CI.
+# The Go domain services (charts/services/*) DO set a full securityContext
+# (readOnlyRootFilesystem included), so that hardening is real and tested.
+#
+# CAVEAT (trivy's .trivyignore has no per-resource scoping for misconfig
+# checks — a bare check ID is ignored repo-wide): until these are resolved, a
+# FUTURE Deployment added without its own securityContext would also be
+# silently ignored by these two IDs rather than caught by CI. Kept narrow at
+# review time by convention (new charts copy the services pattern); tracked to
+# close on #235 (pwa) and #89 (powersync) — fix both, then delete this entry
+# to restore full KSV-0014/KSV-0118 coverage.
+KSV-0014
+KSV-0118

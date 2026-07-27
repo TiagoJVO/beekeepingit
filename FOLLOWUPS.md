@@ -7,35 +7,40 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## Before merging the walking-skeleton slice (#23)
+## `feat/authentik-admin-oidc-client` (#456 — admin OIDC client in the blueprint)
 
-The slice was **deployed to a live k3d cluster** and driven **in a real browser**: the full
-Playwright e2e — **OIDC login (Keycloak PKCE) → create an apiary → offline edit → reconnect →
-server-side assertion (`GET /v1/apiaries` reflects the edit) → reload convergence → a second
-fresh client converges via download sync** — passes end-to-end, exercising **both** the
-PowerSync browser → server write-back and the server → client download. Deploy bugs found and
-**fixed in this branch**: PowerSync sync-rules → `bucket_definitions`; DB `search_path` + schema
-provisioned-by-infra; the `powersync` role as a member of the `*_svc` roles; the OIDC topology
-(see below); and the two stacked download-sync bugs (gateway route targeted a non-existent
-`powersync` Service so `/sync-stream` fell through to the PWA; and the client's PowerSync
-endpoint lacked a trailing slash, so the SDK's `Uri.resolve` dropped the `/sync-stream` prefix
-and POSTed to `/sync/stream` → PWA 405 — both fixed, plus a Traefik StripPrefix for the route).
-What remains — all tracked elsewhere; nothing blocks the merge:
+Post-merge hardening (NOT merge blockers — the blueprint provisioning is complete and the
+`beekeepingit-admin` login/aud/iss is pinned by the helm-e2e admin-login gate):
 
-- **e2e in CI** → promoted to **[#162](https://github.com/TiagoJVO/beekeepingit/issues/162)**.
-  The Playwright e2e passes live but isn't a CI job yet (Go integration tests cover the
-  server-side semantics in CI now); that issue also folds in per-run test-data teardown.
-- **CI/CD auto-deploy — post-merge, gated on EPIC-14 [#89](https://github.com/TiagoJVO/beekeepingit/issues/89).**
-  Build/publish is done and verified (`build-publish.yml` publishes SHA-tagged images on merge).
-  The deploy half — Flux image-automation for the slice's 5 images — is **wired but dormant**
-  (`infra/gitops/image-automation/slice-service-images.yaml` + setter markers in the umbrella
-  HelmRelease); activation needs a merge (so ghcr images exist) + a Flux Git-write credential
-  (#89), and moving those objects into a reconciled path. Documented in that directory's README.
-- **Observability into the standard bring-up (#87).** NFR-OBS-1 is **verified live** (Tempo holds
-  the gateway → sync → apiaries trace, Loki holds trace-correlated per-service logs,
-  `observability-smoke-test.sh` passes — walking-skeleton.md §11.3). The stack was deployed by
-  hand; folding it into `dev-up.sh`/GitOps so it comes up automatically is #87.
+- Assert the admin token's claim SHAPE in e2e + guard which providers may carry
+  `scope-admin-audience` → #460 (both promoted from this #456 security review).
+- **Harden the admin OIDC redirect set for staging/prod** — the gateway `adminHost` route and the
+  staging/prod `global.adminOrigin` overrides are now in place (#449), so the admin app IS
+  gateway-served per environment. What remains is blueprint-side: the `http://localhost:.*` redirect
+  entry is dev-convenience and belongs to the EPIC-14 hardened-blueprint variant, not prod — tighten
+  the admin client's redirect_uris to the real per-environment admin origin there. Owner: EPIC-14.
 
-_Confirmed (no longer open): the `powersync` publication is intentionally scoped to
-`FOR TABLES IN SCHEMA apiaries, organizations` (least-privilege, not `FOR ALL TABLES`) —
-walking-skeleton.md §5.3._
+## `feat/admin-app-deploy-and-cors` (#449 — admin host + cross-origin CORS)
+
+- **Per-environment admin nginx CSP** — `admin/nginx.conf` ships its
+  `Content-Security-Policy-Report-Only` with the **dev** `connect-src` hosts
+  (`https://app.beekeepingit.local:8443` / `auth…`) hardcoded. `release-deploy.yml`'s
+  `publish-admin` now bakes the **staging/prod** `VITE_*` API/issuer hosts into the image, so a
+  non-dev admin build's real API host is **not** in its CSP — harmless today only because the
+  policy is **Report-Only** (it reports, does not block). Env-templating the admin (and client)
+  nginx CSP is tracked in [#462](https://github.com/TiagoJVO/beekeepingit/issues/462); flipping
+  the admin CSP to **enforcing** must wait for that per-environment templating, or a staging/prod
+  admin build would block its own API calls. **Not a merge blocker** (Report-Only). Prune once
+  #462 lands the templating.
+
+## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
+
+- Re-invite reactivation on removal → #459
+
+---
+
+_Aside from the above: PR #418's before-merge item (create the `cluster-ops.yml`
+secrets/variables) is done — the `staging-gate` set is in place. `production-gate` secrets are
+not owed here: prod is deferred until DR (`Q-DR`) + #90 land (D-26), and the fill-in steps live in
+`infra/README.md#secrets--remote-cluster-operations`. The `DEPLOY_NOTIFY_TOKEN` manual step remains
+tracked in [#413](https://github.com/TiagoJVO/beekeepingit/issues/413), still open._

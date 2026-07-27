@@ -4,15 +4,35 @@
 - **Date:** 2026-07-01
 - **Issue / Epic:** #109 / #103 (EPIC-DESIGN) · **Milestone:** M0
 - **Requirements:** NFR-SEC-1, NFR-ROL-1, NFR-ROL-2, FR-TEN-1, FR-TEN-2, FR-ONB-1/2/3, FR-OF-1
-- **Decisions:** [D-7](../../requirements/decisions.md#d-7--identity--auth-keycloak-self-hosted)
-  (Keycloak), [D-3](../../requirements/decisions.md) (org creator = admin), [D-10](../../requirements/decisions.md) (PWA-first)
+- **Decisions:** [D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary)
+  (Keycloak at the time; see Update below), [D-3](../../requirements/decisions.md) (org creator = admin), [D-10](../../requirements/decisions.md) (PWA-first)
 - **Open questions:** [Q-AUTH](../../requirements/open-questions.md) (resolved),
   [Q-ROLE](../../requirements/open-questions.md) (resolved), [Q-TEN](../../requirements/open-questions.md)
 - **Design doc:** [auth.md](../architecture/auth.md)
 
+> **Update (2026-07-10):** the IdP is now **Authentik**, not Keycloak
+> ([ADR-0016](0016-replace-keycloak-with-authentik.md)). The two-layer model, JWKS validation,
+> app-layer org-scoped authZ, and offline design below are **provider-neutral and still stand** —
+> only the **Keycloak-specific** realm/client/flow details are superseded. Read this for the model;
+> [ADR-0016](0016-replace-keycloak-with-authentik.md) +
+> [oidc-integration.md](../architecture/oidc-integration.md) for the Authentik specifics.
+>
+> **Update (2026-07-26) — decision 5 is extended, not reversed.** `admin` **remains** the
+> org-scoped membership role exactly as decided below, but the accompanying claim that there is
+> **no system-wide application admin** (carried in [auth.md](../architecture/auth.md) §5.3)
+> **no longer holds**: [D-32](../../requirements/decisions.md) adds a **platform tier** above
+> membership — a member of the IdP `platform-operator` group, surfaced as a **verified token
+> claim**, administering **every** organization. That tier is **planned, not built** (EPIC-18
+> [#463](https://github.com/TiagoJVO/beekeepingit/issues/463)); its authorization path and the
+> **ADR-0002 tenancy carve-out** it needs get their own ADR in
+> [#466](https://github.com/TiagoJVO/beekeepingit/issues/466). Everything else here — JWKS
+> validation, org resolution from membership, org/role kept out of the token, offline grace — is
+> unchanged, as is [D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary)
+> (account/credential lifecycle stays at the IdP).
+
 ## Context
 
-[D-7](../../requirements/decisions.md#d-7--identity--auth-keycloak-self-hosted) sets the mechanism —
+[D-7](../../requirements/decisions.md#d-7--identity--auth-authentik-self-hosted-behind-a-provider-agnostic-oidc-boundary) sets the mechanism —
 **Keycloak** (OIDC), **offline token caching**, and **app-level org-scoped authorization** on top —
 but leaves the detail to design. Two prior EPIC-DESIGN decisions **depend on that detail**:
 [ADR-0002](0002-multi-tenancy.md) makes app-layer scoping the primary tenancy control and explicitly
@@ -118,7 +138,7 @@ Full specification, diagrams, and the capability matrix are in the
   layer **in addition to** per-service validation.
 - **ReBAC now (OpenFGA / Ory Keto)** for fine-grained/relationship access. **Deferred:** unnecessary
   for org-level isolation in v1; slots in after authN when cross-org sharing or per-resource ACLs
-  appear (design doc §5.5). Noted in [tech-stack.md](../../requirements/tech-stack.md#identity--keycloak).
+  appear (design doc §5.5). Noted in [tech-stack.md](../../requirements/tech-stack.md#identity--authentik-behind-a-provider-agnostic-oidc-boundary).
 
 ## Follow-ups
 

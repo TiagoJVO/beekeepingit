@@ -1,7 +1,7 @@
-// Package authtest provides a minimal in-process stand-in for Keycloak's
-// OIDC discovery + JWKS endpoints, plus RS256 token minting, so services
+// Package authtest provides a minimal in-process stand-in for an OIDC
+// provider's discovery + JWKS endpoints, plus RS256 token minting, so services
 // built on the shared template can exercise their authn.NewMiddleware chain
-// over real HTTP in tests without a live Keycloak. It mirrors the inline
+// over real HTTP in tests without a live IdP. It mirrors the inline
 // helper in servicetemplate/example's own test, hoisted here so every domain
 // service (identity, organizations, apiaries, sync) reuses one implementation.
 package authtest
@@ -60,6 +60,19 @@ func (i *IDP) Issuer() string { return i.Server.URL }
 // valid for one hour.
 func (i *IDP) Mint(t *testing.T, sub, audience string) string {
 	t.Helper()
+	return i.MintWithClaims(t, sub, audience, nil)
+}
+
+// MintWithClaims is Mint plus arbitrary extra claims merged into the token's
+// payload (e.g. the platform_operator boolean, #465/#466) — go-jose merges
+// multiple .Claims() calls into one payload. Lets a test prove a claim is
+// read only from a genuinely signature-verified token (a real, if fake-IdP,
+// signed JWT) rather than through a context-injection test seam, and mint a
+// realistic forged/tampered counterpart (e.g. signed with a key never
+// published in this IDP's JWKS) to prove NewMiddleware rejects it before any
+// claim is ever extracted.
+func (i *IDP) MintWithClaims(t *testing.T, sub, audience string, extra map[string]any) string {
+	t.Helper()
 	signer, err := jose.NewSigner(
 		jose.SigningKey{Algorithm: jose.RS256, Key: i.priv},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", i.kid),
@@ -74,7 +87,7 @@ func (i *IDP) Mint(t *testing.T, sub, audience string) string {
 		Expiry:   jwt.NewNumericDate(time.Now().Add(time.Hour)),
 		IssuedAt: jwt.NewNumericDate(time.Now()),
 	}
-	raw, err := jwt.Signed(signer).Claims(claims).Serialize()
+	raw, err := jwt.Signed(signer).Claims(claims).Claims(extra).Serialize()
 	if err != nil {
 		t.Fatalf("authtest: serialize token: %v", err)
 	}

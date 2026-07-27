@@ -1,10 +1,11 @@
 // Package authn is the shared JWT/JWKS authentication middleware: it
-// verifies a Keycloak-issued bearer access token via the realm's OIDC
+// verifies an OIDC-issued bearer access token via the issuer's OIDC
 // discovery document + JWKS (coreos/go-oidc/v3), rejecting invalid/expired
 // tokens with the standard problem+json error format
-// (docs/architecture/auth.md §4). Org-scoped authorization — which
-// organization, which role — is a separate, later concern (EPIC-01); this
-// package only establishes who the caller is.
+// (docs/architecture/auth.md §4). It depends only on standard OIDC, not on
+// any particular provider (oidc-integration.md §1). Org-scoped authorization —
+// which organization, which role — is a separate, later concern (EPIC-01);
+// this package only establishes who the caller is.
 package authn
 
 import (
@@ -20,19 +21,19 @@ import (
 
 // Config configures token verification.
 type Config struct {
-	IssuerURL string // Keycloak realm issuer (the token's `iss`), e.g. https://.../realms/beekeepingit
+	IssuerURL string // OIDC issuer (the token's `iss`), e.g. https://auth.example/application/o/beekeepingit/
 	Audience  string // expected client id (checked against the token's aud)
 	// DiscoveryURL, when set, is where the OIDC discovery document is fetched,
 	// while IssuerURL stays the expected token `iss`. Dev/CI: lets an in-cluster
-	// service reach Keycloak over plain HTTP (an internal Service URL) while
-	// still validating a browser token whose `iss` is the external HTTPS gateway
+	// service reach the issuer over plain HTTP (an internal Service URL) while
+	// still validating a browser token whose `iss` is the external HTTPS issuer
 	// URL (go-oidc's InsecureIssuerURLContext bridges the mismatch). Empty in
 	// production, where discovery and issuer are the same URL.
 	DiscoveryURL string
 }
 
 // NewMiddleware builds JWT-validating middleware against cfg. It fetches the
-// realm's OIDC discovery document once at startup; go-oidc caches the JWKS
+// issuer's OIDC discovery document once at startup; go-oidc caches the JWKS
 // internally and refetches it on an unrecognized kid (key rotation).
 func NewMiddleware(ctx context.Context, cfg Config) (func(http.Handler) http.Handler, error) {
 	discoverAt := cfg.IssuerURL
@@ -45,7 +46,14 @@ func NewMiddleware(ctx context.Context, cfg Config) (func(http.Handler) http.Han
 	if err != nil {
 		return nil, fmt.Errorf("authn: discover issuer %q: %w", cfg.IssuerURL, err)
 	}
-	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.Audience})
+	// SupportedSigningAlgs is pinned to RS256 explicitly rather than left to
+	// go-oidc's implicit default: absent an explicit value, Provider.Verifier
+	// defaults to whatever the issuer's discovery document advertises in
+	// id_token_signing_alg_values_supported (falling back to RS256 only when
+	// discovery declares nothing) — so a misconfigured or compromised
+	// discovery document would otherwise silently control the accepted
+	// signing algorithm.
+	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.Audience, SupportedSigningAlgs: []string{oidc.RS256}})
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +80,16 @@ func NewMiddleware(ctx context.Context, cfg Config) (func(http.Handler) http.Han
 			}
 			if verified, ok := raw["email_verified"].(bool); ok {
 				claims.EmailVerified = verified
+			}
+			// platform_operator (#465/#466): a literal JSON boolean only —
+			// a type assertion failure (absent, string, number, array, ...)
+			// leaves PlatformOperator at its zero value (false), the
+			// documented fail-closed outcome (oidc-integration.md §3.2).
+			// raw is decoded from idToken.Claims, which only succeeds after
+			// verifier.Verify has already checked the signature/iss/aud/exp
+			// above — this claim is never trusted before that point.
+			if operator, ok := raw["platform_operator"].(bool); ok {
+				claims.PlatformOperator = operator
 			}
 
 			ctx := context.WithValue(r.Context(), claimsKey{}, claims)

@@ -9,7 +9,7 @@ image:
 resourceTier: medium
 port: 8080
 
-# Real sync-token JWKS (#23/#106, replaces #22's Keycloak-realm stopgap): the
+# Real sync-token JWKS (#23/#106, replaces #22's OIDC-realm stopgap): the
 # `sync` service mints the short-TTL, org-scoped PowerSync token
 # (GET /v1/sync/token) and serves the matching public keys here. `audience`
 # must match the sync service's SYNC_TOKEN_AUDIENCE. `allow_local_jwks: true`
@@ -32,13 +32,169 @@ auth:
 # function name", #23 deploy). The bucket is parameterized on the sync token's
 # `organization_id` claim; `deleted_at IS NULL` drops tombstoned rows so a
 # server-side delete propagates as a local delete (sync.md §4.5).
+#
+# apiaries.apiaries: an explicit column list, NOT `SELECT *` — the raw
+# `location` column is a PostGIS `geography(Point,4326)` and streams to the
+# client in a wire form (EWKB) the Dart/SQLite side has no parser for.
+# ST_X/ST_Y(location) instead project it to plain nullable double-precision
+# lon/lat columns (`location_lon`/`location_lat`), which PowerSync replicates
+# as ordinary SQLite REAL columns the client can read directly, no WKB parsing
+# needed. Deliberately no `::geometry` cast here (unlike the Go service's own
+# SQL, where PostGIS applies it implicitly) — PowerSync's sync-rules SQL
+# parser only supports CAST to text/numeric/integer/real/blob, not PostGIS
+# types, and fatals replication with "CAST not supported for 'geometry'" if
+# one is present; ST_X/ST_Y already accept `geography` directly (PowerSync
+# GIS support, docs.powersync.com/client-sdks/advanced/gis-data-postgis), so
+# the cast was both unsupported and unnecessary. NULL when an apiary has no
+# stored location (both columns nullable, matching the DB column's own
+# optionality). Both #33 (offline proximity ordering, FR-AP-2 — "the list
+# works offline... using an offline distance computation") and #34/#37 (map
+# view + offline distance measurement, FR-AP-3/FR-AP-5) need these same two
+# columns client-side, so this one bucket entry covers all three — don't
+# duplicate it if you touch this file again for related work.
+#
+# Because the list is explicit, it must stay a SUPERSET of the client's local
+# schema (client/lib/core/sync/powersync_schema.dart): a column missing here
+# doesn't error anywhere — it silently stays NULL on every device that didn't
+# write it locally. `notes` (FR-AP-8, #196) was lost exactly that way when
+# #33's rewrite of this entry (from `SELECT *` to the explicit list) landed in
+# parallel with #196 adding the column; the walking-skeleton e2e's fresh-client
+# notes assertion (client/e2e/tests/slice.spec.ts) now guards against a repeat.
+#
+# apiaries.audit_log and apiaries.sync_conflict_log (#61, history.md §6
+# "recent history is offline-viewable" / "LWW losers... surfaced as a
+# superseded timeline event") are included read-only in the same org bucket,
+# matching the flat unfiltered-`SELECT *` style already used for the other two
+# tables below — no other bucket entry here is time/row-bounded either. history.md
+# §6 calls for a "recent window", not the unbounded log, but Sync Rules'
+# bucket `data` queries don't support a LIMIT/pagination clause (they define
+# a continuously-replicated row set, not a point-in-time page) and per-service
+# audit volume is small (§3 "Trade-off (accepted)" — bounded by real change
+# volume). So v1 replicates the full per-org history down, same as every
+# other bucket row; a time-bounded WHERE (e.g. `recorded_at > now() -
+# interval`) would need re-evaluation server-side to keep rolling forward,
+# which Sync Rules also doesn't do — that refinement is deferred (tracked in
+# FOLLOWUPS.md) rather than approximated here.
+#
+# apiaries.apiary_counters (#256, FR-AP-7): typed 1-N counters decoupled from
+# the apiaries table — hive_count is no longer a column on apiaries.apiaries
+# (retired by that service's migration 00005), so it is gone from the
+# apiaries SELECT below and the per-type counter rows stream instead. The
+# publication needs no change: it is schema-scoped (`FOR TABLES IN SCHEMA
+# apiaries, ...`, charts/postgres/templates/cluster.yaml), so the new table
+# is captured automatically. No `deleted_at` filter — counters have no
+# tombstone of their own (a counter is always either the current value or
+# absent; its apiary's tombstone already removes the apiary — and with it
+# every dependent read — from the device's slice).
+#
+# place_label (#252, migration 00006): a plain nullable text column, added to
+# the explicit apiaries SELECT alongside name — no ST_X/ST_Y-style projection
+# needed (unlike location, it's already client-representable SQL text).
+# IMPORTANT: because this list is explicit (not `SELECT *`), it must stay a
+# SUPERSET of the client's local schema (powersync_schema.dart) — a column
+# missing here doesn't error anywhere, it silently stays NULL on every device
+# that didn't write it locally itself. Every additive apiaries.apiaries
+# column needs a matching addition here in the SAME change that adds it
+# server-side, not a follow-up.
 syncConfig:
   bucket_definitions:
     by_organization:
       parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
       data:
-        - SELECT * FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        - SELECT id, organization_id, name, notes, place_label, created_at,
+          updated_at, ST_X(location) AS location_lon, ST_Y(location) AS location_lat
+          FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        - SELECT * FROM apiaries.apiary_counters WHERE organization_id = bucket.organization_id
         - SELECT * FROM organizations.organizations WHERE id = bucket.organization_id
+        - SELECT * FROM apiaries.audit_log WHERE organization_id = bucket.organization_id
+        - SELECT * FROM apiaries.sync_conflict_log WHERE organization_id = bucket.organization_id
+        # activities.activities (#39, FR-OF-1): stream the org's activities to
+        # the device so an offline-created activity reconciles across devices.
+        # Explicit column list matching the client's local schema
+        # (client/lib/core/sync/powersync_schema.dart's activities Table —
+        # NOT recorded_at/deleted_at, which the client doesn't declare), same
+        # additive-safety rationale as the apiaries.apiaries entry above.
+        # deleted_at IS NULL so a server-side tombstone leaves the client's
+        # result set (#41's delete path). The activities schema is in the
+        # powersync publication (charts/postgres syncedSchemas).
+        - SELECT id, organization_id, apiary_id, performed_by, journey_id, type,
+          occurred_at, attributes, created_at, updated_at
+          FROM activities.activities WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        # activities.audit_log / activities.sync_conflict_log (#60, FR-HIS-1,
+        # history.md §6/§8): the per-activity history timeline's offline path.
+        # Same flat unfiltered-`SELECT *` shape and same full-log (not
+        # time-bounded) rationale as the apiaries.audit_log /
+        # apiaries.sync_conflict_log entries above — see their comment; Sync
+        # Rules can't express a LIMIT or a rolling time window, so v1
+        # replicates the whole per-org log.
+        #
+        # These land in the SAME local `audit_log` / `sync_conflict_log` tables
+        # as the apiaries entries: PowerSync names the output table from the
+        # unqualified FROM name, and both schemas' DDL is column-identical
+        # (services/activities/store/migrations/00002_create_audit_log.sql vs.
+        # services/apiaries/store/migrations/00002_create_audit_log.sql). That
+        # is deliberate, not a collision — both logs are polymorphic on
+        # (entity_type, entity_id) (history.md §3), so one local table per log
+        # kind serves every entity's timeline and the client filters by
+        # entity_type (client/lib/features/history/history_repository.dart's
+        # UNION ALL, mirroring the server's ListEntityTimeline query).
+        #
+        # Read-only on the device: nothing in the client ever writes these
+        # tables, so they generate no CRUD ops and need no
+        # `entityTypeForTable` mapping in powersync_connector.dart (contrast
+        # every other table here, which is write-backed).
+        - SELECT * FROM activities.audit_log WHERE organization_id = bucket.organization_id
+        - SELECT * FROM activities.sync_conflict_log WHERE organization_id = bucket.organization_id
+        # journeys.journeys / journeys.journey_plan_items (#45, FR-OF-1, D-21):
+        # stream a journey's own fields and its "apiaries to visit" plan so
+        # creating/editing/closing a journey offline reconciles across
+        # devices, and the edit form can pre-fill the currently-selected
+        # apiaries without a network call. Explicit column lists matching the
+        # client's local schema (client/lib/core/sync/powersync_schema.dart) —
+        # NOT recorded_at/deleted_at, same additive-safety rationale as every
+        # other entry here: this list must stay a SUPERSET of the client's
+        # local schema, or an added column silently stays NULL on devices
+        # that didn't write it locally (the #196/#33 incident this file's own
+        # header comment already documents for apiaries.apiaries).
+        - SELECT id, organization_id, name, main_activity_type, status, default_attributes, created_at, updated_at
+          FROM journeys.journeys WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        - SELECT id, organization_id, journey_id, apiary_id, created_at
+          FROM journeys.journey_plan_items WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        # journeys.audit_log / journeys.sync_conflict_log (#315, FR-HIS-1,
+        # history.md §6/§8): the per-journey history timeline's offline path.
+        # Same flat unfiltered-`SELECT *` shape, same full-log (not
+        # time-bounded) rationale, and the same read-only-on-device treatment
+        # as the apiaries.audit_log / activities.audit_log entries above — see
+        # their comment. These land in the SAME local `audit_log` /
+        # `sync_conflict_log` tables (both logs are polymorphic on
+        # (entity_type, entity_id), so one local table per log kind serves
+        # every entity's timeline and the client filters by entity_type). #315
+        # only had to add these once the journey detail screen gained a history
+        # view to read them; before that journeys streamed its own rows but not
+        # its logs, exactly like todos still does below (no read surface yet).
+        - SELECT * FROM journeys.audit_log WHERE organization_id = bucket.organization_id
+        - SELECT * FROM journeys.sync_conflict_log WHERE organization_id = bucket.organization_id
+        # todos.todos (#50, FR-OF-1, FR-TD-1): stream the org's todos to the
+        # device so an offline create/edit/complete/reopen/delete reconciles
+        # across devices. Explicit column list matching the client's local
+        # schema (client/lib/core/sync/powersync_schema.dart's todos Table —
+        # NOT recorded_at/deleted_at, which the client doesn't declare), same
+        # additive-safety rationale as the apiaries.apiaries/activities.activities
+        # entries above. deleted_at IS NULL so a server-side tombstone leaves
+        # the client's result set. Only todos.todos streams — NOT its own
+        # audit_log/sync_conflict_log (unlike apiaries', which are included
+        # read-only above for #61's combined history timeline; todos has no
+        # such read surface yet). The todos schema is in the powersync
+        # publication (charts/postgres syncedSchemas). apiary_id (#51,
+        # FR-TD-1: "may be associated with a specific apiary, or left as a
+        # general, org-level todo") is included so the association survives
+        # offline creation and sync end to end — omitting it here would
+        # silently leave every device's local apiary_id NULL regardless of
+        # what the server actually stored (the #196/#33 incident this file's
+        # own header comment documents).
+        - SELECT id, organization_id, title, description, due_date, priority,
+          status, completed_at, assignee_id, apiary_id, created_at, updated_at
+          FROM todos.todos WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
 
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.

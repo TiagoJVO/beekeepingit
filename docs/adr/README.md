@@ -6,7 +6,7 @@ still also go to [../../requirements/decisions.md](../../requirements/decisions.
 
 ## Convention
 
-- One file per decision: `NNNN-short-title.md` (e.g. `0001-sync-engine-choice.md`).
+- One file per decision: `NNNN-short-title.md` (e.g. `0005-sync-engine-choice.md`).
 - Suggested sections: **Context → Decision → Consequences → Alternatives** (+ Status:
   proposed / accepted / superseded).
 - Link the related `FR-*/NFR-*`, `D-*`, `Q-*`, and `EPIC-*`.

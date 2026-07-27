@@ -8,20 +8,25 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
-// EnsureBucket creates bucket if it doesn't already exist. Idempotent.
+// EnsureBucket creates bucket if it doesn't already exist. Idempotent —
+// including under concurrent callers.
+//
+// This deliberately does NOT check BucketExists first: that would be a
+// separate round trip from the MakeBucket call, so two concurrent callers
+// could both observe "doesn't exist" and both proceed to MakeBucket, with
+// one getting a hard "already exists" failure instead of the idempotent
+// success EnsureBucket promises (a TOCTOU race). Instead, attempt MakeBucket
+// unconditionally and treat the provider's own "already owned/exists"
+// response as success — that check-and-create is atomic on the server side.
 func (s *Store) EnsureBucket(ctx context.Context, bucket string) error {
-	exists, err := s.client.BucketExists(ctx, bucket)
-	if err != nil {
-		return fmt.Errorf("objectstore: bucket exists check %q: %w", bucket, err)
-	}
-	if exists {
+	err := s.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: ""})
+	if err == nil {
 		return nil
 	}
-
-	if err := s.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: ""}); err != nil {
-		return fmt.Errorf("objectstore: make bucket %q: %w", bucket, err)
+	if resp := minio.ToErrorResponse(err); resp.Code == "BucketAlreadyOwnedByYou" || resp.Code == "BucketAlreadyExists" {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("objectstore: ensure bucket %q: %w", bucket, err)
 }
 
 // Put uploads the contents of r as bucket/key.

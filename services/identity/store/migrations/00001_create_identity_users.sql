@@ -1,7 +1,10 @@
 -- +goose Up
--- identity.users — the local projection of a Keycloak-authenticated principal
+-- identity.users — the local projection of an OIDC-authenticated principal
 -- (data-model.md §3). `keycloak_sub` is the OIDC subject (D-7) the shared
 -- auth middleware resolves an incoming token to (auth.md §5.1 step 1).
+-- NOTE: `keycloak_sub` is renamed to the provider-neutral `oidc_sub` in
+-- 00002 (Keycloak→Authentik migration); this file is left as the historical
+-- create so the migration chain still replays cleanly.
 --
 -- The `identity` SCHEMA is provisioned by infra, not here: the postgres chart
 -- creates it at bootstrap (owned by the app role), so the least-privilege

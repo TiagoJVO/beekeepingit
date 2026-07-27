@@ -1,0 +1,73 @@
+{{/*
+CloudNativePG operational plumbing — the traffic the postgres Cluster needs
+to RECONCILE, as opposed to the app-level 5432 flows in .Values.edges. This
+is what PR #224's first CI round proved the hard way: with only the 5432
+edges allowed, the CNPG instance pods couldn't reach the Kubernetes API
+server (their instance manager registers status/leadership there) and the
+operator couldn't probe them, so the Cluster never became ready and the
+postgres schema-grants post-install hook timed out (DeadlineExceeded) —
+NetworkPolicy IS enforced on k3s via its embedded kube-router controller
+(see default-deny.yaml).
+
+Selected by CNPG's own `cnpg.io/cluster` label, which the operator stamps on
+every pod it creates for the Cluster — the running instances AND its own
+bootstrap Job pods (initdb/join), which run the same instance manager and
+need the same API access.
+
+Doesn't fit the .Values.edges model: the API server is not a pod (it's the
+node process behind the `kubernetes.default` Service), so no
+namespaceSelector/podSelector can express it — an ipBlock is the only
+NetworkPolicy peer that can. 0.0.0.0/0 scoped to the two API ports is the
+tightest expressible form: 6443 is the k3s API endpoint the Service DNATs to
+(kube-router filters post-DNAT), 443 kept as well so the rule doesn't break
+on a CNI that filters pre-DNAT or a cluster whose API serves 443 directly.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-instance-plumbing
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: networkpolicy
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ include "postgres.fullname" . }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    # The operator (cnpg-system, installed by infra/cluster/up.sh, ADR-0010)
+    # probes each instance's manager on its HTTP status port 8000 — without
+    # it the operator can't see instance health and the Cluster stays
+    # unready. (Its 5432 access is a separate edge in values.yaml.)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - { protocol: TCP, port: 8000 }
+    # Instance-to-instance streaming replication (single instance today;
+    # correct and inert until `postgres.instances` grows past 1).
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ include "postgres.fullname" . }}
+      ports:
+        - { protocol: TCP, port: 5432 }
+  egress:
+    # Kubernetes API server (see doc comment above for why ipBlock + both
+    # ports).
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0 }
+      ports:
+        - { protocol: TCP, port: 6443 }
+        - { protocol: TCP, port: 443 }
+    # Egress side of the instance-to-instance replication above.
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ include "postgres.fullname" . }}
+      ports:
+        - { protocol: TCP, port: 5432 }
+{{- end }}
