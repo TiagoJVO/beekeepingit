@@ -627,5 +627,22 @@
   "discardChangesTitle": "Descartar alterações?",
   "discardChangesMessage": "Tem alterações por guardar. Se sair agora, serão perdidas.",
   "discardChangesConfirmAction": "Descartar",
-  "discardChangesCancelAction": "Continuar a editar"
+  "discardChangesCancelAction": "Continuar a editar",
+  "notificationTodoDueSoon": "\"{title}\" vence brevemente.",
+  "@notificationTodoDueSoon": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "notificationTodoOverdue": "\"{title}\" está atrasado.",
+  "@notificationTodoOverdue": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "notificationSyncCompleted": "Todas as alterações foram sincronizadas."
 }

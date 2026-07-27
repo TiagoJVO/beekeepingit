@@ -1570,4 +1570,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get discardChangesCancelAction => 'Keep editing';
+
+  @override
+  String notificationTodoDueSoon(String title) {
+    return '\"$title\" is due soon.';
+  }
+
+  @override
+  String notificationTodoOverdue(String title) {
+    return '\"$title\" is overdue.';
+  }
+
+  @override
+  String get notificationSyncCompleted => 'All your changes are synced.';
 }
