@@ -12,8 +12,6 @@
 Post-merge hardening (NOT merge blockers — the blueprint provisioning is complete and the
 `beekeepingit-admin` login/aud/iss is pinned by the helm-e2e admin-login gate):
 
-- Assert the admin token's claim SHAPE in e2e + guard which providers may carry
-  `scope-admin-audience` → #460 (both promoted from this #456 security review).
 - **Harden the admin OIDC redirect set for staging/prod** — the gateway `adminHost` route and the
   staging/prod `global.adminOrigin` overrides are now in place (#449), so the admin app IS
   gateway-served per environment. What remains is blueprint-side: the `http://localhost:.*` redirect

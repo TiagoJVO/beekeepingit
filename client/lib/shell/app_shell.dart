@@ -10,6 +10,7 @@ import '../features/notifications/notification_events.dart';
 import '../features/notifications/notification_feed_provider.dart';
 import '../features/notifications/notification_models.dart';
 import '../features/notifications/notification_preferences_repository.dart';
+import '../features/settings/notification_settings_repository.dart';
 import '../features/sync/sync_rejected_repository.dart';
 import '../l10n/gen/app_localizations.dart';
 import '../theming/brand_tokens.dart';
@@ -314,18 +315,25 @@ class AppShell extends ConsumerWidget {
     // know it happened, not be interrupted. The full conflict record is the
     // entity-history/timeline UI (FR-HIS, #59-#62).
     //
-    // Gated by the `sync_conflict` preference (#82's preference-key
-    // contract, D-24): this toast already existed (#58) as an
+    // Gated by both the master "Enable notifications" switch (#81, FR-ST-1,
+    // D-24, #500) and the `sync_conflict` per-event preference (#82's
+    // preference-key contract, D-24): this toast already existed (#58) as an
     // always-on, real-time notice — a conflict can only ever happen while a
     // sync attempt is in flight, which itself only happens while the app is
     // open (no background sync in the PWA phase), so there is no "missed
     // while closed" case to detect at app-open the way todo-due/sync-result
     // events need (notification_events.dart's own doc on why `sync_conflict`
-    // has no engine-side detection of its own). This story just adds the
-    // missing per-event mute for it.
+    // has no engine-side detection of its own) — and so no dedup/backlog
+    // state to preserve here the way `notification_checker.dart` must for
+    // those: a suppressed real-time toast is simply never shown, there is
+    // nothing to flood on re-enable.
     ref.listen(supersededNotificationProvider, (previous, next) {
       final change = next.value;
       if (change == null) return;
+      final notificationsEnabled = ref
+          .read(notificationSettingsRepositoryProvider)
+          .isNotificationsEnabled();
+      if (!notificationsEnabled) return;
       final conflictsEnabled = ref
           .read(notificationPreferencesRepositoryProvider)
           .isEnabled(notificationEventSyncConflict);

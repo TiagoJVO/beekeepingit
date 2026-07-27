@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
 import 'package:powersync/powersync.dart';
 
+import '../../features/settings/sync_settings_repository.dart';
 import '../auth/auth_controller.dart';
 import 'connectivity_probe.dart';
 import 'local_store.dart';
@@ -101,13 +102,35 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   // into [rearmGateOnDisconnect] (HIGH finding: this wiring previously had
   // zero test coverage) so the transition logic is unit-testable with a fake
   // `bool` stream, independent of a real PowerSyncDatabase.
+  //
+  // Gated by the auto-sync setting (FR-ST-1, #81): re-arming unconditionally
+  // here would undo a user's "auto-sync off" choice the moment a manual
+  // "sync now" (`syncNowProvider` → `SyncGate.requestSync`, which bypasses
+  // the gate entirely) connects and then later disconnects — this is the one
+  // other place besides the toggle listener below that can re-enable the
+  // probe loop, so it must consult the same setting.
   final statusSub = rearmGateOnDisconnect(
     connectedStream: db.statusStream.map((status) => status.connected),
-    rearm: gate.rearm,
+    rearm: () => applyAutoSyncSetting(
+      enabled: ref.read(autoSyncEnabledProvider),
+      gate: gate,
+    ),
     onConnectedChanged: (isConnected) => connected = isConnected,
   );
 
-  gate.start();
+  // Initial gate start, honoring the persisted auto-sync setting (FR-ST-1,
+  // #81) — defaults to `true` (SyncSettingsRepository), matching the
+  // unconditional `gate.start()` this replaces for anyone who never visits
+  // the settings screen.
+  applyAutoSyncSetting(enabled: ref.read(autoSyncEnabledProvider), gate: gate);
+
+  // Live toggle (AC: "changing a setting takes effect without requiring a
+  // reinstall"): `ref.listen`, not `ref.watch` — this must NOT rebuild (and
+  // thereby tear down/reopen) the whole PowerSync session on every toggle,
+  // only react to it.
+  final autoSyncSub = ref.listen<bool>(autoSyncEnabledProvider, (_, enabled) {
+    applyAutoSyncSetting(enabled: enabled, gate: gate);
+  });
 
   // Synchronous by construction — Riverpod's `ref.onDispose` is a
   // `void Function()` and never awaits a Future a callback returns (HIGH
@@ -115,6 +138,7 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   // immediately but doesn't await it either; it's stashed so the *next*
   // [powerSyncProvider] instance can await it before opening a new database.
   ref.onDispose(() {
+    autoSyncSub.close();
     _teardownGuard.registerTeardown(() async {
       await statusSub.cancel();
       gate.dispose();
@@ -126,6 +150,34 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   });
   return PowerSyncSession(db: db, connector: connector, gate: gate);
 });
+
+/// Applies the auto-sync setting (`features/settings/sync_settings_repository
+/// .dart`, FR-ST-1/#81) to [gate]: enabling (re-)arms the probe loop —
+/// [SyncGate.rearm] is safe to call whether the gate is freshly constructed,
+/// already running, or previously stopped by this same function — and
+/// disabling stops it, canceling any pending backoff timer so no further
+/// automatic connect attempt is made. This is the sole place the setting's
+/// two possible values are translated into gate calls, so both wiring points
+/// above ([powerSyncProvider]'s initial setup and its live toggle listener)
+/// share one tested decision.
+///
+/// Never disconnects an already-connected engine (`PowerSyncDatabase.connect`
+/// is not [gate]'s to tear down, and an in-flight atomic push must not be
+/// interrupted — FR-OF-2): disabling auto-sync only prevents *future*
+/// automatic (re)connect attempts, matching FR-OF-3's framing of the gate as
+/// an optimization over *when* to attempt a sync, never a hard block on an
+/// active one.
+///
+/// `@visibleForTesting` — production only calls this from
+/// [powerSyncProvider].
+@visibleForTesting
+void applyAutoSyncSetting({required bool enabled, required SyncGate gate}) {
+  if (enabled) {
+    gate.rearm();
+  } else {
+    gate.stop();
+  }
+}
 
 /// Re-arms [gate]'s rearm callback the moment [connectedStream] transitions
 /// from `true` to `false` — the whole reason `db.statusStream` is subscribed

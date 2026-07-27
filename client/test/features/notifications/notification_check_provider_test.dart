@@ -4,6 +4,7 @@ import 'package:beekeepingit_client/features/notifications/notification_dedup_st
 import 'package:beekeepingit_client/features/notifications/notification_feed_provider.dart';
 import 'package:beekeepingit_client/features/notifications/notification_models.dart';
 import 'package:beekeepingit_client/features/notifications/notification_preferences_repository.dart';
+import 'package:beekeepingit_client/features/settings/notification_settings_repository.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
@@ -51,6 +52,9 @@ void main() {
         ),
         notificationPreferencesRepositoryProvider.overrideWithValue(
           NotificationPreferencesRepository(prefs: localPrefs),
+        ),
+        notificationSettingsRepositoryProvider.overrideWithValue(
+          NotificationSettingsRepository(prefs: localPrefs),
         ),
       ],
     );
@@ -101,6 +105,9 @@ void main() {
           notificationPreferencesRepositoryProvider.overrideWithValue(
             NotificationPreferencesRepository(prefs: _FakeLocalPrefs()),
           ),
+          notificationSettingsRepositoryProvider.overrideWithValue(
+            NotificationSettingsRepository(prefs: _FakeLocalPrefs()),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -122,6 +129,28 @@ void main() {
           connectivity: SyncConnectivity.offline,
           pendingCount: 2,
         ),
+      );
+
+      container.listen(notificationCheckProvider, (_, _) {});
+      await pumpEventQueue();
+
+      expect(container.read(notificationFeedProvider), isEmpty);
+    });
+
+    test('the master notification switch off suppresses runCheck\'s published '
+        'notifications entirely (#500, FR-ST-1, D-24)', () async {
+      final prefs = _FakeLocalPrefs();
+      NotificationSettingsRepository(
+        prefs: prefs,
+      ).setNotificationsEnabled(false);
+      final container = buildContainer(
+        todos: [_overdueTodo('t1')],
+        rejected: const [],
+        status: const SyncStatus(
+          connectivity: SyncConnectivity.online,
+          pendingCount: 0,
+        ),
+        prefs: prefs,
       );
 
       container.listen(notificationCheckProvider, (_, _) {});

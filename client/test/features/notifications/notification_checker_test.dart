@@ -4,6 +4,7 @@ import 'package:beekeepingit_client/features/notifications/notification_dedup_st
 import 'package:beekeepingit_client/features/notifications/notification_events.dart';
 import 'package:beekeepingit_client/features/notifications/notification_models.dart';
 import 'package:beekeepingit_client/features/notifications/notification_preferences_repository.dart';
+import 'package:beekeepingit_client/features/settings/notification_settings_repository.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -36,6 +37,7 @@ void main() {
       final checker = NotificationChecker(
         dedupStore: NotificationDedupStore(prefs: prefs),
         preferences: NotificationPreferencesRepository(prefs: prefs),
+        settings: NotificationSettingsRepository(prefs: prefs),
       );
 
       final result = checker.check(
@@ -59,6 +61,7 @@ void main() {
         final checker = NotificationChecker(
           dedupStore: NotificationDedupStore(prefs: prefs),
           preferences: NotificationPreferencesRepository(prefs: prefs),
+          settings: NotificationSettingsRepository(prefs: prefs),
         );
 
         final result = checker.check(
@@ -79,6 +82,7 @@ void main() {
       final checker = NotificationChecker(
         dedupStore: dedupStore,
         preferences: NotificationPreferencesRepository(prefs: prefs),
+        settings: NotificationSettingsRepository(prefs: prefs),
       );
       final todos = [_overdueTodo('t1')];
 
@@ -94,6 +98,7 @@ void main() {
       final checkerAfterRestart = NotificationChecker(
         dedupStore: NotificationDedupStore(prefs: prefs),
         preferences: NotificationPreferencesRepository(prefs: prefs),
+        settings: NotificationSettingsRepository(prefs: prefs),
       );
       final secondOpen = checkerAfterRestart.check(
         todos: todos,
@@ -113,6 +118,7 @@ void main() {
         final checker = NotificationChecker(
           dedupStore: NotificationDedupStore(prefs: prefs),
           preferences: NotificationPreferencesRepository(prefs: prefs),
+          settings: NotificationSettingsRepository(prefs: prefs),
         );
 
         final result = checker.check(
@@ -125,5 +131,71 @@ void main() {
         expect(result.whereType<TodoDueAppNotification>(), hasLength(1));
       },
     );
+
+    test('the master switch off suppresses every notification even though '
+        'the per-event preference is enabled (#500, FR-ST-1, D-24)', () {
+      final prefs = _FakeLocalPrefs();
+      NotificationSettingsRepository(
+        prefs: prefs,
+      ).setNotificationsEnabled(false);
+      final checker = NotificationChecker(
+        dedupStore: NotificationDedupStore(prefs: prefs),
+        preferences: NotificationPreferencesRepository(prefs: prefs),
+        settings: NotificationSettingsRepository(prefs: prefs),
+      );
+
+      final result = checker.check(
+        todos: [_overdueTodo('t1')],
+        today: DateTime(2026, 7, 27),
+        pendingCount: 0,
+        rejectedOpIds: {'op-1'},
+      );
+
+      expect(result, isEmpty);
+    });
+
+    test('a condition that arose while muted does not flood on the first '
+        'check after re-enabling — the dedup state kept tracking it while off '
+        '(#500 AC)', () {
+      final prefs = _FakeLocalPrefs();
+      final settings = NotificationSettingsRepository(prefs: prefs)
+        ..setNotificationsEnabled(false);
+      final dedupStore = NotificationDedupStore(prefs: prefs);
+      final todos = [_overdueTodo('t1')];
+
+      // First check while muted: the condition (overdue todo) is newly
+      // true, and must be recorded in the dedup state even though nothing
+      // is surfaced.
+      final whileMuted =
+          NotificationChecker(
+            dedupStore: dedupStore,
+            preferences: NotificationPreferencesRepository(prefs: prefs),
+            settings: settings,
+          ).check(
+            todos: todos,
+            today: DateTime(2026, 7, 27),
+            pendingCount: 0,
+            rejectedOpIds: const {},
+          );
+
+      settings.setNotificationsEnabled(true);
+
+      // Re-enabling and re-checking the SAME still-overdue todo must not
+      // retroactively notify — the condition didn't change while muted.
+      final afterReenable =
+          NotificationChecker(
+            dedupStore: dedupStore,
+            preferences: NotificationPreferencesRepository(prefs: prefs),
+            settings: settings,
+          ).check(
+            todos: todos,
+            today: DateTime(2026, 7, 27),
+            pendingCount: 0,
+            rejectedOpIds: const {},
+          );
+
+      expect(whileMuted, isEmpty);
+      expect(afterReenable, isEmpty);
+    });
   });
 }
