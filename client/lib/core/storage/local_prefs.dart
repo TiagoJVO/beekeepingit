@@ -32,3 +32,17 @@ const kProfileCacheKey = 'bk.profile';
 /// Cache key for the onboarding gate's last-known-good organization snapshot
 /// (`OrganizationRepository.fetchMine()`) — see [kProfileCacheKey].
 const kOrganizationCacheKey = 'bk.organization';
+
+/// Settings key (FR-ST-1, #81) for the "auto-sync" preference —
+/// `features/settings/sync_settings_repository.dart` reads/writes it, and
+/// `core/sync/powersync_service.dart` honors it (EPIC-06's sync layer).
+/// Public for the same reason as [kProfileCacheKey]: `AuthController.logout()`
+/// purges it so a second user on a shared device doesn't inherit the prior
+/// user's device-local sync preference.
+const kAutoSyncEnabledKey = 'bk.settings.auto_sync_enabled';
+
+/// Settings key (FR-ST-1, #81) for the notifications master switch —
+/// `features/settings/notification_settings_repository.dart` reads/writes it;
+/// the notification engine (#82) and the per-event toggle list (#288) build
+/// on top of it. Purged on logout — see [kAutoSyncEnabledKey].
+const kNotificationsEnabledKey = 'bk.settings.notifications_enabled';
