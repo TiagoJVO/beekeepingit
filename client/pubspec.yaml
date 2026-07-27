@@ -20,7 +20,7 @@ dependencies:
   crypto: ^3.0.7
   meta: ^1.18.0
   web: ^1.1.1
-  uuid: ^4.5.3
+  uuid: ^4.6.0
   # Provider-agnostic OIDC: discovery (`Issuer.discover`) + Authorization Code
   # + PKCE (`Flow.authorizationCodeWithPKCE`) driven behind the AuthPlatform
   # seam. Deliberately NOT openid_client_browser (that's the implicit flow).
