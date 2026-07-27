@@ -116,6 +116,9 @@
 - name: "area/security"
   color: "b60205"
   description: "Security and data protection"
+- name: "area/settings"
+  color: "c2e0c6"
+  description: "App settings and notification preferences"
 
 # --- Effort (optional sizing) ---
 - name: "size/xs"

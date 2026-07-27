@@ -253,6 +253,9 @@ Core technology decisions (2026-06-27). Detail and rationale in
   - **Revised 2026-07-16 (D-25):** M6 was "Import/Export"; Import is split out into its own
     milestone (**M12**), scheduled last, and narrowed to apiaries-only. M6 keeps Export
     (apiaries + activities + journeys, unchanged scope).
+  - **Revised 2026-07-27 (D-33):** M6 is reprioritized out of Phase 2 to **Phase 6, paired with
+    M12** — story-ready but judged non-critical, so it now sits behind the native rollout
+    alongside Import instead of ahead of it.
 - **Streams:** the cross-cutting concerns — **offline/sync (EPIC-06)**, **history/audit (EPIC-07)**,
   **i18n/a11y (EPIC-11)**, **security/compliance/DR (EPIC-14)**, **platform rollout (EPIC-15)** — are
   **continuous streams, not milestones**: their epics carry **no milestone** (labeled **`stream`**) and
@@ -282,7 +285,7 @@ Core technology decisions (2026-06-27). Detail and rationale in
     on M3–M6) ∥ **M8**'s groundwork — the AI provider research spike and EPIC-14's GDPR framework
     have no code prerequisites and have their own lead time, worth starting early.
   - **Phase 2 (once M3's `#38`/`#39` land):** **M4** Journeys (`#46`, the journey picker, needs
-    the Activities model) and **M6** Export (needs Activities' `#38` and Journeys' `#45`).
+    the Activities model).
   - **Phase 3 (once M5 lands):** **M9** Settings & Notifications (`#82` needs the Todos due-date
     field).
   - **Phase 4 (once M3+M4+M5 are far enough along):** **M8**'s core query/write features (need
@@ -291,7 +294,11 @@ Core technology decisions (2026-06-27). Detail and rationale in
   - **Phase 5 (native rollout, deliberately last per D-10):** **M10** Android, then **M11** iOS &
     on-device AI — no code dependency on M3–M9, but D-10's own rationale ("native only when a
     feature needs it") argues against front-loading this.
-  - **Phase 6 (explicitly deferred to the very end, D-25):** **M12** Import (Apiaries).
+  - **Phase 6 (explicitly deferred to the very end, D-25; M6 rejoins here per D-33):** **M12**
+    Import (Apiaries) paired with **M6** Export — Export was originally Phase 2 (story-ready as
+    soon as M3/M4 landed) but D-33 reprioritizes it behind the native rollout as non-critical;
+    only its GDPR consent/privacy-policy scope was pulled forward (split from `#90` into `#487`,
+    Phase-1/4 groundwork feeding M8's consent story `#66` directly).
   - This phasing is exactly what an `ecc:orch-*` agent run at the milestone level should follow;
     each milestone's GitHub description carries a short phase tag for the same reason.
 
@@ -496,7 +503,16 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   the PWA phase, so **push notifications are deferred to the native phase** (M10/M11, EPIC-15).
   Because there's no background service in the PWA phase, the notification check runs **when
   the app is opened or brought to the foreground**, not on a timer or poll.
-- **Supersedes:** Q-NOTIF. **Touches:** FR-ST-1, FR-TD-1, FR-OF-2, #82.
+- _Refined (2026-07-27, user-confirmed, milestone-planning pass on M9):_ two gaps D-24 left open,
+  now resolved. **Reminder audience is org-wide, not assignee-restricted:** a todo due-date
+  reminder fires for every org member who opens the app, consistent with D-23's "assignment isn't
+  an access boundary — every member sees every todo"; the assignee is not a notification filter.
+  **Repeat policy is once per condition change:** a given todo-due or sync-result condition
+  notifies once when it first becomes true and does not re-fire on every subsequent app-open while
+  the same condition persists unchanged — only a genuine state change (a new failure, a todo newly
+  crossing into due-soon/overdue) re-fires it. Also: the native-phase push channel this decision
+  defers had no tracking issue; **#489** (M10 · Android) now owns it.
+- **Supersedes:** Q-NOTIF. **Touches:** FR-ST-1, FR-TD-1, FR-OF-2, #82, #489.
 
 ## D-25 — Import semantics: apiaries-only, merged with assisted matching, deferred to M12
 
@@ -700,6 +716,35 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   scoped routes; `groups` never authorizes; non-operators unaffected, test-proven).
 - **Touches:** NFR-ROL-1, NFR-ROL-2, NFR-SEC-1, FR-TEN-2, FR-HIS-1, D-3, D-7, ADR-0002, ADR-0004,
   `docs/architecture/auth.md` §3.3/§5.3, EPIC-10 (#11), EPIC-18 (#463), #464.
+
+## D-33 — M6 Export reprioritized to pair with M12 Import; GDPR consent/privacy-policy split out
+
+- **Decision (user, 2026-07-27):** **M6 Export** moves out of **Phase 2** (D-14's original build
+  phasing) into **Phase 6**, scheduled alongside **M12 Import** at the very end of the rollout,
+  behind the native phase (M10/M11). All of M6's story-level blockers were already closed —
+  this is a **priority call, not a dependency gate**: Export is judged non-critical relative to
+  Settings/Notifications (M9), the AI Assistant (M8), and the native rollout.
+- **GDPR split (the ripple this reprioritization would otherwise cause):** `#90` ("GDPR:
+  data export/erasure, consent records, privacy policy, EU residency") is an **EPIC-14** stream
+  story that had landed in M6 under D-14's "milestone of first need" rule. But M8's AI-consent
+  story (`#66`) explicitly **reuses `#90`'s consent-record infrastructure** — so deferring all of
+  `#90` alongside Export would also defer the compliance gate needed to actually _launch_ cloud AI
+  to users (`NFR-AI-1` requires opt-in consent before any data leaves the device), not just delay
+  a standalone feature.
+  - `#90` is **split**: consent-record storage, privacy-policy versioning/surfacing, and EU-
+    residency documentation move to a **new story, `#487`**, which has no dependency on the export
+    path and is re-milestoned to **M8** (the new first real need) — unblocking `#66` immediately.
+  - `#90` **keeps** the data-export request, data-erasure ("right to be forgotten"), and PII-review
+    scope — these genuinely depend on the export path (`#69`) and stay in the deferred M6.
+- **Also deferred with M6 (per the same call):** `#69` (CSV/JSON export), `#71` (GDPR
+  data-export tie-in), `#92` (disaster recovery), `#294` (honey-lot export field) — none of these
+  block M8, M9, or the native rollout.
+- **Supersedes:** none. **Refines:** D-14's recommended build phasing (Phase 2/6) and its
+  milestone-of-first-need assignment for `#90`. Does not touch D-25 (Import stays split out into
+  its own milestone, still last).
+- **Touches:** D-14, D-25, D-26 (production-readiness still waits on DR + GDPR export/erasure,
+  now later), EPIC-09 (#10), EPIC-14 (#15), EPIC-08 (#9), `#66`, `#69`, `#71`, `#90`, `#92`, `#294`,
+  `#487`.
 
 ---
 

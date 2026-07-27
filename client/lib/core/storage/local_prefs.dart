@@ -32,3 +32,35 @@ const kProfileCacheKey = 'bk.profile';
 /// Cache key for the onboarding gate's last-known-good organization snapshot
 /// (`OrganizationRepository.fetchMine()`) — see [kProfileCacheKey].
 const kOrganizationCacheKey = 'bk.organization';
+
+/// Settings key (FR-ST-1, #81) for the "auto-sync" preference —
+/// `features/settings/sync_settings_repository.dart` reads/writes it, and
+/// `core/sync/powersync_service.dart` honors it (EPIC-06's sync layer).
+/// Public for the same reason as [kProfileCacheKey]: `AuthController.logout()`
+/// purges it so a second user on a shared device doesn't inherit the prior
+/// user's device-local sync preference.
+const kAutoSyncEnabledKey = 'bk.settings.auto_sync_enabled';
+
+/// Settings key (FR-ST-1, #81) for the notifications master switch —
+/// `features/settings/notification_settings_repository.dart` reads/writes it.
+/// Gates the notification engine's own per-event preferences below
+/// ([kNotificationPreferencesKey]): `NotificationChecker.check` and
+/// `shell/app_shell.dart`'s real-time sync-conflict toast listener both
+/// consult this key in addition to the per-event map, so switching it off
+/// stops delivery outright rather than only dimming the settings-screen
+/// toggle list (D-24, #500). Purged on logout — see [kAutoSyncEnabledKey].
+const kNotificationsEnabledKey = 'bk.settings.notifications_enabled';
+
+/// Cache key for the notification engine's per-event preference map (#82's
+/// preference-key contract, D-24, FR-ST-1) — see
+/// `features/notifications/notification_preferences_repository.dart`. Purged
+/// on logout (`auth_controller.dart`'s `_clearLocalSession`) for the same
+/// reason as [kProfileCacheKey]: a second user on a shared device must never
+/// inherit a prior user's notification toggles.
+const kNotificationPreferencesKey = 'bk.notification_prefs';
+
+/// Cache key for the notification engine's durable "already notified for
+/// this condition" dedup state (#82's once-per-condition-change repeat
+/// policy) — see `features/notifications/notification_dedup_store.dart`.
+/// Purged on logout for the same reason as [kNotificationPreferencesKey].
+const kNotificationDedupStateKey = 'bk.notification_state';

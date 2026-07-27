@@ -532,6 +532,55 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get settingsAutoSyncLabel => 'Sincronização automática';
+
+  @override
+  String get settingsAutoSyncHint =>
+      'Sincronizar automaticamente com uma boa ligação. Desative para sincronizar apenas ao tocar em “Sincronizar agora”.';
+
+  @override
+  String get accountNotificationsSectionTitle => 'Notificações';
+
+  @override
+  String get settingsNotificationsEnabledLabel => 'Ativar notificações';
+
+  @override
+  String get settingsNotificationsEnabledHint =>
+      'Mostrar avisos na app para tarefas pendentes e resultados de sincronização.';
+
+  @override
+  String get settingsNotificationEventsComingSoon =>
+      'Os tipos de notificação individuais vão aparecer aqui.';
+
+  @override
+  String get notificationEventTodoDueLabel => 'Lembretes de prazo das tarefas';
+
+  @override
+  String get notificationEventTodoDueHint =>
+      'Avisar quando uma tarefa vence brevemente ou está atrasada.';
+
+  @override
+  String get notificationEventSyncFailureLabel => 'Falhas de sincronização';
+
+  @override
+  String get notificationEventSyncFailureHint =>
+      'Avisar quando uma alteração é rejeitada e precisa de correção.';
+
+  @override
+  String get notificationEventSyncSuccessLabel => 'Sincronização concluída';
+
+  @override
+  String get notificationEventSyncSuccessHint =>
+      'Avisar quando todas as alterações terminam de sincronizar.';
+
+  @override
+  String get notificationEventSyncConflictLabel => 'Conflitos de sincronização';
+
+  @override
+  String get notificationEventSyncConflictHint =>
+      'Avisar quando uma edição offline é substituída por uma alteração mais recente.';
+
+  @override
   String get apiaryDetailTitle => 'Apiário';
 
   @override
@@ -1581,4 +1630,18 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get discardChangesCancelAction => 'Continuar a editar';
+
+  @override
+  String notificationTodoDueSoon(String title) {
+    return '\"$title\" vence brevemente.';
+  }
+
+  @override
+  String notificationTodoOverdue(String title) {
+    return '\"$title\" está atrasado.';
+  }
+
+  @override
+  String get notificationSyncCompleted =>
+      'Todas as alterações foram sincronizadas.';
 }

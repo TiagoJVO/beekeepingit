@@ -914,6 +914,90 @@ abstract class AppLocalizations {
   /// **'Could not sync right now: {error}'**
   String accountSyncNowError(String error);
 
+  /// Sync-settings toggle on the account screen's Sync section (FR-ST-1, FR-OF-3, #81)
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-sync'**
+  String get settingsAutoSyncLabel;
+
+  /// Explanatory subtitle under the auto-sync toggle (#81)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync automatically over a good connection. Turn off to only sync when you tap “Sync now”.'**
+  String get settingsAutoSyncHint;
+
+  /// Heading above the notification preferences on the account settings screen (FR-ST-1, D-24, #81)
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get accountNotificationsSectionTitle;
+
+  /// Master switch for in-app notifications (#81); gates the per-event toggle list (#288) and the notification engine (#82)
+  ///
+  /// In en, this message translates to:
+  /// **'Enable notifications'**
+  String get settingsNotificationsEnabledLabel;
+
+  /// Explanatory subtitle under the notifications master switch (#81, D-24)
+  ///
+  /// In en, this message translates to:
+  /// **'Show in-app reminders for due todos and sync results.'**
+  String get settingsNotificationsEnabledHint;
+
+  /// Placeholder shown in the per-event notification-toggle list's container until #288 supplies the real list
+  ///
+  /// In en, this message translates to:
+  /// **'Individual notification types will appear here.'**
+  String get settingsNotificationEventsComingSoon;
+
+  /// Per-event toggle row title for the todo due-date reminder event (notification_events.dart's notificationEventTodoDueReminder, #82, D-24, FR-TD-1, #288)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo due-date reminders'**
+  String get notificationEventTodoDueLabel;
+
+  /// Explanatory subtitle under the todo due-date reminders toggle (#288)
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when a todo is due soon or overdue.'**
+  String get notificationEventTodoDueHint;
+
+  /// Per-event toggle row title for the sync-failure event (notification_events.dart's notificationEventSyncFailure, #82, D-24, FR-OF-2, #288)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync failures'**
+  String get notificationEventSyncFailureLabel;
+
+  /// Explanatory subtitle under the sync failures toggle (#288)
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when a change is rejected and needs fixing.'**
+  String get notificationEventSyncFailureHint;
+
+  /// Per-event toggle row title for the sync-success event (notification_events.dart's notificationEventSyncSuccess, #82, D-24, #288)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync completed'**
+  String get notificationEventSyncSuccessLabel;
+
+  /// Explanatory subtitle under the sync completed toggle (#288)
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when all your changes finish syncing.'**
+  String get notificationEventSyncSuccessHint;
+
+  /// Per-event toggle row title for the sync-conflict event (notification_events.dart's notificationEventSyncConflict, #82, D-24, sync.md §4.2/§8, #288)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync conflicts'**
+  String get notificationEventSyncConflictLabel;
+
+  /// Explanatory subtitle under the sync conflicts toggle (#288)
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when an offline edit is overwritten by a newer change.'**
+  String get notificationEventSyncConflictHint;
+
   /// Apiary detail screen app bar title (#32)
   ///
   /// In en, this message translates to:
@@ -2714,6 +2798,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keep editing'**
   String get discardChangesCancelAction;
+
+  /// In-app toast for a todo newly crossing into its due-soon reminder window (#82, D-24, FR-TD-1) — org-wide, fired for every member who opens the app regardless of the todo's assignee (D-23)
+  ///
+  /// In en, this message translates to:
+  /// **'\"{title}\" is due soon.'**
+  String notificationTodoDueSoon(String title);
+
+  /// In-app toast for a todo newly crossing into overdue (#82, D-24, FR-TD-1) — same org-wide audience as notificationTodoDueSoon
+  ///
+  /// In en, this message translates to:
+  /// **'\"{title}\" is overdue.'**
+  String notificationTodoOverdue(String title);
+
+  /// In-app toast fired once when the device's sync state transitions from not-fully-synced (pending writes or a needs-fix rejection) to fully synced (#82, D-24)
+  ///
+  /// In en, this message translates to:
+  /// **'All your changes are synced.'**
+  String get notificationSyncCompleted;
 }
 
 class _AppLocalizationsDelegate

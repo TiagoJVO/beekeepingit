@@ -121,7 +121,7 @@ void main() {
         addTearDown(container.dispose);
 
         // Start the listener and let the initial (has-an-org) resolution settle.
-        container.listen(membershipLossPurgeProvider, (_, __) {});
+        container.listen(membershipLossPurgeProvider, (_, _) {});
         await container.read(organizationProvider.future);
         await Future<void>.delayed(Duration.zero);
 
@@ -157,7 +157,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        container.listen(membershipLossPurgeProvider, (_, __) {});
+        container.listen(membershipLossPurgeProvider, (_, _) {});
         await container.read(organizationProvider.future);
         await Future<void>.delayed(Duration.zero);
 
@@ -182,7 +182,7 @@ void main() {
         );
         addTearDown(container.dispose);
 
-        container.listen(membershipLossPurgeProvider, (_, __) {});
+        container.listen(membershipLossPurgeProvider, (_, _) {});
         await container.read(organizationProvider.future);
         await Future<void>.delayed(Duration.zero);
 
