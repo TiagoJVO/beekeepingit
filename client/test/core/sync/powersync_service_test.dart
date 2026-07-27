@@ -1,7 +1,30 @@
 import 'dart:async';
 
+import 'package:beekeepingit_client/core/sync/connectivity_probe.dart';
 import 'package:beekeepingit_client/core/sync/powersync_service.dart';
+import 'package:beekeepingit_client/core/sync/sync_gate.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// A scripted [ConnectivityProbe] — always resolves immediately with a fixed
+/// result and counts invocations, so tests can tell whether [SyncGate]'s
+/// probe loop is actually running without a real network call. Mirrors
+/// `sync_gate_test.dart`'s own fakes (a fake, not a mock, per the project's
+/// Dart testing conventions).
+class _FakeProbe implements ConnectivityProbe {
+  _FakeProbe({this.result = true});
+
+  final bool result;
+  int checkCalls = 0;
+
+  @override
+  Future<bool> check() async {
+    checkCalls++;
+    return result;
+  }
+
+  @override
+  void dispose() {}
+}
 
 void main() {
   group('TeardownGuard (HIGH #2 — async ref.onDispose is fire-and-forget)', () {
@@ -184,5 +207,77 @@ void main() {
         expect(observed, [true, false, true]);
       },
     );
+  });
+
+  group('applyAutoSyncSetting (#81 — the sync-settings screen honored by the '
+      'EPIC-06 sync layer)', () {
+    test('enabled: true starts a fresh (not-yet-started) gate — the '
+        'probe loop actually runs', () async {
+      final probe = _FakeProbe();
+      final gate = SyncGate(probe: probe, onGatePassed: () async {});
+      addTearDown(gate.dispose);
+
+      applyAutoSyncSetting(enabled: true, gate: gate);
+      await pumpEventQueue();
+
+      expect(probe.checkCalls, greaterThan(0));
+    });
+
+    test('enabled: false never starts the gate\'s probe loop', () async {
+      final probe = _FakeProbe();
+      final gate = SyncGate(probe: probe, onGatePassed: () async {});
+      addTearDown(gate.dispose);
+
+      applyAutoSyncSetting(enabled: false, gate: gate);
+      await pumpEventQueue();
+
+      expect(probe.checkCalls, 0);
+    });
+
+    test('enabled: false stops an already-running gate — a pending '
+        'backoff never fires another probe', () async {
+      final probe = _FakeProbe(result: false); // keeps backing off
+      final gate = SyncGate(
+        probe: probe,
+        onGatePassed: () async {},
+        initialBackoff: const Duration(milliseconds: 20),
+      );
+      addTearDown(gate.dispose);
+      gate.start();
+      await pumpEventQueue();
+      final callsWhileRunning = probe.checkCalls;
+      expect(
+        callsWhileRunning,
+        greaterThan(0),
+        reason: 'sanity check: the loop really is running',
+      );
+
+      applyAutoSyncSetting(enabled: false, gate: gate);
+      // Longer than initialBackoff — if stop() failed to cancel the
+      // pending timer, another probe would fire in this window.
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(
+        probe.checkCalls,
+        callsWhileRunning,
+        reason: 'stop() must cancel the backoff timer',
+      );
+    });
+
+    test('enabled: true re-arms a gate previously stopped by this same '
+        'function (the toggle-back-on case)', () async {
+      final probe = _FakeProbe();
+      final gate = SyncGate(probe: probe, onGatePassed: () async {});
+      addTearDown(gate.dispose);
+      gate.start();
+      await pumpEventQueue(); // passes immediately, hands off to "engine"
+      applyAutoSyncSetting(enabled: false, gate: gate);
+      final callsWhileOff = probe.checkCalls;
+
+      applyAutoSyncSetting(enabled: true, gate: gate);
+      await pumpEventQueue();
+
+      expect(probe.checkCalls, greaterThan(callsWhileOff));
+    });
   });
 }
