@@ -1602,4 +1602,18 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get discardChangesCancelAction => 'Continuar a editar';
+
+  @override
+  String notificationTodoDueSoon(String title) {
+    return '\"$title\" vence brevemente.';
+  }
+
+  @override
+  String notificationTodoOverdue(String title) {
+    return '\"$title\" está atrasado.';
+  }
+
+  @override
+  String get notificationSyncCompleted =>
+      'Todas as alterações foram sincronizadas.';
 }

@@ -2160,5 +2160,27 @@
   "discardChangesCancelAction": "Keep editing",
   "@discardChangesCancelAction": {
     "description": "Cancel action in the discard-changes dialog: stay on the screen, keeping unsaved edits (#345)"
+  },
+  "notificationTodoDueSoon": "\"{title}\" is due soon.",
+  "@notificationTodoDueSoon": {
+    "description": "In-app toast for a todo newly crossing into its due-soon reminder window (#82, D-24, FR-TD-1) — org-wide, fired for every member who opens the app regardless of the todo's assignee (D-23)",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "notificationTodoOverdue": "\"{title}\" is overdue.",
+  "@notificationTodoOverdue": {
+    "description": "In-app toast for a todo newly crossing into overdue (#82, D-24, FR-TD-1) — same org-wide audience as notificationTodoDueSoon",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "notificationSyncCompleted": "All your changes are synced.",
+  "@notificationSyncCompleted": {
+    "description": "In-app toast fired once when the device's sync state transitions from not-fully-synced (pending writes or a needs-fix rejection) to fully synced (#82, D-24)"
   }
 }

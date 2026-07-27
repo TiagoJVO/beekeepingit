@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/l10n/locale_provider.dart';
 import 'core/sync/local_data_purge.dart';
+import 'features/notifications/notification_check_provider.dart';
 import 'l10n/gen/app_localizations.dart';
 import 'routing/app_router.dart';
 import 'theming/app_theme.dart';
@@ -17,6 +18,13 @@ class BeekeepingitApp extends ConsumerWidget {
     // boots — a `Provider<void>` whose only job is the `ref.listen` inside
     // it (local_data_purge.dart), independent of which screen is on top.
     ref.watch(membershipLossPurgeProvider);
+
+    // Starts the notification engine's app-open/foreground check (#82,
+    // D-24) — a `Provider<void>` whose only job is wiring the check to the
+    // app's own cold start and every later foreground resume
+    // (notification_check_provider.dart); the actual toast display lives in
+    // `shell/app_shell.dart`, wherever a `ScaffoldMessenger` is available.
+    ref.watch(notificationCheckProvider);
 
     // The stored preferred language (NFR-I18N-1, FR-ST-1, #340). `null` while
     // unset/loading, so MaterialApp falls back to the system locale.
