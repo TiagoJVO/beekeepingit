@@ -32,3 +32,17 @@ const kProfileCacheKey = 'bk.profile';
 /// Cache key for the onboarding gate's last-known-good organization snapshot
 /// (`OrganizationRepository.fetchMine()`) — see [kProfileCacheKey].
 const kOrganizationCacheKey = 'bk.organization';
+
+/// Cache key for the notification engine's per-event preference map (#82's
+/// preference-key contract, D-24, FR-ST-1) — see
+/// `features/notifications/notification_preferences_repository.dart`. Purged
+/// on logout (`auth_controller.dart`'s `_clearLocalSession`) for the same
+/// reason as [kProfileCacheKey]: a second user on a shared device must never
+/// inherit a prior user's notification toggles.
+const kNotificationPreferencesKey = 'bk.notification_prefs';
+
+/// Cache key for the notification engine's durable "already notified for
+/// this condition" dedup state (#82's once-per-condition-change repeat
+/// policy) — see `features/notifications/notification_dedup_store.dart`.
+/// Purged on logout for the same reason as [kNotificationPreferencesKey].
+const kNotificationDedupStateKey = 'bk.notification_state';

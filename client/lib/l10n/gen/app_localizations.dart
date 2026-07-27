@@ -2714,6 +2714,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keep editing'**
   String get discardChangesCancelAction;
+
+  /// In-app toast for a todo newly crossing into its due-soon reminder window (#82, D-24, FR-TD-1) — org-wide, fired for every member who opens the app regardless of the todo's assignee (D-23)
+  ///
+  /// In en, this message translates to:
+  /// **'\"{title}\" is due soon.'**
+  String notificationTodoDueSoon(String title);
+
+  /// In-app toast for a todo newly crossing into overdue (#82, D-24, FR-TD-1) — same org-wide audience as notificationTodoDueSoon
+  ///
+  /// In en, this message translates to:
+  /// **'\"{title}\" is overdue.'**
+  String notificationTodoOverdue(String title);
+
+  /// In-app toast fired once when the device's sync state transitions from not-fully-synced (pending writes or a needs-fix rejection) to fully synced (#82, D-24)
+  ///
+  /// In en, this message translates to:
+  /// **'All your changes are synced.'**
+  String get notificationSyncCompleted;
 }
 
 class _AppLocalizationsDelegate
