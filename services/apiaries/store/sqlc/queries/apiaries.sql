@@ -286,8 +286,11 @@ ORDER BY recorded_at, id;
 -- audit_log rows and the {winning_payload, losing_payload, winner} conflict
 -- payload for sync_conflict_log rows — the two tables' change shapes differ
 -- by design (§3 vs §4.2), so callers branch on event_kind to interpret it.
--- Like ListAuditLog, not yet exposed via HTTP — typed groundwork for the
--- entity-detail "history" screen (history.md §8/§10).
+-- Exposed via HTTP since #60 (GET /v1/apiaries/{apiaryId}/history, api/
+-- history.go), which is what the entity-detail "history" screen
+-- (history.md §8) reads when a device has no local slice to render from.
+-- It was typed groundwork with no HTTP surface between #61 and #60;
+-- ListAuditLog still is.
 SELECT timeline.id, timeline.organization_id, timeline.entity_type, timeline.entity_id,
        timeline.event_kind, timeline.actor_user_id, timeline.occurred_at, timeline.recorded_at,
        timeline.changed_fields, timeline.change

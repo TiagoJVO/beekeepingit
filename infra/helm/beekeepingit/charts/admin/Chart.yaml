@@ -1,0 +1,11 @@
+apiVersion: v2
+name: admin
+description: >-
+  The BeekeepingIT React admin app (#72/#73) served as a static bundle behind
+  nginx (admin/Dockerfile + admin/nginx.conf). Served on its own host
+  admin.beekeepingit.local — the gateway routes that host's `/` here (#449,
+  ADR-0016). Online-only SPA (no PowerSync/service worker), so — unlike the PWA —
+  no COOP/COEP cross-origin isolation.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

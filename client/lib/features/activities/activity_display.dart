@@ -1,4 +1,5 @@
 import '../../l10n/gen/app_localizations.dart';
+import '../members/member_display.dart';
 import 'activities_repository.dart';
 import 'activity_types.dart';
 
@@ -153,10 +154,5 @@ String activityAttributionText(
   if (performedBy == currentUserId) return l10n.activityPerformedByYou;
   final name = memberNames[performedBy];
   if (name != null && name.isNotEmpty) return name;
-  return l10n.activityPerformedByMember(_shortId(performedBy));
+  return l10n.activityPerformedByMember(shortMemberId(performedBy));
 }
-
-/// The last 8 characters of a UUID — enough to visually distinguish
-/// different performers within one org's activity list without printing the
-/// full 36-character id on every row.
-String _shortId(String id) => id.length <= 8 ? id : id.substring(id.length - 8);

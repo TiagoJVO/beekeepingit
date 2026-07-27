@@ -5,7 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
+import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import 'todo_apiary_picker_field.dart';
 import 'todo_assignee_picker_field.dart';
 import 'todo_priority.dart';
@@ -30,11 +33,18 @@ import 'todos_repository.dart';
 /// [TodosRepository.update]'s own established convention: an omitted due
 /// date/assignee/apiary means "clear it".
 class TodoFormScreen extends ConsumerStatefulWidget {
-  const TodoFormScreen({this.todoId, super.key});
+  const TodoFormScreen({this.todoId, this.initialApiaryId, super.key});
 
   /// Null for create; the todo being viewed/edited/completed/deleted for
   /// edit.
   final String? todoId;
+
+  /// Pre-selects the apiary picker in CREATE mode only (#389) — preserves
+  /// the create-from-apiary-detail flow that used to go through #52's
+  /// quick-create sheet's own read-only apiary chip. Meaningless (ignored)
+  /// when [todoId] is set: [_loadExistingInner] overwrites `_apiaryId` from
+  /// the loaded todo's own `apiaryId` regardless.
+  final String? initialApiaryId;
 
   bool get isEdit => todoId != null;
 
@@ -42,7 +52,8 @@ class TodoFormScreen extends ConsumerStatefulWidget {
   ConsumerState<TodoFormScreen> createState() => _TodoFormScreenState();
 }
 
-class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
+class _TodoFormScreenState extends ConsumerState<TodoFormScreen>
+    with UnsavedChangesMixin {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -64,7 +75,16 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.isEdit) _loadExisting();
+    if (widget.isEdit) {
+      _loadExisting();
+    } else {
+      // A prefill, not a user edit (#389) — assigned directly (no
+      // `setState`/`markUnsavedChanges`) since this runs before the first
+      // build, mirroring `_loadExistingInner`'s own "don't arm the
+      // unsaved-changes guard for data that came from outside the user's
+      // own input" rule.
+      _apiaryId = widget.initialApiaryId;
+    }
   }
 
   @override
@@ -78,7 +98,11 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
   /// edit every field") — mirrors add_activity_screen.dart's own
   /// `_loadExisting`, including its error handling and its "l10n/messenger
   /// only read inside the catch block" rule.
-  Future<void> _loadExisting() async {
+  // Wrapped in [loadWithoutMarkingDirty] (#345) so pre-filling the fields
+  // doesn't arm the unsaved-changes guard.
+  Future<void> _loadExisting() => loadWithoutMarkingDirty(_loadExistingInner);
+
+  Future<void> _loadExistingInner() async {
     setState(() => _busy = true);
     try {
       final repo = await ref.read(todosRepositoryProvider.future);
@@ -116,10 +140,18 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
-    if (picked != null) setState(() => _dueDate = picked);
+    if (picked != null) {
+      setState(() => _dueDate = picked);
+      // The date lives outside the Form's field tree — arm the guard directly
+      // (#345).
+      markUnsavedChanges();
+    }
   }
 
-  void _clearDueDate() => setState(() => _dueDate = null);
+  void _clearDueDate() {
+    setState(() => _dueDate = null);
+    markUnsavedChanges();
+  }
 
   /// Saves via [TodosRepository.create] (add) or [TodosRepository.update]
   /// (#293, edit) depending on [isEdit] — a FULL resubmit of all six fields,
@@ -160,6 +192,7 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
         );
       }
       if (!mounted) return;
+      clearUnsavedChanges();
       context.go('/todos/$savedId');
       messenger.showSnackBar(SnackBar(content: Text(l10n.todoSaveSuccess)));
     } catch (e) {
@@ -229,6 +262,7 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
       final repo = await ref.read(todosRepositoryProvider.future);
       await repo.delete(widget.todoId!);
       if (!mounted) return;
+      clearUnsavedChanges();
       context.go('/todos');
       messenger.showSnackBar(SnackBar(content: Text(l10n.todoDeleteSuccess)));
     } catch (e) {
@@ -252,116 +286,128 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextFormField(
-                  key: const Key('todo-title-field'),
-                  controller: _titleController,
-                  maxLength: 500,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? l10n.todoTitleRequired
-                      : null,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoTitleLabel,
-                    border: const OutlineInputBorder(),
+    return buildUnsavedChangesGuard(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              BrandDimens.gutterForm,
+              BrandDimens.gutterForm,
+              BrandDimens.gutterForm,
+              BrandDimens.scrollBottomInset,
+            ),
+            child: Form(
+              key: _formKey,
+              // Any field edit arms the unsaved-changes guard (#345); the
+              // pickers/date below (outside the field tree) call it directly.
+              onChanged: markUnsavedChanges,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  LabeledField(
+                    label: l10n.todoTitleLabel,
+                    child: TextFormField(
+                      key: const Key('todo-title-field'),
+                      controller: _titleController,
+                      maxLength: 500,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? l10n.todoTitleRequired
+                          : null,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('todo-description-field'),
-                  controller: _descriptionController,
-                  minLines: 3,
-                  maxLines: 6,
-                  maxLength: 10000,
-                  textInputAction: TextInputAction.newline,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoDescriptionLabel,
-                    border: const OutlineInputBorder(),
-                    alignLabelWithHint: true,
+                  const SizedBox(height: BrandDimens.gapField),
+                  LabeledField(
+                    label: l10n.todoDescriptionLabel,
+                    child: TextFormField(
+                      key: const Key('todo-description-field'),
+                      controller: _descriptionController,
+                      minLines: 3,
+                      maxLines: 6,
+                      maxLength: 10000,
+                      textInputAction: TextInputAction.newline,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                _dueDateField(l10n),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  key: const Key('todo-priority-field'),
-                  initialValue: _priority,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.todoPriorityFieldLabel,
-                    border: const OutlineInputBorder(),
+                  const SizedBox(height: BrandDimens.gapField),
+                  _dueDateField(l10n),
+                  const SizedBox(height: BrandDimens.gapField),
+                  LabeledField(
+                    label: l10n.todoPriorityFieldLabel,
+                    child: DropdownButtonFormField<String>(
+                      key: const Key('todo-priority-field'),
+                      initialValue: _priority,
+                      isExpanded: true,
+                      items: [
+                        for (final p in knownTodoPriorities)
+                          DropdownMenuItem(
+                            value: p,
+                            child: Text(todoPriorityLabel(l10n, p) ?? p),
+                          ),
+                        // A stored priority this client version doesn't know
+                        // (replicated from a newer server, D-20) still renders —
+                        // mirrors add_activity_screen.dart's own `disease` field
+                        // fix for the identical
+                        // initialValue-must-be-in-items assertion risk.
+                        if (!knownTodoPriorities.contains(_priority))
+                          DropdownMenuItem(
+                            value: _priority,
+                            child: Text(
+                              todoPriorityLabel(l10n, _priority) ?? _priority,
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setState(() => _priority = v);
+                      },
+                    ),
                   ),
-                  items: [
-                    for (final p in knownTodoPriorities)
-                      DropdownMenuItem(
-                        value: p,
-                        child: Text(todoPriorityLabel(l10n, p) ?? p),
-                      ),
-                    // A stored priority this client version doesn't know
-                    // (replicated from a newer server, D-20) still renders —
-                    // mirrors add_activity_screen.dart's own `disease` field
-                    // fix for the identical
-                    // initialValue-must-be-in-items assertion risk.
-                    if (!knownTodoPriorities.contains(_priority))
-                      DropdownMenuItem(
-                        value: _priority,
-                        child: Text(
-                          todoPriorityLabel(l10n, _priority) ?? _priority,
-                        ),
-                      ),
+                  const SizedBox(height: BrandDimens.gapField),
+                  TodoAssigneePickerField(
+                    selectedAssigneeId: _assigneeId,
+                    onChanged: (v) {
+                      setState(() => _assigneeId = v);
+                      markUnsavedChanges();
+                    },
+                  ),
+                  const SizedBox(height: BrandDimens.gapField),
+                  TodoApiaryPickerField(
+                    selectedApiaryId: _apiaryId,
+                    onChanged: (v) {
+                      setState(() => _apiaryId = v);
+                      markUnsavedChanges();
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  PrimaryActionButton(
+                    key: const Key('todo-save-button'),
+                    label: l10n.saveButton,
+                    busy: _busy,
+                    onPressed: _save,
+                  ),
+                  if (widget.isEdit) ...[
+                    const SizedBox(height: 12),
+                    SecondaryActionButton(
+                      key: const Key('todo-complete-toggle-button'),
+                      label: isDone
+                          ? l10n.todoReopenAction
+                          : l10n.todoCompleteAction,
+                      icon: isDone ? Icons.replay : Icons.check_circle_outline,
+                      busy: _busy,
+                      onPressed: _toggleComplete,
+                    ),
+                    const SizedBox(height: 12),
+                    SecondaryActionButton(
+                      key: const Key('todo-delete-button'),
+                      label: l10n.deleteTodo,
+                      icon: Icons.delete_outline,
+                      destructive: true,
+                      busy: _busy,
+                      onPressed: _confirmDelete,
+                    ),
                   ],
-                  onChanged: (v) {
-                    if (v != null) setState(() => _priority = v);
-                  },
-                ),
-                const SizedBox(height: 16),
-                TodoAssigneePickerField(
-                  selectedAssigneeId: _assigneeId,
-                  onChanged: (v) => setState(() => _assigneeId = v),
-                ),
-                const SizedBox(height: 16),
-                TodoApiaryPickerField(
-                  selectedApiaryId: _apiaryId,
-                  onChanged: (v) => setState(() => _apiaryId = v),
-                ),
-                const SizedBox(height: 24),
-                PrimaryActionButton(
-                  key: const Key('todo-save-button'),
-                  label: l10n.saveButton,
-                  busy: _busy,
-                  onPressed: _save,
-                ),
-                if (widget.isEdit) ...[
-                  const SizedBox(height: 12),
-                  SecondaryActionButton(
-                    key: const Key('todo-complete-toggle-button'),
-                    label: isDone
-                        ? l10n.todoReopenAction
-                        : l10n.todoCompleteAction,
-                    icon: isDone ? Icons.replay : Icons.check_circle_outline,
-                    busy: _busy,
-                    onPressed: _toggleComplete,
-                  ),
-                  const SizedBox(height: 12),
-                  SecondaryActionButton(
-                    key: const Key('todo-delete-button'),
-                    label: l10n.deleteTodo,
-                    icon: Icons.delete_outline,
-                    destructive: true,
-                    busy: _busy,
-                    onPressed: _confirmDelete,
-                  ),
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -373,27 +419,28 @@ class _TodoFormScreenState extends ConsumerState<TodoFormScreen> {
     final dueText = _dueDate == null
         ? l10n.todoDueDateUnset
         : LocaleFormatting.of(context).date(_dueDate!);
-    return InkWell(
-      key: const Key('todo-due-date-field'),
-      onTap: _pickDueDate,
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: l10n.todoDueDateFieldLabel,
-          border: const OutlineInputBorder(),
-          suffixIcon: _dueDate == null
-              ? null
-              : IconButton(
-                  key: const Key('todo-due-date-clear-button'),
-                  tooltip: l10n.todoDueDateClearAction,
-                  constraints: const BoxConstraints(
-                    minWidth: kMinTapTarget,
-                    minHeight: kMinTapTarget,
+    return LabeledField(
+      label: l10n.todoDueDateFieldLabel,
+      child: InkWell(
+        key: const Key('todo-due-date-field'),
+        onTap: _pickDueDate,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            suffixIcon: _dueDate == null
+                ? null
+                : IconButton(
+                    key: const Key('todo-due-date-clear-button'),
+                    tooltip: l10n.todoDueDateClearAction,
+                    constraints: const BoxConstraints(
+                      minWidth: kMinTapTarget,
+                      minHeight: kMinTapTarget,
+                    ),
+                    icon: const Icon(Icons.clear),
+                    onPressed: _clearDueDate,
                   ),
-                  icon: const Icon(Icons.clear),
-                  onPressed: _clearDueDate,
-                ),
+          ),
+          child: Text(dueText),
         ),
-        child: Text(dueText),
       ),
     );
   }

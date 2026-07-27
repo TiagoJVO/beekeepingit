@@ -49,6 +49,15 @@ ambiguities flagged inline link to `open-questions.md`.
   and other relevant details.
   - _Resolved (D-2):_ "number of hives" is a **count** on the apiary; hives are
     **not** a separate entity.
+  - _Refined (#341, product-owner-directed, 2026-07-21):_ an apiary's **location
+    is mandatory** — it can never be created or saved without coordinates.
+    Enforced at every layer: the create/edit form validation, the OpenAPI
+    `ApiaryCreate.required` + REST service validation, the offline sync-apply
+    validation (a location-less `put` is rejected), and a DB `NOT NULL`
+    constraint (`00008_apiary_location_not_null.sql`). This supersedes the
+    walking-skeleton-era "location optional" behavior the earlier
+    `00003_add_apiary_location.sql` migration and the original `ApiaryCreate`
+    schema assumed.
 - **FR-AP-8** — An apiary may carry optional **free-text notes**, editable
   from the apiary form and shown on the detail page. Notes sync offline and
   are **history-tracked** (FR-HIS) like other apiary edits.

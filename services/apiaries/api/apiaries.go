@@ -102,6 +102,7 @@ func ReadRouter(pool *pgxpool.Pool) http.Handler {
 	r.Get("/", listApiaries(q))
 	r.Get("/{apiaryId}", getApiary(q))
 	r.Get("/{apiaryId}/distance", getApiaryDistance(q))
+	r.Get("/{apiaryId}/history", getApiaryHistory(q))
 	return r
 }
 
@@ -117,6 +118,7 @@ func Router(pool *pgxpool.Pool) http.Handler {
 	r.Get("/", listApiaries(q))
 	r.Get("/{apiaryId}", getApiary(q))
 	r.Get("/{apiaryId}/distance", getApiaryDistance(q))
+	r.Get("/{apiaryId}/history", getApiaryHistory(q))
 	r.Post("/", createApiary(pool))
 	r.Patch("/{apiaryId}", updateApiary(pool))
 	r.Delete("/{apiaryId}", deleteApiary(pool))

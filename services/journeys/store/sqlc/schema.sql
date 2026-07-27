@@ -1,7 +1,7 @@
 -- sqlc's virtual schema for codegen only — mirrors the "up" side of
--- ../migrations/00001_create_journeys.sql and 00002_create_audit_log.sql
--- (no down migration; runtime schema changes only ever happen via goose).
--- Update both files together.
+-- ../migrations/00001_create_journeys.sql, 00002_create_audit_log.sql and
+-- 00003_add_journey_default_attributes.sql (no down migration; runtime
+-- schema changes only ever happen via goose). Update these files together.
 CREATE SCHEMA IF NOT EXISTS journeys;
 
 CREATE TABLE journeys.journeys (
@@ -13,7 +13,8 @@ CREATE TABLE journeys.journeys (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL,
     recorded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at          TIMESTAMPTZ
+    deleted_at          TIMESTAMPTZ,
+    default_attributes  JSONB -- 00003: journey-level subtype attribute defaults (#385), nullable
 );
 
 CREATE TABLE journeys.journey_plan_items (

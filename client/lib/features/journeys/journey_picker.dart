@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../organization/organization_repository.dart';
 import 'journey_matching.dart';
 import 'journey_status.dart';
@@ -26,6 +30,25 @@ final journeyMatchesProvider = StreamProvider.autoDispose
       );
     });
 
+/// Live relaxed candidate journeys for one (apiary, activity type) pair
+/// (#440, D-31) — the data source for the picker's "attach to a journey that
+/// didn't plan this apiary" toggle: open, type-matching journeys whose plan
+/// does NOT include this apiary. Family-keyed + autoDispose, mirroring
+/// [journeyMatchesProvider]'s own per-key live-query convention.
+final journeyUnplannedMatchesProvider = StreamProvider.autoDispose
+    .family<List<Journey>, ({String apiaryId, String activityType})>((
+      ref,
+      args,
+    ) async* {
+      final repo = await ref.watch(journeysRepositoryProvider.future);
+      final org = await ref.watch(organizationProvider.future);
+      yield* repo.watchTypeMatchingUnplanned(
+        apiaryId: args.apiaryId,
+        activityType: args.activityType,
+        organizationId: org?.id,
+      );
+    });
+
 /// The result of a picker session (#46 AC: deselect / switch / create-new),
 /// returned by [showJourneyPickerSheet]. `null` (no outcome at all) means the
 /// sheet was dismissed without a choice — the caller's current selection is
@@ -42,8 +65,21 @@ class JourneyPickerNone extends JourneyPickerOutcome {
 /// The user picked an existing journey (open or closed — the confirm warning
 /// for a closed one is enforced at SAVE time by the caller, not here).
 class JourneyPickerSelected extends JourneyPickerOutcome {
-  const JourneyPickerSelected(this.journeyId);
+  const JourneyPickerSelected(
+    this.journeyId, {
+    this.addCurrentApiaryToPlan = false,
+  });
   final String journeyId;
+
+  /// True only when the journey was chosen from the #440/D-31 "attach to a
+  /// journey that didn't plan this apiary" relaxed list — the caller must
+  /// then add the current apiary to this journey's plan on save
+  /// ([JourneysRepository.addApiaryToPlan]). False for every ordinary
+  /// planned-apiary match (open or closed): those already plan the apiary, so
+  /// growing the plan would be a no-op at best and, on edit, could wrongly
+  /// re-add an apiary the user had removed from the plan — so plan-growth is
+  /// scoped strictly to this deliberate relaxed pick.
+  final bool addCurrentApiaryToPlan;
 }
 
 /// The user tapped the inline create-new-journey shortcut — the caller opens
@@ -95,6 +131,11 @@ class _JourneyPickerSheet extends ConsumerStatefulWidget {
 
 class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
   bool _showHidden = false;
+  // #440/D-31: distinct from _showHidden (which reveals CLOSED planned
+  // matches) — this reveals OPEN journeys that did NOT plan this apiary,
+  // still filtered to the matching activity type. Opt-in; off by default so
+  // the planned-first view is unchanged.
+  bool _showUnplanned = false;
 
   @override
   Widget build(BuildContext context) {
@@ -106,15 +147,26 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
         activityType: widget.activityType,
       )),
     );
+    final unplannedAsync = ref.watch(
+      journeyUnplannedMatchesProvider((
+        apiaryId: widget.apiaryId,
+        activityType: widget.activityType,
+      )),
+    );
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        padding: const EdgeInsets.fromLTRB(
+          BrandDimens.gutter,
+          BrandDimens.gutter,
+          BrandDimens.gutter,
+          24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(l10n.journeyPickerTitle, style: theme.textTheme.titleLarge),
+            SectionHeader(l10n.journeyPickerTitle),
             const SizedBox(height: 8),
             Flexible(
               child: matchesAsync.when(
@@ -128,6 +180,14 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                 ),
                 data: (matches) {
                   final candidates = splitJourneyCandidates(matches);
+                  // The relaxed set is a secondary, opt-in affordance: a
+                  // transient load/error in its own live query must never
+                  // block the main picker, so fall back to an empty list
+                  // rather than surfacing its own loading/error UI.
+                  final unplanned = unplannedPickerCandidates(
+                    unplannedAsync.value ?? const [],
+                    planned: candidates.open,
+                  );
                   return SingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -159,7 +219,7 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                             ).pop(JourneyPickerSelected(journey.id)),
                           ),
                         if (candidates.closed.isNotEmpty) ...[
-                          const Divider(),
+                          Divider(color: context.brand.cardBorder),
                           SwitchListTile(
                             key: const Key('journey-picker-show-hidden-toggle'),
                             title: Text(l10n.journeyPickerShowHiddenToggle),
@@ -176,7 +236,32 @@ class _JourneyPickerSheetState extends ConsumerState<_JourneyPickerSheet> {
                                 ).pop(JourneyPickerSelected(journey.id)),
                               ),
                         ],
-                        const Divider(),
+                        if (unplanned.isNotEmpty) ...[
+                          Divider(color: context.brand.cardBorder),
+                          SwitchListTile(
+                            key: const Key(
+                              'journey-picker-show-unplanned-toggle',
+                            ),
+                            title: Text(l10n.journeyPickerShowUnplannedToggle),
+                            value: _showUnplanned,
+                            onChanged: (v) =>
+                                setState(() => _showUnplanned = v),
+                          ),
+                          if (_showUnplanned)
+                            for (final journey in unplanned)
+                              _JourneyTile(
+                                journey: journey,
+                                selected: journey.id == widget.currentJourneyId,
+                                addsApiaryToPlan: true,
+                                onTap: () => Navigator.of(context).pop(
+                                  JourneyPickerSelected(
+                                    journey.id,
+                                    addCurrentApiaryToPlan: true,
+                                  ),
+                                ),
+                              ),
+                        ],
+                        Divider(color: context.brand.cardBorder),
                         _CreateJourneyTile(
                           onTap: () => Navigator.of(
                             context,
@@ -212,17 +297,75 @@ class _NoJourneyTile extends StatelessWidget {
       button: true,
       selected: selected,
       label: l10n.journeyPickerNoneOption,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kMinTapTarget),
-        child: ExcludeSemantics(
-          child: ListTile(
-            key: const Key('journey-picker-none-option'),
-            onTap: onTap,
-            leading: Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? theme.colorScheme.primary : null,
+      child: ExcludeSemantics(
+        child: _PickerRow(
+          rowKey: const Key('journey-picker-none-option'),
+          icon: selected ? Icons.radio_button_checked : Icons.radio_button_off,
+          iconColor: selected
+              ? theme.colorScheme.tertiary
+              : theme.colorScheme.onSurfaceVariant,
+          title: l10n.journeyPickerNoneOption,
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
+/// One branded picker row — the shared shape behind the "no journey",
+/// per-journey and create-new options: a full [kMinTapTarget]-tall ink row
+/// with a leading state icon, the option's label, and an optional trailing
+/// badge. Replaces the three files-worth of near-identical [ListTile]s these
+/// options used to each build, so the sheet's rows pick up the brand type
+/// scale/colours in one place.
+class _PickerRow extends StatelessWidget {
+  const _PickerRow({
+    required this.rowKey,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final Key rowKey;
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final Widget? trailing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        key: rowKey,
+        borderRadius: BrandDimens.borderCard,
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: kMinTapTarget),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, color: iconColor),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontFamily: AppTheme.bodyFontFamily,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ),
+                if (trailing != null) ...[const SizedBox(width: 10), trailing!],
+              ],
             ),
-            title: Text(l10n.journeyPickerNoneOption),
           ),
         ),
       ),
@@ -235,42 +378,82 @@ class _JourneyTile extends StatelessWidget {
     required this.journey,
     required this.selected,
     required this.onTap,
+    this.addsApiaryToPlan = false,
   });
 
   final Journey journey;
   final bool selected;
   final VoidCallback onTap;
 
+  /// #440/D-31: true for a row in the picker's "attach to a journey that
+  /// didn't plan this apiary" relaxed list. Gives the row a DISTINCT
+  /// screen-reader label and visible badge disclosing that picking it also
+  /// adds the current apiary to the journey's plan — the same per-row
+  /// disclosure a closed journey gets, so neither a sighted nor an assistive
+  /// user has to infer the side effect from which toggle they opened. Never
+  /// combined with a closed journey (the relaxed list is open-only), so the
+  /// two disclosures are mutually exclusive.
+  final bool addsApiaryToPlan;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final closed = journey.status == journeyStatusClosed;
-    final label = closed
-        ? l10n.journeyPickerClosedOptionSemanticLabel(journey.name)
-        : journey.name;
+    final String label;
+    final String? badgeText;
+    if (closed) {
+      label = l10n.journeyPickerClosedOptionSemanticLabel(journey.name);
+      badgeText = l10n.journeyStatusClosedLabel;
+    } else if (addsApiaryToPlan) {
+      label = l10n.journeyPickerUnplannedOptionSemanticLabel(journey.name);
+      badgeText = l10n.journeyPickerAddsApiaryBadge;
+    } else {
+      label = journey.name;
+      badgeText = null;
+    }
     return Semantics(
       button: true,
       selected: selected,
       label: label,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kMinTapTarget),
-        child: ExcludeSemantics(
-          child: ListTile(
-            key: Key('journey-picker-option-${journey.id}'),
-            onTap: onTap,
-            leading: Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: selected ? theme.colorScheme.primary : null,
-            ),
-            title: Text(journey.name),
-            trailing: closed
-                ? Chip(
-                    label: Text(l10n.journeyStatusClosedLabel),
-                    visualDensity: VisualDensity.compact,
-                  )
-                : null,
-          ),
+      child: ExcludeSemantics(
+        child: _PickerRow(
+          rowKey: Key('journey-picker-option-${journey.id}'),
+          icon: selected ? Icons.radio_button_checked : Icons.radio_button_off,
+          iconColor: selected
+              ? theme.colorScheme.tertiary
+              : theme.colorScheme.onSurfaceVariant,
+          title: journey.name,
+          trailing: badgeText == null ? null : _PickerBadge(text: badgeText),
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
+/// A small pill badge shown at the trailing edge of a picker row — the
+/// closed-journey status marker (D-21) and the #440/D-31 "adds this apiary to
+/// the plan" disclosure share this one shape so both read identically.
+class _PickerBadge extends StatelessWidget {
+  const _PickerBadge({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
+      ),
+      child: Text(
+        text,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -293,21 +476,13 @@ class _CreateJourneyTile extends StatelessWidget {
     return Semantics(
       button: true,
       label: l10n.journeyPickerCreateNewAction,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: kMinTapTarget),
-        child: ExcludeSemantics(
-          child: ListTile(
-            key: const Key('journey-picker-create-new-option'),
-            onTap: onTap,
-            leading: Icon(
-              Icons.add_circle_outline,
-              color: theme.colorScheme.primary,
-            ),
-            title: Text(
-              l10n.journeyPickerCreateNewAction,
-              style: TextStyle(color: theme.colorScheme.primary),
-            ),
-          ),
+      child: ExcludeSemantics(
+        child: _PickerRow(
+          rowKey: const Key('journey-picker-create-new-option'),
+          icon: Icons.add_circle_outline,
+          iconColor: theme.colorScheme.tertiary,
+          title: l10n.journeyPickerCreateNewAction,
+          onTap: onTap,
         ),
       ),
     );

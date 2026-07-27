@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/sync/powersync_schema.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../activities/activities_repository.dart';
 import '../activities/activity_filters.dart';
 import '../activities/activity_list_widgets.dart';
 import '../activities/activity_types.dart';
 import '../apiaries/apiaries_repository.dart';
+import '../history/history_section.dart';
 import 'journey_stats_section.dart';
 import 'journey_status.dart';
 import 'journeys_repository.dart';
@@ -83,12 +89,17 @@ class _JourneyDetailBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
+    final brand = context.brand;
     final typeLabel =
         activityTypeLabel(l10n, journey.mainActivityType) ??
         journey.mainActivityType;
     final statusLabel =
         journeyStatusLabel(l10n, journey.status) ?? journey.status;
+    final defaultAttributesSummary = _defaultAttributesSummary(
+      l10n,
+      journey.mainActivityType,
+      journey.defaultAttributes,
+    );
 
     return Center(
       child: ConstrainedBox(
@@ -98,32 +109,28 @@ class _JourneyDetailBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
+              HeroCard(
                 key: const Key('journey-detail-header'),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       journey.name,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.bold,
+                      style: TextStyle(
+                        fontFamily: AppTheme.displayFontFamily,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 26,
+                        color: brand.onHeroSurface,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Flexible(
                           child: Text(
                             typeLabel,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onPrimaryContainer,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: brand.onHeroSurfaceMuted),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -134,13 +141,40 @@ class _JourneyDetailBody extends StatelessWidget {
                         ),
                       ],
                     ),
+                    // Journey-level subtype attribute defaults (#385) — only
+                    // rendered when the journey actually has any set.
+                    if (defaultAttributesSummary != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        defaultAttributesSummary,
+                        key: const Key('journey-detail-default-attributes'),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: brand.onHeroSurfaceMuted,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(height: 14),
-              JourneyStatsSection(journeyId: journey.id),
+              JourneyStatsSection(
+                journeyId: journey.id,
+                mainActivityType: journey.mainActivityType,
+              ),
               const SizedBox(height: 14),
               _JourneyApiariesSection(journey: journey),
+              const SizedBox(height: 14),
+              // Per-journey change history (#315, FR-HIS-1) — the same shared,
+              // capped preview the apiary/activity detail screens embed,
+              // pointed at this journey and linking out to the full-screen
+              // timeline (same preview-then-full-screen split, for the same
+              // virtualization reason a shrink-wrapped preview can't).
+              HistorySection(
+                entityType: journeyEntityType,
+                entityId: journey.id,
+                onViewAll: () => context.go('/journeys/${journey.id}/history'),
+              ),
             ],
           ),
         ),
@@ -149,14 +183,49 @@ class _JourneyDetailBody extends StatelessWidget {
   }
 }
 
-/// Open/closed pill matching the header's `primaryContainer` background —
-/// styled like apiary_detail_screen.dart's own `_CounterBadge` (a `surface`
-/// pill for contrast against the colored header), not journeys_list_screen.
-/// dart's/journey_form_screen.dart's own `_StatusBadge`/`_StatusChip` (those
-/// sit on a plain, uncolored background). Kept as its own small private
-/// widget rather than a shared export — this codebase's established
-/// convention: those two files already carry their own near-identical
-/// copies for their own backgrounds.
+/// The muted "Defaults: Apivar/amitraz · Varroose" summary line under the
+/// [HeroCard]'s type label (#385) — one value per set default key, in the
+/// same per-type field order journey_default_attributes_section.dart shows
+/// them, skipping any key with no value set. Returns null (caller skips
+/// rendering the line) when the journey has no defaults at all, or its
+/// `main_activity_type` carries none (generic).
+String? _defaultAttributesSummary(
+  AppLocalizations l10n,
+  String mainActivityType,
+  Map<String, dynamic> defaultAttributes,
+) {
+  final values = <String>[];
+  switch (mainActivityType) {
+    case activityTypeTreatment:
+      final context = defaultAttributes['treatment_context'] as String?;
+      if (context != null) {
+        values.add(treatmentContextLabel(l10n, context) ?? context);
+      }
+      final type = defaultAttributes['treatment_type'] as String?;
+      if (type != null) values.add(type);
+      final disease = defaultAttributes['disease'] as String?;
+      if (disease != null) values.add(disease);
+    case activityTypeFeeding:
+      final feedType = defaultAttributes['feed_type'] as String?;
+      if (feedType != null) values.add(feedType);
+    case activityTypeHarvest:
+      final lotBatch = defaultAttributes['lot_batch'] as String?;
+      if (lotBatch != null && lotBatch.isNotEmpty) values.add(lotBatch);
+  }
+  if (values.isEmpty) return null;
+  return l10n.journeyDetailDefaultAttributesLabel(values.join(' · '));
+}
+
+/// Open/closed pill sitting ON the plum [HeroCard] — styled exactly like
+/// apiary_detail_screen.dart's own `_CounterBadge` (a translucent white wash
+/// of `onHeroSurface`, so the pill reads against the plum without inventing
+/// a colour), not journeys_list_screen.dart's/journey_form_screen.dart's own
+/// `_StatusBadge`/`_StatusChip` (those sit on a plain, light card ground).
+/// Open carries the stronger wash and weight; both keep the white
+/// `onHeroSurface` ink, which is comfortably AA on either. Kept as its own
+/// small private widget rather than a shared export — this codebase's
+/// established convention: those two files already carry their own
+/// near-identical copies for their own backgrounds.
 class _StatusBadge extends StatelessWidget {
   const _StatusBadge({required this.label, required this.closed});
 
@@ -166,20 +235,19 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final brand = context.brand;
     return Container(
       key: const Key('journey-detail-status-badge'),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        color: brand.onHeroSurface.withValues(alpha: closed ? 0.12 : 0.22),
+        borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
       ),
       child: Text(
         label,
         style: theme.textTheme.labelSmall?.copyWith(
-          color: closed
-              ? theme.colorScheme.onSurfaceVariant
-              : theme.colorScheme.primary,
-          fontWeight: FontWeight.w600,
+          color: brand.onHeroSurface,
+          fontWeight: closed ? FontWeight.w600 : FontWeight.w700,
         ),
       ),
     );
@@ -209,6 +277,7 @@ class _JourneyApiariesSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
+    final brand = context.brand;
     final plannedApiaryIds =
         ref.watch(journeyPlanApiariesByJourneyProvider).value?[journey.id] ??
         const <String>[];
@@ -221,19 +290,16 @@ class _JourneyApiariesSection extends ConsumerWidget {
 
     return Container(
       key: const Key('journey-detail-apiaries-section'),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(BrandDimens.padCard),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(16),
+        color: brand.cardColor,
+        border: Border.all(color: brand.cardBorder),
+        borderRadius: BrandDimens.borderCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            l10n.journeyDetailApiariesTitle,
-            style: theme.textTheme.titleMedium,
-          ),
+          SectionHeader(l10n.journeyDetailApiariesTitle),
           const SizedBox(height: 12),
           activitiesAsync.when(
             loading: () => const Center(
@@ -248,6 +314,7 @@ class _JourneyApiariesSection extends ConsumerWidget {
               style: TextStyle(color: theme.colorScheme.error),
             ),
             data: (activities) => _ApiaryEntries(
+              journeyId: journey.id,
               plannedApiaryIds: plannedApiaryIds,
               activities: activities,
               apiaryNames: apiaryNames,
@@ -265,11 +332,13 @@ class _JourneyApiariesSection extends ConsumerWidget {
 /// seen-ids guard against a duplicate entry when an id appears in both.
 class _ApiaryEntries extends StatelessWidget {
   const _ApiaryEntries({
+    required this.journeyId,
     required this.plannedApiaryIds,
     required this.activities,
     required this.apiaryNames,
   });
 
+  final String journeyId;
   final List<String> plannedApiaryIds;
   final List<Activity> activities;
   final Map<String, String> apiaryNames;
@@ -291,9 +360,9 @@ class _ApiaryEntries extends StatelessWidget {
     ];
 
     if (apiaryIds.isEmpty) {
-      return Text(
-        l10n.journeyDetailApiariesEmpty,
+      return EmptyState(
         key: const Key('journey-detail-apiaries-empty'),
+        message: l10n.journeyDetailApiariesEmpty,
       );
     }
 
@@ -302,6 +371,7 @@ class _ApiaryEntries extends StatelessWidget {
       children: [
         for (final apiaryId in apiaryIds) ...[
           _ApiaryCard(
+            journeyId: journeyId,
             apiaryId: apiaryId,
             // A raw internal id would leak into user-facing text if this
             // apiary isn't in the currently-loaded list (deleted since, or
@@ -329,12 +399,14 @@ class _ApiaryEntries extends StatelessWidget {
 /// an activity list (there's nothing to list yet).
 class _ApiaryCard extends StatelessWidget {
   const _ApiaryCard({
+    required this.journeyId,
     required this.apiaryId,
     required this.apiaryName,
     required this.isPlanned,
     required this.activities,
   });
 
+  final String journeyId;
   final String apiaryId;
   final String apiaryName;
   final bool isPlanned;
@@ -347,22 +419,30 @@ class _ApiaryCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
 
-    return Container(
+    return BrandCard(
       key: Key('journey-detail-apiary-$apiaryId'),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
+              LeadingIconTile(
+                icon: Icons.hive_outlined,
+                color: context.brand.cresta.color,
+                tint: context.brand.cresta.tint,
+                size: BrandDimens.sizeLeadingTileSmall,
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   apiaryName,
-                  style: theme.textTheme.titleSmall,
+                  style: TextStyle(
+                    fontFamily: AppTheme.bodyFontFamily,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: theme.colorScheme.onSurface,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -384,6 +464,13 @@ class _ApiaryCard extends StatelessWidget {
               // state.
               emptyText: '',
               shrinkWrap: true,
+              // #384: keep a tap on this journey's own activity inside the
+              // Journeys branch (see ActivityListView's own doc comment) —
+              // apiaryId travels as a query parameter for
+              // journeyActivityDetail's own route (app_router.dart).
+              detailLocationBuilder: (activity) =>
+                  '/journeys/$journeyId/activities/${activity.id}'
+                  '?apiaryId=${activity.apiaryId}',
             ),
           ] else ...[
             const SizedBox(height: 4),
@@ -418,17 +505,17 @@ class _VisitedBadge extends StatelessWidget {
         ? l10n.journeyDetailApiaryVisitedBadge
         : l10n.journeyDetailApiaryPlannedBadge;
     final background = visited
-        ? theme.colorScheme.primaryContainer
+        ? theme.colorScheme.secondaryContainer
         : theme.colorScheme.surfaceContainerHighest;
     final foreground = visited
-        ? theme.colorScheme.onPrimaryContainer
+        ? theme.colorScheme.onSecondaryContainer
         : theme.colorScheme.onSurfaceVariant;
     return Container(
       key: Key('journey-detail-apiary-badge-$apiaryId'),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
       ),
       child: Text(
         label,

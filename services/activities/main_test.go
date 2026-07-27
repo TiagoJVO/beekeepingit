@@ -35,6 +35,7 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/health"
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 	"github.com/TiagoJVO/beekeepingit/services/shared/devseed"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 // testOrgHeader lets a test request stand in as a caller resolved to a
@@ -973,6 +974,91 @@ func TestActivitiesSync_ValidateThenApply_CreateActivity_Success(t *testing.T) {
 	}
 }
 
+// --- #378: a patch may omit occurred_at/type/attributes (PowerSync uploads
+// only the columns that actually changed — an edit that doesn't touch a
+// given field legitimately produces a patch without it), unlike this file's
+// previous full-resubmit assumption ---
+
+// TestActivitiesSync_ValidateAcceptsPartialPatch confirms the validate-side
+// fix directly: a patch carrying no data at all, and a patch carrying only
+// occurred_at, are both accepted (only `put` still requires occurred_at/type).
+func TestActivitiesSync_ValidateAcceptsPartialPatch(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	empty := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T10:00:00Z", "data": map[string]any{},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{empty}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate (empty patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	occurredOnly := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"occurred_at": "2026-07-17"},
+	}
+	rec = f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{occurredOnly}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate (occurred_at-only patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestActivitiesSync_Apply_PatchWithoutAttributesPreservesAttributes is the
+// concrete regression this issue exists for: mergeActivityOp used to reset
+// `attributes` to an empty map whenever a patch's data.Attributes was absent,
+// silently wiping the stored attribute bag on any edit that didn't happen to
+// touch it (e.g. an occurred_at-only patch). A patch that omits attributes
+// must preserve them.
+func TestActivitiesSync_Apply_PatchWithoutAttributesPreservesAttributes(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	create := syncOp(id, apiaryID) // attributes: {"notes": "queued offline"}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{create}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patch := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T12:00:00Z",
+		"data":       map[string]any{"occurred_at": "2026-07-18"}, // no attributes key at all
+	}
+	batch := map[string]any{"ops": []any{patch}}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch); rec.Code != http.StatusOK {
+		t.Fatalf("validate (occurred_at-only patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	if row.OccurredAt.Time.Format("2006-01-02") != "2026-07-18" {
+		t.Fatalf("occurred_at after patch = %v, want 2026-07-18 (the patch's own change must still apply)", row.OccurredAt.Time)
+	}
+	var attrs map[string]any
+	if err := json.Unmarshal(row.Attributes, &attrs); err != nil {
+		t.Fatalf("unmarshal attributes: %v", err)
+	}
+	if attrs["notes"] != "queued offline" {
+		t.Fatalf("attributes after occurred_at-only patch = %+v, want unchanged {notes: queued offline} (must not be wiped)", attrs)
+	}
+	if row.Type != api.TypeGeneric {
+		t.Fatalf("type after occurred_at-only patch = %q, want unchanged %q", row.Type, api.TypeGeneric)
+	}
+}
+
 // TestActivitiesSync_Apply_NonCanonicalCaseApiaryIdStillApplies is the
 // regression guard for the review finding that resolveApiaryOwnership keyed
 // `owned` by the RAW, unnormalized client string, while applyActivityOp
@@ -1612,6 +1698,291 @@ func TestActivitiesRest_History_DeleteProducesAuditRow(t *testing.T) {
 	}
 }
 
+// --- GET /v1/activities/{id}/history (#60, FR-HIS-1) ---
+
+// historyEntryView mirrors api/history.go's historyEntryDTO wire shape —
+// this test file's own decode target (can't import the api package's
+// unexported type across packages).
+type historyEntryView struct {
+	ID            string          `json:"id"`
+	EntityType    string          `json:"entity_type"`
+	EntityID      string          `json:"entity_id"`
+	EventKind     string          `json:"event_kind"`
+	ActorUserID   *string         `json:"actor_user_id"`
+	OccurredAt    time.Time       `json:"occurred_at"`
+	RecordedAt    time.Time       `json:"recorded_at"`
+	ChangedFields []string        `json:"changed_fields"`
+	Change        json.RawMessage `json:"change"`
+}
+
+type historyListView struct {
+	Data []historyEntryView `json:"data"`
+}
+
+func (f *activitiesFixture) getActivityHistory(t *testing.T, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	return f.do(t, http.MethodGet, "/v1/activities/"+id+"/history", nil)
+}
+
+// TestActivitiesRest_History_GetReturnsCombinedTimelineChronologically is
+// #60's core AC: GET /v1/activities/{id}/history exposes the combined
+// audit_log+sync_conflict_log timeline ListEntityTimeline builds (mirroring
+// apiaries' own #61/#60 read) — create/update/delete via the REST write
+// paths, then read it back over HTTP in chronological (recorded_at) order,
+// oldest first.
+func TestActivitiesRest_History_GetReturnsCombinedTimelineChronologically(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getActivityHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, update, delete): %+v", len(got.Data), got.Data)
+	}
+	wantKinds := []string{history.ChangeCreate, history.ChangeUpdate, history.ChangeDelete}
+	for i, want := range wantKinds {
+		e := got.Data[i]
+		if e.EventKind != want {
+			t.Fatalf("history[%d].EventKind = %q, want %q", i, e.EventKind, want)
+		}
+		if e.EntityType != "activity" || e.EntityID != id {
+			t.Fatalf("history[%d] entity = (%q,%q), want (activity,%q)", i, e.EntityType, e.EntityID, id)
+		}
+		if e.ActorUserID == nil || *e.ActorUserID != devseed.UserID {
+			t.Fatalf("history[%d].ActorUserID = %v, want %q", i, e.ActorUserID, devseed.UserID)
+		}
+		if e.OccurredAt.IsZero() || e.RecordedAt.IsZero() {
+			t.Fatalf("history[%d] has a zero timestamp: %+v", i, e)
+		}
+	}
+	if len(got.Data[1].ChangedFields) == 0 {
+		t.Fatalf("update entry ChangedFields = %v, want at least one changed field", got.Data[1].ChangedFields)
+	}
+	if !got.Data[0].RecordedAt.Before(got.Data[1].RecordedAt) || !got.Data[1].RecordedAt.Before(got.Data[2].RecordedAt) {
+		t.Fatalf("history entries not chronologically ordered: %+v", got.Data)
+	}
+}
+
+// TestActivitiesRest_History_ConflictSurfacesAsSupersededOverHTTP proves the
+// #60 REST endpoint surfaces an LWW-losing offline edit as a "superseded"
+// event (history.md §6), not silently missing — the HTTP counterpart of
+// TestActivitiesSync_Apply_Delete_OlderThanLastEditIsSuperseded's own
+// conflict scenario, but for a patch-vs-patch race read back via the new
+// history route instead of asserted directly against the DB.
+func TestActivitiesRest_History_ConflictSurfacesAsSupersededOverHTTP(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOp(id, apiaryID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// A newer edit lands first (11:00) and wins.
+	winningOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{"notes": "winner"}},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{winningOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("winning patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// An older queued edit (10:30, between the create's 10:00 and the
+	// winning edit's 11:00) arrives after — it loses.
+	losingOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T10:30:00Z",
+		"data":       map[string]any{"type": api.TypeFeeding, "occurred_at": "2026-07-16", "attributes": map[string]any{"notes": "loser"}},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{losingOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("losing patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var applyResult struct {
+		Results []struct {
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &applyResult); err != nil {
+		t.Fatalf("decode apply response: %v", err)
+	}
+	if len(applyResult.Results) != 1 || applyResult.Results[0].Result != "superseded" {
+		t.Fatalf("losing patch result = %+v, want one superseded op", applyResult.Results)
+	}
+
+	histRec := f.getActivityHistory(t, id)
+	if histRec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", histRec.Code, histRec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(histRec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, winning update, superseded loss): %+v", len(got.Data), got.Data)
+	}
+	last := got.Data[2]
+	if last.EventKind != history.EventSuperseded {
+		t.Fatalf("last entry EventKind = %q, want %q", last.EventKind, history.EventSuperseded)
+	}
+	if last.ChangedFields != nil {
+		t.Fatalf("superseded entry ChangedFields = %v, want nil (only audit_log rows carry it)", last.ChangedFields)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(last.Change, &change); err != nil {
+		t.Fatalf("unmarshal superseded change: %v", err)
+	}
+	if change["winner"] != "server" {
+		t.Fatalf("superseded change[winner] = %v, want server", change["winner"])
+	}
+}
+
+// TestActivitiesRest_History_NotFound_UnknownID: a history request for an id
+// that was never created 404s, same as the REST create/edit/delete paths.
+func TestActivitiesRest_History_NotFound_UnknownID(t *testing.T) {
+	f := newActivitiesFixture(t)
+	rec := f.getActivityHistory(t, uuid.NewString())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("history status for unknown id = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestActivitiesRest_History_CrossOrg_NotFound is the #60 IDOR regression:
+// org B must not be able to read org A's activity history by id — the same
+// CRITICAL cross-org guard TestActivitiesRest_CrossOrg_WritesCannotTouchOtherOrgsRow
+// proves for edit/delete (#284/#39 carry-over), now proven for the new
+// history route too, so it never regresses that fix. 404 (ADR-0002
+// scope-hiding), not an empty-but-200 body (which would still leak "this id
+// exists in some org").
+func TestActivitiesRest_History_CrossOrg_NotFound(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	other := otherOrgCaller()
+	rec := f.doAs(t, other, http.MethodGet, "/v1/activities/"+id+"/history", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-org history status = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestActivitiesRest_History_ChangePayloadNeverEmbedsPersonalData is the
+// activities counterpart of apiaries' own pseudonymity regression
+// (TestApiariesSlice_History_ChangePayloadNeverEmbedsPersonalData, #59).
+// history.md §7.3 makes GDPR erasure safe by CONSTRUCTION: an audit row
+// carries only the opaque actor UUID, never denormalized names/emails — so
+// erasing a user from identity.users leaves nothing personal behind in any
+// service's audit_log. That guarantee is only as good as its weakest write
+// path, and #60 gave activities its own HTTP read surface for these rows.
+//
+// Asserts against the HTTP response rather than the table directly (unlike
+// the apiaries test): the wire shape is what #60 actually exposed, so this
+// guards the DTO mapping too, not just what got stored. Covers all three
+// audit change types AND the sync_conflict_log "superseded" entry, whose
+// change carries whole winning/losing row payloads — the likeliest place for
+// a field to smuggle personal data in unnoticed.
+func TestActivitiesRest_History_ChangePayloadNeverEmbedsPersonalData(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newActivitiesFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	// create + update + delete over REST (three audit change types)...
+	if rec := f.do(t, http.MethodPost, "/v1/activities", validHarvestBody(id, apiaryID)); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/activities/"+id, map[string]any{
+		"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	// ...plus a stale offline edit that loses LWW, producing a superseded
+	// conflict row with full winning/losing payloads.
+	losingOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2020-01-01T00:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-17",
+			"attributes": map[string]any{"notes": "stale offline edit"},
+		},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{losingOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("losing apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/activities/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getActivityHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) == 0 {
+		t.Fatalf("history returned no entries; the assertions below would vacuously pass")
+	}
+	var sawSuperseded bool
+	for _, e := range got.Data {
+		if e.EventKind == history.EventSuperseded {
+			sawSuperseded = true
+		}
+	}
+	if !sawSuperseded {
+		t.Fatalf("no superseded entry in the timeline — the conflict payload, this test's main target, went unchecked: %+v", got.Data)
+	}
+
+	// devseed's known PII — if it ever leaked into a payload it would appear
+	// verbatim as one of these substrings, at any nesting depth.
+	forbidden := []string{devseed.UserName, devseed.UserEmail}
+
+	for _, e := range got.Data {
+		body := string(e.Change)
+		for _, pii := range forbidden {
+			if strings.Contains(body, pii) {
+				t.Fatalf("change payload for event_kind=%s contains denormalized PII %q: %s", e.EventKind, pii, body)
+			}
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(e.Change, &decoded); err != nil {
+			t.Fatalf("change payload for event_kind=%s is not a JSON object: %s", e.EventKind, body)
+		}
+		for _, key := range []string{"actor_name", "name", "email"} {
+			if _, ok := decoded[key]; ok {
+				t.Fatalf("change payload for event_kind=%s embeds a %q field: %s", e.EventKind, key, body)
+			}
+		}
+		// The actor is exposed as an opaque UUID and nothing else.
+		if e.ActorUserID != nil && *e.ActorUserID != devseed.UserID {
+			t.Fatalf("ActorUserID = %q, want the opaque devseed user UUID %q", *e.ActorUserID, devseed.UserID)
+		}
+	}
+}
+
 // --- /internal/sync validate/apply — edit (#40) ---
 
 func TestActivitiesSync_Apply_Patch_UpdatesActivity(t *testing.T) {
@@ -1888,6 +2259,303 @@ func TestActivitiesSync_Apply_Delete_OlderThanLastEditIsSuperseded(t *testing.T)
 	}
 	if row.Type != api.TypeGeneric {
 		t.Fatalf("surviving row type = %q, want %q (the newer edit's content, not clobbered by the stale delete)", row.Type, api.TypeGeneric)
+	}
+}
+
+// --- journey_id re-linking on edit (#387) ---
+
+func getActivityRow(t *testing.T, f *activitiesFixture, id string) sqlcgen.ActivitiesActivity {
+	t.Helper()
+	row, err := sqlcgen.New(f.pool).GetActivity(context.Background(), sqlcgen.GetActivityParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		ID:             pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetActivity: %v", err)
+	}
+	return row
+}
+
+func TestActivitiesSync_Apply_Patch_JourneyIdAbsentKeepsStoredLink(t *testing.T) {
+	apiaryID, journeyID := uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyID})
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, journeyID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		// No "journey_id" key at all — an edit that doesn't touch the
+		// attachment (the common case, add_activity_screen.dart's own
+		// journey section renders nothing for an unrelated field edit).
+		"data": map[string]any{"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{}},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	row := getActivityRow(t, f, id)
+	if !row.JourneyID.Valid || uuidString(row.JourneyID) != journeyID {
+		t.Fatalf("journey_id after patch = %+v, want unchanged %q (absent key must keep the stored link)", row.JourneyID, journeyID)
+	}
+}
+
+func TestActivitiesSync_Apply_Patch_JourneyIdNullClearsLink(t *testing.T) {
+	apiaryID, journeyID := uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyID})
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, journeyID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+			"journey_id": nil, // key PRESENT, value null -> explicit clear
+		},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	row := getActivityRow(t, f, id)
+	if row.JourneyID.Valid {
+		t.Fatalf("journey_id after patch = %+v, want cleared (NULL) — an explicit `journey_id: null` must detach", row.JourneyID)
+	}
+}
+
+func TestActivitiesSync_Apply_Patch_JourneyIdSetRelinks(t *testing.T) {
+	apiaryID, journeyA, journeyB := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyA, journeyB})
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, journeyA)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+			"journey_id": journeyB,
+		},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	row := getActivityRow(t, f, id)
+	if !row.JourneyID.Valid || uuidString(row.JourneyID) != journeyB {
+		t.Fatalf("journey_id after patch = %+v, want re-linked to %q", row.JourneyID, journeyB)
+	}
+}
+
+// TestActivitiesSync_Apply_Patch_RelinkToForeignJourneyIsNoOp proves a
+// re-link to an unowned/unknown journey no-ops the WHOLE op (mirrors
+// TestActivitiesSync_Apply_CrossOrgJourneyIdIsNoOp's create-time
+// counterpart) — not just journey_id silently dropped while the rest of
+// the patch (type/occurred_at) still lands.
+func TestActivitiesSync_Apply_Patch_RelinkToForeignJourneyIsNoOp(t *testing.T) {
+	apiaryID, journeyA := uuid.NewString(), uuid.NewString()
+	foreignJourneyID := uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyA}) // foreignJourneyID deliberately not known
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, journeyA)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+			"journey_id": foreignJourneyID,
+		},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200 (cross-org journey_id on patch is a no-op, not an error), body = %s", rec.Code, rec.Body.String())
+	}
+
+	row := getActivityRow(t, f, id)
+	// syncOpWithJourney's own create already uses TypeGeneric/2026-07-16 —
+	// occurred_at is the field whose value actually DIFFERS between the
+	// create and this rejected patch attempt (2026-07-17), so it is the one
+	// that can actually detect "the rest of the patch still landed".
+	if row.OccurredAt.Time.Format(dateLayoutForTest) == "2026-07-17" {
+		t.Fatalf("row's occurred_at was mutated despite the rejected cross-org journey_id — the WHOLE patch must have been a no-op")
+	}
+	if !row.JourneyID.Valid || uuidString(row.JourneyID) != journeyA {
+		t.Fatalf("journey_id = %+v, want unchanged %q (rejected re-link must not touch it)", row.JourneyID, journeyA)
+	}
+}
+
+// TestActivitiesSync_Apply_JourneyIdChange_OlderIsSupersededAndConflictLogsIt
+// is the LWW safety-net test for journey_id specifically: a stale offline
+// re-link must not clobber a newer one, and the conflict log's winning
+// payload must reflect the SURVIVING (newer) journey_id, not the stale
+// rejected one (#387's own extension of logActivityConflict).
+func TestActivitiesSync_Apply_JourneyIdChange_OlderIsSupersededAndConflictLogsIt(t *testing.T) {
+	apiaryID, journeyA, journeyB, journeyC := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyA, journeyB, journeyC})
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, journeyA)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// A newer re-link to journeyB lands first (11:00).
+	newerPatch := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-17", "attributes": map[string]any{},
+			"journey_id": journeyB,
+		},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{newerPatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("newer patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// A STALE queued re-link to journeyC (device time between create and the
+	// newer edit) arrives after.
+	stalePatch := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T10:30:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-16", "attributes": map[string]any{},
+			"journey_id": journeyC,
+		},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{stalePatch}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stale patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Results []struct {
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Results) != 1 || got.Results[0].Result != "superseded" {
+		t.Fatalf("stale re-link result = %+v, want one superseded op", got.Results)
+	}
+
+	row := getActivityRow(t, f, id)
+	if !row.JourneyID.Valid || uuidString(row.JourneyID) != journeyB {
+		t.Fatalf("surviving journey_id = %+v, want the newer edit's %q, not clobbered by the stale re-link", row.JourneyID, journeyB)
+	}
+
+	rows, err := f.pool.Query(context.Background(),
+		"SELECT winning_payload FROM activities.sync_conflict_log WHERE organization_id = $1 AND entity_id = $2",
+		pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	)
+	if err != nil {
+		t.Fatalf("query sync_conflict_log: %v", err)
+	}
+	defer rows.Close()
+	var winningJSON []byte
+	found := false
+	for rows.Next() {
+		if err := rows.Scan(&winningJSON); err != nil {
+			t.Fatalf("scan winning_payload: %v", err)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("no sync_conflict_log row found — the stale re-link must have been logged as a conflict")
+	}
+	var winning struct {
+		JourneyID *string `json:"journey_id"`
+	}
+	if err := json.Unmarshal(winningJSON, &winning); err != nil {
+		t.Fatalf("unmarshal winning_payload: %v", err)
+	}
+	if winning.JourneyID == nil || *winning.JourneyID != journeyB {
+		t.Fatalf("winning_payload.journey_id = %v, want %q (the surviving server state)", winning.JourneyID, journeyB)
+	}
+}
+
+// TestActivitiesSync_Apply_Patch_RelinkAuditRowIncludesJourneyId proves a
+// re-link participates in audit history like every other mutable column
+// (#387's write.go/sync.go plan: activityRowState.fields()).
+func TestActivitiesSync_Apply_Patch_RelinkAuditRowIncludesJourneyId(t *testing.T) {
+	apiaryID, journeyID := uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyID})
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOp(id, apiaryID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data": map[string]any{
+			"type": api.TypeGeneric, "occurred_at": "2026-07-16", "attributes": map[string]any{},
+			"journey_id": journeyID,
+		},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListAuditLog(context.Background(), sqlcgen.ListAuditLogParams{
+		OrganizationID: pgtype.UUID{Bytes: uuid.MustParse(devseed.OrganizationID), Valid: true},
+		EntityType:     "activity",
+		EntityID:       pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLog: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("audit rows = %d, want 2 (create + re-link)", len(rows))
+	}
+	found := false
+	for _, changedField := range rows[1].ChangedFields {
+		if changedField == "journey_id" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("update audit row changed_fields = %v, want it to include journey_id", rows[1].ChangedFields)
+	}
+}
+
+// TestActivitiesSync_Apply_Put_WithoutJourneyIdClearsExistingLink proves
+// put's full-resubmit semantics: a put that doesn't mention journey_id at
+// all clears any previously-stored link, exactly like a create body with no
+// journey_id inserts NULL (mergeActivityOp's own doc comment).
+func TestActivitiesSync_Apply_Put_WithoutJourneyIdClearsExistingLink(t *testing.T) {
+	apiaryID, journeyID := uuid.NewString(), uuid.NewString()
+	f := newActivitiesFixtureWithJourneys(t, []string{apiaryID}, []string{journeyID})
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{syncOpWithJourney(id, apiaryID, journeyID)}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	resendPut := map[string]any{
+		"op": "put", "entity_type": "activity", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data": map[string]any{
+			"apiary_id": apiaryID, "type": api.TypeGeneric, "occurred_at": "2026-07-16",
+			"attributes": map[string]any{"notes": "resubmitted without a journey"},
+			// no "journey_id" key at all
+		},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{resendPut}}); rec.Code != http.StatusOK {
+		t.Fatalf("put apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	row := getActivityRow(t, f, id)
+	if row.JourneyID.Valid {
+		t.Fatalf("journey_id after full-resubmit put = %+v, want cleared (a put omitting journey_id represents no journey)", row.JourneyID)
 	}
 }
 

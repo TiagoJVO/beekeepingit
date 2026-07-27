@@ -93,3 +93,26 @@ with the release version. This gives one consistent mental model: CI validates e
 - **Keep `infra/gitops/` in this repo** — viable and simpler (same-repo PR needs only `GITHUB_TOKEN`,
   no new secret); the split (§3) was chosen for separation-of-concerns hygiene, accepting the
   cross-repo credential cost.
+
+## Addendum (2026-07-21): separate the approval-gate environment from the deploy-record environment
+
+`beekeepingit`'s [Deployments page](https://github.com/TiagoJVO/beekeepingit/deployments) is
+populated by Actions' implicit deployment-record creation, triggered any time a job references
+`environment:` — there's no separate API call to intercept. Before this change, `approve` referenced
+`staging`/`production` directly, so the Deployments page recorded "approved to publish" at release
+time — before the tag-bump PR was even opened, let alone merged into `beekeepingit-gitops`. That
+conflated two different events under one name: _approved to release_ and _actually running on the
+cluster_.
+
+**Change:** `approve` now references `staging-gate`/`production-gate` (this repo's only user of
+those names). The required-reviewer protection rule moved from `production` to `production-gate`;
+`production`/`staging` are now unprotected placeholders, reserved for the real deploy record.
+`beekeepingit-gitops`'s `notify-deploy` workflow (fires on push to its `main`, i.e. exactly when a
+tag-bump PR merges and Flux is about to reconcile) creates a deployment on `beekeepingit` under the
+plain `staging`/`production` name via a scoped cross-repo PAT (`DEPLOY_NOTIFY_TOKEN`, Deployments:
+write on `beekeepingit` only — same narrow-scope principle as `GITOPS_PR_TOKEN` in §2/§3).
+
+Consequence: `beekeepingit`'s Deployments page now carries two distinct environment families —
+`*-gate` (release approved to publish) and the plain name (GitOps merge landed, Flux reconciling)
+— rather than one name meaning both. No change to the approval mechanism itself, no new standing
+git-write credential (the new PAT can only create deployment records, nothing else).

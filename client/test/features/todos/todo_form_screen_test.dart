@@ -240,12 +240,17 @@ void _useTallViewport(WidgetTester tester) {
 Future<void> _goToNewForm(
   WidgetTester tester, {
   required _FakeTodosRepository repo,
+  String? initialApiaryId,
 }) async {
   _useTallViewport(tester);
   await tester.pumpWidget(_buildApp(repo: repo));
   await tester.pumpAndSettle();
   final router = GoRouter.of(tester.element(find.byType(AppShell)));
-  router.go('/todos/new');
+  router.go(
+    initialApiaryId == null
+        ? '/todos/new'
+        : '/todos/new?apiaryId=$initialApiaryId',
+  );
   await tester.pumpAndSettle();
 }
 
@@ -273,6 +278,46 @@ Future<void> _pumpBounded(WidgetTester tester) async {
   for (var i = 0; i < 10; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
+}
+
+/// Drives the REAL `showDatePicker` calendar dialog (#370): opens the picker
+/// from [fieldKey], taps [day] in the month grid, and confirms with the
+/// dialog's own `MaterialLocalizations`-provided confirm label (no hardcoded
+/// English string).
+///
+/// Deliberately generic in [fieldKey] so the identical pattern can be reused
+/// for `add_activity_screen.dart`'s `occurredAt` field, which is the same
+/// shape and is likewise not UI-driven in its own tests yet (#370's note).
+///
+/// Determinism: `showDatePicker`'s `initialDate` decides WHICH month the grid
+/// opens on, and both screens default it to `DateTime.now()` when the field
+/// is empty. So callers must drive this from an already-set date (an edit
+/// form pre-filled via `getById`) rather than an empty field — otherwise the
+/// day tapped here lands in whatever month "today" happens to be and the test
+/// drifts/goes flaky near month boundaries.
+Future<void> _pickDayInDatePicker(
+  WidgetTester tester, {
+  required Key fieldKey,
+  required int day,
+}) async {
+  await tester.tap(find.byKey(fieldKey));
+  await tester.pumpAndSettle();
+
+  expect(find.byType(DatePickerDialog), findsOneWidget);
+  final materialL10n = MaterialLocalizations.of(
+    tester.element(find.byType(DatePickerDialog)),
+  );
+
+  await tester.tap(
+    find.descendant(
+      of: find.byType(DatePickerDialog),
+      matching: find.text('$day'),
+    ),
+  );
+  await tester.pumpAndSettle();
+
+  await tester.tap(find.widgetWithText(TextButton, materialL10n.okButtonLabel));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -347,6 +392,57 @@ void main() {
       expect(saved.assigneeId, 'm1');
       expect(saved.apiaryId, 'a1');
     });
+
+    testWidgets(
+      'create mode pre-selects the apiary passed via initialApiaryId (#389)',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await _goToNewForm(tester, repo: repo, initialApiaryId: 'a1');
+
+        // The apiary picker (#293) shows Monte Alto (a1) already selected —
+        // preserves the create-from-apiary-detail flow that used to go
+        // through #52's own quick-create sheet's read-only chip.
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('todo-apiary-option-a1')),
+            matching: find.byIcon(Icons.radio_button_checked),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.enterText(
+          find.byKey(const Key('todo-title-field')),
+          'Check queen',
+        );
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        await _pumpBounded(tester);
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.apiaryId, 'a1');
+      },
+    );
+
+    testWidgets(
+      'create mode with initialApiaryId still allows changing the apiary '
+      'via TodoApiaryPickerField (#389)',
+      (tester) async {
+        final repo = _FakeTodosRepository();
+        await _goToNewForm(tester, repo: repo, initialApiaryId: 'a1');
+
+        await tester.tap(find.byKey(const Key('todo-apiary-option-a2')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('todo-title-field')),
+          'Check queen',
+        );
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        await _pumpBounded(tester);
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.apiaryId, 'a2');
+      },
+    );
 
     testWidgets(
       'a failing create() keeps the form open and shows an error, not an '
@@ -500,6 +596,44 @@ void main() {
         await _pumpBounded(tester);
 
         expect(repo.updated.single.dueDate, isNull);
+        expect(repo.updated.single.assigneeId, 'm1');
+        expect(repo.updated.single.apiaryId, 'a1');
+      },
+    );
+
+    testWidgets(
+      'picking a new due date through the real showDatePicker UI displays it '
+      'and resubmits it (#370)',
+      (tester) async {
+        final repo = _FakeTodosRepository(
+          // Pins the picker's `initialDate` (and therefore the month the grid
+          // opens on) to August 2026 — see _pickDayInDatePicker's note on
+          // determinism.
+          existing: existingTodo(
+            dueDate: '2026-08-01',
+            assigneeId: 'm1',
+            apiaryId: 'a1',
+          ),
+        );
+        await _goToEditForm(tester, repo: repo);
+        expect(find.text('Aug 1, 2026'), findsOneWidget);
+
+        await _pickDayInDatePicker(
+          tester,
+          fieldKey: const Key('todo-due-date-field'),
+          day: 15,
+        );
+
+        // Displayed on the field...
+        expect(find.text('Aug 15, 2026'), findsOneWidget);
+        expect(find.text('Aug 1, 2026'), findsNothing);
+
+        // ...and persisted through save.
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        await _pumpBounded(tester);
+
+        expect(repo.updated, hasLength(1));
+        expect(repo.updated.single.dueDate, '2026-08-15');
         expect(repo.updated.single.assigneeId, 'm1');
         expect(repo.updated.single.apiaryId, 'a1');
       },

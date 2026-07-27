@@ -136,7 +136,8 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
           key: const Key('members-back-button'),
           icon: const Icon(Icons.arrow_back),
           tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-          onPressed: () => context.go('/apiaries'),
+          // Back to the app home, which is the Tasks tab now (D-29, #427).
+          onPressed: () => context.go('/todos'),
         ),
         title: Text(l10n.membersTitle),
       ),
@@ -165,7 +166,6 @@ class _MembersScreenState extends ConsumerState<MembersScreen> {
                         keyboardType: TextInputType.emailAddress,
                         decoration: InputDecoration(
                           labelText: l10n.membersInviteEmailLabel,
-                          border: const OutlineInputBorder(),
                           errorText: _emailError,
                         ),
                         validator: (v) {

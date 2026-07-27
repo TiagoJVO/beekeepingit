@@ -139,6 +139,15 @@ todos             (id, organization_id, title, description, due_date, priority, 
                    completed_at, assignee_id, apiary_id, created_at, updated_at)
                    -- #50: plain typed columns, no JSON-encoded attributes column needed;
                    -- #51: apiary_id added (optional apiary association, FR-TD-1)
+audit_log         (id, organization_id, entity_type, entity_id, change_type, actor_user_id,
+                   occurred_at, recorded_at, changed_fields TEXT(JSON), change TEXT(JSON))
+sync_conflict_log (id, organization_id, entity_type, entity_id, winning_payload TEXT(JSON),
+                   losing_payload TEXT(JSON), winner, actor_user_id, occurred_at, recorded_at)
+                   -- #60, FR-HIS-1: READ-ONLY on the device (server-authored history —
+                   -- no CRUD ops, no entityTypeForTable mapping). POLYMORPHIC: both
+                   -- apiaries.* and activities.* stream into these same two tables,
+                   -- keyed by (entity_type, entity_id) — history.md §3. The client
+                   -- UNIONs them per entity, mirroring the server's ListEntityTimeline.
 ```
 
 Projection: server `location geography` → client `location_lon/lat` via `ST_X`/`ST_Y`

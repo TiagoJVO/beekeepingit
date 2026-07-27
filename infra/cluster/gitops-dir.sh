@@ -14,6 +14,13 @@
 # can capture it with `dir="$(gitops-dir.sh)"`.
 set -euo pipefail
 
+# Optional local config from infra/cluster/.env (see .env.example) — lets
+# BEEKEEPINGIT_GITOPS_DIR/BEEKEEPINGIT_GITOPS_REPO live there for standalone
+# invocations (callers that already sourced env.sh just re-inherit the same
+# values through the environment).
+# shellcheck disable=SC1091 # resolved at runtime next to this script
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
+
 GITOPS_REPO="${BEEKEEPINGIT_GITOPS_REPO:-https://github.com/TiagoJVO/beekeepingit-gitops}"
 
 if [ -n "${BEEKEEPINGIT_GITOPS_DIR:-}" ]; then

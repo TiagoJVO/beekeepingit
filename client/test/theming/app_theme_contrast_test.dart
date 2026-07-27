@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:beekeepingit_client/theming/app_theme.dart';
+import 'package:beekeepingit_client/theming/brand_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -50,6 +51,17 @@ const double _kMinNormalTextContrast = 4.5;
 /// for a decorative/non-body role.
 const double _kMinNonTextContrast = 3.0;
 
+/// A comfortable margin above the 4.5:1 AA floor (WCAG 2.2 AAA for normal
+/// text, 7:1). The `surfaceContainerHighest`/`onSurfaceVariant` pair carries
+/// the journey counter/badge text (`journeys_list_screen.dart`'s
+/// `_ProgressBadge`/`_StatusBadge`, `journey_detail_screen.dart`'s
+/// `_VisitedBadge`, `journey_stats_detail_screen.dart`'s `_VisitBadge`). In
+/// light mode it previously sat at only ~4.64:1 — passing the floor but
+/// rendering as barely-legible in the field (#423). This bar guards that pair
+/// (both brightnesses) so a future token nudge can't silently drop it back to
+/// marginal.
+const double _kComfortableTextContrast = 7.0;
+
 void _expectAaContrast(
   String label,
   Color foreground,
@@ -87,10 +99,10 @@ void _checkOnColorPairs(String themeName, ColorScheme scheme) {
       scheme.secondaryContainer,
     ),
     'surface/onSurface': (scheme.onSurface, scheme.surface),
-    'surfaceContainerHighest/onSurfaceVariant': (
-      scheme.onSurfaceVariant,
-      scheme.surfaceContainerHighest,
-    ),
+    // NOTE: surfaceContainerHighest/onSurfaceVariant (the counter/badge text
+    // pair) is intentionally NOT here — it's held to the higher
+    // _kComfortableTextContrast bar via _checkBadgeTextPair below, not this
+    // 4.5:1 floor.
     'error/onError': (scheme.onError, scheme.error),
     'errorContainer/onErrorContainer': (
       scheme.onErrorContainer,
@@ -105,6 +117,18 @@ void _checkOnColorPairs(String themeName, ColorScheme scheme) {
       entry.value.$2,
     );
   }
+}
+
+/// Guards the counter/badge text pair
+/// (`surfaceContainerHighest`/`onSurfaceVariant`) against the comfortable
+/// ≥7:1 margin rather than the bare 4.5:1 floor (#423).
+void _checkBadgeTextPair(String themeName, ColorScheme scheme) {
+  _expectAaContrast(
+    '$themeName surfaceContainerHighest/onSurfaceVariant (counter/badge text)',
+    scheme.onSurfaceVariant,
+    scheme.surfaceContainerHighest,
+    minRatio: _kComfortableTextContrast,
+  );
 }
 
 void _checkTertiaryPair(
@@ -129,6 +153,17 @@ void main() {
     _checkOnColorPairs('dark', AppTheme.dark().colorScheme);
   });
 
+  test('counter/badge text pair clears the comfortable 7:1 margin, not just '
+      'the 4.5:1 floor, in both brightnesses (#423)', () {
+    // surfaceContainerHighest/onSurfaceVariant carries the journey
+    // counter/badge text. Light mode sat at only ~4.64:1 (barely-legible in
+    // the field); darkening the `muted` token lifts it to ~7.10:1. Dark mode
+    // already sits at ~7.87:1. Both are asserted against the higher bar so a
+    // future nudge can't silently drop this pair back to marginal.
+    _checkBadgeTextPair('light', AppTheme.light().colorScheme);
+    _checkBadgeTextPair('dark', AppTheme.dark().colorScheme);
+  });
+
   test('light theme tertiary/onTertiary meets the non-text 3:1 floor, not '
       'full text AA (#79, matches brand_tokens.dart\'s gold-as-body-text '
       'precedent)', () {
@@ -151,6 +186,70 @@ void main() {
       'dark',
       AppTheme.dark().colorScheme,
       minRatio: _kMinNormalTextContrast,
+    );
+  });
+
+  // --- BrandTheme extension roles (hero surface, notes callout, activity-type
+  // tints) — the look-and-feel roles Material's ColorScheme has no slot for
+  // (lib/theming/brand_theme.dart). These carry real text/graphics on the
+  // restyled screens, so they get the same computational AA guard the
+  // ColorScheme roles above already have.
+
+  test('BrandTheme text-carrying roles meet WCAG 2.2 AA (4.5:1) in both '
+      'brightnesses', () {
+    for (final (name, brand) in <(String, BrandTheme)>[
+      ('light', AppTheme.light().extension<BrandTheme>()!),
+      ('dark', AppTheme.dark().extension<BrandTheme>()!),
+    ]) {
+      // Hero title + body (apiary/activity detail plum header) and the notes
+      // "sticky note" callout are genuine body text, held to the 4.5:1 bar.
+      _expectAaContrast(
+        '$name hero onHeroSurface',
+        brand.onHeroSurface,
+        brand.heroSurface,
+      );
+      _expectAaContrast(
+        '$name hero onHeroSurfaceMuted',
+        brand.onHeroSurfaceMuted,
+        brand.heroSurface,
+      );
+      _expectAaContrast('$name notes text', brand.notesText, brand.notesBg);
+    }
+  });
+
+  test('BrandTheme activity-type icon tints meet the non-text 3:1 floor '
+      '(graphical), except the decorative gold cresta pair', () {
+    // The type icon tiles are graphical objects; in light mode their tints are
+    // opaque so contrast is meaningful (dark-mode tints are translucent washes
+    // over the plum card, so a raw-token ratio would be misleading and is not
+    // asserted here). feeding/treatment/generic clear the 3:1 non-text floor.
+    final brand = AppTheme.light().extension<BrandTheme>()!;
+    for (final (name, v) in <(String, ActivityTypeVisual)>[
+      ('feeding', brand.feeding),
+      ('treatment', brand.treatment),
+      ('generic', brand.generic),
+    ]) {
+      _expectAaContrast(
+        'light activity $name icon-on-tint',
+        v.color,
+        v.tint,
+        minRatio: _kMinNonTextContrast,
+      );
+    }
+    // Cresta is honey/gold-on-sand (~2.85:1), below even the 3:1 non-text
+    // floor — the same documented gold-as-decorative exception brand_tokens
+    // and the tertiary pair above already call out. It's exempt from SC
+    // 1.4.11 because the icon is DECORATIVE: the activity type is always
+    // shown as an adjacent text label (and the apiary/hive name carries the
+    // row's meaning), so the tinted icon never solely conveys content. Guard
+    // only that it hasn't regressed to invisibly-low contrast.
+    final cresta = _contrastRatio(brand.cresta.color, brand.cresta.tint);
+    expect(
+      cresta,
+      greaterThan(1.3),
+      reason:
+          'cresta icon-on-tint ($cresta:1) — decorative, but should stay '
+          'visibly distinct from its tile',
     );
   });
 }

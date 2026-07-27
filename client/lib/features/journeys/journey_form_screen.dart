@@ -4,9 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
+import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 import 'apiary_multi_select_field.dart';
+import 'journey_default_attributes_section.dart';
 import 'journey_status.dart';
 import 'journeys_repository.dart';
 
@@ -35,7 +39,8 @@ class JourneyFormScreen extends ConsumerStatefulWidget {
   ConsumerState<JourneyFormScreen> createState() => _JourneyFormScreenState();
 }
 
-class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
+class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
+    with UnsavedChangesMixin {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
 
@@ -43,7 +48,10 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
   String _status = journeyStatusOpen;
   Set<String> _apiaryIds = {};
   bool _busy = false;
-  String? _apiaryIdsError;
+
+  // Journey-level subtype attribute defaults (#385) — see
+  // journey_default_attributes_section.dart's own doc comment.
+  final _defaultAttributes = JourneyDefaultAttributesController();
 
   @override
   void initState() {
@@ -54,6 +62,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _defaultAttributes.dispose();
     super.dispose();
   }
 
@@ -61,7 +70,11 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
   /// add_activity_screen.dart's own `_loadExisting`, including its error
   /// handling and its "l10n/messenger only read inside the catch block"
   /// rule).
-  Future<void> _loadExisting() async {
+  // Wrapped in [loadWithoutMarkingDirty] (#345) so pre-filling the form
+  // doesn't arm the unsaved-changes guard.
+  Future<void> _loadExisting() => loadWithoutMarkingDirty(_loadExistingInner);
+
+  Future<void> _loadExistingInner() async {
     setState(() => _busy = true);
     try {
       final repo = await ref.read(journeysRepositoryProvider.future);
@@ -72,6 +85,10 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
         _mainActivityType = existing.mainActivityType;
         _status = existing.status;
         _apiaryIds = existing.apiaryIds.toSet();
+        _defaultAttributes.populate(
+          existing.mainActivityType,
+          existing.defaultAttributes,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -84,23 +101,20 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
     }
   }
 
-  bool _validate(AppLocalizations l10n) {
-    final formOk = _formKey.currentState!.validate();
-    final hasApiary = _apiaryIds.isNotEmpty;
-    setState(() {
-      _apiaryIdsError = hasApiary ? null : l10n.journeyApiariesRequired;
-    });
-    return formOk && hasApiary;
-  }
+  // A journey may be saved with an empty apiary plan (D-30, #428): only the
+  // name is required at create time; apiaries can be added later via edit
+  // ([JourneysRepository.create] already documents `apiaryIds` may be empty).
+  bool _validate() => _formKey.currentState!.validate();
 
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
-    if (!_validate(l10n)) return;
+    if (!_validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       final repo = await ref.read(journeysRepositoryProvider.future);
       final name = _nameController.text.trim();
+      final defaultAttributes = _defaultAttributes.build(_mainActivityType);
       if (widget.isEdit) {
         await repo.update(
           widget.journeyId!,
@@ -108,15 +122,18 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
           mainActivityType: _mainActivityType,
           status: _status,
           apiaryIds: _apiaryIds.toList(),
+          defaultAttributes: defaultAttributes,
         );
       } else {
         await repo.create(
           name: name,
           mainActivityType: _mainActivityType,
           apiaryIds: _apiaryIds.toList(),
+          defaultAttributes: defaultAttributes,
         );
       }
       if (!mounted) return;
+      clearUnsavedChanges();
       context.go('/journeys');
       messenger.showSnackBar(SnackBar(content: Text(l10n.journeySaveSuccess)));
     } catch (e) {
@@ -174,6 +191,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
       final repo = await ref.read(journeysRepositoryProvider.future);
       await repo.delete(widget.journeyId!);
       if (!mounted) return;
+      clearUnsavedChanges();
       context.go('/journeys');
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.journeyDeleteSuccess)),
@@ -196,104 +214,121 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (widget.isEdit)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _StatusChip(status: _status),
-                  ),
-                TextFormField(
-                  key: const Key('journey-name-field'),
-                  controller: _nameController,
-                  maxLength: 200,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? l10n.journeyNameRequired
-                      : null,
-                  decoration: InputDecoration(
-                    labelText: l10n.journeyNameLabel,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  key: const Key('journey-main-activity-type-field'),
-                  initialValue: _mainActivityType,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.journeyMainActivityTypeLabel,
-                    border: const OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final type in knownActivityTypes)
-                      DropdownMenuItem(
-                        value: type,
-                        child: Text(activityTypeLabel(l10n, type) ?? type),
+    return buildUnsavedChangesGuard(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              BrandDimens.gutterForm,
+              BrandDimens.gutterForm,
+              BrandDimens.gutterForm,
+              BrandDimens.scrollBottomInset,
+            ),
+            child: Form(
+              key: _formKey,
+              // Any field edit arms the unsaved-changes guard (#345); the
+              // apiary multi-select below (outside the field tree) calls it
+              // directly.
+              onChanged: markUnsavedChanges,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (widget.isEdit)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        bottom: BrandDimens.gapField,
                       ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _mainActivityType = value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                ApiaryMultiSelectField(
-                  selectedApiaryIds: _apiaryIds,
-                  onChanged: (ids) => setState(() {
-                    _apiaryIds = ids;
-                    _apiaryIdsError = null;
-                  }),
-                ),
-                if (_apiaryIdsError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, left: 4),
-                    child: Text(
-                      _apiaryIdsError!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                        fontSize: 12,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _StatusChip(status: _status),
                       ),
                     ),
+                  LabeledField(
+                    label: l10n.journeyNameLabel,
+                    child: TextFormField(
+                      key: const Key('journey-name-field'),
+                      controller: _nameController,
+                      maxLength: 200,
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? l10n.journeyNameRequired
+                          : null,
+                    ),
                   ),
-                const SizedBox(height: 24),
-                PrimaryActionButton(
-                  key: const Key('journey-save-button'),
-                  label: l10n.saveButton,
-                  busy: _busy,
-                  onPressed: _save,
-                ),
-                if (widget.isEdit && !isClosed) ...[
-                  const SizedBox(height: 12),
-                  SecondaryActionButton(
-                    key: const Key('journey-close-button'),
-                    label: l10n.closeJourneyAction,
-                    icon: Icons.lock_outline,
+                  const SizedBox(height: BrandDimens.gapField),
+                  LabeledField(
+                    label: l10n.journeyMainActivityTypeLabel,
+                    child: DropdownButtonFormField<String>(
+                      key: const Key('journey-main-activity-type-field'),
+                      initialValue: _mainActivityType,
+                      isExpanded: true,
+                      items: [
+                        for (final type in knownActivityTypes)
+                          DropdownMenuItem(
+                            value: type,
+                            child: Text(activityTypeLabel(l10n, type) ?? type),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _mainActivityType = value;
+                            // A different main_activity_type invalidates the
+                            // old type's default-attribute keys (#385's own
+                            // design decision) — reset rather than carry
+                            // stale/mismatched values forward.
+                            _defaultAttributes.reset();
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                  JourneyDefaultAttributesSection(
+                    type: _mainActivityType,
+                    controller: _defaultAttributes,
+                    onChanged: () => setState(() {}),
+                  ),
+                  const SizedBox(height: BrandDimens.gapField),
+                  ApiaryMultiSelectField(
+                    selectedApiaryIds: _apiaryIds,
+                    onChanged: (ids) {
+                      setState(() {
+                        _apiaryIds = ids;
+                      });
+                      markUnsavedChanges();
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  PrimaryActionButton(
+                    key: const Key('journey-save-button'),
+                    label: l10n.saveButton,
                     busy: _busy,
-                    onPressed: _close,
+                    onPressed: _save,
                   ),
+                  if (widget.isEdit && !isClosed) ...[
+                    const SizedBox(height: 12),
+                    SecondaryActionButton(
+                      key: const Key('journey-close-button'),
+                      label: l10n.closeJourneyAction,
+                      icon: Icons.lock_outline,
+                      busy: _busy,
+                      onPressed: _close,
+                    ),
+                  ],
+                  if (widget.isEdit) ...[
+                    const SizedBox(height: 12),
+                    SecondaryActionButton(
+                      key: const Key('journey-delete-button'),
+                      label: l10n.deleteJourney,
+                      icon: Icons.delete_outline,
+                      destructive: true,
+                      busy: _busy,
+                      onPressed: _confirmDelete,
+                    ),
+                  ],
                 ],
-                if (widget.isEdit) ...[
-                  const SizedBox(height: 12),
-                  SecondaryActionButton(
-                    key: const Key('journey-delete-button'),
-                    label: l10n.deleteJourney,
-                    icon: Icons.delete_outline,
-                    destructive: true,
-                    busy: _busy,
-                    onPressed: _confirmDelete,
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),
@@ -325,8 +360,8 @@ class _StatusChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: closed
               ? theme.colorScheme.surfaceContainerHighest
-              : theme.colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(12),
+              : theme.colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(BrandDimens.radiusBadge),
         ),
         child: ExcludeSemantics(
           child: Text(
@@ -334,7 +369,8 @@ class _StatusChip extends StatelessWidget {
             style: theme.textTheme.labelMedium?.copyWith(
               color: closed
                   ? theme.colorScheme.onSurfaceVariant
-                  : theme.colorScheme.onPrimaryContainer,
+                  : theme.colorScheme.onSecondaryContainer,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),

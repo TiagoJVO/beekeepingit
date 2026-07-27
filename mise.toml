@@ -33,6 +33,7 @@ sqlc = "1.31.1"                                          # typed SQL query codeg
 actionlint = "latest"        # GitHub Actions workflow linter
 shellcheck = "latest"        # shell script linter
 gitleaks = "latest"          # secret scanning
+yq = "4"                     # YAML query/extraction (scripts/check-deploy-url-drift.sh — #369)
 "npm:prettier" = "3"                 # Markdown / YAML / JSON formatter
 "npm:markdownlint-cli2" = "latest"   # Markdown linter
 
@@ -45,6 +46,7 @@ gitleaks = "latest"          # secret scanning
 helm = "3.21.2"     # pinned to match .github/workflows/helm-ci.yml
 kubectl = "latest"
 k3d = "latest"
+"aqua:scaleway/scaleway-cli" = "2.59.0"   # `scw` — Kapsule staging/prod cluster ops (D-26; infra/cluster/scaleway-*.sh, cluster-ops.yml)
 
 [settings]
 # Trust this config without an interactive prompt in CI/agent contexts.

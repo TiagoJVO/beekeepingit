@@ -344,6 +344,141 @@ func (q *Queries) ListActivitiesByOrg(ctx context.Context, arg ListActivitiesByO
 	return items, nil
 }
 
+const listAuditLog = `-- name: ListAuditLog :many
+SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
+FROM activities.audit_log
+WHERE organization_id = $1 AND entity_type = $2 AND entity_id = $3
+ORDER BY recorded_at, id
+`
+
+type ListAuditLogParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	EntityType     string      `json:"entity_type"`
+	EntityID       pgtype.UUID `json:"entity_id"`
+}
+
+// The per-entity timeline read (FR-HIS-1) — not yet exposed via HTTP (no AC
+// in this milestone requires the view screens), kept as typed groundwork for
+// the entity-detail "history" screen, mirroring apiaries.ListAuditLog.
+func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]ActivitiesAuditLog, error) {
+	rows, err := q.db.Query(ctx, listAuditLog, arg.OrganizationID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ActivitiesAuditLog
+	for rows.Next() {
+		var i ActivitiesAuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.ChangeType,
+			&i.ActorUserID,
+			&i.OccurredAt,
+			&i.RecordedAt,
+			&i.ChangedFields,
+			&i.Change,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntityTimeline = `-- name: ListEntityTimeline :many
+SELECT timeline.id, timeline.organization_id, timeline.entity_type, timeline.entity_id,
+       timeline.event_kind, timeline.actor_user_id, timeline.occurred_at, timeline.recorded_at,
+       timeline.changed_fields, timeline.change
+FROM (
+    SELECT al.id, al.organization_id, al.entity_type, al.entity_id, al.change_type AS event_kind,
+           al.actor_user_id, al.occurred_at, al.recorded_at, al.changed_fields, al.change
+    FROM activities.audit_log al
+    WHERE al.organization_id = $1 AND al.entity_type = $2 AND al.entity_id = $3
+
+    UNION ALL
+
+    SELECT scl.id, scl.organization_id, scl.entity_type, scl.entity_id, 'superseded' AS event_kind,
+           scl.actor_user_id, scl.occurred_at, scl.recorded_at, NULL::text[] AS changed_fields,
+           jsonb_build_object('winning_payload', scl.winning_payload, 'losing_payload', scl.losing_payload, 'winner', scl.winner) AS change
+    FROM activities.sync_conflict_log scl
+    WHERE scl.organization_id = $1 AND scl.entity_type = $2 AND scl.entity_id = $3
+) timeline
+ORDER BY timeline.recorded_at, timeline.id
+`
+
+type ListEntityTimelineParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	EntityType     string      `json:"entity_type"`
+	EntityID       pgtype.UUID `json:"entity_id"`
+}
+
+type ListEntityTimelineRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	EventKind      string             `json:"event_kind"`
+	ActorUserID    pgtype.UUID        `json:"actor_user_id"`
+	OccurredAt     pgtype.Timestamptz `json:"occurred_at"`
+	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
+	ChangedFields  []string           `json:"changed_fields"`
+	Change         []byte             `json:"change"`
+}
+
+// The combined per-entity timeline (#60 AC, history.md §6), mirroring
+// apiaries' ListEntityTimeline query (services/apiaries/store/sqlc/queries/
+// apiaries.sql, #61) exactly, against this service's own audit_log/
+// sync_conflict_log tables: UNIONs activities.audit_log (applied
+// create/update/delete rows, event_kind = change_type) with
+// activities.sync_conflict_log (LWW-loss rows, event_kind hardcoded
+// 'superseded' — mirrors history.EventSuperseded — history.md §6 "LWW
+// losers... surfaced as a superseded timeline event, not silently
+// overwritten"), ordered chronologically. change carries the audit delta for
+// audit_log rows and the {winning_payload, losing_payload, winner} conflict
+// payload for sync_conflict_log rows — the two tables' change shapes differ
+// by design (§3 vs §4.2), so callers branch on event_kind to interpret it.
+// Exposed via HTTP from the moment it's added (GET /v1/activities/{id}/
+// history, #60) — activities had no prior "typed groundwork, no HTTP surface
+// yet" stage for it, unlike apiaries' own copy of this query, which sat
+// unexposed between #61 and #60 and is now served by that service's
+// equivalent route.
+func (q *Queries) ListEntityTimeline(ctx context.Context, arg ListEntityTimelineParams) ([]ListEntityTimelineRow, error) {
+	rows, err := q.db.Query(ctx, listEntityTimeline, arg.OrganizationID, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntityTimelineRow
+	for rows.Next() {
+		var i ListEntityTimelineRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.EntityType,
+			&i.EntityID,
+			&i.EventKind,
+			&i.ActorUserID,
+			&i.OccurredAt,
+			&i.RecordedAt,
+			&i.ChangedFields,
+			&i.Change,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteActivity = `-- name: SoftDeleteActivity :execrows
 UPDATE activities.activities
 SET deleted_at = $3, updated_at = $3, recorded_at = now()
@@ -427,7 +562,7 @@ func (q *Queries) UpdateActivity(ctx context.Context, arg UpdateActivityParams) 
 
 const updateActivitySync = `-- name: UpdateActivitySync :exec
 UPDATE activities.activities
-SET apiary_id = $3, type = $4, occurred_at = $5, attributes = $6, updated_at = $7, deleted_at = $8, recorded_at = now()
+SET apiary_id = $3, type = $4, occurred_at = $5, attributes = $6, journey_id = $9, updated_at = $7, deleted_at = $8, recorded_at = now()
 WHERE organization_id = $1 AND id = $2
 `
 
@@ -440,14 +575,17 @@ type UpdateActivitySyncParams struct {
 	Attributes     []byte             `json:"attributes"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	JourneyID      pgtype.UUID        `json:"journey_id"`
 }
 
-// Sync-apply put/patch/delete (#40/#41, mirrors apiaries' UpdateApiary):
+// Sync-apply put/patch/delete (#40/#41/#387, mirrors apiaries' UpdateApiary):
 // sets every mutable column, INCLUDING deleted_at (a tombstone is just
-// another LWW-compared field, sync.md §4.5) — the caller
-// (applyActivityOp's mergeActivityOp) computes the full desired row first.
-// performed_by/journey_id are never written here, same rationale as
-// UpdateActivity above.
+// another LWW-compared field, sync.md §4.5) and, as of #387, journey_id —
+// the caller (applyActivityOp's mergeActivityOp) computes the full desired
+// row first, including journey_id's tri-state resolution. performed_by is
+// NEVER written here (FR-TEN-2 attribution stays immutable) — journey_id is
+// the one asymmetry between this query and REST UpdateActivity (still
+// untouched there, #387's own design doc).
 func (q *Queries) UpdateActivitySync(ctx context.Context, arg UpdateActivitySyncParams) error {
 	_, err := q.db.Exec(ctx, updateActivitySync,
 		arg.OrganizationID,
@@ -458,53 +596,7 @@ func (q *Queries) UpdateActivitySync(ctx context.Context, arg UpdateActivitySync
 		arg.Attributes,
 		arg.UpdatedAt,
 		arg.DeletedAt,
+		arg.JourneyID,
 	)
 	return err
-}
-
-const listAuditLog = `-- name: ListAuditLog :many
-SELECT id, organization_id, entity_type, entity_id, change_type, actor_user_id, occurred_at, recorded_at, changed_fields, change
-FROM activities.audit_log
-WHERE organization_id = $1 AND entity_type = $2 AND entity_id = $3
-ORDER BY recorded_at, id
-`
-
-type ListAuditLogParams struct {
-	OrganizationID pgtype.UUID `json:"organization_id"`
-	EntityType     string      `json:"entity_type"`
-	EntityID       pgtype.UUID `json:"entity_id"`
-}
-
-// The per-entity timeline read (FR-HIS-1) — not yet exposed via HTTP (no AC
-// in this milestone requires the view screens), kept as typed groundwork for
-// the entity-detail "history" screen, mirroring apiaries.ListAuditLog.
-func (q *Queries) ListAuditLog(ctx context.Context, arg ListAuditLogParams) ([]ActivitiesAuditLog, error) {
-	rows, err := q.db.Query(ctx, listAuditLog, arg.OrganizationID, arg.EntityType, arg.EntityID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ActivitiesAuditLog
-	for rows.Next() {
-		var i ActivitiesAuditLog
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrganizationID,
-			&i.EntityType,
-			&i.EntityID,
-			&i.ChangeType,
-			&i.ActorUserID,
-			&i.OccurredAt,
-			&i.RecordedAt,
-			&i.ChangedFields,
-			&i.Change,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

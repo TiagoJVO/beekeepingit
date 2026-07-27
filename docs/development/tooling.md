@@ -43,7 +43,8 @@ Language-scoped variants exist too: `task go:lint`, `task web:test`, `task dart:
 Per [D-9](../../requirements/decisions.md), packages are created as work needs them. The `go:` /
 `web:` / `dart:` targets **discover** their packages (`go.mod` / `package.json` / `pubspec.yaml`)
 and **no-op** with a message when none exist. The `repo:` hygiene targets (Prettier, Markdown,
-actionlint, shellcheck, gitleaks) run today, so `task lint` is meaningful from day one.
+actionlint, shellcheck, gitleaks, deploy-URL drift) run today, so `task lint` is meaningful from
+day one.
 
 ## Adding a package
 
@@ -69,14 +70,22 @@ Bypass in an emergency with `git commit --no-verify` (CI still enforces the same
 
 ## Linter/formatter configs
 
-| Language / area  | Config                                                           | Tool              |
-| ---------------- | ---------------------------------------------------------------- | ----------------- |
-| Go               | [`.golangci.yml`](../../.golangci.yml)                           | golangci-lint     |
-| Dart/Flutter     | [`analysis_options.yaml`](../../analysis_options.yaml)           | dart analyze      |
-| Markdown         | [`.markdownlint-cli2.yaml`](../../.markdownlint-cli2.yaml)       | markdownlint-cli2 |
-| MD/YAML/JSON fmt | [`.prettierrc.yaml`](../../.prettierrc.yaml) + `.prettierignore` | prettier          |
-| GitHub Actions   | —                                                                | actionlint        |
-| Secrets          | —                                                                | gitleaks          |
+| Language / area  | Config                                                                         | Tool              |
+| ---------------- | ------------------------------------------------------------------------------ | ----------------- |
+| Go               | [`.golangci.yml`](../../.golangci.yml)                                         | golangci-lint     |
+| Dart/Flutter     | [`analysis_options.yaml`](../../analysis_options.yaml)                         | dart analyze      |
+| Markdown         | [`.markdownlint-cli2.yaml`](../../.markdownlint-cli2.yaml)                     | markdownlint-cli2 |
+| MD/YAML/JSON fmt | [`.prettierrc.yaml`](../../.prettierrc.yaml) + `.prettierignore`               | prettier          |
+| GitHub Actions   | —                                                                              | actionlint        |
+| Secrets          | —                                                                              | gitleaks          |
+| Deploy URL drift | [`scripts/check-deploy-url-drift.sh`](../../scripts/check-deploy-url-drift.sh) | yq (+ bash)       |
+
+Note: the deploy-URL check exists because the PWA's OIDC/gateway/PowerSync URLs are Dart
+_compile-time_ constants, so they are written twice — once as `--dart-define`s in
+[`release-deploy.yml`](../../.github/workflows/release-deploy.yml)'s `publish-client` job, once as
+hostnames in `infra/helm/beekeepingit/environments/<env>.yaml`. There is no shared source; the
+check (`task repo:deploy-urls`) fails when the two copies disagree, so a one-sided edit can't ship
+a PWA pointed at the wrong host (#369, [D-27](../../requirements/decisions.md)).
 
 Note: `.prettierignore` excludes `infra/helm/**/templates/**` — Helm chart templates embed Go
 template syntax (`{{ .Values.x }}`) inside `.yaml` files, which is not valid standalone YAML and

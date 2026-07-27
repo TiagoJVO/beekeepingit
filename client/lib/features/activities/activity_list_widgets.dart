@@ -5,12 +5,38 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../members/members_repository.dart';
 import '../profile/profile_repository.dart';
 import 'activities_repository.dart';
 import 'activity_display.dart';
 import 'activity_filters.dart';
 import 'activity_types.dart';
+
+/// The single mapping from an activity type to its brand accent + tile tint
+/// (`context.brand`'s cresta/feeding/treatment/generic roles) — every screen
+/// that renders a typed activity row/chip/picker reuses this rather than its
+/// own switch (activities list, apiary detail's embedded section, the
+/// add-activity type picker).
+ActivityTypeVisual activityTypeVisual(BuildContext context, String type) {
+  final brand = context.brand;
+  return switch (type) {
+    activityTypeHarvest => brand.cresta,
+    activityTypeFeeding => brand.feeding,
+    activityTypeTreatment => brand.treatment,
+    _ => brand.generic,
+  };
+}
+
+/// The Material icon paired with [activityTypeVisual] for a given type.
+IconData activityTypeIcon(String type) => switch (type) {
+  activityTypeHarvest => Icons.hive_outlined,
+  activityTypeFeeding => Icons.restaurant_outlined,
+  activityTypeTreatment => Icons.healing_outlined,
+  _ => Icons.event_note_outlined,
+};
 
 /// The type + date-range filter bar shared by #42's apiary-scoped section
 /// and #43's main Activities tab (DRY, #42/#43 AC: filterable by type and
@@ -52,7 +78,6 @@ class ActivityFilterBar extends StatelessWidget {
             isExpanded: true,
             decoration: InputDecoration(
               labelText: l10n.activityFilterTypeLabel,
-              border: const OutlineInputBorder(),
               isDense: true,
             ),
             items: [
@@ -78,7 +103,6 @@ class ActivityFilterBar extends StatelessWidget {
                   child: InputDecorator(
                     decoration: InputDecoration(
                       labelText: l10n.activityFilterDateRangeLabel,
-                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                     child: Text(
@@ -167,6 +191,7 @@ class ActivityListView extends ConsumerWidget {
     this.shrinkWrap = false,
     this.maxItems,
     this.onViewAll,
+    this.detailLocationBuilder,
     super.key,
   });
 
@@ -177,6 +202,15 @@ class ActivityListView extends ConsumerWidget {
   final bool shrinkWrap;
   final int? maxItems;
   final VoidCallback? onViewAll;
+
+  /// Overrides where a row navigates on tap (#384) — defaults to the
+  /// apiaries-branch activity detail route (`_ActivityTile`'s own doc
+  /// comment) when omitted. A caller embedding this list in a DIFFERENT
+  /// navigation branch (journey_detail_screen.dart's own activity rows)
+  /// passes a location under ITS OWN branch instead, so the tab that opens
+  /// stays the one the user was already on, and Back returns there —
+  /// rather than silently crossing into the apiaries tab.
+  final String Function(Activity activity)? detailLocationBuilder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -202,20 +236,10 @@ class ActivityListView extends ConsumerWidget {
       ),
       data: (vm) {
         if (!vm.hasAnyActivities) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(emptyText),
-            ),
-          );
+          return EmptyState(message: emptyText);
         }
         if (vm.filtered.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(l10n.activitiesFilterNoResults),
-            ),
-          );
+          return EmptyState(message: l10n.activitiesFilterNoResults);
         }
         // Cap the rendered rows only when there's a "view all" escape hatch,
         // so a capped preview never strands rows the user can't reach (#42/
@@ -255,6 +279,7 @@ class ActivityListView extends ConsumerWidget {
                 apiaryName: showApiary
                     ? apiaryNameOf?.call(activity.apiaryId)
                     : null,
+                detailLocationBuilder: detailLocationBuilder,
               );
             },
           ),
@@ -270,12 +295,14 @@ class _ActivityTile extends StatelessWidget {
     required this.currentUserId,
     required this.memberNames,
     this.apiaryName,
+    this.detailLocationBuilder,
   });
 
   final Activity activity;
   final String? currentUserId;
   final Map<String, String> memberNames;
   final String? apiaryName;
+  final String Function(Activity activity)? detailLocationBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -290,6 +317,7 @@ class _ActivityTile extends StatelessWidget {
       currentUserId,
       memberNames: memberNames,
     );
+    final typeVisual = activityTypeVisual(context, activity.type);
 
     return ListTile(
       key: Key('activity-${activity.id}'),
@@ -301,10 +329,19 @@ class _ActivityTile extends StatelessWidget {
       // every activity view/edit/delete surface lives — so a tap from the
       // Activities tab crosses into that branch's stack (Back returns to the
       // apiary context), consistent with where edit/delete already live.
+      // [detailLocationBuilder] (#384) overrides this for a caller embedding
+      // this tile in a different branch's own stack (journey_detail_screen.
+      // dart) — see ActivityListView's own doc comment.
       onTap: () => context.go(
-        '/apiaries/${activity.apiaryId}/activities/${activity.id}',
+        detailLocationBuilder?.call(activity) ??
+            '/apiaries/${activity.apiaryId}/activities/${activity.id}',
       ),
-      leading: Icon(_iconFor(activity.type)),
+      leading: LeadingIconTile(
+        icon: activityTypeIcon(activity.type),
+        color: typeVisual.color,
+        tint: typeVisual.tint,
+        size: BrandDimens.sizeLeadingTileSmall,
+      ),
       title: Text(title),
       subtitle: Text(subtitle),
       trailing: Semantics(
@@ -320,13 +357,6 @@ class _ActivityTile extends StatelessWidget {
       ),
     );
   }
-
-  IconData _iconFor(String type) => switch (type) {
-    activityTypeHarvest => Icons.hive_outlined,
-    activityTypeFeeding => Icons.restaurant_outlined,
-    activityTypeTreatment => Icons.healing_outlined,
-    _ => Icons.event_note_outlined,
-  };
 }
 
 /// The "view all N activities" row shown at the foot of a capped preview

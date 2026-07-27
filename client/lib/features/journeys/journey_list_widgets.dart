@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
 import '../activities/activity_types.dart';
 import 'journey_filters.dart';
 
@@ -41,7 +42,12 @@ class JourneyFilterBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(
+        BrandDimens.gutter,
+        8,
+        BrandDimens.gutter,
+        4,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -51,7 +57,6 @@ class JourneyFilterBar extends StatelessWidget {
             isExpanded: true,
             decoration: InputDecoration(
               labelText: l10n.journeyFilterTypeLabel,
-              border: const OutlineInputBorder(),
               isDense: true,
             ),
             items: [
@@ -73,11 +78,11 @@ class JourneyFilterBar extends StatelessWidget {
               Expanded(
                 child: InkWell(
                   key: const Key('journey-filter-date-range-field'),
+                  borderRadius: BrandDimens.borderField,
                   onTap: () => _pickRange(context),
                   child: InputDecorator(
                     decoration: InputDecoration(
                       labelText: l10n.journeyFilterDateRangeLabel,
-                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                     child: Text(

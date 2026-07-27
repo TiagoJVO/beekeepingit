@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/config"
+	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/cors"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/health"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/logging"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/otelboot"
@@ -52,6 +53,12 @@ func New(cfg config.Config, providers *otelboot.Providers, logger *slog.Logger, 
 	r.Use(chimiddleware.RequestID)
 	r.Use(problem.RecoverMiddleware(logger))
 	r.Use(logging.RequestLogger(logger))
+	// CORS runs ahead of the caller's (JWT-protected) mounted routes so a
+	// cross-origin preflight — which carries no credentials — is answered here
+	// with 204 instead of 401, and every response carries the ETag exposure the
+	// admin app needs (#449, FR-TEN-2, NFR-ARC-2). No-op when
+	// cfg.CORSAllowedOrigins is empty (same-origin services).
+	r.Use(cors.Middleware(cors.Config{AllowedOrigins: cfg.CORSAllowedOrigins}))
 
 	r.Get("/healthz", checks.Healthz())
 	r.Get("/readyz", checks.Readyz())

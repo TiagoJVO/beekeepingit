@@ -4,6 +4,7 @@ import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:beekeepingit_client/features/account/account_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
 import 'package:flutter/material.dart';
@@ -82,6 +83,7 @@ Widget _buildScreen(
   String orgRole = 'admin',
   SyncStatus? syncStatus,
   Future<void> Function()? syncNow,
+  int needsFixCount = 0,
 }) {
   return ProviderScope(
     overrides: [
@@ -101,6 +103,11 @@ Widget _buildScreen(
             ),
       ),
       syncNowProvider.overrideWithValue(syncNow ?? () async {}),
+      // The Sync section's needs-fix truthfulness fix (#379): isolated the
+      // same way as syncStatusProvider above.
+      syncNeedsFixCountProvider.overrideWith(
+        (ref) => Stream.value(needsFixCount),
+      ),
     ],
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -123,8 +130,10 @@ void main() {
 
     expect(find.byKey(const Key('account-name-field')), findsOneWidget);
     expect(find.byKey(const Key('account-email-field')), findsOneWidget);
-    expect(find.text('Ana'), findsOneWidget);
-    expect(find.text('ana@example.com'), findsOneWidget);
+    // Name + email now appear twice: once in the read-only avatar header
+    // (the prototype's account card) and once in the editable field below.
+    expect(find.text('Ana'), findsNWidgets(2));
+    expect(find.text('ana@example.com'), findsNWidgets(2));
     // Presence/wiring only — not tapped: it opens a real browser tab via a
     // web-only platform call (see account_platform.dart), matching how
     // widget_test.dart never taps 'login-button' for the same reason.
@@ -306,12 +315,82 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('account-sync-now-button')),
+      );
       await tester.tap(find.byKey(const Key('account-sync-now-button')));
       await tester.pumpAndSettle();
 
       expect(called, isTrue);
       expect(find.text('Sync requested.'), findsOneWidget);
     });
+
+    testWidgets(
+      'does NOT claim "Everything is synced." when there are rejected '
+      'writes awaiting a fix, even though PowerSync\'s own upload queue is '
+      'empty (#379: a rejected op already left pendingCount, so the plain '
+      'pending-count line was misleadingly claiming full sync)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            _FakeProfileController(_profile()),
+            syncStatus: const SyncStatus(
+              connectivity: SyncConnectivity.online,
+              pendingCount: 0,
+            ),
+            needsFixCount: 1,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Everything is synced.'), findsNothing);
+        expect(
+          find.text('1 change was rejected and needs fixing.'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('account-needs-fix-button')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'shows the plural needs-fix status line for more than one rejection',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(_FakeProfileController(_profile()), needsFixCount: 3),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('3 changes were rejected and need fixing.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'reverts to the plain pending-count line once needsFixCount returns '
+      'to zero (regression guard: the old "Everything is synced." line '
+      'still returns for the genuinely-fully-synced case)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(
+            _FakeProfileController(_profile()),
+            syncStatus: const SyncStatus(
+              connectivity: SyncConnectivity.online,
+              pendingCount: 0,
+            ),
+            needsFixCount: 0,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Everything is synced.'), findsOneWidget);
+        expect(find.byKey(const Key('account-needs-fix-button')), findsNothing);
+      },
+    );
 
     testWidgets('a failed manual sync surfaces a retry-able error toast', (
       tester,
@@ -326,6 +405,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('account-sync-now-button')),
+      );
       await tester.tap(find.byKey(const Key('account-sync-now-button')));
       await tester.pumpAndSettle();
 

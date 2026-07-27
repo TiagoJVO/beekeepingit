@@ -3,8 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
+import '../../core/sync/powersync_schema.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
+import '../history/history_section.dart';
 import '../profile/profile_repository.dart';
 import 'activities_repository.dart';
 import 'activity_display.dart';
@@ -152,6 +157,7 @@ class _ActivityDetailBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
+    final brand = context.brand;
     final currentUserId = ref.watch(profileProvider).value?.id;
 
     final typeLabel = activityTypeLabel(l10n, activity.type) ?? activity.type;
@@ -167,21 +173,18 @@ class _ActivityDetailBody extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
+              HeroCard(
                 key: const Key('activity-detail-header'),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       typeLabel,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.bold,
+                      style: TextStyle(
+                        fontFamily: AppTheme.displayFontFamily,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 24,
+                        color: brand.onHeroSurface,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -202,35 +205,20 @@ class _ActivityDetailBody extends ConsumerWidget {
               ),
               const SizedBox(height: 14),
               if (rows.isEmpty)
-                Container(
+                BrandCard(
                   key: const Key('activity-detail-no-attributes'),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
                   child: Text(
                     l10n.activityNoAttributesSummary,
                     style: theme.textTheme.bodyMedium,
                   ),
                 )
               else
-                Container(
+                BrandCard(
                   key: const Key('activity-detail-attributes'),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        l10n.activityDetailAttributesHeader,
-                        style: theme.textTheme.titleMedium,
-                      ),
+                      SectionHeader(l10n.activityDetailAttributesHeader),
                       const SizedBox(height: 8),
                       for (final row in rows) ...[
                         _AttributeRow(label: row.label, value: row.value),
@@ -239,6 +227,18 @@ class _ActivityDetailBody extends ConsumerWidget {
                     ],
                   ),
                 ),
+              const SizedBox(height: 14),
+              // This activity's change history (#60, FR-HIS-1, history.md
+              // §8) — same per-entity timeline component the apiary detail
+              // screen embeds, pointed at this entity instead. Sits after
+              // the content cards and before the destructive delete action.
+              HistorySection(
+                entityType: activityEntityType,
+                entityId: activity.id,
+                onViewAll: () => context.go(
+                  '/apiaries/${activity.apiaryId}/activities/${activity.id}/history',
+                ),
+              ),
               const SizedBox(height: 24),
               SecondaryActionButton(
                 key: const Key('activity-detail-delete-button'),
@@ -274,7 +274,7 @@ class _HeaderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = theme.colorScheme.onPrimaryContainer;
+    final color = context.brand.onHeroSurfaceMuted;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

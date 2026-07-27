@@ -12,7 +12,8 @@ class AppLocalizationsPt extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
-  String get loginPrompt => 'Inicie sessão para gerir os seus apiários.';
+  String get loginPrompt =>
+      'Inicie sessão para gerir os seus apiários. É a primeira vez? Toque em Iniciar sessão — pode criar a sua conta no ecrã seguinte.';
 
   @override
   String get loginButton => 'Iniciar sessão';
@@ -40,6 +41,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get addApiary => 'Adicionar apiário';
 
   @override
+  String get actionsMenuLabel => 'Ações';
+
+  @override
   String hiveCountValue(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -50,6 +54,70 @@ class AppLocalizationsPt extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String superCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count alças',
+      one: '1 alça',
+      zero: 'Sem alças',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeHiveLabel => 'Colmeias';
+
+  @override
+  String get counterTypeSuperLabel => 'Alças';
+
+  @override
+  String emptyHiveCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count colmeias vazias',
+      one: '1 colmeia vazia',
+      zero: 'Sem colmeias vazias',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String swarmCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count enxames',
+      one: '1 enxame',
+      zero: 'Sem enxames',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeEmptyHiveLabel => 'Colmeias vazias';
+
+  @override
+  String get counterTypeSwarmLabel => 'Enxames';
+
+  @override
+  String get apiaryAddCounterAction => 'Adicionar contador';
+
+  @override
+  String get apiaryAddCounterTitle => 'Adicionar um contador';
+
+  @override
+  String get apiaryNoCountersToAdd =>
+      'Já existem contadores de todos os tipos.';
+
+  @override
+  String get counterDecrementLabel => 'Diminuir';
+
+  @override
+  String get counterIncrementLabel => 'Aumentar';
 
   @override
   String get newApiaryTitle => 'Novo apiário';
@@ -356,7 +424,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get offlineBannerErrorMessage =>
-      'Algumas alterações não foram sincronizadas e o PowerSync está a tentar novamente.';
+      'Algumas alterações ainda não foram sincronizadas — a tentar novamente.';
 
   @override
   String get syncSupersededNotice =>
@@ -395,6 +463,23 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixCounterLabel => 'Alteração de nº de colmeias';
 
   @override
+  String get syncNeedsFixActivityLabel => 'Alteração de atividade';
+
+  @override
+  String get syncNeedsFixJourneyLabel => 'Alteração de jornada';
+
+  @override
+  String get syncNeedsFixJourneyPlanLabel => 'Alteração do plano da jornada';
+
+  @override
+  String get syncNeedsFixTodoLabel => 'Alteração de tarefa';
+
+  @override
+  String syncNeedsFixTitleWithName(String label, String name) {
+    return '$label · $name';
+  }
+
+  @override
   String get syncNeedsFixGenericProblem =>
       'Esta alteração foi rejeitada e precisa da sua atenção.';
 
@@ -420,6 +505,17 @@ class AppLocalizationsPt extends AppLocalizations {
       other: '$count alterações por sincronizar.',
       one: '1 alteração por sincronizar.',
       zero: 'Tudo sincronizado.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String accountSyncNeedsFixStatus(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count alterações foram rejeitadas e precisam de correção.',
+      one: '1 alteração foi rejeitada e precisa de correção.',
     );
     return '$_temp0';
   }
@@ -514,6 +610,30 @@ class AppLocalizationsPt extends AppLocalizations {
   String get apiaryMapAttributionOsm => '© Colaboradores do OpenStreetMap';
 
   @override
+  String get apiaryMapRulerToggleAction => 'Medir distância';
+
+  @override
+  String get apiaryMapMeasureFromMyLocation => 'Usar a minha localização';
+
+  @override
+  String get apiaryMapRecenterAction => 'Centrar na minha localização';
+
+  @override
+  String apiaryMapInfoOpenTodos(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tarefas em aberto',
+      one: '1 tarefa em aberto',
+      zero: 'Nenhuma tarefa em aberto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get apiaryMapInfoViewApiary => 'Ver apiário';
+
+  @override
   String get apiaryPlaceLabelLabel => 'Nome do local';
 
   @override
@@ -548,8 +668,32 @@ class AppLocalizationsPt extends AppLocalizations {
       'Sem localização definida — toque no mapa para colocar um alfinete';
 
   @override
+  String get apiaryLocationRequired =>
+      'Defina a localização do apiário antes de guardar.';
+
+  @override
   String get apiaryMapPickerLabel =>
       'Mapa: toque para colocar o alfinete do apiário';
+
+  @override
+  String get apiaryMapPickerRecenterAction => 'Centrar no marcador';
+
+  @override
+  String get apiaryMapPickerMaximizeAction => 'Maximizar mapa';
+
+  @override
+  String get apiaryLocationPickerFullScreenTitle =>
+      'Colocar o alfinete do apiário';
+
+  @override
+  String get apiaryLocationPickerConfirmAction => 'Confirmar localização';
+
+  @override
+  String get apiaryLocationPickerCancelAction => 'Cancelar';
+
+  @override
+  String get apiaryLocationPickerFullScreenLabel =>
+      'Mapa em ecrã inteiro: toque para colocar o alfinete do apiário';
 
   @override
   String apiaryDistanceValue(String distanceKm) {
@@ -802,11 +946,14 @@ class AppLocalizationsPt extends AppLocalizations {
   String get journeyApiariesLabel => 'Apiários a visitar';
 
   @override
-  String get journeyApiariesRequired => 'Selecione pelo menos um apiário';
-
-  @override
   String get journeyApiariesNoneAvailable =>
       'Ainda não há apiários — adicione um no separador Apiários primeiro.';
+
+  @override
+  String get journeyApiariesSelectAll => 'Selecionar todos';
+
+  @override
+  String get journeyApiariesClearAll => 'Limpar tudo';
 
   @override
   String journeyApiariesSelectedCount(int count) {
@@ -819,6 +966,13 @@ class AppLocalizationsPt extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get journeyDefaultAttributesSectionLabel =>
+      'Predefinições para atividades';
+
+  @override
+  String get journeyDefaultsNotSetOption => 'Não definido';
 
   @override
   String journeyLoadError(String error) {
@@ -914,6 +1068,18 @@ class AppLocalizationsPt extends AppLocalizations {
   String get journeyPickerShowHiddenToggle => 'Mostrar jornadas ocultas';
 
   @override
+  String get journeyPickerShowUnplannedToggle =>
+      'Mostrar jornadas que não planearam este apiário';
+
+  @override
+  String journeyPickerUnplannedOptionSemanticLabel(String name) {
+    return '$name, irá adicionar este apiário ao plano';
+  }
+
+  @override
+  String get journeyPickerAddsApiaryBadge => 'Adiciona apiário';
+
+  @override
   String journeyPickerClosedOptionSemanticLabel(String name) {
     return '$name, jornada fechada';
   }
@@ -940,6 +1106,23 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get closedJourneyConfirmAddAction => 'Adicionar mesmo assim';
+
+  @override
+  String get journeyRelinkConfirmTitle => 'Alterar a jornada associada?';
+
+  @override
+  String journeyRelinkConfirmMessage(
+    String oldJourneyName,
+    String newJourneyName,
+  ) {
+    return 'Esta atividade vai passar de \"$oldJourneyName\" para \"$newJourneyName\".';
+  }
+
+  @override
+  String get journeyRelinkConfirmCancelAction => 'Cancelar';
+
+  @override
+  String get journeyRelinkConfirmConfirmAction => 'Confirmar';
 
   @override
   String get journeyStatsSectionTitle => 'Estatísticas da jornada';
@@ -987,10 +1170,97 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get journeyStatsHivesWorkedLabel => 'Colmeias trabalhadas (total)';
+
+  @override
+  String journeyStatsHivesWorkedValue(int worked, String planned) {
+    return '$worked/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesWorkedNoData => '—';
+
+  @override
+  String get journeyStatsMoreAction => 'Mais estatísticas';
+
+  @override
+  String get journeyStatsDetailTitle => 'Mais estatísticas';
+
+  @override
+  String get journeyStatsDetailFilterAll => 'Todos';
+
+  @override
+  String get journeyStatsDetailFilterVisited => 'Visitados';
+
+  @override
+  String get journeyStatsDetailFilterNotVisited => 'Não visitados';
+
+  @override
+  String get journeyStatsDetailSortLabel => 'Ordenar por';
+
+  @override
+  String get journeyStatsDetailSortName => 'Nome';
+
+  @override
+  String get journeyStatsDetailSortKgPerHive => 'Kg/colmeia';
+
+  @override
+  String get journeyStatsDetailSortSupersPerHive => 'Alças/colmeia';
+
+  @override
+  String get journeyStatsDetailSortFeedAmount => 'Quantidade de alimento';
+
+  @override
+  String get journeyStatsDetailSortHivesInvolved => 'Colmeias envolvidas';
+
+  @override
+  String get journeyStatsDetailEmpty =>
+      'Nenhum apiário corresponde ao filtro atual.';
+
+  @override
+  String get journeyStatsDetailHiveCountLabel => 'Colmeias';
+
+  @override
+  String get journeyStatsDetailHoneyKgLabel => 'Mel (kg)';
+
+  @override
+  String get journeyStatsDetailSupersLabel => 'Alças';
+
+  @override
+  String get journeyStatsDetailKgPerHiveLabel => 'Kg/colmeia';
+
+  @override
+  String get journeyStatsDetailSupersPerHiveLabel => 'Alças/colmeia';
+
+  @override
+  String get journeyStatsDetailFeedAmountLabel => 'Quantidade de alimento';
+
+  @override
+  String get journeyStatsDetailHivesInvolvedLabel => 'Colmeias envolvidas';
+
+  @override
+  String get journeyStatsDetailNoDataValue => '—';
+
+  @override
+  String journeyStatsDetailFeedingSummary(String amount) {
+    return 'Quantidade total de alimento: $amount';
+  }
+
+  @override
+  String journeyStatsDetailTreatedSummary(int treated, int planned) {
+    return '$treated/$planned apiários tratados';
+  }
+
+  @override
   String get journeyDetailTitle => 'Jornada';
 
   @override
   String get editJourneyAction => 'Editar jornada';
+
+  @override
+  String journeyDetailDefaultAttributesLabel(String values) {
+    return 'Predefinições: $values';
+  }
 
   @override
   String get journeyDetailApiariesTitle => 'Apiários';
@@ -1101,23 +1371,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get addTodo => 'Nova tarefa';
-
-  @override
-  String get todoQuickCreateTitle => 'Nova tarefa';
-
-  @override
-  String get todoDueDateLabel => 'Prazo';
-
-  @override
-  String todoQuickCreateForApiary(String apiaryName) {
-    return 'Para $apiaryName';
-  }
-
-  @override
-  String get todoQuickCreateCancelAction => 'Cancelar';
-
-  @override
-  String get todoCreatedConfirmation => 'Tarefa criada';
 
   @override
   String get newTodoTitle => 'Nova tarefa';
@@ -1239,4 +1492,93 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteTodoCancelAction => 'Cancelar';
+
+  @override
+  String get historySectionTitle => 'Histórico';
+
+  @override
+  String get historyScreenTitle => 'Histórico';
+
+  @override
+  String get historyEmpty => 'Ainda não há alterações registadas';
+
+  @override
+  String historyError(String error) {
+    return 'Não foi possível carregar o histórico: $error';
+  }
+
+  @override
+  String get historyViewAllAction => 'Ver tudo';
+
+  @override
+  String get historyEventCreated => 'Criado';
+
+  @override
+  String get historyEventUpdated => 'Atualizado';
+
+  @override
+  String get historyEventDeleted => 'Eliminado';
+
+  @override
+  String get historyEventSuperseded => 'Substituído';
+
+  @override
+  String get historyEventUnknown => 'Alterado';
+
+  @override
+  String historyChangedFieldsValue(String fields) {
+    return 'Alterado: $fields';
+  }
+
+  @override
+  String get historySupersededDetail =>
+      'Substituído por uma versão mais recente de outro dispositivo';
+
+  @override
+  String get historyActorYou => 'Você';
+
+  @override
+  String historyActorMember(String id) {
+    return 'Membro $id';
+  }
+
+  @override
+  String get historyActorUnknown => 'Desconhecido';
+
+  @override
+  String historyEntrySemanticLabel(
+    String event,
+    String actor,
+    String timestamp,
+  ) {
+    return '$event por $actor, $timestamp';
+  }
+
+  @override
+  String get historyFieldLocation => 'Localização';
+
+  @override
+  String get historyFieldActivityType => 'Tipo de atividade';
+
+  @override
+  String get historyFieldAttributes => 'Detalhes';
+
+  @override
+  String get historyFieldApiary => 'Apiário';
+
+  @override
+  String get historyFieldStatus => 'Estado';
+
+  @override
+  String get discardChangesTitle => 'Descartar alterações?';
+
+  @override
+  String get discardChangesMessage =>
+      'Tem alterações por guardar. Se sair agora, serão perdidas.';
+
+  @override
+  String get discardChangesConfirmAction => 'Descartar';
+
+  @override
+  String get discardChangesCancelAction => 'Continuar a editar';
 }

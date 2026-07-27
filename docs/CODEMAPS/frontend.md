@@ -20,7 +20,7 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
 StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per-tab FAB config
   in `_fabConfigByTab`, generalized #52 to a primary + optional secondary tonal FAB, an
   `onPressed(context)` action rather than only a route — Apiaries tab: primary "Add apiary"
-  + secondary "New todo" opening todo_quick_create_sheet.dart, no pre-filled apiary)
+  + secondary "New todo" routing to /todos/new (#389), no pre-filled apiary)
   ├ /apiaries              ApiariesListScreen     features/apiaries   ◄ live (M2)
   │   ├ new                ApiaryFormScreen
   │   └ :id                ApiaryDetailScreen
@@ -31,16 +31,26 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   │       │                             #46 adds the journey-attachment picker — auto-select/
   │       │                             deselect/switch/inline-create, features/journeys/
   │       │                             journey_picker.dart + journey_quick_create_sheet.dart)
+  │       ├ history                     HistoryScreen      features/history (#60, FR-HIS-1; full
+  │       │                             per-apiary change timeline — virtualized, uncapped)
   │       ├ activities/:activityId      ActivityDetailScreen features/activities (#310; read-only
-  │       │   └ edit                    view — type/date/attrs/performer; Edit+Delete)
-  │       │                             AddActivityScreen (#40/#41; edit + delete, isEdit)
+  │       │   ├ edit                    view — type/date/attrs/performer; Edit+Delete)
+  │       │   │                         AddActivityScreen (#40/#41; edit + delete, isEdit)
+  │       │   └ history                 HistoryScreen      features/history (#60; same generic
+  │       │                             screen, pointed at entity_type=activity)
   │       ├ (embedded)                  _ApiaryActivitiesSection on ApiaryDetailScreen (#42;
   │       │                             per-apiary activity list, type/date-range filters,
   │       │                             attribution — #44; capped preview → "view all" opens
   │       │                             the activities route above; a row → activity detail)
-  │       └ (FAB, not a route)          add-todo FAB on ApiaryDetailScreen (#52, FR-UX-2) opens
-  │                                     features/todos/todo_quick_create_sheet.dart pre-filled
-  │                                     with this apiary (read-only chip, no apiary picker)
+  │       ├ (embedded)                  HistorySection on both detail screens (#60, FR-HIS-1,
+  │       │                             history.md §8; entity-agnostic per-entity timeline keyed
+  │       │                             by (entity_type, entity_id) — local-first from the synced
+  │       │                             audit_log/sync_conflict_log tables, REST fallback when the
+  │       │                             device has no slice; capped preview → "view all" opens the
+  │       │                             history route; superseded LWW losses shown inline)
+  │       └ (FAB, not a route)          add-todo FAB on ApiaryDetailScreen (#52/#389, FR-UX-2)
+  │                                     routes to /todos/new?apiaryId=..., pre-selecting this
+  │                                     apiary in the full form's own picker
   ├ /activities            ActivitiesListScreen  features/activities ◄ live (#43; org-wide
   │                        activity list, same filters + apiary label per row)
   ├ /journeys              JourneysListScreen     features/journeys   ◄ live (#45/#47; org-wide
@@ -58,10 +68,11 @@ StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per
   ├ /todos                 TodosListScreen        features/todos      ◄ live (#53; org-wide
   │   │                    todo list — status/priority/due-date filters (combinable), sortable
   │   │                    by due date/priority/status, distinguishes open/overdue/done; own
-  │   │                    FAB (#52) opens todo_quick_create_sheet.dart, no pre-filled apiary;
+  │   │                    FAB (#52/#389) routes to /todos/new, no pre-filled apiary;
   │   │                    row tap → detail (#293))
-  │   ├ new                TodoFormScreen         features/todos (#293; standalone create route —
-  │   │                    direct nav/deep-link only, distinct from #52's quick-create sheet)
+  │   ├ new                TodoFormScreen         features/todos (#293/#389; the ONLY create
+  │   │                    entry point now — every FAB routes here, `?apiaryId=` optionally
+  │   │                    pre-selects the apiary picker)
   │   └ :id                TodoDetailScreen       features/todos (#293, FR-TD-1; every field
   │       │                read-only incl. resolved assignee/apiary names — todo_display.dart's
   │       │                `todoAssigneeLabel`/`todoApiaryLabel`; complete/reopen toggle in place;
@@ -137,7 +148,11 @@ types mirroring apiaries/apiary_counters' own parent+child split ·
 `todos` (title, description, due_date, priority, status, completed_at, assignee_id, apiary_id,
 org_id, timestamps — #50, plain scalar columns, no JSON-encoded column needed unlike
 `activities`; apiary_id added by #51, optional apiary association FR-TD-1) ·
-`sync_rejected_ops` (**local-only** dead-letter).
+`sync_rejected_ops` (**local-only** dead-letter) ·
+`audit_log` / `sync_conflict_log` (#60, FR-HIS-1 — **read-only, never written locally**;
+polymorphic on (entity_type, entity_id), so one table per log kind serves every entity's
+timeline and BOTH `apiaries.*` and `activities.*` stream into them; JSONB/TEXT[] columns
+arrive JSON-encoded as TEXT, same convention as `activities.attributes`).
 `deleted_at` is not a local column (Sync Rules exclude tombstones). See [data.md](data.md).
 
 ## Theming / brand

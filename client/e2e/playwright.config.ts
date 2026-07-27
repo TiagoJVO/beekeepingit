@@ -9,13 +9,16 @@ import { defineConfig, devices } from "@playwright/test";
  */
 const baseURL = process.env.E2E_BASE_URL ?? "https://app.beekeepingit.local:8443";
 
-// Map both the app host (PWA/APIs/sync) and the auth host (the OIDC provider,
-// on its own origin — see docs/architecture/oidc-integration.md §2) to loopback
-// in the browser itself (no /etc/hosts edit needed) so the OIDC redirect
-// resolves to the k3d host port. Override E2E_HOST_MAP to point elsewhere.
+// Map the app host (PWA/APIs/sync), the auth host (the OIDC provider, on its own
+// origin — see docs/architecture/oidc-integration.md §2) and the admin host (the
+// React admin app's own origin, #449/#460) to loopback in the browser itself (no
+// /etc/hosts edit needed) so the OIDC redirect resolves to the k3d host port.
+// The admin entry is harmless to the PWA specs (they never navigate there) and
+// lets the admin-token spec reach the admin app. Override E2E_HOST_MAP to point
+// elsewhere.
 const hostMap =
   process.env.E2E_HOST_MAP ??
-  "MAP app.beekeepingit.local 127.0.0.1, MAP auth.beekeepingit.local 127.0.0.1";
+  "MAP app.beekeepingit.local 127.0.0.1, MAP auth.beekeepingit.local 127.0.0.1, MAP admin.beekeepingit.local 127.0.0.1";
 
 export default defineConfig({
   testDir: "./tests",
@@ -34,6 +37,16 @@ export default defineConfig({
     baseURL,
     // Dev cluster uses a self-signed cert.
     ignoreHTTPSErrors: true,
+    // Location is mandatory on the apiary form (#341, FR-AP-7), and the form's
+    // "use current location" action goes through `geolocator` →
+    // `navigator.geolocation`. Granting the permission up front (and pinning a
+    // fixed coordinate) makes that path deterministic — no permission prompt to
+    // dismiss, no real device location — so the create step has a reliable
+    // fallback if the embedded map's canvas tap doesn't take under headless
+    // chromium. The coordinate is mainland Portugal, matching the app's own
+    // default map center (apiary_form_screen.dart's `_pickerFallbackCenter`).
+    permissions: ["geolocation"],
+    geolocation: { latitude: 39.5, longitude: -8.0 },
     // The OIDC callback + Flutter re-bootstrap is a full page load that can be
     // slow on a cold stack; the default 30s navigation budget is tight, so
     // raise it for waitForURL/goto across the suite.

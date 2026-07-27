@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 import 'apiary_multi_select_field.dart';
+import 'journey_default_attributes_section.dart';
 import 'journeys_repository.dart';
 
 /// The #46 activity-form picker's inline "create a new journey" shortcut
@@ -20,29 +23,44 @@ import 'journeys_repository.dart';
 /// same UNDERLYING pieces [JourneyFormScreen] itself uses for the fields
 /// this shortcut actually needs (name + main activity type + apiaries):
 /// [ApiaryMultiSelectField] verbatim, the same activity-type dropdown
-/// pattern, and [JourneysRepository.create] — the same validation rules
-/// (name required, at least one apiary), just condensed into a sheet that
-/// returns the new journey's id (or null if canceled) instead of navigating
-/// anywhere.
+/// pattern, and [JourneysRepository.create] — the same validation rule
+/// (name required; the apiary plan may be empty — D-30, #428), just
+/// condensed into a sheet that returns the new journey's id (or null if
+/// canceled) instead of navigating anywhere.
 ///
 /// [initialApiaryId] pre-selects the apiary the activity is being logged
 /// against (the natural default — this journey is being created FOR this
-/// apiary) and [initialMainActivityType] pre-fills the activity's own type
-/// (the natural default for "a journey to match this activity") — both
-/// remain editable, since a user might genuinely want a different plan.
+/// apiary); it remains editable, since a user might genuinely want the plan
+/// to span more apiaries.
 ///
-/// Returns both the new journey's id AND its entered name (not just the id):
-/// the caller (add_activity_screen.dart) displays the name immediately in
-/// its "attached to" summary, before the local store's own live query
-/// (journey_picker.dart's `journeyMatchesProvider`) necessarily catches up
-/// with the just-created row — returning the name sidesteps that race
-/// instead of the display briefly showing a raw id or "unknown".
-Future<({String id, String name})?> showJourneyQuickCreateSheet(
+/// [mainActivityType] is the activity's own type and is **locked** here (not
+/// merely pre-filled): an activity can only attach to a journey whose main
+/// activity type matches it (D-21 — the normal picker only ever offers
+/// type-matching journeys via `journeyMatchesProvider`), so letting this
+/// inline shortcut pick a *different* type would create a journey the
+/// activity cannot correctly attach to (#343). The field is shown read-only
+/// so the user sees what type the new journey will carry, without being able
+/// to diverge from the activity being registered.
+///
+/// Returns the new journey's id, its entered name, AND the defaults it
+/// saved (not just the id): the caller (add_activity_screen.dart) displays
+/// the name immediately in its "attached to" summary, before the local
+/// store's own live query (journey_picker.dart's `journeyMatchesProvider`)
+/// necessarily catches up with the just-created row — returning the name
+/// sidesteps that race instead of the display briefly showing a raw id or
+/// "unknown". [defaultAttributes] (#385) sidesteps the SAME race for the
+/// prefill flow (the separate dependent issue): the caller can apply them
+/// directly rather than waiting for the live query to replicate the
+/// just-written row back.
+Future<({String id, String name, Map<String, dynamic> defaultAttributes})?>
+showJourneyQuickCreateSheet(
   BuildContext context, {
   required String initialApiaryId,
-  required String initialMainActivityType,
+  required String mainActivityType,
 }) {
-  return showModalBottomSheet<({String id, String name})>(
+  return showModalBottomSheet<
+    ({String id, String name, Map<String, dynamic> defaultAttributes})
+  >(
     context: context,
     isScrollControlled: true,
     // A quick-create form mid-flow shouldn't vanish on an accidental
@@ -52,7 +70,7 @@ Future<({String id, String name})?> showJourneyQuickCreateSheet(
     enableDrag: false,
     builder: (_) => _JourneyQuickCreateSheet(
       initialApiaryId: initialApiaryId,
-      initialMainActivityType: initialMainActivityType,
+      mainActivityType: mainActivityType,
     ),
   );
 }
@@ -60,11 +78,11 @@ Future<({String id, String name})?> showJourneyQuickCreateSheet(
 class _JourneyQuickCreateSheet extends ConsumerStatefulWidget {
   const _JourneyQuickCreateSheet({
     required this.initialApiaryId,
-    required this.initialMainActivityType,
+    required this.mainActivityType,
   });
 
   final String initialApiaryId;
-  final String initialMainActivityType;
+  final String mainActivityType;
 
   @override
   ConsumerState<_JourneyQuickCreateSheet> createState() =>
@@ -75,41 +93,48 @@ class _JourneyQuickCreateSheetState
     extends ConsumerState<_JourneyQuickCreateSheet> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  late String _mainActivityType = widget.initialMainActivityType;
   late Set<String> _apiaryIds = {widget.initialApiaryId};
   bool _busy = false;
-  String? _apiaryIdsError;
+
+  // Journey-level subtype attribute defaults (#385) — type is LOCKED here
+  // (this widget's own doc comment), so unlike journey_form_screen.dart
+  // there is no type-change reset to wire.
+  final _defaultAttributes = JourneyDefaultAttributesController();
 
   @override
   void dispose() {
     _nameController.dispose();
+    _defaultAttributes.dispose();
     super.dispose();
   }
 
-  bool _validate(AppLocalizations l10n) {
-    final formOk = _formKey.currentState!.validate();
-    final hasApiary = _apiaryIds.isNotEmpty;
-    setState(() {
-      _apiaryIdsError = hasApiary ? null : l10n.journeyApiariesRequired;
-    });
-    return formOk && hasApiary;
-  }
+  // A journey may be saved with an empty apiary plan (D-30, #428): only the
+  // name is required; the pre-selected apiary can be deselected and the plan
+  // filled in later via edit ([JourneysRepository.create] documents
+  // `apiaryIds` may be empty).
+  bool _validate() => _formKey.currentState!.validate();
 
   Future<void> _create() async {
     final l10n = AppLocalizations.of(context);
-    if (!_validate(l10n)) return;
+    if (!_validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       final repo = await ref.read(journeysRepositoryProvider.future);
       final name = _nameController.text.trim();
+      final defaultAttributes = _defaultAttributes.build(
+        widget.mainActivityType,
+      );
       final id = await repo.create(
         name: name,
-        mainActivityType: _mainActivityType,
+        mainActivityType: widget.mainActivityType,
         apiaryIds: _apiaryIds.toList(),
+        defaultAttributes: defaultAttributes,
       );
       if (!mounted) return;
-      Navigator.of(context).pop((id: id, name: name));
+      Navigator.of(
+        context,
+      ).pop((id: id, name: name, defaultAttributes: defaultAttributes));
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -125,106 +150,118 @@ class _JourneyQuickCreateSheetState
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
+          BrandDimens.gutter,
+          BrandDimens.gutter,
+          BrandDimens.gutter,
           24 + MediaQuery.of(context).viewInsets.bottom,
         ),
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+        // The fields scroll, the action row stays pinned: with the
+        // gloves-friendly control heights (58px fields, 60px primary button —
+        // BrandDimens) this sheet's natural height exceeds a small phone's
+        // viewport, and a single scroll view around EVERYTHING would push
+        // Save/Cancel below the fold where a user in the field can't reach
+        // them. Keeping the actions outside the scrollable keeps them
+        // reachable at any screen size, text scale, or future field count.
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SectionHeader(l10n.journeyQuickCreateTitle),
+                      const SizedBox(height: BrandDimens.gapField),
+                      LabeledField(
+                        label: l10n.journeyNameLabel,
+                        child: TextFormField(
+                          key: const Key('journey-quick-create-name-field'),
+                          controller: _nameController,
+                          maxLength: 200,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? l10n.journeyNameRequired
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: BrandDimens.gapField),
+                      LabeledField(
+                        label: l10n.journeyMainActivityTypeLabel,
+                        // Locked to the activity being registered (#343): an
+                        // activity can only attach to a type-matching journey
+                        // (D-21), so this inline shortcut must not be able to
+                        // pick a divergent type. Rendered as a disabled
+                        // dropdown (onChanged: null) — visible and
+                        // screen-reader-legible, but not changeable.
+                        child: DropdownButtonFormField<String>(
+                          key: const Key(
+                            'journey-quick-create-main-activity-type-field',
+                          ),
+                          initialValue: widget.mainActivityType,
+                          isExpanded: true,
+                          items: [
+                            DropdownMenuItem(
+                              value: widget.mainActivityType,
+                              child: Text(
+                                activityTypeLabel(
+                                      l10n,
+                                      widget.mainActivityType,
+                                    ) ??
+                                    widget.mainActivityType,
+                              ),
+                            ),
+                          ],
+                          onChanged: null,
+                          disabledHint: Text(
+                            activityTypeLabel(l10n, widget.mainActivityType) ??
+                                widget.mainActivityType,
+                          ),
+                        ),
+                      ),
+                      JourneyDefaultAttributesSection(
+                        type: widget.mainActivityType,
+                        controller: _defaultAttributes,
+                        onChanged: () => setState(() {}),
+                      ),
+                      const SizedBox(height: BrandDimens.gapField),
+                      ApiaryMultiSelectField(
+                        selectedApiaryIds: _apiaryIds,
+                        onChanged: (ids) => setState(() {
+                          _apiaryIds = ids;
+                        }),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
               children: [
-                Text(
-                  l10n.journeyQuickCreateTitle,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  key: const Key('journey-quick-create-name-field'),
-                  controller: _nameController,
-                  maxLength: 200,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? l10n.journeyNameRequired
-                      : null,
-                  decoration: InputDecoration(
-                    labelText: l10n.journeyNameLabel,
-                    border: const OutlineInputBorder(),
+                Expanded(
+                  child: SecondaryActionButton(
+                    key: const Key('journey-quick-create-cancel-button'),
+                    label: l10n.journeyQuickCreateCancelAction,
+                    busy: false,
+                    onPressed: _busy ? null : () => Navigator.of(context).pop(),
                   ),
                 ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  key: const Key(
-                    'journey-quick-create-main-activity-type-field',
+                const SizedBox(width: 12),
+                Expanded(
+                  child: PrimaryActionButton(
+                    key: const Key('journey-quick-create-save-button'),
+                    label: l10n.saveButton,
+                    busy: _busy,
+                    onPressed: _create,
                   ),
-                  initialValue: _mainActivityType,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: l10n.journeyMainActivityTypeLabel,
-                    border: const OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final type in knownActivityTypes)
-                      DropdownMenuItem(
-                        value: type,
-                        child: Text(activityTypeLabel(l10n, type) ?? type),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _mainActivityType = value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                ApiaryMultiSelectField(
-                  selectedApiaryIds: _apiaryIds,
-                  onChanged: (ids) => setState(() {
-                    _apiaryIds = ids;
-                    _apiaryIdsError = null;
-                  }),
-                ),
-                if (_apiaryIdsError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, left: 4),
-                    child: Text(
-                      _apiaryIdsError!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SecondaryActionButton(
-                        key: const Key('journey-quick-create-cancel-button'),
-                        label: l10n.journeyQuickCreateCancelAction,
-                        busy: false,
-                        onPressed: _busy
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: PrimaryActionButton(
-                        key: const Key('journey-quick-create-save-button'),
-                        label: l10n.saveButton,
-                        busy: _busy,
-                        onPressed: _create,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
-          ),
+          ],
         ),
       ),
     );

@@ -159,9 +159,17 @@ class ApiariesRepository {
   /// NULL" convention (api/geo.go's geoPointInput, api/sync.go's
   /// apiaryData doc comment) so the queued op never carries a lone lon or
   /// lat. [placeLabel] (#252) is independent free-text, alongside [notes].
+  ///
+  /// [hiveCount] is now optional (#346, D-20): the create form no longer
+  /// sets any counter ("no counter set at creation") — counters are managed
+  /// on the detail screen. When omitted (null), NO counter row is written,
+  /// and the hive count reads back as 0 through the COALESCE default (the
+  /// "hive always displays, 0 when no row exists" rule). A non-null value
+  /// still writes a hive counter row, so callers that DO want to seed one
+  /// (and the repository's own tests) are unchanged.
   Future<String> create({
     required String name,
-    required int hiveCount,
+    int? hiveCount,
     String? notes,
     String? placeLabel,
     double? locationLon,
@@ -169,19 +177,32 @@ class ApiariesRepository {
   }) async {
     final id = _uuid.v4();
     final now = _nowIso();
-    // Apiary row first, its hive counter second: PowerSync uploads queued
-    // ops in local write order, and the server's counter apply references
-    // the apiary row (FK) — this ordering guarantees the parent exists by
-    // the time the counter op applies.
+    // Apiary row first, its (optional) hive counter second: PowerSync
+    // uploads queued ops in local write order, and the server's counter
+    // apply references the apiary row (FK) — this ordering guarantees the
+    // parent exists by the time the counter op applies.
     await _store.execute(
       'INSERT INTO $apiariesTable '
       '(id, name, notes, place_label, location_lon, location_lat, created_at, updated_at) '
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [id, name, notes, placeLabel, locationLon, locationLat, now, now],
     );
-    await _insertCounter(id, counterTypeHive, hiveCount, now);
+    if (hiveCount != null) {
+      await _insertCounter(id, counterTypeHive, hiveCount, now);
+    }
     return id;
   }
+
+  /// Sets one typed counter's value (#346, D-20) — the generic write path
+  /// the detail screen uses to edit or add ANY counter type (hive included),
+  /// keyed by (apiary_id, counter_type) via the same upsert semantics as the
+  /// hive-only [update] path. The write goes to the local apiary_counters
+  /// table, which PowerSync uploads as an `apiary_counter` op
+  /// (powersync_connector.dart's `_toOp`) and the owning service audits under
+  /// `entity_type = 'apiary_counter'` (FR-HIS). Callers are responsible for
+  /// only ever setting a [counterType] from [knownCounterTypes].
+  Future<void> setCounter(String apiaryId, String counterType, int value) =>
+      _upsertCounter(apiaryId, counterType, value);
 
   /// Updates the given fields of an existing apiary. `notes`/`placeLabel`
   /// use a present-vs-absent sentinel via [notesProvided]/[placeLabelProvided]
@@ -266,18 +287,23 @@ class ApiariesRepository {
     int value,
   ) async {
     final existing = await _store.getOptional(
-      'SELECT id FROM $apiaryCountersTable WHERE apiary_id = ? AND counter_type = ? '
-      'ORDER BY updated_at DESC LIMIT 1',
+      'SELECT id, value FROM $apiaryCountersTable WHERE apiary_id = ? AND '
+      'counter_type = ? ORDER BY updated_at DESC LIMIT 1',
       [apiaryId, counterType],
     );
-    final now = _nowIso();
     if (existing == null) {
-      await _insertCounter(apiaryId, counterType, value, now);
+      await _insertCounter(apiaryId, counterType, value, _nowIso());
       return;
     }
+    // #378: skip the write entirely when the value hasn't actually changed
+    // (e.g. saving a counter edit back to its original value) — otherwise
+    // this still bumps updated_at, queuing a sync op whose diffed payload
+    // carries no `value` at all (PowerSync uploads only changed columns),
+    // which the server used to reject outright ("value is required").
+    if ((existing['value'] as int?) == value) return;
     await _store.execute(
       'UPDATE $apiaryCountersTable SET value = ?, updated_at = ? WHERE id = ?',
-      [value, now, existing['id']],
+      [value, _nowIso(), existing['id']],
     );
   }
 

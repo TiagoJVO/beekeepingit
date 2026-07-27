@@ -287,6 +287,14 @@ func validateCreate(body apiaryCreateRequest) (uuid.UUID, []problem.FieldError) 
 	if body.PlaceLabel != nil && len(*body.PlaceLabel) > maxPlaceLabelLength {
 		errs = append(errs, problem.FieldError{Field: "place_label", Code: "too_long", Message: "place_label must be at most 200 characters"})
 	}
+	// Location is mandatory on create (FR-AP-7, #341 — the product owner's
+	// directed requirement change): an apiary can never be created without
+	// coordinates. Enforced here (422) as well as at the DB (NOT NULL,
+	// 00008_apiary_location_not_null.sql) and in the sync-apply path
+	// (validateApiaryOp) so every write surface applies the same rule.
+	if body.Location == nil {
+		errs = append(errs, problem.FieldError{Field: "location", Code: "required", Message: "location is required"})
+	}
 	errs = append(errs, body.Location.validate("location")...)
 	return id, errs
 }
@@ -449,6 +457,12 @@ func validateUpdate(fields map[string]json.RawMessage, body apiaryUpdateRequest,
 	}
 	if body.PlaceLabel != nil && len(*body.PlaceLabel) > maxPlaceLabelLength {
 		errs = append(errs, problem.FieldError{Field: "place_label", Code: "too_long", Message: "place_label must be at most 200 characters"})
+	}
+	// Location is mandatory (FR-AP-7, #341): a PATCH may leave it untouched
+	// (key absent), but it may not CLEAR it — sending `"location": null`
+	// explicitly is rejected (422) rather than nulling a NOT NULL column.
+	if locSet && body.Location == nil {
+		errs = append(errs, problem.FieldError{Field: "location", Code: "required", Message: "location cannot be cleared; it is required"})
 	}
 	errs = append(errs, body.Location.validate("location")...)
 	return errs

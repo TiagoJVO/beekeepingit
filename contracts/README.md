@@ -44,7 +44,11 @@ start.
 
 - **Lint + the breaking-change gate run in CI** (`task openapi:lint` in `task ci`;
   `contracts-ci.yml` runs `task openapi:breaking-diff` on PRs touching `contracts/openapi/**`)
-  — see [`taskfiles/openapi.yml`](../taskfiles/openapi.yml). Go server-stub/model codegen
+  — see [`taskfiles/openapi.yml`](../taskfiles/openapi.yml). A sanctioned, user-confirmed breaking
+  change can be recorded (never silently) in
+  [`contracts/openapi/.oasdiff-ignore`](openapi/.oasdiff-ignore) (`oasdiff --err-ignore`, one
+  entry per line, each citing its decision) — see D-28 in `requirements/decisions.md`. Go
+  server-stub/model codegen
   (`task openapi:generate-go`, `oapi-codegen`) is wired too but no-ops until a service adds
   `internal/api/oapi-codegen.yaml`. Dart/TS typed-client codegen is deferred — no client
   consumes a generated client yet and no tool is decided.

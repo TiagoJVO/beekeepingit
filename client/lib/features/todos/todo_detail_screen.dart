@@ -5,6 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/l10n/locale_formatting.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
 import '../apiaries/apiaries_repository.dart';
 import '../members/members_repository.dart';
 import 'todo_display.dart';
@@ -135,7 +139,6 @@ class _TodoDetailBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final theme = Theme.of(context);
     final memberNames =
         ref.watch(memberNamesProvider).value ?? const <String, String>{};
     final apiaries =
@@ -156,25 +159,27 @@ class _TodoDetailBody extends ConsumerWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+          padding: const EdgeInsets.fromLTRB(
+            BrandDimens.gutterForm,
+            BrandDimens.gutterForm,
+            BrandDimens.gutterForm,
+            BrandDimens.scrollBottomInset,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
+              HeroCard(
                 key: const Key('todo-detail-header'),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       todo.title,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.bold,
+                      style: TextStyle(
+                        fontFamily: AppTheme.displayFontFamily,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 24,
+                        color: context.brand.onHeroSurface,
                         decoration: todo.isDone
                             ? TextDecoration.lineThrough
                             : null,
@@ -193,21 +198,12 @@ class _TodoDetailBody extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              Container(
+              BrandCard(
                 key: const Key('todo-detail-fields'),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                  borderRadius: BorderRadius.circular(16),
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      l10n.todoDetailFieldsHeader,
-                      style: theme.textTheme.titleMedium,
-                    ),
+                    SectionHeader(l10n.todoDetailFieldsHeader),
                     const SizedBox(height: 8),
                     _DetailRow(
                       key: const Key('todo-detail-description'),
@@ -269,8 +265,8 @@ class _TodoDetailBody extends ConsumerWidget {
   }
 }
 
-/// A labeled row inside the primary-container header — icon + "Label:
-/// value", tinted for the container's onPrimaryContainer foreground. Mirrors
+/// A labeled row inside the plum [HeroCard] header — icon + "Label: value",
+/// tinted for the hero surface's muted foreground. Mirrors
 /// activity_detail_screen.dart's own private `_HeaderRow` (duplicated, not
 /// shared — same small-duplication precedent that file's own doc comment
 /// documents for `journey_detail_screen.dart`'s near-identical
@@ -290,7 +286,7 @@ class _HeaderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = theme.colorScheme.onPrimaryContainer;
+    final color = context.brand.onHeroSurfaceMuted;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

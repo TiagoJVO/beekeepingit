@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/auth/auth_controller.dart';
+import '../core/sync/powersync_schema.dart';
 import '../features/account/account_screen.dart';
 import '../features/activities/activities_list_screen.dart';
 import '../features/activities/activity_detail_screen.dart';
@@ -12,8 +13,10 @@ import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/history/history_screen.dart';
 import '../features/journeys/journey_detail_screen.dart';
 import '../features/journeys/journey_form_screen.dart';
+import '../features/journeys/journey_stats_detail_screen.dart';
 import '../features/journeys/journeys_list_screen.dart';
 import '../features/members/members_screen.dart';
 import '../features/organization/organization_repository.dart';
@@ -48,7 +51,8 @@ final _assistantBranchKey = GlobalKey<NavigatorState>(
 /// /login; once logged in, an incomplete profile is routed to /profile; once
 /// the profile is complete but there's no organization yet, /organization/new;
 /// both gates block every other route (AC bullet 3) until satisfied. Once both
-/// are done, the apiaries list is home. /organization/members (#27,
+/// are done, the Tasks (Tarefas) list is home (#427, D-29).
+/// /organization/members (#27,
 /// admin-only server-side) and /account (#29) are reachable once onboarded —
 /// neither is part of the onboarding gate itself, just normal authenticated
 /// routes. Exposed as a provider so widget tests can override
@@ -66,13 +70,16 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.listen(organizationProvider, (_, __) => refresh.value++);
 
   return GoRouter(
-    initialLocation: '/apiaries',
+    // Tasks (Tarefas) is the app's home screen (#427, D-29): the daily field
+    // workflow starts from "what do I need to do today", not the apiary list.
+    // Bottom-nav tab order is unchanged — only the landing target moved.
+    initialLocation: '/todos',
     refreshListenable: refresh,
     redirect: (context, state) {
       final authed = ref.read(isAuthenticatedProvider);
       final atLogin = state.matchedLocation == '/login';
       if (!authed) return atLogin ? null : '/login';
-      if (atLogin) return '/apiaries';
+      if (atLogin) return '/todos';
 
       final atProfile = state.matchedLocation == '/profile';
       final profileAsync = ref.read(profileProvider);
@@ -92,7 +99,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!hasOrganization) {
         return atOrganization ? null : '/organization/new';
       }
-      if (atOrganization) return '/apiaries';
+      // A user who has just finished onboarding lands on the same Tasks home
+      // as a returning user (#427, D-29), not the apiaries list.
+      if (atOrganization) return '/todos';
 
       return null;
     },
@@ -199,6 +208,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                       // full path (`.../activities/:activityId/edit`) and
                       // `activityEdit` name are unchanged — no existing deep
                       // link breaks.
+                      // Full per-apiary change history (#60, FR-HIS-1): the
+                      // uncapped counterpart of the detail page's embedded
+                      // HistorySection, same preview-then-full-screen split
+                      // as `activities` above and for the same reason (a
+                      // shrink-wrapped preview can't virtualize).
+                      GoRoute(
+                        path: 'history',
+                        name: 'apiaryHistory',
+                        builder: (context, state) => HistoryScreen(
+                          entityType: apiaryEntityType,
+                          entityId: state.pathParameters['id']!,
+                        ),
+                      ),
                       GoRoute(
                         path: 'activities/:activityId',
                         name: 'activityDetail',
@@ -213,6 +235,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                             builder: (context, state) => AddActivityScreen(
                               apiaryId: state.pathParameters['id']!,
                               activityId: state.pathParameters['activityId']!,
+                            ),
+                          ),
+                          // Per-activity change history (#60, FR-HIS-1) —
+                          // the same generic screen the apiary route above
+                          // uses, differing only in the entity type it is
+                          // pointed at.
+                          GoRoute(
+                            path: 'history',
+                            name: 'activityHistory',
+                            builder: (context, state) => HistoryScreen(
+                              entityType: activityEntityType,
+                              entityId: state.pathParameters['activityId']!,
                             ),
                           ),
                         ],
@@ -275,6 +309,53 @@ final routerProvider = Provider<GoRouter>((ref) {
                           journeyId: state.pathParameters['id']!,
                         ),
                       ),
+                      // Full per-journey change history (#315, FR-HIS-1): the
+                      // uncapped counterpart of the detail page's embedded
+                      // HistorySection, the same generic screen the apiary /
+                      // activity history routes use, differing only in the
+                      // entity type it is pointed at.
+                      GoRoute(
+                        path: 'history',
+                        name: 'journeyHistory',
+                        builder: (context, state) => HistoryScreen(
+                          entityType: journeyEntityType,
+                          entityId: state.pathParameters['id']!,
+                        ),
+                      ),
+                      // Journey-scoped activity detail (#384): the SAME
+                      // ActivityDetailScreen the apiaries-branch route above
+                      // renders, reached instead from within a journey's own
+                      // stack — a tap from journey_detail_screen.dart's
+                      // embedded ActivityListView goes here rather than
+                      // crossing into the apiaries branch (that tab would
+                      // otherwise silently steal focus, and the shell's Back
+                      // would land on the apiary instead of the journey).
+                      // apiaryId travels as a query parameter (not a path
+                      // segment — this route's own identity is journey-
+                      // scoped) so the page still deep-links/reloads without
+                      // needing a live lookup first. Edit/delete/history stay
+                      // reachable only via the apiaries-branch route (its own
+                      // doc comment) — this route exists purely so Back has
+                      // somewhere correct to return to.
+                      GoRoute(
+                        path: 'activities/:activityId',
+                        name: 'journeyActivityDetail',
+                        builder: (context, state) => ActivityDetailScreen(
+                          apiaryId: state.uri.queryParameters['apiaryId'] ?? '',
+                          activityId: state.pathParameters['activityId']!,
+                        ),
+                      ),
+                      // "More stats" per-apiary breakdown (#391) — a sibling
+                      // of `edit`, same nesting precedent (full path
+                      // `.../:id/stats`, reached from the #49 stats
+                      // section's own "More stats" button).
+                      GoRoute(
+                        path: 'stats',
+                        name: 'journeyStats',
+                        builder: (context, state) => JourneyStatsDetailScreen(
+                          journeyId: state.pathParameters['id']!,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -297,7 +378,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'new',
                     name: 'todoNew',
-                    builder: (context, state) => const TodoFormScreen(),
+                    // ?apiaryId= (#389) preserves the create-from-apiary
+                    // flow that used to go through #52's quick-create
+                    // sheet — see apiary_detail_screen.dart's own "New
+                    // todo" action, which now routes here instead of
+                    // opening that sheet.
+                    builder: (context, state) => TodoFormScreen(
+                      initialApiaryId: state.uri.queryParameters['apiaryId'],
+                    ),
                   ),
                   // Todo detail (#293, FR-TD-1, FR-HIS-1): every field,
                   // read-only, plus a complete/reopen toggle — reached by

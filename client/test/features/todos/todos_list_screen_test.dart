@@ -74,6 +74,11 @@ Widget _buildApp({required List<Todo> todos}) {
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
       todosStreamProvider.overrideWith((ref) => Stream.value(todos)),
+      // The full create form's assignee picker (#293, reachable from the
+      // FAB since #389 retired #52's quick-create sheet) watches
+      // memberNamesProvider — overridden so it doesn't attempt a real
+      // fetch.
+      memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
@@ -92,9 +97,9 @@ Future<void> _openTodosTab(
 }
 
 /// A no-op [LocalStoreEngine] — [_FakeTodosRepository] overrides every
-/// method the quick-create sheet touches, so the superclass's store is
-/// never actually used. Mirrors todo_quick_create_sheet_test.dart's own
-/// identical fixture (kept file-private per this suite's own convention).
+/// method the full create form touches, so the superclass's store is never
+/// actually used. Mirrors todo_form_screen_test.dart's own identical
+/// fixture (kept file-private per this suite's own convention).
 class _NoopLocalStore implements LocalStoreEngine {
   @override
   Stream<List<Map<String, Object?>>> watch(
@@ -121,12 +126,12 @@ class _NoopLocalStore implements LocalStoreEngine {
 /// offline-first AC) — unlike the read-only fixed lists [_buildApp] above
 /// overrides [todosStreamProvider] with directly, this one drives
 /// [watchAll] off its own in-memory list, so a `create()` call (from the
-/// quick-create sheet's save button) is immediately reflected back through
-/// the SAME [todosStreamProvider]/[todosViewModelProvider] chain the real
-/// app uses — proving the new todo appears in the list without a real
-/// PowerSync round-trip, exactly like the local-first write path it mirrors
-/// (todos_repository.dart's own doc: every write is queued for sync, but
-/// visible locally immediately).
+/// full create form's save button, #389) is immediately reflected back
+/// through the SAME [todosStreamProvider]/[todosViewModelProvider] chain
+/// the real app uses — proving the new todo appears in the list without a
+/// real PowerSync round-trip, exactly like the local-first write path it
+/// mirrors (todos_repository.dart's own doc: every write is queued for
+/// sync, but visible locally immediately).
 class _FakeTodosRepository extends TodosRepository {
   _FakeTodosRepository() : super(_NoopLocalStore());
 
@@ -169,11 +174,41 @@ Widget _buildAppWithRepo({required _FakeTodosRepository repo}) {
       isAuthenticatedProvider.overrideWithValue(true),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(const [])),
       todosRepositoryProvider.overrideWith((ref) async => repo),
+      // The full create form's assignee picker (#293, reachable from the
+      // FAB since #389 retired #52's quick-create sheet) watches
+      // memberNamesProvider — overridden so it doesn't attempt a real
+      // fetch, matching this file's own `todoByIdProvider` test above.
+      memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
       profileProvider.overrideWith(_CompleteProfileController.new),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
     ],
     child: const BeekeepingitApp(),
   );
+}
+
+/// Every rendered todo row's title, in the order the list lays them out —
+/// the branded row cards (`BrandCard`, todo_list_widgets.dart) carry their
+/// title as a plain descendant [Text] rather than a `ListTile.title`, so
+/// render order is read off each row's vertical offset. Replaces the old
+/// `widgetList<ListTile>(...).map((t) => t.title)` sort assertion; the intent
+/// (which todo renders before which) is unchanged.
+List<String> _rowTitlesInOrder(WidgetTester tester) {
+  final titles = <(double, String)>[];
+  for (final element
+      in find
+          .descendant(
+            of: find.byKey(const Key('todo-list')),
+            matching: find.byType(Text),
+          )
+          .evaluate()) {
+    final text = (element.widget as Text).data;
+    if (text == null) continue;
+    // Titles are bold (w700); the due-date/priority subtitle is not.
+    if ((element.widget as Text).style?.fontWeight != FontWeight.w700) continue;
+    titles.add((tester.getTopLeft(find.byWidget(element.widget)).dy, text));
+  }
+  titles.sort((a, b) => a.$1.compareTo(b.$1));
+  return titles.map((e) => e.$2).toList();
 }
 
 void main() {
@@ -293,6 +328,14 @@ void main() {
             ],
           );
 
+          // The list now defaults to the "Open" status filter (#427, D-29),
+          // which excludes overdue rows — widen it to "All" so this row-
+          // rendering test can see the overdue badge it's asserting on.
+          await tester.tap(find.byKey(const Key('todo-filter-status-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('All').last);
+          await tester.pumpAndSettle();
+
           expect(find.text('Overdue'), findsOneWidget);
         });
 
@@ -310,6 +353,14 @@ void main() {
               ),
             ],
           );
+
+          // The list now defaults to the "Open" status filter (#427, D-29),
+          // which excludes done rows — widen it to "All" so this row-rendering
+          // test can see the completed todo it's asserting on.
+          await tester.tap(find.byKey(const Key('todo-filter-status-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('All').last);
+          await tester.pumpAndSettle();
 
           final titleText = tester.widget<Text>(
             find.descendant(
@@ -505,11 +556,10 @@ void main() {
           await tester.tap(find.text('Priority').last);
           await tester.pumpAndSettle();
 
-          final tiles = tester
-              .widgetList<ListTile>(find.byType(ListTile))
-              .toList();
-          final titles = tiles.map((t) => (t.title! as Text).data).toList();
-          expect(titles, ['High one', 'Low one']);
+          // Rows are branded cards (BrandCard), not ListTiles, so the render
+          // order is asserted by each keyed row's vertical position rather
+          // than by reading ListTile.title — same intent: high before low.
+          expect(_rowTitlesInOrder(tester), ['High one', 'Low one']);
         },
       );
 
@@ -532,16 +582,12 @@ void main() {
         await tester.tap(find.byKey(const Key('todo-sort-direction-button')));
         await tester.pumpAndSettle();
 
-        final tiles = tester
-            .widgetList<ListTile>(find.byType(ListTile))
-            .toList();
-        final titles = tiles.map((t) => (t.title! as Text).data).toList();
-        expect(titles, ['Low one', 'High one']);
+        expect(_rowTitlesInOrder(tester), ['Low one', 'High one']);
       });
     });
   });
 
-  group('quick-create (#52, FR-TD-1, FR-UX-1)', () {
+  group('create (#52/#389, FR-TD-1, FR-UX-1)', () {
     testWidgets('the Todos tab shows a FAB labeled "New todo"', (tester) async {
       await _openTodosTab(tester, todos: const []);
 
@@ -549,21 +595,20 @@ void main() {
       expect(find.text('New todo'), findsOneWidget);
     });
 
-    testWidgets('tapping the FAB opens the quick-create sheet', (tester) async {
+    testWidgets('tapping the FAB routes to the full create form (#389)', (
+      tester,
+    ) async {
       await _openTodosTab(tester, todos: const []);
 
       await tester.tap(find.byKey(const Key('shell-fab')));
       await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('todo-quick-create-title-field')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('todo-title-field')), findsOneWidget);
     });
 
     testWidgets(
-      'completing create makes the new todo appear in the list immediately '
-      '(offline/local-store AC)',
+      'completing create through the full form makes the new todo appear '
+      'back in the list immediately (offline/local-store AC)',
       (tester) async {
         final repo = _FakeTodosRepository();
         await tester.pumpWidget(_buildAppWithRepo(repo: repo));
@@ -574,12 +619,30 @@ void main() {
         await tester.tap(find.byKey(const Key('shell-fab')));
         await tester.pumpAndSettle();
         await tester.enterText(
-          find.byKey(const Key('todo-quick-create-title-field')),
+          find.byKey(const Key('todo-title-field')),
           'Inspect hive 3',
         );
-        await tester.tap(
-          find.byKey(const Key('todo-quick-create-save-button')),
-        );
+        await tester.pump();
+        // The full form's content exceeds the default 800x600 test
+        // viewport (todo_form_screen_test.dart's own note) — scroll the
+        // save button into view rather than resizing the viewport, since
+        // this suite's other tests share the same default size.
+        await tester.ensureVisible(find.byKey(const Key('todo-save-button')));
+        await tester.tap(find.byKey(const Key('todo-save-button')));
+        // Not pumpAndSettle: a successful save navigates to the new todo's
+        // own detail route, whose `todoByIdProvider` watch never resolves
+        // in this PowerSync-less environment (this fake repository doesn't
+        // override `watchById`) — mirrors todo_form_screen_test.dart's own
+        // documented `_pumpBounded` workaround.
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        // The shell's own back button pops from the detail route back to
+        // the list — independent of the detail screen's own (still
+        // loading) data watch, same as the header-back test elsewhere in
+        // this suite.
+        await tester.tap(find.byKey(const Key('shell-back-button')));
         await tester.pumpAndSettle();
 
         expect(find.byKey(const Key('todo-fake-0')), findsOneWidget);

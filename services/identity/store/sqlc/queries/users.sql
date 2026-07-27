@@ -3,6 +3,27 @@ SELECT id, oidc_sub, name, email, locale, created_at, updated_at
 FROM identity.users
 WHERE oidc_sub = $1;
 
+-- name: GetUserByEmail :one
+-- Case-insensitive email -> identity.users lookup, backing the internal
+-- GET /internal/users/by-email/{email} endpoint (#468's platform
+-- cross-organization membership-lookup support tool, D-7: this stays a
+-- LOCAL query against identity's own mirrored profile data -- no new IdP
+-- integration). identity.users.email has NO uniqueness constraint (it is
+-- the free-text profile field PATCH /v1/profile lets a caller set to
+-- anything, #25 -- see organizations/api/organizations.go's ResolvedUser
+-- doc comment for why it must never be used for anything
+-- security-sensitive); the earliest-created match wins on the rare chance
+-- two profiles share one address, the same "oldest wins" convention
+-- organizations' own GetPendingInvitationByEmail uses for its analogous
+-- ambiguity. Empty-string emails (UpsertUserOnFirstSeen's default for an
+-- incomplete profile) are excluded explicitly so a blank query can never
+-- match every never-completed profile in one row.
+SELECT id, oidc_sub, name, email, locale, created_at, updated_at
+FROM identity.users
+WHERE email <> '' AND lower(email) = lower(sqlc.arg(email))
+ORDER BY created_at
+LIMIT 1;
+
 -- name: GetUsersByNames :many
 -- Batch resolve app user_ids -> display name, backing the internal
 -- GET /internal/users/names endpoint the organizations service composes to

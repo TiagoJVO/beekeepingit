@@ -6,6 +6,7 @@ import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/apiaries/apiary_map_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -44,12 +45,16 @@ class _FakeDeviceLocationService implements DeviceLocationService {
 /// Mirrors widget_test.dart's onboarding-gate stubs (profile/organization
 /// already complete) so these tests reach the apiaries tab directly.
 class _CompleteProfileController extends ProfileController {
+  _CompleteProfileController({this.locale = 'en'});
+
+  final String locale;
+
   @override
   Future<Profile> build() async => Profile(
     id: 'test-user',
     name: 'Test User',
     email: 'test@example.com',
-    locale: 'en',
+    locale: locale,
     profileComplete: true,
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
@@ -94,6 +99,8 @@ const _semLocal = Apiary(id: 'a3', name: 'Sem Local', hiveCount: 2);
 Widget _buildApp(
   List<Apiary> apiaries, {
   DeviceLocationService? locationService,
+  String profileLocale = 'en',
+  List<Todo>? todos,
 }) {
   return ProviderScope(
     overrides: [
@@ -103,28 +110,51 @@ Widget _buildApp(
         locationService ??
             const _FakeDeviceLocationService(DeviceLocationServicesDisabled()),
       ),
-      profileProvider.overrideWith(_CompleteProfileController.new),
+      // The stored profile locale now drives the app's UI language (#340),
+      // so a test exercising PT formatting sets it here rather than forcing
+      // the device locale.
+      profileProvider.overrideWith(
+        () => _CompleteProfileController(locale: profileLocale),
+      ),
       organizationProvider.overrideWith(_ExistingOrganizationController.new),
+      // Only overridden when a test actually cares about the apiary info
+      // sheet's open-todo count (#388) — defaults to empty so every other
+      // test in this file (none of which touch todos) is unaffected.
+      todosStreamProvider.overrideWith((ref) => Stream.value(todos ?? [])),
     ],
     child: const BeekeepingitApp(),
   );
 }
 
-/// Switches from the apiaries list (the router's initial location) to the
-/// map view via the list/map toggle's map segment (#34, #35).
+/// Switches to the map view via the list/map toggle's map segment (#34, #35).
+/// The app now lands on the Tasks tab (#427, D-29), so this first navigates to
+/// the Apiaries tab (where the list/map toggle lives) before toggling to map.
 Future<void> _goToMap(
   WidgetTester tester, {
   DeviceLocationService? locationService,
+  String profileLocale = 'en',
+  List<Todo>? todos,
 }) async {
   await tester.pumpWidget(
-    _buildApp([
-      _serraNorte,
-      _valeDasEguas,
-      _semLocal,
-    ], locationService: locationService),
+    _buildApp(
+      [_serraNorte, _valeDasEguas, _semLocal],
+      locationService: locationService,
+      profileLocale: profileLocale,
+      todos: todos,
+    ),
   );
   await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
+  await tester.pumpAndSettle();
+}
+
+/// Enables the ruler (tap-to-measure) mode via the toggle added by #388 — OFF
+/// is now the default, so every test that exercises the old always-on
+/// measuring flow must explicitly opt in first.
+Future<void> _enableRuler(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('apiary-map-ruler-toggle')));
   await tester.pumpAndSettle();
 }
 
@@ -180,9 +210,64 @@ void main() {
   );
 
   testWidgets(
+    'each located apiary marker surfaces its name as a visible label (#344, FR-AP-3)',
+    (tester) async {
+      await _goToMap(tester);
+
+      // Each located apiary's name renders as a visible on-map label, keyed
+      // per apiary so the two markers are distinguishable at a glance (the
+      // bug: the name was only in the Semantics label, never drawn).
+      expect(
+        find.byKey(Key('apiary-marker-name-${_serraNorte.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(Key('apiary-marker-name-${_valeDasEguas.id}')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key('apiary-marker-name-${_serraNorte.id}')),
+          matching: find.text(_serraNorte.name),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key('apiary-marker-name-${_valeDasEguas.id}')),
+          matching: find.text(_valeDasEguas.name),
+        ),
+        findsOneWidget,
+      );
+      // The unlocated apiary has no marker, hence no name label.
+      expect(
+        find.byKey(Key('apiary-marker-name-${_semLocal.id}')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'the apiary marker keeps exposing name + hive count to screen readers (#344)',
+    (tester) async {
+      await _goToMap(tester);
+
+      final handle = tester.ensureSemantics();
+      expect(
+        find.bySemanticsLabel('${_serraNorte.name}, ${_serraNorte.hiveCount}'),
+        findsOneWidget,
+      );
+      handle.dispose();
+    },
+  );
+
+  testWidgets(
     'the empty case (no located apiaries) shows the empty state, not an error',
     (tester) async {
       await tester.pumpWidget(_buildApp([_semLocal]));
+      await tester.pumpAndSettle();
+      // Lands on the Tasks tab now (#427, D-29) — switch to Apiaries first.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
       await tester.pumpAndSettle();
@@ -228,6 +313,7 @@ void main() {
     'tap-to-select-two-then-measure: selecting two apiaries shows the haversine distance',
     (tester) async {
       await _goToMap(tester);
+      await _enableRuler(tester);
 
       // Before any selection: the hint invites tapping two apiaries.
       expect(
@@ -261,6 +347,7 @@ void main() {
     tester,
   ) async {
     await _goToMap(tester);
+    await _enableRuler(tester);
 
     await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
     await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
@@ -279,6 +366,7 @@ void main() {
     tester,
   ) async {
     await _goToMap(tester);
+    await _enableRuler(tester);
 
     await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
     expect(
@@ -483,6 +571,10 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
 
         await _goToMap(tester);
+        // The measure card (and its layout-affecting hint text) only
+        // renders while the ruler is ON (#388) — this test's whole premise
+        // (attribution sits clear of the measure card) only applies then.
+        await _enableRuler(tester);
 
         final attribution = tester.getRect(
           find.byKey(const Key('apiary-map-attribution-text')),
@@ -528,6 +620,11 @@ void main() {
             ),
           ),
         );
+        await tester.pumpAndSettle();
+        // The app lands on the Tasks tab now (#427, D-29); the list/map
+        // IndexedStack under test only mounts once the Apiaries tab opens, so
+        // switch to it before asserting the single shared location request.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
 
         // Before the fix, the list screen's own proximity-ordering banner
@@ -579,6 +676,12 @@ void main() {
               apiariesStreamProvider.overrideWith(
                 (ref) => Stream<List<Apiary>>.error('boom'),
               ),
+              // Tasks is the app's landing screen now (#427, D-29) — stub its
+              // stream so the boot pumpAndSettle renders the Todos tab instead
+              // of hanging on the real, never-resolving todos repository chain.
+              todosStreamProvider.overrideWith(
+                (ref) => Stream.value(const <Todo>[]),
+              ),
               deviceLocationServiceProvider.overrideWithValue(
                 const _FakeDeviceLocationService(
                   DeviceLocationServicesDisabled(),
@@ -592,6 +695,9 @@ void main() {
             child: const BeekeepingitApp(),
           ),
         );
+        await tester.pumpAndSettle();
+        // Lands on the Tasks tab now (#427, D-29) — switch to Apiaries first.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('apiaries-view-map-button')));
@@ -609,21 +715,19 @@ void main() {
       'the measure result uses a comma decimal separator in Portuguese, not '
       'a hardcoded period',
       (tester) async {
-        // Forcing the platform locale (rather than wrapping ApiaryMapScreen
-        // in its own standalone MaterialApp) reuses the full app/_goToMap
-        // harness every other test in this file relies on — the map's
-        // camera-fit position for these two markers is only verified
-        // tap-reachable at THIS harness's viewport (a standalone
+        // Driving the locale through the stored profile (rather than
+        // wrapping ApiaryMapScreen in its own standalone MaterialApp) reuses
+        // the full app/_goToMap harness every other test in this file relies
+        // on — the map's camera-fit position for these two markers is only
+        // verified tap-reachable at THIS harness's viewport (a standalone
         // MaterialApp(home: Scaffold(body: ApiaryMapScreen())) fits the
         // markers differently at the default 800x600 test viewport, close
         // enough to the bottom measure/attribution overlay that the first
-        // tap lands on the overlay instead of the marker underneath).
-        tester.platformDispatcher.localeTestValue = const Locale('pt');
-        tester.platformDispatcher.localesTestValue = const [Locale('pt')];
-        addTearDown(tester.platformDispatcher.clearLocaleTestValue);
-        addTearDown(tester.platformDispatcher.clearLocalesTestValue);
-
-        await _goToMap(tester);
+        // tap lands on the overlay instead of the marker underneath). Since
+        // #340 the profile locale — not the device locale — drives the app's
+        // UI language, so setting it here also exercises that wiring.
+        await _goToMap(tester, profileLocale: 'pt');
+        await _enableRuler(tester);
 
         await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
         await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
@@ -659,29 +763,33 @@ void main() {
     );
   });
 
-  group('theme-token pin styling (MEDIUM finding)', () {
-    testWidgets('the apiary pin hive-count badge derives its style from '
-        'theme.textTheme, not a hardcoded TextStyle', (tester) async {
+  group('marker rotation + badge (#383)', () {
+    testWidgets('apiary pins no longer render the hive-count badge', (
+      tester,
+    ) async {
       await _goToMap(tester);
 
       final markerFinder = find.byKey(Key('apiary-marker-${_serraNorte.id}'));
-      final theme = Theme.of(tester.element(markerFinder));
-      final countText = tester.widget<Text>(
+      expect(
         find.descendant(
           of: markerFinder,
           matching: find.text('${_serraNorte.hiveCount}'),
         ),
-      );
-
-      expect(
-        countText.style,
-        theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onPrimary,
-          fontWeight: FontWeight.bold,
-        ),
+        findsNothing,
       );
     });
 
+    testWidgets('markers counter-rotate to stay upright as the map rotates', (
+      tester,
+    ) async {
+      await _goToMap(tester);
+
+      final layer = tester.widget<MarkerLayer>(find.byType(MarkerLayer));
+      expect(layer.rotate, isTrue);
+    });
+  });
+
+  group('theme-token pin styling (MEDIUM finding)', () {
     testWidgets(
       'the user-location pin label derives its style from theme.textTheme, '
       'not a hardcoded TextStyle',
@@ -706,6 +814,278 @@ void main() {
             fontWeight: FontWeight.bold,
           ),
         );
+      },
+    );
+  });
+
+  group('ruler toggle + apiary info sheet (#388)', () {
+    testWidgets(
+      'the ruler is off by default: no measure card renders on the map',
+      (tester) async {
+        await _goToMap(tester);
+
+        expect(find.byKey(const Key('apiary-map-measure-text')), findsNothing);
+        expect(
+          find.byKey(const Key('apiary-map-measure-overlay')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'the ruler toggle meets the min tap target and has a semantics label',
+      (tester) async {
+        await _goToMap(tester);
+
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-map-ruler-toggle')),
+        );
+        expectHasSemanticsLabel(tester, const Key('apiary-map-ruler-toggle'));
+      },
+    );
+
+    testWidgets(
+      'tapping a pin with the ruler off opens the info sheet with the '
+      'apiary name and open-todo count',
+      (tester) async {
+        await _goToMap(
+          tester,
+          todos: const [
+            Todo(
+              id: 't1',
+              title: 'Check hives',
+              priority: 'medium',
+              status: 'open',
+              apiaryId: 'a1',
+            ),
+            Todo(
+              id: 't2',
+              title: 'Add super',
+              priority: 'low',
+              status: 'open',
+              apiaryId: 'a1',
+            ),
+            Todo(
+              id: 't3',
+              title: 'Already done',
+              priority: 'low',
+              status: 'done',
+              apiaryId: 'a1',
+            ),
+            Todo(
+              id: 't4',
+              title: 'Different apiary',
+              priority: 'low',
+              status: 'open',
+              apiaryId: 'a2',
+            ),
+          ],
+        );
+
+        await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+
+        final sheet = find.byKey(const Key('apiary-map-info-sheet'));
+        expect(sheet, findsOneWidget);
+        expect(
+          find.descendant(of: sheet, matching: find.text(_serraNorte.name)),
+          findsOneWidget,
+        );
+        // 2 open ('t1', 't2') + 1 done ('t3', excluded) for a1; the a2 todo
+        // ('t4') must not be counted against a1.
+        expect(find.text('2 open todos'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "tapping the info sheet's view button navigates to the apiary's "
+      'detail route',
+      (tester) async {
+        await _goToMap(tester);
+
+        await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+        expect(find.byKey(const Key('apiary-map-info-sheet')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('apiary-map-info-view-button')));
+        // Not pumpAndSettle: dismissing the modal sheet and navigating away
+        // in the same tap stacks the sheet's own dismiss transition with the
+        // route change, which never fully quiesces within pumpAndSettle's
+        // budget — the same class of issue _longPressMarker's own doc
+        // comment describes for the map's residual gesture animation. A
+        // couple of fixed pumps are enough for both to take effect.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        final router = GoRouter.of(tester.element(find.byType(AppShell)));
+        expect(
+          router.routeInformationProvider.value.uri.toString(),
+          '/apiaries/a1',
+        );
+      },
+    );
+
+    testWidgets(
+      'ruler on + location available: "Use my location" measures from the '
+      'current position',
+      (tester) async {
+        await _goToMap(
+          tester,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        );
+        await _enableRuler(tester);
+
+        expect(
+          find.byKey(const Key('apiary-map-measure-from-me')),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(const Key('apiary-map-measure-from-me')));
+        await tester.pumpAndSettle();
+
+        // The chip disappears once a user-location endpoint is selected —
+        // it's already occupying one of the two slots.
+        expect(
+          find.byKey(const Key('apiary-map-measure-from-me')),
+          findsNothing,
+        );
+        expect(
+          find.text('Selected You. Tap another apiary to measure.'),
+          findsOneWidget,
+        );
+
+        await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
+
+        final km = haversineDistanceKm(
+          lat1: 41.1496,
+          lon1: -8.6109,
+          lat2: _valeDasEguas.locationLat!,
+          lon2: _valeDasEguas.locationLon!,
+        );
+        final enFormatted = intl.NumberFormat.decimalPatternDigits(
+          locale: 'en',
+          decimalDigits: 2,
+        ).format(km);
+        expect(
+          find.textContaining('You to ${_valeDasEguas.name}: $enFormatted'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('ruler on + location unavailable: no "use my location" chip, '
+        'apiary-to-apiary measuring still works', (tester) async {
+      // Default fake location service reports services disabled.
+      await _goToMap(tester);
+      await _enableRuler(tester);
+
+      expect(find.byKey(const Key('apiary-map-measure-from-me')), findsNothing);
+
+      await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+      await _tapMarker(tester, Key('apiary-marker-${_valeDasEguas.id}'));
+
+      expect(
+        find.textContaining('Serra Norte to Vale das Éguas: 47.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('toggling the ruler off clears an in-progress selection', (
+      tester,
+    ) async {
+      await _goToMap(tester);
+      await _enableRuler(tester);
+
+      await _tapMarker(tester, Key('apiary-marker-${_serraNorte.id}'));
+      expect(
+        find.text('Selected Serra Norte. Tap another apiary to measure.'),
+        findsOneWidget,
+      );
+
+      // Off then back on: the selection must not survive the round trip.
+      await tester.tap(find.byKey(const Key('apiary-map-ruler-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-map-ruler-toggle')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Tap two apiaries to measure the distance between them.'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('"my location" recenter control (#420)', () {
+    testWidgets(
+      'the recenter control is present, meets the min tap target, and has a '
+      'semantics label',
+      (tester) async {
+        await _goToMap(tester);
+
+        expect(
+          find.byKey(const Key('apiary-map-recenter-button')),
+          findsOneWidget,
+        );
+        expectMinTapTarget(
+          tester,
+          find.byKey(const Key('apiary-map-recenter-button')),
+        );
+        expectHasSemanticsLabel(
+          tester,
+          const Key('apiary-map-recenter-button'),
+        );
+      },
+    );
+
+    testWidgets(
+      'tapping it moves and zooms the camera to a fresh fix at street level',
+      (tester) async {
+        await _goToMap(
+          tester,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        );
+
+        // The map's own controller — the exact one the recenter handler calls
+        // move() on. Assert against its camera rather than a widget key so the
+        // move (resolved location + street zoom) is verified, not just that a
+        // button exists.
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        // Precondition: the initial CameraFit frames the markers at a regional
+        // zoom, well short of street level.
+        expect(controller.camera.zoom, lessThan(16.0));
+
+        await tester.tap(find.byKey(const Key('apiary-map-recenter-button')));
+        await tester.pumpAndSettle();
+
+        expect(controller.camera.zoom, 16.0);
+        expect(controller.camera.center.latitude, closeTo(41.1496, 0.0001));
+        expect(controller.camera.center.longitude, closeTo(-8.6109, 0.0001));
+      },
+    );
+
+    testWidgets(
+      'recenter with location unavailable surfaces a message, not a crash',
+      (tester) async {
+        // Default fake reports services disabled — the same graceful branch
+        // the passive user-marker path already degrades to (#34 AC).
+        await _goToMap(tester);
+
+        await tester.tap(find.byKey(const Key('apiary-map-recenter-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.byType(SnackBar), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        // The camera was not moved to street level for an unavailable fix.
+        final controller = tester
+            .widget<FlutterMap>(find.byType(FlutterMap))
+            .mapController!;
+        expect(controller.camera.zoom, lessThan(16.0));
       },
     );
   });

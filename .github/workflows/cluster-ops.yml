@@ -1,0 +1,123 @@
+# On-demand Scaleway Kapsule cluster operations (D-26): bring up or tear down
+# the staging/prod cluster from the Actions tab, running the SAME
+# infra/cluster/scaleway-up.sh / scaleway-down.sh scripts used for manual local
+# runs — the workflow only supplies credentials and tools, so the two paths
+# can't drift.
+#
+# Secrets/variables (see infra/README.md#secrets--remote-cluster-operations for
+# the full inventory + `gh secret set` commands):
+#   - secrets: SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_PROJECT_ID,
+#     SCW_DEFAULT_ORGANIZATION_ID, CF_API_TOKEN, CF_ZONE_ID, and (optional)
+#     AUTHENTIK_EMAIL_USERNAME/AUTHENTIK_EMAIL_PASSWORD. Store them scoped to
+#     the gate ENVIRONMENTS (staging-gate/production-gate), not repo-wide: the
+#     `run` job carries the gate environment, so `secrets.X` resolves the
+#     environment copy first — and the ungated staging path then never holds
+#     prod-capable credentials (use per-environment Scaleway IAM keys).
+#     Repo-level secrets also work (single-maintainer fallback) but weaken
+#     that separation.
+#   - environment variables (non-secret, per gate environment): APP_HOST,
+#     AUTH_HOST — scoped to `staging-gate`/`production-gate` so each
+#     environment gets its own hostnames
+#
+# Gating reuses D-27's release-approval environments: staging -> `staging-gate`
+# (no protection rules, runs immediately); prod -> `production-gate` (required
+# reviewer). The `run` job itself carries the environment so ONE approval both
+# unlocks the job and exposes the env-scoped variables. `down` additionally
+# requires typing the exact cluster name into the `confirm` input — it deletes
+# a real, billed cluster — validated in the ungated `route` job so a typo fails
+# fast, before any approval is spent.
+#
+# D-26 scope guard: bringing up the prod *cluster* is allowed (empty cluster,
+# no user data), but deployments stay staging-grade until DR (Q-DR) and GDPR
+# export/erasure (#90) land.
+name: cluster-ops
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, prod]
+        required: true
+        default: staging
+      action:
+        description: up (create/reconcile) or down (DELETE the cluster)
+        type: choice
+        options: [up, down]
+        required: true
+        default: up
+      confirm:
+        description: For `down` only — type the exact cluster name (e.g. beekeepingit-staging) to confirm deletion
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  route:
+    name: validate & route
+    runs-on: ubuntu-latest
+    outputs:
+      gate: ${{ steps.r.outputs.gate }}
+    steps:
+      - name: Map environment to its approval gate; validate `down` confirmation
+        id: r
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACTION: ${{ inputs.action }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          case "$ENVIRONMENT" in
+            staging) gate=staging-gate ;;
+            prod) gate=production-gate ;;
+            *) echo "::error::unknown environment '$ENVIRONMENT'"; exit 1 ;;
+          esac
+          cluster="beekeepingit-${ENVIRONMENT}"
+          if [ "$ACTION" = "down" ] && [ "$CONFIRM" != "$cluster" ]; then
+            echo "::error::'down' deletes the real, billed '$cluster' cluster — re-run with confirm=$cluster"
+            exit 1
+          fi
+          echo "gate=$gate" >> "$GITHUB_OUTPUT"
+          echo "'$ACTION' on '$cluster' (approval gate: $gate)"
+
+  run:
+    name: ${{ inputs.action }} ${{ inputs.environment }} cluster
+    needs: route
+    runs-on: ubuntu-latest
+    environment: ${{ needs.route.outputs.gate }}
+    env:
+      BK_CLUSTER_ENV: ${{ inputs.environment }}
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+      SCW_DEFAULT_ORGANIZATION_ID: ${{ secrets.SCW_DEFAULT_ORGANIZATION_ID }}
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+      AUTHENTIK_EMAIL_USERNAME: ${{ secrets.AUTHENTIK_EMAIL_USERNAME }}
+      AUTHENTIK_EMAIL_PASSWORD: ${{ secrets.AUTHENTIK_EMAIL_PASSWORD }}
+      APP_HOST: ${{ vars.APP_HOST }}
+      AUTH_HOST: ${{ vars.AUTH_HOST }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Only the infra tools this job actually uses — a full `mise install`
+      # would pull Flutter/Go/etc. for nothing.
+      - name: Set up toolchains from mise.toml (infra tools only)
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          install_args: kubectl helm aqua:scaleway/scaleway-cli
+
+      # flux isn't in mise.toml — same dedicated action helm-e2e.yml uses.
+      - name: Install the flux CLI
+        uses: fluxcd/flux2/action@4a15fa6a023259353ef750acf1c98fe88407d4d0 # v2.7.2
+
+      - name: Run scaleway-${{ inputs.action }}.sh
+        env:
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          "infra/cluster/scaleway-${ACTION}.sh"

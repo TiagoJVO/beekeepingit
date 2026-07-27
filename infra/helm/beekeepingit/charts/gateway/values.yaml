@@ -3,16 +3,21 @@
 # `gateway:` key in the parent's values.yaml/environments/*.yaml.
 enabled: true
 
-# Two local dev hostnames (k3d maps host 8443 -> 443, see infra/README.md). Add
-# BOTH to /etc/hosts (or use `curl --resolve`) to reach them from outside the
+# Three local dev hostnames (k3d maps host 8443 -> 443, see infra/README.md). Add
+# ALL to /etc/hosts (or use `curl --resolve`) to reach them from outside the
 # cluster. Split per ADR-0016 / oidc-integration.md §2:
-#   appHost  — the PWA (`/`) + Go APIs (`/v1/*`) + PowerSync (`/sync-stream`).
-#   authHost — Authentik (issuer + all its paths), routed to its own Service.
+#   appHost   — the PWA (`/`) + Go APIs (`/v1/*`) + PowerSync (`/sync-stream`).
+#   authHost  — Authentik (issuer + all its paths), routed to its own Service.
+#   adminHost — the React admin app (`/`), its own online-only SPA origin (#449).
 # A dedicated auth origin keeps the app origin cross-origin-isolated (COOP/COEP →
 # SharedArrayBuffer for PowerSync) and avoids Authentik's broad root paths
 # (/api, /static, /media, /-, /if, root files) colliding with the PWA `/` catch-all.
+# The admin app is served from its own host (mirroring the app/auth split) so it
+# never collides with the PWA `/` catch-all; being cross-origin from the API, its
+# browser calls are answered by the services' CORS middleware (#449).
 appHost: app.beekeepingit.local
 authHost: auth.beekeepingit.local
+adminHost: admin.beekeepingit.local
 
 # App-host path-based routes fanned out to the slice's services
 # (walking-skeleton.md §5.3). Longest-prefix wins, so order is not significant to
@@ -26,6 +31,14 @@ routes:
   - { path: /v1/profile, service: identity, port: 8080 }
   - { path: /v1/sync, service: sync, port: 8080 }
   - { path: /, service: pwa, port: 80 }
+
+# Admin-host catch-all → the admin subchart's `admin` Service (static React SPA
+# behind nginx, #72). Its own host, so a simple `/` catch-all like the PWA's —
+# no path fan-out. Being a different origin from the app-host API, the admin
+# app's browser fetches are cross-origin and rely on the services' CORS
+# middleware (#449), not any gateway-level CORS.
+adminRoutes:
+  - { path: /, service: admin, port: 80 }
 
 # Auth-host catch-all → the Authentik server Service (its own Flux HelmRelease
 # "authentik", ADR-0012/ADR-0016 → Service "authentik-server"). Authentik serves

@@ -1,8 +1,9 @@
 -- sqlc's virtual schema for codegen only — mirrors the "up" side of
 -- ../migrations/00001_create_apiaries.sql, 00002_create_audit_log.sql,
 -- 00003_add_apiary_location.sql, 00004_add_apiary_notes.sql,
--- 00005_create_apiary_counters.sql, 00006_add_apiary_place_label.sql and
--- 00007_apiary_counters_org_scoped_unique.sql (no down migration; runtime
+-- 00005_create_apiary_counters.sql, 00006_add_apiary_place_label.sql,
+-- 00007_apiary_counters_org_scoped_unique.sql and
+-- 00008_apiary_location_not_null.sql (no down migration; runtime
 -- schema changes only ever happen via goose). Update all files together.
 CREATE SCHEMA IF NOT EXISTS apiaries;
 
@@ -14,7 +15,9 @@ CREATE TABLE apiaries.apiaries (
     updated_at      TIMESTAMPTZ NOT NULL,
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at      TIMESTAMPTZ,
-    location        public.geography(Point, 4326),
+    -- location is MANDATORY (FR-AP-7, #341, 00008_apiary_location_not_null.sql):
+    -- an apiary can never exist without coordinates.
+    location        public.geography(Point, 4326) NOT NULL,
     notes           TEXT CHECK (notes IS NULL OR char_length(notes) <= 10000),
     -- hive_count retired (#256, 00005_create_apiary_counters.sql) — hive
     -- count now lives in apiary_counters, a 1-N child table keyed by

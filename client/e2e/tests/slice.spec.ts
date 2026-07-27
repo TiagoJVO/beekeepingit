@@ -1,4 +1,5 @@
 import { test, expect, Page } from "@playwright/test";
+import { enableSemantics, readIdTokenClaims, submitIdpCredentials } from "./helpers";
 
 /**
  * The M0 walking-skeleton end-to-end test (#23 §7.3):
@@ -50,135 +51,108 @@ const apiaryRow = (page: Page, name: string) =>
 // the detail screen — no list rows are mounted alongside it.
 const apiaryDetailHiveCount = (page: Page) => page.getByText(/\d+ hives|No hives/);
 
-async function enableSemantics(page: Page) {
-  // Flutter builds its semantics DOM (what Playwright selects against) only
-  // after its "Enable accessibility" placeholder is activated. A direct DOM
-  // click fires the handler regardless of the element's (1x1, offscreen)
-  // geometry. Reappears after each full page load (e.g. the OIDC redirect).
-  //
-  // Wait for Flutter to actually bootstrap first: over HTTPS (cross-origin
-  // isolated), the PowerSync/SQLite worker startup pushes first paint out, so
-  // clicking the placeholder immediately after goto() lands before it exists
-  // and no tree is built. Wait for the glass pane, click, then poll until the
-  // semantic tree materializes — no fixed sleeps.
-  await page.waitForSelector("flt-glass-pane, flutter-view", { timeout: 30_000 }).catch(() => {});
-  await page
-    .evaluate(() => {
-      const el =
-        (document.querySelector("flt-semantics-placeholder") as HTMLElement | null) ??
-        (document.querySelector('[aria-label="Enable accessibility"]') as HTMLElement | null);
-      el?.click();
-    })
-    .catch(() => {});
-  await page
-    .waitForFunction(() => document.querySelectorAll("flt-semantics").length > 1, null, {
-      timeout: 15_000,
-    })
-    .catch(() => {});
-}
-
-// Navigate to the app root, tolerating a cold stack. On a freshly-booted k3d
-// cluster the gateway/PWA route can transiently answer 502/503/504 (Traefik has
-// marked the pod ready, but the route's endpoints/first-request path isn't warm
-// yet) — a plain goto() then lands on a static "Bad Gateway" error page that
-// never becomes the Flutter app, and every later selector hangs the whole test.
-// So: reload until the app actually boots (its glass pane appears), not just
-// until goto() resolves. Bounded retries with a short pause.
-async function gotoAppRoot(page: Page) {
-  const deadline = Date.now() + 120_000;
-  let lastStatus: number | null = null;
-  for (;;) {
-    const resp = await page.goto("/", { waitUntil: "domcontentloaded" }).catch(() => null);
-    lastStatus = resp?.status() ?? lastStatus;
-    // A 5xx is the gateway's own error page (no Flutter host element will ever
-    // appear) — retry immediately without burning the glass-pane wait on it.
-    const serverError = resp != null && resp.status() >= 500;
-    if (!serverError) {
-      // The app booted if Flutter's host element is present. Give the SPA a
-      // beat to attach it after a real 2xx.
-      const booted = await page
-        .waitForSelector("flt-glass-pane, flutter-view", { timeout: 20_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (booted) return;
-    }
-    if (Date.now() > deadline) {
-      throw new Error(
-        `app root never booted (last HTTP status ${lastStatus ?? "unknown"}) — gateway/PWA not ready`,
-      );
-    }
-    await page.waitForTimeout(3_000);
-  }
-}
-
-// Provider-agnostic IdP login. The app only redirects to the discovered OIDC
-// provider, so this test must not depend on any one provider's page markup
-// (fixed element ids like `#username`/`#kc-login`, etc.). Locate fields by
-// their accessible label/role — Playwright pierces shadow DOM (Authentik
-// renders its login as lit web components) — and tolerate a two-step
-// (identify → password) flow: submit after the identifier if the password
-// field isn't shown yet.
-const submitButton = (page: Page) =>
-  page.getByRole("button", { name: /log ?in|sign in|continue|next/i });
-
-async function fillIfPresent(
-  page: Page,
-  locator: ReturnType<Page["getByLabel"]>,
-  value: string,
-  timeout = 30_000,
-): Promise<boolean> {
-  try {
-    await locator.first().waitFor({ state: "visible", timeout });
-  } catch {
-    return false;
-  }
-  await locator.first().fill(value);
-  return true;
-}
-
+// The Flutter-semantics bootstrap (enableSemantics), cold-stack navigation
+// (gotoAppRoot), and provider-agnostic IdP form driving now live in
+// ./helpers.ts (#361), shared with the verification-flow spec.
 async function login(page: Page) {
-  await gotoAppRoot(page);
+  await submitIdpCredentials(page, TEST_USER, TEST_PASS);
+
+  // Back on the PWA. After login the app now lands on the Tasks (Tarefas) tab
+  // (D-29, #427), not the apiaries list. The OIDC callback is a full page load
+  // that re-bootstraps Flutter + the token exchange, so allow generously for a
+  // cold stack rather than the default 30s navigation budget.
+  await page.waitForURL(/\/todos/, { timeout: 60_000 });
   await enableSemantics(page);
-  // Wait for the app's own Sign in button to be present AND enabled before
-  // clicking — on a cold stack the login screen can paint a beat after the
-  // glass pane appears. Explicit wait (not just the default click auto-wait)
-  // with a generous timeout so a slow first render doesn't burn the whole
-  // test budget on a hung click.
-  const appSignIn = page.getByRole("button", { name: /sign in/i });
-  await appSignIn.waitFor({ state: "visible", timeout: 60_000 });
-  await appSignIn.click();
+  await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible({ timeout: 30_000 });
+}
 
-  // The app redirects to Authentik; its login form (lit web components) also
-  // needs a beat to render on a cold stack. Wait for the identifier field to
-  // be visible before interacting, so we don't click through a half-rendered
-  // page. fillIfPresent already tolerates absence, but this makes the wait
-  // explicit and generous for the OIDC redirect + Authentik first paint.
-  // ── Step 1: identifier (username/email) ───────────────────────────────
-  await fillIfPresent(page, page.getByLabel(/username|email/i), TEST_USER);
+// After login the app lands on the Tasks tab (D-29, #427). Flows that operate
+// on the apiaries list switch to the Apiaries tab first. The bottom nav is a
+// Material 3 NavigationBar, whose destinations Flutter web exposes as
+// role="tab" (SemanticsRole.tab, navigation_bar.dart) with the tab label as the
+// accessible name — so target the "Apiaries" tab by role, then confirm the
+// branch's own route + heading render before the caller drives the list.
+async function goToApiariesTab(page: Page) {
+  await page.getByRole("tab", { name: "Apiaries" }).click();
+  await page.waitForURL(/\/apiaries/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible({
+    timeout: 30_000,
+  });
+}
 
-  // Two-step providers (e.g. Authentik) show the password only after the
-  // identifier is submitted; a single-step page already has it, so only click
-  // through if the password field isn't visible yet.
-  const password = page.getByLabel(/password/i);
-  if (
-    !(await password
-      .first()
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await submitButton(page).first().click();
+/**
+ * Sets the apiary form's (now mandatory) location — #341, FR-AP-7.
+ *
+ * Two things about the current form make this non-obvious:
+ *
+ * 1. The picker is **collapsed by default** (apiary_form_screen.dart's
+ *    `_mapPickerExpanded`) to keep a fresh create form dense — not to protect
+ *    Save, which is pinned outside the scroll view — so the map and its
+ *    controls don't exist until "Set on map" is tapped.
+ *
+ * 2. The map surface is a `Semantics(label: …)` wrapper around `FlutterMap`
+ *    (`_LocationPicker`), and it is NOT reachable via `getByLabel`. Dumping
+ *    the semantics tree shows that wrapper merges with everything under it
+ *    into a single **leaf** node (childCount 0) whose label is the picker
+ *    label AND the Esri attribution, concatenated. Flutter web renders a
+ *    tappable leaf as `role="button"` and writes the label as DOM **text**
+ *    (`SemanticButton` → `LabelRepresentation.domText`), never as an
+ *    `aria-label` attribute — `aria-label` is only used for nodes that have
+ *    children. So `getByLabel("Map: tap to place the apiary's pin")` matches
+ *    nothing and waits out the whole test budget (the failure this replaced).
+ *    Match the role plus a regex on the accessible name instead — regex, not
+ *    an exact string, because of the concatenated attribution.
+ *
+ * The map tap is the interaction we want to exercise (it's what the widget
+ * tests drive), and Playwright dispatches real mouse events at the point, so
+ * flutter_map's own tap recognizer resolves the LatLng exactly as a user tap
+ * would. Headless canvas gesture handling is the one part of this flow that
+ * can't be verified off CI (no Docker/k3d locally), so "Use current location"
+ * — the form's other location affordance, and the one the widget tests'
+ * `_setLocationViaCurrentLocation` helper uses — backs it up; playwright
+ * .config.ts grants the geolocation permission and pins a fixed coordinate so
+ * that path needs no prompt. Either way we assert the location really is set
+ * before returning, since `_save` silently refuses (showing
+ * `apiaryLocationRequired`) without one and every later step would then fail
+ * for a confusing reason.
+ */
+async function setApiaryLocation(page: Page) {
+  await page.getByText("Set on map", { exact: true }).click();
+  // Flutter also mirrors the status text into a transient
+  // <flt-announcement-polite aria-live="polite"> node, so a bare
+  // getByText(/Location set:/) resolves to two elements and trips Playwright's
+  // strict mode. The real semantics label is a <span>; the announcer is not,
+  // so scoping to span picks the durable one (.first() guards against nesting).
+  const locationSet = page
+    .locator("span")
+    .filter({ hasText: /Location set:/ })
+    .first();
+
+  await page
+    .getByRole("button", { name: /Map: tap to place the apiary/ })
+    .click({ position: { x: 120, y: 110 }, timeout: 20_000 })
+    .catch(() => {});
+  // flutter_map debounces a plain tap behind its double-tap-disambiguation
+  // timer before invoking MapOptions.onTap, so give the status line a moment
+  // to flip before deciding the tap didn't take.
+  await locationSet.waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
+  if (!(await locationSet.isVisible().catch(() => false))) {
+    await page.getByText("Use current location", { exact: true }).click();
   }
+  await expect(locationSet).toBeVisible({ timeout: 20_000 });
 
-  // ── Step 2: password ──────────────────────────────────────────────────
-  await fillIfPresent(page, password, TEST_PASS);
-  await submitButton(page).first().click();
-
-  // Back on the PWA (apiaries list). The OIDC callback is a full page load that
-  // re-bootstraps Flutter + the token exchange, so allow generously for a cold
-  // stack rather than the default 30s navigation budget.
-  await page.waitForURL(/\/apiaries/, { timeout: 60_000 });
-  await enableSemantics(page);
-  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible({ timeout: 30_000 });
+  // Deliberately leave the picker EXPANDED. This used to collapse it via
+  // "Hide map" purely to get Save back above the fold: Save was the last child
+  // of the form's scroll view, and a Flutter-web semantics click does NOT
+  // scroll the Flutter scrollable to reach an off-screen target (the DOM
+  // semantics node is an absolutely-positioned mirror, so
+  // scrollIntoViewIfNeeded moves the page, not the form) — the symptom was a
+  // silent no-op: Save clicked, no validation error, still parked on
+  // "New apiary". Since location became mandatory (#341) every creation has to
+  // expand the picker, so that workaround was hiding a real defect. Save now
+  // lives in a pinned action bar outside the scroll view (FR-UX-1, D-18), and
+  // saving with the map still open is exactly what this test must guard.
+  await expect(page.getByText("Save", { exact: true })).toBeVisible();
 }
 
 test("login → create → offline edit → sync", async ({ page, context, browser }) => {
@@ -196,13 +170,54 @@ test("login → create → offline edit → sync", async ({ page, context, brows
 
   await login(page);
 
+  // ── Real email_verified claim (#361, NFR-SEC-1) ───────────────────────
+  // The seed user is blueprint-seeded VERIFIED (attributes.email_verified:
+  // true), and the provider's email scope now maps the GENUINE attribute
+  // instead of the built-in's hardcoded constant — so the id_token the app
+  // just persisted must say so. This is the live-cluster proof the custom
+  // scope mapping applied and evaluates correctly (a broken blueprint
+  // expression would silently drop the claim → false → the invitation
+  // accept-on-login gate would be dead again); the unverified counterpart is
+  // verification.spec.ts.
+  const claims = await readIdTokenClaims(page);
+  expect(claims.email).toBe(TEST_USER);
+  expect(claims.email_verified).toBe(true);
+
+  // ── No platform authority on a FIELD-APP token (#465, NFR-SEC-1) ──────
+  // The seed user IS in the `platform-operator` group, and their ADMIN-app
+  // token therefore carries `platform_operator: true` (admin-token.spec.ts).
+  // The claim mapping is attached ONLY to the admin provider, so the PWA
+  // token this login just persisted must NOT carry it at all — a long-lived,
+  // offline-cached credential on a beekeeper's phone must never be able to
+  // assert cross-tenant platform authority (#466 authorizes on this claim).
+  // The live counterpart to scripts/check-platform-operator-mapping.sh:
+  // attaching the mapping to the PWA provider fails the static guard AND
+  // this assertion.
+  expect(
+    claims.platform_operator,
+    "the PWA (field-app) token must never carry the platform_operator claim",
+  ).toBeUndefined();
+
   // ── Create an apiary ──────────────────────────────────────────────────
+  // The apiaries tab's quick actions are now consolidated behind a single
+  // expandable "Actions" FAB (#347, FR-UX-1/FR-UX-2) rather than a
+  // standalone "Add apiary" FAB — tap it to reveal the speed-dial options
+  // (ActionsSpeedDial, core/widgets/actions_speed_dial.dart), then pick
+  // "Add apiary" from the expanded list. Its accessible name stays
+  // "Actions" (l10n.actionsMenuLabel) whether collapsed or expanded — only
+  // its `expanded` semantics flag and icon change — so a single locator
+  // works for the tap.
+  //
+  // The app landed on the Tasks tab (D-29, #427); this create → edit → sync
+  // flow is apiaries-centric, so switch to the Apiaries tab first.
+  await goToApiariesTab(page);
+  await page.getByRole("button", { name: "Actions" }).click();
   await page.getByRole("button", { name: "Add apiary" }).click();
   await enableSemantics(page);
   await page.getByLabel("Name").click();
   await page.keyboard.type(apiaryName);
-  await page.getByLabel("Number of hives").click();
-  await page.keyboard.type("0");
+  // The create form no longer has a hive/counter field (#346, D-20): counters
+  // are set on the detail screen after creation, not here.
   await page.getByLabel("Notes").click();
   // Same Flutter-web dropped-keystroke workaround as the hive-count edit
   // below: observed in CI dropping a variable-length prefix ("South " gone
@@ -212,20 +227,34 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.press("Delete");
   await page.keyboard.press("Backspace");
   await page.keyboard.type(apiaryNotes, { delay: 80 });
+  // Location is now MANDATORY (#341, FR-AP-7): the form can't be saved without
+  // one.
+  await setApiaryLocation(page);
   await page.getByText("Save", { exact: true }).click();
 
   await expect(page.getByText(apiaryName)).toBeVisible();
 
   // ── Go offline and edit ───────────────────────────────────────────────
-  // Tapping the list row now opens the read-only detail screen (FR-AP-7,
-  // #32) rather than the edit form directly — reach the form via its edit
-  // action.
+  // Counters are now edited on the detail screen (#346, D-20), not the form:
+  // tapping the list row opens the detail screen, whose hive counter card is
+  // tappable and opens an inline value editor. The apiary was created with no
+  // counter, so the card reads "No hives" until we set it.
   await context.setOffline(true);
   await page.getByText(apiaryName).click();
   await enableSemantics(page);
-  await page.getByRole("button", { name: "Edit apiary" }).click();
+  // Open the hive counter's inline editor by tapping its card.
+  await page.getByText("No hives").click();
   await enableSemantics(page);
-  const hives = page.getByLabel("Number of hives");
+  // `exact` matters here: Playwright's getByLabel is substring + case-
+  // insensitive by default, and the counter CARD next to the editor reads
+  // "No hives" — which contains "hives". The card happens to expose its text
+  // as DOM text rather than an aria-label (merged leaf → domText), so it isn't
+  // actually a label match today, but pinning the exact accessible name keeps
+  // this from turning into a strict-mode violation on any future card that
+  // does carry an aria-label. The editor's own field is the only aria-label
+  // "Hives" (InputDecoration.labelText → the semantics label Flutter web puts
+  // on the <input>).
+  const hives = page.getByLabel("Hives", { exact: true });
   await hives.click();
   // Clear the field reliably before typing (Flutter web can drop the first
   // keystroke after a select-all), then type digit-by-digit.
@@ -235,16 +264,15 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   await page.keyboard.type("12", { delay: 80 });
   await page.getByText("Save", { exact: true }).click();
 
-  // The edit is applied locally while offline (local-first, FR-OF-1). Saving
-  // the edit form now returns to the read-only detail screen (FR-AP-7, #32 —
-  // the form's `_save` routes to /apiaries/:id, not back to the list), so the
-  // fresh value shows on the detail hive-count badge, not a list row. Assert
-  // it there — no navigation, so this stays valid while still offline.
+  // The edit is applied locally while offline (local-first, FR-OF-1). The
+  // inline editor closes and the hive-count badge on the same detail screen
+  // now reads the fresh value — no navigation, so this stays valid while
+  // still offline.
   await expect(apiaryDetailHiveCount(page)).toContainText("12 hives");
 
-  // The edit-form round-trip must not clobber the notes (the form re-saves
-  // them with notesProvided — apiaries_repository.dart's update): still shown
-  // on the detail screen the save returned to.
+  // Editing a counter never touches the apiary's notes (a counter write is
+  // its own `apiary_counter` op, #346) — the create's notes are still shown
+  // on the detail screen.
   await expect(page.getByText(apiaryNotes)).toBeVisible();
 
   // ── Reconnect → the queued change syncs ───────────────────────────────
@@ -321,6 +349,9 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   try {
     const p2 = await fresh.newPage();
     await login(p2);
+    // The fresh client also lands on the Tasks tab (D-29, #427); switch to the
+    // Apiaries tab before asserting the downloaded apiary row.
+    await goToApiariesTab(p2);
     await expect(apiaryRow(p2, apiaryName)).toBeVisible({ timeout: 60_000 });
     await expect(apiaryRow(p2, apiaryName)).toContainText("12 hives");
 
@@ -350,8 +381,9 @@ test("reload keeps the session and converges (#236: offline_access → refresh t
   await login(page);
   await page.reload();
   await enableSemantics(page);
-  // Should still be authenticated (on /apiaries), not bounced to /login.
-  await expect(page.getByRole("heading", { name: "Apiaries" })).toBeVisible();
+  // Should still be authenticated — the reload restores the D-29/#427 landing
+  // (the Tasks tab), not bounce to /login.
+  await expect(page.getByRole("heading", { name: "Todos" })).toBeVisible();
 });
 
 // Blocked on a real, separate walking-skeleton bug — NOT an e2e-harness issue,

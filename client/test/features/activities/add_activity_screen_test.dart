@@ -9,8 +9,10 @@ import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:beekeepingit_client/features/members/members_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/app_shell.dart';
+import 'package:beekeepingit_client/theming/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,11 +59,18 @@ class _CreatedActivity {
 }
 
 class _UpdatedActivity {
-  _UpdatedActivity(this.id, this.type, this.occurredAt, this.attributes);
+  _UpdatedActivity(
+    this.id,
+    this.type,
+    this.occurredAt,
+    this.attributes,
+    this.journeyId,
+  );
   final String id;
   final String type;
   final String occurredAt;
   final Map<String, dynamic> attributes;
+  final String? journeyId;
 }
 
 /// Records `create()`/`update()`/`delete()` calls so the save/edit/delete
@@ -116,9 +125,10 @@ class _FakeActivitiesRepository extends ActivitiesRepository {
     required String type,
     required String occurredAt,
     required Map<String, dynamic> attributes,
+    required String? journeyId,
   }) async {
     if (throwOnUpdate) throw Exception('boom-update');
-    updated.add(_UpdatedActivity(id, type, occurredAt, attributes));
+    updated.add(_UpdatedActivity(id, type, occurredAt, attributes, journeyId));
   }
 
   @override
@@ -129,10 +139,16 @@ class _FakeActivitiesRepository extends ActivitiesRepository {
 }
 
 class _CreatedJourney {
-  _CreatedJourney(this.name, this.mainActivityType, this.apiaryIds);
+  _CreatedJourney(
+    this.name,
+    this.mainActivityType,
+    this.apiaryIds, [
+    this.defaultAttributes = const {},
+  ]);
   final String name;
   final String mainActivityType;
   final List<String> apiaryIds;
+  final Map<String, dynamic> defaultAttributes;
 }
 
 /// A [JourneysRepository] fake for the #46 journey-picker section on the
@@ -146,19 +162,47 @@ class _CreatedJourney {
 /// candidate list, same as journey_form_screen_test.dart's
 /// `_FakeJourneysRepository` fakes create/update/close/delete without
 /// re-deriving any real persistence.
+class _AddedPlanApiary {
+  _AddedPlanApiary(this.journeyId, this.apiaryId);
+  final String journeyId;
+  final String apiaryId;
+}
+
 class _FakeJourneysRepository extends JourneysRepository {
   _FakeJourneysRepository({
     this.matches = const [],
+    this.unplannedMatches = const [],
     this.throwOnCreate = false,
+    this.throwOnAddApiaryToPlan = false,
     Map<String, Journey>? journeysById,
-  }) : journeysById = journeysById ?? {for (final j in matches) j.id: j},
+  }) : journeysById =
+           journeysById ??
+           {
+             for (final j in [...matches, ...unplannedMatches]) j.id: j,
+           },
        super(_NoopLocalStore());
 
   final List<Journey> matches;
+
+  /// The canned relaxed candidate set (#440, D-31) [watchTypeMatchingUnplanned]
+  /// returns — open, type-matching journeys that did NOT plan this apiary,
+  /// revealed behind the picker's "show unplanned" toggle. The real SQL-level
+  /// filtering is covered by journeys_repository_test.dart; this fake only
+  /// drives the picker/save behavior given a fixed list.
+  final List<Journey> unplannedMatches;
   final bool throwOnCreate;
+
+  /// #440/D-31: drives the "plan-grow fails BEFORE the activity is written"
+  /// ordering test — a throwing [addApiaryToPlan] must abort `_save` before
+  /// any activity `create()` runs (no duplicate-activity retry hazard).
+  final bool throwOnAddApiaryToPlan;
   final Map<String, Journey> journeysById;
 
   final List<_CreatedJourney> created = [];
+
+  /// Records [addApiaryToPlan] calls (#440, D-31) so the plan-growth-on-save
+  /// path can be asserted without a real backend.
+  final List<_AddedPlanApiary> addedPlanApiaries = [];
 
   @override
   Stream<List<Journey>> watchMatching({
@@ -168,6 +212,19 @@ class _FakeJourneysRepository extends JourneysRepository {
   }) => Stream.value(matches);
 
   @override
+  Stream<List<Journey>> watchTypeMatchingUnplanned({
+    required String apiaryId,
+    required String activityType,
+    required String? organizationId,
+  }) => Stream.value(unplannedMatches);
+
+  @override
+  Future<void> addApiaryToPlan(String journeyId, String apiaryId) async {
+    if (throwOnAddApiaryToPlan) throw Exception('boom-add-plan');
+    addedPlanApiaries.add(_AddedPlanApiary(journeyId, apiaryId));
+  }
+
+  @override
   Future<Journey?> getById(String id) async => journeysById[id];
 
   @override
@@ -175,9 +232,12 @@ class _FakeJourneysRepository extends JourneysRepository {
     required String name,
     required String mainActivityType,
     required List<String> apiaryIds,
+    Map<String, dynamic> defaultAttributes = const {},
   }) async {
     if (throwOnCreate) throw Exception('boom-journey-create');
-    created.add(_CreatedJourney(name, mainActivityType, apiaryIds));
+    created.add(
+      _CreatedJourney(name, mainActivityType, apiaryIds, defaultAttributes),
+    );
     return 'new-journey-${created.length - 1}';
   }
 }
@@ -210,15 +270,51 @@ class _ExistingOrganizationController extends OrganizationController {
 
 const _apiary = Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 4);
 
+/// Returns a fixed apiary from [getById] so the #424 create-mode
+/// `hives_involved` prefill can read a hive count without a real PowerSync
+/// backend — mirrors `_FakeActivitiesRepository`'s record-and-return
+/// convention, including its `throwOnGetById` precedent for driving the
+/// "lookup fails, form must stay usable" path. Every other method is
+/// inherited untouched (the form only calls [getById]). A null [_apiary]
+/// stands in for a since-deleted apiary.
+class _FakeApiariesRepository extends ApiariesRepository {
+  _FakeApiariesRepository(this._apiary, {this.throwOnGetById = false})
+    : super(_NoopLocalStore());
+
+  final Apiary? _apiary;
+  final bool throwOnGetById;
+
+  @override
+  Future<Apiary?> getById(String id) async {
+    if (throwOnGetById) throw Exception('boom-apiary-load');
+    return _apiary;
+  }
+}
+
 Widget _buildApp({
   required _FakeActivitiesRepository repo,
   _FakeJourneysRepository? journeysRepo,
+  Apiary apiary = _apiary,
+  _FakeApiariesRepository? apiariesRepo,
 }) {
   return ProviderScope(
     overrides: [
       isAuthenticatedProvider.overrideWithValue(true),
-      apiariesStreamProvider.overrideWith((ref) => Stream.value([_apiary])),
-      apiaryByIdProvider.overrideWith((ref, id) => Stream.value(_apiary)),
+      apiariesStreamProvider.overrideWith((ref) => Stream.value([apiary])),
+      // Tasks is the app's landing screen now (#427, D-29) — stub its stream
+      // so booting the app renders the Todos tab without hanging on the real,
+      // never-resolving todos repository chain.
+      todosStreamProvider.overrideWith((ref) => Stream.value(const <Todo>[])),
+      apiaryByIdProvider.overrideWith((ref, id) => Stream.value(apiary)),
+      // #424: the create-mode prefill reads the apiary's hive count via
+      // apiariesRepositoryProvider.getById — override it (default: the same
+      // fixture the list/detail streams use) so it never hangs on the real,
+      // never-resolving powerSyncProvider chain a bare provider would await.
+      // Tests exercising the "lookup fails / apiary gone" paths inject their
+      // own fake here (a throwing one, or one returning null).
+      apiariesRepositoryProvider.overrideWith(
+        (ref) async => apiariesRepo ?? _FakeApiariesRepository(apiary),
+      ),
       // The detail screen's activities section (#42) — overridden with an
       // empty stream so navigating there doesn't hang on the real
       // (never-resolving here) activitiesRepositoryProvider chain and its
@@ -246,12 +342,25 @@ Widget _buildApp({
 Future<void> _openAddActivityForm(
   WidgetTester tester, {
   _FakeJourneysRepository? journeysRepo,
+  Apiary apiary = _apiary,
 }) async {
   await tester.pumpWidget(
-    _buildApp(repo: _FakeActivitiesRepository(), journeysRepo: journeysRepo),
+    _buildApp(
+      repo: _FakeActivitiesRepository(),
+      journeysRepo: journeysRepo,
+      apiary: apiary,
+    ),
   );
   await tester.pumpAndSettle();
+  // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+  // tab before interacting with the apiaries list.
+  await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiary-a1')));
+  await tester.pumpAndSettle();
+  // Add-activity now lives behind the single "Actions" speed dial (#347) —
+  // expand it before tapping the revealed option.
+  await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('apiary-detail-add-activity-button')));
   await tester.pumpAndSettle();
@@ -263,9 +372,17 @@ void main() {
     (tester) async {
       await tester.pumpWidget(_buildApp(repo: _FakeActivitiesRepository()));
       await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiary-a1')));
       await tester.pumpAndSettle();
 
+      // The add-activity entry point is one of the "Actions" speed dial's
+      // scope options (#347) — revealed once the control is expanded.
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('apiary-detail-add-activity-button')),
         findsOneWidget,
@@ -442,6 +559,201 @@ void main() {
     },
   );
 
+  group('create-mode hives_involved prefill (#424, EPIC-17, FR-AC-2)', () {
+    testWidgets(
+      'prefills the shared hives_involved field with the apiary\'s current '
+      'hive count, across every type that carries it',
+      (tester) async {
+        // The fixture apiary has hiveCount 4.
+        await _openAddActivityForm(tester);
+
+        // Harvest (the default type) — prefilled from the apiary.
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-hives-involved-field')),
+              )
+              .controller!
+              .text,
+          '4',
+        );
+
+        // The field is shared, so switching type keeps the prefilled value
+        // (feeding/treatment carry the same hives_involved field).
+        await tester.tap(find.byKey(const Key('activity-type-field')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Feeding').last);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-hives-involved-field')),
+              )
+              .controller!
+              .text,
+          '4',
+        );
+      },
+    );
+
+    testWidgets(
+      'the prefilled value is editable and the user\'s override is what saves',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(_buildApp(repo: repo));
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Prefilled to the apiary's hive count...
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-hives-involved-field')),
+              )
+              .controller!
+              .text,
+          '4',
+        );
+
+        // ...but the user overrides it, and the override is what is saved.
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        await tester.enterText(
+          find.byKey(const Key('activity-hives-involved-field')),
+          '9',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.attributes['hives_involved'], 9);
+      },
+    );
+
+    testWidgets(
+      'an apiary with 0/unknown hives leaves the field empty, not "0"',
+      (tester) async {
+        await _openAddActivityForm(
+          tester,
+          apiary: const Apiary(id: 'a1', name: 'Monte Alto', hiveCount: 0),
+        );
+
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-hives-involved-field')),
+              )
+              .controller!
+              .text,
+          isEmpty,
+        );
+      },
+    );
+
+    testWidgets(
+      'a failing apiary lookup leaves the field empty and the form usable, '
+      'never blocking or crashing',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            repo: _FakeActivitiesRepository(),
+            apiariesRepo: _FakeApiariesRepository(
+              _apiary,
+              throwOnGetById: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // The form rendered and is usable; the prefill just no-op'd.
+        expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-hives-involved-field')),
+              )
+              .controller!
+              .text,
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'a since-deleted apiary (getById returns null) leaves the field empty, '
+      'no crash',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            repo: _FakeActivitiesRepository(),
+            apiariesRepo: _FakeApiariesRepository(null),
+          ),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('activity-type-field')), findsOneWidget);
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const Key('activity-hives-involved-field')),
+              )
+              .controller!
+              .text,
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
   group('required-field validation before save (#39 AC)', () {
     testWidgets(
       'saving a harvest without the required honey_supers is genuinely blocked '
@@ -459,7 +771,13 @@ void main() {
         final repo = _FakeActivitiesRepository();
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -498,7 +816,13 @@ void main() {
         final repo = _FakeActivitiesRepository();
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -526,44 +850,49 @@ void main() {
       },
     );
 
-    testWidgets(
-      'a valid harvest saves successfully with the typed attributes',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('a valid harvest saves successfully with the typed attributes', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final repo = _FakeActivitiesRepository();
-        await tester.pumpWidget(_buildApp(repo: repo));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(_buildApp(repo: repo));
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        await tester.enterText(
-          find.byKey(const Key('activity-honey-supers-field')),
-          '4',
-        );
-        final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
-        await tester.pumpAndSettle();
-        await tester.tap(saveButton);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
-        await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
-        expect(repo.created, hasLength(1));
-        expect(repo.created.single.apiaryId, 'a1');
-        expect(repo.created.single.type, 'harvest');
-        expect(repo.created.single.attributes['honey_supers'], 4);
-        // Navigated away.
-        expect(find.byKey(const Key('activity-save-button')), findsNothing);
-      },
-    );
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.apiaryId, 'a1');
+      expect(repo.created.single.type, 'harvest');
+      expect(repo.created.single.attributes['honey_supers'], 4);
+      // Navigated away.
+      expect(find.byKey(const Key('activity-save-button')), findsNothing);
+    });
 
     testWidgets(
       'a failing create() keeps the form open and shows an error, not an indefinite spinner',
@@ -576,7 +905,13 @@ void main() {
         final repo = _FakeActivitiesRepository(throwOnCreate: true);
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -613,7 +948,13 @@ void main() {
         final repo = _FakeActivitiesRepository();
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -674,7 +1015,13 @@ void main() {
         final repo = _FakeActivitiesRepository();
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -713,7 +1060,13 @@ void main() {
         final repo = _FakeActivitiesRepository();
         await tester.pumpWidget(_buildApp(repo: repo));
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -757,9 +1110,10 @@ void main() {
   /// .byType(AppShell)))` pattern for asserting/driving navigation directly.
   Future<void> goToEditForm(
     WidgetTester tester,
-    _FakeActivitiesRepository repo,
-  ) async {
-    await tester.pumpWidget(_buildApp(repo: repo));
+    _FakeActivitiesRepository repo, {
+    _FakeJourneysRepository? journeysRepo,
+  }) async {
+    await tester.pumpWidget(_buildApp(repo: repo, journeysRepo: journeysRepo));
     await tester.pumpAndSettle();
     final router = GoRouter.of(tester.element(find.byType(AppShell)));
     router.go('/apiaries/a1/activities/act1/edit');
@@ -788,50 +1142,53 @@ void main() {
   );
 
   group('journey picker (#46, FR-JO-1, D-21)', () {
-    testWidgets(
-      'auto-match HIT: a matching open journey is pre-filled and saved '
-      'as journey_id',
-      (tester) async {
-        tester.view.physicalSize = const Size(1200, 2400);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('auto-match HIT: a matching open journey is pre-filled and saved '
+        'as journey_id', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final journeysRepo = _FakeJourneysRepository(matches: [openJourney]);
-        final repo = _FakeActivitiesRepository();
-        await tester.pumpWidget(
-          _buildApp(repo: repo, journeysRepo: journeysRepo),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('apiary-a1')));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const Key('apiary-detail-add-activity-button')),
-        );
-        await tester.pumpAndSettle();
+      final journeysRepo = _FakeJourneysRepository(matches: [openJourney]);
+      final repo = _FakeActivitiesRepository();
+      await tester.pumpWidget(
+        _buildApp(repo: repo, journeysRepo: journeysRepo),
+      );
+      await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('apiary-detail-add-activity-button')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(
-          find.byKey(const Key('activity-journey-attachment-name')),
-          findsOneWidget,
-        );
-        expect(find.text('Spring Harvest Round'), findsOneWidget);
+      expect(
+        find.byKey(const Key('activity-journey-attachment-name')),
+        findsOneWidget,
+      );
+      expect(find.text('Spring Harvest Round'), findsOneWidget);
 
-        await tester.enterText(
-          find.byKey(const Key('activity-honey-supers-field')),
-          '4',
-        );
-        final saveButton = find.byKey(const Key('activity-save-button'));
-        await tester.ensureVisible(saveButton);
-        await tester.pumpAndSettle();
-        await tester.tap(saveButton);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 100));
-        await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(
+        find.byKey(const Key('activity-honey-supers-field')),
+        '4',
+      );
+      final saveButton = find.byKey(const Key('activity-save-button'));
+      await tester.ensureVisible(saveButton);
+      await tester.pumpAndSettle();
+      await tester.tap(saveButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
 
-        expect(repo.created, hasLength(1));
-        expect(repo.created.single.journeyId, 'j1');
-      },
-    );
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.journeyId, 'j1');
+    });
 
     testWidgets('auto-match MISS: no matching journey -> no journey attached, '
         'journey_id is null on save', (tester) async {
@@ -843,7 +1200,13 @@ void main() {
       final repo = _FakeActivitiesRepository();
       await tester.pumpWidget(_buildApp(repo: repo));
       await tester.pumpAndSettle();
+      // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+      // tab before interacting with the apiaries list.
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('apiary-a1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -890,7 +1253,13 @@ void main() {
           _buildApp(repo: repo, journeysRepo: journeysRepo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -942,7 +1311,13 @@ void main() {
           _buildApp(repo: repo, journeysRepo: journeysRepo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -989,6 +1364,202 @@ void main() {
     );
 
     testWidgets(
+      'unplanned journeys (#440, D-31): hidden by default, revealed by the '
+      '"show unplanned" toggle; picking one attaches it AND grows its plan '
+      'with the current apiary on save',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        // No planned matches at all (auto-match miss), but one open,
+        // type-matching journey that did NOT plan this apiary.
+        final journeysRepo = _FakeJourneysRepository(
+          unplannedMatches: [otherOpenJourney],
+        );
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Auto-match miss: nothing attached by default.
+        expect(find.text('No journey attached'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // The unplanned journey is hidden until its own toggle is on.
+        expect(find.byKey(const Key('journey-picker-option-j2')), findsNothing);
+        expect(
+          find.byKey(const Key('journey-picker-show-unplanned-toggle')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('journey-picker-show-unplanned-toggle')),
+        );
+        await tester.pumpAndSettle();
+
+        // The revealed row carries the D-31 disclosure badge (a11y: picking
+        // it also adds the apiary to the plan) — a planned match never does.
+        expect(find.text('Adds apiary'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Second Harvest Round'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Activity attached to the journey (D-21)...
+        expect(repo.created, hasLength(1));
+        expect(repo.created.single.journeyId, 'j2');
+        // ...AND the current apiary was added to that journey's plan (D-31).
+        expect(journeysRepo.addedPlanApiaries, hasLength(1));
+        expect(journeysRepo.addedPlanApiaries.single.journeyId, 'j2');
+        expect(journeysRepo.addedPlanApiaries.single.apiaryId, 'a1');
+      },
+    );
+
+    testWidgets(
+      'picking an ordinary planned match does NOT grow the plan (#440, '
+      'D-31: plan-growth is scoped to the relaxed "unplanned" pick)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(matches: [openJourney]);
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Auto-selected planned match.
+        expect(find.text('Spring Harvest Round'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(repo.created.single.journeyId, 'j1');
+        expect(journeysRepo.addedPlanApiaries, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'plan-grow failure aborts BEFORE the activity is written (#440, D-31 '
+      'ordering): no duplicate-activity hazard, no visited-without-planned '
+      'state',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository(
+          unplannedMatches: [otherOpenJourney],
+          throwOnAddApiaryToPlan: true,
+        );
+        final repo = _FakeActivitiesRepository();
+        await tester.pumpWidget(
+          _buildApp(repo: repo, journeysRepo: journeysRepo),
+        );
+        await tester.pumpAndSettle();
+        // The app now lands on Tasks (D-29, #437) — switch to the Apiaries
+        // tab before opening an apiary.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('apiary-detail-add-activity-button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-show-unplanned-toggle')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('activity-honey-supers-field')),
+          '4',
+        );
+        final saveButton = find.byKey(const Key('activity-save-button'));
+        await tester.ensureVisible(saveButton);
+        await tester.pumpAndSettle();
+        await tester.tap(saveButton);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // The plan-grow threw first, so NO activity was ever created (a retry
+        // can't produce a duplicate) and no plan row was recorded — the form
+        // stays open on the error rather than navigating away.
+        expect(repo.created, isEmpty);
+        expect(journeysRepo.addedPlanApiaries, isEmpty);
+        expect(saveButton, findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'closed journeys are hidden by default in the picker, revealed by '
       'the "show hidden journeys" toggle',
       (tester) async {
@@ -1005,7 +1576,13 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -1053,7 +1630,13 @@ void main() {
           _buildApp(repo: repo, journeysRepo: journeysRepo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -1119,7 +1702,13 @@ void main() {
           _buildApp(repo: repo, journeysRepo: journeysRepo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -1174,7 +1763,13 @@ void main() {
           _buildApp(repo: repo, journeysRepo: journeysRepo),
         );
         await tester.pumpAndSettle();
+        // The app now lands on the Tasks tab (#427, D-29); switch to the Apiaries
+        // tab before interacting with the apiaries list.
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('apiary-detail-add-activity-button')),
@@ -1229,6 +1824,93 @@ void main() {
       },
     );
 
+    testWidgets(
+      'the "Create a new journey" row uses the accent (tertiary) color, not '
+      'the muted secondary color that reads as disabled (#381)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await _openAddActivityForm(tester);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+
+        final scheme = AppTheme.light().colorScheme;
+        final createNewOption = find.byKey(
+          const Key('journey-picker-create-new-option'),
+        );
+        final icon = tester.widget<Icon>(
+          find.descendant(
+            of: createNewOption,
+            matching: find.byIcon(Icons.add_circle_outline),
+          ),
+        );
+        expect(icon.color, scheme.tertiary);
+        expect(icon.color, isNot(scheme.secondary));
+
+        final title = tester.widget<Text>(
+          find.descendant(of: createNewOption, matching: find.byType(Text)),
+        );
+        expect(title.style?.color, scheme.onSurface);
+        expect(title.style?.color, isNot(scheme.secondary));
+      },
+    );
+
+    testWidgets(
+      'inline create: the main activity type is locked to the activity being '
+      'registered so a mismatched-type journey cannot be created (#343, '
+      'FR-JO-4, D-21)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository();
+        await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-create-new-option')),
+        );
+        await tester.pumpAndSettle();
+
+        // The type field is present, shows the activity's own type, but is
+        // locked (disabled) — the user has no way to pick a different type.
+        final typeField = tester.widget<DropdownButtonFormField<String>>(
+          find.byKey(
+            const Key('journey-quick-create-main-activity-type-field'),
+          ),
+        );
+        expect(
+          typeField.onChanged,
+          isNull,
+          reason: 'the main activity type must be locked on inline create',
+        );
+
+        // Creating the journey still works and carries the matching type.
+        await tester.enterText(
+          find.byKey(const Key('journey-quick-create-name-field')),
+          'Matched Journey',
+        );
+        await tester.tap(
+          find.byKey(const Key('journey-quick-create-save-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(journeysRepo.created, hasLength(1));
+        expect(journeysRepo.created.single.mainActivityType, 'harvest');
+      },
+    );
+
     testWidgets('inline create: canceling the quick-create sheet leaves the '
         'attachment unchanged', (tester) async {
       tester.view.physicalSize = const Size(1200, 2400);
@@ -1253,6 +1935,47 @@ void main() {
       expect(find.text('No journey attached'), findsOneWidget);
       expect(journeysRepo.created, isEmpty);
     });
+
+    testWidgets(
+      'inline create: deselecting the pre-filled apiary still saves — the '
+      'plan may be empty (D-30, #428, FR-JO-4)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final journeysRepo = _FakeJourneysRepository();
+        await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-picker-create-new-option')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('journey-quick-create-name-field')),
+          'Empty-plan Journey',
+        );
+        // Deselect the pre-filled apiary (a1) so the plan is empty.
+        await tester.tap(find.byKey(const Key('journey-apiary-option-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('journey-quick-create-save-button')),
+        );
+        await tester.pumpAndSettle();
+
+        // The journey is created with an empty plan; the old at-least-one
+        // apiary gate no longer blocks the inline save.
+        expect(journeysRepo.created, hasLength(1));
+        expect(journeysRepo.created.single.name, 'Empty-plan Journey');
+        expect(journeysRepo.created.single.apiaryIds, isEmpty);
+      },
+    );
 
     testWidgets(
       'inline create: a failing create() keeps the quick-create sheet open '
@@ -1331,6 +2054,264 @@ void main() {
         expect(find.text('Spring Harvest Round'), findsOneWidget);
       },
     );
+
+    group('prefill from journey defaults (#386)', () {
+      testWidgets(
+        'auto-select: an auto-selected journey\'s defaults fill empty '
+        'attribute fields',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final treatmentJourney = const Journey(
+            id: 'jt1',
+            name: 'Spring Treatment',
+            mainActivityType: 'treatment',
+            status: journeyStatusOpen,
+            defaultAttributes: {
+              'treatment_context': 'disease_specific',
+              'treatment_type': 'Apivar/amitraz',
+              'disease': 'Varroose',
+            },
+          );
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [treatmentJourney],
+          );
+          await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Treatment').last);
+          await tester.pumpAndSettle();
+
+          expect(find.text('Specific disease/condition'), findsOneWidget);
+          expect(find.text('Apivar/amitraz'), findsOneWidget);
+          expect(find.text('Varroose'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'a field the user already set is NOT overwritten by a subsequent '
+        'pick (non-clobber rule)',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeyWithDefaults = const Journey(
+            id: 'jd1',
+            name: 'Batch Journey',
+            mainActivityType: 'harvest',
+            status: journeyStatusOpen,
+            defaultAttributes: {'lot_batch': 'LOTE-2026-07'},
+          );
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [journeyWithDefaults],
+          );
+          await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+          // Auto-select already prefilled lot_batch from the default — the
+          // user now types over it explicitly.
+          expect(
+            tester
+                .widget<TextFormField>(
+                  find.byKey(const Key('activity-lot-batch-field')),
+                )
+                .controller!
+                .text,
+            'LOTE-2026-07',
+          );
+          await tester.enterText(
+            find.byKey(const Key('activity-lot-batch-field')),
+            'USER-ENTERED',
+          );
+          await tester.pumpAndSettle();
+
+          // Explicitly re-pick the SAME journey via the picker — exercises
+          // the explicit-pick prefill trigger, not just auto-select.
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('journey-picker-option-jd1')));
+          await tester.pumpAndSettle();
+
+          expect(
+            tester
+                .widget<TextFormField>(
+                  find.byKey(const Key('activity-lot-batch-field')),
+                )
+                .controller!
+                .text,
+            'USER-ENTERED',
+            reason: 'a non-empty field must never be clobbered by a default',
+          );
+        },
+      );
+
+      testWidgets(
+        'inline create: the quick-created journey\'s defaults prefill '
+        'immediately, without waiting for the live query',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          // Empty matches: journeysById stays empty too (built from `matches`
+          // at construction, _FakeJourneysRepository's own doc comment) — a
+          // getById(newlyCreatedId) call would return null, proving the
+          // prefill can't be coming from a re-read of the store; it must be
+          // the quick-create sheet's own returned record.
+          final journeysRepo = _FakeJourneysRepository();
+          await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('journey-picker-create-new-option')),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.enterText(
+            find.byKey(const Key('journey-quick-create-name-field')),
+            'Fresh Harvest Journey',
+          );
+          await tester.enterText(
+            find.byKey(const Key('journey-default-lot-batch-field')),
+            'NEWLOT-01',
+          );
+          await tester.tap(
+            find.byKey(const Key('journey-quick-create-save-button')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(journeysRepo.created.single.defaultAttributes, {
+            'lot_batch': 'NEWLOT-01',
+          });
+          expect(
+            tester
+                .widget<TextFormField>(
+                  find.byKey(const Key('activity-lot-batch-field')),
+                )
+                .controller!
+                .text,
+            'NEWLOT-01',
+          );
+        },
+      );
+
+      testWidgets('the occurred_at date is untouched by a prefill', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        // InputDecoration renders its OWN label as a Text descendant too
+        // (alongside the actual date value), so this filters it out by
+        // content rather than assuming a fixed widget count/order.
+        String? dateText() {
+          final l10n = AppLocalizations.of(
+            tester.element(find.byKey(const Key('activity-occurred-at-field'))),
+          );
+          return tester
+              .widgetList<Text>(
+                find.descendant(
+                  of: find.byKey(const Key('activity-occurred-at-field')),
+                  matching: find.byType(Text),
+                ),
+              )
+              .map((t) => t.data)
+              .firstWhere(
+                (d) => d != null && d != l10n.activityOccurredAtLabel,
+              );
+        }
+
+        final journeyWithDefaults = const Journey(
+          id: 'jd1',
+          name: 'Batch Journey',
+          mainActivityType: 'harvest',
+          status: journeyStatusOpen,
+          defaultAttributes: {'lot_batch': 'LOTE-2026-07'},
+        );
+        final journeysRepo = _FakeJourneysRepository(
+          matches: [journeyWithDefaults],
+        );
+        await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+        final beforeDate = dateText();
+
+        // Trigger the explicit-pick prefill path (re-picking the SAME
+        // auto-matched journey) within this SAME session/build — #386's
+        // prefill runs here.
+        await tester.tap(
+          find.byKey(const Key('activity-journey-change-button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('journey-picker-option-jd1')));
+        await tester.pumpAndSettle();
+        final afterDate = dateText();
+
+        expect(afterDate, beforeDate);
+      });
+
+      testWidgets(
+        'switching activity type then back re-runs prefill for the new '
+        'match',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeyWithDefaults = const Journey(
+            id: 'jd1',
+            name: 'Batch Journey',
+            mainActivityType: 'harvest',
+            status: journeyStatusOpen,
+            defaultAttributes: {'lot_batch': 'LOTE-2026-07'},
+          );
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [journeyWithDefaults],
+          );
+          await _openAddActivityForm(tester, journeysRepo: journeysRepo);
+
+          // Auto-select already prefilled lot_batch — clear it, to prove
+          // the NEXT prefill (after the round trip below) is a fresh run,
+          // not a leftover value.
+          await tester.enterText(
+            find.byKey(const Key('activity-lot-batch-field')),
+            '',
+          );
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Feeding').last);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Honey harvest').last);
+          await tester.pumpAndSettle();
+
+          expect(
+            tester
+                .widget<TextFormField>(
+                  find.byKey(const Key('activity-lot-batch-field')),
+                )
+                .controller!
+                .text,
+            'LOTE-2026-07',
+          );
+        },
+      );
+    });
   });
 
   group('edit mode (#40, FR-AC-3)', () {
@@ -1350,6 +2331,13 @@ void main() {
           find.byKey(const Key('activity-honey-kg-field')),
         );
         expect(honeyKgField.controller!.text, '15');
+        // #424 regression: edit mode loads the activity's OWN stored
+        // hives_involved (3), never the apiary's hive count (the fixture's 4)
+        // — the create-mode prefill must not leak into the edit path.
+        final hivesField = tester.widget<TextFormField>(
+          find.byKey(const Key('activity-hives-involved-field')),
+        );
+        expect(hivesField.controller!.text, '3');
         // A delete affordance is present in edit mode.
         expect(find.byKey(const Key('activity-delete-button')), findsOneWidget);
       },
@@ -1494,6 +2482,282 @@ void main() {
         );
       },
     );
+
+    group('journey attachment on edit (#387)', () {
+      const existingHarvestWithJourney = Activity(
+        id: 'act1',
+        apiaryId: 'a1',
+        type: 'harvest',
+        occurredAt: '2026-06-01',
+        attributes: {'honey_supers': 5},
+        journeyId: 'j1',
+      );
+
+      testWidgets(
+        'renders the stored journey — NOT an auto-match — even when a '
+        'DIFFERENT journey would otherwise be the auto-selected candidate',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [otherOpenJourney], // deliberately NOT the stored journey
+            journeysById: {'j1': openJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          expect(find.text('Spring Harvest Round'), findsOneWidget);
+          expect(find.text('Second Harvest Round'), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'picking a different journey shows the relink confirm dialog at '
+        'save time; cancel keeps the original link untouched',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney, otherOpenJourney],
+            journeysById: {'j1': openJourney, 'j2': otherOpenJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+          await tester.pumpAndSettle();
+          expect(find.text('Second Harvest Round'), findsOneWidget);
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-journey-relink-confirm-dialog')),
+            findsOneWidget,
+          );
+          expect(repo.updated, isEmpty);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-relink-confirm-cancel')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-journey-relink-confirm-dialog')),
+            findsNothing,
+          );
+          expect(repo.updated, isEmpty);
+        },
+      );
+
+      testWidgets(
+        'confirming a relink calls update() with the new journey_id',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney, otherOpenJourney],
+            journeysById: {'j1': openJourney, 'j2': otherOpenJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('journey-picker-option-j2')));
+          await tester.pumpAndSettle();
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('activity-journey-relink-confirm-confirm')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.pump(const Duration(milliseconds: 100));
+
+          expect(repo.updated, hasLength(1));
+          expect(repo.updated.single.journeyId, 'j2');
+        },
+      );
+
+      testWidgets(
+        'removing the journey attachment on edit shows the relink dialog '
+        '(journey -> no journey) and saves journey_id as null',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney],
+            journeysById: {'j1': openJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-remove-button')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('No journey attached'), findsOneWidget);
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-journey-relink-confirm-dialog')),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.byKey(const Key('activity-journey-relink-confirm-confirm')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.pump(const Duration(milliseconds: 100));
+
+          expect(repo.updated, hasLength(1));
+          expect(repo.updated.single.journeyId, isNull);
+        },
+      );
+
+      testWidgets(
+        're-linking to a closed journey on edit shows the closed-journey '
+        'confirm dialog',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney, closedJourney],
+            journeysById: {'j1': openJourney, 'j3': closedJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          await tester.tap(
+            find.byKey(const Key('activity-journey-change-button')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const Key('journey-picker-show-hidden-toggle')),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('journey-picker-option-j3')));
+          await tester.pumpAndSettle();
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('activity-closed-journey-confirm-dialog')),
+            findsOneWidget,
+          );
+          expect(repo.updated, isEmpty);
+        },
+      );
+
+      testWidgets(
+        'switching the activity type on edit detaches the stored journey '
+        '(no auto-match surprises, #387 design)',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney],
+            journeysById: {'j1': openJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          expect(find.text('Spring Harvest Round'), findsOneWidget);
+
+          await tester.tap(find.byKey(const Key('activity-type-field')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Generic').last);
+          await tester.pumpAndSettle();
+
+          expect(find.text('Spring Harvest Round'), findsNothing);
+          expect(find.text('No journey attached'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'saving without changing the journey attachment does not show the '
+        'relink dialog',
+        (tester) async {
+          tester.view.physicalSize = const Size(1200, 2400);
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          final journeysRepo = _FakeJourneysRepository(
+            matches: [openJourney],
+            journeysById: {'j1': openJourney},
+          );
+          final repo = _FakeActivitiesRepository(
+            existing: existingHarvestWithJourney,
+          );
+          await goToEditForm(tester, repo, journeysRepo: journeysRepo);
+
+          final saveButton = find.byKey(const Key('activity-save-button'));
+          await tester.ensureVisible(saveButton);
+          await tester.pumpAndSettle();
+          await tester.tap(saveButton);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.pump(const Duration(milliseconds: 100));
+
+          expect(repo.updated, hasLength(1));
+          expect(repo.updated.single.journeyId, 'j1');
+        },
+      );
+    });
   });
 
   // --- Delete (#41, FR-AC-4) ---

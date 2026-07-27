@@ -24,6 +24,17 @@ import (
 
 const counterTypeHive = "hive"
 
+// counterTypeSuper mirrors api.counterTypeSuper (#346, D-20) for these
+// package-main tests, matching counterTypeHive's own local-const convention.
+const counterTypeSuper = "super"
+
+// counterTypeEmptyHive and counterTypeSwarm mirror api.counterTypeEmptyHive /
+// api.counterTypeSwarm (#392) for these package-main tests.
+const (
+	counterTypeEmptyHive = "empty_hive"
+	counterTypeSwarm     = "swarm"
+)
+
 // counterOp builds an entityTypeApiaryCounter op (api/sync.go's counterData
 // wire shape) for the tests below — the counter-table counterpart of
 // main_test.go's putOp/patchHive, but keyed by apiary_id+counter_type rather
@@ -318,6 +329,76 @@ func TestApiariesSlice_CounterOp_ValidateRejectsDeleteOp(t *testing.T) {
 	}
 }
 
+// --- #378: a patch may omit `value` (PowerSync uploads only the columns
+// that actually changed — a counter save that doesn't change the value
+// legitimately produces a value-less patch) ---
+
+// TestApiariesSlice_CounterOp_ValidateRejectsPutWithoutValue confirms `value`
+// stays required on put — #378 only relaxes patch, a fresh row still needs a
+// value to have any content.
+func TestApiariesSlice_CounterOp_ValidateRejectsPutWithoutValue(t *testing.T) {
+	f := newApiariesFixture(t)
+	bad := api.Op{
+		Op: "put", EntityType: "apiary_counter", ID: uuid.NewString(),
+		Data:      json.RawMessage(`{"apiary_id":"` + uuid.NewString() + `","counter_type":"hive"}`),
+		UpdatedAt: time.Now(),
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", api.Batch{Ops: []api.Op{bad}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("validate status = %d, want 422 (value required on put), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestApiariesSlice_CounterOp_ValidateAcceptsValuelessPatch is #378's core
+// validate-side fix: a patch carrying only the op's identity (apiary_id,
+// counter_type) — no value — is no longer rejected.
+func TestApiariesSlice_CounterOp_ValidateAcceptsValuelessPatch(t *testing.T) {
+	f := newApiariesFixture(t)
+	op := api.Op{
+		Op: "patch", EntityType: "apiary_counter", ID: uuid.NewString(),
+		Data:      json.RawMessage(`{"apiary_id":"` + uuid.NewString() + `","counter_type":"hive"}`),
+		UpdatedAt: time.Now(),
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", api.Batch{Ops: []api.Op{op}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200 (value-less patch accepted), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestApiariesSlice_CounterOp_ApplyValuelessPatchIsNoOp is #378's apply-side
+// fix: a value-less patch against an existing counter row is a true no-op —
+// the stored value is untouched and no audit row is written (nothing
+// actually changed).
+func TestApiariesSlice_CounterOp_ApplyValuelessPatchIsNoOp(t *testing.T) {
+	f := newApiariesFixture(t)
+	apiaryID := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	if got := f.apply(t, putOp(apiaryID, "Encosta Nova", 5, t0)); got.Results[0].Result != "applied" {
+		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)
+	}
+	before := f.countersFor(t, apiaryID)
+	if len(before) != 1 || before[0].Value != 5 {
+		t.Fatalf("counters before value-less patch = %+v, want [{hive 5}]", before)
+	}
+
+	valueless := api.Op{
+		Op: "patch", EntityType: "apiary_counter", ID: uuid.NewString(),
+		Data:      json.RawMessage(`{"apiary_id":"` + apiaryID + `","counter_type":"hive"}`),
+		UpdatedAt: t0.Add(time.Minute),
+	}
+	if got := f.apply(t, valueless); got.Results[0].Result != "applied" {
+		t.Fatalf("value-less patch result = %q, want applied (no-op)", got.Results[0].Result)
+	}
+
+	after := f.countersFor(t, apiaryID)
+	if len(after) != 1 || after[0].Value != 5 || after[0].ID != before[0].ID {
+		t.Fatalf("counters after value-less patch = %+v, want unchanged %+v", after, before)
+	}
+	if rows := f.counterAuditLogFor(t, apiaryID); len(rows) != 0 {
+		t.Fatalf("counter audit rows after value-less no-op patch = %+v, want none", rows)
+	}
+}
+
 // --- History (FR-HIS-1) for the new entity type ---
 
 // TestApiariesSlice_CounterOp_History_CreateAndUpdateProduceAuditRows is
@@ -407,7 +488,9 @@ func TestApiariesSlice_CounterOp_History_FirstWriteIsACreateBaseline(t *testing.
 
 	// An apiary op with NO hive_count key — the new client's create shape
 	// (its local apiaries table no longer has the column).
-	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova"})
+	// location is mandatory on a put (#341), so the create op carries one even
+	// though these tests only care about the counter rows.
+	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova", "location_lon": -8.6, "location_lat": 41.1})
 	create := api.Op{Op: "put", EntityType: "apiary", ID: apiaryID, Data: createData, UpdatedAt: t0}
 	if got := f.apply(t, create); got.Results[0].Result != "applied" {
 		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)
@@ -441,6 +524,124 @@ func TestApiariesSlice_CounterOp_History_FirstWriteIsACreateBaseline(t *testing.
 	}
 	if a := f.getApiary(t, apiaryID); a.HiveCount != 5 {
 		t.Fatalf("hive_count after counter create = %d, want 5", a.HiveCount)
+	}
+}
+
+// TestApiariesSlice_CounterOp_SuperType_KnownFirstClassAndAuditedSeparately
+// is #346's server-side AC: `super` (D-20's "supers" example) is now a KNOWN
+// counter type, so a super counter op is accepted (not rejected like an
+// unknown type), stored as its OWN row keyed by (apiary_id, counter_type)
+// alongside the hive counter (never colliding with it — the UNIQUE key is the
+// pair, not just apiary_id), and history-audited under entity_type=
+// apiary_counter with a baseline keyed by its own type. This is the whole of
+// what the "code-only append to the known set" (D-20) had to buy on the
+// server: no new apply/validate/audit code, just the const + set entry in
+// counters.go — this test proves the existing generic machinery now carries
+// it.
+func TestApiariesSlice_CounterOp_SuperType_KnownFirstClassAndAuditedSeparately(t *testing.T) {
+	f := newApiariesFixture(t)
+	apiaryID := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	// A hive-less apiary create (the new client's shape) — no counter rows yet.
+	// location is mandatory on a put (#341), so the create op carries one even
+	// though these tests only care about the counter rows.
+	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova", "location_lon": -8.6, "location_lat": 41.1})
+	create := api.Op{Op: "put", EntityType: "apiary", ID: apiaryID, Data: createData, UpdatedAt: t0}
+	if got := f.apply(t, create); got.Results[0].Result != "applied" {
+		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)
+	}
+
+	// A super counter op is ACCEPTED (proving `super` is in the known set —
+	// an unknown type is rejected by TestApiariesSlice_CounterOp_Validate
+	// RejectsUnknownCounterType).
+	if got := f.apply(t, counterOp(apiaryID, counterTypeSuper, 6, t0.Add(time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("super counter op result = %q, want applied", got.Results[0].Result)
+	}
+	// It landed as its own row; hive still reads 0 (no hive row) — the two
+	// types coexist, keyed by (apiary_id, counter_type).
+	rows := f.countersFor(t, apiaryID) // ordered by counter_type
+	if len(rows) != 1 || rows[0].CounterType != "super" || rows[0].Value != 6 {
+		t.Fatalf("counters after super op = %+v, want exactly [{super 6}]", rows)
+	}
+	if a := f.getApiary(t, apiaryID); a.HiveCount != 0 {
+		t.Fatalf("hive_count with only a super row = %d, want 0 (unaffected)", a.HiveCount)
+	}
+
+	// Adding a hive counter now yields two independent rows (no collision).
+	if got := f.apply(t, counterOp(apiaryID, counterTypeHive, 4, t0.Add(2*time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("hive counter op result = %q, want applied", got.Results[0].Result)
+	}
+	rows = f.countersFor(t, apiaryID)
+	if len(rows) != 2 || rows[0].CounterType != "hive" || rows[0].Value != 4 ||
+		rows[1].CounterType != "super" || rows[1].Value != 6 {
+		t.Fatalf("counters after hive+super = %+v, want [{hive 4},{super 6}]", rows)
+	}
+
+	// The super write audited under entity_type=apiary_counter as a create
+	// baseline keyed by its own type (not "hive").
+	audit := f.counterAuditLogFor(t, apiaryID)
+	var superCreate *auditRow
+	for i := range audit {
+		if audit[i].ChangeType == "create" {
+			var change map[string]any
+			if err := json.Unmarshal(audit[i].Change, &change); err == nil {
+				if _, ok := change["super"]; ok {
+					superCreate = &audit[i]
+				}
+			}
+		}
+	}
+	if superCreate == nil {
+		t.Fatalf("no apiary_counter create audit row keyed by 'super' found in %+v", audit)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(superCreate.Change, &change); err != nil {
+		t.Fatalf("unmarshal super create change: %v", err)
+	}
+	if change["super"] != float64(6) {
+		t.Fatalf("super create change = %+v, want {super: 6} baseline", change)
+	}
+}
+
+// TestApiariesSlice_CounterOp_NewTypes_KnownAndCoexist is #392's server-side
+// AC, mirroring TestApiariesSlice_CounterOp_SuperType_KnownFirstClassAndAuditedSeparately
+// for the two counter types added by #392: empty_hive and swarm are ACCEPTED
+// (not rejected like an unknown type — TestApiariesSlice_CounterOp_
+// ValidateRejectsUnknownCounterType already proves an actually-unknown type
+// still is), stored as their own rows keyed by (apiary_id, counter_type), and
+// coexist with hive/super without collision.
+func TestApiariesSlice_CounterOp_NewTypes_KnownAndCoexist(t *testing.T) {
+	f := newApiariesFixture(t)
+	apiaryID := uuid.NewString()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+
+	createData, _ := json.Marshal(map[string]any{"name": "Encosta Nova", "location_lon": -8.6, "location_lat": 41.1})
+	create := api.Op{Op: "put", EntityType: "apiary", ID: apiaryID, Data: createData, UpdatedAt: t0}
+	if got := f.apply(t, create); got.Results[0].Result != "applied" {
+		t.Fatalf("create apiary result = %q, want applied", got.Results[0].Result)
+	}
+
+	if got := f.apply(t, counterOp(apiaryID, counterTypeEmptyHive, 1, t0.Add(time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("empty_hive counter op result = %q, want applied", got.Results[0].Result)
+	}
+	if got := f.apply(t, counterOp(apiaryID, counterTypeSwarm, 2, t0.Add(2*time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("swarm counter op result = %q, want applied", got.Results[0].Result)
+	}
+	if got := f.apply(t, counterOp(apiaryID, counterTypeHive, 4, t0.Add(3*time.Second))); got.Results[0].Result != "applied" {
+		t.Fatalf("hive counter op result = %q, want applied", got.Results[0].Result)
+	}
+
+	rows := f.countersFor(t, apiaryID) // ordered by counter_type
+	if len(rows) != 3 {
+		t.Fatalf("counters after empty_hive+swarm+hive = %+v, want exactly 3 rows (no collisions)", rows)
+	}
+	byType := map[string]int32{}
+	for _, r := range rows {
+		byType[r.CounterType] = r.Value
+	}
+	if byType[counterTypeEmptyHive] != 1 || byType[counterTypeSwarm] != 2 || byType[counterTypeHive] != 4 {
+		t.Fatalf("counters by type = %+v, want empty_hive=1 swarm=2 hive=4", byType)
 	}
 }
 

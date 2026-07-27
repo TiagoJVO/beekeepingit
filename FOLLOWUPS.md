@@ -7,60 +7,40 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## Deploy pipeline (D-26, D-27) — post-merge remaining work
+## `feat/authentik-admin-oidc-client` (#456 — admin OIDC client in the blueprint)
 
-Phases 0–4 shipped in #330 (image-automation removed; `infra/gitops/` split into
-`beekeepingit-gitops`; release-triggered `release-deploy.yml` + PWA build path), recorded in
-[D-27](requirements/decisions.md) / [ADR-0018](docs/adr/0018-release-triggered-deploy-pipeline.md).
-`DEPLOYMENT_PIPELINE_PLAN.md` stays until Phase 6 is done, then delete. Remaining:
+Post-merge hardening (NOT merge blockers — the blueprint provisioning is complete and the
+`beekeepingit-admin` login/aud/iss is pinned by the helm-e2e admin-login gate):
 
-- **Re-point the live dev cluster's Flux** (post-#330, manual, in WSL2) — if the dev cluster was
-  GitOps-bootstrapped, `infra/gitops/` leaving `main` makes its Kustomization go stale:
-  `git clone https://github.com/TiagoJVO/beekeepingit-gitops && kubectl apply -f beekeepingit-gitops/clusters/dev/`.
-  No-op if you only use `dev-up.sh`'s local direct-apply loop.
-- **Phase 5 — real domain `melargil.pt`** (naming confirmed, consistent `-rc`): prod
-  `beekeepingit.melargil.pt` + `auth.beekeepingit.melargil.pt`; staging
-  `beekeepingit-rc.melargil.pt` + `auth.beekeepingit-rc.melargil.pt`. In order, after the cluster
-  is up so hosts resolve: (1) Scaleway reserved IP per env → Traefik's LoadBalancer; (2) Cloudflare
-  A records (DNS-only) → those IPs; (3) swap the nip.io / `.example` values for the real ones in the
-  gitops repo's `apps/{staging,prod}/beekeepingit-helmrelease.yaml`, `environments/{staging,prod}.yaml`,
-  and `release-deploy.yml`'s `publish-client` dart-defines. cert-manager stays HTTP-01 unless the
-  Cloudflare proxy is enabled.
-- **Phase 6 — end-to-end verification** — bring staging up, cut `v0.0.1-rc1`, walk the whole chain
-  (build → tag-bump PR → merge → Flux → real domain + trusted cert → login). First live exercise of
-  the new pipeline.
-- **Switch staging's PWA image tag off `staging-manual`** — the gitops repo's
-  `apps/staging/beekeepingit-helmrelease.yaml` still pins `pwa.image.tag: staging-manual`; it
-  switches automatically when the first `-rc` release's tag-bump PR sets the version and is merged
-  (Phase 6). Don't hand-edit it to a non-existent tag before then.
-- **Harden `main`'s required status checks** (deferred from the Phase-6 discussion; not a deploy
-  blocker). `main` currently requires only `ci`, `k3d cluster + helm test`, `helm lint & template
-dry-run`, and the PR-title check (strict). These run but are **not** required, so a red one
-  wouldn't block a merge:
-  - `security-scan` — `trivy (dependencies + secrets)` + `govulncheck (Go modules)`: stable
-    contexts that run on every PR, so safe to add to the required set directly (leave out
-    `trivy (IaC / misconfig)`, which is report-only by design).
-  - `build-publish`'s image build+scan — matrixed (`build <component>`), a dynamic/skippable
-    context; add a small aggregator job (`needs: [build]`, one stable context) before requiring it.
-  - `contracts-ci` — path-filtered on its trigger (`contracts/openapi/**`), so it can't be required
-    as-is (a skipped-because-not-triggered required check leaves PRs pending); would need the
-    always-run + check-relevance-inside pattern helm-e2e uses first.
-  - Low stakes under D-27: merge-to-`main` images are artifacts (dev-only `latest`, overwritten),
-    and the deployable path (`release-deploy.yml`) already gates each publish behind lint/test/scan,
-    prod behind the `production` approval, and behind the human merging the tag-bump PR.
-- **Observability is intentionally not deployed anywhere** (dev, staging, or a future prod) — a
-  deliberate choice, not a gap to revisit.
-- Minor, not blocking: the per-environment PWA URLs in `release-deploy.yml`'s `publish-client` job
-  and each `infra/helm/beekeepingit/environments/*.yaml` overlay are two independently-maintained
-  copies of the same values — no shared source yet. Worth a GitHub issue if it drifts.
+- Assert the admin token's claim SHAPE in e2e + guard which providers may carry
+  `scope-admin-audience` → #460 (both promoted from this #456 security review).
+- **Harden the admin OIDC redirect set for staging/prod** — the gateway `adminHost` route and the
+  staging/prod `global.adminOrigin` overrides are now in place (#449), so the admin app IS
+  gateway-served per environment. What remains is blueprint-side: the `http://localhost:.*` redirect
+  entry is dev-convenience and belongs to the EPIC-14 hardened-blueprint variant, not prod — tighten
+  the admin client's redirect_uris to the real per-environment admin origin there. Owner: EPIC-14.
 
-## Not covered by an automated test: `todo_form_screen.dart`'s date picker
+## `feat/admin-app-deploy-and-cors` (#449 — admin host + cross-origin CORS)
 
-- **What**: actually driving the real `showDatePicker` calendar UI to pick a
-  _new_ due date — only the pre-fill/display and the clear-button path are
-  tested.
-- **Why**: no existing precedent in this codebase for testing that
-  interaction (`add_activity_screen.dart`'s own `occurredAt` date field is
-  the same shape and isn't UI-driven in its own tests either).
-- **Status**: not blocking; a reviewer wanting this covered should add it as
-  a follow-up.
+- **Per-environment admin nginx CSP** — `admin/nginx.conf` ships its
+  `Content-Security-Policy-Report-Only` with the **dev** `connect-src` hosts
+  (`https://app.beekeepingit.local:8443` / `auth…`) hardcoded. `release-deploy.yml`'s
+  `publish-admin` now bakes the **staging/prod** `VITE_*` API/issuer hosts into the image, so a
+  non-dev admin build's real API host is **not** in its CSP — harmless today only because the
+  policy is **Report-Only** (it reports, does not block). Env-templating the admin (and client)
+  nginx CSP is tracked in [#462](https://github.com/TiagoJVO/beekeepingit/issues/462); flipping
+  the admin CSP to **enforcing** must wait for that per-environment templating, or a staging/prod
+  admin build would block its own API calls. **Not a merge blocker** (Report-Only). Prune once
+  #462 lands the templating.
+
+## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
+
+- Re-invite reactivation on removal → #459
+
+---
+
+_Aside from the above: PR #418's before-merge item (create the `cluster-ops.yml`
+secrets/variables) is done — the `staging-gate` set is in place. `production-gate` secrets are
+not owed here: prod is deferred until DR (`Q-DR`) + #90 land (D-26), and the fill-in steps live in
+`infra/README.md#secrets--remote-cluster-operations`. The `DEPLOY_NOTIFY_TOKEN` manual step remains
+tracked in [#413](https://github.com/TiagoJVO/beekeepingit/issues/413), still open._

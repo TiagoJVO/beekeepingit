@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/app_theme.dart';
+import '../../theming/brand_dimens.dart';
+import '../../theming/brand_theme.dart';
+import '../../theming/brand_widgets.dart';
+import '../activities/activity_types.dart';
 import 'journey_stats.dart';
 import 'journeys_repository.dart';
 
@@ -20,10 +26,24 @@ import 'journeys_repository.dart';
 /// itself — a plain `ConsumerWidget` keyed only by [journeyId] so #48 can
 /// drop it into a larger scrollable column exactly like
 /// apiary_detail_screen.dart embeds `_ApiaryActivitiesSection`.
+///
+/// The displayed metrics ADAPT to the journey's [mainActivityType] (#342,
+/// FR-JO-3): every journey shows the universal progress metrics (apiaries
+/// visited vs. planned, and how much is still missing — FR-JO-1), but the
+/// harvest-only aggregations (hives harvested per D-2, honey collected, média
+/// alças/colmeia) render ONLY for a harvest journey — they'd be meaningless on
+/// a feeding/treatment/generic journey, whose activities carry no honey/supers
+/// attributes. The caller already holds the journey (journey_detail_screen),
+/// so the type is passed in rather than re-watched here.
 class JourneyStatsSection extends ConsumerWidget {
-  const JourneyStatsSection({required this.journeyId, super.key});
+  const JourneyStatsSection({
+    required this.journeyId,
+    required this.mainActivityType,
+    super.key,
+  });
 
   final String journeyId;
+  final String mainActivityType;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,21 +51,20 @@ class JourneyStatsSection extends ConsumerWidget {
     final theme = Theme.of(context);
     final statsAsync = ref.watch(journeyStatsProvider(journeyId));
 
+    final brand = context.brand;
+
     return Container(
       key: const Key('journey-stats-section'),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(BrandDimens.padCard),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(16),
+        color: brand.cardColor,
+        border: Border.all(color: brand.cardBorder),
+        borderRadius: BrandDimens.borderCard,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            l10n.journeyStatsSectionTitle,
-            style: theme.textTheme.titleMedium,
-          ),
+          SectionHeader(l10n.journeyStatsSectionTitle),
           const SizedBox(height: 12),
           statsAsync.when(
             loading: () => const Center(
@@ -59,7 +78,11 @@ class JourneyStatsSection extends ConsumerWidget {
               key: const Key('journey-stats-error'),
               style: TextStyle(color: theme.colorScheme.error),
             ),
-            data: (stats) => _JourneyStatsBody(stats: stats),
+            data: (stats) => _JourneyStatsBody(
+              journeyId: journeyId,
+              stats: stats,
+              mainActivityType: mainActivityType,
+            ),
           ),
         ],
       ),
@@ -68,18 +91,38 @@ class JourneyStatsSection extends ConsumerWidget {
 }
 
 class _JourneyStatsBody extends StatelessWidget {
-  const _JourneyStatsBody({required this.stats});
+  const _JourneyStatsBody({
+    required this.journeyId,
+    required this.stats,
+    required this.mainActivityType,
+  });
 
+  final String journeyId;
   final JourneyStats stats;
+  final String mainActivityType;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final locale = LocaleFormatting.of(context);
 
+    // D-2 harvest aggregations (hives harvested, honey collected, média
+    // alças/colmeia) only make sense for a harvest journey — a feeding/
+    // treatment/generic journey's activities carry no honey/supers attributes,
+    // so summing them would only ever show a meaningless 0 (#342, FR-JO-3).
+    final isHarvest = mainActivityType == activityTypeHarvest;
+
     final averageSupersText = stats.averageSupersPerHive == null
         ? l10n.journeyStatsAverageSupersNoData
         : locale.decimal(stats.averageSupersPerHive!);
+
+    // #391: hive-level completion — universal (not harvest-gated) like
+    // apiaries-visited, since harvest/feeding/treatment activities all carry
+    // `hives_involved`. "—" when there's no counter data yet on any planned
+    // apiary, mirroring the average-supers tile's own no-fake-value rule.
+    final hivesPlannedText = stats.hivesPlanned == null
+        ? l10n.journeyStatsHivesWorkedNoData
+        : '${stats.hivesPlanned}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -97,22 +140,32 @@ class _JourneyStatsBody extends StatelessWidget {
               label: l10n.journeyStatsApiariesVisitedLabel,
             ),
             _StatTile(
-              statKey: 'hives-harvested',
-              value: '${stats.hivesHarvested}',
-              label: l10n.journeyStatsHivesHarvestedLabel,
-            ),
-            _StatTile(
-              statKey: 'honey-collected',
-              value: l10n.journeyStatsHoneyCollectedValue(
-                locale.decimal(stats.honeyCollectedKg),
+              statKey: 'hives-worked',
+              value: l10n.journeyStatsHivesWorkedValue(
+                stats.hivesWorked,
+                hivesPlannedText,
               ),
-              label: l10n.journeyStatsHoneyCollectedLabel,
+              label: l10n.journeyStatsHivesWorkedLabel,
             ),
-            _StatTile(
-              statKey: 'average-supers',
-              value: averageSupersText,
-              label: l10n.journeyStatsAverageSupersLabel,
-            ),
+            if (isHarvest) ...[
+              _StatTile(
+                statKey: 'hives-harvested',
+                value: '${stats.hivesHarvested}',
+                label: l10n.journeyStatsHivesHarvestedLabel,
+              ),
+              _StatTile(
+                statKey: 'honey-collected',
+                value: l10n.journeyStatsHoneyCollectedValue(
+                  locale.decimal(stats.honeyCollectedKg),
+                ),
+                label: l10n.journeyStatsHoneyCollectedLabel,
+              ),
+              _StatTile(
+                statKey: 'average-supers',
+                value: averageSupersText,
+                label: l10n.journeyStatsAverageSupersLabel,
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 12),
@@ -121,6 +174,15 @@ class _JourneyStatsBody extends StatelessWidget {
           key: const Key('journey-stats-missing'),
           style: Theme.of(context).textTheme.bodyMedium,
         ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            key: const Key('journey-stats-more-button'),
+            onPressed: () => context.go('/journeys/$journeyId/stats'),
+            child: Text(l10n.journeyStatsMoreAction),
+          ),
+        ),
       ],
     );
   }
@@ -128,8 +190,12 @@ class _JourneyStatsBody extends StatelessWidget {
 
 /// One stat card: a large value over a small label, matching the
 /// prototype's own stat-card shape (a bold number over a muted caption) —
-/// mirrors apiary_detail_screen.dart's `_CounterBadge` sizing/spacing
-/// convention, scaled up for a 2-line card instead of a single pill.
+/// the same visual language as apiary_detail_screen.dart's counter tiles (a
+/// tinted, rounded tile carrying the figure), re-grounded for this section's
+/// light card instead of that screen's plum hero: the tile ground is the
+/// theme's raised-surface role and the value takes the Playfair display face
+/// at the brand field radius, so the figure reads as a headline rather than
+/// body copy while keeping its AA-safe `onSurface` ink.
 class _StatTile extends StatelessWidget {
   const _StatTile({
     required this.statKey,
@@ -149,8 +215,8 @@ class _StatTile extends StatelessWidget {
       width: 148,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(14),
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BrandDimens.borderField,
       ),
       child: Semantics(
         label: '$label: $value',
@@ -161,9 +227,11 @@ class _StatTile extends StatelessWidget {
             children: [
               Text(
                 value,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
+                style: TextStyle(
+                  fontFamily: AppTheme.displayFontFamily,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 24,
+                  color: theme.colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 4),

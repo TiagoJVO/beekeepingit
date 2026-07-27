@@ -104,10 +104,10 @@ abstract class AppLocalizations {
   /// **'BeekeepingIT'**
   String get appTitle;
 
-  /// Text above the login button
+  /// Text above the login button. Mentions account creation (#366): the sign-up entry point is the identity provider's own login page (its "Sign up" link starts the enrollment flow with the OIDC redirect context preserved), so the app deliberately keeps a single auth action and points new users at it
   ///
   /// In en, this message translates to:
-  /// **'Sign in to manage your apiaries.'**
+  /// **'Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.'**
   String get loginPrompt;
 
   /// Primary login action — starts the OIDC redirect to the identity provider
@@ -152,11 +152,89 @@ abstract class AppLocalizations {
   /// **'Add apiary'**
   String get addApiary;
 
+  /// Label for the single expandable quick-actions button (FR-UX-2) that, when tapped, reveals the contextual actions available on the current screen; also its screen-reader name, whose expanded/collapsed state is announced.
+  ///
+  /// In en, this message translates to:
+  /// **'Actions'**
+  String get actionsMenuLabel;
+
   /// Hive count subtitle on a list row
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No hives} =1{1 hive} other{{count} hives}}'**
   String hiveCountValue(int count);
+
+  /// Supers counter value badge on the apiary detail screen (#346, D-20)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No supers} =1{1 super} other{{count} supers}}'**
+  String superCountValue(int count);
+
+  /// The name of the hive counter type, used by the detail screen's add-counter picker and inline value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Hives'**
+  String get counterTypeHiveLabel;
+
+  /// The name of the supers counter type, used by the detail screen's add-counter picker and inline value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Supers'**
+  String get counterTypeSuperLabel;
+
+  /// Empty-hive counter value badge on the apiary detail screen (#392)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No empty hives} =1{1 empty hive} other{{count} empty hives}}'**
+  String emptyHiveCountValue(int count);
+
+  /// Swarm counter value badge on the apiary detail screen (#392)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No swarms} =1{1 swarm} other{{count} swarms}}'**
+  String swarmCountValue(int count);
+
+  /// The name of the empty-hive counter type, used by the detail screen's add-counter picker and inline value editor (#392)
+  ///
+  /// In en, this message translates to:
+  /// **'Empty hives'**
+  String get counterTypeEmptyHiveLabel;
+
+  /// The name of the swarm counter type, used by the detail screen's add-counter picker and inline value editor (#392)
+  ///
+  /// In en, this message translates to:
+  /// **'Swarms'**
+  String get counterTypeSwarmLabel;
+
+  /// Button on the apiary detail screen that opens the add-counter type picker (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Add counter'**
+  String get apiaryAddCounterAction;
+
+  /// Title of the add-counter type picker sheet on the apiary detail screen (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Add a counter'**
+  String get apiaryAddCounterTitle;
+
+  /// Empty state in the add-counter picker when the apiary already has a counter of every known type (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Every counter type is already here.'**
+  String get apiaryNoCountersToAdd;
+
+  /// Accessibility label for the minus button in the inline counter value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Decrease'**
+  String get counterDecrementLabel;
+
+  /// Accessibility label for the plus button in the inline counter value editor (#346)
+  ///
+  /// In en, this message translates to:
+  /// **'Increase'**
+  String get counterIncrementLabel;
 
   /// Create form app bar title
   ///
@@ -695,7 +773,7 @@ abstract class AppLocalizations {
   /// Shown below the app-shell header instead of the normal offline message when the last sync attempt errored (SyncStatus.hasError)
   ///
   /// In en, this message translates to:
-  /// **'Some changes failed to sync and PowerSync is retrying.'**
+  /// **'Some changes couldn\'t sync yet — retrying.'**
   String get offlineBannerErrorMessage;
 
   /// Non-blocking toast shown when an offline edit lost a last-write-wins conflict (sync.md §4.2/§8, D-12 notify-and-fix, #58)
@@ -746,6 +824,36 @@ abstract class AppLocalizations {
   /// **'Hive count change'**
   String get syncNeedsFixCounterLabel;
 
+  /// Needs-fix list row title for a rejected activity write (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity change'**
+  String get syncNeedsFixActivityLabel;
+
+  /// Needs-fix list row title for a rejected journey write (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey change'**
+  String get syncNeedsFixJourneyLabel;
+
+  /// Needs-fix list row title for a rejected journey plan item write (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey plan change'**
+  String get syncNeedsFixJourneyPlanLabel;
+
+  /// Needs-fix list row title for a rejected todo write (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'Todo change'**
+  String get syncNeedsFixTodoLabel;
+
+  /// Needs-fix list row title combined with the record's own display name (its name/title/type field, read from the rejected op's stored payload) when one is available (#379)
+  ///
+  /// In en, this message translates to:
+  /// **'{label} · {name}'**
+  String syncNeedsFixTitleWithName(String label, String name);
+
   /// Needs-fix list row fallback message when the server returned no field-level detail
   ///
   /// In en, this message translates to:
@@ -776,11 +884,17 @@ abstract class AppLocalizations {
   /// **'Status: {status}'**
   String accountSyncStatusLabel(String status);
 
-  /// Pending-change count line on the account screen (#58)
+  /// Pending-change count line on the account screen (#58). Only shown when there are no rejected offline writes awaiting a fix — see accountSyncNeedsFixStatus (#379)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{Everything is synced.} =1{1 change waiting to sync.} other{{count} changes waiting to sync.}}'**
   String accountSyncPendingCount(int count);
+
+  /// Account screen sync-section status line shown INSTEAD OF accountSyncPendingCount whenever there are rejected offline writes awaiting a fix (D-12 notify-and-fix, #379) — replaces the misleading "Everything is synced." line the dead-letter queue could otherwise show alongside a non-zero needs-fix count
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 change was rejected and needs fixing.} other{{count} changes were rejected and need fixing.}}'**
+  String accountSyncNeedsFixStatus(int count);
 
   /// Manual sync trigger button on the account screen — the prototype's “Sincronizar agora” (#58, sync.md §7.1 manual override)
   ///
@@ -938,6 +1052,36 @@ abstract class AppLocalizations {
   /// **'© OpenStreetMap contributors'**
   String get apiaryMapAttributionOsm;
 
+  /// Tooltip/semantics label for the ruler toggle that switches the map between apiary-info (tap opens a quick info sheet) and tap-to-measure modes (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'Measure distance'**
+  String get apiaryMapRulerToggleAction;
+
+  /// Chip/button shown in the measure overlay (ruler ON, current location available, not yet selected) that adds the user's current location as one of the two measurement endpoints (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'Use my location'**
+  String get apiaryMapMeasureFromMyLocation;
+
+  /// Tooltip/semantics label for the 'my location' recenter control on the full-screen apiary map that reads a fresh device fix and moves the camera onto it at street zoom (#420)
+  ///
+  /// In en, this message translates to:
+  /// **'Center on my location'**
+  String get apiaryMapRecenterAction;
+
+  /// Open-todo count line on the map's apiary info sheet (#388), derived live from openTodoCountForApiaryProvider
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No open todos} one{1 open todo} other{{count} open todos}}'**
+  String apiaryMapInfoOpenTodos(int count);
+
+  /// Action on the map's apiary info sheet that navigates to the full apiary detail screen (#388)
+  ///
+  /// In en, this message translates to:
+  /// **'View apiary'**
+  String get apiaryMapInfoViewApiary;
+
   /// Optional free-text place name field label on the apiary form, and its label on the detail screen (#252, e.g. "Montargil")
   ///
   /// In en, this message translates to:
@@ -998,11 +1142,53 @@ abstract class AppLocalizations {
   /// **'No location set — tap the map to place a pin'**
   String get apiaryFormLocationNotSet;
 
+  /// Validation error on the apiary form when the user tries to save without a location — location is mandatory (FR-AP-7, #341)
+  ///
+  /// In en, this message translates to:
+  /// **'Set the apiary\'s location before saving.'**
+  String get apiaryLocationRequired;
+
   /// Semantics label for the embedded map-pin picker on the apiary form (#252)
   ///
   /// In en, this message translates to:
   /// **'Map: tap to place the apiary\'s pin'**
   String get apiaryMapPickerLabel;
+
+  /// Tooltip/semantics label for the recenter control on the apiary form's map picker that moves the camera back onto the placed pin at street zoom after panning away (#420)
+  ///
+  /// In en, this message translates to:
+  /// **'Recenter on the pin'**
+  String get apiaryMapPickerRecenterAction;
+
+  /// Tooltip/semantics label for the control on the apiary form's map picker that opens the full-screen map picker so the pin can be placed precisely (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Maximize map'**
+  String get apiaryMapPickerMaximizeAction;
+
+  /// App bar title of the full-screen apiary location picker opened from the form's maximize control (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Place the apiary\'s pin'**
+  String get apiaryLocationPickerFullScreenTitle;
+
+  /// Tooltip/semantics label for the confirm control in the full-screen apiary location picker that returns the chosen location to the form (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm location'**
+  String get apiaryLocationPickerConfirmAction;
+
+  /// Tooltip/semantics label for the cancel/close control in the full-screen apiary location picker that discards any change and returns to the form (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get apiaryLocationPickerCancelAction;
+
+  /// Semantics label for the map in the full-screen apiary location picker (#421)
+  ///
+  /// In en, this message translates to:
+  /// **'Full-screen map: tap to place the apiary\'s pin'**
+  String get apiaryLocationPickerFullScreenLabel;
 
   /// Distance from the device's current location shown on an apiaries list row, locale-formatted (FR-AP-2, #253)
   ///
@@ -1436,23 +1622,41 @@ abstract class AppLocalizations {
   /// **'Apiaries to visit'**
   String get journeyApiariesLabel;
 
-  /// Validation message when no apiary is selected for a journey's plan (#45)
-  ///
-  /// In en, this message translates to:
-  /// **'Select at least one apiary'**
-  String get journeyApiariesRequired;
-
   /// Shown in the apiary multi-select picker when the organization has no apiaries at all yet (#45)
   ///
   /// In en, this message translates to:
   /// **'No apiaries yet — add one from the Apiaries tab first.'**
   String get journeyApiariesNoneAvailable;
 
+  /// Bulk action in the journey apiary picker that selects every apiary matching the current search filter (#425, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get journeyApiariesSelectAll;
+
+  /// Bulk action in the journey apiary picker that clears the whole apiary selection (#425, FR-JO-4)
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get journeyApiariesClearAll;
+
   /// Running count below the apiary multi-select picker (#45)
   ///
   /// In en, this message translates to:
   /// **'{count, plural, =0{No apiaries selected} =1{1 apiary selected} other{{count} apiaries selected}}'**
   String journeyApiariesSelectedCount(int count);
+
+  /// Section header on the journey create/edit form and quick-create sheet above the optional subtype attribute defaults (#385)
+  ///
+  /// In en, this message translates to:
+  /// **'Defaults for activities'**
+  String get journeyDefaultAttributesSectionLabel;
+
+  /// Dropdown option that clears an optional journey default-attribute field (#385)
+  ///
+  /// In en, this message translates to:
+  /// **'Not set'**
+  String get journeyDefaultsNotSetOption;
 
   /// Error toast when loading an existing journey for editing throws (#45)
   ///
@@ -1610,6 +1814,24 @@ abstract class AppLocalizations {
   /// **'Show hidden journeys'**
   String get journeyPickerShowHiddenToggle;
 
+  /// Toggle in the journey picker that reveals open, type-matching journeys whose plan does not include the current apiary; picking one attaches the activity and adds the apiary to that journey's plan (#440, D-31)
+  ///
+  /// In en, this message translates to:
+  /// **'Show journeys that didn\'t plan this apiary'**
+  String get journeyPickerShowUnplannedToggle;
+
+  /// Screen-reader label for a journey's row in the relaxed "didn't plan this apiary" list, disclosing that picking it also adds the current apiary to the journey's plan (#440, D-31)
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, will add this apiary to the plan'**
+  String journeyPickerUnplannedOptionSemanticLabel(String name);
+
+  /// Short visual badge on a journey row in the relaxed "didn't plan this apiary" list, marking that picking it adds the current apiary to that journey's plan (#440, D-31)
+  ///
+  /// In en, this message translates to:
+  /// **'Adds apiary'**
+  String get journeyPickerAddsApiaryBadge;
+
   /// Screen-reader label for a closed journey's row in the picker, once revealed via the show-hidden toggle (#46, D-21)
   ///
   /// In en, this message translates to:
@@ -1658,6 +1880,33 @@ abstract class AppLocalizations {
   /// **'Add anyway'**
   String get closedJourneyConfirmAddAction;
 
+  /// Title of the confirm-to-proceed dialog shown when saving an EDITED activity whose journey attachment differs from the one it was loaded with (#387)
+  ///
+  /// In en, this message translates to:
+  /// **'Change journey attachment?'**
+  String get journeyRelinkConfirmTitle;
+
+  /// Body of the journey-relink confirm dialog, naming both the old and new journey (#387) — either may be the localized "No journey" string (journeyPickerNoneOption) rather than a real journey name
+  ///
+  /// In en, this message translates to:
+  /// **'This activity will move from \"{oldJourneyName}\" to \"{newJourneyName}\".'**
+  String journeyRelinkConfirmMessage(
+    String oldJourneyName,
+    String newJourneyName,
+  );
+
+  /// Cancel action in the journey-relink confirm dialog — stays on the form, the activity's journey attachment is left unchanged (#387)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get journeyRelinkConfirmCancelAction;
+
+  /// Confirm action in the journey-relink confirm dialog — proceeds with saving the activity's new journey attachment (#387)
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm'**
+  String get journeyRelinkConfirmConfirmAction;
+
   /// Heading above the journey stats section (#49, FR-JO-1) — apiaries visited, hives harvested, honey collected, média alças/colmeia
   ///
   /// In en, this message translates to:
@@ -1700,10 +1949,10 @@ abstract class AppLocalizations {
   /// **'{kg} kg'**
   String journeyStatsHoneyCollectedValue(String kg);
 
-  /// Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49) — kept in Portuguese per the prototype/AC's own naming (docs/design/prototype.md's Q-JOUR answer, this issue's own AC wording), not translated to an English equivalent
+  /// Stat card label for Σ honey_supers ÷ Σ hives_involved across the journey's harvest activities (#49). Localized like every other stat label (#382) — previously left in Portuguese by mistake.
   ///
   /// In en, this message translates to:
-  /// **'Média alças/colmeia'**
+  /// **'Avg. supers/hive'**
   String get journeyStatsAverageSupersLabel;
 
   /// Shown instead of a number on the média alças/colmeia stat card when there is no hive-count denominator yet — zero harvest activities, or every one has a null/zero hives_involved (#49, NFR-TST-1's no-divide-by-zero case)
@@ -1718,6 +1967,156 @@ abstract class AppLocalizations {
   /// **'{count, plural, =0{All planned apiaries visited} =1{1 apiary still missing} other{{count} apiaries missing}}'**
   String journeyStatsMissingLabel(int count);
 
+  /// Stat card label for hive-level completion (#391): Σ hives_involved across the journey's activities of every type vs. the total hive count of the currently-planned apiaries
+  ///
+  /// In en, this message translates to:
+  /// **'Hives worked'**
+  String get journeyStatsHivesWorkedLabel;
+
+  /// Value on the hives-worked stat card (#391), e.g. "12/40" — planned is already the localized "no data" placeholder or a plain number by the time it reaches this template
+  ///
+  /// In en, this message translates to:
+  /// **'{worked}/{planned}'**
+  String journeyStatsHivesWorkedValue(int worked, String planned);
+
+  /// Placeholder standing in for the hives-planned denominator (#391) when none of the journey's currently-planned apiaries has a hive counter row yet — a genuine "no data" state, never a fake 0
+  ///
+  /// In en, this message translates to:
+  /// **'—'**
+  String get journeyStatsHivesWorkedNoData;
+
+  /// Button at the foot of the #49 stats section that opens the #391 per-apiary breakdown screen
+  ///
+  /// In en, this message translates to:
+  /// **'More stats'**
+  String get journeyStatsMoreAction;
+
+  /// Shell app bar title for the #391 per-apiary breakdown route (/journeys/:id/stats)
+  ///
+  /// In en, this message translates to:
+  /// **'More stats'**
+  String get journeyStatsDetailTitle;
+
+  /// The #391 breakdown screen's visited-filter segment showing every apiary in the journey's scope
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get journeyStatsDetailFilterAll;
+
+  /// The #391 breakdown screen's visited-filter segment showing only visited apiaries
+  ///
+  /// In en, this message translates to:
+  /// **'Visited'**
+  String get journeyStatsDetailFilterVisited;
+
+  /// The #391 breakdown screen's visited-filter segment showing only apiaries with no attributed activity yet
+  ///
+  /// In en, this message translates to:
+  /// **'Not visited'**
+  String get journeyStatsDetailFilterNotVisited;
+
+  /// Label on the #391 breakdown screen's sort field
+  ///
+  /// In en, this message translates to:
+  /// **'Sort by'**
+  String get journeyStatsDetailSortLabel;
+
+  /// The #391 breakdown screen's sort option: alphabetical by apiary name (always offered, every journey type)
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get journeyStatsDetailSortName;
+
+  /// The #391 breakdown screen's sort option for a harvest journey: kg of honey per hive, descending, nulls last
+  ///
+  /// In en, this message translates to:
+  /// **'Kg/hive'**
+  String get journeyStatsDetailSortKgPerHive;
+
+  /// The #391 breakdown screen's sort option for a harvest journey: honey supers per hive, descending, nulls last
+  ///
+  /// In en, this message translates to:
+  /// **'Supers/hive'**
+  String get journeyStatsDetailSortSupersPerHive;
+
+  /// The #391 breakdown screen's sort option for a feeding journey: total feed amount, descending
+  ///
+  /// In en, this message translates to:
+  /// **'Feed amount'**
+  String get journeyStatsDetailSortFeedAmount;
+
+  /// The #391 breakdown screen's sort option for a treatment journey: hives involved in treatment, descending
+  ///
+  /// In en, this message translates to:
+  /// **'Hives involved'**
+  String get journeyStatsDetailSortHivesInvolved;
+
+  /// The #391 breakdown screen's empty state when the visited/not-visited filter matches nothing
+  ///
+  /// In en, this message translates to:
+  /// **'No apiaries match the current filter.'**
+  String get journeyStatsDetailEmpty;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's current hive count
+  ///
+  /// In en, this message translates to:
+  /// **'Hives'**
+  String get journeyStatsDetailHiveCountLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's Σ honey_kg (harvest journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Honey (kg)'**
+  String get journeyStatsDetailHoneyKgLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's Σ honey_supers (harvest journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Supers'**
+  String get journeyStatsDetailSupersLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's own kg-of-honey-per-hive average (harvest journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Kg/hive'**
+  String get journeyStatsDetailKgPerHiveLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's own supers-per-hive average (harvest journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Supers/hive'**
+  String get journeyStatsDetailSupersPerHiveLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's Σ feed_amount (feeding journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Feed amount'**
+  String get journeyStatsDetailFeedAmountLabel;
+
+  /// The #391 breakdown screen's per-apiary card metric label for the apiary's Σ hives_involved across treatment activities (treatment journeys)
+  ///
+  /// In en, this message translates to:
+  /// **'Hives involved'**
+  String get journeyStatsDetailHivesInvolvedLabel;
+
+  /// Placeholder for a per-apiary card's kg/hive or supers/hive metric (#391) when the apiary has no hive-count denominator yet — never a fake 0
+  ///
+  /// In en, this message translates to:
+  /// **'—'**
+  String get journeyStatsDetailNoDataValue;
+
+  /// The #391 breakdown screen's header summary row for a feeding journey: Σ feed_amount across every apiary
+  ///
+  /// In en, this message translates to:
+  /// **'Total feed amount: {amount}'**
+  String journeyStatsDetailFeedingSummary(String amount);
+
+  /// The #391 breakdown screen's header summary row for a treatment journey: how many planned apiaries have at least one treatment-type activity
+  ///
+  /// In en, this message translates to:
+  /// **'{treated}/{planned} apiaries treated'**
+  String journeyStatsDetailTreatedSummary(int treated, int planned);
+
   /// Shell app bar title for the journey detail route (#48, FR-JO-3) — a generic, not per-instance, title mirroring apiaryDetailTitle/activityDetailTitle's own convention; the specific journey's name renders in the page body itself
   ///
   /// In en, this message translates to:
@@ -1729,6 +2128,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit journey'**
   String get editJourneyAction;
+
+  /// Muted summary line under the type label on the journey detail page's hero card, listing the journey's set subtype attribute defaults (#385) — e.g. "Defaults: Apivar/amitraz · Varroose"; not rendered at all when the journey has none set
+  ///
+  /// In en, this message translates to:
+  /// **'Defaults: {values}'**
+  String journeyDetailDefaultAttributesLabel(String values);
 
   /// Section heading above the journey detail page's per-apiary list (#48, FR-JO-3)
   ///
@@ -1939,36 +2344,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'New todo'**
   String get addTodo;
-
-  /// Heading of the quick-create bottom sheet (#52, FR-TD-1, FR-UX-1)
-  ///
-  /// In en, this message translates to:
-  /// **'New todo'**
-  String get todoQuickCreateTitle;
-
-  /// Field label for the optional due-date picker on the quick-create sheet (#52, FR-TD-1)
-  ///
-  /// In en, this message translates to:
-  /// **'Due date'**
-  String get todoDueDateLabel;
-
-  /// Read-only chip on the quick-create sheet showing the apiary this todo will be associated with when opened contextually from the apiary detail page or the apiaries list (#52, FR-UX-2) — quick-create has no apiary picker of its own, the association comes entirely from context.
-  ///
-  /// In en, this message translates to:
-  /// **'For {apiaryName}'**
-  String todoQuickCreateForApiary(String apiaryName);
-
-  /// Cancel button on the quick-create sheet — discards the in-progress todo without creating it (#52)
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel'**
-  String get todoQuickCreateCancelAction;
-
-  /// Success toast shown after a quick-created todo saves (#52)
-  ///
-  /// In en, this message translates to:
-  /// **'Todo created'**
-  String get todoCreatedConfirmation;
 
   /// Header title for the standalone todo-create route (#293) — reachable by direct navigation/deep-linking, distinct from #52's own quick-create sheet
   ///
@@ -2185,6 +2560,160 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get deleteTodoCancelAction;
+
+  /// Header of the per-entity change-history timeline section on an apiary/activity detail screen (#60, FR-HIS-1)
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get historySectionTitle;
+
+  /// App-bar title of the full per-entity history screen reached from the detail-screen section's view-all link (#60, FR-HIS-1)
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get historyScreenTitle;
+
+  /// Empty state of the history timeline (#60) — also what an offline device with no synced history slice shows, which is a legitimate empty result, not an error
+  ///
+  /// In en, this message translates to:
+  /// **'No changes recorded yet'**
+  String get historyEmpty;
+
+  /// Error state of the history timeline (#60)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load history: {error}'**
+  String historyError(String error);
+
+  /// Link from the capped history section on a detail screen to the full history screen (#60) — mirrors the activities section's own view-all affordance (#42)
+  ///
+  /// In en, this message translates to:
+  /// **'View all'**
+  String get historyViewAllAction;
+
+  /// Timeline label for an audit_log change_type=create row (#60, history.md §3)
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get historyEventCreated;
+
+  /// Timeline label for an audit_log change_type=update row (#60, history.md §3)
+  ///
+  /// In en, this message translates to:
+  /// **'Updated'**
+  String get historyEventUpdated;
+
+  /// Timeline label for an audit_log change_type=delete row — a soft-delete tombstone (#60, history.md §3)
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted'**
+  String get historyEventDeleted;
+
+  /// Timeline label for a sync_conflict_log row: an offline edit that lost last-write-wins and was preserved rather than dropped (#60, history.md §6)
+  ///
+  /// In en, this message translates to:
+  /// **'Superseded'**
+  String get historyEventSuperseded;
+
+  /// Fallback timeline label for an event kind this client version doesn't recognize (#60) — the vocabulary is extensible server-side (D-20), so an unknown kind degrades to a generic label instead of breaking the timeline
+  ///
+  /// In en, this message translates to:
+  /// **'Changed'**
+  String get historyEventUnknown;
+
+  /// Sub-line of an update entry listing which fields changed (#60) — fields is already localized and comma-joined by the caller
+  ///
+  /// In en, this message translates to:
+  /// **'Changed: {fields}'**
+  String historyChangedFieldsValue(String fields);
+
+  /// Sub-line of a superseded entry (#60, history.md §6 'your offline change was superseded by a newer value') — explains that the edit was kept in the record, not lost
+  ///
+  /// In en, this message translates to:
+  /// **'Replaced by a newer version from another device'**
+  String get historySupersededDetail;
+
+  /// History-entry actor when it is the signed-in user (#60) — mirrors activityPerformedByYou
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get historyActorYou;
+
+  /// History-entry actor fallback when the org roster has no display name for the user id (#60) — mirrors activityPerformedByMember; id is a short trailing id fragment
+  ///
+  /// In en, this message translates to:
+  /// **'Member {id}'**
+  String historyActorMember(String id);
+
+  /// History-entry actor when the row carries no actor_user_id at all (#60) — history.md §3 allows a null actor
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown'**
+  String get historyActorUnknown;
+
+  /// Screen-reader label for one history timeline entry (#60, WCAG 2.2 AA) — collapses the visually-separate event/actor/time into one announcement; all three parts are already localized and formatted by the caller
+  ///
+  /// In en, this message translates to:
+  /// **'{event} by {actor}, {timestamp}'**
+  String historyEntrySemanticLabel(
+    String event,
+    String actor,
+    String timestamp,
+  );
+
+  /// Localized name of the apiaries.location column when it appears in an update entry's changed-fields list (#60). Columns whose user-facing name already has a form label reuse that key instead (name, notes, place_label, hive_count, occurred_at) — only the gaps get a historyField* key of their own
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get historyFieldLocation;
+
+  /// Localized name of the activities.type column in a changed-fields list (#60)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity type'**
+  String get historyFieldActivityType;
+
+  /// Localized name of the activities.attributes column (the per-type attribute bag) in a changed-fields list (#60)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get historyFieldAttributes;
+
+  /// Localized name of the activities.apiary_id column in a changed-fields list (#60)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get historyFieldApiary;
+
+  /// Localized name of the journeys.status column in a changed-fields list (#315)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get historyFieldStatus;
+
+  /// Title of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345, FR-UX-1/FR-UX-2)
+  ///
+  /// In en, this message translates to:
+  /// **'Discard changes?'**
+  String get discardChangesTitle;
+
+  /// Body of the confirm-discard dialog shown when leaving an edit/create screen with unsaved changes (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'You have unsaved changes. If you leave now, they will be lost.'**
+  String get discardChangesMessage;
+
+  /// Confirm action in the discard-changes dialog: leave the screen and lose unsaved edits (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'Discard'**
+  String get discardChangesConfirmAction;
+
+  /// Cancel action in the discard-changes dialog: stay on the screen, keeping unsaved edits (#345)
+  ///
+  /// In en, this message translates to:
+  /// **'Keep editing'**
+  String get discardChangesCancelAction;
 }
 
 class _AppLocalizationsDelegate

@@ -150,6 +150,51 @@ func TestMiddleware_ValidToken_PopulatesClaims(t *testing.T) {
 	}
 }
 
+// TestMiddleware_EmailVerifiedClaim_FailsClosed pins the #361 contract on the
+// consumer side: EmailVerified must be false unless the token carries a
+// literal boolean true `email_verified` claim. The invitation accept-on-login
+// gate (organizations, #170) trusts this field, so a token with the claim
+// missing, or present as a non-boolean ("true", 1, null — shapes a
+// misconfigured IdP mapping could emit), must parse as UNVERIFIED rather than
+// accidentally truthy.
+func TestMiddleware_EmailVerifiedClaim_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra map[string]any
+	}{
+		{name: "claim missing", extra: map[string]any{"email": "beekeeper@example.com"}},
+		{name: "string true", extra: map[string]any{"email": "beekeeper@example.com", "email_verified": "true"}},
+		{name: "numeric 1", extra: map[string]any{"email": "beekeeper@example.com", "email_verified": 1}},
+		{name: "null", extra: map[string]any{"email": "beekeeper@example.com", "email_verified": nil}},
+		{name: "boolean false", extra: map[string]any{"email": "beekeeper@example.com", "email_verified": false}},
+	}
+
+	idp := newTestIDP(t)
+	priv, pub := generateKey(t, "key-1")
+	idp.addKey(pub)
+	mw := newMiddleware(t, idp.srv.URL)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			token := mintToken(t, priv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), tc.extra)
+
+			var claims authn.Claims
+			rec := doRequest(mw, protectedHandler(&claims), "Bearer "+token)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (an odd email_verified shape must not reject the token, only fail the flag closed), body = %s",
+					rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if claims.EmailVerified {
+				t.Errorf("EmailVerified = true, want false (fail closed) for %s", tc.name)
+			}
+			if claims.Email != "beekeeper@example.com" {
+				t.Errorf("Email = %q, want beekeeper@example.com (email itself still parses)", claims.Email)
+			}
+		})
+	}
+}
+
 func TestMiddleware_ExpiredToken_Rejected(t *testing.T) {
 	idp := newTestIDP(t)
 	priv, pub := generateKey(t, "key-1")
@@ -217,6 +262,110 @@ func TestMiddleware_PinsRS256_IgnoringDiscoveryAlgorithms(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d (RS256 token must verify regardless of what discovery advertises), body = %s",
 			rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestMiddleware_PlatformOperatorClaim_PopulatesClaims pins the extraction
+// side of the #465/#466 claim contract: a literal JSON boolean
+// `platform_operator: true` on a genuinely signature-verified token
+// populates Claims.PlatformOperator, exactly like email/email_verified.
+func TestMiddleware_PlatformOperatorClaim_PopulatesClaims(t *testing.T) {
+	idp := newTestIDP(t)
+	priv, pub := generateKey(t, "key-1")
+	idp.addKey(pub)
+	mw := newMiddleware(t, idp.srv.URL)
+
+	token := mintToken(t, priv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), map[string]any{
+		"platform_operator": true,
+	})
+
+	var claims authn.Claims
+	rec := doRequest(mw, protectedHandler(&claims), "Bearer "+token)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !claims.PlatformOperator {
+		t.Errorf("PlatformOperator = false, want true")
+	}
+}
+
+// TestMiddleware_PlatformOperatorClaim_AbsentOrWrongShape_FailsClosed mirrors
+// TestMiddleware_EmailVerifiedClaim_FailsClosed for platform_operator
+// (oidc-integration.md §3.2: "Absent ⇒ treat as false" is the fail-closed
+// outcome for a mapping error or a non-admin-client token; any shape other
+// than a literal JSON boolean — the contract explicitly rules out a string
+// or array — must also fail closed, not silently coerce to true).
+func TestMiddleware_PlatformOperatorClaim_AbsentOrWrongShape_FailsClosed(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra map[string]any
+	}{
+		{name: "claim missing (ordinary pwa/non-operator token)", extra: nil},
+		{name: "string true", extra: map[string]any{"platform_operator": "true"}},
+		{name: "numeric 1", extra: map[string]any{"platform_operator": 1}},
+		{name: "array", extra: map[string]any{"platform_operator": []string{"platform-operator"}}},
+		{name: "null", extra: map[string]any{"platform_operator": nil}},
+		{name: "boolean false", extra: map[string]any{"platform_operator": false}},
+	}
+
+	idp := newTestIDP(t)
+	priv, pub := generateKey(t, "key-1")
+	idp.addKey(pub)
+	mw := newMiddleware(t, idp.srv.URL)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			token := mintToken(t, priv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), tc.extra)
+
+			var claims authn.Claims
+			rec := doRequest(mw, protectedHandler(&claims), "Bearer "+token)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (an odd platform_operator shape must not reject the token, only fail the flag closed), body = %s",
+					rec.Code, http.StatusOK, rec.Body.String())
+			}
+			if claims.PlatformOperator {
+				t.Errorf("PlatformOperator = true, want false (fail closed) for %s", tc.name)
+			}
+		})
+	}
+}
+
+// TestMiddleware_ForgedPlatformOperatorClaim_Rejected is the #466 AC4 proof
+// that a forged claim is caught by JWT signature verification, not by any
+// downstream authorization code: a token claiming platform_operator: true,
+// "signed" with a key this IDP never published to its JWKS (an attacker who
+// doesn't hold the real signing key), must be rejected outright at
+// NewMiddleware — 401, and the claim is never even extracted, let alone
+// trusted. Uses the SAME kid as the real key ("key-1") so the verifier looks
+// the kid up, finds the genuine public key, and the signature check itself is
+// what fails — not merely an "unknown kid" short-circuit.
+func TestMiddleware_ForgedPlatformOperatorClaim_Rejected(t *testing.T) {
+	idp := newTestIDP(t)
+	_, genuinePub := generateKey(t, "key-1")
+	idp.addKey(genuinePub) // only the genuine public key is ever published
+	mw := newMiddleware(t, idp.srv.URL)
+
+	// attackerPriv is never registered with the IDP -- simulates a caller who
+	// does not hold the real signing key crafting a token that CLAIMS
+	// platform_operator: true.
+	attackerPriv, _ := generateKey(t, "key-1")
+	forged := mintToken(t, attackerPriv, "key-1", idp.srv.URL, time.Now().Add(time.Hour), map[string]any{
+		"platform_operator": true,
+	})
+
+	var claims authn.Claims
+	rec := doRequest(mw, protectedHandler(&claims), "Bearer "+forged)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d (a token signed by a key not in the IDP's JWKS must be rejected)", rec.Code, http.StatusUnauthorized)
+	}
+	if claims.PlatformOperator {
+		t.Errorf("PlatformOperator = true on a REJECTED token -- the forged claim must never reach an authorization decision")
+	}
+	if claims.Sub != "" {
+		t.Errorf("Sub = %q, want empty -- no Claims should be populated/forwarded for a rejected token", claims.Sub)
 	}
 }
 

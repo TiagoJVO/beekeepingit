@@ -75,7 +75,8 @@ jobs:
             if echo "$changed" | grep -q "^${dir}/"; then
               name="$(echo "$dir" | tr '/' '-')"
               image="ghcr.io/${owner}/beekeepingit/${name}"
-              # Every component (Go service or the PWA) is one build. The client is
+              # Every component (Go service, the Flutter PWA, or the React admin app) is one
+              # build. The client is
               # built define-less here (AppConfig's dev defaults) as pure CI/artifact
               # validation — its real per-environment, deployable build is produced by
               # release-deploy.yml with the target env's URLs baked in (D-27, ADR-0018).
@@ -141,8 +142,31 @@ jobs:
               && cd "$COMPONENT_PATH" && flutter pub get && dart run powersync:setup_web \
               && flutter analyze && flutter test \
               && flutter build web --release --no-web-resources-cdn )
+          elif [ -f "$COMPONENT_PATH/package.json" ]; then
+            # npm component (the React admin app, #72/#449): lint → test → build the static
+            # Vite bundle into dist/, which the component's Dockerfile then COPYs. Vite bakes
+            # VITE_* at BUILD time (not read at deploy time — an earlier comment here was
+            # wrong), so the dev hostnames must be present now, exactly like the PWA's
+            # define-less `client:latest` carries AppConfig's dev defaults. This build
+            # publishes `admin:latest` (dev URLs), which the dev cluster's Flux HelmRelease
+            # pulls; the real per-environment (staging/prod) admin image is built by
+            # release-deploy.yml's publish-admin job with that env's URLs baked in
+            # (D-27, ADR-0018). These dev VITE_* mirror admin/.env.example and the dev
+            # hostnames in infra/helm/beekeepingit/charts/gateway/values.yaml — the
+            # `deploy-urls` check (scripts/check-deploy-url-drift.sh) guards the
+            # staging/prod copies against the overlays. Repo-wide web lint/test also run in
+            # ci.yml's `task web:*` fan-out; this scopes the same gates to the built artifact.
+            # Only `npm run build` needs the VITE_* (Vite reads them at bundle time); lint/test
+            # don't. Keep the dev values in one place via env for the build step.
+            ( cd "$COMPONENT_PATH" \
+              && npm ci && npm run lint && npm test \
+              && VITE_OIDC_ISSUER="https://auth.beekeepingit.local:8443/application/o/beekeepingit/" \
+                 VITE_OIDC_CLIENT_ID="beekeepingit-admin" \
+                 VITE_API_BASE_URL="https://app.beekeepingit.local:8443" \
+                 VITE_ACCOUNT_URL="https://auth.beekeepingit.local:8443/if/user/#/settings" \
+                 npm run build )
           else
-            echo "::error::unknown component type at $COMPONENT_PATH (no go.mod or pubspec.yaml)"
+            echo "::error::unknown component type at $COMPONENT_PATH (no go.mod, pubspec.yaml, or package.json)"
             exit 1
           fi
 
@@ -218,6 +242,55 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
+
+  # Stable, always-reporting roll-up of the matrixed `build` job above, so the image
+  # build + scan can be a REQUIRED status check on `main` (#368, D-27). The matrix
+  # produces one context per affected component (`build client`, `build services-sync`,
+  # …) — dynamic names that vary per PR and vanish entirely when nothing is affected, so
+  # none of them can be named in branch protection. This job is the one fixed context.
+  #
+  # Two rules make it safe to require:
+  #   * `if: always()` — a `needs:` job is itself SKIPPED when an upstream is skipped, and
+  #     a skipped REQUIRED check leaves a PR "Expected" forever. `always()` guarantees this
+  #     job runs (and therefore reports a conclusion) on every PR/push.
+  #   * the results are evaluated EXPLICITLY below rather than implied by `needs:`, because
+  #     with `always()` GitHub no longer fails this job when an upstream failed.
+  #
+  # `build` is legitimately skipped when `detect` finds no affected component (the matrix is
+  # path-gated), so `skipped` must PASS; `failure`/`cancelled` must FAIL. `detect` itself has
+  # no `if:` and so never legitimately skips — anything other than `success` there means the
+  # matrix never got the chance to run, which must NOT be reported as green.
+  build-images:
+    name: build & scan images
+    needs: [detect, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the build matrix to have passed (or legitimately skipped)
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+          echo "detect=${DETECT_RESULT} build=${BUILD_RESULT}"
+
+          if [ "$DETECT_RESULT" != "success" ]; then
+            echo "::error::component detection did not succeed (${DETECT_RESULT}) — the build matrix never ran"
+            exit 1
+          fi
+
+          case "$BUILD_RESULT" in
+            success)
+              echo "All affected components built and scanned clean."
+              ;;
+            skipped)
+              echo "No affected buildable component for this change — nothing to build or scan."
+              ;;
+            *)
+              echo "::error::image build/scan did not pass (${BUILD_RESULT})"
+              exit 1
+              ;;
+          esac
 
   # ---------------------------------------------------------------------------------------------
   # PLACEHOLDER — NOT part of the M0 pipeline (AC #6). macOS runners for native iOS builds are
