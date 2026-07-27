@@ -1,5 +1,5 @@
 import 'package:powersync/powersync.dart' as ps;
-import 'package:powersync/sqlite3_common.dart';
+import 'package:sqlite3/common.dart';
 
 import 'local_store.dart';
 
