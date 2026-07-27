@@ -107,7 +107,7 @@ jobs:
       # Only the infra tools this job actually uses — a full `mise install`
       # would pull Flutter/Go/etc. for nothing.
       - name: Set up toolchains from mise.toml (infra tools only)
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           install_args: kubectl helm aqua:scaleway/scaleway-cli
 
