@@ -71,7 +71,7 @@ void main() {
           ),
         );
 
-        container.listen(notificationCheckProvider, (_, __) {});
+        container.listen(notificationCheckProvider, (_, _) {});
         await pumpEventQueue();
 
         final published = container.read(notificationFeedProvider);
@@ -106,7 +106,7 @@ void main() {
       addTearDown(container.dispose);
 
       expect(
-        () => container.listen(notificationCheckProvider, (_, __) {}),
+        () => container.listen(notificationCheckProvider, (_, _) {}),
         returnsNormally,
       );
       await pumpEventQueue();
@@ -124,7 +124,7 @@ void main() {
         ),
       );
 
-      container.listen(notificationCheckProvider, (_, __) {});
+      container.listen(notificationCheckProvider, (_, _) {});
       await pumpEventQueue();
 
       expect(container.read(notificationFeedProvider), isEmpty);

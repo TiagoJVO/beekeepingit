@@ -45,8 +45,8 @@ final notificationCheckProvider = Provider<void>((ref) {
   // itself rebuild on every todos/rejection change — unlike `ref.watch`,
   // which would re-run this whole setup (and re-register the lifecycle
   // listener) on every update.
-  ref.listen(todosStreamProvider, (_, __) {});
-  ref.listen(syncRejectedOpsProvider, (_, __) {});
+  ref.listen(todosStreamProvider, (_, _) {});
+  ref.listen(syncRejectedOpsProvider, (_, _) {});
 
   Future<void> runCheck() async {
     try {
