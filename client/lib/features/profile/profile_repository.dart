@@ -101,9 +101,9 @@ class ProfileRepository {
 
   Future<Profile> update({String? name, String? email, String? locale}) async {
     final body = <String, dynamic>{
-      if (name != null) 'name': name,
-      if (email != null) 'email': email,
-      if (locale != null) 'locale': locale,
+      'name': ?name,
+      'email': ?email,
+      'locale': ?locale,
     };
     final json = await _api.patchJson('/profile', body);
     return Profile.fromJson(json);

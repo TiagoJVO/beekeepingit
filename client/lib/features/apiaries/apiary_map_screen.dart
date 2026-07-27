@@ -408,7 +408,7 @@ class _Map extends StatelessWidget {
   /// number of markers").
   List<ll.LatLng> get _framedPoints => [
     for (final a in apiaries) ll.LatLng(a.locationLat!, a.locationLon!),
-    if (userLocation != null) userLocation!,
+    ?userLocation,
   ];
 
   bool _isSelected(Apiary a) =>
