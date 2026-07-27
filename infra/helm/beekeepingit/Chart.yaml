@@ -41,6 +41,12 @@ dependencies:
     version: "0.1.0"
     repository: "file://charts/gateway"
     condition: gateway.enabled
+  # Dev/CI SMTP sink for Authentik's outbound email (#361, ADR-0019) — hand-rolled
+  # (mailpit ships as a bare Docker image, like powersync). Disabled in prod.
+  - name: mailpit
+    version: "0.1.0"
+    repository: "file://charts/mailpit"
+    condition: mailpit.enabled
   - name: powersync
     version: "0.1.0"
     repository: "file://charts/powersync"
@@ -56,6 +62,12 @@ dependencies:
     version: "0.1.0"
     repository: "file://charts/pwa"
     condition: pwa.enabled
+  # The React admin app static bundle (#72/#73), served on its own host
+  # admin.beekeepingit.local behind the gateway (#449, ADR-0016).
+  - name: admin
+    version: "0.1.0"
+    repository: "file://charts/admin"
+    condition: admin.enabled
   # Default-deny + explicit-allow NetworkPolicies for the whole namespace
   # (EPIC-14 #89, NFR-SEC-1) — applies namespace-wide, so it also covers pods
   # owned by the standalone authentik/minio Flux HelmReleases (ADR-0012),

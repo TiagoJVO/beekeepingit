@@ -18,6 +18,10 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Optional local config from infra/cluster/.env (see .env.example) — e.g.
+# BEEKEEPINGIT_GITOPS_DIR for the gitops-dir.sh resolution below.
+# shellcheck disable=SC1091 # resolved at runtime next to this script
+. "$script_dir/env.sh"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 chart_dir="$repo_root/infra/helm/beekeepingit"
 namespace="beekeepingit-dev"

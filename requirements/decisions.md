@@ -6,7 +6,7 @@ wins over earlier requirement wording.
 > Decisions are the working **default, not immutable**. If contradicting one makes sense,
 > propose it to the user; on confirmation, update it here (and the affected requirements).
 
-_Last updated: 2026-07-13._
+_Last updated: 2026-07-26._
 
 ---
 
@@ -48,8 +48,20 @@ _Last updated: 2026-07-13._
 - **Supersedes:** Q-JOIN.
 - **Affected requirements:** adds FR-ONB-3 / FR-TEN-3 (invitation & membership
   management). The org-creator's admin role aligns with NFR-ROL-1.
-- **Still open:** invitation expiry, re-invite, removing members, transferring
-  admin (minor — for planning detail).
+- **Refined by #290 (2026-07-25):** **removing members** and **transferring admin**
+  are now decided (closes those open details). An admin may **remove** a member
+  (soft `status` → `removed`, so the member loses org access on their next request,
+  FR-TEN-2) and **change** a member's role within the fixed `admin`/`user` model
+  (auth.md §5.3, NFR-ROL-1/2) — admin transfer is promote-then-demote, not a
+  distinct operation. A **last-admin guard** forbids removing or demoting the org's
+  only remaining admin, so an organization always keeps at least one admin. Both
+  actions are recorded in `organizations.audit_log` (FR-HIS-1).
+- **Clarified by D-32 (2026-07-26):** this rule is the **organization tier**. "Org creator =
+  its first admin" describes the `admin` **membership** role inside one organization and is
+  **unchanged**. It is **not** the platform tier — a platform operator's authority comes from
+  the IdP `platform-operator` group, never from creating or joining an organization (D-32,
+  EPIC-18 #463).
+- **Still open:** invitation expiry, re-invite (minor — for planning detail).
 
 ## D-4 — v1 scope deferrals
 
@@ -119,6 +131,13 @@ Core technology decisions (2026-06-27). Detail and rationale in
   [`docs/architecture/oidc-integration.md`](../docs/architecture/oidc-integration.md).
 - **Supersedes:** Q-AUTH — mechanism **and** offline-login designed in `auth.md` (provider-neutral)
   - ADR-0016 (Authentik specifics).
+- **Reaffirmed unchanged by D-32 (2026-07-26).** Adding the **platform tier** (D-32, EPIC-18 #463)
+  does **not** move any account or credential concern into the app: **create, disable, password
+  reset and MFA stay at the IdP**, and the admin app keeps linking out to the provider's user
+  settings for them. The platform console administers **memberships and roles only** — never
+  credentials. Consistently, **platform authority is IdP group membership** (`platform-operator`)
+  surfaced as a **verified token claim** the app reads but does not manage; the `admin`/`user`
+  **membership** role stays app-side in `organizations.memberships`, never an IdP role.
 
 ## D-8 — AI: NL→structured-query, cloud model first (on-device later)
 
@@ -600,6 +619,87 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   pattern generally) must be revisited — either removed once no longer relevant, or replaced by
   proper `/v2` versioning per ADR-0003 §5 if a similar change is ever needed post-launch.
 - **Touches:** FR-AP-7, ADR-0003 (§1 contract-first CI gate, §5 versioning), #341.
+
+---
+
+## D-29 — Default landing screen: Tasks (Tarefas), open tasks sorted by priority
+
+- **Decision (product owner, 2026-07-24):** after login the app lands on the **Tasks
+  (Tarefas)** screen, not Apiários. The task list defaults to **non-closed (open)** tasks,
+  sorted by **priority** (most urgent first). Bottom-nav tab order is unchanged. From
+  field-testing feedback (#427).
+- **Rationale:** the daily field workflow starts from "what do I need to do today", not the
+  apiary list.
+- No prior decision governed the app's initial screen; this records it. **Touches:**
+  `area/todos`, #427, EPIC-17 (#430).
+
+---
+
+## D-30 — A journey may be created with zero apiaries (plan filled in later)
+
+- **Decision (product owner, 2026-07-24):** the journey create/edit form no longer requires
+  at least one apiary; a journey can be saved with an **empty plan** and apiaries added later
+  via edit (the data layer already supports this — `JourneysRepository.create` documents
+  `apiaryIds` may be empty). The name-required rule stays. From field-testing feedback (#428).
+- **Relaxes FR-JO-4's create-time UX** ("select the apiaries to be visited"): apiary selection
+  at create time becomes optional, not mandatory; FR-JO-4's intent (a journey plans apiaries)
+  is unchanged, only the mandatory-at-create gate is lifted.
+- **Relates to D-21** (attribution) and the planned D-31 (attaching an activity whose apiary the
+  journey did not plan adds that apiary to the plan). **Touches:** FR-JO-4, D-21, #428, EPIC-17 (#430).
+
+---
+
+## D-31 — Attaching an activity to a journey that didn't plan its apiary adds the apiary to the plan
+
+- **Decision (product owner, 2026-07-24):** the activity form's journey picker can (behind a
+  toggle, distinct from the closed-journey "show hidden" toggle) offer **open journeys whose
+  plan does not include the current apiary**, still filtered to the matching main activity type.
+  Selecting one attaches the activity (`journey_id`, D-21) **and adds the current apiary to that
+  journey's plan** (`journey_plan_items`). From field-testing feedback (#428 Part B, #440).
+- **Rationale / invariant:** keeps "apiaries visited vs planned" coherent — the attached apiary
+  becomes planned+visited (visited is always a subset of planned; feitos/planeados never exceeds
+  100%). Makes zero-apiary journeys (D-30) usable: their plan fills in as activities are logged.
+- **Extends D-21** (which matched only journeys whose plan already includes the apiary).
+  **Touches:** FR-JO-1, FR-JO-4, D-21, D-30, #428, #440, EPIC-17 (#430).
+
+---
+
+## D-32 — Administration is two-tier: organization admin + platform operator
+
+- **Decision (product owner, 2026-07-26) — reverses the earlier "no system-wide app admin"
+  answer.** Administration has **two tiers**. The intended product includes an **app admin
+  console for the BeekeepingIT owners** — managing organizations, users and roles across the
+  whole platform, expanding to further administration features later.
+
+  | Tier                                | Who                                                                  | Scope                 |
+  | ----------------------------------- | -------------------------------------------------------------------- | --------------------- |
+  | **Organization** (EPIC-10, built)   | a **member** of an organization whose membership role is `admin`     | that one organization |
+  | **Platform** (EPIC-18 #463, intent) | a member of the IdP **`platform-operator`** group; not an org member | every organization    |
+
+- **Supersedes:** **Q-ROLE** — whose earlier answer, _"admin is organization-scoped; there is no
+  system-wide application admin"_, is **replaced** by this two-tier answer. The org-scoped half
+  still stands; the "no system-wide admin" half does not.
+- **The organization tier is unchanged.** Customers keep self-service member management exactly
+  as EPIC-10 shipped: `admin` vs `user` remains the fixed **membership** role in
+  `organizations.memberships`, resolved server-side per request, and **D-3** (org creator = its
+  first admin, last-admin guard) still governs it. The platform tier sits **above** it; it does
+  not replace or weaken it.
+- **Platform authority is not org membership.** It comes from the IdP **`platform-operator`
+  group**, surfaced to the services as a **verified token claim** (EPIC-18 #465) — never asserted
+  by the client, never derived from joining an organization.
+- **D-7 is unchanged** — account/credential lifecycle (create, disable, password reset, MFA)
+  stays at the IdP; the console manages **memberships and roles only**.
+- **Uses NFR-ROL-1's "more roles may exist later" hook** — the platform tier _is_ that expansion,
+  added as a **tier above** membership rather than as a third membership role.
+- **Tenancy carve-out (the risk).** ADR-0002's rule that cross-organization access returns `404`
+  (never `403`) still protects tenants; platform operators need real data across that boundary,
+  so the carve-out must be **narrow, per-endpoint and test-proven** (a non-operator still gets
+  `404`). Designed and recorded in its own ADR under EPIC-18 (#466) — not decided here. **Built:**
+  [ADR-0021](../docs/adr/0021-platform-operator-tenancy-carve-out.md) (per-endpoint
+  `requirePlatformOperatorOrOrgAdmin`/`...OrgMember`, wired into the five existing organization-
+  scoped routes; `groups` never authorizes; non-operators unaffected, test-proven).
+- **Touches:** NFR-ROL-1, NFR-ROL-2, NFR-SEC-1, FR-TEN-2, FR-HIS-1, D-3, D-7, ADR-0002, ADR-0004,
+  `docs/architecture/auth.md` §3.3/§5.3, EPIC-10 (#11), EPIC-18 (#463), #464.
 
 ---
 

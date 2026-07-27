@@ -4,6 +4,11 @@
 # starts from a clean state — no orphaned resources.
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Optional local config from infra/cluster/.env (see .env.example).
+# shellcheck disable=SC1091 # resolved at runtime next to this script
+. "$script_dir/env.sh"
+
 cluster_name="beekeeping"
 
 for bin in k3d flock; do

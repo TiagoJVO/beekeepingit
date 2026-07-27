@@ -22,15 +22,16 @@ type JourneysAuditLog struct {
 }
 
 type JourneysJourney struct {
-	ID               pgtype.UUID        `json:"id"`
-	OrganizationID   pgtype.UUID        `json:"organization_id"`
-	Name             string             `json:"name"`
-	MainActivityType string             `json:"main_activity_type"`
-	Status           string             `json:"status"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-	RecordedAt       pgtype.Timestamptz `json:"recorded_at"`
-	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	ID                pgtype.UUID        `json:"id"`
+	OrganizationID    pgtype.UUID        `json:"organization_id"`
+	Name              string             `json:"name"`
+	MainActivityType  string             `json:"main_activity_type"`
+	Status            string             `json:"status"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	RecordedAt        pgtype.Timestamptz `json:"recorded_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	DefaultAttributes []byte             `json:"default_attributes"`
 }
 
 type JourneysJourneyPlanItem struct {

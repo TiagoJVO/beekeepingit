@@ -125,3 +125,59 @@ func TestValidateJourneyFields_RejectsTooManyApiaryIDs(t *testing.T) {
 		t.Fatalf("errs = %+v, want apiary_ids/too_many", errs)
 	}
 }
+
+func TestValidateDefaultAttributes_AbsentIsValid(t *testing.T) {
+	if errs := validateDefaultAttributes(nil); len(errs) != 0 {
+		t.Fatalf("validateDefaultAttributes(nil) = %+v, want no errors", errs)
+	}
+}
+
+func TestValidateDefaultAttributes_EmptyObjectIsValid(t *testing.T) {
+	if errs := validateDefaultAttributes([]byte(`{}`)); len(errs) != 0 {
+		t.Fatalf("validateDefaultAttributes({}) = %+v, want no errors", errs)
+	}
+}
+
+func TestValidateDefaultAttributes_ValidObjectIsValid(t *testing.T) {
+	raw := []byte(`{"treatment_type":"amitraz","disease":"varroa"}`)
+	if errs := validateDefaultAttributes(raw); len(errs) != 0 {
+		t.Fatalf("validateDefaultAttributes(%s) = %+v, want no errors", raw, errs)
+	}
+}
+
+func TestValidateDefaultAttributes_RejectsNull(t *testing.T) {
+	errs := validateDefaultAttributes([]byte(`null`))
+	if !hasFieldCode(errs, "default_attributes", "invalid") {
+		t.Fatalf("errs = %+v, want default_attributes/invalid", errs)
+	}
+}
+
+func TestValidateDefaultAttributes_RejectsNonObject(t *testing.T) {
+	for _, raw := range []string{`"a string"`, `123`, `["array"]`, `true`} {
+		errs := validateDefaultAttributes([]byte(raw))
+		if !hasFieldCode(errs, "default_attributes", "invalid") {
+			t.Fatalf("validateDefaultAttributes(%s) errs = %+v, want default_attributes/invalid", raw, errs)
+		}
+	}
+}
+
+func TestValidateDefaultAttributes_RejectsMalformedJSON(t *testing.T) {
+	errs := validateDefaultAttributes([]byte(`{not json`))
+	if !hasFieldCode(errs, "default_attributes", "invalid") {
+		t.Fatalf("errs = %+v, want default_attributes/invalid", errs)
+	}
+}
+
+func TestValidateDefaultAttributes_RejectsTooLarge(t *testing.T) {
+	// Build an oversized-but-otherwise-well-formed JSON object.
+	big := make([]byte, 0, maxDefaultAttributesBytes+64)
+	big = append(big, '{', '"', 'k', '"', ':', '"')
+	for len(big) < maxDefaultAttributesBytes+1 {
+		big = append(big, 'a')
+	}
+	big = append(big, '"', '}')
+	errs := validateDefaultAttributes(big)
+	if !hasFieldCode(errs, "default_attributes", "too_long") {
+		t.Fatalf("errs = %+v, want default_attributes/too_long", errs)
+	}
+}

@@ -35,6 +35,7 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/health"
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 	"github.com/TiagoJVO/beekeepingit/services/shared/devseed"
+	"github.com/TiagoJVO/beekeepingit/services/shared/history"
 )
 
 // testOrgHeader lets a test request stand in as a caller resolved to a
@@ -312,18 +313,29 @@ func problemHasFieldCode(p struct {
 }
 
 type journeyResponse struct {
-	ID               string   `json:"id"`
-	OrganizationID   string   `json:"organization_id"`
-	Name             string   `json:"name"`
-	MainActivityType string   `json:"main_activity_type"`
-	Status           string   `json:"status"`
-	ApiaryIDs        []string `json:"apiary_ids"`
+	ID                string         `json:"id"`
+	OrganizationID    string         `json:"organization_id"`
+	Name              string         `json:"name"`
+	MainActivityType  string         `json:"main_activity_type"`
+	Status            string         `json:"status"`
+	ApiaryIDs         []string       `json:"apiary_ids"`
+	DefaultAttributes map[string]any `json:"default_attributes"`
 }
 
 func createBody(id, name, mainActivityType string, apiaryIDs []string) map[string]any {
 	return map[string]any{
 		"id": id, "name": name, "main_activity_type": mainActivityType, "apiary_ids": apiaryIDs,
 	}
+}
+
+// createBodyWithDefaultAttributes is createBody plus a default_attributes
+// payload (#385) — a separate helper rather than a new createBody param so
+// every existing call site (which never cares about defaults) stays
+// unchanged.
+func createBodyWithDefaultAttributes(id, name, mainActivityType string, apiaryIDs []string, defaultAttributes map[string]any) map[string]any {
+	body := createBody(id, name, mainActivityType, apiaryIDs)
+	body["default_attributes"] = defaultAttributes
+	return body
 }
 
 func TestJourneysRest_Create_Success(t *testing.T) {
@@ -430,6 +442,164 @@ func TestJourneysRest_Create_ValidationRejectsBadInput(t *testing.T) {
 	p := decodeProblem(t, rec)
 	if !problemHasFieldCode(p, "id", "invalid") {
 		t.Fatalf("problem errors = %+v, want id/invalid", p.Errors)
+	}
+}
+
+// --- default_attributes (#385) ---
+
+func TestJourneysRest_Create_WithDefaultAttributesRoundTrips(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	body := createBodyWithDefaultAttributes(id, "Journey", "treatment", []string{apiaryID}, map[string]any{
+		"treatment_context": "disease_specific", "disease": "Varroose",
+	})
+	rec := f.do(t, http.MethodPost, "/v1/journeys", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	var got journeyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.DefaultAttributes["treatment_context"] != "disease_specific" || got.DefaultAttributes["disease"] != "Varroose" {
+		t.Fatalf("default_attributes = %+v, want treatment_context/disease round-tripped", got.DefaultAttributes)
+	}
+}
+
+func TestJourneysRest_Create_AbsentDefaultAttributesStoresNull(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Journey", "harvest", []string{apiaryID}))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	var got journeyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.DefaultAttributes != nil {
+		t.Fatalf("default_attributes = %+v, want null/nil when never set", got.DefaultAttributes)
+	}
+}
+
+func TestJourneysRest_Create_RejectsNonObjectDefaultAttributes(t *testing.T) {
+	f := newJourneysFixture(t)
+	rec := f.do(t, http.MethodPost, "/v1/journeys", map[string]any{
+		"id": uuid.NewString(), "name": "Journey", "main_activity_type": "harvest",
+		"apiary_ids": []string{}, "default_attributes": "not-an-object",
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (default_attributes must be an object), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "default_attributes", "invalid") {
+		t.Fatalf("problem errors = %+v, want default_attributes/invalid", p.Errors)
+	}
+}
+
+func TestJourneysRest_Create_RejectsOversizeDefaultAttributes(t *testing.T) {
+	f := newJourneysFixture(t)
+	big := strings.Repeat("a", 9000)
+	rec := f.do(t, http.MethodPost, "/v1/journeys", map[string]any{
+		"id": uuid.NewString(), "name": "Journey", "main_activity_type": "harvest",
+		"apiary_ids": []string{}, "default_attributes": map[string]any{"lot_batch": big},
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (default_attributes too large), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "default_attributes", "too_long") {
+		t.Fatalf("problem errors = %+v, want default_attributes/too_long", p.Errors)
+	}
+}
+
+func TestJourneysRest_Update_AbsentDefaultAttributesPreservesStored(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	createBodyReq := createBodyWithDefaultAttributes(id, "Journey", "feeding", []string{apiaryID}, map[string]any{"feed_type": "Xarope 1:1"})
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBodyReq); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	// PATCH without default_attributes in the body at all — must keep the
+	// stored value unchanged (mirrors status's absent-keeps convention).
+	rec := f.do(t, http.MethodPatch, "/v1/journeys/"+id, updateBody("Renamed", "feeding", []string{apiaryID}, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got journeyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.DefaultAttributes["feed_type"] != "Xarope 1:1" {
+		t.Fatalf("default_attributes = %+v, want feed_type preserved from create", got.DefaultAttributes)
+	}
+}
+
+func TestJourneysRest_Update_PresentDefaultAttributesReplaces(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	createBodyReq := createBodyWithDefaultAttributes(id, "Journey", "treatment", []string{apiaryID}, map[string]any{"treatment_context": "general_preventive"})
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBodyReq); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	updateReq := updateBody("Journey", "treatment", []string{apiaryID}, nil)
+	updateReq["default_attributes"] = map[string]any{"treatment_context": "disease_specific", "disease": "Varroose"}
+	rec := f.do(t, http.MethodPatch, "/v1/journeys/"+id, updateReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got journeyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.DefaultAttributes["treatment_context"] != "disease_specific" || got.DefaultAttributes["disease"] != "Varroose" {
+		t.Fatalf("default_attributes = %+v, want the PATCH's new value (full replace)", got.DefaultAttributes)
+	}
+}
+
+// TestJourneysRest_History_UpdateProducesAuditRow_IncludesDefaultAttributes
+// proves default_attributes changes participate in audit history like every
+// other mutable column (#385's write.go plan: journeyRowState.fields()).
+func TestJourneysRest_History_UpdateProducesAuditRow_IncludesDefaultAttributes(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Journey", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	updateReq := updateBody("Journey", "harvest", []string{apiaryID}, nil)
+	updateReq["default_attributes"] = map[string]any{"lot_batch": "LOTE-2026-07"}
+	if rec := f.do(t, http.MethodPatch, "/v1/journeys/"+id, updateReq); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	rows, err := q.ListAuditLog(context.Background(), sqlcgen.ListAuditLogParams{
+		OrganizationID: devseedOrg(), EntityType: "journey", EntityID: pgtype.UUID{Bytes: uuid.MustParse(id), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("ListAuditLog: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("audit rows = %d, want 2 (create + update)", len(rows))
+	}
+	found := false
+	for _, changedField := range rows[1].ChangedFields {
+		if changedField == "default_attributes" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("update audit row changed_fields = %v, want it to include default_attributes", rows[1].ChangedFields)
 	}
 }
 
@@ -920,6 +1090,114 @@ func TestJourneysSync_ValidateThenApply_CreateWithPlanItems_Success(t *testing.T
 	}
 }
 
+// --- #378: name/main_activity_type are required on put, but a patch may
+// omit either — PowerSync uploads only the columns that actually changed,
+// and "close journey" is the concrete wire shape: {status: "closed"} alone
+// (the client resends nothing else, contrary to this file's previous
+// full-resubmit assumption) ---
+
+func journeyStatusPatchOp(id, status string) map[string]any {
+	return map[string]any{
+		"op": "patch", "entity_type": "journey", "id": id,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"status": status},
+	}
+}
+
+// TestJourneysSync_Validate_AcceptsStatusOnlyPatch confirms the validate-side
+// fix directly against the real "close journey" wire shape.
+func TestJourneysSync_Validate_AcceptsStatusOnlyPatch(t *testing.T) {
+	f := newJourneysFixture(t)
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{
+		"ops": []any{journeyStatusPatchOp(uuid.NewString(), "closed")},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("validate (status-only patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysSync_Validate_RejectsPutWithoutNameOrType confirms name/
+// main_activity_type stay required on put — #378 only relaxes patch, a
+// fresh journey still needs both to have any content. Also pins the
+// nil-vs-unknown split for main_activity_type: absent must report
+// "required", not the misleading "invalid" the old shared nil-or-unknown
+// check produced.
+func TestJourneysSync_Validate_RejectsPutWithoutNameOrType(t *testing.T) {
+	f := newJourneysFixture(t)
+	bad := map[string]any{
+		"op": "put", "entity_type": "journey", "id": uuid.NewString(),
+		"updated_at": "2026-07-16T10:00:00Z", "data": map[string]any{},
+	}
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{bad}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("validate status = %d, want 422 (name/main_activity_type required on put), body = %s", rec.Code, rec.Body.String())
+	}
+	var problem struct {
+		Errors []struct {
+			Field string `json:"field"`
+			Code  string `json:"code"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem response: %v", err)
+	}
+	foundNameRequired, foundTypeRequired := false, false
+	for _, e := range problem.Errors {
+		if e.Field == "ops[0].data.name" && e.Code == "required" {
+			foundNameRequired = true
+		}
+		if e.Field == "ops[0].data.main_activity_type" && e.Code == "required" {
+			foundTypeRequired = true
+		}
+	}
+	if !foundNameRequired {
+		t.Fatalf("problem errors = %+v, want a required error on ops[0].data.name", problem.Errors)
+	}
+	if !foundTypeRequired {
+		t.Fatalf("problem errors = %+v, want a required (not invalid) error on ops[0].data.main_activity_type when absent", problem.Errors)
+	}
+}
+
+// TestJourneysSync_Apply_StatusOnlyPatchClosesWithoutTouchingName is the
+// apply-side proof: a status-only patch against an existing journey closes
+// it and leaves name/main_activity_type exactly as stored (mergeJourneyOp
+// already merged correctly — this pins that the validate relaxation didn't
+// change apply's own behavior).
+func TestJourneysSync_Apply_StatusOnlyPatchClosesWithoutTouchingName(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	create := map[string]any{"ops": []any{journeyPutOp(journeyID, "cenad", "treatment")}}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", create); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	batch := map[string]any{"ops": []any{journeyStatusPatchOp(journeyID, "closed")}}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch); rec.Code != http.StatusOK {
+		t.Fatalf("validate (status-only patch) status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	applyRec := f.do(t, http.MethodPost, "/internal/sync/apply", batch)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetJourney(context.Background(), sqlcgen.GetJourneyParams{
+		OrganizationID: devseedOrg(), ID: pgtype.UUID{Bytes: uuid.MustParse(journeyID), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("GetJourney: %v", err)
+	}
+	if row.Status != "closed" {
+		t.Fatalf("status after status-only patch = %q, want closed", row.Status)
+	}
+	if row.Name != "cenad" {
+		t.Fatalf("name after status-only patch = %q, want unchanged %q", row.Name, "cenad")
+	}
+	if row.MainActivityType != "treatment" {
+		t.Fatalf("main_activity_type after status-only patch = %q, want unchanged %q", row.MainActivityType, "treatment")
+	}
+}
+
 func TestJourneysSync_Validate_RejectsCrossOrgApiaryId(t *testing.T) {
 	foreignApiaryID := uuid.NewString()
 	f := newJourneysFixture(t) // no known apiary ids
@@ -1291,5 +1569,419 @@ func TestJourneysSync_Apply_Delete_TombstonesJourney(t *testing.T) {
 	}
 	if rows[1].ChangeType != "delete" {
 		t.Fatalf("second audit row change_type = %q, want delete", rows[1].ChangeType)
+	}
+}
+
+// --- default_attributes over sync (#385) ---
+
+func journeyPutOpWithDefaultAttributes(id, name, mainActivityType string, defaultAttributes map[string]any) map[string]any {
+	op := journeyPutOp(id, name, mainActivityType)
+	op["data"].(map[string]any)["default_attributes"] = defaultAttributes
+	return op
+}
+
+func TestJourneysSync_Validate_RejectsNonObjectDefaultAttributes(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	op := journeyPutOp(journeyID, "Journey", "harvest")
+	op["data"].(map[string]any)["default_attributes"] = "not-an-object"
+	batch := map[string]any{"ops": []any{op}}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 (default_attributes must be an object), body = %s", rec.Code, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if !problemHasFieldCode(p, "ops[0].data.default_attributes", "invalid") {
+		t.Fatalf("problem errors = %+v, want ops[0].data.default_attributes/invalid", p.Errors)
+	}
+}
+
+// TestJourneysSync_Apply_Put_MaterializesDefaultAttributes proves a put op
+// (an offline create) that carries default_attributes stores them —
+// mirrors status's own "put materializes the sent value" behavior in
+// applyJourneyOp's missing branch.
+func TestJourneysSync_Apply_Put_MaterializesDefaultAttributes(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	op := journeyPutOpWithDefaultAttributes(journeyID, "Journey", "feeding", map[string]any{"feed_type": "Candi"})
+	batch := map[string]any{"ops": []any{op}}
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch); rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetJourney(context.Background(), sqlcgen.GetJourneyParams{OrganizationID: devseedOrg(), ID: pgtype.UUID{Bytes: uuid.MustParse(journeyID), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetJourney: %v", err)
+	}
+	var defaultAttributes map[string]any
+	if err := json.Unmarshal(row.DefaultAttributes, &defaultAttributes); err != nil {
+		t.Fatalf("unmarshal stored default_attributes: %v", err)
+	}
+	if defaultAttributes["feed_type"] != "Candi" {
+		t.Fatalf("stored default_attributes = %+v, want feed_type=Candi", defaultAttributes)
+	}
+}
+
+// TestJourneysSync_Apply_Patch_AbsentDefaultAttributesKeepsStored is the
+// sync-path counterpart of TestJourneysRest_Update_AbsentDefaultAttributesPreservesStored:
+// a patch op whose data never mentions default_attributes must leave the
+// row's stored defaults untouched (mergeJourneyOp's absent-keeps-current
+// convention).
+func TestJourneysSync_Apply_Patch_AbsentDefaultAttributesKeepsStored(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	createOp := journeyPutOpWithDefaultAttributes(journeyID, "Journey", "treatment", map[string]any{"treatment_context": "general_preventive"})
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{createOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"name": "Renamed", "main_activity_type": "treatment"}, // no default_attributes key at all
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetJourney(context.Background(), sqlcgen.GetJourneyParams{OrganizationID: devseedOrg(), ID: pgtype.UUID{Bytes: uuid.MustParse(journeyID), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetJourney: %v", err)
+	}
+	var defaultAttributes map[string]any
+	if err := json.Unmarshal(row.DefaultAttributes, &defaultAttributes); err != nil {
+		t.Fatalf("unmarshal stored default_attributes: %v", err)
+	}
+	if defaultAttributes["treatment_context"] != "general_preventive" {
+		t.Fatalf("stored default_attributes = %+v, want the original value preserved (patch never mentioned the key)", defaultAttributes)
+	}
+}
+
+// TestJourneysSync_Apply_Conflict_WinningPayloadIncludesDefaultAttributes
+// proves a superseded (LWW-losing) op's conflict-log entry captures the
+// SERVER's winning default_attributes, like every other mutable column
+// (logJourneyConflict's #385 extension).
+func TestJourneysSync_Apply_Conflict_WinningPayloadIncludesDefaultAttributes(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	createOp := journeyPutOpWithDefaultAttributes(journeyID, "Journey", "harvest", map[string]any{"lot_batch": "WINNER-LOT"})
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{createOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	newerPatch := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"name": "Newer", "main_activity_type": "harvest"},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{newerPatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("newer patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	stalePatch := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T10:30:00Z", // between create (10:00) and the newer patch (11:00)
+		"data":       map[string]any{"name": "Stale", "main_activity_type": "harvest"},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{stalePatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("stale patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rows, err := f.pool.Query(context.Background(), "SELECT winning_payload FROM journeys.sync_conflict_log WHERE organization_id = $1 AND entity_id = $2", devseedOrg(), pgtype.UUID{Bytes: uuid.MustParse(journeyID), Valid: true})
+	if err != nil {
+		t.Fatalf("query sync_conflict_log: %v", err)
+	}
+	defer rows.Close()
+	var winningJSON []byte
+	found := false
+	for rows.Next() {
+		if err := rows.Scan(&winningJSON); err != nil {
+			t.Fatalf("scan winning_payload: %v", err)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("no sync_conflict_log row found — the stale patch must have been logged as a conflict")
+	}
+	var winning struct {
+		DefaultAttributes map[string]any `json:"default_attributes"`
+	}
+	if err := json.Unmarshal(winningJSON, &winning); err != nil {
+		t.Fatalf("unmarshal winning_payload: %v", err)
+	}
+	if winning.DefaultAttributes["lot_batch"] != "WINNER-LOT" {
+		t.Fatalf("winning_payload.default_attributes = %+v, want lot_batch=WINNER-LOT (the surviving server state)", winning.DefaultAttributes)
+	}
+}
+
+// --- History view over HTTP (GET /v1/journeys/{journeyId}/history, #315,
+// FR-HIS-1) — the journeys counterpart of apiaries/activities' own combined
+// audit_log+sync_conflict_log read endpoint. ---
+
+// historyEntryView mirrors api/history.go's historyEntryDTO wire shape — this
+// test file's own decode target (can't import the api package's unexported
+// type across packages), matching journeyResponse's own convention.
+type historyEntryView struct {
+	ID            string          `json:"id"`
+	EntityType    string          `json:"entity_type"`
+	EntityID      string          `json:"entity_id"`
+	EventKind     string          `json:"event_kind"`
+	ActorUserID   *string         `json:"actor_user_id"`
+	OccurredAt    *time.Time      `json:"occurred_at"`
+	RecordedAt    time.Time       `json:"recorded_at"`
+	ChangedFields []string        `json:"changed_fields"`
+	Change        json.RawMessage `json:"change"`
+}
+
+type historyListView struct {
+	Data []historyEntryView `json:"data"`
+}
+
+func (f *journeysFixture) getJourneyHistory(t *testing.T, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	return f.do(t, http.MethodGet, "/v1/journeys/"+id+"/history", nil)
+}
+
+// TestJourneysRest_History_GetReturnsCombinedTimelineChronologically is #315's
+// core AC: GET /v1/journeys/{id}/history exposes the same combined
+// audit_log+sync_conflict_log timeline ListEntityTimeline builds — create /
+// update / delete via the REST write paths, then read it back over HTTP in
+// chronological (recorded_at) order, oldest first.
+func TestJourneysRest_History_GetReturnsCombinedTimelineChronologically(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Colheita", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/journeys/"+id, updateBody("Colheita Nova", "harvest", []string{apiaryID}, nil)); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/journeys/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getJourneyHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, update, delete): %+v", len(got.Data), got.Data)
+	}
+	wantKinds := []string{history.ChangeCreate, history.ChangeUpdate, history.ChangeDelete}
+	for i, want := range wantKinds {
+		e := got.Data[i]
+		if e.EventKind != want {
+			t.Fatalf("history[%d].EventKind = %q, want %q", i, e.EventKind, want)
+		}
+		if e.EntityType != "journey" || e.EntityID != id {
+			t.Fatalf("history[%d] entity = (%q,%q), want (journey,%q)", i, e.EntityType, e.EntityID, id)
+		}
+		if e.ActorUserID == nil || *e.ActorUserID != devseed.UserID {
+			t.Fatalf("history[%d].ActorUserID = %v, want %q", i, e.ActorUserID, devseed.UserID)
+		}
+		if e.OccurredAt == nil || e.OccurredAt.IsZero() || e.RecordedAt.IsZero() {
+			t.Fatalf("history[%d] has a missing/zero timestamp: %+v", i, e)
+		}
+	}
+	if len(got.Data[1].ChangedFields) != 1 || got.Data[1].ChangedFields[0] != "name" {
+		t.Fatalf("update entry ChangedFields = %v, want [name]", got.Data[1].ChangedFields)
+	}
+	// Chronological, oldest first (recorded_at) — not just the right kinds.
+	if !got.Data[0].RecordedAt.Before(got.Data[1].RecordedAt) || !got.Data[1].RecordedAt.Before(got.Data[2].RecordedAt) {
+		t.Fatalf("history entries not chronologically ordered: %+v", got.Data)
+	}
+}
+
+// TestJourneysRest_History_ConflictSurfacesAsSupersededOverHTTP proves an
+// LWW-losing offline edit (sync apply) shows up over the REST endpoint as a
+// "superseded" event (history.md §6), not silently missing.
+func TestJourneysRest_History_ConflictSurfacesAsSupersededOverHTTP(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{journeyPutOp(journeyID, "Journey", "generic")}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	newerPatch := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"name": "Newer Name", "main_activity_type": "generic"},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{newerPatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("newer patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	stalePatch := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T10:30:00Z", // older than the newer patch — loses the LWW compare
+		"data":       map[string]any{"name": "Stale Name", "main_activity_type": "generic"},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{stalePatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("stale patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getJourneyHistory(t, journeyID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	// create + newer patch (both applied audit rows) + the superseded loss.
+	if len(got.Data) != 3 {
+		t.Fatalf("history entries = %d, want 3 (create, winning update, superseded loss): %+v", len(got.Data), got.Data)
+	}
+	superseded := got.Data[2]
+	if superseded.EventKind != history.EventSuperseded {
+		t.Fatalf("last entry EventKind = %q, want %q", superseded.EventKind, history.EventSuperseded)
+	}
+	if superseded.ChangedFields != nil {
+		t.Fatalf("superseded entry ChangedFields = %v, want nil (only audit_log rows carry it)", superseded.ChangedFields)
+	}
+	var change map[string]any
+	if err := json.Unmarshal(superseded.Change, &change); err != nil {
+		t.Fatalf("unmarshal superseded change: %v", err)
+	}
+	if change["winner"] != "server" {
+		t.Fatalf("superseded change[winner] = %v, want server", change["winner"])
+	}
+}
+
+// TestJourneysRest_History_NotFound_UnknownID: a history request for an id that
+// was never created 404s, same as GET /v1/journeys/{id} itself.
+func TestJourneysRest_History_NotFound_UnknownID(t *testing.T) {
+	f := newJourneysFixture(t)
+	rec := f.getJourneyHistory(t, uuid.NewString())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("history status for unknown id = %d, want 404, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysRest_History_CrossOrg_NotFound is the #315 IDOR regression: org B
+// must not be able to read org A's journey history by id. 404 (ADR-0002
+// scope-hiding), not a distinguishable exists-but-forbidden signal, and not an
+// empty-but-200 body either (which would still leak "this id exists").
+func TestJourneysRest_History_CrossOrg_NotFound(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Org A Journey", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.doAs(t, otherOrgCaller(), http.MethodGet, "/v1/journeys/"+id+"/history", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("cross-org history status = %d, want 404 (scope-hiding, ADR-0002), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysRest_History_DeletedJourneyStaysReachable is the deleted-agnostic
+// existence check's reason for being (mirrors apiaries' getApiaryHistory using
+// GetApiaryForUpdate, not GetApiary): a soft-deleted journey's audit trail —
+// including the delete event itself — must stay readable, since exposing that
+// trail is the whole point of the endpoint (FR-HIS-1). A GetJourney-style
+// deleted_at IS NULL check would wrongly 404 this.
+func TestJourneysRest_History_DeletedJourneyStaysReachable(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBody(id, "Journey", "harvest", []string{apiaryID})); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodDelete, "/v1/journeys/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getJourneyHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history-after-delete status = %d, want 200 (a deleted journey's trail must stay reachable), body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+	if len(got.Data) != 2 {
+		t.Fatalf("history entries = %d, want 2 (create, delete): %+v", len(got.Data), got.Data)
+	}
+	if got.Data[1].EventKind != history.ChangeDelete {
+		t.Fatalf("last entry EventKind = %q, want %q (the delete event must be in the trail)", got.Data[1].EventKind, history.ChangeDelete)
+	}
+}
+
+// TestJourneysRest_History_ChangePayloadNeverEmbedsPersonalData is the journeys
+// counterpart of apiaries'/activities' same-named guard (history.md §7.3): the
+// change payloads this endpoint now exposes — both the audit_log delta AND the
+// sync_conflict_log winning/losing payloads (which embed the full journey row,
+// including the org-supplied default_attributes bag) — must carry only the
+// opaque actor_user_id UUID, never a denormalized actor name/email. Without
+// this, a future change that folded a resolved actor display name into
+// journeyRowState/default_attributes would ship silently and be exposed both
+// over this REST endpoint and org-wide via the PowerSync sync rule.
+func TestJourneysRest_History_ChangePayloadNeverEmbedsPersonalData(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+
+	// Create carrying a default_attributes bag, then rename (an audit delta),
+	// then apply a stale sync edit that loses LWW (a conflict payload).
+	create := createBody(id, "Journey", "harvest", []string{apiaryID})
+	create["default_attributes"] = map[string]any{"lot_batch": "LOTE-2026-07"}
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", create); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPatch, "/v1/journeys/"+id, updateBody("Renamed", "harvest", []string{apiaryID}, nil)); rec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	stalePatch := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": id,
+		"updated_at": "2026-07-16T09:00:00Z", // older than the REST update above — loses LWW
+		"data":       map[string]any{"name": "Stale", "main_activity_type": "harvest"},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{stalePatch}}); rec.Code != http.StatusOK {
+		t.Fatalf("stale patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	rec := f.getJourneyHistory(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got historyListView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode history response: %v", err)
+	}
+
+	// devseed's known PII — if it ever leaked into a change payload it would
+	// appear verbatim as one of these substrings.
+	forbidden := []string{devseed.UserName, devseed.UserEmail}
+	for _, entry := range got.Data {
+		body := string(entry.Change)
+		for _, pii := range forbidden {
+			if strings.Contains(body, pii) {
+				t.Fatalf("change payload for event_kind=%s contains denormalized PII %q: %s", entry.EventKind, pii, body)
+			}
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(entry.Change, &decoded); err != nil {
+			t.Fatalf("change payload is not a JSON object: %s", body)
+		}
+		if _, ok := decoded["actor_name"]; ok {
+			t.Fatalf("change payload embeds an actor_name field: %s", body)
+		}
+		if _, ok := decoded["email"]; ok {
+			t.Fatalf("change payload embeds an email field: %s", body)
+		}
+		// The actor is carried only as the opaque UUID, in its own DTO column.
+		if entry.ActorUserID != nil && *entry.ActorUserID == devseed.UserName {
+			t.Fatalf("actor_user_id is a display name, want the opaque UUID: %q", *entry.ActorUserID)
+		}
 	}
 }

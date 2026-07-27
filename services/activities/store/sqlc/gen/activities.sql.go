@@ -562,7 +562,7 @@ func (q *Queries) UpdateActivity(ctx context.Context, arg UpdateActivityParams) 
 
 const updateActivitySync = `-- name: UpdateActivitySync :exec
 UPDATE activities.activities
-SET apiary_id = $3, type = $4, occurred_at = $5, attributes = $6, updated_at = $7, deleted_at = $8, recorded_at = now()
+SET apiary_id = $3, type = $4, occurred_at = $5, attributes = $6, journey_id = $9, updated_at = $7, deleted_at = $8, recorded_at = now()
 WHERE organization_id = $1 AND id = $2
 `
 
@@ -575,14 +575,17 @@ type UpdateActivitySyncParams struct {
 	Attributes     []byte             `json:"attributes"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	JourneyID      pgtype.UUID        `json:"journey_id"`
 }
 
-// Sync-apply put/patch/delete (#40/#41, mirrors apiaries' UpdateApiary):
+// Sync-apply put/patch/delete (#40/#41/#387, mirrors apiaries' UpdateApiary):
 // sets every mutable column, INCLUDING deleted_at (a tombstone is just
-// another LWW-compared field, sync.md §4.5) — the caller
-// (applyActivityOp's mergeActivityOp) computes the full desired row first.
-// performed_by/journey_id are never written here, same rationale as
-// UpdateActivity above.
+// another LWW-compared field, sync.md §4.5) and, as of #387, journey_id —
+// the caller (applyActivityOp's mergeActivityOp) computes the full desired
+// row first, including journey_id's tri-state resolution. performed_by is
+// NEVER written here (FR-TEN-2 attribution stays immutable) — journey_id is
+// the one asymmetry between this query and REST UpdateActivity (still
+// untouched there, #387's own design doc).
 func (q *Queries) UpdateActivitySync(ctx context.Context, arg UpdateActivitySyncParams) error {
 	_, err := q.db.Exec(ctx, updateActivitySync,
 		arg.OrganizationID,
@@ -593,6 +596,7 @@ func (q *Queries) UpdateActivitySync(ctx context.Context, arg UpdateActivitySync
 		arg.Attributes,
 		arg.UpdatedAt,
 		arg.DeletedAt,
+		arg.JourneyID,
 	)
 	return err
 }

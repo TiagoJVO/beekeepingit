@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/l10n/locale_formatting.dart';
 import '../../l10n/gen/app_localizations.dart';
@@ -78,6 +79,7 @@ class JourneyStatsSection extends ConsumerWidget {
               style: TextStyle(color: theme.colorScheme.error),
             ),
             data: (stats) => _JourneyStatsBody(
+              journeyId: journeyId,
               stats: stats,
               mainActivityType: mainActivityType,
             ),
@@ -90,10 +92,12 @@ class JourneyStatsSection extends ConsumerWidget {
 
 class _JourneyStatsBody extends StatelessWidget {
   const _JourneyStatsBody({
+    required this.journeyId,
     required this.stats,
     required this.mainActivityType,
   });
 
+  final String journeyId;
   final JourneyStats stats;
   final String mainActivityType;
 
@@ -112,6 +116,14 @@ class _JourneyStatsBody extends StatelessWidget {
         ? l10n.journeyStatsAverageSupersNoData
         : locale.decimal(stats.averageSupersPerHive!);
 
+    // #391: hive-level completion — universal (not harvest-gated) like
+    // apiaries-visited, since harvest/feeding/treatment activities all carry
+    // `hives_involved`. "—" when there's no counter data yet on any planned
+    // apiary, mirroring the average-supers tile's own no-fake-value rule.
+    final hivesPlannedText = stats.hivesPlanned == null
+        ? l10n.journeyStatsHivesWorkedNoData
+        : '${stats.hivesPlanned}';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -126,6 +138,14 @@ class _JourneyStatsBody extends StatelessWidget {
                 stats.apiariesPlanned,
               ),
               label: l10n.journeyStatsApiariesVisitedLabel,
+            ),
+            _StatTile(
+              statKey: 'hives-worked',
+              value: l10n.journeyStatsHivesWorkedValue(
+                stats.hivesWorked,
+                hivesPlannedText,
+              ),
+              label: l10n.journeyStatsHivesWorkedLabel,
             ),
             if (isHarvest) ...[
               _StatTile(
@@ -153,6 +173,15 @@ class _JourneyStatsBody extends StatelessWidget {
           l10n.journeyStatsMissingLabel(stats.apiariesMissing),
           key: const Key('journey-stats-missing'),
           style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            key: const Key('journey-stats-more-button'),
+            onPressed: () => context.go('/journeys/$journeyId/stats'),
+            child: Text(l10n.journeyStatsMoreAction),
+          ),
         ),
       ],
     );

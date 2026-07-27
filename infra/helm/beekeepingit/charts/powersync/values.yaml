@@ -156,10 +156,24 @@ syncConfig:
         # local schema, or an added column silently stays NULL on devices
         # that didn't write it locally (the #196/#33 incident this file's own
         # header comment already documents for apiaries.apiaries).
-        - SELECT id, organization_id, name, main_activity_type, status, created_at, updated_at
+        - SELECT id, organization_id, name, main_activity_type, status, default_attributes, created_at, updated_at
           FROM journeys.journeys WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
         - SELECT id, organization_id, journey_id, apiary_id, created_at
           FROM journeys.journey_plan_items WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+        # journeys.audit_log / journeys.sync_conflict_log (#315, FR-HIS-1,
+        # history.md §6/§8): the per-journey history timeline's offline path.
+        # Same flat unfiltered-`SELECT *` shape, same full-log (not
+        # time-bounded) rationale, and the same read-only-on-device treatment
+        # as the apiaries.audit_log / activities.audit_log entries above — see
+        # their comment. These land in the SAME local `audit_log` /
+        # `sync_conflict_log` tables (both logs are polymorphic on
+        # (entity_type, entity_id), so one local table per log kind serves
+        # every entity's timeline and the client filters by entity_type). #315
+        # only had to add these once the journey detail screen gained a history
+        # view to read them; before that journeys streamed its own rows but not
+        # its logs, exactly like todos still does below (no read surface yet).
+        - SELECT * FROM journeys.audit_log WHERE organization_id = bucket.organization_id
+        - SELECT * FROM journeys.sync_conflict_log WHERE organization_id = bucket.organization_id
         # todos.todos (#50, FR-OF-1, FR-TD-1): stream the org's todos to the
         # device so an offline create/edit/complete/reopen/delete reconciles
         # across devices. Explicit column list matching the client's local

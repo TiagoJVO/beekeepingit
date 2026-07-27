@@ -1,22 +1,54 @@
 #!/usr/bin/env bash
-# One-command bring-up for the Scaleway Kapsule staging cluster (D-26).
-# Idempotent: safe to re-run against an already-provisioned cluster.
+# One-command bring-up for a Scaleway Kapsule cluster (D-26) — staging by
+# default, prod via BK_CLUSTER_ENV=prod. Idempotent: safe to re-run against an
+# already-provisioned cluster. Ends fully GitOps-bootstrapped (see below), so
+# after this script Flux reconciles the environment on its own.
 #
-# Prerequisites (Phase 0, done once by hand, not by this script):
+# Configuration/secrets come from the environment. For local runs put them in
+# infra/cluster/.env (gitignored; loaded via env.sh — see .env.example for the
+# full list). In CI (.github/workflows/cluster-ops.yml) the same variable names
+# are injected from GitHub secrets/variables. GitHub secrets are write-only —
+# a local run cannot read them back — hence the .env file for manual use.
+#
+# Prerequisites (done once by hand, not by this script):
 #   - a Scaleway account with billing set up, in an EU region
-#   - `scw init` already run (stores the API access/secret key + default
-#     project/region — see https://www.scaleway.com/en/docs/console/account/how-to/create-api-keys/)
+#   - API credentials: either `scw init` (stores a local profile) or the
+#     SCW_ACCESS_KEY / SCW_SECRET_KEY / SCW_DEFAULT_PROJECT_ID /
+#     SCW_DEFAULT_ORGANIZATION_ID env vars (what CI uses — see
+#     https://www.scaleway.com/en/docs/console/account/how-to/create-api-keys/)
 #
-# Optional dynamic DNS (D-27/Phase 5): set the env vars below and this script
-# pushes Traefik's freshly-assigned LoadBalancer IP to Cloudflare on each bring-up.
-# We deliberately do NOT reserve a static Scaleway IP (a held flexible IP bills
-# ~EUR3/mo even while the cluster is torn down); dynamic DNS keeps the standing
-# cost at zero. Skipped if CF_API_TOKEN is unset (then point DNS by hand from the
-# summary printed at the end):
-#   CF_API_TOKEN      Cloudflare token, scoped to Zone > DNS > Edit on the zone
-#   CF_ZONE_ID        the zone's ID (Cloudflare dashboard -> the zone -> API section)
-#   STAGING_APP_HOST  e.g. beekeepingit-rc.melargil.pt
-#   STAGING_AUTH_HOST e.g. auth.beekeepingit-rc.melargil.pt
+# Optional dynamic DNS (D-27/Phase 5): set CF_API_TOKEN / CF_ZONE_ID /
+# APP_HOST / AUTH_HOST and this script pushes Traefik's freshly-assigned
+# LoadBalancer IP to Cloudflare on each bring-up. We deliberately do NOT
+# reserve a static Scaleway IP (a held flexible IP bills ~EUR3/mo even while
+# the cluster is torn down); dynamic DNS keeps the standing cost at zero.
+# Skipped if CF_API_TOKEN is unset (then point DNS by hand from the summary
+# printed at the end):
+#   CF_API_TOKEN  Cloudflare token, scoped to Zone > DNS > Edit on the zone
+#   CF_ZONE_ID    the zone's ID (Cloudflare dashboard -> the zone -> API section)
+#   APP_HOST      e.g. beekeepingit-rc.melargil.pt
+#   AUTH_HOST     e.g. auth.beekeepingit-rc.melargil.pt
+# (STAGING_APP_HOST/STAGING_AUTH_HOST are accepted as legacy aliases.)
+#
+# Optional Authentik outbound-email relay credentials (#361, NFR-SEC-1): set
+# AUTHENTIK_EMAIL_USERNAME / AUTHENTIK_EMAIL_PASSWORD and this script creates/
+# updates the out-of-band `beekeepingit-authentik-email-credentials` Secret the
+# authentik subchart merges into its config at render time (see that chart's
+# config-secret.yaml — the cluster-state-not-git idiom; every other in-cluster
+# secret is chart-generated and needs nothing from here).
+#
+# GitOps bootstrap: applies the beekeepingit-gitops repo's clusters/<env>/
+# (Flux GitRepository/Kustomizations + the cert-manager ClusterIssuer), so
+# bring-up is genuinely one command — unlike dev-up.sh, which deliberately
+# SKIPS bootstrap because a pre-merge dev loop must deploy the local checkout,
+# not `main`. Staging/prod have the opposite need: they should track the gitops
+# repo. Set SKIP_GITOPS_BOOTSTRAP=1 to opt out (e.g. debugging an unmerged
+# chart against a fresh cluster).
+#
+# D-26 scope guard on prod: bring-up of the prod cluster is allowed (an empty
+# cluster holds no user data), but deployments stay staging-grade until DR
+# (Q-DR) and GDPR export/erasure (#90) land — don't cut a bare (non-rc)
+# release onto it before those close.
 #
 # Gotcha - a stale DNSSEC DS record at the registry silently blocks cert issuance.
 # Symptom: the cluster and app come up healthy and the HTTP-01 challenge shows
@@ -37,7 +69,22 @@
 # lives on a separate Cloudflare account, so CF_API_TOKEN must belong to it.
 set -euo pipefail
 
-cluster_name="${SCW_K8S_CLUSTER_NAME:-beekeepingit-staging}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Optional local config/secrets from infra/cluster/.env (see .env.example).
+# shellcheck disable=SC1091 # resolved at runtime next to this script
+. "$script_dir/env.sh"
+
+env_name="${BK_CLUSTER_ENV:-staging}"
+case "$env_name" in
+  staging | prod) ;;
+  *)
+    echo "error: BK_CLUSTER_ENV must be 'staging' or 'prod' (got '$env_name')" >&2
+    exit 1
+    ;;
+esac
+
+cluster_name="${SCW_K8S_CLUSTER_NAME:-beekeepingit-$env_name}"
+namespace="beekeepingit-$env_name"
 region="${SCW_REGION:-fr-par}"
 # DEV1-M (3vCPU/4GB) was the original default but proved insufficient on the
 # first staging bring-up (D-26): the full stack (CNPG, Traefik, cert-manager,
@@ -50,6 +97,9 @@ region="${SCW_REGION:-fr-par}"
 # up; revisit down if usage stays low once the stack is stable.
 node_type="${SCW_NODE_TYPE:-DEV1-L}"
 
+app_host="${APP_HOST:-${STAGING_APP_HOST:-}}"
+auth_host="${AUTH_HOST:-${STAGING_AUTH_HOST:-}}"
+
 for bin in scw kubectl helm flux; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "error: '$bin' not found on PATH" >&2
@@ -57,17 +107,46 @@ for bin in scw kubectl helm flux; do
   fi
 done
 
+# Fail fast with a useful message when the Scaleway credentials are missing or
+# incomplete — otherwise the first `scw` call fails mid-run with a bare
+# denied/401. Without a `scw init` profile, a profile-less run needs all four.
+if [ ! -f "${HOME}/.config/scw/config.yaml" ]; then
+  missing=""
+  for v in SCW_ACCESS_KEY SCW_SECRET_KEY SCW_DEFAULT_PROJECT_ID SCW_DEFAULT_ORGANIZATION_ID; do
+    [ -n "${!v:-}" ] || missing="$missing $v"
+  done
+  if [ -n "$missing" ]; then
+    echo "error: no scw profile (~/.config/scw/config.yaml) and missing:$missing" >&2
+    echo "either run 'scw init' once, or set all four SCW_* variables" >&2
+    echo "(locally via infra/cluster/.env — see .env.example; in CI via GitHub secrets)" >&2
+    exit 1
+  fi
+fi
+
+# Resolve the GitOps checkout for step 6 UP FRONT, so a missing/broken
+# clusters/<env>/ fails here — before any billed Scaleway resource exists —
+# rather than stranding a half-provisioned cluster on the last step.
+gitops_dir=""
+if [ "${SKIP_GITOPS_BOOTSTRAP:-}" != "1" ]; then
+  gitops_dir="$("$script_dir/gitops-dir.sh")"
+  if [ ! -d "$gitops_dir/clusters/$env_name" ]; then
+    echo "error: '$gitops_dir/clusters/$env_name' does not exist — the beekeepingit-gitops repo has no $env_name bootstrap manifests (set SKIP_GITOPS_BOOTSTRAP=1 to bring the cluster up without them)" >&2
+    exit 1
+  fi
+fi
+
 # Same flock idiom as infra/cluster/up.sh, but note two caveats that don't
 # carry over here. (1) up.sh's lock protects one shared *local* cluster from
 # concurrent sessions on the *same machine* (it's a plain local lockfile).
-# This remote cluster can equally be reached from any machine with `scw init`
-# run against the same Scaleway project, so even when available this lock
-# only protects against a race with another session on *this* machine — it
-# is not distributed coordination. Keep this project single-maintainer-
-# operated until that's addressed (e.g. locking at the Scaleway resource
-# level, or routing all real changes through CI). (2) unlike up.sh's WSL2/
-# Linux environment, `flock` is a util-linux tool, not bundled with Git
-# Bash on Windows — so it's treated as optional here, not required.
+# This remote cluster can equally be reached from any machine with credentials
+# for the same Scaleway project — including the GitHub Actions runners
+# cluster-ops.yml uses — so even when available this lock only protects
+# against a race with another session on *this* machine — it is not
+# distributed coordination. Keep this project single-maintainer-operated until
+# that's addressed (e.g. locking at the Scaleway resource level, or routing
+# all real changes through CI). (2) unlike up.sh's WSL2/Linux environment,
+# `flock` is a util-linux tool, not bundled with Git Bash on Windows — so it's
+# treated as optional here, not required.
 if command -v flock >/dev/null 2>&1; then
   lockfile="/tmp/scw-k8s-${cluster_name}.lock"
   exec 200>"$lockfile"
@@ -150,8 +229,10 @@ if [ -n "${CF_API_TOKEN:-}" ]; then
     }
   done
   : "${CF_ZONE_ID:?set CF_ZONE_ID (the zone ID) when CF_API_TOKEN is set}"
-  : "${STAGING_APP_HOST:?set STAGING_APP_HOST (e.g. beekeepingit-rc.melargil.pt) when CF_API_TOKEN is set}"
-  : "${STAGING_AUTH_HOST:?set STAGING_AUTH_HOST (e.g. auth.beekeepingit-rc.melargil.pt) when CF_API_TOKEN is set}"
+  if [ -z "$app_host" ] || [ -z "$auth_host" ]; then
+    echo "error: set APP_HOST and AUTH_HOST (e.g. beekeepingit-rc.melargil.pt / auth.beekeepingit-rc.melargil.pt) when CF_API_TOKEN is set" >&2
+    exit 1
+  fi
 
   echo "waiting for Traefik's LoadBalancer IP (Kapsule assigns it a moment after the Service is created)"
   lb_ip=""
@@ -167,26 +248,33 @@ if [ -n "${CF_API_TOKEN:-}" ]; then
   echo "Traefik LoadBalancer IP: $lb_ip"
 
   cf_api="https://api.cloudflare.com/client/v4"
+  # Authenticated curl with the token fed via a header FILE (`-H @path`, a
+  # process substitution of the printf *builtin* — no extra process, nothing
+  # on any argv), not `-H "Authorization: ..."`: a plain -H would expose the
+  # token to `ps`/`/proc/*/cmdline` on a shared machine for the call's duration.
+  cf_curl() {
+    curl -fsS -H @<(printf 'Authorization: Bearer %s\n' "$CF_API_TOKEN") "$@"
+  }
   # Create the A record if absent, else PATCH its content to the current IP.
   cf_upsert_a() {
     local fqdn="$1" ip="$2" rec_id
-    rec_id="$(curl -fsS -H "Authorization: Bearer $CF_API_TOKEN" \
-      "$cf_api/zones/$CF_ZONE_ID/dns_records?type=A&name=$fqdn" | jq -r '.result[0].id // empty')"
+    rec_id="$(cf_curl "$cf_api/zones/$CF_ZONE_ID/dns_records?type=A&name=$fqdn" \
+      | jq -r '.result[0].id // empty')"
     if [ -n "$rec_id" ]; then
-      curl -fsS -X PATCH -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+      cf_curl -X PATCH -H "Content-Type: application/json" \
         "$cf_api/zones/$CF_ZONE_ID/dns_records/$rec_id" \
         --data "$(jq -nc --arg ip "$ip" '{content: $ip}')" >/dev/null
       echo "cloudflare: A $fqdn -> $ip (updated)"
     else
-      curl -fsS -X POST -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+      cf_curl -X POST -H "Content-Type: application/json" \
         "$cf_api/zones/$CF_ZONE_ID/dns_records" \
         --data "$(jq -nc --arg n "$fqdn" --arg ip "$ip" \
           '{type: "A", name: $n, content: $ip, ttl: 120, proxied: false}')" >/dev/null
       echo "cloudflare: A $fqdn -> $ip (created)"
     fi
   }
-  cf_upsert_a "$STAGING_APP_HOST" "$lb_ip"
-  cf_upsert_a "$STAGING_AUTH_HOST" "$lb_ip"
+  cf_upsert_a "$app_host" "$lb_ip"
+  cf_upsert_a "$auth_host" "$lb_ip"
 else
   echo "CF_API_TOKEN not set — skipping the Cloudflare DNS update (point DNS by hand; see the summary below)"
 fi
@@ -205,24 +293,53 @@ echo "installing Flux controllers"
 flux install
 flux check
 
+# 5. Out-of-band Authentik email-relay credentials (#361, NFR-SEC-1) — the ONE
+# in-cluster secret the chart can't generate (it's an external relay's
+# credentials; everything else is lookup+randAlphaNum-generated in-cluster, see
+# the chart's secret templates). Idempotent apply so a rotated password in the
+# environment lands on re-run; the namespace is created here since Flux applies
+# the release into it asynchronously later. Values never touch disk, logs, or
+# any argv: `--from-file` + process substitution of the printf *builtin* keeps
+# them off `ps`/`/proc/*/cmdline` (a `--from-literal` would not), and kubectl
+# streams the composed Secret straight to the API.
+if [ -n "${AUTHENTIK_EMAIL_USERNAME:-}" ] && [ -n "${AUTHENTIK_EMAIL_PASSWORD:-}" ]; then
+  echo "creating/updating the beekeepingit-authentik-email-credentials Secret in $namespace"
+  kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n "$namespace" create secret generic beekeepingit-authentik-email-credentials \
+    --from-file=username=<(printf %s "$AUTHENTIK_EMAIL_USERNAME") \
+    --from-file=password=<(printf %s "$AUTHENTIK_EMAIL_PASSWORD") \
+    --dry-run=client -o yaml | kubectl apply -f -
+else
+  echo "AUTHENTIK_EMAIL_USERNAME/AUTHENTIK_EMAIL_PASSWORD not set — skipping the email-relay Secret (Authentik sends no authenticated outbound email until it exists)"
+fi
+
+# 6. GitOps bootstrap — apply the gitops repo's clusters/<env>/ (Flux
+# GitRepository/Kustomizations + the cert-manager ClusterIssuer). Idempotent;
+# from here Flux reconciles the umbrella release + Authentik/MinIO on its own,
+# and deploys are promoted via release-deploy.yml's tag-bump PRs (D-27).
+if [ "${SKIP_GITOPS_BOOTSTRAP:-}" != "1" ]; then
+  # $gitops_dir was resolved (and clusters/<env>/ existence-checked) up front,
+  # before any billed resource was created.
+  echo "bootstrapping GitOps from the beekeepingit-gitops repo (clusters/$env_name/)"
+  kubectl apply -f "$gitops_dir/clusters/$env_name/"
+else
+  echo "SKIP_GITOPS_BOOTSTRAP=1 — skipping the GitOps bootstrap (apply clusters/$env_name/ yourself when ready)"
+fi
+
 cat <<EOF
 
-Cluster ready. Remaining one-time setup, in order:
+Cluster '$cluster_name' ($env_name) ready.
 
-1. DNS: if CF_API_TOKEN was set, the A records for \$STAGING_APP_HOST /
-   \$STAGING_AUTH_HOST were already pushed to Cloudflare above. Otherwise point
-   them at Traefik's LoadBalancer IP manually:
+- DNS: if CF_API_TOKEN was set, the A records for the app/auth hosts were
+  pushed to Cloudflare above. Otherwise point them at Traefik's LoadBalancer
+  IP manually:
 
-     kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+    kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 
-2. Create the cert-manager ClusterIssuer (not templated here — it needs a
-   real ACME account email; see the beekeepingit-gitops README for where this
-   lands once staging is bootstrapped).
+- GitOps: clusters/$env_name/ was applied (unless SKIP_GITOPS_BOOTSTRAP=1), so
+  Flux now reconciles the environment from the beekeepingit-gitops repo —
+  including the cert-manager ClusterIssuer. Watch it converge with:
 
-3. Bootstrap GitOps for this cluster — the Flux manifests live in the
-   beekeepingit-gitops repo now (D-27/ADR-0018):
-
-     git clone https://github.com/TiagoJVO/beekeepingit-gitops
-     kubectl apply -f beekeepingit-gitops/clusters/staging/
+    flux get kustomizations --watch
 
 EOF

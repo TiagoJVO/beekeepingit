@@ -1,0 +1,175 @@
+{
+  "app": {
+    "title": "BeekeepingIT Admin",
+    "signOut": "Sign out",
+    "manageAccount": "Manage account"
+  },
+  "login": {
+    "heading": "Sign in to the admin app",
+    "intro": "Use your BeekeepingIT account to manage your organization, members and roles.",
+    "signIn": "Sign in",
+    "accountNote": "Account and password are managed at your identity provider."
+  },
+  "loading": {
+    "authenticating": "Signing you in…",
+    "checkingAccess": "Checking your access…"
+  },
+  "shell": {
+    "signedInAs": "Signed in as {{name}} · {{org}}",
+    "roleBadge": "Signed in as admin"
+  },
+  "orgSettings": {
+    "heading": "Organization details",
+    "intro": "Update your organization's name and address. Changes apply to everyone in the organization.",
+    "loading": "Loading your organization…",
+    "fields": {
+      "name": "Organization name",
+      "address": "Address"
+    },
+    "save": "Save changes",
+    "saving": "Saving…",
+    "discard": "Discard changes",
+    "saved": "Organization details saved.",
+    "conflict": {
+      "body": "Someone else changed this organization while you were editing. Reload to get the latest details, then apply your changes again.",
+      "reload": "Reload latest details"
+    },
+    "errors": {
+      "nameRequired": "Organization name is required.",
+      "nameTooLong": "Organization name must be at most {{max}} characters.",
+      "addressTooLong": "Address must be at most {{max}} characters.",
+      "saveFailed": "We could not save your changes. Please try again.",
+      "loadFailed": "We could not load your organization. Please try again.",
+      "versionUnavailable": "We could not confirm the current version of your organization, so we did not save to avoid overwriting someone else's changes. Please reload and try again."
+    }
+  },
+  "members": {
+    "heading": "Members",
+    "intro": "View who belongs to your organization, invite new members by email, and remove members who should no longer have access.",
+    "invite": {
+      "heading": "Invite a member",
+      "emailLabel": "Email address",
+      "roleLabel": "Role",
+      "submit": "Send invitation",
+      "sending": "Sending…",
+      "sent": "Invitation sent to {{email}}.",
+      "errors": {
+        "emailRequired": "Email address is required.",
+        "invalidEmail": "Enter a valid email address.",
+        "alreadyInvited": "That person already has a pending invitation or is already a member.",
+        "failed": "We could not send the invitation. Please try again."
+      }
+    },
+    "roster": {
+      "heading": "Current members",
+      "loading": "Loading members…",
+      "loadFailed": "We could not load the members. Please try again.",
+      "empty": "No members yet.",
+      "loadMore": "Load more members",
+      "loadingMore": "Loading…",
+      "columns": {
+        "member": "Member",
+        "role": "Role",
+        "status": "Status",
+        "actions": "Actions"
+      }
+    },
+    "roles": {
+      "admin": "Admin",
+      "user": "Member"
+    },
+    "statuses": {
+      "active": "Active",
+      "invited": "Invited",
+      "removed": "Removed"
+    },
+    "remove": {
+      "action": "Remove",
+      "ariaLabel": "Remove member {{member}}",
+      "confirm": {
+        "title": "Remove this member?",
+        "body": "Member {{member}} will lose access to this organization. This cannot be undone from here.",
+        "confirm": "Remove member",
+        "removing": "Removing…",
+        "cancel": "Cancel"
+      },
+      "errors": {
+        "lastAdmin": "You can't remove the last admin. Promote another member to admin first, then try again.",
+        "notMember": "That person is no longer a member of this organization.",
+        "failed": "We could not remove the member. Please try again."
+      }
+    },
+    "changeRole": {
+      "selectLabel": "Change role for member {{member}}",
+      "success": "Member {{member}} is now {{role}}.",
+      "confirm": {
+        "title": "Change this member's role?",
+        "body": "Member {{member}} will change from {{from}} to {{to}}. The new permissions take effect on their next request.",
+        "confirm": "Change role",
+        "changing": "Changing…",
+        "cancel": "Cancel"
+      },
+      "errors": {
+        "lastAdmin": "You can't demote the last admin. Promote another member to admin first, then try again.",
+        "notMember": "That person is no longer a member of this organization.",
+        "forbidden": "You don't have permission to change roles in this organization.",
+        "failed": "We could not change the member's role. Please try again."
+      }
+    },
+    "roleCapabilities": {
+      "heading": "What can each role do?",
+      "intro": "Every member of this organization has one of two roles. Admins manage the organization; members work with the shared hive data. These roles apply within this organization only.",
+      "allowed": "Allowed",
+      "notAllowed": "Not allowed",
+      "columns": {
+        "capability": "Capability"
+      },
+      "capabilities": {
+        "data": "Full access to apiaries, activities, journeys and to-dos",
+        "aiHistory": "Use the AI assistant and view history",
+        "members": "Invite and remove members",
+        "roles": "Assign member roles (promote or demote admin / member)",
+        "orgSettings": "Edit organization settings and manage pending invitations"
+      }
+    }
+  },
+  "quotasSeam": {
+    "navLabel": "Quotas & rate limits (coming later)"
+  },
+  "orgPicker": {
+    "heading": "Choose an organization to administer",
+    "intro": "Signed in as {{name}}. You are a platform operator — search for an organization and select it to manage its details, members and roles.",
+    "searchLabel": "Search organizations by name",
+    "search": "Search",
+    "loading": "Loading organizations…",
+    "loadFailed": "We could not load the organizations. Please try again.",
+    "empty": "No organizations match your search.",
+    "listLabel": "Organizations",
+    "memberCount_one": "{{count}} member",
+    "memberCount_other": "{{count}} members",
+    "loadMore": "Load more organizations",
+    "loadingMore": "Loading…"
+  },
+  "operatorBanner": {
+    "message": "Platform operator view — you are administering \"{{org}}\", an organization you are not a member of.",
+    "switch": "Switch organization"
+  },
+  "denied": {
+    "heading": "Admin access required",
+    "body": "Your account does not have the admin role in this organization, so you cannot use the admin app. Ask an organization admin to grant you the admin role, then sign in again.",
+    "noOrg": "Your account is not a member of any organization yet. Join or create an organization in the field app first.",
+    "signOut": "Sign out"
+  },
+  "error": {
+    "authHeading": "Sign-in failed",
+    "accessHeading": "Could not verify your access",
+    "network": "We could not reach the server. Check your connection and try again.",
+    "generic": "Something went wrong. Please try again.",
+    "retry": "Try again"
+  },
+  "config": {
+    "heading": "Configuration error",
+    "body": "The admin app is missing required configuration. Set the following environment variables and rebuild:",
+    "seeExample": "See admin/.env.example for details."
+  }
+}

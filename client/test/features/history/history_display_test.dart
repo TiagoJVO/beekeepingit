@@ -96,6 +96,19 @@ void main() {
       expect(historyFieldLabel(_l10n, 'apiary_id'), 'Apiary');
     });
 
+    test('localizes the journey-audited columns (#315)', () {
+      // The columns journeys.audit_log records on a journey update
+      // (journeyRowState.fields()): a raw column name would otherwise leak
+      // into the changed-fields line of a journey's history.
+      expect(
+        historyFieldLabel(_l10n, 'main_activity_type'),
+        'Main activity type',
+      );
+      expect(historyFieldLabel(_l10n, 'status'), 'Status');
+      expect(historyFieldLabel(_l10n, 'apiary_ids'), 'Apiaries to visit');
+      expect(historyFieldLabel(_l10n, 'default_attributes'), 'Details');
+    });
+
     test('falls through to the raw column name for anything unmapped', () {
       // A newly-audited column reads slightly technical rather than
       // vanishing from the changed-fields line.

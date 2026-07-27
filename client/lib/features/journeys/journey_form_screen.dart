@@ -10,6 +10,7 @@ import '../../theming/brand_dimens.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
 import 'apiary_multi_select_field.dart';
+import 'journey_default_attributes_section.dart';
 import 'journey_status.dart';
 import 'journeys_repository.dart';
 
@@ -47,7 +48,10 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
   String _status = journeyStatusOpen;
   Set<String> _apiaryIds = {};
   bool _busy = false;
-  String? _apiaryIdsError;
+
+  // Journey-level subtype attribute defaults (#385) — see
+  // journey_default_attributes_section.dart's own doc comment.
+  final _defaultAttributes = JourneyDefaultAttributesController();
 
   @override
   void initState() {
@@ -58,6 +62,7 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
   @override
   void dispose() {
     _nameController.dispose();
+    _defaultAttributes.dispose();
     super.dispose();
   }
 
@@ -80,6 +85,10 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
         _mainActivityType = existing.mainActivityType;
         _status = existing.status;
         _apiaryIds = existing.apiaryIds.toSet();
+        _defaultAttributes.populate(
+          existing.mainActivityType,
+          existing.defaultAttributes,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -92,23 +101,20 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
     }
   }
 
-  bool _validate(AppLocalizations l10n) {
-    final formOk = _formKey.currentState!.validate();
-    final hasApiary = _apiaryIds.isNotEmpty;
-    setState(() {
-      _apiaryIdsError = hasApiary ? null : l10n.journeyApiariesRequired;
-    });
-    return formOk && hasApiary;
-  }
+  // A journey may be saved with an empty apiary plan (D-30, #428): only the
+  // name is required at create time; apiaries can be added later via edit
+  // ([JourneysRepository.create] already documents `apiaryIds` may be empty).
+  bool _validate() => _formKey.currentState!.validate();
 
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
-    if (!_validate(l10n)) return;
+    if (!_validate()) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       final repo = await ref.read(journeysRepositoryProvider.future);
       final name = _nameController.text.trim();
+      final defaultAttributes = _defaultAttributes.build(_mainActivityType);
       if (widget.isEdit) {
         await repo.update(
           widget.journeyId!,
@@ -116,12 +122,14 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
           mainActivityType: _mainActivityType,
           status: _status,
           apiaryIds: _apiaryIds.toList(),
+          defaultAttributes: defaultAttributes,
         );
       } else {
         await repo.create(
           name: name,
           mainActivityType: _mainActivityType,
           apiaryIds: _apiaryIds.toList(),
+          defaultAttributes: defaultAttributes,
         );
       }
       if (!mounted) return;
@@ -264,10 +272,22 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
                       ],
                       onChanged: (value) {
                         if (value != null) {
-                          setState(() => _mainActivityType = value);
+                          setState(() {
+                            _mainActivityType = value;
+                            // A different main_activity_type invalidates the
+                            // old type's default-attribute keys (#385's own
+                            // design decision) — reset rather than carry
+                            // stale/mismatched values forward.
+                            _defaultAttributes.reset();
+                          });
                         }
                       },
                     ),
+                  ),
+                  JourneyDefaultAttributesSection(
+                    type: _mainActivityType,
+                    controller: _defaultAttributes,
+                    onChanged: () => setState(() {}),
                   ),
                   const SizedBox(height: BrandDimens.gapField),
                   ApiaryMultiSelectField(
@@ -275,22 +295,10 @@ class _JourneyFormScreenState extends ConsumerState<JourneyFormScreen>
                     onChanged: (ids) {
                       setState(() {
                         _apiaryIds = ids;
-                        _apiaryIdsError = null;
                       });
                       markUnsavedChanges();
                     },
                   ),
-                  if (_apiaryIdsError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, left: 4),
-                      child: Text(
-                        _apiaryIdsError!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
                   const SizedBox(height: 24),
                   PrimaryActionButton(
                     key: const Key('journey-save-button'),

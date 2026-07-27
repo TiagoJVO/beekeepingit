@@ -1,0 +1,15 @@
+apiVersion: v2
+name: mailpit
+description: >-
+  Dev/CI SMTP sink (#361, NFR-SEC-1, ADR-0019): a single Mailpit pod that captures ALL
+  outbound email from Authentik (SMTP :1025) and exposes it for inspection over an HTTP
+  API/UI (:8025) — so the email-verification flow (charts/authentik's blueprint) is
+  exercisable end-to-end without a real relay and without any risk of dev/CI mail
+  escaping to real inboxes. Hand-rolled (mailpit ships as a bare Docker image, same
+  rationale as charts/powersync). No auth, no persistence — messages are ephemeral by
+  design. Disabled in prod (environments/prod.yaml), where Authentik points at a real
+  relay whose credentials are infrastructure configuration, never in git — see
+  charts/authentik/templates/config-secret.yaml.
+type: application
+version: 0.1.0
+appVersion: "1.30.5"

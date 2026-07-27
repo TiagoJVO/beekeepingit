@@ -12,7 +12,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'BeekeepingIT';
 
   @override
-  String get loginPrompt => 'Sign in to manage your apiaries.';
+  String get loginPrompt =>
+      'Sign in to manage your apiaries. New here? Tap Sign in — you can create your account on the next screen.';
 
   @override
   String get loginButton => 'Sign in';
@@ -71,6 +72,36 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get counterTypeSuperLabel => 'Supers';
+
+  @override
+  String emptyHiveCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count empty hives',
+      one: '1 empty hive',
+      zero: 'No empty hives',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String swarmCountValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count swarms',
+      one: '1 swarm',
+      zero: 'No swarms',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterTypeEmptyHiveLabel => 'Empty hives';
+
+  @override
+  String get counterTypeSwarmLabel => 'Swarms';
 
   @override
   String get apiaryAddCounterAction => 'Add counter';
@@ -389,7 +420,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get offlineBannerErrorMessage =>
-      'Some changes failed to sync and PowerSync is retrying.';
+      'Some changes couldn\'t sync yet — retrying.';
 
   @override
   String get syncSupersededNotice =>
@@ -428,6 +459,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixCounterLabel => 'Hive count change';
 
   @override
+  String get syncNeedsFixActivityLabel => 'Activity change';
+
+  @override
+  String get syncNeedsFixJourneyLabel => 'Journey change';
+
+  @override
+  String get syncNeedsFixJourneyPlanLabel => 'Journey plan change';
+
+  @override
+  String get syncNeedsFixTodoLabel => 'Todo change';
+
+  @override
+  String syncNeedsFixTitleWithName(String label, String name) {
+    return '$label · $name';
+  }
+
+  @override
   String get syncNeedsFixGenericProblem =>
       'This change was rejected and needs your attention.';
 
@@ -453,6 +501,17 @@ class AppLocalizationsEn extends AppLocalizations {
       other: '$count changes waiting to sync.',
       one: '1 change waiting to sync.',
       zero: 'Everything is synced.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String accountSyncNeedsFixStatus(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count changes were rejected and need fixing.',
+      one: '1 change was rejected and needs fixing.',
     );
     return '$_temp0';
   }
@@ -547,6 +606,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiaryMapAttributionOsm => '© OpenStreetMap contributors';
 
   @override
+  String get apiaryMapRulerToggleAction => 'Measure distance';
+
+  @override
+  String get apiaryMapMeasureFromMyLocation => 'Use my location';
+
+  @override
+  String get apiaryMapRecenterAction => 'Center on my location';
+
+  @override
+  String apiaryMapInfoOpenTodos(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count open todos',
+      one: '1 open todo',
+      zero: 'No open todos',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get apiaryMapInfoViewApiary => 'View apiary';
+
+  @override
   String get apiaryPlaceLabelLabel => 'Place label';
 
   @override
@@ -586,6 +669,25 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryMapPickerLabel => 'Map: tap to place the apiary\'s pin';
+
+  @override
+  String get apiaryMapPickerRecenterAction => 'Recenter on the pin';
+
+  @override
+  String get apiaryMapPickerMaximizeAction => 'Maximize map';
+
+  @override
+  String get apiaryLocationPickerFullScreenTitle => 'Place the apiary\'s pin';
+
+  @override
+  String get apiaryLocationPickerConfirmAction => 'Confirm location';
+
+  @override
+  String get apiaryLocationPickerCancelAction => 'Cancel';
+
+  @override
+  String get apiaryLocationPickerFullScreenLabel =>
+      'Full-screen map: tap to place the apiary\'s pin';
 
   @override
   String apiaryDistanceValue(String distanceKm) {
@@ -836,11 +938,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get journeyApiariesLabel => 'Apiaries to visit';
 
   @override
-  String get journeyApiariesRequired => 'Select at least one apiary';
-
-  @override
   String get journeyApiariesNoneAvailable =>
       'No apiaries yet — add one from the Apiaries tab first.';
+
+  @override
+  String get journeyApiariesSelectAll => 'Select all';
+
+  @override
+  String get journeyApiariesClearAll => 'Clear all';
 
   @override
   String journeyApiariesSelectedCount(int count) {
@@ -853,6 +958,12 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get journeyDefaultAttributesSectionLabel => 'Defaults for activities';
+
+  @override
+  String get journeyDefaultsNotSetOption => 'Not set';
 
   @override
   String journeyLoadError(String error) {
@@ -948,6 +1059,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get journeyPickerShowHiddenToggle => 'Show hidden journeys';
 
   @override
+  String get journeyPickerShowUnplannedToggle =>
+      'Show journeys that didn\'t plan this apiary';
+
+  @override
+  String journeyPickerUnplannedOptionSemanticLabel(String name) {
+    return '$name, will add this apiary to the plan';
+  }
+
+  @override
+  String get journeyPickerAddsApiaryBadge => 'Adds apiary';
+
+  @override
   String journeyPickerClosedOptionSemanticLabel(String name) {
     return '$name, closed journey';
   }
@@ -974,6 +1097,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get closedJourneyConfirmAddAction => 'Add anyway';
+
+  @override
+  String get journeyRelinkConfirmTitle => 'Change journey attachment?';
+
+  @override
+  String journeyRelinkConfirmMessage(
+    String oldJourneyName,
+    String newJourneyName,
+  ) {
+    return 'This activity will move from \"$oldJourneyName\" to \"$newJourneyName\".';
+  }
+
+  @override
+  String get journeyRelinkConfirmCancelAction => 'Cancel';
+
+  @override
+  String get journeyRelinkConfirmConfirmAction => 'Confirm';
 
   @override
   String get journeyStatsSectionTitle => 'Journey stats';
@@ -1003,7 +1143,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get journeyStatsAverageSupersLabel => 'Média alças/colmeia';
+  String get journeyStatsAverageSupersLabel => 'Avg. supers/hive';
 
   @override
   String get journeyStatsAverageSupersNoData => 'No data yet';
@@ -1021,10 +1161,96 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get journeyStatsHivesWorkedLabel => 'Hives worked';
+
+  @override
+  String journeyStatsHivesWorkedValue(int worked, String planned) {
+    return '$worked/$planned';
+  }
+
+  @override
+  String get journeyStatsHivesWorkedNoData => '—';
+
+  @override
+  String get journeyStatsMoreAction => 'More stats';
+
+  @override
+  String get journeyStatsDetailTitle => 'More stats';
+
+  @override
+  String get journeyStatsDetailFilterAll => 'All';
+
+  @override
+  String get journeyStatsDetailFilterVisited => 'Visited';
+
+  @override
+  String get journeyStatsDetailFilterNotVisited => 'Not visited';
+
+  @override
+  String get journeyStatsDetailSortLabel => 'Sort by';
+
+  @override
+  String get journeyStatsDetailSortName => 'Name';
+
+  @override
+  String get journeyStatsDetailSortKgPerHive => 'Kg/hive';
+
+  @override
+  String get journeyStatsDetailSortSupersPerHive => 'Supers/hive';
+
+  @override
+  String get journeyStatsDetailSortFeedAmount => 'Feed amount';
+
+  @override
+  String get journeyStatsDetailSortHivesInvolved => 'Hives involved';
+
+  @override
+  String get journeyStatsDetailEmpty => 'No apiaries match the current filter.';
+
+  @override
+  String get journeyStatsDetailHiveCountLabel => 'Hives';
+
+  @override
+  String get journeyStatsDetailHoneyKgLabel => 'Honey (kg)';
+
+  @override
+  String get journeyStatsDetailSupersLabel => 'Supers';
+
+  @override
+  String get journeyStatsDetailKgPerHiveLabel => 'Kg/hive';
+
+  @override
+  String get journeyStatsDetailSupersPerHiveLabel => 'Supers/hive';
+
+  @override
+  String get journeyStatsDetailFeedAmountLabel => 'Feed amount';
+
+  @override
+  String get journeyStatsDetailHivesInvolvedLabel => 'Hives involved';
+
+  @override
+  String get journeyStatsDetailNoDataValue => '—';
+
+  @override
+  String journeyStatsDetailFeedingSummary(String amount) {
+    return 'Total feed amount: $amount';
+  }
+
+  @override
+  String journeyStatsDetailTreatedSummary(int treated, int planned) {
+    return '$treated/$planned apiaries treated';
+  }
+
+  @override
   String get journeyDetailTitle => 'Journey';
 
   @override
   String get editJourneyAction => 'Edit journey';
+
+  @override
+  String journeyDetailDefaultAttributesLabel(String values) {
+    return 'Defaults: $values';
+  }
 
   @override
   String get journeyDetailApiariesTitle => 'Apiaries';
@@ -1134,23 +1360,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addTodo => 'New todo';
-
-  @override
-  String get todoQuickCreateTitle => 'New todo';
-
-  @override
-  String get todoDueDateLabel => 'Due date';
-
-  @override
-  String todoQuickCreateForApiary(String apiaryName) {
-    return 'For $apiaryName';
-  }
-
-  @override
-  String get todoQuickCreateCancelAction => 'Cancel';
-
-  @override
-  String get todoCreatedConfirmation => 'Todo created';
 
   @override
   String get newTodoTitle => 'New todo';
@@ -1345,6 +1554,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get historyFieldApiary => 'Apiary';
+
+  @override
+  String get historyFieldStatus => 'Status';
 
   @override
   String get discardChangesTitle => 'Discard changes?';

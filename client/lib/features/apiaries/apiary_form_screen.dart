@@ -10,6 +10,7 @@ import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
 import 'apiaries_repository.dart';
+import 'apiary_location_picker_screen.dart';
 
 /// Default map-picker center/zoom when no location is set yet — same
 /// mainland-Portugal default as apiary_map_screen.dart's `_fallbackCenter`
@@ -18,6 +19,12 @@ import 'apiaries_repository.dart';
 const _pickerFallbackCenter = ll.LatLng(39.5, -8.0);
 const _pickerFallbackZoom = 6.0;
 const _pickerFocusedZoom = 13.0;
+
+/// Street-level zoom the recenter control and "use current location" jump
+/// the picker camera to (#420) — closer than [_pickerFocusedZoom]'s
+/// place-into-context view, so after panning away the user lands right on
+/// top of the pin, at a zoom fine enough to nudge it precisely.
+const _pickerStreetZoom = 16.0;
 
 /// Create (when [apiaryId] is null) or edit an apiary. Writes go local-first
 /// through the repository; there is no direct REST write (walking-skeleton.md
@@ -68,6 +75,13 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
   final _nameController = TextEditingController();
   final _notesController = TextEditingController();
   final _placeLabelController = TextEditingController();
+
+  /// Drives programmatic camera moves on the embedded [_LocationPicker]
+  /// (#420) — its recenter control and "use current location" both call
+  /// `move(...)` so the pin recenters live after the user has panned away,
+  /// rather than a one-shot [MapOptions.initialCenter] that only applies
+  /// when the picker is first built.
+  final _pickerMapController = MapController();
   bool _busy = false;
 
   /// The pin's current position, or null when no location is set — mirrors
@@ -103,6 +117,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     _nameController.dispose();
     _notesController.dispose();
     _placeLabelController.dispose();
+    _pickerMapController.dispose();
     super.dispose();
   }
 
@@ -180,9 +195,26 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
           // The pin lives outside the Form's field tree, so Form.onChanged
           // won't catch it — arm the unsaved-changes guard explicitly (#345).
           markUnsavedChanges();
+          // Recenter the picker camera onto the just-fetched position at
+          // street zoom (#420) — an already-built picker ignores its
+          // initialCenter, so without this a fetch after the map was panned
+          // away would set the pin off-screen.
+          _recenterPicker(_location!);
         default:
           _locationPermissionDenied = true;
       }
+    });
+  }
+
+  /// Moves the picker camera onto [point] at street zoom (#420). Deferred to
+  /// after the frame because the picker's [FlutterMap] may have only just
+  /// been inserted into the tree by the same [setState] that expanded it
+  /// ([_mapPickerExpanded]) — the [MapController] isn't attached until that
+  /// build completes, so calling `move` synchronously would throw.
+  void _recenterPicker(ll.LatLng point) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _pickerMapController.move(point, _pickerStreetZoom);
     });
   }
 
@@ -193,6 +225,31 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
       _locationError = null;
     });
     markUnsavedChanges();
+  }
+
+  /// Opens the full-screen map picker (#421) so the pin can be placed
+  /// precisely on a full viewport (the embedded 220px map is hard to aim on,
+  /// especially with gloves — field-testing feedback). The picker carries the
+  /// current pin in and returns the chosen [ll.LatLng] (or null on cancel);
+  /// on a real choice we adopt it, clear any pending errors, and recenter the
+  /// embedded picker onto it so the form's own small map reflects the change.
+  Future<void> _openFullScreenPicker() async {
+    final result = await showApiaryLocationPickerScreen(
+      context,
+      initialLocation: _location,
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _location = result;
+      _locationPermissionDenied = false;
+      _locationError = null;
+    });
+    // The pin lives outside the Form's field tree, so Form.onChanged won't
+    // catch it — arm the unsaved-changes guard explicitly (#345).
+    markUnsavedChanges();
+    // Reflect the newly-chosen pin on the embedded picker, which may have been
+    // panned away (an already-built map ignores its initialCenter — #420).
+    _recenterPicker(result);
   }
 
   void _clearLocation() {
@@ -335,9 +392,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
                 // The fields scroll, the actions stay pinned — the same
-                // structure journey_quick_create_sheet.dart /
-                // todo_quick_create_sheet.dart already use, and the fix for
-                // the #341 regression described in the class doc comment.
+                // structure journey_quick_create_sheet.dart already uses,
+                // and the fix for the #341 regression described in the
+                // class doc comment.
                 // A single scroll view around EVERYTHING put Save last, below
                 // a mandatory 220px map picker whose gesture region swallows
                 // the drag that would scroll it back into view; on a short
@@ -467,8 +524,11 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                               if (_mapPickerExpanded) ...[
                                 const SizedBox(height: 8),
                                 _LocationPicker(
+                                  controller: _pickerMapController,
                                   location: _location,
                                   onTap: _onMapTap,
+                                  onMaximize: _openFullScreenPicker,
+                                  streetZoom: _pickerStreetZoom,
                                 ),
                                 const SizedBox(height: 8),
                                 SecondaryActionButton(
@@ -569,10 +629,19 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
 /// user recognizes terrain/tree cover for siting an apiary the same way
 /// they do when browsing the full map.
 class _LocationPicker extends StatelessWidget {
-  const _LocationPicker({required this.location, required this.onTap});
+  const _LocationPicker({
+    required this.controller,
+    required this.location,
+    required this.onTap,
+    required this.onMaximize,
+    required this.streetZoom,
+  });
 
+  final MapController controller;
   final ll.LatLng? location;
   final void Function(ll.LatLng) onTap;
+  final VoidCallback onMaximize;
+  final double streetZoom;
 
   @override
   Widget build(BuildContext context) {
@@ -587,6 +656,7 @@ class _LocationPicker extends StatelessWidget {
           child: Stack(
             children: [
               FlutterMap(
+                mapController: controller,
                 options: MapOptions(
                   initialCenter: location ?? _pickerFallbackCenter,
                   initialZoom: location != null
@@ -641,6 +711,95 @@ class _LocationPicker extends StatelessWidget {
                   ),
                 ),
               ),
+              // "Maximize" control (#421) — opens the full-screen map picker
+              // so the pin can be placed precisely on a full viewport (the
+              // embedded 220px map is hard to aim on, especially with gloves).
+              // Always shown (unlike recenter): the full-screen view is where
+              // a first pin gets placed too, not only where an existing one is
+              // adjusted. Top-left, clear of the top-right recenter control.
+              // Gloves-friendly: ≥[kMinTapTarget], Tooltip + Semantics label.
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Semantics(
+                  button: true,
+                  label: l10n.apiaryMapPickerMaximizeAction,
+                  child: Tooltip(
+                    message: l10n.apiaryMapPickerMaximizeAction,
+                    child: Material(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      elevation: 2,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        key: const Key(
+                          'apiary-location-picker-maximize-button',
+                        ),
+                        customBorder: const CircleBorder(),
+                        onTap: onMaximize,
+                        child: Container(
+                          width: kMinTapTarget,
+                          height: kMinTapTarget,
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.fullscreen,
+                            size: 22,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // "Recenter on the pin" control (#420) — a live recenter the
+              // user can tap after panning the picker away, versus the pin's
+              // one-shot placement. Only shown once a pin exists (there's
+              // nothing to recenter on otherwise); the picker is already
+              // built here, so [controller] is attached and `move` is safe to
+              // call synchronously. Gloves-friendly: ≥[kMinTapTarget], with a
+              // Tooltip + Semantics label (WCAG 2.2 AA).
+              if (location != null)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Semantics(
+                    button: true,
+                    label: l10n.apiaryMapPickerRecenterAction,
+                    child: Tooltip(
+                      message: l10n.apiaryMapPickerRecenterAction,
+                      child: Material(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                        elevation: 2,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          key: const Key(
+                            'apiary-location-picker-recenter-button',
+                          ),
+                          customBorder: const CircleBorder(),
+                          onTap: () => controller.move(location!, streetZoom),
+                          child: Container(
+                            width: kMinTapTarget,
+                            height: kMinTapTarget,
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.my_location,
+                              size: 22,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

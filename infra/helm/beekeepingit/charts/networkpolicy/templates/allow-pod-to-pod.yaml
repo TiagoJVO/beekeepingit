@@ -17,6 +17,14 @@ exceptions:
     egress policy renders: an Ingress-type policy selecting an excluded pod
     would impose a whitelist on it after all, silently blocking its other,
     un-enumerated callers.
+  - when the edge sets `ingressOnly: true` (the mirror case: the CALLER is a
+    pod default-deny deliberately excludes — e.g. Authentik's server/worker
+    sending SMTP to the umbrella-owned mailpit sink, #361), only the
+    target-side ingress policy renders: an Egress-type policy whose
+    podSelector matched the excluded caller would flip it to whitelist-only
+    egress and strangle its own, un-enumerated internal traffic — exactly the
+    failure mode that got the vendored stacks excluded in the first place
+    (PR #224).
 
 Selector shapes an edge's `from`/`to` can take:
   - a plain map of pod labels                    -> podSelector
@@ -45,7 +53,7 @@ traffic to/from any pod in the same namespace, whoever created it.
 {{- $root := . }}
 {{- range .Values.edges }}
 {{- $edge := . }}
-{{- if not $edge.from.namespaceSelector }}
+{{- if and (not $edge.from.namespaceSelector) (not $edge.ingressOnly) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
