@@ -657,6 +657,30 @@
       }
     }
   },
+  "settingsAutoSyncLabel": "Auto-sync",
+  "@settingsAutoSyncLabel": {
+    "description": "Sync-settings toggle on the account screen's Sync section (FR-ST-1, FR-OF-3, #81)"
+  },
+  "settingsAutoSyncHint": "Sync automatically over a good connection. Turn off to only sync when you tap “Sync now”.",
+  "@settingsAutoSyncHint": {
+    "description": "Explanatory subtitle under the auto-sync toggle (#81)"
+  },
+  "accountNotificationsSectionTitle": "Notifications",
+  "@accountNotificationsSectionTitle": {
+    "description": "Heading above the notification preferences on the account settings screen (FR-ST-1, D-24, #81)"
+  },
+  "settingsNotificationsEnabledLabel": "Enable notifications",
+  "@settingsNotificationsEnabledLabel": {
+    "description": "Master switch for in-app notifications (#81); gates the per-event toggle list (#288) and the notification engine (#82)"
+  },
+  "settingsNotificationsEnabledHint": "Show in-app reminders for due todos and sync results.",
+  "@settingsNotificationsEnabledHint": {
+    "description": "Explanatory subtitle under the notifications master switch (#81, D-24)"
+  },
+  "settingsNotificationEventsComingSoon": "Individual notification types will appear here.",
+  "@settingsNotificationEventsComingSoon": {
+    "description": "Placeholder shown in the per-event notification-toggle list's container until #288 supplies the real list"
+  },
   "apiaryDetailTitle": "Apiary",
   "@apiaryDetailTitle": {
     "description": "Apiary detail screen app bar title (#32)"

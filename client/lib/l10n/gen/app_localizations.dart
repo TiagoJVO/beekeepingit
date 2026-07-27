@@ -914,6 +914,42 @@ abstract class AppLocalizations {
   /// **'Could not sync right now: {error}'**
   String accountSyncNowError(String error);
 
+  /// Sync-settings toggle on the account screen's Sync section (FR-ST-1, FR-OF-3, #81)
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-sync'**
+  String get settingsAutoSyncLabel;
+
+  /// Explanatory subtitle under the auto-sync toggle (#81)
+  ///
+  /// In en, this message translates to:
+  /// **'Sync automatically over a good connection. Turn off to only sync when you tap “Sync now”.'**
+  String get settingsAutoSyncHint;
+
+  /// Heading above the notification preferences on the account settings screen (FR-ST-1, D-24, #81)
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get accountNotificationsSectionTitle;
+
+  /// Master switch for in-app notifications (#81); gates the per-event toggle list (#288) and the notification engine (#82)
+  ///
+  /// In en, this message translates to:
+  /// **'Enable notifications'**
+  String get settingsNotificationsEnabledLabel;
+
+  /// Explanatory subtitle under the notifications master switch (#81, D-24)
+  ///
+  /// In en, this message translates to:
+  /// **'Show in-app reminders for due todos and sync results.'**
+  String get settingsNotificationsEnabledHint;
+
+  /// Placeholder shown in the per-event notification-toggle list's container until #288 supplies the real list
+  ///
+  /// In en, this message translates to:
+  /// **'Individual notification types will appear here.'**
+  String get settingsNotificationEventsComingSoon;
+
   /// Apiary detail screen app bar title (#32)
   ///
   /// In en, this message translates to:

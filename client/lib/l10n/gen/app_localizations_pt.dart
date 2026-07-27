@@ -532,6 +532,27 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get settingsAutoSyncLabel => 'Sincronização automática';
+
+  @override
+  String get settingsAutoSyncHint =>
+      'Sincronizar automaticamente com uma boa ligação. Desative para sincronizar apenas ao tocar em “Sincronizar agora”.';
+
+  @override
+  String get accountNotificationsSectionTitle => 'Notificações';
+
+  @override
+  String get settingsNotificationsEnabledLabel => 'Ativar notificações';
+
+  @override
+  String get settingsNotificationsEnabledHint =>
+      'Mostrar avisos na app para tarefas pendentes e resultados de sincronização.';
+
+  @override
+  String get settingsNotificationEventsComingSoon =>
+      'Os tipos de notificação individuais vão aparecer aqui.';
+
+  @override
   String get apiaryDetailTitle => 'Apiário';
 
   @override

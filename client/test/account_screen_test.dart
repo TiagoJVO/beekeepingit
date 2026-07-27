@@ -1,15 +1,35 @@
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:beekeepingit_client/features/account/account_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
+import 'package:beekeepingit_client/features/settings/notification_settings_repository.dart';
+import 'package:beekeepingit_client/features/settings/sync_settings_repository.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:beekeepingit_client/shell/sync_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// An in-memory [LocalPrefs] fake — same convention as
+/// `profile_repository_test.dart`/`auth_controller_test.dart` — backing the
+/// settings sections' repositories (#81) so tests can assert real
+/// persistence without touching browser localStorage.
+class _FakeLocalPrefs implements LocalPrefs {
+  final Map<String, String> _store = {};
+
+  @override
+  String? read(String key) => _store[key];
+
+  @override
+  void write(String key, String value) => _store[key] = value;
+
+  @override
+  void remove(String key) => _store.remove(key);
+}
 
 /// An organization fixture so [AccountScreen]'s org-admin-only manage-members
 /// action (relocated here by #197, see account_screen.dart) has something to
@@ -84,7 +104,9 @@ Widget _buildScreen(
   SyncStatus? syncStatus,
   Future<void> Function()? syncNow,
   int needsFixCount = 0,
+  LocalPrefs? settingsPrefs,
 }) {
+  final prefs = settingsPrefs ?? _FakeLocalPrefs();
   return ProviderScope(
     overrides: [
       profileProvider.overrideWith(() => controller),
@@ -107,6 +129,14 @@ Widget _buildScreen(
       // same way as syncStatusProvider above.
       syncNeedsFixCountProvider.overrideWith(
         (ref) => Stream.value(needsFixCount),
+      ),
+      // Settings sections (#81): a fake, in-memory LocalPrefs so persistence
+      // is asserted for real without touching browser localStorage.
+      syncSettingsRepositoryProvider.overrideWithValue(
+        SyncSettingsRepository(prefs: prefs),
+      ),
+      notificationSettingsRepositoryProvider.overrideWithValue(
+        NotificationSettingsRepository(prefs: prefs),
       ),
     ],
     child: const MaterialApp(
@@ -419,6 +449,123 @@ void main() {
       );
       expect(button.onPressed, isNotNull);
       expect(button.busy, isFalse);
+    });
+
+    testWidgets('shows the auto-sync setting, defaulting to enabled (#81)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
+      await tester.pumpAndSettle();
+
+      final toggle = tester.widget<SwitchListTile>(
+        find.byKey(const Key('settings-auto-sync-toggle')),
+      );
+      expect(toggle.value, isTrue);
+      expect(find.text('Auto-sync'), findsOneWidget);
+    });
+
+    testWidgets(
+      'tapping the auto-sync toggle persists the new value (honored by '
+      'the EPIC-06 sync layer via autoSyncEnabledProvider, #81)',
+      (tester) async {
+        final prefs = _FakeLocalPrefs();
+        await tester.pumpWidget(
+          _buildScreen(
+            _FakeProfileController(_profile()),
+            settingsPrefs: prefs,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(
+          find.byKey(const Key('settings-auto-sync-toggle')),
+        );
+        await tester.tap(find.byKey(const Key('settings-auto-sync-toggle')));
+        await tester.pumpAndSettle();
+
+        expect(
+          SyncSettingsRepository(prefs: prefs).isAutoSyncEnabled(),
+          isFalse,
+        );
+        final toggle = tester.widget<SwitchListTile>(
+          find.byKey(const Key('settings-auto-sync-toggle')),
+        );
+        expect(toggle.value, isFalse);
+      },
+    );
+
+    testWidgets(
+      'reflects a previously-persisted auto-sync-disabled preference (#81)',
+      (tester) async {
+        final prefs = _FakeLocalPrefs();
+        SyncSettingsRepository(prefs: prefs).setAutoSyncEnabled(false);
+
+        await tester.pumpWidget(
+          _buildScreen(
+            _FakeProfileController(_profile()),
+            settingsPrefs: prefs,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final toggle = tester.widget<SwitchListTile>(
+          find.byKey(const Key('settings-auto-sync-toggle')),
+        );
+        expect(toggle.value, isFalse);
+      },
+    );
+  });
+
+  group('Notifications section (#81)', () {
+    testWidgets('shows the section and the master switch, defaulting to '
+        'enabled', (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Notifications'), findsOneWidget);
+      final toggle = tester.widget<SwitchListTile>(
+        find.byKey(const Key('settings-notifications-enabled-toggle')),
+      );
+      expect(toggle.value, isTrue);
+    });
+
+    testWidgets(
+      'tapping the master switch persists the new value (honored by the '
+      'notification engine, #82)',
+      (tester) async {
+        final prefs = _FakeLocalPrefs();
+        await tester.pumpWidget(
+          _buildScreen(
+            _FakeProfileController(_profile()),
+            settingsPrefs: prefs,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(
+          find.byKey(const Key('settings-notifications-enabled-toggle')),
+        );
+        await tester.tap(
+          find.byKey(const Key('settings-notifications-enabled-toggle')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          NotificationSettingsRepository(prefs: prefs).isNotificationsEnabled(),
+          isFalse,
+        );
+      },
+    );
+
+    testWidgets('provides the container the per-event notification-toggle list '
+        'renders into (#288)', (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('settings-notification-events-slot')),
+        findsOneWidget,
+      );
     });
   });
 }
