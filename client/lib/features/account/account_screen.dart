@@ -15,6 +15,7 @@ import '../../theming/brand_tokens.dart';
 import '../../theming/brand_widgets.dart';
 import '../organization/organization_repository.dart';
 import '../profile/profile_repository.dart';
+import '../settings/notification_event_toggles_list.dart';
 import '../settings/notification_settings_section.dart';
 import '../settings/sync_settings_repository.dart';
 import '../sync/sync_rejected_repository.dart';
@@ -256,10 +257,15 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
-                    // Notification preferences (FR-ST-1, D-24, #81): the
-                    // container the per-event toggle list renders into
-                    // (#288) — see notification_settings_section.dart.
-                    const NotificationSettingsSection(),
+                    // Notification preferences (FR-ST-1, D-24, #81/#288):
+                    // the master-switch container from #81
+                    // (notification_settings_section.dart), with #288's
+                    // per-event toggle list (notification_event_toggles_
+                    // list.dart, backed by #82's preference contract) filling
+                    // the eventTogglesSlot it left for this story.
+                    const NotificationSettingsSection(
+                      eventTogglesSlot: NotificationEventTogglesList(),
+                    ),
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),

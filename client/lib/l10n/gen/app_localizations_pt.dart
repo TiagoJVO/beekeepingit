@@ -553,6 +553,34 @@ class AppLocalizationsPt extends AppLocalizations {
       'Os tipos de notificação individuais vão aparecer aqui.';
 
   @override
+  String get notificationEventTodoDueLabel => 'Lembretes de prazo das tarefas';
+
+  @override
+  String get notificationEventTodoDueHint =>
+      'Avisar quando uma tarefa vence brevemente ou está atrasada.';
+
+  @override
+  String get notificationEventSyncFailureLabel => 'Falhas de sincronização';
+
+  @override
+  String get notificationEventSyncFailureHint =>
+      'Avisar quando uma alteração é rejeitada e precisa de correção.';
+
+  @override
+  String get notificationEventSyncSuccessLabel => 'Sincronização concluída';
+
+  @override
+  String get notificationEventSyncSuccessHint =>
+      'Avisar quando todas as alterações terminam de sincronizar.';
+
+  @override
+  String get notificationEventSyncConflictLabel => 'Conflitos de sincronização';
+
+  @override
+  String get notificationEventSyncConflictHint =>
+      'Avisar quando uma edição offline é substituída por uma alteração mais recente.';
+
+  @override
   String get apiaryDetailTitle => 'Apiário';
 
   @override

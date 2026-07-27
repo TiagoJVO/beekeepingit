@@ -3,6 +3,8 @@ import 'package:beekeepingit_client/core/auth/auth_controller.dart';
 import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/core/widgets/field_action_button.dart';
 import 'package:beekeepingit_client/features/account/account_screen.dart';
+import 'package:beekeepingit_client/features/notifications/notification_events.dart';
+import 'package:beekeepingit_client/features/notifications/notification_preferences_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/settings/notification_settings_repository.dart';
@@ -137,6 +139,12 @@ Widget _buildScreen(
       ),
       notificationSettingsRepositoryProvider.overrideWithValue(
         NotificationSettingsRepository(prefs: prefs),
+      ),
+      // Per-event notification-toggle list (#288): shares the same fake
+      // prefs store as the settings sections above, so a tap on either
+      // section is asserted against the same durable backing store.
+      notificationPreferencesRepositoryProvider.overrideWithValue(
+        NotificationPreferencesRepository(prefs: prefs),
       ),
     ],
     child: const MaterialApp(
@@ -565,6 +573,48 @@ void main() {
       expect(
         find.byKey(const Key('settings-notification-events-slot')),
         findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'renders the per-event notification-toggle list inside the settings '
+      'screen, backed by #82\'s preference contract (#288)',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildScreen(_FakeProfileController(_profile())),
+        );
+        await tester.pumpAndSettle();
+
+        for (final eventKey in knownNotificationEvents) {
+          expect(
+            find.byKey(Key('settings-notification-event-toggle-$eventKey')),
+            findsOneWidget,
+          );
+        }
+      },
+    );
+
+    testWidgets('tapping a per-event toggle on the settings screen persists it '
+        'through the same preferences store the notification engine reads '
+        '(#82, #288)', (tester) async {
+      final prefs = _FakeLocalPrefs();
+      await tester.pumpWidget(
+        _buildScreen(_FakeProfileController(_profile()), settingsPrefs: prefs),
+      );
+      await tester.pumpAndSettle();
+
+      const toggleKey = Key(
+        'settings-notification-event-toggle-$notificationEventSyncFailure',
+      );
+      await tester.ensureVisible(find.byKey(toggleKey));
+      await tester.tap(find.byKey(toggleKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        NotificationPreferencesRepository(
+          prefs: prefs,
+        ).isEnabled(notificationEventSyncFailure),
+        isFalse,
       );
     });
   });
