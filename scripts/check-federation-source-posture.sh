@@ -1,24 +1,40 @@
 #!/usr/bin/env bash
 # Guard: every upstream federation source in the Authentik blueprint must keep
-# the account posture #363 shipped (FR-TEN-1, NFR-SEC-1, D-7).
+# the account posture #363 shipped and #364 extended (FR-TEN-1, NFR-SEC-1, D-7).
 #
 # Adding a federation source hands an EXTERNAL identity provider a path into
-# accounts on this deployment. Three properties make that safe, and all three
+# accounts on this deployment. Four properties make that safe, and all four
 # are one careless line away from being lost — so they are asserted here rather
 # than left to review:
 #
-#   1. NO `enrollment_flow`. With it unset, an unknown upstream identity is
-#      refused with an HTTP 400 and creates no rows at all
+#   1. NO `enrollment_flow`. With it unset, an upstream identity that resolves
+#      to no local account can never create one
 #      (core/sources/flow_manager.py `handle_enroll`, authentik 2026.5.4).
 #      Setting it opens self-service account creation via the upstream, which
 #      is #365 and NOT this issue — invitation-only account creation still
-#      applies (auth.md §8.13).
-#   2. `user_matching_mode: identifier`. Matching keys on the upstream's stable
-#      SUBJECT. Any `email_*` mode would link an existing local account from an
-#      upstream email — and authentik's Google source type drops Google's
-#      `verified_email`, so that email is UNVERIFIED. That is the #170
-#      account-takeover shape. Subject + known-email-history linking is #364.
-#   3. Credentials by `!Env`, never literals. The blueprint is rendered into a
+#      applies (auth.md §8.13/§8.14).
+#   2. `user_matching_mode: username_link` — and ONLY in combination with (3).
+#      Read that as "the matcher looks the account up by its UNIQUE key", not
+#      as "trust the upstream's username": #364's property mapping REPLACES the
+#      username property with the local account it resolved, or removes it.
+#      `username` is the only matchable property `User` declares UNIQUE, so the
+#      matcher's `matching_objects.first()` can never pick an arbitrary account
+#      out of several (authentik/core/sources/matcher.py). Every other mode is
+#      rejected: `identifier` can only ever ENROLL an unlinked identity (#363's
+#      dead end), and any `email_*` mode matches the RAW upstream email — which
+#      for Google is unverified, because `GoogleType.get_base_user_properties`
+#      drops `verified_email`. That is the #170 account-takeover shape.
+#   3. The #364 account-resolution property mapping is attached, by `!KeyOf`,
+#      and it is the ONLY property mapping on the source. It is what makes (2)
+#      safe: it refuses unless the upstream's own verification signal is
+#      strictly `True` and exactly one local, active, non-superuser,
+#      locally-verified account claims that address (current address or
+#      known-email history). Detach it and Google — which emits no `username`
+#      at all — DENIES every login (fail closed); detach it from a source type
+#      that DOES emit a username and the upstream would choose the account. A
+#      second mapping could re-set `username` after it (mappings merge in name
+#      order), so exactly one is required.
+#   4. Credentials by `!Env`, never literals. The blueprint is rendered into a
 #      ConfigMap, so a literal (or Helm-interpolated) client secret would be
 #      readable by anything in the namespace and visible in
 #      `helm get manifest`. Credentials arrive as process env from the
@@ -26,10 +42,10 @@
 #      (charts/authentik/templates/config-secret.yaml).
 #
 # Plus two structural properties the above depend on:
-#   4. Every source entry is `conditions:`-gated, so a cluster without those
+#   5. Every source entry is `conditions:`-gated, so a cluster without those
 #      credentials skips the entry instead of failing serializer validation —
 #      which would invalidate the WHOLE blueprint (the PR #414 failure mode).
-#   5. The default identification stage is never left with EMPTY `user_fields`,
+#   6. The default identification stage is never left with EMPTY `user_fields`,
 #      which would trip authentik's AutoRedirectController and send every login
 #      to a source with no way to reach the password form.
 #
@@ -50,6 +66,11 @@ set -euo pipefail
 repo_root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 blueprint="${1:-${repo_root}/infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml}"
 
+# The blueprint id of #364's account-resolution property mapping. Kept as one
+# named value because both the per-source assertion and the "it exists at all"
+# END check key off it.
+link_mapping_id="mapping-federation-account-link"
+
 if [ ! -f "${blueprint}" ]; then
   printf '✗ [federation-source] blueprint not found: %s\n' "${blueprint}" >&2
   exit 1
@@ -59,11 +80,11 @@ fi
 # everything until the next one is that entry's body, joined into a single
 # space-separated string so a value a reformat wrapped across lines still
 # matches. Assertions run per entry in flush().
-awk '
+awk -v MAPPING="${link_mapping_id}" '
   function flush() {
     if (model == "") return
 
-    if (model ~ /authentik_sources_oauth\.oauthsource/) {
+    if (model ~ /^authentik_sources_oauth[.]oauthsource$/) {
       sources++
       seen_ids = seen_ids " " id
 
@@ -78,13 +99,29 @@ awk '
         status = 1
       }
 
-      # (2) matching must key on the upstream subject.
-      if (body !~ /user_matching_mode[[:space:]]*:[[:space:]]*identifier([^A-Za-z0-9_-]|$)/) {
-        printf("✗ [federation-source] %s must set `user_matching_mode: identifier` — any email_* mode links an existing account from an UNVERIFIED upstream email (the #170 shape); subject+known-email linking is #364\n", id) > "/dev/stderr"
+      # (2) matching must resolve through the UNIQUE username key, never the
+      # raw upstream email (see the header). Anything but `username_link` fails.
+      if (body !~ /user_matching_mode[[:space:]]*:[[:space:]]*username_link([^A-Za-z0-9_-]|$)/) {
+        printf("✗ [federation-source] %s must set `user_matching_mode: username_link` — it is the only matchable property authentik declares UNIQUE, so the #364 resolver can steer the match to exactly one account; any email_* mode matches the RAW upstream email (unverified for Google — the #170 shape) and `identifier` can never link an unlinked identity\n", id) > "/dev/stderr"
         status = 1
       }
 
-      # (3) credentials must never be literals. consumer_key is exempt only
+      # (3) the #364 resolver must be attached — by `!KeyOf`, and alone. Same
+      # fail-closed-on-the-opaque posture as check-scope-mapping-provider.sh: a
+      # `!Find` here could resolve to something this guard cannot reason about,
+      # and a SECOND mapping (they merge in name order) could re-set `username`
+      # after the resolver cleared it.
+      if (body !~ ("user_property_mappings[[:space:]]*:[[:space:]]*[[-]?[[:space:]]*!KeyOf[[:space:]]+" MAPPING "([^A-Za-z0-9_-]|$)")) {
+        printf("✗ [federation-source] %s must attach the #364 account-resolution mapping as `user_property_mappings: [!KeyOf %s]` — without it the source either DENIES every login (Google emits no username) or lets the UPSTREAM choose the local account\n", id, MAPPING) > "/dev/stderr"
+        status = 1
+      }
+      n = gsub(/!KeyOf/, "&", body)
+      if (n != 1) {
+        printf("✗ [federation-source] %s carries %d `!KeyOf` references — a source entry must carry exactly one (the #364 resolver). A second property mapping merges AFTER it (name order) and could re-set `username`; if this is a deliberate addition, teach this guard about it in the same change\n", id, n) > "/dev/stderr"
+        status = 1
+      }
+
+      # (4) credentials must never be literals. consumer_key is exempt only
       # when it is a non-secret public client id AND consumer_secret is !Env
       # (the dev/CI stand-in, which authenticates against nothing).
       if (body !~ /consumer_secret[[:space:]]*:[[:space:]]*!Env[[:space:]]*\[/) {
@@ -92,7 +129,7 @@ awk '
         status = 1
       }
 
-      # (4) the entry must be conditions-gated, so an environment without the
+      # (5) the entry must be conditions-gated, so an environment without the
       # credentials skips it rather than failing validation for the whole file.
       if (body !~ /(^|[^A-Za-z0-9_-])conditions[[:space:]]*:/) {
         printf("✗ [federation-source] %s has no `conditions:` gate — an environment without its credentials would fail serializer validation and invalidate the ENTIRE blueprint (PR #414)\n", id) > "/dev/stderr"
@@ -100,8 +137,15 @@ awk '
       }
     }
 
-    # (5) no identification-stage entry may empty user_fields.
-    if (model ~ /authentik_stages_identification\.identificationstage/) {
+    # The #364 resolver entry itself must exist, exactly once, and be an OAuth
+    # SOURCE property mapping (the model the source M2M accepts — a scope
+    # mapping with the same id would resolve to nothing usable).
+    if (model ~ /^authentik_sources_oauth[.]oauthsourcepropertymapping$/ && id == MAPPING) {
+      link_mappings++
+    }
+
+    # (6) no identification-stage entry may empty user_fields.
+    if (model ~ /^authentik_stages_identification[.]identificationstage$/) {
       ident_entries++
       if (body ~ /user_fields:[[:space:]]*\[[[:space:]]*\]/) {
         printf("✗ [federation-source] an identification-stage entry sets an EMPTY `user_fields` — authentik auto-redirects such a stage to its single source, removing every way to reach the password form\n") > "/dev/stderr"
@@ -165,8 +209,12 @@ awk '
       printf("✗ [federation-source] no identification-stage entry found — the sources would never be shown on the login card\n") > "/dev/stderr"
       status = 1
     }
+    if (link_mappings != 1) {
+      printf("✗ [federation-source] expected exactly ONE `authentik_sources_oauth.oauthsourcepropertymapping` entry with id `%s`, found %d — it is the #364 account resolver every source above references\n", MAPPING, link_mappings) > "/dev/stderr"
+      status = 1
+    }
     if (status == 0) {
-      printf("› [federation-source] ok: %d source(s) [%s ] are subject-matched, enrollment-closed, !Env-credentialed and conditions-gated\n", sources, seen_ids)
+      printf("› [federation-source] ok: %d source(s) [%s ] are enrollment-closed, resolver-matched (%s), !Env-credentialed and conditions-gated\n", sources, seen_ids, MAPPING)
     }
     exit status
   }

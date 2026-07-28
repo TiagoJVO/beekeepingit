@@ -7,22 +7,6 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `feat/google-federation-363` (#363 — Google federation + "Continue with Google")
-
-After merge (NOT merge blockers — nothing can exercise these until an environment has real Google
-credentials, and none exists yet):
-
-- **Run the manual verification checklist** in `infra/README.md`
-  ("Enabling 'Continue with Google' on an environment") once against an environment with a real
-  Google OAuth client. It covers the only things no automated test can reach: a completed
-  sign-in through Google, the invitation-only refusal for an unlinked Google account, that a
-  linked account resolves to the same `sub`, and that sign-out still revokes the SSO session
-  after a _federated_ login. Record the result on #363. Until then, the Google-specific half of
-  this feature is config-verified and doc-verified but not execution-verified — stated plainly in
-  `docs/architecture/auth.md` §8.13.
-- **Create the `beekeepingit-authentik-google-credentials` Secret** (staging first) per the same
-  README section; the feature is inert until it exists, by design.
-
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -38,9 +22,18 @@ credentials, and none exists yet):
 
 ---
 
-_Sweep note (#363): the `feat/authentik-admin-oidc-client` (#456) entry was stale — #456 closed_
-_long ago, so under this file's own rule it could no longer ride along. Its remaining work_
-_(tightening the admin client's `http://localhost:.*` redirect entry for staging/prod) is now_
+_Sweep note (#364): the `feat/google-federation-363` entry was stale — #363 closed with PR #509,_
+_so under this file's own rule it could no longer ride along. Its work (creating the Google_
+_credentials Secret and running the manual verification checklist against a real Google client) is_
+_genuinely outstanding and now covers #364's first-link case too, so it is promoted to_
+_[#510](https://github.com/TiagoJVO/beekeepingit/issues/510), a sub-issue of EPIC-14_
+_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15) — the same treatment #508 got in the_
+_#363 sweep — and pruned here. `feat/account-linking-364` adds no entry of its own: it owes_
+_nothing before merge beyond CI, and its one unverifiable-in-CI dependency is #510._
+
+_Earlier sweep note (#363): the `feat/authentik-admin-oidc-client` (#456) entry was stale — #456_
+_closed long ago. Its remaining work (tightening the admin client's `http://localhost:.*` redirect_
+_entry for staging/prod) is now_
 _[#508](https://github.com/TiagoJVO/beekeepingit/issues/508), a sub-issue of EPIC-14_
-_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and is pruned here. #362's own sweep_
+_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and was pruned then. #362's own sweep_
 _had already pruned the #449 and #290 entries in the same spirit._

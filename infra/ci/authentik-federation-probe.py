@@ -1,36 +1,59 @@
-# Federation-posture probe (#363, NFR-SEC-1, NFR-TST-1) — run inside the
-# authentik worker: `ak shell -c "$(cat authentik-federation-probe.py)"`.
+# Federation-posture + account-linking probe (#363, #364, NFR-SEC-1, NFR-TST-1)
+# — run inside the authentik worker:
+# `ak shell -c "$(cat authentik-federation-probe.py)"`.
 #
 # WHY THIS EXISTS. A live end-to-end against real Google is not automatable
 # (consent screen + bot detection) and must never run in CI, so the INBOUND
 # half of federation — what authentik decides when an upstream identity comes
 # back — cannot be proven through a browser. This drives the real
-# `SourceFlowManager` against the dev/CI stand-in source (a generic
-# `openidconnect` source configured with the IDENTICAL posture as the Google
-# one: `user_matching_mode: identifier`, no `enrollment_flow`,
-# `authentication_flow: default-source-authentication`) and asserts the two
-# decisions that carry the security weight:
+# `SourceFlowManager` (and therefore the real `SourceMatcher` and the real,
+# deployed account-resolution property mapping) against the dev/CI stand-in
+# source, which carries the IDENTICAL posture as the Google one:
+# `user_matching_mode: username_link`, the `mapping-federation-account-link`
+# resolver attached, no `enrollment_flow`, `authentication_flow:
+# default-source-authentication`.
 #
-#   1. An UNKNOWN upstream identity is REFUSED — `Action.ENROLL` -> HTTP 400,
-#      with no `User` and no `UserSourceConnection` row created. That is
-#      "invitation-only account creation still applies" (#365 is what opens
-#      it), proven against the real code path rather than asserted on paper.
-#   2. A LINKED identity resolves to the EXISTING local user — `Action.AUTH`,
-#      same user, same `attributes.upn`. `upn` is what the provider emits as
-#      the OIDC `sub` (`sub_mode: user_upn`), so this is D-7's boundary: a
-#      federated sign-in produces the same subject the password path does, and
-#      the domain services need no change.
+# WHAT IT PROVES (#364's acceptance criteria, live, against the real code):
+#   1. SUBJECT WINS. An identity whose `UserSourceConnection` already exists
+#      resolves to that user by identifier ALONE — asserted with a DIFFERENT
+#      and deliberately UNVERIFIED upstream email in the payload, so the
+#      assertion is about the subject and nothing else. `attributes.upn` (what
+#      the provider emits as the OIDC `sub`) is unchanged: D-7's boundary.
+#   2. VERIFIED-EMAIL FIRST LINK. An unlinked identity whose upstream email is
+#      genuinely verified and matches exactly one local, active, non-superuser,
+#      LOCALLY-verified account resolves to that account (Action.LINK) — no
+#      duplicate account.
+#   3. CHANGED ADDRESS, VIA HISTORY. The same, matching an address that is only
+#      in that account's `attributes.known_emails` and no longer its current
+#      `email`.
+#   4. UNVERIFIED NEVER LINKS. The same address with the upstream's
+#      verification flag false / a string "true" / absent is DENIED, creating
+#      no rows. That is the #170 account-takeover shape, refused live.
+#   5. AMBIGUITY, SQUATTING, PRIVILEGE AND UNKNOWNS ALL FAIL CLOSED. Two
+#      accounts sharing the address, an account that never proved inbox control
+#      itself, a superuser, and an address nobody holds are each DENIED with no
+#      rows created — so invitation-only account creation still holds.
+#   6. THE HISTORY IS ACTUALLY WRITTEN. The deployed
+#      `beekeepingit-mark-email-verified` expression policy — the ONE writer of
+#      `known_emails` — is evaluated for real and asserted to append, dedupe,
+#      normalize and bound the list, and to write nothing at all without the
+#      restored-flow-token proof.
 #
-# HONEST SCOPE LIMIT. `get_action()` resolves a connection and does not touch
-# the `User` row at all, so assertion 2's "upn unchanged" is close to
-# tautological here — it proves the flow-manager path is non-mutating, NOT that
-# a full federated login leaves `upn` alone. The only thing that could rewrite
-# it is a `user_write` stage inside the authentication flow, and
-# `default-source-authentication` has none; if one is ever bound there, this
-# probe would NOT catch it. The browser e2e
-# (client/e2e/tests/federation.spec.ts) covers the outbound half, and the
-# posture guard (scripts/check-federation-source-posture.sh) pins the config.
-# Together they are the coverage; none of the three alone is.
+# HONEST SCOPE LIMITS.
+#   * `get_action()` resolves a connection and never touches the `User` row, so
+#     "upn unchanged" proves the flow-manager path is non-mutating, NOT that a
+#     full federated login leaves `upn` alone. The only thing that could rewrite
+#     it is a `user_write` stage inside the authentication flow, and
+#     `default-source-authentication` has none; if one is ever bound there, this
+#     probe would NOT catch it.
+#   * Action.LINK returns an UNSAVED connection. Persisting it is
+#     `PostSourceStage`'s job, inside the flow this probe does not execute — so
+#     "the link is remembered next time" is proven by construction (upstream
+#     code), not by this probe.
+#   * Nothing here completes a real upstream token exchange. The browser e2e
+#     (client/e2e/tests/federation.spec.ts) covers the outbound half and the
+#     posture guard (scripts/check-federation-source-posture.sh) pins the
+#     config. Together they are the coverage; none of the three alone is.
 #
 # WHY EVERYTHING LIVES INSIDE ONE FUNCTION. `ak shell -c` `exec()`s this whole
 # file. At authentik 2026.5.4 (django==5.2.15) Django's shell command runs
@@ -61,16 +84,29 @@ def _run():
 
     from authentik.core.models import User, UserSourceConnection
     from authentik.core.sources.flow_manager import Action
+    from authentik.policies.expression.models import ExpressionPolicy
+    from authentik.policies.types import PolicyRequest
     from authentik.sources.oauth.models import OAuthSource, UserOAuthSourceConnection
     from authentik.sources.oauth.views.callback import OAuthSourceFlowManager
 
     source_slug = "federation-stub"
+    resolver_mapping_name = "BeekeepingIT Source Mapping: federated account resolution"
+    stamp_policy_name = "beekeepingit-mark-email-verified"
     seed_email = "test.beekeeper@beekeepingit.local"
     # Pinned in the blueprint's seed user; sub_mode=user_upn makes it the `sub`.
     expected_upn = "11111111-1111-4111-8111-111111111111"
-    unknown_ident = "ci-probe-unknown-sub-0001"
     known_ident = "ci-probe-known-sub-0001"
-    unknown_email = "ci-probe-nobody@example.invalid"
+
+    # Every row this probe creates carries this prefix, so a crashed previous
+    # run is swept before a new one starts and nothing leaks into the specs
+    # that share this cluster.
+    prefix = "ci-probe-364-"
+    addr_current = prefix + "current@example.invalid"
+    addr_former = prefix + "former@example.invalid"
+    addr_unverified = prefix + "unverified@example.invalid"
+    addr_duplicate = prefix + "duplicate@example.invalid"
+    addr_superuser = prefix + "superuser@example.invalid"
+    addr_nobody = prefix + "nobody@example.invalid"
 
     failures = []
 
@@ -133,6 +169,79 @@ def _run():
 
         print("info: using inline RequestFactory fallback")
 
+    class StubPlan:
+        """Minimal stand-in for a FlowPlan.
+
+        The stamp policy only ever reads/writes `flow_plan.context`, so this is
+        the whole contract. Deliberately NOT the real `FlowPlan`: constructing
+        one couples this probe to a dataclass signature that says nothing about
+        the behaviour under test, and the real plan is already exercised
+        end-to-end by client/e2e/tests/verification.spec.ts.
+        """
+
+        def __init__(self):
+            self.context = {}
+
+    class StubRestoreToken:
+        """Stand-in for the FlowToken the executor restores the plan from.
+
+        The policy only compares `.user`; the token/user match itself is
+        authentik's own check inside the email stage (auth.md §8.10).
+        """
+
+        def __init__(self, user):
+            self.user = user
+
+    def sweep():
+        UserOAuthSourceConnection.objects.filter(identifier__startswith=prefix).delete()
+        User.objects.filter(username__startswith=prefix).delete()
+
+    def make_user(suffix, email, verified=True, history=None, superuser=False):
+        return User.objects.create(
+            username=prefix + suffix,
+            name="CI Probe " + suffix,
+            email=email,
+            is_active=True,
+            is_superuser=superuser,
+            attributes={
+                # Not a UUID on purpose: these rows are transient and never
+                # mint a token, so an obviously-probe-shaped value is more
+                # useful than a plausible `sub` if one ever leaks past the sweep.
+                "upn": prefix + "upn-" + suffix,
+                "email_verified": verified,
+                "known_emails": list(history) if history else [],
+            },
+        )
+
+    def resolve(rf, identifier, payload):
+        """Run the REAL flow manager (hence the real resolver mapping)."""
+        sfm = OAuthSourceFlowManager(
+            OAuthSource.objects.get(slug=source_slug),
+            rf.get("/", user=AnonymousUser()),
+            identifier,
+            {"info": payload},
+            {},
+        )
+        return sfm.get_action()
+
+    def upstream(email, verified_key="email_verified", verified_value=True, username=None):
+        """An upstream userinfo payload.
+
+        `username` defaults to an attacker-flavoured value on purpose: the
+        stand-in source type maps `preferred_username` into the `username`
+        property, so every assertion below also proves the resolver OVERRODE
+        whatever the upstream asserted rather than letting it choose an account.
+        """
+        payload = {
+            "sub": "irrelevant",
+            "email": email,
+            "name": "CI Probe",
+            "preferred_username": username or (prefix + "upstream-asserted"),
+        }
+        if verified_key is not None:
+            payload[verified_key] = verified_value
+        return payload
+
     def probe():
         rf = RequestFactory()
 
@@ -153,9 +262,15 @@ def _run():
             "got {!r}".format(source.provider_type),
         )
         check(
-            "user_matching_mode == identifier (keys on the upstream SUBJECT)",
-            source.user_matching_mode == "identifier",
+            "user_matching_mode == username_link (#364 resolver steers the match)",
+            source.user_matching_mode == "username_link",
             "got {!r}".format(source.user_matching_mode),
+        )
+        mapping_names = sorted(m.name for m in source.user_property_mappings.all())
+        check(
+            "the #364 account resolver is the source's ONLY user property mapping",
+            mapping_names == [resolver_mapping_name],
+            "got {!r}".format(mapping_names),
         )
         check(
             "enrollment_flow is NULL (invitation-only still applies)",
@@ -165,65 +280,147 @@ def _run():
         check("authentication_flow is set", source.authentication_flow_id is not None)
         check("source is enabled", source.enabled is True)
 
-        # ---------- 1. unknown identity -> ENROLL -> 400, nothing created ----
+        # ---------- fixtures ----------
         users_before = User.objects.count()
         conns_before = UserSourceConnection.objects.count()
 
-        # AnonymousUser(), NOT guardian's get_anonymous_user(): get_action
-        # branches on request.user.is_authenticated first, and guardian's
-        # anonymous user is a real DB row that would yield LINK instead of the
-        # unauthenticated path this must exercise.
-        sfm = OAuthSourceFlowManager(
-            source,
-            rf.get("/", user=AnonymousUser()),
-            unknown_ident,
-            {
-                "info": {
-                    "sub": unknown_ident,
-                    "email": unknown_email,
-                    "preferred_username": "ci-probe-nobody",
-                    "name": "CI Probe",
-                }
-            },
-            {},
-        )
-        action, connection = sfm.get_action()
-        check(
-            "unknown identity -> Action.ENROLL",
-            action == Action.ENROLL,
-            "got {!r}".format(action),
-        )
+        # The account a returning user must reach. Its CURRENT address differs
+        # from the historic one, so cases 2 and 3 are genuinely different paths.
+        make_user("current", addr_current, history=[addr_former])
+        # Registered at an address but never proved inbox control (#366 allows
+        # this, and allows it at someone else's address).
+        make_user("unverified", addr_unverified, verified=False)
+        # Two accounts, one address — this deployment allows that by design.
+        make_user("dupe-a", addr_duplicate)
+        make_user("dupe-b", addr_duplicate)
+        # Blast-radius guard: ops accounts link deliberately, never inbound.
+        make_user("superuser", addr_superuser, superuser=True)
 
-        if action == Action.ENROLL:
-            response = sfm.handle_enroll(connection)
+        current_user = User.objects.get(username=prefix + "current")
+
+        # ---------- the linking decisions ----------
+        cases = [
+            (
+                "AC4 verified upstream email == an account's CURRENT address -> LINK to it",
+                upstream(addr_current),
+                Action.LINK,
+                current_user.pk,
+            ),
+            (
+                "AC2/AC5 verified upstream email found only in known_emails -> LINK to the same account",
+                upstream(addr_former),
+                Action.LINK,
+                current_user.pk,
+            ),
+            (
+                "AC3 upstream says email_verified: false -> DENY (the #170 shape refused)",
+                upstream(addr_current, verified_value=False),
+                Action.DENY,
+                None,
+            ),
+            (
+                "AC3 upstream says email_verified: 'true' (a string) -> DENY (strict boolean)",
+                upstream(addr_current, verified_value="true"),
+                Action.DENY,
+                None,
+            ),
+            (
+                "AC3 upstream sends NO verification flag at all -> DENY",
+                upstream(addr_current, verified_key=None),
+                Action.DENY,
+                None,
+            ),
+            (
+                "Google's flag spelling (verified_email) is honoured -> LINK",
+                upstream(addr_current, verified_key="verified_email"),
+                Action.LINK,
+                current_user.pk,
+            ),
+            (
+                "two accounts share the verified address -> DENY (never guess)",
+                upstream(addr_duplicate),
+                Action.DENY,
+                None,
+            ),
+            (
+                "the matched account never proved inbox control itself -> DENY (#361 holds)",
+                upstream(addr_unverified),
+                Action.DENY,
+                None,
+            ),
+            (
+                "the matched account is a superuser -> DENY (blast-radius guard)",
+                upstream(addr_superuser),
+                Action.DENY,
+                None,
+            ),
+            (
+                "verified address nobody holds -> DENY (no account is ever created)",
+                upstream(addr_nobody),
+                Action.DENY,
+                None,
+            ),
+            # The adversarial case `username_link` looks like it should be
+            # vulnerable to: the upstream asserts a REAL local username. The
+            # stand-in source type maps `preferred_username` -> the `username`
+            # property, so without the resolver this would link straight to
+            # that account off an unverified email. The resolver clears it.
+            (
+                "upstream asserts a real local username with an unverified email -> DENY",
+                upstream(
+                    addr_nobody,
+                    verified_value=False,
+                    username=prefix + "current",
+                ),
+                Action.DENY,
+                None,
+            ),
+            (
+                "upstream asserts a real local username with a verified but UNKNOWN email -> DENY",
+                upstream(addr_nobody, username=prefix + "current"),
+                Action.DENY,
+                None,
+            ),
+        ]
+        for index, (label, payload, expected_action, expected_user) in enumerate(cases):
+            action, connection = resolve(rf, "{}unlinked-{}".format(prefix, index), payload)
+            if not check(label, action == expected_action, "got {!r}".format(action)):
+                continue
+            if expected_user is None:
+                continue
             check(
-                "handle_enroll() -> HTTP 400 (source not configured for enrollment)",
-                getattr(response, "status_code", None) == 400,
-                "got {!r}".format(getattr(response, "status_code", None)),
+                label + " [resolved to the expected account]",
+                connection is not None and getattr(connection, "user_id", None) == expected_user,
+                "got {!r}".format(getattr(connection, "user_id", None)),
             )
 
         check(
-            "no User row created",
-            User.objects.count() == users_before,
-            "{} -> {}".format(users_before, User.objects.count()),
+            "no User row created by any resolution",
+            User.objects.count() == users_before + 5,
+            "{} -> {} (expected +5 fixtures only)".format(users_before, User.objects.count()),
         )
         check(
-            "no User with the probe email",
-            not User.objects.filter(email=unknown_email).exists(),
-        )
-        check(
-            "no UserSourceConnection row created",
+            "no UserSourceConnection row created by any resolution",
             UserSourceConnection.objects.count() == conns_before,
             "{} -> {}".format(conns_before, UserSourceConnection.objects.count()),
         )
+
+        # Enrollment stays closed at the code level too, not just by never
+        # being reached: #363's proof, kept because #365 is what changes it.
+        response = OAuthSourceFlowManager(
+            source,
+            rf.get("/", user=AnonymousUser()),
+            prefix + "enroll-probe",
+            {"info": upstream(addr_nobody)},
+            {},
+        ).handle_enroll(UserOAuthSourceConnection(source=source, identifier=prefix + "enroll-probe"))
         check(
-            "no connection for the unknown identifier",
-            not UserSourceConnection.objects.filter(
-                source=source, identifier=unknown_ident
-            ).exists(),
+            "handle_enroll() -> HTTP 400 (source is not configured for enrollment)",
+            getattr(response, "status_code", None) == 400,
+            "got {!r}".format(getattr(response, "status_code", None)),
         )
 
-        # ---------- 2. existing link -> AUTH, seed user, upn untouched -------
+        # ---------- AC1: the SUBJECT decides, not the email -------------------
         seed = User.objects.filter(email=seed_email).first()
         if not check("seed user '{}' exists".format(seed_email), seed is not None):
             return
@@ -253,32 +450,24 @@ def _run():
                 conn_row = created_conn
                 probe_ident = known_ident
 
-            sfm2 = OAuthSourceFlowManager(
-                source,
-                rf.get("/", user=AnonymousUser()),
+            # Deliberately a DIFFERENT, UNVERIFIED address: if the email had any
+            # say, this would resolve elsewhere or be denied. It must not.
+            action2, connection2 = resolve(
+                rf,
                 probe_ident,
-                {
-                    "info": {
-                        "sub": probe_ident,
-                        "email": seed_email,
-                        "preferred_username": "test.beekeeper",
-                        "name": "Test Beekeeper",
-                    }
-                },
-                {},
+                upstream(addr_nobody, verified_value=False),
             )
-            action2, connection2 = sfm2.get_action()
             check(
-                "linked identity -> Action.AUTH",
+                "AC1 linked identity -> Action.AUTH on the SUBJECT alone",
                 action2 == Action.AUTH,
                 "got {!r}".format(action2),
             )
             check(
-                "resolved connection is the seeded row",
+                "AC1 resolved connection is the seeded row",
                 connection2 is not None and connection2.pk == conn_row.pk,
             )
             check(
-                "resolved user is the seed user (no new account)",
+                "AC1 resolved user is the seed user (a foreign, unverified email changed nothing)",
                 connection2 is not None and connection2.user_id == seed.pk,
             )
 
@@ -301,6 +490,73 @@ def _run():
             ).exists(),
         )
 
+        # ---------- AC2: the history is actually WRITTEN ----------------------
+        # Drives the DEPLOYED stamp policy — the only writer of known_emails.
+        try:
+            stamp = ExpressionPolicy.objects.get(name=stamp_policy_name)
+        except ExpressionPolicy.DoesNotExist:
+            check("stamp policy '{}' exists".format(stamp_policy_name), False, "not found")
+            return
+        check("stamp policy '{}' exists".format(stamp_policy_name), True)
+
+        def run_stamp(user, restored=True):
+            plan = StubPlan()
+            plan.context["pending_user"] = user
+            if restored:
+                plan.context["is_restored"] = StubRestoreToken(user)
+            request = PolicyRequest(user)
+            request.context["flow_plan"] = plan
+            result = stamp.passes(request)
+            return result, plan.context.get("prompt_data", {})
+
+        # A fresh, unverified account at an address it has never proved.
+        pending = make_user("stamp", prefix + "stamp@example.invalid", verified=False)
+        result, prompt_data = run_stamp(pending)
+        check(
+            "stamp policy passes for an unverified pending user with the restore proof",
+            result.passing is True,
+            "messages={!r}".format(getattr(result, "messages", None)),
+        )
+        check(
+            "stamp policy still writes attributes.email_verified (#361 unchanged)",
+            prompt_data.get("attributes.email_verified") is True,
+            "got {!r}".format(prompt_data.get("attributes.email_verified")),
+        )
+        check(
+            "stamp policy records the just-proven address in known_emails (#364)",
+            prompt_data.get("attributes.known_emails") == [prefix + "stamp@example.invalid"],
+            "got {!r}".format(prompt_data.get("attributes.known_emails")),
+        )
+
+        # An account with prior history, at a NEW address, with a duplicate and
+        # a mixed-case entry already stored.
+        pending2 = make_user(
+            "stamp2",
+            prefix + "Stamp2-New@example.invalid",
+            verified=False,
+            history=[addr_former, addr_former.upper()],
+        )
+        _, prompt_data2 = run_stamp(pending2)
+        check(
+            "stamp policy appends, dedupes and lowercases the history",
+            prompt_data2.get("attributes.known_emails")
+            == [addr_former, prefix + "stamp2-new@example.invalid"],
+            "got {!r}".format(prompt_data2.get("attributes.known_emails")),
+        )
+
+        # Without the restored-flow-token evidence nothing is written at all.
+        pending3 = make_user("stamp3", prefix + "stamp3@example.invalid", verified=False)
+        result3, prompt_data3 = run_stamp(pending3, restored=False)
+        check(
+            "no restore proof -> stamp policy refuses",
+            result3.passing is not True,
+        )
+        check(
+            "no restore proof -> nothing written (neither the flag nor the history)",
+            prompt_data3 == {},
+            "got {!r}".format(prompt_data3),
+        )
+
     # Defensive: if this deployment ever runs authentik multi-tenant, pin the
     # probe to the public schema rather than whatever `ak shell` activated.
     ctx = contextlib.nullcontext()
@@ -313,7 +569,15 @@ def _run():
         print("info: no schema_context ({}), running as-is".format(exc))
 
     with ctx:
-        probe()
+        # Sweep before AND after: a crashed earlier run must not make this one
+        # fail for the wrong reason, and nothing may leak into the specs that
+        # share this cluster.
+        sweep()
+        try:
+            probe()
+        finally:
+            sweep()
+            print("info: swept probe fixtures ({}*)".format(prefix))
 
     return failures
 
