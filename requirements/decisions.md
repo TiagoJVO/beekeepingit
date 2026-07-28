@@ -61,6 +61,40 @@ _Last updated: 2026-07-28._
   **unchanged**. It is **not** the platform tier — a platform operator's authority comes from
   the IdP `platform-operator` group, never from creating or joining an organization (D-32,
   EPIC-18 #463).
+- **Extended by #362 (2026-07-28) — user-confirmed.** Self-service registration (#366,
+  `auth.md` §8.11) removed the precondition this decision was written under — that accounts
+  existed only by invitation — so "the creator of an organization becomes its admin" now applies
+  to **anyone who can register**. That stays **unrestricted**: no invitation prerequisite, no
+  operator approval, no pending or limited organization state. Gating it would contradict
+  FR-ONB-2's own onboarding branch and EPIC-16's premise (#365) that a user with **no** invitation
+  reaches a usable account. Three controls already bound the surface and **are** the decision, not
+  follow-up work: (1) **a verified email is a precondition** — no session, and therefore no token,
+  exists before inbox control is proven (#361, `auth.md` §8.10/§8.11), and
+  `POST /v1/organizations` asserts `email_verified` **itself** rather than inheriting it from the
+  provider's flow (defense in depth: a precondition living only in IdP flow config is one
+  blueprint edit, or one new federation source, away from silently disappearing); (2) **one
+  organization per account**, enforced by the unique partial index
+  `idx_memberships_one_active_per_user` on `organizations.memberships` (organizations migration
+  `00004`), so the per-account cap is **1 by construction**; (3) **abuse response is the platform
+  tier** (D-32) — an operator lists every organization with its member count (#467) and disables
+  the offending account at the IdP (D-7). **Per-address organization caps** and
+  **disposable-address policy** are **deliberately not built now**: they are NFR-RL-1's mechanism,
+  deferred by D-4 (v1 is free, no quota enforcement), and the first real deployment is
+  staging-grade rather than a prod environment holding real user data (D-26). Revisit at public
+  launch. _(Throttling the sign-up endpoint itself is a separate, already-tracked concern — EPIC-14
+  #416, NFR-SEC-1 — not re-decided here.)_
+- **Single active membership vs. a later invitation — a block, stated (#362).** A user who
+  already has an active membership and is **then** invited to another organization does **not**
+  join it: the accept-on-login step runs only for a caller with **no** active membership
+  (`auth.md` §8.7's fallback inside `GET /v1/organizations/me`), there is no self-service accept
+  endpoint, and the last-admin guard above forbids a sole admin removing themselves — and an
+  organization's only member is always its admin, precisely because that guard blocks removing or
+  demoting the last one. So the invitation stays `pending` indefinitely. That is the **correct**
+  outcome for the single-active-membership invariant and is now **recorded rather than
+  emergent**: it is a **block**, not a leave-then-join and not a prompt. Making it exitable — a
+  **sole member** may leave their own organization, after which the ordinary accept-on-login path
+  joins them to the inviting org — is tracked as **#506**, scheduled **before public
+  launch**; it is not part of #365 or M1.1.
 - **Still open:** invitation expiry, re-invite (minor — for planning detail).
 
 ## D-4 — v1 scope deferrals

@@ -83,7 +83,15 @@ paths:
     post:
       operationId: createOrganization
       summary: Create an organization (caller becomes admin)
-      description: Creates an org and makes the authenticated user its first admin (D-3, FR-ONB-2).
+      description: >-
+        Creates an org and makes the authenticated user its first admin (D-3,
+        FR-ONB-2). Open to any authenticated caller — including a
+        self-registered one — with **no** invitation, approval or review gate
+        (D-3, #362). Two preconditions apply: the caller's email must be
+        verified (`email_verified`) and the caller must not already hold an
+        active membership (`409` otherwise — at most one organization per
+        account). The `403` covers both an unverified email and a caller the
+        identity service does not know; the `detail` field distinguishes them.
       tags: [Organizations]
       parameters:
         - $ref: './_shared/components.openapi.yaml#/components/parameters/IdempotencyKeyHeader'
@@ -107,6 +115,8 @@ paths:
                 $ref: '#/components/schemas/Organization'
         '401':
           $ref: './_shared/components.openapi.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared/components.openapi.yaml#/components/responses/Forbidden'
         '409':
           $ref: './_shared/components.openapi.yaml#/components/responses/Conflict'
         '422':

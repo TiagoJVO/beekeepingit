@@ -166,10 +166,11 @@ func newOrgFixtureWithEmailClaims(t *testing.T, users map[string]stubUser, claim
 }
 
 // newOrgFixtureInternal is the one shared constructor behind newOrgFixture,
-// newOrgFixtureWithEmails and newOrgFixtureWithEmailClaims. When
-// claimsBySub is non-nil, the mounted authn chain is wrapped with a layer
-// that enriches the verified Claims with a per-sub Email/EmailVerified pair,
-// standing in for what a real OIDC token's email/email_verified claims
+// newOrgFixtureWithEmails and newOrgFixtureWithEmailClaims. The mounted authn
+// chain is always wrapped with a layer that enriches the verified Claims with
+// an Email/EmailVerified pair — verified-with-no-email by default, overridden
+// per-sub by claimsBySub when given (withEmailClaims) — standing in for what a
+// real OIDC token's email/email_verified claims
 // would carry — authtest.Mint (services/servicetemplate/authn/authtest,
 // shared infra outside this branch's ownership) only sets the standard
 // sub/aud/exp claims, so this is the sanctioned test-only seam, mirroring
@@ -226,9 +227,7 @@ func newOrgFixtureInternal(t *testing.T, users map[string]stubUser, claimsBySub 
 	if err != nil {
 		t.Fatalf("build authn middleware: %v", err)
 	}
-	if claimsBySub != nil {
-		authnMW = withEmailClaims(authnMW, claimsBySub)
-	}
+	authnMW = withEmailClaims(authnMW, claimsBySub)
 	identity := newStubIdentity(t, users)
 
 	cfg := config.Config{ServiceName: "organizations-test", HTTPAddr: ":0", LogLevel: slog.LevelInfo, DB: dbCfg}
@@ -299,10 +298,25 @@ func (f *orgFixture) auditLogFor(t *testing.T, entityType, entityID string) []au
 	return out
 }
 
-// withEmailClaims wraps authnMW with a layer that overrides the verified
-// Claims' Email/EmailVerified per-sub, after real JWT signature/issuer/
-// audience verification has already populated Claims from the token's
-// standard claims — see newOrgFixtureInternal's doc comment.
+// withEmailClaims wraps authnMW with a layer that sets the verified Claims'
+// Email/EmailVerified, after real JWT signature/issuer/audience verification
+// has already populated Claims from the token's standard claims — see
+// newOrgFixtureInternal's doc comment.
+//
+// Every subject defaults to `email_verified: true` with an empty email claim,
+// and claimsBySub (which may be nil) overrides that per-sub. The default models
+// the ordinary caller: nothing issues a session before the emailed one-time
+// link is used (auth.md §8.10/§8.11), so a token reaching these routes carries
+// a verified address — which POST /organizations now asserts for itself (#362,
+// D-3) rather than trusting the provider's flow to have done it. Defaulting
+// (rather than requiring every fixture to spell it out) is behaviour-neutral
+// for every pre-existing test: the only other consumer of these claims,
+// getMyOrganization's accept-on-login fallback, keys on the verified EMAIL,
+// which stays empty here and so still matches no invitation
+// (acceptPendingInvitationByEmail's empty-email short-circuit) exactly as it
+// did when the claim was absent. Tests that need an unverified caller, or an
+// email claim at all, name those subjects in claimsBySub via
+// newOrgFixtureWithEmailClaims.
 func withEmailClaims(authnMW func(http.Handler) http.Handler, claimsBySub map[string]tokenClaim) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return authnMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -311,6 +325,7 @@ func withEmailClaims(authnMW func(http.Handler) http.Handler, claimsBySub map[st
 				next.ServeHTTP(w, r)
 				return
 			}
+			claims.EmailVerified = true
 			if tc, found := claimsBySub[claims.Sub]; found {
 				claims.Email = tc.Email
 				claims.EmailVerified = tc.EmailVerified
