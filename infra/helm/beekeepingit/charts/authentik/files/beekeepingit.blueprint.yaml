@@ -961,11 +961,15 @@ entries:
   #
   # The three URLs deliberately point at authentik's OWN liveness endpoint: a
   # reachable, side-effect-free URL on a host the e2e's host-map already
-  # resolves. The spec asserts the BROWSER LANDS THERE carrying the correct
+  # resolves. The spec asserts the outbound REQUEST to it carries the correct
   # OAuth parameters (client_id / redirect_uri / scope / state) — the complete
-  # proof of the outbound half of the flow. Nothing answers a token exchange,
-  # and nothing is meant to: completing an upstream login needs a real upstream,
-  # which is the manual verification checklist in infra/README.md.
+  # proof of the outbound half of the flow. It asserts the request rather than
+  # the landing page on purpose: this endpoint answers 204, and a browser does
+  # not commit a navigation to a 204, so asserting on the resulting URL is
+  # asserting on undefined behaviour (it went flaky exactly that way on this
+  # PR's first CI run). Nothing answers a token exchange, and nothing is meant
+  # to: completing an upstream login needs a real upstream, which is the manual
+  # verification checklist in infra/README.md.
   - model: authentik_sources_oauth.oauthsource
     id: source-federation-stub
     conditions:

@@ -104,13 +104,30 @@ test.describe("upstream federation (#363)", () => {
 
     const hinted = new URL(pendingNext!, AUTH_ORIGIN);
     hinted.searchParams.set("beekeepingit_idp", STUB_SLUG);
-    await page.goto(hinted.toString());
 
-    // No click: the redirect stage auto-follows, so we should end up at the
-    // stand-in's authorize URL without ever seeing the identification form.
-    await page.waitForURL(/\/-\/health\/live\//, { timeout: 60_000 });
+    // Assert on the outbound REQUEST, not on where the browser ends up.
+    //
+    // What this test is about is the request that leaves for the upstream, and
+    // the stand-in's authorize URL deliberately points at an inert endpoint —
+    // authentik's `/-/health/live/`, which answers **204 No Content**. A
+    // browser does not commit a navigation to a 204: it stays on the previous
+    // page. So `waitForURL` against that URL was asserting on undefined
+    // behaviour and timed out non-deterministically (it went flaky on the
+    // first CI run of this spec, passing only on Playwright's retry).
+    // `waitForRequest` is both deterministic and a closer match to the claim:
+    // the redirect chain reached the upstream with these parameters,
+    // regardless of what the upstream chose to answer.
+    const upstreamRequest = page.waitForRequest(
+      (req) => req.isNavigationRequest() && req.url().includes("/-/health/live/"),
+      { timeout: 60_000 },
+    );
+    // No click anywhere in here: the redirect stage auto-follows. The goto's
+    // own promise is deliberately not awaited for success — its final response
+    // is that 204, which surfaces as an aborted navigation.
+    const navigation = page.goto(hinted.toString()).catch(() => null);
 
-    const upstream = new URL(page.url());
+    const upstream = new URL((await upstreamRequest).url());
+    await navigation;
     expect(upstream.searchParams.get("client_id")).toBe("beekeepingit-federation-stub");
     expect(upstream.searchParams.get("response_type")).toBe("code");
     // The callback authentik will accept the upstream's response on — this is

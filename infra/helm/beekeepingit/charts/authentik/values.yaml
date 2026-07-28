@@ -47,9 +47,11 @@ federationStub:
   enabled: false
   # Where the source's authorize/token/userinfo URLs point. Deliberately a
   # reachable, side-effect-free endpoint on a host the e2e host-map already
-  # resolves: the e2e asserts the browser LANDS there carrying the right OAuth
-  # parameters. Nothing answers a token exchange — completing an upstream login
-  # needs a real upstream (the manual checklist in infra/README.md).
+  # resolves: the e2e asserts the outbound REQUEST to it carries the right OAuth
+  # parameters. (It asserts the request, not the landing page — this endpoint
+  # answers 204 and a browser never commits a navigation to a 204.) Nothing
+  # answers a token exchange — completing an upstream login needs a real
+  # upstream (the manual checklist in infra/README.md).
   upstreamUrl: https://auth.beekeepingit.local:8443/-/health/live/
 
 # Placeholder for standalone rendering only — the umbrella always injects the
