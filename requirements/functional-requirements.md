@@ -208,10 +208,19 @@ harvest, which requires visiting all apiaries).
   Organization completion is **enforced** before accessing main features.
   - _Resolved (D-3):_ the user who **creates** an organization becomes its
     **admin**; other users **join an existing org via email invitation**.
+  - _Extended (D-3 / #362):_ organization creation is **open to any
+    self-registered user** with a **verified email** — no invitation, approval
+    or review gate — and each account holds **exactly one** active membership
+    (DB-enforced). A user who already belongs to an organization cannot accept
+    an invitation to another one; see D-3.
 - **FR-ONB-3** — **Organization membership & invitations**: the org admin can
   **invite members by email**; invited users join the existing organization. The
   org creator is the first admin (see NFR-ROL-1). _(Detail still open: invite
   expiry/re-invite, removing members, transferring admin.)_
+  - _Clarified (D-3 / #362):_ an invitation is claimed on login **only** by a
+    caller with **no** active membership. An invitation sent to someone who
+    already belongs to an organization stays `pending` and is never
+    auto-claimed — the single-active-membership invariant wins.
 
 ## Accounts & Subscription (FR-AU)
 
