@@ -19,6 +19,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get loginButton => 'Iniciar sessão';
 
   @override
+  String get loginWithGoogleButton => 'Continuar com a Google';
+
+  @override
   String get loginError =>
       'Não foi possível iniciar sessão — verifique a ligação e tente novamente.';
 

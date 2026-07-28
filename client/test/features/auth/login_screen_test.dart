@@ -56,4 +56,54 @@ void main() {
       expect(find.byKey(const Key('login-button')), findsOneWidget);
     },
   );
+
+  group('Continue with Google (#363)', () {
+    testWidgets('the sign-in screen offers a federated action alongside the '
+        'primary one', (tester) async {
+      await tester.pumpWidget(
+        _buildLoginScreen(
+          overrides: [
+            oidcIssuerProvider.overrideWith(
+              (ref) => Future<Issuer>.error(Exception('not reached')),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('login-button')), findsOneWidget);
+      expect(find.byKey(const Key('login-google-button')), findsOneWidget);
+      // AC: the label is the externalized EN string, never a literal.
+      expect(find.text('Continue with Google'), findsOneWidget);
+    });
+
+    testWidgets(
+      'tapping it while offline surfaces the same error affordance as '
+      '"Sign in" rather than an unhandled exception',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildLoginScreen(
+            overrides: [
+              oidcIssuerProvider.overrideWith(
+                (ref) => Future<Issuer>.error(
+                  Exception('discovery unreachable while offline'),
+                ),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('login-error-message')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('login-google-button')));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('login-error-message')), findsOneWidget);
+        // Both actions stay available — either one is the retry affordance.
+        expect(find.byKey(const Key('login-google-button')), findsOneWidget);
+        expect(find.byKey(const Key('login-button')), findsOneWidget);
+      },
+    );
+  });
 }

@@ -116,6 +116,12 @@ abstract class AppLocalizations {
   /// **'Sign in'**
   String get loginButton;
 
+  /// Federated sign-in action (#363) next to "Sign in". Starts the same OIDC redirect with the beekeepingit_idp=google hint, so the identity provider sends the user straight to Google instead of showing its own login form
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with Google'**
+  String get loginWithGoogleButton;
+
   /// Shown on the login screen when starting sign-in fails (e.g. OIDC discovery unreachable while offline); tapping "Sign in" again retries
   ///
   /// In en, this message translates to:

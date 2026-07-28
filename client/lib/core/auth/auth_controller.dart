@@ -12,6 +12,16 @@ import '../sync/powersync_service.dart';
 import 'auth_platform.dart';
 import 'pkce.dart';
 
+/// Authorize-request parameter naming the upstream identity provider to
+/// federate to (#363, FR-ONB-1). Part of the frozen client contract —
+/// docs/architecture/oidc-integration.md §7. See [AuthController.login].
+const kIdpHintParam = 'beekeepingit_idp';
+
+/// The [kIdpHintParam] value for Google (#363) — the slug of the federation
+/// source declared in the Authentik blueprint. Kept as a named constant so the
+/// login screen never spells the slug inline.
+const kIdpHintGoogle = 'google';
+
 const _kVerifier = 'bk.pkce_verifier';
 const _kState = 'bk.oauth_state';
 const _kRefresh = 'bk.refresh_token';
@@ -270,7 +280,16 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// ourselves (openid_client's [Flow] keeps it private) and persist it plus the
   /// CSRF `state`, so the callback — a fresh page load — can reconstruct the
   /// same flow and let openid_client validate the state + complete the exchange.
-  Future<void> login() async {
+  ///
+  /// [idpHint] (#363) names an upstream federation source (e.g.
+  /// [kIdpHintGoogle]) to go straight to, sent as the [kIdpHintParam]
+  /// parameter on the same standard authorize request. Omit it for the ordinary
+  /// "Sign in" action, which lands the user on the provider's own login form.
+  /// Everything else — PKCE, `state`, scopes, the redirect URI and the code
+  /// exchange in [_exchangeCallback] — is identical either way, which is why a
+  /// federated sign-in yields exactly the same token shape from our own issuer
+  /// (D-7; docs/architecture/auth.md §8.12).
+  Future<void> login({String? idpHint}) async {
     // Reset any previous failure at the start of every attempt — tapping
     // "Sign in" again is the retry affordance.
     ref.read(loginErrorProvider.notifier).state = null;
@@ -281,6 +300,17 @@ class AuthController extends AsyncNotifier<AuthSession?> {
       final flow = Flow.authorizationCodeWithPKCE(
         _client(issuer),
         codeVerifier: verifier,
+        // Federation hint (#363): asks the provider to send the user straight
+        // to one upstream identity provider instead of showing its own login
+        // form. It is an extra parameter on the STANDARD authorize request —
+        // the app still knows nothing but the discovery document, so the
+        // provider-agnostic boundary holds (D-7,
+        // docs/architecture/oidc-integration.md §1/§7). An unknown or
+        // unconfigured hint is ignored by the provider and the user simply
+        // gets the normal login page, so this can never dead-end a sign-in.
+        additionalParameters: idpHint == null
+            ? const {}
+            : {kIdpHintParam: idpHint},
         // `offline_access` is required for the provider to issue a refresh
         // token; build() restores a session on (re)load only from a
         // persisted refresh token, so without it a full page reload logs the

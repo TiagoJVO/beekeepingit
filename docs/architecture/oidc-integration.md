@@ -237,6 +237,19 @@ optional.
   `id_token_hint` + `post_logout_redirect_uri` (clear local state **first** for offline-degrade);
   optional `revocation_endpoint`. Replaces the Keycloak refresh-token POST.
 - **Account (password change)** — `OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings` (a config value, not a derived path).
+- **Federation hint (`beekeepingit_idp`, #363)** — the app's "Continue with Google" action sends
+  the **same** authorize request as "Sign in" plus one extension parameter,
+  **`beekeepingit_idp=<source slug>`** (`google`), asking the provider to go straight to that
+  upstream instead of rendering its own login form. **Additive and provider-neutral by
+  construction:** it is a query parameter on the standard authorize endpoint, so the client still
+  knows nothing but the discovery document (§1) — no vendor URL scheme, no second client id, no
+  second issuer, and **nothing about the token contract (§4/§5) changes**. A federated sign-in
+  yields the same `iss`/`aud`/`sub` as a password sign-in, which is exactly D-7's boundary. An
+  **unknown or unconfigured** hint is ignored and the user lands on the normal login page, so the
+  parameter can never dead-end a sign-in — a deployment with no federation source configured needs
+  no client change. Provider side: `docs/architecture/auth.md` §8.12. Client side:
+  `kIdpHintParam` in `client/lib/core/auth/auth_controller.dart`; both sides are pinned by
+  `client/test/core/auth/auth_controller_test.dart`.
 - **Token storage & offline-first boot (#390)** — the refresh token + `id_token` persist in
   **`localStorage`** (survives a browser restart); the PKCE `code_verifier`/`state` stay in
   per-tab **`sessionStorage`** (ephemeral, single-flow — no reason to outlive the redirect). A
@@ -341,6 +354,31 @@ optional.
   must go red in CI: the live pin is the same `admin-token.spec.ts` (operator ⇒ `true`, non-operator
   ⇒ `false`) plus `slice.spec.ts`'s assertion that a PWA token never carries it, and the static pin is
   `scripts/check-platform-operator-mapping.sh` (`task repo:lint`).
+- **Upstream federation (#363, auth.md §8.12)** adds four things to the watch-list, all pinned to
+  authentik **2026.5.4** and all re-checkable on a version bump:
+  - **`BlueprintEntry.conditions` skip validation entirely** (`Importer._validate_single` returns
+    before the serializer runs). That is what lets the Google source entry — whose serializer
+    performs **live outbound HTTP to `accounts.google.com`** — be absent from a credential-less
+    cluster without invalidating the whole blueprint. If conditions ever started evaluating after
+    validation, dev/CI bring-up would begin depending on Google's reachability. Static pin:
+    `scripts/check-federation-source-posture.sh` (`task repo:lint`) asserts every source entry is
+    conditions-gated.
+  - **Google's source type drops `verified_email`** (`get_base_user_properties` returns only
+    `email`/`name`), which is why `user_matching_mode` **must** stay `identifier` and never an
+    `email_*` mode. If a bump starts surfacing the upstream's verification state, revisit
+    [#364](https://github.com/TiagoJVO/beekeepingit/issues/364) — do not silently switch modes.
+    Same static pin.
+  - **The `beekeepingit_idp` hint chain** depends on `SESSION_KEY_GET`/`NEXT_ARG_NAME` still being
+    how `FlowExecutorView` stores the pending authorize request, and on `xak-flow-redirect` still
+    auto-following. A bump that changes either degrades "Continue with Google" to a plain login —
+    silently. Live pin: `client/e2e/tests/federation.spec.ts` (one-hop reach + the negative case
+    that a plain password login is **not** hijacked by the redirect stage bound into the default
+    authentication flow).
+  - **The source button's accessible name is a localized template** (`Continue with {name}`,
+    msgid `seb6ab868740e4e36`), currently **untranslated** in the shipped `pt-BR` catalog. A text
+    selector would therefore pass today for the wrong reason; the e2e pins the locale-independent
+    `button[name^="source-"]` attribute instead. Re-check if authentik ever ships a `pt-PT` web
+    catalog (that is also what [#412](https://github.com/TiagoJVO/beekeepingit/issues/412) tracks).
 - **CI** — `helm-e2e`: timeout 20→30m, install `--timeout` →15m, apply the Authentik `HelmRelease`
   - `rollout status` before `helm test`; `helm test` hook curls `/-/health/ready/`. `helm-ci`: swap
     the `codecentric` repo add for the `authentik` repo where a lint/template needs it.

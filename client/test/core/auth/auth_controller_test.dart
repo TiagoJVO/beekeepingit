@@ -314,8 +314,69 @@ void main() {
           platform.readSession('bk.oauth_state'),
           uri.queryParameters['state'],
         );
+
+        // No federation hint on the plain "Sign in" action (#363) — the
+        // provider must show its own login form, not bounce to an upstream.
+        expect(
+          uri.queryParameters.containsKey('beekeepingit_idp'),
+          isFalse,
+          reason:
+              'login() without an idpHint must not send the federation hint',
+        );
       },
     );
+
+    // #363 (FR-ONB-1, D-7). "Continue with Google" is the SAME authorize
+    // request plus one extension parameter — that is what keeps the client
+    // provider-agnostic (oidc-integration.md §1/§7): no vendor URL, no second
+    // client id, no second issuer. Everything the services validate is
+    // therefore unchanged, which is the whole point of D-7's boundary.
+    test('login(idpHint:) adds beekeepingit_idp to the standard authorize URL '
+        'and changes nothing else', () async {
+      final platform = FakeAuthPlatform();
+      final client = MockClient((req) async => http.Response('not found', 404));
+      final container = _container(platform, client);
+      await container.read(authControllerProvider.future);
+
+      await container
+          .read(authControllerProvider.notifier)
+          .login(idpHint: kIdpHintGoogle);
+
+      expect(platform.assignedLocation, isNotNull);
+      final uri = Uri.parse(platform.assignedLocation!);
+      expect(uri.queryParameters[kIdpHintParam], 'google');
+
+      // Same endpoint, same flow, same client, same scopes — the hint rides
+      // along, it does not replace anything.
+      expect('${uri.scheme}://${uri.host}${uri.path}', _authorizeUrl);
+      expect(uri.queryParameters['response_type'], 'code');
+      expect(uri.queryParameters['client_id'], 'beekeepingit-pwa');
+      expect(uri.queryParameters['redirect_uri'], platform.redirectUri);
+      expect(uri.queryParameters['code_challenge_method'], 'S256');
+      expect(uri.queryParameters['code_challenge'], isNotEmpty);
+      expect(uri.queryParameters['state'], isNotEmpty);
+      final requestedScopes = (uri.queryParameters['scope'] ?? '').split(' ');
+      expect(requestedScopes, contains('openid'));
+      expect(requestedScopes, contains('offline_access'));
+
+      // PKCE/CSRF state is persisted exactly as on the password path, so
+      // the callback completes through the same _exchangeCallback code.
+      expect(platform.readSession('bk.pkce_verifier'), isNotEmpty);
+      expect(
+        platform.readSession('bk.oauth_state'),
+        uri.queryParameters['state'],
+      );
+    });
+
+    test('the hint parameter name is the frozen contract value', () {
+      // Pinned deliberately: the Authentik policy that acts on this parameter
+      // (blueprint `beekeepingit-idp-hint-redirect`) hardcodes the same
+      // string, and it is published in oidc-integration.md §7. Renaming it on
+      // one side only would silently stop federated sign-in from redirecting,
+      // degrading it to a plain login with no failure anywhere.
+      expect(kIdpHintParam, 'beekeepingit_idp');
+      expect(kIdpHintGoogle, 'google');
+    });
   });
 
   group('code exchange (build())', () {

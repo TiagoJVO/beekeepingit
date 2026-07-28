@@ -87,6 +87,28 @@ class LoginScreen extends ConsumerWidget {
                       await ref.read(authControllerProvider.notifier).login();
                     },
                   ),
+                  const SizedBox(height: 12),
+                  // Federated sign-in (#363, FR-ONB-1). Starts the SAME OIDC
+                  // Authorization Code + PKCE redirect as the primary action,
+                  // adding only the `beekeepingit_idp` hint so the provider
+                  // sends the user straight to Google instead of showing its
+                  // own login form (auth.md §8.12). Secondary emphasis: the
+                  // password path stays the primary action, and both carry the
+                  // same 56px gloves-friendly target and semantics wrapper
+                  // (D-18, WCAG 2.2 AA) from core/widgets/field_action_button.
+                  // If this deployment has no Google source configured, the
+                  // provider ignores the hint and the user simply lands on the
+                  // normal login page — never a dead end.
+                  SecondaryActionButton(
+                    key: const Key('login-google-button'),
+                    label: l10n.loginWithGoogleButton,
+                    icon: Icons.account_circle_outlined,
+                    onPressed: () async {
+                      await ref
+                          .read(authControllerProvider.notifier)
+                          .login(idpHint: kIdpHintGoogle);
+                    },
+                  ),
                   if (loginError != null) ...[
                     const SizedBox(height: 16),
                     Text(

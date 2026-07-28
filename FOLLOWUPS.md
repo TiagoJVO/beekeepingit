@@ -7,16 +7,31 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `feat/authentik-admin-oidc-client` (#456 — admin OIDC client in the blueprint)
+## `feat/google-federation-363` (#363 — Google federation + "Continue with Google")
 
-Post-merge hardening (NOT merge blockers — the blueprint provisioning is complete and the
-`beekeepingit-admin` login/aud/iss is pinned by the helm-e2e admin-login gate):
+Before merge:
 
-- **Harden the admin OIDC redirect set for staging/prod** — the gateway `adminHost` route and the
-  staging/prod `global.adminOrigin` overrides are now in place (#449), so the admin app IS
-  gateway-served per environment. What remains is blueprint-side: the `http://localhost:.*` redirect
-  entry is dev-convenience and belongs to the EPIC-14 hardened-blueprint variant, not prod — tighten
-  the admin client's redirect_uris to the real per-environment admin origin there. Owner: EPIC-14.
+- **The live e2e and the in-cluster probe have never run.** `client/e2e/tests/federation.spec.ts`
+  and `infra/ci/authentik-federation-probe.py` were written against source-verified Authentik
+  2026.5.4 behavior but authored without a cluster; their first real execution is this PR's
+  `helm-e2e` job. Read that job's output before merging — a red probe/spec here is a real finding,
+  not flake. Everything else in the change (Helm renders for all three overlays, the blueprint
+  posture guard including its negative cases, Flutter analyze + the full `flutter test` suite,
+  prettier/markdownlint) was verified locally.
+
+After merge (NOT merge blockers — nothing can exercise these until an environment has real Google
+credentials, and none exists yet):
+
+- **Run the manual verification checklist** in `infra/README.md`
+  ("Enabling 'Continue with Google' on an environment") once against an environment with a real
+  Google OAuth client. It covers the only things no automated test can reach: a completed
+  sign-in through Google, the invitation-only refusal for an unlinked Google account, that a
+  linked account resolves to the same `sub`, and that sign-out still revokes the SSO session
+  after a _federated_ login. Record the result on #363. Until then, the Google-specific half of
+  this feature is config-verified and doc-verified but not execution-verified — stated plainly in
+  `docs/architecture/auth.md` §8.12.
+- **Create the `beekeepingit-authentik-google-credentials` Secret** (staging first) per the same
+  README section; the feature is inert until it exists, by design.
 
 ## `feat/admin-app-deploy-and-cors` (#449 — admin host + cross-origin CORS)
 
@@ -30,10 +45,6 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
   the admin CSP to **enforcing** must wait for that per-environment templating, or a staging/prod
   admin build would block its own API calls. **Not a merge blocker** (Report-Only). Prune once
   #462 lands the templating.
-
-## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
-
-- Re-invite reactivation on removal → #459
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -50,8 +61,12 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
 
 ---
 
-_Aside from the above: PR #418's before-merge item (create the `cluster-ops.yml`
-secrets/variables) is done — the `staging-gate` set is in place. `production-gate` secrets are
-not owed here: prod is deferred until DR (`Q-DR`) + #90 land (D-26), and the fill-in steps live in
-`infra/README.md#secrets--remote-cluster-operations`. The `DEPLOY_NOTIFY_TOKEN` manual step remains
-tracked in [#413](https://github.com/TiagoJVO/beekeepingit/issues/413), still open._
+_Sweep note (#363): three entries were stale — their owning issue/PR had already closed._
+_`#456`'s admin-redirect hardening was promoted to_
+_[#508](https://github.com/TiagoJVO/beekeepingit/issues/508) (sub-issue of EPIC-14 #15) and pruned_
+_here; `#290`'s re-invite reactivation was already tracked in_
+_[#459](https://github.com/TiagoJVO/beekeepingit/issues/459) and pruned; `#418`'s `cluster-ops.yml`_
+_secrets note was long since done. `production-gate` secrets are not owed: prod is deferred until_
+_DR (`Q-DR`) + #90 land (D-26), and the fill-in steps live in_
+_`infra/README.md#secrets--remote-cluster-operations`. `DEPLOY_NOTIFY_TOKEN` remains tracked in_
+_[#413](https://github.com/TiagoJVO/beekeepingit/issues/413), still open._

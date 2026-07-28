@@ -16,6 +16,7 @@ tasks:
       - task: deploy-urls
       - task: admin-audience-mapping
       - task: platform-operator-mapping
+      - task: federation-source-posture
 
   format:
     desc: "Format Markdown / YAML / JSON with Prettier (writes changes)"
@@ -68,3 +69,8 @@ tasks:
     desc: "Verify the platform-operator claim mapping is attached to ONLY the admin provider (#465, NFR-SEC-1)"
     cmds:
       - ./scripts/check-platform-operator-mapping.sh
+
+  federation-source-posture:
+    desc: "Verify federation sources stay enrollment-closed + subject-matched + !Env-credentialed (#363, NFR-SEC-1)"
+    cmds:
+      - ./scripts/check-federation-source-posture.sh

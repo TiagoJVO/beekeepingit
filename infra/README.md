@@ -219,6 +219,72 @@ typing the exact cluster name into the `confirm` input, since it deletes a real,
 Note the D-26 scope guard: bringing up the prod _cluster_ is fine (it holds no user data), but
 deployments stay staging-grade until DR (`Q-DR`) and GDPR export/erasure (#90) land.
 
+### Enabling "Continue with Google" on an environment (#363)
+
+Google federation is **off unless its credentials exist in the cluster** — the blueprint entry is
+condition-gated on them, so an environment without them deploys cleanly with no Google button and
+no outbound call to Google at blueprint-apply time (see
+[`docs/architecture/auth.md`](../docs/architecture/auth.md) §8.12 for why that gate is
+load-bearing). Turning it on is three steps, none of which put a secret in git.
+
+1. **Create the OAuth client** in [Google Cloud Console](https://console.cloud.google.com/) →
+   _APIs & Services → Credentials → Create credentials → OAuth client ID_, application type **Web
+   application**. Configure the OAuth consent screen first if the project has none.
+2. **Add the redirect URI exactly as Authentik builds it** — trailing slash included, because
+   Authentik reverses the same URL when it sends the user out _and_ when it rebuilds it for the
+   token exchange; a mismatch fails the exchange with `redirect_uri_mismatch`:
+
+   ```text
+   https://<AUTH_HOST>/source/oauth/callback/google/
+   ```
+
+   e.g. `https://auth.beekeepingit-rc.melargil.pt/source/oauth/callback/google/`. The slug
+   (`google`) is the source's slug in the blueprint — change one and you change both.
+
+3. **Create the out-of-band Secret** in the target namespace (manual — an agent must not handle
+   these values). This is the same cluster-state-not-git idiom as the SMTP relay credentials
+   above; the chart merges it into `beekeepingit-authentik-config` via `lookup`, and the upstream
+   Authentik chart env-mounts it onto the server and worker:
+
+   ```sh
+   kubectl -n <namespace> create secret generic beekeepingit-authentik-google-credentials \
+     --from-literal=client-id='<the OAuth client id>' \
+     --from-literal=client-secret='<the OAuth client secret>'
+   ```
+
+   Then re-run the umbrella `helm upgrade` for that environment — the `lookup` only sees the
+   Secret on a subsequent render — and let the Authentik worker re-apply the blueprint. Verify
+   with `kubectl -n <namespace> get secret beekeepingit-authentik-config -o jsonpath='{.data}' |
+grep -o BEEKEEPINGIT_GOOGLE_CLIENT_ID` and by loading the login page: a **Continue with
+   Google** button appears on Authentik's own login card.
+
+   Enabling this in the **dev** namespace leaves the dev/CI federation stand-in enabled too
+   (`environments/dev.yaml`); the blueprint binds **both** buttons onto the login card in that
+   case, so seeing two is expected, not a misconfiguration.
+
+   To turn it off again, delete the Secret and re-run `helm upgrade`: the next render drops the
+   env, the blueprint's condition goes false, and the unconditional identification-stage entry
+   resets `sources: []` so the button disappears. The `OAuthSource` row itself is left behind
+   (blueprints don't delete) — remove it in the Authentik admin UI if you want it gone entirely.
+
+**Manual verification checklist (required once per environment).** CI proves the config, the deny
+posture and everything up to the outbound request, but **nothing automated completes a sign-in
+through a real Google account** — a live e2e against Google is not automatable (consent screen +
+bot detection). Run this by hand after step 3, and record the result on the PR/issue:
+
+- [ ] The app's **Continue with Google** button goes straight to Google's consent screen — one
+      hop, no stop at Authentik's login form.
+- [ ] Signing in with a Google account that is **not** linked to any local account is refused with
+      _"Source is not configured for enrollment."_ and creates **no** user (check _Directory →
+      Users_ in the Authentik admin UI). This is the invitation-only guarantee.
+- [ ] Signing in with a password, connecting Google under _Settings → Connected services_, then
+      signing out and using **Continue with Google** lands in the app on the **same account** —
+      same apiaries, same organization.
+- [ ] That federated session's token carries the **same `sub`** as the password session (decode
+      `localStorage["bk.id_token"]`), and the app needed no reconfiguration — the D-7 boundary.
+- [ ] **Sign out** from that federated session returns to the login screen and a fresh page load
+      does not restore it (the server-side SSO session was revoked).
+
 `scaleway-up.sh` ends fully **GitOps-bootstrapped** (it applies the
 [`beekeepingit-gitops`](https://github.com/TiagoJVO/beekeepingit-gitops) repo's `clusters/<env>/`
 — Flux sources + the cert-manager `ClusterIssuer`), so a fresh cluster converges on its own;
@@ -233,6 +299,7 @@ bootstrap so the local checkout (not `main`) is what gets deployed.
 | [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                                                                                                                                                                          |
 | [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                                                                                                                                                                   |
 | [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                                                                                                                                                                   |
+| [`ci/`](ci/)                                                 | Probes CI execs **inside** cluster pods, where the assertion can't be made from outside — today `authentik-federation-probe.py` (#363), run through `ak shell` in the Authentik worker by `helm-e2e.yml`                                                                                                     |
 | [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                                                                                                                                                                               |
 | [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                                                                                                                                                                   |
 

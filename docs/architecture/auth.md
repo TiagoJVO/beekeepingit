@@ -96,7 +96,8 @@ The provider is **[Authentik](https://goauthentik.io/)** (D-7), self-hosted on t
 Its unit of tenancy is an **application** (slug **`beekeepingit`**) fronting an **OAuth2 provider** —
 the analogue of a Keycloak _realm + client_. It serves **all** end users and is **social/SSO-ready
 later** (add federation sources without touching services, since services only ever see standard OIDC
-tokens). The provider is provisioned declaratively by a **blueprint** (the analogue of a Keycloak
+tokens) — **now exercised**: #363 added Google as a federation source with **zero** service or token
+changes (§8.12). The provider is provisioned declaratively by a **blueprint** (the analogue of a Keycloak
 realm import — see §8.5, [oidc-integration.md §8](oidc-integration.md#8-deployment-infra)).
 Provider config (login/branding flows, password policy, token lifetimes, SMTP) beyond that blueprint
 is managed as infrastructure in **EPIC-14** ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15));
@@ -528,16 +529,17 @@ build**. Under Authentik, **email verification + SMTP (#361, §8.10) and self-se
 recovery/password-reset remains **provider flow config in EPIC-14**; the fixed contract values are in
 [oidc-integration.md §5, §7](oidc-integration.md#7-client-contract-flutter-web-pwa):
 
-| Item                          | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Email verification**        | **Built (#361, §8.10):** a login-time **email stage** in the authentication flow gates unverified, non-superuser users on an emailed one-time link; completion stamps the `email_verified` user attribute, and a **custom scope mapping** emits that genuine state as the `email_verified` claim (replacing the built-in's hardcoded constant — `true` before Authentik 2025.10, `false` since, either way cosmetic). SMTP is wired via `AUTHENTIK_EMAIL__*` (dev/CI: the Mailpit sink; prod: a real relay, credentials as infra config). App flows gate on `email_verified` (§3.4) — it now means something. |
-| **Password reset**            | An **Authentik recovery flow** (self-service, email link) — **not built in v1**; provisioned in EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) with SMTP. No recovery flow ships by default.                                                                                                                                                                                                                                                                                                                                                                                             |
-| **Registration**              | **Built (#366, §8.11):** self-service username/email/password **enrollment flow** at the provider, linked from the login page. A fresh registration is held **unverified** on an emailed one-time link (§8.10's machinery) — no session, and no invitation match, before inbox control is proven; "registration disabled" is no longer the control, the **real `email_verified` signal is**. **First login** (unchanged) triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on.                 |
-| **Account / password change** | The client links out to Authentik's user settings — **`OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings`** (a config value, not a derived path), replacing Keycloak's `/account` console.                                                                                                                                                                                                                                                                                                                                                                                         |
-| **Access-token lifetime**     | **short, ≈ 15 min** (limits exposure; forces refresh). Blueprint validity **`minutes=15`** (Django-timedelta string). _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **Refresh / SSO session**     | **≈ 30 days** (field convenience). Blueprint validity **`days=30`**. _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **Offline grace window**      | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._ Native-phase (D-10) — out of scope for the PWA-phase hardening pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **Logout**                    | **Front-channel `end_session` redirect** — a **GET** to the provider's `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing the **server-side SSO cookie** at the IdP. Local state is cleared **first** so offline logout still degrades to locally-logged-out. This **replaces Keycloak's refresh-token POST**. Logout also invalidates the local PowerSync database so a second user on the same shared device doesn't see the previous session's replicated rows before the next sync.                                                      |
+| Item                          | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Email verification**        | **Built (#361, §8.10):** a login-time **email stage** in the authentication flow gates unverified, non-superuser users on an emailed one-time link; completion stamps the `email_verified` user attribute, and a **custom scope mapping** emits that genuine state as the `email_verified` claim (replacing the built-in's hardcoded constant — `true` before Authentik 2025.10, `false` since, either way cosmetic). SMTP is wired via `AUTHENTIK_EMAIL__*` (dev/CI: the Mailpit sink; prod: a real relay, credentials as infra config). App flows gate on `email_verified` (§3.4) — it now means something.                                                                                                                             |
+| **Password reset**            | An **Authentik recovery flow** (self-service, email link) — **not built in v1**; provisioned in EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) with SMTP. No recovery flow ships by default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **Registration**              | **Built (#366, §8.11):** self-service username/email/password **enrollment flow** at the provider, linked from the login page. A fresh registration is held **unverified** on an emailed one-time link (§8.10's machinery) — no session, and no invitation match, before inbox control is proven; "registration disabled" is no longer the control, the **real `email_verified` signal is**. **First login** (unchanged) triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on.                                                                                                                                             |
+| **Upstream federation**       | **Built (#363, §8.12):** Google as an Authentik **OAuth source**, offered as "Continue with Google" on the app's sign-in screen and on the provider's own login card. Credentials are infrastructure config (an out-of-band Secret env-mounted into the worker, read by the blueprint's `!Env`), never repo values or ConfigMap contents. **Account creation stays invitation-only** — the source has no `enrollment_flow`, so an unknown upstream identity is refused with a 400 creating no rows (#365 opens it); matching keys on the upstream's stable **subject**, never the email (#364 adds email-history linking). Domain services are unchanged: the minted token's `iss`/`aud`/`sub` are identical to a password login's (D-7). |
+| **Account / password change** | The client links out to Authentik's user settings — **`OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings`** (a config value, not a derived path), replacing Keycloak's `/account` console.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Access-token lifetime**     | **short, ≈ 15 min** (limits exposure; forces refresh). Blueprint validity **`minutes=15`** (Django-timedelta string). _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Refresh / SSO session**     | **≈ 30 days** (field convenience). Blueprint validity **`days=30`**. _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **Offline grace window**      | **≈ 14–30 days** (native, §6.3). _Proposed; tune in EPIC-14._ Native-phase (D-10) — out of scope for the PWA-phase hardening pass.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Logout**                    | **Front-channel `end_session` redirect** — a **GET** to the provider's `end_session_endpoint` with `id_token_hint` (the persisted `id_token`, §6.2) + `post_logout_redirect_uri`, clearing the **server-side SSO cookie** at the IdP. Local state is cleared **first** so offline logout still degrades to locally-logged-out. This **replaces Keycloak's refresh-token POST**. Logout also invalidates the local PowerSync database so a second user on the same shared device doesn't see the previous session's replicated rows before the next sync.                                                                                                                                                                                  |
 
 > Lifetimes are **starting points**, to be confirmed against a **security review** (EPIC-14, #15) and
 > field-UX testing — not hard requirements. The blueprint sets these as concrete validities rather
@@ -946,6 +948,170 @@ matches an invitation, before the emailed one-time link is used.
   `GET /v1/organizations/me` 404 (nothing inherited), and the original account still logs in
   unchanged (same `sub`, no forced re-verification). Go tests are unchanged (no service code
   touched); the #170 invitation-gate suites keep pinning the server side.
+
+## 8.12 As built (#363) — Google federation
+
+Google is added as an **upstream federation source** on Authentik, and the app's sign-in screen
+gains its own **"Continue with Google"** action (FR-ONB-1, FR-TEN-1, NFR-SEC-1, NFR-I18N-1,
+NFR-TST-1, D-7, D-18). **No Go service changed, and no token changed** — that is the point, not a
+convenience: a federated login still resolves to a **local Authentik user**, and the provider
+still mints the same standard OIDC token from **our own** issuer with `sub` = that user's
+`attributes.upn` (`sub_mode: user_upn`, §3.4). Services validating `iss`/`aud`/`sub` cannot tell
+the two paths apart, which is precisely the "social/SSO-ready later" property D-7 reserved
+(§3.1). Everything below is config-as-code in the blueprint
+([`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)).
+
+- **The source.** An `authentik_sources_oauth.oauthsource` with `provider_type: google`,
+  `promoted: true` (a prominent block button on the login card rather than a small icon), bound
+  onto the default identification stage's `sources`. Authentik's `GoogleType` hardcodes the
+  authorization/token/profile/JWKS URLs and is not `urls_customizable`, so the blueprint sets
+  none of them. The upstream's OAuth client must be configured to redirect to
+  **`https://<auth-host>/source/oauth/callback/google/`** (trailing slash included — the same
+  reverse authentik uses when building the outbound request and when rebuilding it for the token
+  exchange; a mismatch fails the exchange). Ops steps: [`infra/README.md`](../../infra/README.md).
+- **Credentials: not in git, and not in a ConfigMap either (NFR-SEC-1).** The client id/secret
+  reach Authentik as **process environment**, read by the blueprint's own `!Env` tag in the worker
+  at import time. They are deliberately **not** Helm-interpolated: the blueprint renders into a
+  **ConfigMap**, and a ConfigMap is not a Secret — an interpolated client secret would be readable
+  by anything in the namespace and visible in `helm get manifest`. Instead
+  `charts/authentik/templates/config-secret.yaml` merges the out-of-band Secret
+  `beekeepingit-authentik-google-credentials` (keys `client-id`, `client-secret`) into
+  `beekeepingit-authentik-config` via `lookup` — the identical cluster-state-not-git idiom §8.10
+  uses for the SMTP relay — and the upstream chart env-mounts every key of that Secret on the
+  server and the worker. **Side effect worth naming:** because the condition lives in the
+  blueprint rather than in Helm, the blueprint file stays **static**, so `helm template` renders it
+  byte-for-byte and the posture guard below can assert on the real thing.
+- **Absent credentials must deploy cleanly, and that is load-bearing.** The source entry (and the
+  entry binding it to the login card) carry `conditions:` on both variables. `BlueprintEntry`
+  conditions are evaluated by `Importer._validate_single` **before** the model is resolved or the
+  serializer runs, so a credential-less cluster skips the entry outright. Two failures avoided:
+  `consumer_key`/`consumer_secret` are non-blank-required, so a rendered-but-empty entry would
+  raise — and **one invalid entry invalidates the whole blueprint**, meaning nothing in the file
+  applies (the PR #414 failure mode: OIDC discovery 404s forever, with the only evidence on the
+  `BlueprintInstance` status). And `OAuthSourceSerializer.validate` performs **live outbound HTTP**
+  for a `google` source — it falls back to `GoogleType`'s own `oidc_well_known_url`/`oidc_jwks_url`
+  constants even when the blueprint sets neither — so dev/CI bring-up would otherwise depend on
+  Google being reachable.
+- **Account posture — invitation-only still holds, provably.** `enrollment_flow` is **deliberately
+  unset**. At the pinned 2026.5.4, `SourceFlowManager.handle_enroll` returns
+  `bad_request_message("Source is not configured for enrollment.")` — an **HTTP 400** — _before_
+  `_prepare_flow`, and the connection row is only ever persisted later by `PostSourceStage`. So an
+  unknown Google identity creates **no `User` row and no connection row**. This issue changes _how
+  an existing user authenticates_, not _who may obtain an account_; opening registration via Google
+  is [#365](https://github.com/TiagoJVO/beekeepingit/issues/365).
+- **Identity keys on the provider's stable subject, never the email.** `user_matching_mode:
+identifier` is stated explicitly because it is a security decision, not a default to inherit:
+  authentik's Google type returns **only** `{email, name}` from userinfo — Google's
+  `verified_email` is **dropped** — so any `email_*` matching mode would link an existing local
+  account from an **unverified** upstream address. That is the #170 account-takeover shape one
+  layer out, and the epic's own rule ("an email match links only when that address is genuinely
+  verified") cannot be satisfied with the data this source type surfaces. Subject-keyed linking
+  plus a known-email history is [#364](https://github.com/TiagoJVO/beekeepingit/issues/364).
+- **So how does anyone get linked today?** Through Authentik's **native "Connected services"**
+  page (`/if/user/#/settings;page-sources` — already the app's `OIDC_ACCOUNT_URL` target, §7):
+  `get_action` returns `LINK` for an already-authenticated session and `handle_existing_link` saves
+  the connection. **Consequence, stated plainly:** until #364 lands, "Continue with Google" works
+  only for a user who has connected Google there first; everyone else lands on the normal login
+  form. That is the deliberate, issue-scoped posture — not an oversight — and it is what keeps
+  invitation-only intact without inventing an unverified-email link.
+- **`email_verified` and the #361 gate.** The source's `authentication_flow` is upstream's
+  `default-source-authentication`, **unchanged**. It is not extended with §8.10's login-time email
+  stage, and the reason is structural rather than an omission: its `user_login` stage sits at
+  **order 0**, and `unique_together (target, stage, order)` means a blueprint cannot move an
+  upstream binding (an upgrade would re-assert it anyway). It does not need extending — reaching
+  the linking page requires a **completed password login**, which is exactly what already passes
+  the #361 gate, so a federated login is by construction only ever available to an account that
+  already proved inbox control. That flow also has **no `user_write` stage**, which is the property
+  guaranteeing Google can never overwrite the local user's `email`, `attributes.upn` (the app-facing
+  `sub`) or `attributes.email_verified`. Nothing writes the verification attribute but §8.10's
+  restored-flow-token-gated stamp.
+- **One hop from the app, without putting a vendor URL in client code.** Authentik has **no
+  IdP-hint parameter**, and its source login URL cannot carry the return context by itself:
+  `OAuthRedirect.get_redirect_url` reads no `?next`, and the post-login landing comes from
+  `request.session[SESSION_KEY_GET]["next"]` — session state only `FlowExecutorView.dispatch`
+  writes. A browser sent straight to `/source/oauth/login/<slug>/` therefore dead-ends on the IdP's
+  user page. The built chain instead is: the app appends **one extension parameter**
+  (`beekeepingit_idp=google`) to the **standard** authorize request
+  ([oidc-integration.md §7](oidc-integration.md#7-client-contract-flutter-web-pwa)) → the
+  unauthenticated authorize view redirects into the authentication flow with
+  `next=<the authorize path, relative>` → an expression policy reads that stored `next`, resolves
+  the slug **against enabled sources in Authentik's own database**, and sets
+  `redirect_stage_target` → a `RedirectStage` at order 5 emits an `xak-flow-redirect` challenge the
+  web executor **auto-follows** → after the upstream returns, `SourceFlowManager` restores the same
+  `next` and the user lands back on the pending authorize request, in the app. The client stays
+  discovery-only: no vendor URL scheme, no second client id, no second issuer, **no change to the
+  token contract**.
+  - **Rejected alternative**, recorded so it isn't re-litigated: Authentik's native
+    `AutoRedirectController` (fires when an identification stage has empty `user_fields`, exactly
+    one source and no passwordless flow) driven by a **second OAuth2 provider** whose
+    `authentication_flow` points at such a flow. It needs no policy — but a second provider means a
+    second `client_id` and a second per-provider issuer, so its tokens would carry the wrong
+    `aud`/`iss` unless the admin-client-style iss/aud override mapping (§3.2) were duplicated onto
+    it. That is a change to the **frozen** token contract plus another public client, traded for a
+    UX detail. Declined.
+  - **Safety.** This binds a stage into the **default authentication flow**, so a mistake would
+    hijack every login. Four independent guards: `evaluate_on_plan: false` +
+    `re_evaluate_policies: true` (the policy runs at stage time — `SESSION_KEY_GET` does not exist
+    at plan time; same flags and rationale as §8.10's email bindings); the policy returns **false
+    on any doubt** and a raising expression policy evaluates to the binding's `failure_result`
+    (false), which **skips** the stage; `target_static` is a deliberately unresolvable path, dead
+    config by construction, so a lost override 404s rather than redirecting somewhere useful; and
+    **CI proves the negative case live** — the stand-in below makes this stage real in dev/CI,
+    and every password-login spec runs through it.
+- **The app side (D-18, NFR-I18N-1).** `login({String? idpHint})` in
+  [`auth_controller.dart`](../../client/lib/core/auth/auth_controller.dart) passes the hint through
+  `openid_client`'s `additionalParameters`; PKCE, `state`, scopes, redirect URI and the code
+  exchange are **byte-identically** the password path's, which is why the resulting token is the
+  same. The login screen gains a `SecondaryActionButton` (`login-google-button`) beside the
+  unchanged honey primary — same 56px gloves-friendly target and the same
+  `Semantics`+`ExcludeSemantics` wrapper (WCAG 2.2 AA). The label is externalized EN/PT
+  (`loginWithGoogleButton` — "Continue with Google" / "Continuar com a Google").
+- **i18n limitation, same class as §8.10/§8.11.** The **provider-rendered** button is labelled
+  `Continue with {source.name}`: `source.name` is a DB string Authentik never runs through gettext,
+  and the surrounding template translates only into the web catalogs Authentik ships — which at
+  2026.5.4 include `pt-BR` but **no `pt-PT`** — so the IdP's own login card renders in English for a
+  pt-PT browser. Tracked with the existing limitations in
+  [#412](https://github.com/TiagoJVO/beekeepingit/issues/412); re-check on version bumps. The app's
+  own screens are fully EN/PT via gen-l10n.
+- **Sign-out is unaffected (verified, not assumed).** Logout is a front-channel `end_session` GET
+  with `id_token_hint` (§8.5), and federation changes neither the token nor the session model —
+  the Authentik SSO session a federated login creates is the same session object a password login
+  creates (`default-source-authentication`'s `user_login` stage is the _same stage object_ the
+  default flow uses). The local PowerSync invalidation is client-side and untouched. The §7
+  "Logout" row is unchanged. **Not** verified end-to-end through a real Google round-trip — see
+  the honesty note below.
+- **Testing (NFR-TST-1) — three layers, because no single one can cover this.** A live e2e through
+  real Google is not automatable (consent screen + bot detection) and must never run in CI, so the
+  path is proven in parts:
+  1. **Config, offline.** [`scripts/check-federation-source-posture.sh`](../../scripts/check-federation-source-posture.sh)
+     (`task repo:lint` → CI) asserts on the blueprint source that every federation source is
+     enrollment-closed, `identifier`-matched, `!Env`-credentialed and conditions-gated, and that no
+     identification-stage entry is left with empty `user_fields` (which would trip
+     `AutoRedirectController` and remove every route to the password form).
+  2. **The inbound half, live.** A **dev/CI stand-in source** — a generic `openidconnect` source
+     with the **identical** posture, hermetic at apply time (with both `oidc_*` URL fields empty
+     the serializer makes zero outbound calls) — plus
+     [`infra/ci/authentik-federation-probe.py`](../../infra/ci/authentik-federation-probe.py), run
+     by `helm-e2e.yml` through `ak shell` in the worker (the same idiom as §8.10's SMTP probe). It
+     drives the **real `SourceFlowManager`** and asserts an unknown upstream identity yields
+     `Action.ENROLL` → **HTTP 400 with no `User` and no connection row created**, while a linked
+     identity yields `Action.AUTH` resolving to the existing seed user with an unchanged `upn`.
+  3. **The outbound half, live.** [`client/e2e/tests/federation.spec.ts`](../../client/e2e/tests/federation.spec.ts):
+     both actions render on the app's sign-in screen; a plain "Sign in" is **not** hijacked by the
+     redirect stage; a hinted request reaches the upstream **in one hop** with a well-formed
+     authorize request (`client_id`, `response_type`, the `/source/oauth/callback/<slug>/`
+     redirect URI, `state`, `openid` scope); and an unknown hint falls through to the normal login
+     form rather than erroring or redirecting anywhere a crafted value chose.
+     Plus Flutter unit/widget tests for the hint parameter, the button, its EN/PT label and its tap
+     target/semantics.
+- **What is NOT tested, stated plainly.** No automated test completes a sign-in through a real
+  Google account: the token exchange, Google's userinfo shape, the real callback and the
+  end-to-end sign-out after a _federated_ login are covered only by the **manual verification
+  checklist** in [`infra/README.md`](../../infra/README.md), which must be run once against a
+  cluster with real credentials. The probe's "`upn` unchanged" assertion is also narrower than it
+  looks — `get_action()` never touches the `User` row, so it proves the flow-manager path is
+  non-mutating, not that a full federated login leaves `upn` alone; the guarantee there rests on
+  `default-source-authentication` having no `user_write` stage, which the probe does not enforce.
 
 ## 9. Acceptance-criteria traceability (#109)
 

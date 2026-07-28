@@ -19,6 +19,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loginButton => 'Sign in';
 
   @override
+  String get loginWithGoogleButton => 'Continue with Google';
+
+  @override
   String get loginError =>
       'Couldn\'t sign in — check your connection and try again.';
 
