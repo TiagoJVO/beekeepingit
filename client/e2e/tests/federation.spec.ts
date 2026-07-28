@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, Page, test } from "@playwright/test";
 
 import { enableSemantics, gotoAppRoot } from "./helpers";
 
@@ -13,8 +13,10 @@ import { enableSemantics, gotoAppRoot } from "./helpers";
  * IDENTICAL posture as the Google one (same model, same `OAuthRedirect` view,
  * same `SourceFlowManager`, `user_matching_mode: identifier`, no
  * `enrollment_flow`), so the wiring under test is genuinely the same wiring,
- * not a mock of it. Only the upstream differs, and its authorize URL points at
- * an inert, reachable endpoint so the browser can land there and be inspected.
+ * not a mock of it. Only the upstream differs: its authorize URL points at an
+ * inert, reachable endpoint, and the spec asserts the outbound REQUEST to it
+ * rather than any landing page (that endpoint answers 204, and a browser never
+ * commits a navigation to a 204).
  *
  * The INBOUND half — what authentik decides when an upstream identity comes
  * back, i.e. the invitation-only deny posture and the unchanged `sub` — is
@@ -49,6 +51,53 @@ const AUTH_ORIGIN = process.env.E2E_AUTH_ORIGIN ?? "https://auth.beekeepingit.lo
 // those flows stop at the upstream. It must still be a registered redirect for
 // the `beekeepingit-pwa` client or authentik rejects the request outright.
 const APP_ORIGIN = process.env.E2E_BASE_URL ?? "https://app.beekeepingit.local:8443";
+const DISCOVERY_URL = `${AUTH_ORIGIN}/application/o/beekeepingit/.well-known/openid-configuration`;
+
+/**
+ * Builds an authorize request for the `beekeepingit-pwa` client carrying a
+ * federation hint, WITHOUT driving the app's sign-in button first.
+ *
+ * Why not just click the button and replay the URL it produces: that click
+ * leaves an in-progress flow plan in authentik's Django session, and
+ * `FlowExecutorView.dispatch` CONTINUES an existing plan for the same flow
+ * rather than re-planning it — so a replay resumes at whatever stage the click
+ * already reached and never revisits the order-5 redirect stage. That made
+ * these specs fail on the first attempt and pass only on Playwright's retry
+ * (which starts from a fresh context), across three CI runs.
+ *
+ * Discovery is fetched from INSIDE the page, not with Playwright's `request`
+ * fixture: that fixture is a Node-side HTTP client and does not honour the
+ * browser's `--host-resolver-rules`, so `auth.beekeepingit.local` simply does
+ * not resolve for it. Fetching in-page is also what the real client does, and
+ * the blueprint already grants this origin CORS on the discovery document
+ * (the PWA provider's strict bare-origin redirect_uri entry exists for exactly
+ * that).
+ *
+ * No coverage is lost by not using the button here: that "Continue with
+ * Google" sends precisely this request, with PKCE and state intact, is pinned
+ * by client/test/core/auth/auth_controller_test.dart. What is unproven there,
+ * and proven here, is what authentik DOES with the hint.
+ */
+async function hintedAuthorizeUrl(page: Page, hint: string, state: string): Promise<string> {
+  const authorizationEndpoint = await page.evaluate(
+    async (url) => (await (await fetch(url)).json()).authorization_endpoint as string,
+    DISCOVERY_URL,
+  );
+  expect(
+    authorizationEndpoint,
+    "OIDC discovery should advertise an authorize endpoint",
+  ).toBeTruthy();
+
+  const hinted = new URL(authorizationEndpoint);
+  hinted.searchParams.set("client_id", "beekeepingit-pwa");
+  hinted.searchParams.set("response_type", "code");
+  hinted.searchParams.set("redirect_uri", APP_ORIGIN);
+  hinted.searchParams.set("scope", "openid profile email");
+  hinted.searchParams.set("state", state);
+  // The one parameter under test — the same one the app's button sends.
+  hinted.searchParams.set("beekeepingit_idp", hint);
+  return hinted.toString();
+}
 
 test.describe("upstream federation (#363)", () => {
   test("the app's sign-in screen offers a federated action next to Sign in", async ({ page }) => {
@@ -88,43 +137,14 @@ test.describe("upstream federation (#363)", () => {
   // as the flow's `next` -> hint policy resolves the slug against enabled
   // sources -> redirect stage auto-follows to /source/oauth/login/<slug>/ ->
   // OAuthRedirect builds the upstream authorize request. Asserting the
-  // parameters on the final URL proves every link in that chain fired.
+  // parameters on that outbound request proves every link in the chain fired.
   test("a federated action reaches the upstream in one hop, with a well-formed authorize request", async ({
     page,
-    request,
   }) => {
-    // Build the authorize request straight from OIDC discovery rather than by
-    // driving the app's button first.
-    //
-    // This started out as "click Sign in, capture the pending authorize URL,
-    // replay it with the hint", and it was FLAKY across three CI runs — failing
-    // the first attempt and passing only on Playwright's retry (which CI counts
-    // as a pass). The preamble was the problem, not the assertion: it leaves an
-    // in-progress flow plan in authentik's Django session, and
-    // `FlowExecutorView.dispatch` CONTINUES an existing plan for the same flow
-    // rather than re-planning it, so the replay resumed at whatever stage the
-    // first click had reached and never revisited the order-5 redirect stage.
-    // Clearing cookies was not enough to undo that reliably.
-    //
-    // Constructing the request here removes the app boot, the prior plan and
-    // the session entirely, and costs nothing in coverage: the app-side half
-    // (that "Continue with Google" sends exactly this, with PKCE/state intact)
-    // is pinned by client/test/core/auth/auth_controller_test.dart. What is
-    // unproven there and proven here is what authentik DOES with the hint.
-    const discovery = await request.get(
-      `${AUTH_ORIGIN}/application/o/beekeepingit/.well-known/openid-configuration`,
-    );
-    expect(discovery.ok(), "OIDC discovery should be reachable").toBeTruthy();
-    const authorizationEndpoint = (await discovery.json()).authorization_endpoint as string;
-
-    const hinted = new URL(authorizationEndpoint);
-    hinted.searchParams.set("client_id", "beekeepingit-pwa");
-    hinted.searchParams.set("response_type", "code");
-    hinted.searchParams.set("redirect_uri", APP_ORIGIN);
-    hinted.searchParams.set("scope", "openid profile email");
-    hinted.searchParams.set("state", "e2e-federation-state");
-    // The one parameter under test — the same one the app's button sends.
-    hinted.searchParams.set("beekeepingit_idp", STUB_SLUG);
+    // Boot the app only to get a page on the app origin that discovery can be
+    // fetched from — deliberately no click, so no flow plan is ever created.
+    await gotoAppRoot(page);
+    const hinted = await hintedAuthorizeUrl(page, STUB_SLUG, "e2e-federation-state");
 
     // Assert on the outbound REQUEST, not on where the browser ends up: the
     // stand-in's authorize URL points at authentik's `/-/health/live/`, which
@@ -139,7 +159,7 @@ test.describe("upstream federation (#363)", () => {
     // No click anywhere: the redirect stage auto-follows. The goto's own
     // promise is deliberately not awaited for success — its final response is
     // that 204, which surfaces as an aborted navigation.
-    const navigation = page.goto(hinted.toString()).catch(() => null);
+    const navigation = page.goto(hinted).catch(() => null);
 
     const upstream = new URL((await upstreamRequest).url());
     await navigation;
@@ -159,25 +179,17 @@ test.describe("upstream federation (#363)", () => {
   // normal login, never to an error page or an open redirect. The policy
   // whitelists against enabled sources in authentik's own DB, so this also
   // pins that a crafted parameter cannot steer the redirect anywhere.
-  test("an unknown federation hint falls through to the normal login form", async ({
-    page,
-    request,
-  }) => {
+  test("an unknown federation hint falls through to the normal login form", async ({ page }) => {
     // Same state-free construction as the one-hop test — otherwise this could
     // land on the identification form because a prior plan was already there,
     // rather than because the hint was correctly refused.
-    const discovery = await request.get(
-      `${AUTH_ORIGIN}/application/o/beekeepingit/.well-known/openid-configuration`,
+    await gotoAppRoot(page);
+    const hinted = await hintedAuthorizeUrl(
+      page,
+      "https://evil.example/not-a-source",
+      "e2e-unknown-hint-state",
     );
-    expect(discovery.ok()).toBeTruthy();
-    const hinted = new URL((await discovery.json()).authorization_endpoint as string);
-    hinted.searchParams.set("client_id", "beekeepingit-pwa");
-    hinted.searchParams.set("response_type", "code");
-    hinted.searchParams.set("redirect_uri", APP_ORIGIN);
-    hinted.searchParams.set("scope", "openid profile email");
-    hinted.searchParams.set("state", "e2e-unknown-hint-state");
-    hinted.searchParams.set("beekeepingit_idp", "https://evil.example/not-a-source");
-    await page.goto(hinted.toString());
+    await page.goto(hinted);
 
     await expect(page.locator('input[name="uidField"]')).toBeVisible({ timeout: 30_000 });
     expect(page.url()).toContain(AUTH_ORIGIN);
