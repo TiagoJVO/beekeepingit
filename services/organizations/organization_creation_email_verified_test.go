@@ -33,15 +33,15 @@ import (
 // the user to check their inbox.
 func TestCreateOrganization_EmailVerifiedGate(t *testing.T) {
 	const (
-		verifiedSub     = "3620000a-0000-4000-8000-000000000001"
-		unverifiedSub   = "3620000a-0000-4000-8000-000000000002"
-		verifiedUserID  = "a3620000-0000-7000-8000-000000000001"
-		unverifiedUsrID = "a3620000-0000-7000-8000-000000000002"
+		verifiedSub      = "3620000a-0000-4000-8000-000000000001"
+		unverifiedSub    = "3620000a-0000-4000-8000-000000000002"
+		verifiedUserID   = "a3620000-0000-7000-8000-000000000001"
+		unverifiedUserID = "a3620000-0000-7000-8000-000000000002"
 	)
 	f := newOrgFixtureWithEmailClaims(t,
 		map[string]stubUser{
 			verifiedSub:   {UserID: verifiedUserID, Email: "verified@example.test"},
-			unverifiedSub: {UserID: unverifiedUsrID, Email: "unverified@example.test"},
+			unverifiedSub: {UserID: unverifiedUserID, Email: "unverified@example.test"},
 		},
 		map[string]tokenClaim{
 			verifiedSub:   {Email: "verified@example.test", EmailVerified: true},

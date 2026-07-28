@@ -210,9 +210,10 @@ harvest, which requires visiting all apiaries).
     **admin**; other users **join an existing org via email invitation**.
   - _Extended (D-3 / #362):_ organization creation is **open to any
     self-registered user** with a **verified email** — no invitation, approval
-    or review gate — and each account holds **exactly one** active membership
-    (DB-enforced). A user who already belongs to an organization cannot accept
-    an invitation to another one; see D-3.
+    or review gate — and an account holds **at most one** active membership
+    (DB-enforced cap of 1; zero until onboarding completes). A user who already
+    belongs to an organization cannot accept an invitation to another one; see
+    D-3.
 - **FR-ONB-3** — **Organization membership & invitations**: the org admin can
   **invite members by email**; invited users join the existing organization. The
   org creator is the first admin (see NFR-ROL-1). _(Detail still open: invite
