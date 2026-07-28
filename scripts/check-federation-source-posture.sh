@@ -12,7 +12,7 @@
 #      (core/sources/flow_manager.py `handle_enroll`, authentik 2026.5.4).
 #      Setting it opens self-service account creation via the upstream, which
 #      is #365 and NOT this issue — invitation-only account creation still
-#      applies (auth.md §8.12).
+#      applies (auth.md §8.13).
 #   2. `user_matching_mode: identifier`. Matching keys on the upstream's stable
 #      SUBJECT. Any `email_*` mode would link an existing local account from an
 #      upstream email — and authentik's Google source type drops Google's

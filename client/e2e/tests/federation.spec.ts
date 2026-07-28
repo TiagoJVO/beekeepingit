@@ -44,6 +44,11 @@ const STUB_SLUG = "federation-stub";
 const STUB_BUTTON = 'button[name^="source-"]';
 
 const AUTH_ORIGIN = process.env.E2E_AUTH_ORIGIN ?? "https://auth.beekeepingit.local:8443";
+// Only used as a syntactically valid `redirect_uri` on the authorize requests
+// the IdP-side tests construct — nothing ever redirects back to it, because
+// those flows stop at the upstream. It must still be a registered redirect for
+// the `beekeepingit-pwa` client or authentik rejects the request outright.
+const APP_ORIGIN = process.env.E2E_BASE_URL ?? "https://app.beekeepingit.local:8443";
 
 test.describe("upstream federation (#363)", () => {
   test("the app's sign-in screen offers a federated action next to Sign in", async ({ page }) => {
@@ -86,56 +91,54 @@ test.describe("upstream federation (#363)", () => {
   // parameters on the final URL proves every link in that chain fired.
   test("a federated action reaches the upstream in one hop, with a well-formed authorize request", async ({
     page,
+    request,
   }) => {
-    await gotoAppRoot(page);
-    await enableSemantics(page);
+    // Build the authorize request straight from OIDC discovery rather than by
+    // driving the app's button first.
+    //
+    // This started out as "click Sign in, capture the pending authorize URL,
+    // replay it with the hint", and it was FLAKY across three CI runs — failing
+    // the first attempt and passing only on Playwright's retry (which CI counts
+    // as a pass). The preamble was the problem, not the assertion: it leaves an
+    // in-progress flow plan in authentik's Django session, and
+    // `FlowExecutorView.dispatch` CONTINUES an existing plan for the same flow
+    // rather than re-planning it, so the replay resumed at whatever stage the
+    // first click had reached and never revisited the order-5 redirect stage.
+    // Clearing cookies was not enough to undo that reliably.
+    //
+    // Constructing the request here removes the app boot, the prior plan and
+    // the session entirely, and costs nothing in coverage: the app-side half
+    // (that "Continue with Google" sends exactly this, with PKCE/state intact)
+    // is pinned by client/test/core/auth/auth_controller_test.dart. What is
+    // unproven there and proven here is what authentik DOES with the hint.
+    const discovery = await request.get(
+      `${AUTH_ORIGIN}/application/o/beekeepingit/.well-known/openid-configuration`,
+    );
+    expect(discovery.ok(), "OIDC discovery should be reachable").toBeTruthy();
+    const authorizationEndpoint = (await discovery.json()).authorization_endpoint as string;
 
-    // Drive the stand-in the same way the Google button drives Google: the
-    // app's button hardcodes `google`, so navigate the identical authorize
-    // request with the stand-in's slug. (The Google button's own parameter is
-    // pinned by client/test/core/auth/auth_controller_test.dart; what is
-    // unproven there and proven here is what authentik DOES with it.)
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/if\/flow\//, { timeout: 60_000 });
-
-    const authorizeUrl = new URL(page.url());
-    const pendingNext = authorizeUrl.searchParams.get("next");
-    expect(pendingNext, "authentik should have stored the pending authorize request").toBeTruthy();
-
-    const hinted = new URL(pendingNext!, AUTH_ORIGIN);
+    const hinted = new URL(authorizationEndpoint);
+    hinted.searchParams.set("client_id", "beekeepingit-pwa");
+    hinted.searchParams.set("response_type", "code");
+    hinted.searchParams.set("redirect_uri", APP_ORIGIN);
+    hinted.searchParams.set("scope", "openid profile email");
+    hinted.searchParams.set("state", "e2e-federation-state");
+    // The one parameter under test — the same one the app's button sends.
     hinted.searchParams.set("beekeepingit_idp", STUB_SLUG);
 
-    // Drop the IdP session before replaying the authorize request WITH the
-    // hint. Clicking "Sign in" above left an in-progress flow plan in
-    // authentik's Django session, and `FlowExecutorView.dispatch` CONTINUES an
-    // existing plan for the same flow rather than re-planning — so the
-    // executor would resume at the identification stage it had already reached
-    // and never revisit the order-5 redirect stage. That is what made this
-    // spec flaky on its first two CI runs: it failed on the first attempt and
-    // passed on Playwright's retry, which starts from a fresh context.
-    // Clearing cookies is the smallest thing that reproduces "a user whose
-    // first action is Continue with Google", which is the case under test.
-    await page.context().clearCookies();
-
-    // Assert on the outbound REQUEST, not on where the browser ends up.
-    //
-    // What this test is about is the request that leaves for the upstream, and
-    // the stand-in's authorize URL deliberately points at an inert endpoint —
-    // authentik's `/-/health/live/`, which answers **204 No Content**. A
-    // browser does not commit a navigation to a 204: it stays on the previous
-    // page. So `waitForURL` against that URL was asserting on undefined
-    // behaviour and timed out non-deterministically (it went flaky on the
-    // first CI run of this spec, passing only on Playwright's retry).
-    // `waitForRequest` is both deterministic and a closer match to the claim:
+    // Assert on the outbound REQUEST, not on where the browser ends up: the
+    // stand-in's authorize URL points at authentik's `/-/health/live/`, which
+    // answers 204 No Content, and a browser does not commit a navigation to a
+    // 204 — asserting on the resulting page URL would be asserting on
+    // undefined behaviour. The request is also the closer match to the claim:
     // the redirect chain reached the upstream with these parameters,
     // regardless of what the upstream chose to answer.
-    const upstreamRequest = page.waitForRequest(
-      (req) => req.isNavigationRequest() && req.url().includes("/-/health/live/"),
-      { timeout: 60_000 },
-    );
-    // No click anywhere in here: the redirect stage auto-follows. The goto's
-    // own promise is deliberately not awaited for success — its final response
-    // is that 204, which surfaces as an aborted navigation.
+    const upstreamRequest = page.waitForRequest((req) => req.url().includes("/-/health/live/"), {
+      timeout: 60_000,
+    });
+    // No click anywhere: the redirect stage auto-follows. The goto's own
+    // promise is deliberately not awaited for success — its final response is
+    // that 204, which surfaces as an aborted navigation.
     const navigation = page.goto(hinted.toString()).catch(() => null);
 
     const upstream = new URL((await upstreamRequest).url());
@@ -156,21 +159,24 @@ test.describe("upstream federation (#363)", () => {
   // normal login, never to an error page or an open redirect. The policy
   // whitelists against enabled sources in authentik's own DB, so this also
   // pins that a crafted parameter cannot steer the redirect anywhere.
-  test("an unknown federation hint falls through to the normal login form", async ({ page }) => {
-    await gotoAppRoot(page);
-    await enableSemantics(page);
-
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/if\/flow\//, { timeout: 60_000 });
-
-    const pendingNext = new URL(page.url()).searchParams.get("next");
-    expect(pendingNext).toBeTruthy();
-    const hinted = new URL(pendingNext!, AUTH_ORIGIN);
+  test("an unknown federation hint falls through to the normal login form", async ({
+    page,
+    request,
+  }) => {
+    // Same state-free construction as the one-hop test — otherwise this could
+    // land on the identification form because a prior plan was already there,
+    // rather than because the hint was correctly refused.
+    const discovery = await request.get(
+      `${AUTH_ORIGIN}/application/o/beekeepingit/.well-known/openid-configuration`,
+    );
+    expect(discovery.ok()).toBeTruthy();
+    const hinted = new URL((await discovery.json()).authorization_endpoint as string);
+    hinted.searchParams.set("client_id", "beekeepingit-pwa");
+    hinted.searchParams.set("response_type", "code");
+    hinted.searchParams.set("redirect_uri", APP_ORIGIN);
+    hinted.searchParams.set("scope", "openid profile email");
+    hinted.searchParams.set("state", "e2e-unknown-hint-state");
     hinted.searchParams.set("beekeepingit_idp", "https://evil.example/not-a-source");
-    // Same fresh-session requirement as the one-hop test above — otherwise
-    // this would land on the identification form because the plan was already
-    // there, not because the hint was correctly refused.
-    await page.context().clearCookies();
     await page.goto(hinted.toString());
 
     await expect(page.locator('input[name="uidField"]')).toBeVisible({ timeout: 30_000 });
