@@ -973,8 +973,10 @@ D-3). What bounds the surface is what already ships:
   limit is needed.
 - **Abuse response is the platform tier, not a new gate** — an operator lists every organization
   with its member count (#467, D-32) and disables the offending account at the IdP (D-7).
-  Per-address caps, sign-up rate limiting and disposable-address policy are NFR-RL-1's mechanism,
-  deferred by D-4; revisit at public launch.
+  Per-address organization caps and disposable-address policy are NFR-RL-1's mechanism, deferred
+  by D-4; revisit at public launch. Throttling the **sign-up endpoint** itself is a separate,
+  already-tracked concern — [#416](https://github.com/TiagoJVO/beekeepingit/issues/416) under
+  EPIC-14, whose §8.11 abuse-posture AC this decision does not displace.
 - **The single-active-membership dead end is now recorded, not emergent.** A user who already has
   an active membership and is **then** invited elsewhere never joins: §8.7's accept-on-login
   fallback only runs for a caller with **no** active membership, there is no self-service accept

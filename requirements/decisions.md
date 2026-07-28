@@ -77,11 +77,12 @@ _Last updated: 2026-07-28._
   `idx_memberships_one_active_per_user` on `organizations.memberships` (organizations migration
   `00004`), so the per-account cap is **1 by construction**; (3) **abuse response is the platform
   tier** (D-32) — an operator lists every organization with its member count (#467) and disables
-  the offending account at the IdP (D-7). Per-address caps, sign-up rate limiting and
-  disposable-address policy are **deliberately not built now**: they are NFR-RL-1's mechanism,
+  the offending account at the IdP (D-7). **Per-address organization caps** and
+  **disposable-address policy** are **deliberately not built now**: they are NFR-RL-1's mechanism,
   deferred by D-4 (v1 is free, no quota enforcement), and the first real deployment is
   staging-grade rather than a prod environment holding real user data (D-26). Revisit at public
-  launch.
+  launch. _(Throttling the sign-up endpoint itself is a separate, already-tracked concern — EPIC-14
+  #416, NFR-SEC-1 — not re-decided here.)_
 - **Single active membership vs. a later invitation — a block, stated (#362).** A user who
   already has an active membership and is **then** invited to another organization does **not**
   join it: the accept-on-login step runs only for a caller with **no** active membership

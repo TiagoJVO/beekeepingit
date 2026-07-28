@@ -18,23 +18,6 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
   entry is dev-convenience and belongs to the EPIC-14 hardened-blueprint variant, not prod — tighten
   the admin client's redirect_uris to the real per-environment admin origin there. Owner: EPIC-14.
 
-## `feat/admin-app-deploy-and-cors` (#449 — admin host + cross-origin CORS)
-
-- **Per-environment admin nginx CSP** — `admin/nginx.conf` ships its
-  `Content-Security-Policy-Report-Only` with the **dev** `connect-src` hosts
-  (`https://app.beekeepingit.local:8443` / `auth…`) hardcoded. `release-deploy.yml`'s
-  `publish-admin` now bakes the **staging/prod** `VITE_*` API/issuer hosts into the image, so a
-  non-dev admin build's real API host is **not** in its CSP — harmless today only because the
-  policy is **Report-Only** (it reports, does not block). Env-templating the admin (and client)
-  nginx CSP is tracked in [#462](https://github.com/TiagoJVO/beekeepingit/issues/462); flipping
-  the admin CSP to **enforcing** must wait for that per-environment templating, or a staging/prod
-  admin build would block its own API calls. **Not a merge blocker** (Report-Only). Prune once
-  #462 lands the templating.
-
-## `feat/organizations-member-lifecycle` (#290 — member remove + role change)
-
-- Re-invite reactivation on removal → #459
-
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -47,11 +30,3 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
   linting-toolchain gap, not a real type regression in the codebase. Re-check #495 once
   typescript-eslint ships TS 7.x support (or Dependabot supersedes it with a newer PR); prune
   this entry once #495 merges or is closed as superseded.
-
----
-
-_Aside from the above: PR #418's before-merge item (create the `cluster-ops.yml`
-secrets/variables) is done — the `staging-gate` set is in place. `production-gate` secrets are
-not owed here: prod is deferred until DR (`Q-DR`) + #90 land (D-26), and the fill-in steps live in
-`infra/README.md#secrets--remote-cluster-operations`. The `DEPLOY_NOTIFY_TOKEN` manual step remains
-tracked in [#413](https://github.com/TiagoJVO/beekeepingit/issues/413), still open._
