@@ -924,8 +924,17 @@ entries:
       provider_type: google
       # GoogleType hardcodes authorization/token/profile/jwks URLs and is NOT
       # `urls_customizable`, so setting them here would be dead config.
-      consumer_key: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_ID]
-      consumer_secret: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_SECRET]
+      # ALWAYS give `!Env` a two-element [VAR, default] form. authentik's `Env`
+      # tag constructor reads `node.value[1]` unconditionally for a sequence
+      # node, so the one-element `!Env [VAR]` spelling raises IndexError while
+      # the file is being PARSED — which kills `blueprints_discovery` for the
+      # whole file (no BlueprintInstance row is created at all, so nothing even
+      # reports the file as invalid; the only symptom is OIDC discovery 404ing
+      # forever, the PR #414 shape again). Found the hard way by this PR's
+      # first CI run. `scripts/check-federation-source-posture.sh` now fails on
+      # any single-element `!Env`.
+      consumer_key: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_ID, ""]
+      consumer_secret: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_SECRET, ""]
       user_matching_mode: identifier
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
       # enrollment_flow: intentionally UNSET — see the section comment.

@@ -123,6 +123,22 @@ awk '
   { sub(/(^|[[:space:]])#.*$/, "") }
   /^[[:space:]]*$/ { next }
 
+  # `!Env` MUST use the two-element [VAR, default] form. authentik`s Env tag
+  # constructor reads node.value[1] unconditionally for a sequence node, so the
+  # one-element `!Env [VAR]` spelling raises IndexError while the file is being
+  # PARSED. That kills blueprints_discovery for the WHOLE file: no
+  # BlueprintInstance row is created, nothing reports the file as invalid, and
+  # the only symptom is OIDC discovery 404ing forever. Cost one 23-minute CI
+  # bring-up to diagnose, so it is asserted here in milliseconds. (A structural
+  # YAML parse does NOT catch this — the tag constructors only run inside
+  # authentik.)
+  /!Env[[:space:]]*\[/ {
+    if ($0 !~ /!Env[[:space:]]*\[[^]]*,/) {
+      printf("✗ [federation-source] line %d uses the one-element `!Env [VAR]` form — authentik raises IndexError parsing it, which silently kills blueprint discovery for the entire file; use `!Env [VAR, \"\"]`\n", FNR) > "/dev/stderr"
+      status = 1
+    }
+  }
+
   # Fail closed on YAML anchors/aliases/merge keys ANYWHERE in the file. This
   # guard reasons over each entry`s own text and does not resolve anchors, so a
   # `<<: *shared` merge could reintroduce `enrollment_flow` into a source entry

@@ -363,6 +363,14 @@ optional.
     validation, dev/CI bring-up would begin depending on Google's reachability. Static pin:
     `scripts/check-federation-source-posture.sh` (`task repo:lint`) asserts every source entry is
     conditions-gated.
+  - **`!Env` must always carry a default** (`!Env [VAR, ""]`, never `!Env [VAR]`). The tag's
+    constructor reads `node.value[1]` unconditionally for a sequence node, so the one-element
+    spelling raises `IndexError` **while the file is being parsed** — which kills
+    `blueprints_discovery` for the **whole file**: no `BlueprintInstance` row is created at all,
+    so nothing reports the file as invalid and the only symptom is OIDC discovery 404ing forever
+    (the PR #414 shape, reached by a different route). A structural YAML parse does **not** catch
+    it, because the tag constructors only run inside authentik. Static pin:
+    `scripts/check-federation-source-posture.sh` fails on any single-element `!Env`.
   - **Google's source type drops `verified_email`** (`get_base_user_properties` returns only
     `email`/`name`), which is why `user_matching_mode` **must** stay `identifier` and never an
     `email_*` mode. If a bump starts surfacing the upstream's verification state, revisit
