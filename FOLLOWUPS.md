@@ -9,16 +9,6 @@
 
 ## `feat/google-federation-363` (#363 — Google federation + "Continue with Google")
 
-Before merge:
-
-- **The live e2e and the in-cluster probe have never run.** `client/e2e/tests/federation.spec.ts`
-  and `infra/ci/authentik-federation-probe.py` were written against source-verified Authentik
-  2026.5.4 behavior but authored without a cluster; their first real execution is this PR's
-  `helm-e2e` job. Read that job's output before merging — a red probe/spec here is a real finding,
-  not flake. Everything else in the change (Helm renders for all three overlays, the blueprint
-  posture guard including its negative cases, Flutter analyze + the full `flutter test` suite,
-  prettier/markdownlint) was verified locally.
-
 After merge (NOT merge blockers — nothing can exercise these until an environment has real Google
 credentials, and none exists yet):
 
