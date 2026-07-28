@@ -1087,6 +1087,14 @@ identifier` is stated explicitly because it is a security decision, not a defaul
   `next` and the user lands back on the pending authorize request, in the app. The client stays
   discovery-only: no vendor URL scheme, no second client id, no second issuer, **no change to the
   token contract**.
+  - **The hint is honoured when the authentication flow is _planned_, not on every request.**
+    `FlowExecutorView.dispatch` **continues** an existing plan for the same flow rather than
+    re-planning it, so a browser that already has a half-finished login in flight resumes at the
+    stage it had reached and never revisits the order-5 redirect stage — the user simply gets the
+    normal login page. Benign (never an error, never a wrong redirect) and invisible in the app,
+    where either button starts a fresh authorize; but it is real, and it is what made the e2e
+    flaky until the spec was fixed to start from a clean session. Worth knowing before adding a
+    "retry with Google" affordance mid-flow.
   - **Rejected alternative**, recorded so it isn't re-litigated: Authentik's native
     `AutoRedirectController` (fires when an identification stage has empty `user_fields`, exactly
     one source and no passwordless flow) driven by a **second OAuth2 provider** whose

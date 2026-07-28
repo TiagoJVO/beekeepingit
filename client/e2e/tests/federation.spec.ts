@@ -105,6 +105,18 @@ test.describe("upstream federation (#363)", () => {
     const hinted = new URL(pendingNext!, AUTH_ORIGIN);
     hinted.searchParams.set("beekeepingit_idp", STUB_SLUG);
 
+    // Drop the IdP session before replaying the authorize request WITH the
+    // hint. Clicking "Sign in" above left an in-progress flow plan in
+    // authentik's Django session, and `FlowExecutorView.dispatch` CONTINUES an
+    // existing plan for the same flow rather than re-planning — so the
+    // executor would resume at the identification stage it had already reached
+    // and never revisit the order-5 redirect stage. That is what made this
+    // spec flaky on its first two CI runs: it failed on the first attempt and
+    // passed on Playwright's retry, which starts from a fresh context.
+    // Clearing cookies is the smallest thing that reproduces "a user whose
+    // first action is Continue with Google", which is the case under test.
+    await page.context().clearCookies();
+
     // Assert on the outbound REQUEST, not on where the browser ends up.
     //
     // What this test is about is the request that leaves for the upstream, and
@@ -155,6 +167,10 @@ test.describe("upstream federation (#363)", () => {
     expect(pendingNext).toBeTruthy();
     const hinted = new URL(pendingNext!, AUTH_ORIGIN);
     hinted.searchParams.set("beekeepingit_idp", "https://evil.example/not-a-source");
+    // Same fresh-session requirement as the one-hop test above — otherwise
+    // this would land on the identification form because the plan was already
+    // there, not because the hint was correctly refused.
+    await page.context().clearCookies();
     await page.goto(hinted.toString());
 
     await expect(page.locator('input[name="uidField"]')).toBeVisible({ timeout: 30_000 });
