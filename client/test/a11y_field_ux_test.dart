@@ -112,6 +112,17 @@ void main() {
       expectMinTapTarget(tester, find.byKey(const Key('login-button')));
     });
 
+    // #363 (D-18): the federated action must be as gloves-friendly as the
+    // primary one — same 56px SecondaryActionButton, not a bare text link.
+    testWidgets('login screen federated action (Continue with Google)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_withMaterial(const LoginScreen()));
+      await tester.pumpAndSettle();
+
+      expectMinTapTarget(tester, find.byKey(const Key('login-google-button')));
+    });
+
     testWidgets('apiaries list view-toggle segments', (tester) async {
       final router = GoRouter(
         initialLocation: '/apiaries',
@@ -253,6 +264,15 @@ void main() {
         await tester.pumpAndSettle();
 
         expectHasSemanticsLabel(tester, const Key('login-button'));
+      });
+
+      testWidgets('federated login button announces its action (#363)', (
+        tester,
+      ) async {
+        await tester.pumpWidget(_withMaterial(const LoginScreen()));
+        await tester.pumpAndSettle();
+
+        expectHasSemanticsLabel(tester, const Key('login-google-button'));
       });
 
       testWidgets('apiaries view toggle segments announce list/map', (

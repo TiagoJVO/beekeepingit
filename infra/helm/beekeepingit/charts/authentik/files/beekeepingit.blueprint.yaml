@@ -800,3 +800,395 @@ entries:
     attrs:
       user_fields: [email, username]
       enrollment_flow: !KeyOf flow-enrollment
+      # Federation sources shown on the login card (#363). Deliberately EMPTY
+      # here and re-set by the conditional entry at the end of this file: an
+      # environment WITHOUT federation credentials must end up with no source
+      # bound, including one that had them before (removing the credentials
+      # Secret must actually unbind the button, not leave a dead one). The
+      # conditional entry runs LATER in this file, so when credentials ARE
+      # present it wins. Dropping the built-in `authentik-built-in` source is
+      # safe: its `ui_login_button` returns None (core/models.py) so it renders
+      # nothing, and password login comes from `user_fields` + the password
+      # stage bound at order 20, NOT from this M2M (verified at 2026.5.4).
+      sources: []
+
+  # === Google federation (#363, FR-ONB-1, FR-TEN-1, NFR-SEC-1, D-7, D-18) =====
+  #
+  # Google is added as an UPSTREAM federation source on Authentik. Domain
+  # services are untouched: a federated login still resolves to a LOCAL
+  # authentik user, and the provider still mints the same standard OIDC token
+  # from OUR issuer with `sub` = that user's `attributes.upn` (sub_mode:
+  # user_upn). That token invariance IS D-7's IdP-agnostic boundary
+  # (auth.md §3.1) — see auth.md §8.13.
+  #
+  # ---------------------------------------------------------------------------
+  # CREDENTIALS: not in git, and not in a ConfigMap either (NFR-SEC-1)
+  # ---------------------------------------------------------------------------
+  # The Google OAuth client id/secret arrive as PROCESS ENVIRONMENT via the
+  # blueprint's own `!Env` tag, resolved by the authentik worker at import time
+  # (blueprints/v1/common.py `class Env` — `getenv(key) or default`). They are
+  # NOT Helm-interpolated: this file is rendered into a ConfigMap
+  # (templates/blueprint-configmap.yaml), and a ConfigMap is not a Secret — a
+  # `lookup`-interpolated client secret would be world-readable in-namespace and
+  # visible in `helm get manifest`. Instead templates/config-secret.yaml merges
+  # the out-of-band Secret `beekeepingit-authentik-google-credentials` (keys:
+  # client-id, client-secret) into `beekeepingit-authentik-config` via `lookup`
+  # — the exact cluster-state-not-git idiom #361 uses for the SMTP relay
+  # credentials — and the upstream chart env-mounts every key of that Secret on
+  # the server and the worker. Ops steps: infra/README.md.
+  #
+  # ---------------------------------------------------------------------------
+  # WHY `conditions:` RATHER THAN A HELM `if` (this is load-bearing)
+  # ---------------------------------------------------------------------------
+  # `BlueprintEntry.conditions` are evaluated by `Importer._validate_single`
+  # BEFORE the model is resolved or the serializer runs — an entry whose
+  # conditions are falsy is skipped outright ("One or more conditions of this
+  # entry are not fulfilled, skipping" -> `return None` -> `continue`). Two
+  # consequences, both required:
+  #   1. A cluster with no Google credentials deploys CLEANLY. `consumer_key` /
+  #      `consumer_secret` are plain TextFields with no blank=True, so a rendered
+  #      entry with empty credentials would raise a ValidationError — and one
+  #      invalid entry marks the WHOLE blueprint invalid, so NOTHING in this file
+  #      would apply (the PR #414 failure mode: OIDC discovery 404s forever).
+  #   2. `OAuthSourceSerializer.validate` performs LIVE OUTBOUND HTTP for a
+  #      `google` source — it falls back to the GoogleType's own
+  #      `oidc_well_known_url`/`oidc_jwks_url` class constants even when this
+  #      file sets neither, and fetches accounts.google.com + googleapis.com at
+  #      apply time. Skipping the entry skips that fetch, so dev/CI bring-up
+  #      never depends on Google being reachable.
+  # Because the condition lives in the blueprint (not in Helm), THIS FILE STAYS
+  # STATIC — `helm template` renders it byte-for-byte, which is what makes the
+  # offline assertions in scripts/check-federation-source-posture.sh possible.
+  #
+  # ---------------------------------------------------------------------------
+  # ACCOUNT POSTURE: invitation-only still holds, and identity keys on the
+  # provider's stable SUBJECT — never on the email
+  # ---------------------------------------------------------------------------
+  #   * `enrollment_flow` is DELIBERATELY ABSENT. Verified at 2026.5.4,
+  #     core/sources/flow_manager.py `handle_enroll`: with no enrollment flow it
+  #     returns `bad_request_message(... "Source is not configured for
+  #     enrollment.")` — an HTTP 400 — BEFORE `_prepare_flow`, and the
+  #     UserSourceConnection is only persisted later by PostSourceStage. So an
+  #     unknown Google identity creates NO User row and NO connection row.
+  #     Opening registration via Google is #365, not this issue.
+  #   * `user_matching_mode: identifier` (the model default, stated explicitly
+  #     because it is a security decision). Matching keys on the upstream's
+  #     stable subject, stored as `UserSourceConnection.identifier`.
+  #     `email_link` is REJECTED and must not be set here: at 2026.5.4
+  #     `sources/oauth/types/google.py` `get_base_user_properties` returns ONLY
+  #     `{"email", "name"}` — Google's `verified_email` is dropped — so
+  #     `email_link` would link an existing local account to an UNVERIFIED
+  #     upstream address. That is the #170 account-takeover shape. Subject-keyed
+  #     linking plus a known-email history is #364.
+  #   * How a user gets linked TODAY: authentik's native "Connected services"
+  #     page (`/if/user/#/settings;page-sources`, already the app's
+  #     OIDC_ACCOUNT_URL target — auth.md §7). `get_action` returns LINK for an
+  #     ALREADY-AUTHENTICATED session, and `handle_existing_link` saves the
+  #     connection. Reaching that page requires a completed password login,
+  #     which is exactly what already passes the #361 email-verification gate —
+  #     so a federated login is, by construction, only ever available to an
+  #     account that already proved inbox control. That is why this section adds
+  #     NO email stage to the source-authentication flow.
+  #   * `default-source-authentication` (upstream) is used UNCHANGED as the
+  #     authentication_flow. It must be set: `handle_auth` passes it straight to
+  #     `_prepare_flow`, which 400s with "Configured flow does not exist." when
+  #     it is null. It contains only a user_login stage (at order **0**, so
+  #     there is no room to slot stages before it from a blueprint anyway —
+  #     `unique_together (target, stage, order)` means an upstream binding can't
+  #     be moved, and an upgrade would re-assert it) and the `ak_is_sso_flow`
+  #     guard. It has NO user_write stage, which is the property that guarantees
+  #     Google can never overwrite the local user's `email`, `attributes.upn`
+  #     (the app-facing `sub`) or `attributes.email_verified`.
+  - model: authentik_sources_oauth.oauthsource
+    id: source-google
+    conditions:
+      - !Env [BEEKEEPINGIT_GOOGLE_CLIENT_ID, ""]
+      - !Env [BEEKEEPINGIT_GOOGLE_CLIENT_SECRET, ""]
+    identifiers: { slug: google }
+    attrs:
+      # `name` feeds the rendered button: the identification stage builds
+      # `UILoginButton(name=self.name, ...)` and the web UI labels the button
+      # "Continue with {name}" — so this is "Google", NOT "Continue with
+      # Google". It is a DB string, so authentik applies no gettext lookup to
+      # it; the surrounding "Continue with …" template IS localized, but only
+      # into the web catalogs authentik ships, which at 2026.5.4 include pt-BR
+      # and NOT pt-PT — the same limitation class as the enrollment prompts
+      # (auth.md §8.11) and tracked with them in #412. The app's OWN button is
+      # fully EN/PT via gen-l10n.
+      name: Google
+      slug: google
+      enabled: true
+      # Prominent block button rather than a small icon beside the password
+      # form (drops the icon, shows the label text, sorts first).
+      promoted: true
+      provider_type: google
+      # GoogleType hardcodes authorization/token/profile/jwks URLs and is NOT
+      # `urls_customizable`, so setting them here would be dead config.
+      # ALWAYS give `!Env` a two-element [VAR, default] form. authentik's `Env`
+      # tag constructor reads `node.value[1]` unconditionally for a sequence
+      # node, so the one-element `!Env [VAR]` spelling raises IndexError while
+      # the file is being PARSED — which kills `blueprints_discovery` for the
+      # whole file (no BlueprintInstance row is created at all, so nothing even
+      # reports the file as invalid; the only symptom is OIDC discovery 404ing
+      # forever, the PR #414 shape again). Found the hard way by this PR's
+      # first CI run. `scripts/check-federation-source-posture.sh` now fails on
+      # any single-element `!Env`.
+      consumer_key: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_ID, ""]
+      consumer_secret: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_SECRET, ""]
+      user_matching_mode: identifier
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+      # enrollment_flow: intentionally UNSET — see the section comment.
+
+  # --- Dev/CI federation stand-in (#363, NFR-TST-1) ---------------------------
+  # A live e2e against real Google is not automatable (consent screen + bot
+  # detection) and must never run in CI. This generic `openidconnect` source
+  # exercises the SAME federation code path as Google — same source model, same
+  # `OAuthRedirect` view, same `SourceFlowManager`, same matching mode, same
+  # absent enrollment flow — so the wiring below (hint policy -> redirect stage
+  # -> source redirect -> upstream authorize request) is genuinely proven in CI
+  # rather than only asserted on paper. Only the upstream differs.
+  #
+  # Gated on BEEKEEPINGIT_FEDERATION_STUB_ENABLED, set from
+  # `authentik.federationStub.enabled` (dev/CI true; staging/prod leave it
+  # unset) — not on credentials, since there are none to hold.
+  #
+  # `openidconnect` IS `urls_customizable`, so all three URLs come from here.
+  # With BOTH `oidc_well_known_url` AND `oidc_jwks_url` left empty,
+  # `OAuthSourceSerializer.validate` makes ZERO outbound HTTP calls at apply
+  # time (verified at 2026.5.4) — the stand-in is hermetic, unlike a `google`
+  # entry. JWKS is only the id_token FALLBACK when the userinfo endpoint answers
+  # nothing, so leaving it empty is safe for the outbound half this proves.
+  #
+  # The three URLs deliberately point at authentik's OWN liveness endpoint: a
+  # reachable, side-effect-free URL on a host the e2e's host-map already
+  # resolves. The spec asserts the outbound REQUEST to it carries the correct
+  # OAuth parameters (client_id / redirect_uri / scope / state) — the complete
+  # proof of the outbound half of the flow. It asserts the request rather than
+  # the landing page on purpose: this endpoint answers 204, and a browser does
+  # not commit a navigation to a 204, so asserting on the resulting URL is
+  # asserting on undefined behaviour (it went flaky exactly that way on this
+  # PR's first CI run). Nothing answers a token exchange, and nothing is meant
+  # to: completing an upstream login needs a real upstream, which is the manual
+  # verification checklist in infra/README.md.
+  - model: authentik_sources_oauth.oauthsource
+    id: source-federation-stub
+    conditions:
+      - !Env [BEEKEEPINGIT_FEDERATION_STUB_ENABLED, ""]
+    identifiers: { slug: federation-stub }
+    attrs:
+      name: Stand-in IdP
+      slug: federation-stub
+      enabled: true
+      promoted: true
+      provider_type: openidconnect
+      # Not credentials: no upstream ever validates these and no token exchange
+      # is reached. They exist only because the serializer requires both fields
+      # to be non-blank.
+      consumer_key: beekeepingit-federation-stub
+      consumer_secret: !Env [BEEKEEPINGIT_FEDERATION_STUB_CLIENT_SECRET, unused]
+      authorization_url: "{{ .Values.federationStub.upstreamUrl }}"
+      access_token_url: "{{ .Values.federationStub.upstreamUrl }}"
+      profile_url: "{{ .Values.federationStub.upstreamUrl }}"
+      # Identical posture to the Google source above — that is the whole point.
+      user_matching_mode: identifier
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+      # enrollment_flow: intentionally UNSET.
+
+  # --- One-hop "Continue with <source>" from the app (#363, D-18) -------------
+  # The app's sign-in screen must offer "Continue with Google" as its OWN
+  # action, and that action has to reach Google in ONE hop and come back INTO
+  # the app. authentik has no IdP-hint parameter, and the source login URL
+  # cannot carry the return context by itself:
+  #   * `OAuthRedirect.get_redirect_url` (sources/oauth/views/redirect.py) reads
+  #     NO `?next` query parameter — `request.GET` appears nowhere in that file;
+  #   * `SourceFlowManager._prepare_flow` computes the post-login landing as
+  #     `self.request.session.get(SESSION_KEY_GET, {}).get(NEXT_ARG_NAME,
+  #     "authentik_core:if-user")` — session state, only ever written by
+  #     `FlowExecutorView.dispatch`.
+  # So a browser sent straight to /source/oauth/login/<slug>/ dead-ends on the
+  # IdP's user page. The supported way in is to arrive through the flow executor
+  # (which stores `next`) and be redirected onward from INSIDE the flow.
+  #
+  # That is what this does, from stock authentik pieces only:
+  #   1. The app appends ONE extra parameter to the STANDARD OIDC authorize URL
+  #      (`beekeepingit_idp=<source slug>`). The app therefore still knows
+  #      nothing but the discovery document — no vendor URL scheme in client
+  #      code, which is what oidc-integration.md §1 requires (contract: §7).
+  #   2. The authorize view is unauthenticated, so `PolicyAccessView
+  #      .handle_no_permission` redirects into the authentication flow with
+  #      `next=self.request.get_full_path()` — the authorize path INCLUDING our
+  #      parameter, and RELATIVE (which matters: the PLAN_CONTEXT_REDIRECT
+  #      branch of `_flow_done` has no is_url_absolute guard) — and the executor
+  #      stores it in SESSION_KEY_GET.
+  #   3. The policy below reads that stored `next`, extracts the slug, and
+  #      accepts it ONLY if it names an ENABLED OAuthSource (a DB whitelist, so
+  #      a crafted value cannot redirect anywhere else). It then sets
+  #      `redirect_stage_target`, which `RedirectStageView.get_challenge`
+  #      prioritises over the stage's static target.
+  #   4. The redirect stage (order 5, before identification at 10) emits an
+  #      `xak-flow-redirect` challenge, which the web executor's
+  #      `ak-stage-redirect` component auto-follows — one hop, no extra click.
+  #   5. After the upstream returns, `SourceFlowManager` restores `next` from
+  #      the same session key, so the user lands back on the pending authorize
+  #      request and finishes in the app.
+  #
+  # REJECTED ALTERNATIVE (recorded so it isn't re-litigated): authentik's native
+  # auto-redirect (`AutoRedirectController` fires when an identification stage
+  # has empty `user_fields`, exactly one source and no passwordless flow) driven
+  # by a SECOND OAuth2 provider whose `authentication_flow` points at such a
+  # flow. It needs no policy — but a second provider means a second client_id
+  # and a second per-provider issuer, so its tokens would carry the wrong
+  # `aud`/`iss` for the domain services unless the admin-client-style iss/aud
+  # override mapping were duplicated onto it. That is a change to the FROZEN
+  # token contract plus another public client, for a UX detail. This issue must
+  # not touch the token contract (D-7, oidc-integration.md §4).
+  #
+  # SAFETY. This binds a stage into the DEFAULT AUTHENTICATION FLOW, so a
+  # mistake here would hijack every login. Four independent guards:
+  #   * `evaluate_on_plan: false` + `re_evaluate_policies: true` — the policy is
+  #     evaluated when the stage is REACHED, not at plan time (SESSION_KEY_GET
+  #     does not exist yet at plan time: the plan is built by
+  #     `handle_no_permission`, one request earlier). Identical flags and
+  #     rationale to the #361 email-verification bindings above.
+  #   * The policy returns False on ANY doubt — no HTTP request, no flow plan,
+  #     no stored `next`, no parameter, more than one value, an unknown slug, a
+  #     disabled source — and a raising expression policy evaluates to the
+  #     binding's default failure_result (false). False SKIPS the stage,
+  #     leaving an ordinary password login untouched.
+  #   * `target_static` is a deliberately unresolvable path. It is dead config
+  #     by construction (the policy always sets the override before the stage
+  #     runs); if the override were ever lost the user gets a 404 and the login
+  #     fails — fail closed, never a silent redirect somewhere useful.
+  #   * CI proves the negative case live: the stand-in source above makes this
+  #     stage REAL in dev/CI, and slice/verification/registration specs drive
+  #     plain password logins through it on every run. A policy that started
+  #     returning true would turn those red immediately.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-idp-hint-redirect
+    identifiers: { name: beekeepingit-idp-hint-redirect }
+    attrs:
+      name: beekeepingit-idp-hint-redirect
+      expression: |
+        from urllib.parse import parse_qs, urlsplit
+
+        from authentik.flows.planner import PLAN_CONTEXT_REDIRECT_STAGE_TARGET
+        from authentik.flows.views.executor import NEXT_ARG_NAME, SESSION_KEY_GET
+        from authentik.sources.oauth.models import OAuthSource
+
+        # The parameter the app appends to the standard OIDC authorize request.
+        # Contract: docs/architecture/oidc-integration.md §7.
+        HINT_PARAM = "beekeepingit_idp"
+
+        flow_plan = request.context.get("flow_plan")
+        http_req = request.http_request
+        if not flow_plan or not http_req:
+            return False
+
+        # Written by FlowExecutorView.dispatch from the executor's `?query=`;
+        # holds a QueryDict of the ORIGINAL authorize request's parameters.
+        stored_get = http_req.session.get(SESSION_KEY_GET) or {}
+        next_url = stored_get.get(NEXT_ARG_NAME, "")
+        if not next_url:
+            return False
+
+        hints = parse_qs(urlsplit(next_url).query).get(HINT_PARAM, [])
+        if len(hints) != 1:
+            return False
+        slug = hints[0]
+
+        # DB whitelist: the hint may only ever name a source this deployment
+        # actually enabled. An unknown or disabled slug is not an error to
+        # report, it is simply not a hint — fall through to the normal
+        # identification stage.
+        if not OAuthSource.objects.filter(slug=slug, enabled=True).exists():
+            return False
+
+        flow_plan.context[PLAN_CONTEXT_REDIRECT_STAGE_TARGET] = f"/source/oauth/login/{slug}/"
+        return True
+  - model: authentik_stages_redirect.redirectstage
+    id: stage-idp-hint-redirect
+    identifiers: { name: beekeepingit-idp-hint-redirect }
+    attrs:
+      name: beekeepingit-idp-hint-redirect
+      mode: static
+      # Unreachable by construction — see the SAFETY note above. The serializer
+      # rejects an empty target_static when mode is static, so this cannot be
+      # blank; it is never used, because the policy always sets
+      # `redirect_stage_target` first.
+      target_static: /source/oauth/login/-unset-/
+      keep_context: true
+  - model: authentik_flows.flowstagebinding
+    id: binding-auth-idp-hint-redirect
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      stage: !KeyOf stage-idp-hint-redirect
+      order: 5
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-idp-hint-redirect
+      target: !KeyOf binding-auth-idp-hint-redirect
+      order: 0
+
+  # --- Bind the enabled sources onto the login card (#363) --------------------
+  # One conditional update entry PER COMBINATION of enabled sources, because
+  # `!Find` resolves to None for a source whose own entry was skipped, and a
+  # None in this M2M would invalidate the entry — and with it the whole
+  # blueprint. Each entry therefore carries exactly the conditions of the
+  # sources it names, and they are ordered least-specific first: entries apply
+  # in file order and each one REPLACES `sources` wholesale (that is the same
+  # mechanism the unconditional `sources: []` reset relies on), so the
+  # both-enabled entry must come last to win.
+  #
+  # The both-enabled case is not hypothetical: following infra/README.md's
+  # "Enabling Continue with Google" steps against the dev namespace turns Google
+  # on in an environment where environments/dev.yaml already enables the
+  # stand-in. Without the third entry the stand-in's would apply last and
+  # silently unbind the Google button while leaving its source row enabled —
+  # a failure whose only symptom is a missing button (review finding).
+  #
+  # All entries restate
+  # `user_fields` and `enrollment_flow`: `IdentificationStageSerializer`
+  # cross-validates "no user fields and no source" against the entry's OWN data,
+  # and omitting `user_fields` is exactly what broke the blueprint in PR #414.
+  # The unconditional entry earlier in this file resets `sources: []` first, so
+  # an environment that loses its credentials also loses the button.
+  # NOTE: `user_fields` must stay NON-empty here. An identification stage with
+  # empty `user_fields` and exactly one source triggers authentik's
+  # AutoRedirectController, which would send EVERY login straight to that source
+  # with no way to reach the password form.
+  - model: authentik_stages_identification.identificationstage
+    conditions:
+      - !Env [BEEKEEPINGIT_GOOGLE_CLIENT_ID, ""]
+      - !Env [BEEKEEPINGIT_GOOGLE_CLIENT_SECRET, ""]
+    identifiers: { name: default-authentication-identification }
+    attrs:
+      user_fields: [email, username]
+      enrollment_flow: !KeyOf flow-enrollment
+      sources:
+        - !Find [authentik_core.source, [slug, google]]
+  - model: authentik_stages_identification.identificationstage
+    conditions:
+      - !Env [BEEKEEPINGIT_FEDERATION_STUB_ENABLED, ""]
+    identifiers: { name: default-authentication-identification }
+    attrs:
+      user_fields: [email, username]
+      enrollment_flow: !KeyOf flow-enrollment
+      sources:
+        - !Find [authentik_core.source, [slug, federation-stub]]
+  # Both enabled — must be LAST, so it wins over the two single-source entries
+  # above. See this section's header comment.
+  - model: authentik_stages_identification.identificationstage
+    conditions:
+      - !Env [BEEKEEPINGIT_GOOGLE_CLIENT_ID, ""]
+      - !Env [BEEKEEPINGIT_GOOGLE_CLIENT_SECRET, ""]
+      - !Env [BEEKEEPINGIT_FEDERATION_STUB_ENABLED, ""]
+    identifiers: { name: default-authentication-identification }
+    attrs:
+      user_fields: [email, username]
+      enrollment_flow: !KeyOf flow-enrollment
+      sources:
+        - !Find [authentik_core.source, [slug, google]]
+        - !Find [authentik_core.source, [slug, federation-stub]]

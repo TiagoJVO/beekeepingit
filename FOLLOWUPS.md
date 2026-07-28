@@ -7,16 +7,21 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `feat/authentik-admin-oidc-client` (#456 — admin OIDC client in the blueprint)
+## `feat/google-federation-363` (#363 — Google federation + "Continue with Google")
 
-Post-merge hardening (NOT merge blockers — the blueprint provisioning is complete and the
-`beekeepingit-admin` login/aud/iss is pinned by the helm-e2e admin-login gate):
+After merge (NOT merge blockers — nothing can exercise these until an environment has real Google
+credentials, and none exists yet):
 
-- **Harden the admin OIDC redirect set for staging/prod** — the gateway `adminHost` route and the
-  staging/prod `global.adminOrigin` overrides are now in place (#449), so the admin app IS
-  gateway-served per environment. What remains is blueprint-side: the `http://localhost:.*` redirect
-  entry is dev-convenience and belongs to the EPIC-14 hardened-blueprint variant, not prod — tighten
-  the admin client's redirect_uris to the real per-environment admin origin there. Owner: EPIC-14.
+- **Run the manual verification checklist** in `infra/README.md`
+  ("Enabling 'Continue with Google' on an environment") once against an environment with a real
+  Google OAuth client. It covers the only things no automated test can reach: a completed
+  sign-in through Google, the invitation-only refusal for an unlinked Google account, that a
+  linked account resolves to the same `sub`, and that sign-out still revokes the SSO session
+  after a _federated_ login. Record the result on #363. Until then, the Google-specific half of
+  this feature is config-verified and doc-verified but not execution-verified — stated plainly in
+  `docs/architecture/auth.md` §8.13.
+- **Create the `beekeepingit-authentik-google-credentials` Secret** (staging first) per the same
+  README section; the feature is inert until it exists, by design.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -30,3 +35,12 @@ Post-merge hardening (NOT merge blockers — the blueprint provisioning is compl
   linting-toolchain gap, not a real type regression in the codebase. Re-check #495 once
   typescript-eslint ships TS 7.x support (or Dependabot supersedes it with a newer PR); prune
   this entry once #495 merges or is closed as superseded.
+
+---
+
+_Sweep note (#363): the `feat/authentik-admin-oidc-client` (#456) entry was stale — #456 closed_
+_long ago, so under this file's own rule it could no longer ride along. Its remaining work_
+_(tightening the admin client's `http://localhost:.*` redirect entry for staging/prod) is now_
+_[#508](https://github.com/TiagoJVO/beekeepingit/issues/508), a sub-issue of EPIC-14_
+_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and is pruned here. #362's own sweep_
+_had already pruned the #449 and #290 entries in the same spirit._

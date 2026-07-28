@@ -50,6 +50,12 @@ app.*.map.json
 /web/powersync_db.worker.js
 /web/powersync_sync.worker.js
 
+# Local PowerSync SQLite database left behind by `flutter test` (widget tests
+# instantiate the real client). Regenerated on demand, never committed.
+/beekeepingit.db
+/beekeepingit.db-shm
+/beekeepingit.db-wal
+
 # Lighthouse CI installability audit output (#93) — regenerated each run.
 /.lighthouseci/
 /lhci-report/

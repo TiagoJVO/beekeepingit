@@ -22,6 +22,8 @@ void main() {
       final en = AppLocalizationsEn();
       expect(en.appTitle, 'BeekeepingIT');
       expect(en.loginButton, 'Sign in');
+      // #363 — the federated action's label is externalized, not a literal.
+      expect(en.loginWithGoogleButton, 'Continue with Google');
       expect(en.saveButton, 'Save');
       expect(en.hiveCountValue(0), 'No hives');
       expect(en.hiveCountValue(1), '1 hive');
@@ -33,6 +35,7 @@ void main() {
       final pt = AppLocalizationsPt();
       expect(pt.appTitle, 'BeekeepingIT');
       expect(pt.loginButton, 'Iniciar sessão');
+      expect(pt.loginWithGoogleButton, 'Continuar com a Google');
       expect(pt.saveButton, 'Guardar');
       expect(pt.hiveCountValue(0), 'Sem colmeias');
       expect(pt.hiveCountValue(1), '1 colmeia');
