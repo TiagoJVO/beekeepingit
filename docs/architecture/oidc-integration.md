@@ -247,7 +247,7 @@ optional.
   yields the same `iss`/`aud`/`sub` as a password sign-in, which is exactly D-7's boundary. An
   **unknown or unconfigured** hint is ignored and the user lands on the normal login page, so the
   parameter can never dead-end a sign-in — a deployment with no federation source configured needs
-  no client change. Provider side: `docs/architecture/auth.md` §8.12. Client side:
+  no client change. Provider side: `docs/architecture/auth.md` §8.13. Client side:
   `kIdpHintParam` in `client/lib/core/auth/auth_controller.dart`; both sides are pinned by
   `client/test/core/auth/auth_controller_test.dart`.
 - **Token storage & offline-first boot (#390)** — the refresh token + `id_token` persist in
@@ -354,7 +354,7 @@ optional.
   must go red in CI: the live pin is the same `admin-token.spec.ts` (operator ⇒ `true`, non-operator
   ⇒ `false`) plus `slice.spec.ts`'s assertion that a PWA token never carries it, and the static pin is
   `scripts/check-platform-operator-mapping.sh` (`task repo:lint`).
-- **Upstream federation (#363, auth.md §8.12)** adds four things to the watch-list, all pinned to
+- **Upstream federation (#363, auth.md §8.13)** adds four things to the watch-list, all pinned to
   authentik **2026.5.4** and all re-checkable on a version bump:
   - **`BlueprintEntry.conditions` skip validation entirely** (`Importer._validate_single` returns
     before the serializer runs). That is what lets the Google source entry — whose serializer

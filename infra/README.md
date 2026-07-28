@@ -224,7 +224,7 @@ deployments stay staging-grade until DR (`Q-DR`) and GDPR export/erasure (#90) l
 Google federation is **off unless its credentials exist in the cluster** — the blueprint entry is
 condition-gated on them, so an environment without them deploys cleanly with no Google button and
 no outbound call to Google at blueprint-apply time (see
-[`docs/architecture/auth.md`](../docs/architecture/auth.md) §8.12 for why that gate is
+[`docs/architecture/auth.md`](../docs/architecture/auth.md) §8.13 for why that gate is
 load-bearing). Turning it on is three steps, none of which put a secret in git.
 
 1. **Create the OAuth client** in [Google Cloud Console](https://console.cloud.google.com/) →

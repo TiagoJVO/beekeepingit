@@ -92,7 +92,7 @@ class LoginScreen extends ConsumerWidget {
                   // Authorization Code + PKCE redirect as the primary action,
                   // adding only the `beekeepingit_idp` hint so the provider
                   // sends the user straight to Google instead of showing its
-                  // own login form (auth.md §8.12). Secondary emphasis: the
+                  // own login form (auth.md §8.13). Secondary emphasis: the
                   // password path stays the primary action, and both carry the
                   // same 56px gloves-friendly target and semantics wrapper
                   // (D-18, WCAG 2.2 AA) from core/widgets/field_action_button.

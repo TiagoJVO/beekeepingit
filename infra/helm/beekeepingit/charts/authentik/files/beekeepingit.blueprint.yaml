@@ -819,7 +819,7 @@ entries:
   # authentik user, and the provider still mints the same standard OIDC token
   # from OUR issuer with `sub` = that user's `attributes.upn` (sub_mode:
   # user_upn). That token invariance IS D-7's IdP-agnostic boundary
-  # (auth.md §3.1) — see auth.md §8.12.
+  # (auth.md §3.1) — see auth.md §8.13.
   #
   # ---------------------------------------------------------------------------
   # CREDENTIALS: not in git, and not in a ConfigMap either (NFR-SEC-1)

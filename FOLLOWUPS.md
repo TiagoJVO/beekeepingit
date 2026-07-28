@@ -29,7 +29,7 @@ credentials, and none exists yet):
   linked account resolves to the same `sub`, and that sign-out still revokes the SSO session
   after a _federated_ login. Record the result on #363. Until then, the Google-specific half of
   this feature is config-verified and doc-verified but not execution-verified — stated plainly in
-  `docs/architecture/auth.md` §8.12.
+  `docs/architecture/auth.md` §8.13.
 - **Create the `beekeepingit-authentik-google-credentials` Secret** (staging first) per the same
   README section; the feature is inert until it exists, by design.
 

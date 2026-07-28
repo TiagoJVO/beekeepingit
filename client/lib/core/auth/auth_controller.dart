@@ -288,7 +288,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   /// Everything else — PKCE, `state`, scopes, the redirect URI and the code
   /// exchange in [_exchangeCallback] — is identical either way, which is why a
   /// federated sign-in yields exactly the same token shape from our own issuer
-  /// (D-7; docs/architecture/auth.md §8.12).
+  /// (D-7; docs/architecture/auth.md §8.13).
   Future<void> login({String? idpHint}) async {
     // Reset any previous failure at the start of every attempt — tapping
     // "Sign in" again is the retry affordance.

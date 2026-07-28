@@ -42,7 +42,7 @@ email:
 # environments/dev.yaml; staging/prod leave it off. Renders the
 # BEEKEEPINGIT_FEDERATION_STUB_ENABLED env the blueprint entry's `conditions:`
 # gate on. See files/beekeepingit.blueprint.yaml and docs/architecture/auth.md
-# §8.12.
+# §8.13.
 federationStub:
   enabled: false
   # Where the source's authorize/token/userinfo URLs point. Deliberately a

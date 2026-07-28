@@ -526,7 +526,11 @@ jobs:
       # existing local user with an unchanged `upn`/`sub` (D-7). The script
       # documents its own scope limits; the browser spec
       # (client/e2e/tests/federation.spec.ts) covers the outbound half.
-      # `-c` (not stdin) so SystemExit sets the process exit code.
+      #
+      # The script is read HERE and passed as a single argv element, so it is
+      # never re-parsed by a shell inside the pod — no `kubectl cp` (which
+      # would need tar in the container) and no nested `sh -c`. `ak shell -c`
+      # rather than stdin so the script's SystemExit sets the exit code.
       - name: Verify federation posture (authentik SourceFlowManager)
         if: steps.changes.outputs.e2e == 'true'
         run: |
@@ -534,10 +538,8 @@ jobs:
             -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker \
             --field-selector=status.phase=Running \
             -o jsonpath='{.items[0].metadata.name}')
-          kubectl -n beekeepingit-dev cp infra/ci/authentik-federation-probe.py \
-            "$WORKER:/tmp/federation-probe.py"
-          kubectl -n beekeepingit-dev exec "$WORKER" -- \
-            sh -c 'ak shell -c "$(cat /tmp/federation-probe.py)"'
+          kubectl -n beekeepingit-dev exec -i "$WORKER" -- \
+            ak shell -c "$(cat infra/ci/authentik-federation-probe.py)"
 
       # Node itself already came from "Set up toolchains from mise.toml" above
       # (mise.toml pins node = 22, the same toolchain local dev uses) — no
