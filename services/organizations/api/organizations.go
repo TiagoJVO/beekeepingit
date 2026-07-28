@@ -24,6 +24,13 @@
 // getMyOrganization's doc comments for why that distinction is
 // security-critical, not stylistic.
 //
+// POST /organizations is open to ANY authenticated caller with a verified
+// email (D-3's #362 amendment: self-registered users may create an
+// organization freely -- no invitation prerequisite, no operator approval, no
+// pending org state). It asserts claims.EmailVerified itself rather than
+// inheriting that guarantee from the identity provider's flow; see
+// createOrganization's own comment for why that redundancy is deliberate.
+//
 // POST /organizations additionally rejects a caller who already has an
 // active membership (409) -- the client router gate keeps the normal UI path
 // away from a second create, but a direct API call must not be allowed to
@@ -601,6 +608,29 @@ func createOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 		claims, ok := authn.FromContext(r.Context())
 		if !ok {
 			problem.Write(w, r, problem.Internal())
+			return
+		}
+
+		// D-3 (#362): a verified email is the PRECONDITION of the otherwise
+		// unrestricted organization-creation policy, so this route asserts it
+		// from the token itself rather than inheriting it from the provider's
+		// flow (auth.md section 3.4 "gate sensitive flows on email_verified").
+		// Registration and login are both held behind the emailed one-time
+		// link today (auth.md section 8.10/8.11), so no real caller reaches
+		// here unverified -- which is exactly why this is defense in depth: a
+		// precondition that lives only in IdP flow configuration is one
+		// blueprint edit, or one new federation source (#363/#365), away from
+		// silently disappearing. Checked BEFORE the body is decoded or any
+		// identity/DB work happens: an ungated caller's input is not processed
+		// at all, so this gate cannot be probed through validation responses.
+		// Unlike the accept-on-login gate (getMyOrganization, where unverified
+		// is deliberately indistinguishable from "no pending invitation" so
+		// verification state can't be probed), this answers a plain 403: the
+		// caller is asking about their own account state, not another org's
+		// existence, and the client's onboarding needs a distinguishable
+		// "verify your address first" signal.
+		if !claims.EmailVerified {
+			problem.Write(w, r, problem.Forbidden("caller's email address must be verified before creating an organization"))
 			return
 		}
 

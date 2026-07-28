@@ -33,19 +33,6 @@ credentials, and none exists yet):
 - **Create the `beekeepingit-authentik-google-credentials` Secret** (staging first) per the same
   README section; the feature is inert until it exists, by design.
 
-## `feat/admin-app-deploy-and-cors` (#449 — admin host + cross-origin CORS)
-
-- **Per-environment admin nginx CSP** — `admin/nginx.conf` ships its
-  `Content-Security-Policy-Report-Only` with the **dev** `connect-src` hosts
-  (`https://app.beekeepingit.local:8443` / `auth…`) hardcoded. `release-deploy.yml`'s
-  `publish-admin` now bakes the **staging/prod** `VITE_*` API/issuer hosts into the image, so a
-  non-dev admin build's real API host is **not** in its CSP — harmless today only because the
-  policy is **Report-Only** (it reports, does not block). Env-templating the admin (and client)
-  nginx CSP is tracked in [#462](https://github.com/TiagoJVO/beekeepingit/issues/462); flipping
-  the admin CSP to **enforcing** must wait for that per-environment templating, or a staging/prod
-  admin build would block its own API calls. **Not a merge blocker** (Report-Only). Prune once
-  #462 lands the templating.
-
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -61,12 +48,9 @@ credentials, and none exists yet):
 
 ---
 
-_Sweep note (#363): three entries were stale — their owning issue/PR had already closed._
-_`#456`'s admin-redirect hardening was promoted to_
-_[#508](https://github.com/TiagoJVO/beekeepingit/issues/508) (sub-issue of EPIC-14 #15) and pruned_
-_here; `#290`'s re-invite reactivation was already tracked in_
-_[#459](https://github.com/TiagoJVO/beekeepingit/issues/459) and pruned; `#418`'s `cluster-ops.yml`_
-_secrets note was long since done. `production-gate` secrets are not owed: prod is deferred until_
-_DR (`Q-DR`) + #90 land (D-26), and the fill-in steps live in_
-_`infra/README.md#secrets--remote-cluster-operations`. `DEPLOY_NOTIFY_TOKEN` remains tracked in_
-_[#413](https://github.com/TiagoJVO/beekeepingit/issues/413), still open._
+_Sweep note (#363): the `feat/authentik-admin-oidc-client` (#456) entry was stale — #456 closed_
+_long ago, so under this file's own rule it could no longer ride along. Its remaining work_
+_(tightening the admin client's `http://localhost:.*` redirect entry for staging/prod) is now_
+_[#508](https://github.com/TiagoJVO/beekeepingit/issues/508), a sub-issue of EPIC-14_
+_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and is pruned here. #362's own sweep_
+_had already pruned the #449 and #290 entries in the same spirit._
