@@ -21,7 +21,7 @@ dependencies:
   # package:sqlite3/common.dart (the Row type) directly — powersync 2.x
   # deprecated its package:powersync/sqlite3_common.dart re-export;
   # otherwise only a transitive dep of powersync.
-  sqlite3: ^3.5.0
+  sqlite3: ^3.5.1
   crypto: ^3.0.7
   meta: ^1.18.0
   web: ^1.1.1
