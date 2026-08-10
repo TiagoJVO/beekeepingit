@@ -40,7 +40,7 @@ yq = "4"                     # YAML query/extraction (scripts/check-deploy-url-d
 # --- API contract tooling (contracts/openapi/ — #153, ADR-0003 §11) ---
 "npm:@redocly/cli" = "2.37.0"                                            # OpenAPI lint (recommended ruleset) + bundle (resolves split $ref before oasdiff/codegen)
 "go:github.com/oasdiff/oasdiff" = "1.22.0"                               # breaking-change diff gate on PRs touching contracts/openapi/**
-"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "2.7.1"  # Go server-stub + models codegen (no-ops until a service adds internal/api/oapi-codegen.yaml)
+"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "2.8.0"  # Go server-stub + models codegen (no-ops until a service adds internal/api/oapi-codegen.yaml)
 
 # --- Infra toolchain (infra/ — single-cluster k8s platform, #83/EPIC-13) ---
 helm = "4.2.3"     # pinned to match .github/workflows/helm-ci.yml
