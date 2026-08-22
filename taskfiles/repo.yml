@@ -48,7 +48,12 @@ tasks:
           -not -path './.claude/worktrees/*' -not -path '*/.dart_tool/*' \
           2>/dev/null || true)
         if [ -z "$files" ]; then echo "› [repo] no shell scripts — skipping"; exit 0; fi
-        shellcheck $files
+        # -x: follow `# shellcheck source=path` directives into sourced files
+        # outside this invocation's own file list — infra/cluster's
+        # scw-common.sh/scw-cluster-prereqs.sh (#539) are sourced by several
+        # scaleway-*.sh scripts and declare vars/functions those scripts use,
+        # which shellcheck can only see by actually following the source.
+        shellcheck -x $files
 
   secrets:
     desc: "Scan the working tree for committed secrets (gitleaks)"
