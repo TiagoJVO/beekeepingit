@@ -86,6 +86,43 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// LoadDB loads ONLY the database settings, for admin processes that talk to
+// Postgres but serve no HTTP — specifically the deploy-time migrate job (#541,
+// 12-factor XII). Load would reject those with "OIDC_ISSUER_URL is required",
+// and handing a migration job OIDC credentials it never uses would be exactly
+// the over-provisioning this split exists to remove: the migrate job runs with
+// the DDL-capable migrator role, so it should carry the smallest possible
+// surrounding configuration.
+//
+// Note DB_USER/DB_PASSWORD here are the MIGRATOR credential, not the service
+// runtime one — the two now differ deliberately (see the migrate job template
+// in charts/services), which is the whole point of #541's fix.
+func LoadDB() (dbaccess.Config, error) {
+	var errs []error
+	req := func(key string) string {
+		v := os.Getenv(key)
+		if v == "" {
+			errs = append(errs, fmt.Errorf("config: %s is required", key))
+		}
+		return v
+	}
+
+	cfg := dbaccess.Config{
+		Host:       req("DB_HOST"),
+		Port:       envDefault("DB_PORT", "5432"),
+		User:       req("DB_USER"),
+		Password:   req("DB_PASSWORD"),
+		Database:   req("DB_NAME"),
+		SSLMode:    envDefault("DB_SSLMODE", "require"),
+		SearchPath: os.Getenv("DB_SEARCH_PATH"),
+	}
+
+	if len(errs) > 0 {
+		return dbaccess.Config{}, errors.Join(errs...)
+	}
+	return cfg, nil
+}
+
 // parseCSV splits a comma-separated env value into a trimmed, empty-free slice.
 // Returns nil for an empty/absent value so an unset CORS_ALLOWED_ORIGINS leaves
 // CORS disabled rather than allowlisting an empty origin.
