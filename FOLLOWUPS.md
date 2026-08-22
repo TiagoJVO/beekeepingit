@@ -25,6 +25,20 @@ beekeepingit` (`charts/postgres/templates/table-grants-job.yaml`) has only ever 
   wrong reason and the transition stays untested.
 - **`task lint` has never run on this branch.** `lefthook` is not on PATH in the authoring
   environment, so the commit-msg and format hooks were skipped on all commits here.
+- **Check for stray `<schema>_svc` ownership outside its own schema before the first staging
+  upgrade.** `REASSIGN OWNED BY` is database-wide for the named role, not schema-scoped. In
+  practice `<schema>_svc` should only ever own objects in its own schema (and now cannot create
+  any, since `CREATE` is revoked), so this is expected to be inert — but staging carries
+  pre-#541 state created under the old rules, so verify rather than assume. Only ever moves
+  ownership _toward_ the more trusted role, so the risk is low; the point is to know, not to
+  guard. From the security review of this branch.
+- **The history-table list in `table-grants-job.yaml` is hardcoded** to `audit_log` and
+  `sync_conflict_log`. `ALTER DEFAULT PRIVILEGES` makes UPDATE/DELETE the default for anything a
+  future migration creates in the schema, and only those two literal names are revoked back. A
+  future history-style table under a different name would silently keep UPDATE/DELETE for the
+  runtime role. Decide before more history tables land: adopt a naming convention the job can
+  match, or an explicit allowlist that fails the release on an unrecognised table. From the
+  security review of this branch; promote to an Issue if it outlives this PR.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 

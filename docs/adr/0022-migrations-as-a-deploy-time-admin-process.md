@@ -115,8 +115,22 @@ table and write its `<schema>_svc`-owned ledger without any prior step — verif
 - **`SECURITY DEFINER` helper** owned by `beekeepingit`, executable by the runtime role. Rejected:
   every new DDL shape needs a new helper, and any loosening of its scope becomes a
   privilege-escalation path — a standing hazard in exchange for avoiding a one-time restructure.
-- **Per-service `<schema>_migrator` role** owning the history tables. Rejected as strictly more
-  moving parts than reusing `beekeepingit`, which already owns the schemas and already has the
-  membership this needs; it would add a second credential per service for no additional isolation.
+- **Per-service `<schema>_migrator` role** owning that service's tables. Initially rejected here as
+  more moving parts than reusing `beekeepingit`, "for no additional isolation".
+
+  > **That rejection was wrong on the isolation point, and is corrected here.** The security review
+  > of this change established that it _does_ buy isolation, and materially. `beekeepingit` owns
+  > every schema and is a member of every `<schema>_svc`, and each migrate Job runs **the service's
+  > own application image** — the same artifact that serves untrusted HTTP. So compromising any one
+  > service image yields database-owner reach over _every other_ service's schema and `audit_log`,
+  > where ownership bypasses the DML-only restriction entirely. Before this ADR, a compromised
+  > service was confined to its own schema.
+  >
+  > This is now tracked as [#545](https://github.com/TiagoJVO/beekeepingit/issues/545) and is a
+  > genuine open trade-off, not a settled one. It was not treated as blocking this change: the
+  > defect this ADR fixes was live and shipping, and the widened blast radius is a knowingly
+  > accepted cost rather than a regression from a previously-safe state — but it should not be left
+  > recorded as though it cost nothing.
+
 - **Keeping startup migrations and dropping #62's guarantee.** Rejected: the append-only audit
   trail is a compliance-facing property (`FR-HIS-1`, `NFR-CMP-1`), not a nice-to-have.
