@@ -46,6 +46,13 @@ type auditImmutabilityFixture struct {
 	superuser *pgx.Conn // bootstrap-only: stands in for CNPG's own privileged reconciliation connection — creates roles/db AND grants the beekeepingit/svc-role membership (mirrors managed.roles.inRoles, never a manual GRANT run by beekeepingit itself)
 	owner     *pgx.Conn // beekeepingit: owns the schema, not the table (until locked down)
 	svc       *pgx.Conn // apiaries_svc: creates the table via its "migration", is its owner until locked down
+
+	// DSNs for the same two roles, so a test can drive the REAL
+	// dbaccess.Migrate (which takes a DSN, not a *pgx.Conn) as either role —
+	// see migration_ownership_test.go, which needs exactly that to prove
+	// which role can migrate a locked-down history table.
+	ownerDSN string
+	svcDSN   string
 }
 
 const (
@@ -130,10 +137,21 @@ func newAuditImmutabilityFixture(t *testing.T) *auditImmutabilityFixture {
 		}
 	}
 
+	// Mirrors production: every service connects with `options=-c
+	// search_path=<schema>`, which is why goose's ledger lands in
+	// `<schema>.goose_db_version` (verified on staging) rather than public.
+	dsnWithSearchPath := func(user, password string) string {
+		c := configFor(user, password)
+		c.SearchPath = auditFixtureSchema
+		return c.DSN()
+	}
+
 	return &auditImmutabilityFixture{
 		superuser: su,
 		owner:     connect(auditFixtureOwner, "owner_pw"),
 		svc:       connect(auditFixtureSvcRole, "svc_pw"),
+		ownerDSN:  dsnWithSearchPath(auditFixtureOwner, "owner_pw"),
+		svcDSN:    dsnWithSearchPath(auditFixtureSvcRole, "svc_pw"),
 	}
 }
 
