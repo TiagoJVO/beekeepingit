@@ -78,7 +78,11 @@ spec:
         {{- include "beekeepingit.labels" . | nindent 8 }}
         app.kubernetes.io/name: postgres
     spec:
-      restartPolicy: OnFailure
+      # `Never`, not `OnFailure` (#551): with OnFailure the Job controller
+      # DELETES the pod once backoffLimit is exhausted, taking the psql output
+      # that explains the failure with it. `Never` gives each attempt its own
+      # retained pod, so a failed release can still be diagnosed.
+      restartPolicy: Never
       containers:
         - name: schema-grants
           image: {{ .Values.image }}

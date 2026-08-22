@@ -133,7 +133,18 @@ spec:
         # to remember to add.
         app.kubernetes.io/component: migrate
     spec:
-      restartPolicy: OnFailure
+      # `Never`, not `OnFailure` (#551). With `OnFailure` Kubernetes restarts the
+      # container IN PLACE, and when backoffLimit is exhausted the Job
+      # controller deletes the pod — so by the time a CI diagnostics step runs,
+      # `kubectl logs` has nothing to show and the reason the migration failed is
+      # simply gone. Two helm-e2e runs were spent guessing at a failure whose
+      # log had already been discarded.
+      #
+      # `Never` makes each attempt its own pod, which persists after the Job
+      # fails. That is what turns "the migrate Job failed" into "the migrate Job
+      # failed BECAUSE ...". The cost is a few extra pod objects on a failing
+      # deploy, which is exactly when you want them.
+      restartPolicy: Never
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
