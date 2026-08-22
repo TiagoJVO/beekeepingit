@@ -90,6 +90,17 @@ beyond the general "connection pooler" risk this ADR already flagged:
   RUNS THE MIGRATIONS that `CREATE TABLE` the schema's own tables** (`dbaccess.Migrate` and
   `dbaccess.Connect` share one `Config`/DSN — `services/servicetemplate/config/config.go`). That
   makes `<schema>_svc` the **table owner** for every table it queries.
+
+  > **AMENDED by [ADR-0022](0022-migrations-as-a-deploy-time-admin-process.md) (#541,
+  > 2026-08-22): this premise no longer holds.** Migrations moved out of the serving process into
+  > a deploy-time Job running as `beekeepingit`, which now owns every table; `<schema>_svc` holds
+  > DML only and owns nothing. That is exactly option (a) below — "separating table ownership from
+  > the querying role" — so the **specific blocker this deferral rested on is gone**, incidentally
+  > rather than by design. RLS would now bind against `<schema>_svc` without `FORCE`, since it is
+  > no longer an owner. The deferral itself is NOT hereby reversed: the connection-pooler concern
+  > this ADR raises separately still stands, and adopting RLS remains its own decision with its own
+  > testing burden. Recorded so the next reader does not re-derive a rationale that has expired.
+
 - **Postgres table owners bypass RLS by default** — a plain
   `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` would be **silently ineffective** for exactly the
   role that runs every application query, giving a false sense of a working backstop. Making

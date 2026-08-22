@@ -7,21 +7,24 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `feat/google-federation-363` (#363 — Google federation + "Continue with Google")
+## `fix/541-migrations-as-migrator-role` (#541 — migrations as a deploy-time admin process)
 
-After merge (NOT merge blockers — nothing can exercise these until an environment has real Google
-credentials, and none exists yet):
+Before merge:
 
-- **Run the manual verification checklist** in `infra/README.md`
-  ("Enabling 'Continue with Google' on an environment") once against an environment with a real
-  Google OAuth client. It covers the only things no automated test can reach: a completed
-  sign-in through Google, the invitation-only refusal for an unlinked Google account, that a
-  linked account resolves to the same `sub`, and that sign-out still revokes the SSO session
-  after a _federated_ login. Record the result on #363. Until then, the Google-specific half of
-  this feature is config-verified and doc-verified but not execution-verified — stated plainly in
-  `docs/architecture/auth.md` §8.13.
-- **Create the `beekeepingit-authentik-google-credentials` Secret** (staging first) per the same
-  README section; the feature is inert until it exists, by design.
+- **Verify the transition against a real cluster.** `REASSIGN OWNED BY <schema>_svc TO
+beekeepingit` (`charts/postgres/templates/table-grants-job.yaml`) has only ever run in
+  testcontainers. Staging is the one environment carrying pre-#541 state — tables owned by
+  `<schema>_svc` from the old startup-migration path — so it is the only place the transition is
+  genuinely exercised. Deploy there and confirm afterwards that every table in every service
+  schema is owned by `beekeepingit`, and that `<schema>_svc` retains `INSERT`/`SELECT` only on
+  `audit_log`/`sync_conflict_log`.
+- **Staging currently carries a manual hand-fix.** On 2026-08-22 `organizations.audit_log`
+  ownership was moved by hand to unblock the stuck `v0.0.1-rc8` rollout (migrations 5 and 6
+  applied, ownership re-locked). That is _not_ what this branch does, and the by-hand state must
+  be reconciled by an actual deploy of this branch — otherwise staging looks correct for the
+  wrong reason and the transition stays untested.
+- **`task lint` has never run on this branch.** `lefthook` is not on PATH in the authoring
+  environment, so the commit-msg and format hooks were skipped on all commits here.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -38,9 +41,11 @@ credentials, and none exists yet):
 
 ---
 
-_Sweep note (#363): the `feat/authentik-admin-oidc-client` (#456) entry was stale — #456 closed_
-_long ago, so under this file's own rule it could no longer ride along. Its remaining work_
-_(tightening the admin client's `http://localhost:.*` redirect entry for staging/prod) is now_
-_[#508](https://github.com/TiagoJVO/beekeepingit/issues/508), a sub-issue of EPIC-14_
-_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and is pruned here. #362's own sweep_
-_had already pruned the #449 and #290 entries in the same spirit._
+_Sweep note (#541): the `feat/google-federation-363` entry was stale — its PR_
+_[#509](https://github.com/TiagoJVO/beekeepingit/pull/509) merged and_
+_[#363](https://github.com/TiagoJVO/beekeepingit/issues/363) closed, so under this file's own rule_
+_it could no longer ride along. Its work was never done (no environment has real Google OAuth_
+_credentials), so it was promoted to_
+_[#544](https://github.com/TiagoJVO/beekeepingit/issues/544) rather than pruned, and removed here._
+_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that entry_
+_stands. The earlier #363 sweep had already handled #456/#508 in the same spirit._
