@@ -171,7 +171,32 @@ spec:
                 # the same reason — it has to commit atomically WITH the grant.
                 # It stays conditional because a schema whose service has not
                 # shipped its history table yet must not fail the release.
-                psql -v ON_ERROR_STOP=1 --single-transaction \
+                # RETRY ONLY WHAT IS WORTH RETRYING (#551 follow-up). This Job
+                # previously leaned on `backoffLimit: 10` to ride out a Postgres
+                # blip, which also meant a genuinely broken statement was
+                # retried ten times before anyone heard about it. Lowering the
+                # limit alone went too far the other way and broke a real CI
+                # run: CNPG reported "DB not available, will retry
+                # (.s.PGSQL.5432: no such file or directory)" mid-deploy, and
+                # Job backoff is EXPONENTIAL, so a couple of attempts buys only
+                # tens of seconds — less than the outage.
+                #
+                # psql's exit codes separate the two cases exactly, so use them
+                # instead of guessing with a retry count:
+                #   2 -> could not connect / connection went bad  => transient,
+                #        worth retrying, and the thing an operator can do
+                #        nothing about
+                #   3 -> error in the script with ON_ERROR_STOP   => the SQL is
+                #        wrong; retrying cannot help and only delays the report
+                #   1 -> psql's own fatal error                   => same
+                # Retrying only on 2 means a Postgres restart is absorbed while
+                # a bad statement still fails on the FIRST attempt, which is the
+                # property #541 made load-bearing.
+                attempt=1
+                max_attempts=10
+                while :; do
+                  set +e
+                  psql -v ON_ERROR_STOP=1 --single-transaction \
                   -c "REASSIGN OWNED BY ${svc_role} TO beekeepingit;" \
                   -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${svc_role};" \
                   -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${svc_role};" \
@@ -191,6 +216,36 @@ spec:
                         END LOOP;
                       END
                       \$do\$;"
+                  rc=$?
+                  set -e
+
+                  # `if`, NOT `[ ... ] && break`. Under `set -e` the latter is a
+                  # compound command whose exit status is non-zero whenever rc
+                  # is non-zero, so the shell would exit right there — silently
+                  # turning this retry loop into a single attempt. Caught by
+                  # exercising the loop against a stubbed psql rather than by
+                  # reading it.
+                  if [ "$rc" -eq 0 ]; then
+                    break
+                  fi
+
+                  # Anything that is not a connection problem is the SQL's
+                  # fault. Fail now, on the first attempt, with psql's own
+                  # message already on stdout.
+                  if [ "$rc" -ne 2 ]; then
+                    echo "${schema}: psql exited ${rc} (not a connection error) — failing without retry." >&2
+                    exit "$rc"
+                  fi
+
+                  if [ "$attempt" -ge "$max_attempts" ]; then
+                    echo "${schema}: still cannot reach Postgres after ${max_attempts} attempts — giving up." >&2
+                    exit 2
+                  fi
+
+                  echo "${schema}: cannot reach Postgres (psql exit 2), attempt ${attempt}/${max_attempts}; retrying in 5s..." >&2
+                  attempt=$((attempt + 1))
+                  sleep 5
+                done
 
                 echo "${schema}: runtime grants applied."
               }
