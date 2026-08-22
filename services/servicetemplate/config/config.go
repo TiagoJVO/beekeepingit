@@ -120,6 +120,17 @@ func LoadDB() (dbaccess.Config, error) {
 	if len(errs) > 0 {
 		return dbaccess.Config{}, errors.Join(errs...)
 	}
+
+	// Validate HERE, unlike Load. A serving process reaches dbaccess.Connect,
+	// which validates on the way in; the migrate admin process calls Migrate
+	// and exits, so without this its Config would never be validated at all.
+	// SearchPath is the one that matters — it is concatenated into the DSN's
+	// `options=-c search_path=` and an unvalidated value can inject further
+	// connection options, which in this job would carry database-OWNER
+	// privileges.
+	if err := cfg.Validate(); err != nil {
+		return dbaccess.Config{}, err
+	}
 	return cfg, nil
 }
 
