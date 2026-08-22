@@ -7,6 +7,21 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
+## `claude/orch-change-feature-d959be` (#539 — pause/resume Scaleway environments without losing data)
+
+Not a merge blocker for the code/docs in this branch, but the issue's own "Verification" AC
+("a staging round-trip is exercised end to end") cannot be executed by an agent — it needs a
+human operator with real Scaleway credentials, per `infra/README.md`'s own "an agent must not
+handle these values" convention:
+
+- **Run the staging round-trip**: seed a recognisable row, `scaleway-scale-down.sh`,
+  `scaleway-scale-up.sh`, confirm the row survives and the app works. Record the result on #539.
+  Until then, the pause/resume design is research-verified (ADR-0022) and shellcheck/actionlint-clean
+  but not execution-verified against real infra.
+- **Confirm the staging cluster's control-plane tier** is Mutualized (free), not a paid Dedicated
+  tier (`scw k8s cluster get <id> region=fr-par` → check `.Type`) — flagged as unconfirmed in
+  ADR-0022/`infra/README.md`.
+
 ## `feat/account-linking-364` (#364 — federated account linking)
 
 - **Notify the account owner when a sign-in method is first linked.** The one missing detection
@@ -51,3 +66,8 @@ _entry for staging/prod) is now_
 _[#508](https://github.com/TiagoJVO/beekeepingit/issues/508), a sub-issue of EPIC-14_
 _[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and was pruned then. #362's own sweep_
 _had already pruned the #449 and #290 entries in the same spirit._
+
+_Sweep note (#539): the `feat/google-federation-363` (#363) entry was stale — #363 closed and its_
+_manual-verification follow-up was already promoted to_
+_[#510](https://github.com/TiagoJVO/beekeepingit/issues/510), so it's pruned here rather than_
+_riding along a second time._
