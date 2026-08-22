@@ -166,7 +166,7 @@ api/*.go (handlers)
   → store/sqlc/gen/*.sql.go   (typed queries, sqlc-generated from queries/*.sql)
   → pgxpool.Pool              (dbaccess.Connect, services/shared/dbaccess/pool.go)
 migrations: store/migrations/*.sql (goose) + migrations_embed.go; applied by the deploy-time
-  `<binary> migrate` Job as the migrator role, NOT at boot (ADR-0022/#541) — migrate.go/runMigrate
+  `<binary> migrate` Job as the migrator role, NOT at boot (ADR-0023/#541) — migrate.go/runMigrate
 schema.sql = sqlc's virtual (codegen-only) schema; mirrors cumulative migrations
 ```
 

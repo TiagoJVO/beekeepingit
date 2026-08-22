@@ -81,7 +81,7 @@ func newApiariesFixture(t *testing.T) *apiariesFixture {
 	)
 	// postgis/postgis (not the plain postgres:16-alpine other services use):
 	// this service's schema needs the postgis extension (location
-	// geography(Point,4326), 00003_add_apiary_location.sql) — matching the
+	// geography(Point,4326), 00008_baseline.sql (previously 00003_add_apiary_location.sql)) — matching the
 	// real cluster's CNPG postgis operand image (infra/helm/beekeepingit/
 	// charts/postgres/values.yaml), just a standalone build of the same
 	// extension rather than the CNPG-specific image.
@@ -2555,7 +2555,7 @@ func createSchema(ctx context.Context, t *testing.T, cfg dbaccess.Config, name s
 // createPostgisExtension enables postgis on the test database, standing in
 // for the postgres chart's bootstrap (cluster.yaml's postInitApplicationSQL
 // runs `CREATE EXTENSION IF NOT EXISTS postgis;` once, cluster-wide, before
-// any service's migrations run) — 00003_add_apiary_location.sql's
+// any service's migrations run) — 00008_baseline.sql (previously 00003_add_apiary_location.sql)'s
 // `geography(Point, 4326)` column needs the extension to already exist.
 func createPostgisExtension(ctx context.Context, t *testing.T, cfg dbaccess.Config) {
 	t.Helper()

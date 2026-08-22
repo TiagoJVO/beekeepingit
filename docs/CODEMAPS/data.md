@@ -174,6 +174,6 @@ shared/dbaccess:00001 create_example_items (template reference only)
 - **History**: writes append an `audit_log` row (delta via `shared/history`); immutability holds
   because the runtime role `<schema>_svc` never owns a table — the migrator (`beekeepingit`) does —
   so granting it `INSERT`/`SELECT` and withholding `UPDATE`/`DELETE` is durable and it cannot
-  self-`GRANT` back in (`infra/helm/.../postgres/templates/table-grants-job.yaml`, ADR-0022/#541).
+  self-`GRANT` back in (`infra/helm/.../postgres/templates/table-grants-job.yaml`, ADR-0023/#541).
 
 See [backend.md](backend.md) for the query layer, [architecture.md](architecture.md) for sync.

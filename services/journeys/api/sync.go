@@ -95,7 +95,7 @@ type journeyData struct {
 // `put` op's `data` — journey_id + apiary_id identify what this row means;
 // both are always required (put is the only content-bearing op for this
 // entity type — delete carries no data, since the item's own stable id is
-// enough to remove it, migrations/00001_create_journeys.sql's doc comment).
+// enough to remove it, migrations/00003_baseline.sql (previously 00001_create_journeys.sql)'s doc comment).
 type journeyPlanItemData struct {
 	JourneyID *string `json:"journey_id"`
 	ApiaryID  *string `json:"apiary_id"`

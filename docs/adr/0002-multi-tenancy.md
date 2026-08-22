@@ -91,7 +91,7 @@ beyond the general "connection pooler" risk this ADR already flagged:
   `dbaccess.Connect` share one `Config`/DSN — `services/servicetemplate/config/config.go`). That
   makes `<schema>_svc` the **table owner** for every table it queries.
 
-  > **AMENDED by [ADR-0022](0022-migrations-as-a-deploy-time-admin-process.md) (#541,
+  > **AMENDED by [ADR-0023](0023-migrations-as-a-deploy-time-admin-process.md) (#541,
   > 2026-08-22): this premise no longer holds.** Migrations moved out of the serving process into
   > a deploy-time Job running as `beekeepingit`, which now owns every table; `<schema>_svc` holds
   > DML only and owns nothing. That is exactly option (a) below — "separating table ownership from

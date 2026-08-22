@@ -47,7 +47,7 @@ todo regardless of assignee) and `apiary_id` (nullable UUID, #51, FR-TD-1:
 "may be associated with a specific apiary, or left as a general, org-level
 todo") are both **cross-service soft references** — no FK, per the
 data-ownership rule "cross-context references are by ID, not FK"
-(`store/migrations/00003_add_apiary_id.sql`). The usual audit/tombstone
+(`store/migrations/00003_baseline.sql (previously 00003_add_apiary_id.sql)`). The usual audit/tombstone
 columns round it out (`created_at`/`updated_at`/`recorded_at`/`deleted_at`,
 matching activities' shape).
 

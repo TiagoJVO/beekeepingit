@@ -1,4 +1,4 @@
-# 0022 — Migrations run as a deploy-time admin process, not at service startup
+# 0023 — Migrations run as a deploy-time admin process, not at service startup
 
 - **Status:** Accepted
 - **Date:** 2026-08-22
@@ -91,6 +91,35 @@ check through inherited membership, so the migrate Job can alter a legacy `<sche
 table and write its `<schema>_svc`-owned ledger without any prior step — verified in
 `services/shared/dbaccess/migration_ownership_test.go`.
 
+### 5. Migrations are squashed into a per-service baseline
+
+Each service's migrations collapse into a single `0000N_baseline.sql`, so a fresh database gets
+the final shape in one step instead of replaying create-then-alter.
+
+**Numbered at the then-current max, not `00001`.** goose applies any version above the database's
+max, so a baseline sitting exactly at that max is a no-op on an already-migrated cluster while a
+fresh database applies it and lands on the _same version number_. Both end with identical schema
+and identical ledger state. Numbering it `00001` would strand fresh and existing clusters on
+different versions permanently.
+
+**Generated, not hand-written.** The baselines come from `pg_dump --schema-only` run against a
+database migrated by the real migration files. A hand-written baseline is precisely how a fresh
+database and a long-lived one drift apart. goose's own `goose_db_version` and `CREATE SCHEMA` are
+stripped — goose owns its ledger, infra owns schemas.
+
+**The hard constraint:** a baseline may only be cut when _every_ live environment is at or above
+its version, otherwise goose will try to apply it over tables that already exist. Verified before
+cutting these: staging was at exactly the file max for all six services. The local k3d dev cluster
+was behind (organizations at 4) and must be recreated rather than upgraded — it is disposable,
+which is the only reason this was acceptable.
+
+Baselines have **no Down section**. There is no meaningful target to migrate down to past a
+squash, and the steps that would be unwound no longer exist.
+
+Honest scoping note: at 26 migrations across six services this buys very little today. It was
+done because the replay path was going to keep growing and the constraint above only gets harder
+to satisfy as more environments appear — not because fresh installs were slow.
+
 ## Consequences
 
 - The runtime credential no longer carries DDL. A compromised service can no longer `DROP` or
@@ -114,7 +143,12 @@ table and write its `<schema>_svc`-owned ledger without any prior step — verif
   health check. Closing it entirely would mean either a migration-aware readiness check or gating
   the rollout on hook completion; neither is done here.
 - `services/*/store/sqlc/schema.sql` remains sqlc codegen input only and is **not** a bootstrap
-  baseline. Squashing/baselining migrations is a separate improvement, tracked apart from this ADR.
+  baseline — it is never applied to a database. Its header used to name the individual migration
+  files it mirrored; those no longer exist, so each now points at the baseline instead. Drift
+  between the two surfaces as wrong generated Go types, not as a failed migration.
+- Re-cutting a baseline is now a release-coordination step, not a refactor: it requires knowing
+  every live environment's goose version first. Recorded in `FOLLOWUPS.md` so the constraint
+  survives this PR.
 
 ## Alternatives considered
 

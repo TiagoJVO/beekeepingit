@@ -53,7 +53,7 @@ composite-key enrichment of the queued delete op needed.
 
 An activity carries the attribution link, **not** this schema: a **stored,
 nullable `activities.journey_id`** column (already present in
-`services/activities/store/migrations/00001_create_activities.sql`, wired by
+`services/activities/store/migrations/00002_baseline.sql (previously 00001_create_activities.sql)`, wired by
 [#46](https://github.com/TiagoJVO/beekeepingit/issues/46)'s activity-form
 picker — see `services/activities/README.md`'s own "Cross-service journey
 ownership" section) — this is a deliberate, already-confirmed decision

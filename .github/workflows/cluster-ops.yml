@@ -1,8 +1,19 @@
-# On-demand Scaleway Kapsule cluster operations (D-26): bring up or tear down
-# the staging/prod cluster from the Actions tab, running the SAME
-# infra/cluster/scaleway-up.sh / scaleway-down.sh scripts used for manual local
-# runs — the workflow only supplies credentials and tools, so the two paths
-# can't drift.
+# On-demand Scaleway Kapsule cluster operations (D-26): bring up, tear down,
+# pause, or resume the staging/prod cluster from the Actions tab, running the
+# SAME infra/cluster/scaleway-{up,down,scale-up,scale-down}.sh scripts used
+# for manual local runs — the workflow only supplies credentials and tools, so
+# the manual and CI paths can't drift.
+#
+# Four actions (#539):
+#   - up          create the cluster (or reconcile an existing one) — the
+#                 original, unchanged bring-up
+#   - down        PERMANENTLY destroy the cluster, its volumes, and its Load
+#                 Balancers — the original, unchanged full teardown
+#   - scale-down  the routine "stop paying for compute between sessions" op:
+#                 scales the node pool to 0, keeps the cluster (and every
+#                 PersistentVolumeClaim) alive — nothing is destroyed
+#   - scale-up    resumes a scale-down'd cluster; fails clearly if the
+#                 cluster doesn't exist rather than silently creating one
 #
 # Secrets/variables (see infra/README.md#secrets--remote-cluster-operations for
 # the full inventory + `gh secret set` commands):
@@ -21,11 +32,14 @@
 #
 # Gating reuses D-27's release-approval environments: staging -> `staging-gate`
 # (no protection rules, runs immediately); prod -> `production-gate` (required
-# reviewer). The `run` job itself carries the environment so ONE approval both
-# unlocks the job and exposes the env-scoped variables. `down` additionally
-# requires typing the exact cluster name into the `confirm` input — it deletes
-# a real, billed cluster — validated in the ungated `route` job so a typo fails
-# fast, before any approval is spent.
+# reviewer) — this applies to all four actions, so a prod scale-down/scale-up
+# still needs a human reviewer click. The `run` job itself carries the
+# environment so ONE approval both unlocks the job and exposes the env-scoped
+# variables. `down` additionally requires typing the exact cluster name into
+# the `confirm` input — it PERMANENTLY deletes a real, billed cluster and its
+# data — validated in the ungated `route` job so a typo fails fast, before any
+# approval is spent. `scale-down` does NOT require `confirm`: it destroys
+# nothing (see infra/README.md).
 #
 # D-26 scope guard: bringing up the prod *cluster* is allowed (empty cluster,
 # no user data), but deployments stay staging-grade until DR (Q-DR) and GDPR
@@ -42,13 +56,13 @@ on:
         required: true
         default: staging
       action:
-        description: up (create/reconcile) or down (DELETE the cluster)
+        description: up (create) | down (DESTROY) | scale-down (pause, keeps data) | scale-up (resume)
         type: choice
-        options: [up, down]
+        options: [up, down, scale-down, scale-up]
         required: true
         default: up
       confirm:
-        description: For `down` only — type the exact cluster name (e.g. beekeepingit-staging) to confirm deletion
+        description: For `down` only — type the exact cluster name (e.g. beekeepingit-staging) to confirm PERMANENT deletion
         type: string
         required: false
         default: ""
@@ -75,6 +89,13 @@ jobs:
             staging) gate=staging-gate ;;
             prod) gate=production-gate ;;
             *) echo "::error::unknown environment '$ENVIRONMENT'"; exit 1 ;;
+          esac
+          # `type: choice` only constrains the Actions-UI dropdown, not a
+          # dispatch via the REST API/`gh workflow run` — validate server-side
+          # too, before any approval gate is spent.
+          case "$ACTION" in
+            up | down | scale-down | scale-up) ;;
+            *) echo "::error::unknown action '$ACTION'"; exit 1 ;;
           esac
           cluster="beekeepingit-${ENVIRONMENT}"
           if [ "$ACTION" = "down" ] && [ "$CONFIRM" != "$cluster" ]; then

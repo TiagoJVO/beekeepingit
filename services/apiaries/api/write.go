@@ -290,7 +290,7 @@ func validateCreate(body apiaryCreateRequest) (uuid.UUID, []problem.FieldError) 
 	// Location is mandatory on create (FR-AP-7, #341 — the product owner's
 	// directed requirement change): an apiary can never be created without
 	// coordinates. Enforced here (422) as well as at the DB (NOT NULL,
-	// 00008_apiary_location_not_null.sql) and in the sync-apply path
+	// 00008_baseline.sql (previously 00008_apiary_location_not_null.sql)) and in the sync-apply path
 	// (validateApiaryOp) so every write surface applies the same rule.
 	if body.Location == nil {
 		errs = append(errs, problem.FieldError{Field: "location", Code: "required", Message: "location is required"})
