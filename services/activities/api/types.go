@@ -2,7 +2,7 @@
 // server-side validation (#38, FR-AC-1, D-2, D-19). This file (types.go) is
 // the type registry: the extensible set of known activity types and each
 // type's own attribute schema, validated against the JSONB `attributes` bag
-// (store/migrations/00001_create_activities.sql) rather than a DB
+// (store/migrations/00002_baseline.sql (previously 00001_create_activities.sql)) rather than a DB
 // enum/CHECK — mirroring the data-model.md §2 "extensible enums" convention
 // apiaries' counter_type already uses (services/apiaries/api/counters.go).
 //

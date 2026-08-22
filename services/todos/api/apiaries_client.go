@@ -2,7 +2,7 @@
 // it can accept a client-supplied apiary_id. Todos does not own the apiaries
 // schema (ownership rule 1, docs/architecture/service-decomposition.md §4:
 // "cross-context references are by ID, not FK") — the todos.todos table's
-// apiary_id column (store/migrations/00003_add_apiary_id.sql) is a soft
+// apiary_id column (store/migrations/00003_baseline.sql (previously 00003_add_apiary_id.sql)) is a soft
 // reference this service has no database access to verify directly. The only
 // trustworthy way to know whether an apiary_id belongs to the caller's
 // organization is to ask the OWNING service, exactly the same zero-trust

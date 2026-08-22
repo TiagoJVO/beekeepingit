@@ -326,7 +326,7 @@ scoping**, with **optional Postgres Row-Level Security (RLS)** as defense-in-dep
   (`api/apiaries.go`'s `listApiaries`), not backed by a `pg_trgm` index.
 - **`place_label`** (#252): an optional free-text place name (e.g. "Montargil"), independent of
   `location`'s coordinates and of the apiary's own `name` — a plain nullable `TEXT` column
-  (migration `00006_add_apiary_place_label.sql`), capped at 200 chars like a short label, not
+  (migration `00008_baseline.sql (previously 00006_add_apiary_place_label.sql)`), capped at 200 chars like a short label, not
   free-form prose (unlike `notes`'s 10,000-char cap). Threaded through the same write paths as
   `location` (REST + sync-apply) and the PowerSync sync-rules bucket/client schema.
 

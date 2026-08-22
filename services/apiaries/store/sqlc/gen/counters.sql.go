@@ -106,13 +106,13 @@ type UpsertApiaryCounterParams struct {
 }
 
 // apiary_counters — typed 1-N counters decoupled from apiaries (#256,
-// FR-AP-7, D-2 note, 00005_create_apiary_counters.sql). One row per
+// FR-AP-7, D-2 note, 00008_baseline.sql (previously 00005_create_apiary_counters.sql)). One row per
 // (apiary, counter_type); a future counter type (nucs, supers, queens, ...)
 // is a code-only append to the known set (api/counters.go), never a new
 // migration or new query here — every type shares these same four queries.
 // Enforces "only one row per (org, apiary, type)" via ON CONFLICT on the
 // table's UNIQUE(organization_id, apiary_id, counter_type) constraint
-// (widened by 00007_apiary_counters_org_scoped_unique.sql, tenant-IDOR
+// (widened by 00008_baseline.sql (previously 00007_apiary_counters_org_scoped_unique.sql), tenant-IDOR
 // defense in depth — the conflict target itself now encodes tenancy, so it
 // can never collide across two different orgs' rows even in principle) —
 // an upsert, not a check-then-insert/update pair, so this is safe under

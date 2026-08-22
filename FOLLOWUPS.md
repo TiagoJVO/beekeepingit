@@ -7,6 +7,37 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
+## `fix/541-migrations-as-migrator-role` (#541 — migrations as a deploy-time admin process)
+
+After this merges and reaches staging via a release (D-27: merge → release → tag-bump PR → Flux
+reconciles — staging is never deployed from a branch):
+
+- **Validate the ownership transition on staging.** `REASSIGN OWNED BY <schema>_svc TO
+beekeepingit` (`charts/postgres/templates/table-grants-job.yaml`) has only ever run in
+  containers. Staging is the one environment carrying pre-#541 state, so it is the only place the
+  transition is genuinely exercised. As of 2026-08-22 it has **16 tables still owned by
+  `<schema>_svc`** (organizations 4, apiaries 3, journeys 3, todos 2, activities 2, identity 2) and
+  10 already owned by `beekeepingit`. Afterwards, confirm all 26 are owned by `beekeepingit` and
+  that `<schema>_svc` holds `INSERT`/`SELECT` only on `audit_log`/`sync_conflict_log`. Already
+  verified as safe to run: no `<schema>_svc` owns anything outside its own schema, which is the
+  one thing `REASSIGN OWNED`'s database-wide scope could have caught out.
+- **The same release reconciles a manual hand-fix.** On 2026-08-22 `organizations.audit_log`
+  ownership was moved by hand to unblock the stuck `v0.0.1-rc8` rollout (migrations 5 and 6
+  applied, ownership re-locked). Until this ships, staging looks correct for the wrong reason.
+- **The history-table list in `table-grants-job.yaml` is hardcoded** to `audit_log` and
+  `sync_conflict_log`. `ALTER DEFAULT PRIVILEGES` makes UPDATE/DELETE the default for anything a
+  future migration creates in the schema, and only those two literal names are revoked back. A
+  future history-style table under a different name would silently keep UPDATE/DELETE for the
+  runtime role. Decide before more history tables land: adopt a naming convention the job can
+  match, or an explicit allowlist that fails the release on an unrecognised table. From the
+  security review of this branch; promote to an Issue if it outlives this PR.
+- **Re-cutting a migration baseline requires every live environment at or above its version.**
+  This branch squashed each service's migrations into a single `0000N_baseline.sql` numbered at the
+  then-current max (verified equal to staging's ledger for all six services). Squashing below a
+  deployed cluster's version would make goose apply the baseline over tables that already exist.
+  The local k3d dev cluster was behind (organizations at 4) and must be recreated with
+  `infra/cluster/dev-up.sh` rather than upgraded in place.
+
 ## `claude/orch-change-feature-d959be` (#539 — pause/resume Scaleway environments without losing data)
 
 Not a merge blocker for the code/docs in this branch, but the issue's own "Verification" AC
@@ -48,3 +79,11 @@ _Sweep note (#539): the `feat/google-federation-363` (#363) entry was stale — 
 _manual-verification follow-up was already promoted to_
 _[#510](https://github.com/TiagoJVO/beekeepingit/issues/510), so it's pruned here rather than_
 _riding along a second time._
+
+_Sweep note (#541): this branch swept the same stale `feat/google-federation-363` entry_
+_independently, from a base that predated #539's sweep, and promoted it to a **duplicate**_
+_issue — [#544](https://github.com/TiagoJVO/beekeepingit/issues/544), since closed in favour of_
+_[#510](https://github.com/TiagoJVO/beekeepingit/issues/510). Worth remembering: a stale entry may_
+_already have been promoted on an unmerged branch, so check open Issues for the work before_
+_filing a new one. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
+_open — that entry stands._

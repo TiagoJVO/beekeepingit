@@ -96,7 +96,7 @@ type apiaryData struct {
 // the client-generated Op.ID is only the local row's own PK (PowerSync's
 // CRUD-queue key), never the server's identity for this row. The server's
 // real uniqueness is (apiary_id, counter_type) — the table's UNIQUE
-// constraint (00005_create_apiary_counters.sql) — so two different devices
+// constraint (00008_baseline.sql (previously 00005_create_apiary_counters.sql)) — so two different devices
 // creating a "hive" counter for the same apiary offline generate two
 // DIFFERENT client ids for what the server correctly collapses into ONE row
 // via applyCounterOp's upsert. Value is a pointer (not a plain int32) so
@@ -224,7 +224,7 @@ func validateApiaryOp(i int, op Op) []problem.FieldError {
 	// Location is mandatory on a put/offline-create (FR-AP-7, #341 — the
 	// product owner's directed requirement change): a full put must carry
 	// both coordinates, mirroring the REST path's validateCreate and the DB
-	// NOT NULL constraint (00008_apiary_location_not_null.sql). A patch is
+	// NOT NULL constraint (00008_baseline.sql (previously 00008_apiary_location_not_null.sql)). A patch is
 	// exempt — it never clears location (mergeOp only ever SETS it when both
 	// coordinates are present), so it can't violate the NOT NULL invariant.
 	if op.Op == "put" && (data.LocationLon == nil || data.LocationLat == nil) {

@@ -3,7 +3,7 @@
 // organizations schema (ownership rule 1,
 // docs/architecture/service-decomposition.md §4: "cross-context references
 // are by ID, not FK") — todos.todos' assignee_id column
-// (store/migrations/00001_create_todos.sql) is a soft reference this service
+// (store/migrations/00003_baseline.sql (previously 00001_create_todos.sql)) is a soft reference this service
 // has no database access to verify directly. The only trustworthy way to know
 // whether an assignee_id is a member of the caller's organization is to ask
 // the OWNING service — the SAME internal endpoint

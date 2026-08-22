@@ -65,7 +65,18 @@ func (c Config) DSN() string {
 // assigns (D-6), never arbitrary user input.
 var validSchemaName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
-func (c Config) validate() error {
+// Validate rejects a Config that must never reach DSN(). Exported because the
+// migrate admin process (#541) needs it: it calls Migrate and then EXITS,
+// never calling Connect, so the validation Connect performs would otherwise
+// never run for that path at all.
+//
+// That gap matters more there than in a serving process, not less — the
+// migrate job authenticates as the database OWNER, so an injected connection
+// option carries owner privileges. Before #541 a bad SearchPath was at least
+// caught by Connect moments after Migrate in the same process; relatedly, see
+// #285 on Migrate itself still taking a raw DSN rather than a Config it could
+// validate.
+func (c Config) Validate() error {
 	if c.Host == "" || c.User == "" || c.Database == "" {
 		return fmt.Errorf("dbaccess: host, user and database are required")
 	}
