@@ -212,12 +212,60 @@ gh variable set AUTH_HOST --env staging-gate --body auth.beekeepingit-rc.melargi
 under _Settings → Environments_ first if it doesn't exist yet.)
 
 **On-demand runs from GitHub**: the [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml)
-`workflow_dispatch` workflow runs `scaleway-up.sh`/`scaleway-down.sh` with those
-secrets — pick `environment` (staging/prod) and `action` (up/down) in the Actions tab. Staging
-runs immediately; prod waits for `production-gate`'s required reviewer; `down` also requires
-typing the exact cluster name into the `confirm` input, since it deletes a real, billed cluster.
-Note the D-26 scope guard: bringing up the prod _cluster_ is fine (it holds no user data), but
-deployments stay staging-grade until DR (`Q-DR`) and GDPR export/erasure (#90) land.
+`workflow_dispatch` workflow runs one of the four scripts below with those secrets — pick
+`environment` (staging/prod) and `action` (up/down/scale-down/scale-up) in the Actions tab. Staging
+runs immediately; prod waits for `production-gate`'s required reviewer on **every** action; `down`
+additionally requires typing the exact cluster name into the `confirm` input, since it permanently
+deletes a real, billed cluster. Note the D-26 scope guard: bringing up the prod _cluster_ is fine
+(it holds no user data), but deployments stay staging-grade until DR (`Q-DR`) and GDPR
+export/erasure (#90) land.
+
+### Pausing and resuming an environment without losing data (#539)
+
+Tearing an environment down with `scaleway-down.sh` is a **permanent, destructive** operation — it
+deletes the cluster, its node pool, its block-storage volumes, and its Load Balancers
+(`with-additional-resources=true`), so a subsequent `scaleway-up.sh` always starts from a genuinely
+empty state (`bootstrap.initdb`, fresh Authentik/MinIO). That's the right tool when you actually
+want to throw an environment away, but it's the wrong default for "I'm done for today, stop the
+meter until tomorrow" — routinely destroying and re-provisioning an environment for that is not a
+restart, it's a repeated data-loss event.
+
+**`scaleway-scale-down.sh`/`scaleway-scale-up.sh` are the routine pause/resume pair instead.**
+Rather than deleting the cluster, `scale-down` deletes the environment's LoadBalancer-type
+Service(s) (so Scaleway's cloud-controller-manager cleanly deprovisions the billed Load Balancer
+behind them through its own reconciliation, instead of the script calling the Scaleway API directly
+against a Service the CCM still believes it owns) and scales the node pool to **0**. The
+**cluster itself — its control plane, its etcd, and therefore every `PersistentVolumeClaim`,
+`PersistentVolume`, and the CNPG `Cluster` custom resource — stays alive.** `scale-up` scales the
+pool back up and reinstalls the cluster-scoped prerequisites that lived on the deleted nodes (CNPG
+operator, Traefik — which provisions a fresh Load Balancer — cert-manager, Flux); CNPG Postgres,
+Authentik, and MinIO reschedule onto the new nodes and reattach their already-`Bound` PVCs through
+completely standard Kubernetes CSI semantics. **There is no volume-reattachment logic anywhere in
+this design, because nothing is ever detached from the cluster's object model** — only from its
+compute. `scale-up` fails with a clear error (rather than silently creating a new cluster) if the
+target cluster doesn't exist at all — it resumes a paused environment, it doesn't create one.
+
+This works because Kapsule's control plane is **free on the default "Mutualized" tier, independent
+of node count** (confirmed on Scaleway's pricing page) — a cluster scaled to 0 nodes costs nothing
+beyond its still-attached block-storage volumes, which you're paying for either way if you want the
+data kept. `scale-down` does **not** require the `confirm` input `down` does: it destroys nothing.
+
+Two things this design does **not** have a documented answer for, so don't treat them as settled:
+
+- **Control-plane tier.** This only holds if the cluster is on the Mutualized tier, not a paid
+  Dedicated one (`scw k8s cluster get <id> region=<region>` → check `.Type`). Confirm this once per
+  cluster if you're not sure how it was created.
+- **Long-idle zero-node clusters.** Scaleway's docs don't state a policy either way on reaping
+  clusters left at 0 nodes for extended periods. Don't rely on `scale-down` for multi-week/-month
+  pauses without checking directly with Scaleway first — for that horizon, `scaleway-down.sh` (full
+  teardown) is the safer, better-understood choice.
+
+| Script                   | Effect                                                          | Data          |
+| ------------------------ | --------------------------------------------------------------- | ------------- |
+| `scaleway-up.sh`         | create the cluster (or reconcile an existing one)               | n/a (fresh)   |
+| `scaleway-down.sh`       | **permanently destroy** the cluster + volumes + Load Balancers  | **destroyed** |
+| `scaleway-scale-down.sh` | scale the node pool to 0; cluster/control plane keep running    | **kept**      |
+| `scaleway-scale-up.sh`   | scale the node pool back up; fails if the cluster doesn't exist | **kept**      |
 
 ### Enabling "Continue with Google" on an environment (#363)
 
@@ -293,15 +341,15 @@ bootstrap so the local checkout (not `main`) is what gets deployed.
 
 ## Layout
 
-| Path                                                         | What it is                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`); Scaleway Kapsule staging/prod bring-up/teardown (`scaleway-up.sh`/`scaleway-down.sh`, D-26) with env/secrets loading (`env.sh` + `.env.example`) |
-| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                                                                                                                                                                          |
-| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                                                                                                                                                                   |
-| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                                                                                                                                                                   |
-| [`ci/`](ci/)                                                 | Probes CI execs **inside** cluster pods, where the assertion can't be made from outside — today `authentik-federation-probe.py` (#363), run through `ak shell` in the Authentik worker by `helm-e2e.yml`                                                                                                     |
-| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                                                                                                                                                                               |
-| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                                                                                                                                                                   |
+| Path                                                         | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`cluster/`](cluster/)                                       | Local k8s cluster (k3d) bring-up (`up.sh`) and teardown (`down.sh`); whole-environment single-command bring-up/teardown (`dev-up.sh`/`dev-down.sh`, `#22`); Scaleway Kapsule staging/prod bring-up/teardown (`scaleway-up.sh`/`scaleway-down.sh`, D-26) and data-preserving pause/resume (`scaleway-scale-down.sh`/`scaleway-scale-up.sh`, `#539`), with shared preamble/prereq logic (`scw-common.sh`, `scw-cluster-prereqs.sh`) and env/secrets loading (`env.sh` + `.env.example`) |
+| [`helm/beekeepingit/`](helm/beekeepingit/)                   | The Helm **umbrella chart** — see its own [README](helm/beekeepingit/README.md) for the subchart/values conventions                                                                                                                                                                                                                                                                                                                                                                   |
+| [`helm/observability/`](helm/observability/)                 | The **observability stack** chart (#87) — its own Flux `HelmRelease`, deployed after MinIO; see its [README](helm/observability/README.md)                                                                                                                                                                                                                                                                                                                                            |
+| [`gitops/`](gitops/)                                         | **Flux** GitOps wiring that reconciles the charts onto the cluster from this repo — see its own [README](gitops/README.md)                                                                                                                                                                                                                                                                                                                                                            |
+| [`ci/`](ci/)                                                 | Probes CI execs **inside** cluster pods, where the assertion can't be made from outside — today `authentik-federation-probe.py` (#363), run through `ak shell` in the Authentik worker by `helm-e2e.yml`                                                                                                                                                                                                                                                                              |
+| [`observability-smoke-test.sh`](observability-smoke-test.sh) | Fires a correlated trace+log+metric through the OTel Collector — a verification aid until `#23`'s services emit real telemetry                                                                                                                                                                                                                                                                                                                                                        |
+| [`grafana-open.sh`](grafana-open.sh)                         | Dev convenience: fetches Grafana's admin password, port-forwards it, and opens the browser                                                                                                                                                                                                                                                                                                                                                                                            |
 
 Postgres+PostGIS, the OIDC provider (Authentik — [ADR-0016](../docs/adr/0016-replace-keycloak-with-authentik.md),
 originally Keycloak at **#84**), MinIO and the gateway are the umbrella chart's first real

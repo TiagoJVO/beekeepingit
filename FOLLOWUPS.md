@@ -7,21 +7,20 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `feat/google-federation-363` (#363 — Google federation + "Continue with Google")
+## `claude/orch-change-feature-d959be` (#539 — pause/resume Scaleway environments without losing data)
 
-After merge (NOT merge blockers — nothing can exercise these until an environment has real Google
-credentials, and none exists yet):
+Not a merge blocker for the code/docs in this branch, but the issue's own "Verification" AC
+("a staging round-trip is exercised end to end") cannot be executed by an agent — it needs a
+human operator with real Scaleway credentials, per `infra/README.md`'s own "an agent must not
+handle these values" convention:
 
-- **Run the manual verification checklist** in `infra/README.md`
-  ("Enabling 'Continue with Google' on an environment") once against an environment with a real
-  Google OAuth client. It covers the only things no automated test can reach: a completed
-  sign-in through Google, the invitation-only refusal for an unlinked Google account, that a
-  linked account resolves to the same `sub`, and that sign-out still revokes the SSO session
-  after a _federated_ login. Record the result on #363. Until then, the Google-specific half of
-  this feature is config-verified and doc-verified but not execution-verified — stated plainly in
-  `docs/architecture/auth.md` §8.13.
-- **Create the `beekeepingit-authentik-google-credentials` Secret** (staging first) per the same
-  README section; the feature is inert until it exists, by design.
+- **Run the staging round-trip**: seed a recognisable row, `scaleway-scale-down.sh`,
+  `scaleway-scale-up.sh`, confirm the row survives and the app works. Record the result on #539.
+  Until then, the pause/resume design is research-verified (ADR-0022) and shellcheck/actionlint-clean
+  but not execution-verified against real infra.
+- **Confirm the staging cluster's control-plane tier** is Mutualized (free), not a paid Dedicated
+  tier (`scw k8s cluster get <id> region=fr-par` → check `.Type`) — flagged as unconfirmed in
+  ADR-0022/`infra/README.md`.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -44,3 +43,8 @@ _(tightening the admin client's `http://localhost:.*` redirect entry for staging
 _[#508](https://github.com/TiagoJVO/beekeepingit/issues/508), a sub-issue of EPIC-14_
 _[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and is pruned here. #362's own sweep_
 _had already pruned the #449 and #290 entries in the same spirit._
+
+_Sweep note (#539): the `feat/google-federation-363` (#363) entry was stale — #363 closed and its_
+_manual-verification follow-up was already promoted to_
+_[#510](https://github.com/TiagoJVO/beekeepingit/issues/510), so it's pruned here rather than_
+_riding along a second time._
