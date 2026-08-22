@@ -1,0 +1,143 @@
+{{/*
+Runtime-role table grants, and the append-only guarantee for history tables
+(history.md §7.1, ADR-0007 §4). Replaces audit-immutability-job.yaml, which
+this change deletes.
+
+WHY THE OLD JOB IS GONE, NOT JUST MOVED. #62 had a genuinely hard problem:
+each service's migrations ran AS `<schema>_svc`, so that role CREATEd — and
+therefore OWNED — its own `audit_log`. A plain `REVOKE UPDATE, DELETE` can
+never bind an owner (it can re-`GRANT` to itself at will, and keeps
+TRUNCATE/ALTER/DROP regardless), so the only durable fix available was to move
+ownership off the runtime role after the fact, with an idempotent
+`ALTER TABLE ... OWNER TO beekeepingit` + narrow re-GRANT.
+
+That ownership dance is now unnecessary, because #541 moved migrations into
+the deploy-time migrate Job running as `beekeepingit`. The runtime role never
+creates a table, so it never owns one, so there is nothing to take away.
+Immutability collapses back into the simple thing it always should have been:
+grant `<schema>_svc` INSERT/SELECT on history tables and never UPDATE/DELETE.
+It cannot self-GRANT its way back in, because Postgres silently no-ops a GRANT
+of a privilege the grantor does not hold, and it is never a member of
+`beekeepingit` (only the reverse direction is ever granted).
+
+The old job's cost is worth remembering: it had to poll for each (schema,
+table) pair to appear, because it raced the service pods' startup migrations —
+something a Helm hook cannot sequence. It burned a documented ~55-minute retry
+budget before that was fixed. With migrations now at hook-weight 2 and this
+job at 3, the race is gone by construction: the tables are guaranteed to exist
+before this runs, so there is nothing to poll for.
+
+HOOK WEIGHTS:
+  1  schema-grants-job.yaml   schema USAGE + powersync database grant (fast,
+                              deliberately independent of migrations so it
+                              never gates PowerSync's rollout)
+  2  charts/services migrate-job.yaml
+  3  THIS JOB
+
+WHAT IT DOES, per schema, all idempotent:
+
+  1. REASSIGN OWNED BY <schema>_svc TO beekeepingit — the transition for
+     already-deployed clusters (staging), where tables created by the OLD
+     startup-migration path are still owned by the runtime role. Fresh
+     installs no-op here, since beekeepingit created everything already.
+     Runs as beekeepingit, which is allowed because it holds privileges of
+     both roles: it is the target, and CNPG's operator reconciles its plain
+     membership in <schema>_svc from cluster.yaml's managed.roles.inRoles.
+  2. Blanket DML for the runtime role on the service's own tables, plus
+     ALTER DEFAULT PRIVILEGES so tables a FUTURE migration creates are
+     granted automatically rather than needing this job re-run first.
+  3. REVOKE UPDATE/DELETE/TRUNCATE back off the history tables. Deliberately
+     grant-then-revoke rather than enumerating non-history tables: the set of
+     history tables is small, fixed and known, while the domain tables are
+     not, and a missed REVOKE fails loudly in the immutability tests whereas
+     a missed GRANT would fail silently at runtime.
+*/}}
+{{- if .Values.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "postgres.fullname" . }}-table-grants
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" . | nindent 4 }}
+    app.kubernetes.io/name: postgres
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "3"
+spec:
+  backoffLimit: 10
+  activeDeadlineSeconds: 180
+  template:
+    metadata:
+      labels:
+        {{- include "beekeepingit.labels" . | nindent 8 }}
+        app.kubernetes.io/name: postgres
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: table-grants
+          image: {{ .Values.image }}
+          env:
+            - name: PGHOST
+              value: {{ include "postgres.fullname" . }}-rw
+            - name: PGDATABASE
+              value: beekeepingit
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres.fullname" . }}-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgres.fullname" . }}-app
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              # Every statement below is idempotent and safe to re-run on each
+              # helm upgrade. Unlike the job this replaces, nothing here polls:
+              # migrations completed at hook-weight 2, so the tables already
+              # exist. A schema whose service has not shipped yet simply has no
+              # tables, and every statement degrades to a no-op.
+              grant_schema() {
+                schema="$1"
+                svc_role="${schema}_svc"
+
+                psql -v ON_ERROR_STOP=1 \
+                  -c "REASSIGN OWNED BY ${svc_role} TO beekeepingit;" \
+                  -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${svc_role};" \
+                  -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${svc_role};" \
+                  -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA ${schema} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${svc_role};" \
+                  -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA ${schema} GRANT USAGE, SELECT ON SEQUENCES TO ${svc_role};"
+
+                # history.md §7.1: append-only. Re-run after the blanket grant
+                # above, which deliberately includes these tables first.
+                for table in audit_log sync_conflict_log; do
+                  exists=$(psql -v ON_ERROR_STOP=1 -tA -c \
+                    "SELECT 1 FROM pg_tables WHERE schemaname = '${schema}' AND tablename = '${table}';")
+                  if [ "$exists" = "1" ]; then
+                    # Per-TABLE revoke only. ALTER DEFAULT PRIVILEGES is
+                    # per-SCHEMA and cannot be narrowed to one table, so using
+                    # it here would also strip UPDATE/DELETE from every future
+                    # DOMAIN table in this schema — breaking ordinary writes.
+                    # No window is opened by leaving defaults alone: a newly
+                    # created history table is granted at weight 3 in the same
+                    # deploy that created it at weight 2, and this revoke runs
+                    # immediately after, before any service pod rolls.
+                    psql -v ON_ERROR_STOP=1 \
+                      -c "REVOKE UPDATE, DELETE, TRUNCATE ON ${schema}.${table} FROM ${svc_role};"
+                    echo "${schema}.${table}: append-only (INSERT/SELECT only for ${svc_role})."
+                  fi
+                done
+                echo "${schema}: runtime grants applied."
+              }
+
+              {{- range .Values.schemas }}
+              grant_schema "{{ . }}"
+              {{- end }}
+{{- end }}

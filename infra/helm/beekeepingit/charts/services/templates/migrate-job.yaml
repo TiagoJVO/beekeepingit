@@ -1,0 +1,133 @@
+{{/*
+#541's deploy-time migration admin process (12-factor XII), one Job per
+database-backed service.
+
+WHY THIS EXISTS AT ALL. Migrations used to run at pod startup, inside the
+serving process, as the service's own runtime role `<schema>_svc`
+(dbaccess.Migrate called from main.go with cfg.DB.DSN()). #62 then moved
+history-table ownership off that role onto `beekeepingit` so the audit log
+would be tamper-proof — and since Postgres requires table OWNERSHIP for ALTER
+TABLE (it is not a grantable privilege), that correctly took DDL away from the
+service. The two positions are mutually exclusive: a role that may migrate a
+table may also DROP it. Keeping migrations on the serving path meant handing
+the runtime credential permanent DDL rights, which is exactly what #62 set out
+to remove.
+
+The visible symptom was organizations migration 00005 (#470) in v0.0.1-rc8:
+`must be owner of table audit_log` (SQLSTATE 42501), crashlooping 7113 times
+over 25 days on staging while the previous ReplicaSet kept serving — so every
+health check stayed green and nothing alerted. See #541.
+
+WHY post-install/post-upgrade AND NOT pre-install. A pre-install hook runs
+before the release's own resources exist, and on a first install the Postgres
+cluster IS one of those resources (charts/postgres' CNPG Cluster) — there
+would be nothing to connect to. So this runs post-install like the other
+Postgres hooks and waits for the server to answer, the same way
+schema-grants-job.yaml already does.
+
+HOOK WEIGHTS — the ordering is the design, not an accident:
+
+  1  schema-grants-job.yaml   schema USAGE + the powersync database grant
+  2  THIS JOB                 migrations, as the migrator/owner role
+  3  table-grants-job.yaml    table DML grants, history-table revokes, and the
+                              ownership transition for existing clusters
+
+Weight 1 is deliberately kept free of any dependency on migrations. That job
+gates PowerSync's rollout (infra/README.md step 4/7) and must stay fast and
+predictable — putting migrations in front of it would mean a slow or stuck
+migration also stalls PowerSync, which is precisely the failure shape behind
+the ~55-minute retry incident recorded in the file this change deletes
+(audit-immutability-job.yaml). Table-level grants genuinely cannot run until
+the tables exist, so those — and only those — move to weight 3.
+
+CREDENTIAL. Runs as `beekeepingit` (the postgres chart's `-app` Secret), which
+owns every service schema and is therefore free to create and alter tables in
+it. This is emphatically NOT `<schema>_svc`: the whole point is that the
+migrator and the runtime role are different principals. On an already-deployed
+cluster whose tables are still owned by `<schema>_svc`, `beekeepingit` can
+still alter them through the plain membership CNPG's operator reconciles from
+cluster.yaml's `managed.roles.inRoles` — Postgres' ownership check is
+satisfied by inherited membership, so no goose ledger surgery is needed for
+the transition (proven in
+services/shared/dbaccess/migration_ownership_test.go).
+
+The image is the service's own — ENTRYPOINT is ["/app"], so passing
+args: ["migrate"] runs main.go's migrate branch and exits. No separate image,
+no Dockerfile change.
+*/}}
+{{- if .Values.enabled }}
+{{- $root := . }}
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.db.enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-migrate
+  namespace: {{ $root.Values.global.namespace }}
+  labels:
+    {{- include "beekeepingit.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}-migrate
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "2"
+spec:
+  # A migration that is going to succeed does so in seconds once Postgres is
+  # reachable; these retries exist for "Postgres not up yet", not for a
+  # genuinely failing migration. A real failure must surface as a failed
+  # release rather than being retried into a timeout — that silent-retry
+  # behaviour is what let #541 hide for 25 days.
+  backoffLimit: 10
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "beekeepingit.labels" $root | nindent 8 }}
+        app.kubernetes.io/name: {{ $name }}-migrate
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: migrate
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          image: "{{ $root.Values.image.registry }}/{{ $svc.component }}:{{ $svc.tag | default $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          args: ["migrate"]
+          env:
+            # config.LoadDB (not config.Load) reads exactly these — no OIDC,
+            # no HTTP, no telemetry settings. A migration job has no business
+            # holding credentials it never uses.
+            - name: DB_HOST
+              value: {{ $root.Values.db.host | quote }}
+            - name: DB_PORT
+              value: {{ $root.Values.db.port | quote }}
+            - name: DB_NAME
+              value: {{ $root.Values.db.name | quote }}
+            - name: DB_SSLMODE
+              value: {{ $root.Values.db.sslmode | quote }}
+            - name: DB_SEARCH_PATH
+              value: {{ $svc.db.schema | quote }}
+            # The MIGRATOR credential — deliberately not $svc.db.secret.
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.db.migratorSecret }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.db.migratorSecret }}
+                  key: password
+          resources:
+            {{- index $root.Values.global.resources $root.Values.resourceTier | toYaml | nindent 12 }}
+{{- end }}
+{{- end }}
+{{- end }}

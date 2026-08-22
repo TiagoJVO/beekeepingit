@@ -93,14 +93,27 @@ spec:
       # `{{ include "postgres.fullname" . }}-app` Secret every Job/service
       # already authenticates with — untouched.
       #
-      # #62 (history.md §7.1): beekeepingit needs to be able to `ALTER TABLE
-      # ... OWNER TO beekeepingit` on each service's audit_log/
-      # sync_conflict_log (audit-immutability-job.yaml) after that service's
-      # own migration creates it (as `<schema>_svc`, making `<schema>_svc`
-      # the owner). `ALTER TABLE ... OWNER TO X` requires the acting role to
-      # be able to `SET ROLE X` — i.e. be a member of the NEW owner — so it's
-      # beekeepingit that needs membership in `<schema>_svc` (this direction),
-      # not the other way around. A manual `GRANT <schema>_svc TO
+      # #62 (history.md §7.1) originally needed this so beekeepingit could
+      # `ALTER TABLE ... OWNER TO beekeepingit` each service's audit_log/
+      # sync_conflict_log after that service's own startup migration created
+      # it as `<schema>_svc`. #541 removed that whole dance — migrations now
+      # run as beekeepingit in the deploy-time migrate Job, so it owns every
+      # table from creation and there is no ownership to move.
+      #
+      # The membership is still REQUIRED, for two narrower reasons:
+      #   1. The transition on already-deployed clusters: table-grants-job.yaml
+      #      runs `REASSIGN OWNED BY <schema>_svc TO beekeepingit` to adopt
+      #      tables the old startup-migration path left behind, and REASSIGN
+      #      requires privileges of BOTH the old and new role.
+      #   2. Migrating those not-yet-reassigned tables in the first place:
+      #      Postgres satisfies the ALTER ownership check through inherited
+      #      membership, which is why the migrate Job can alter a legacy
+      #      `<schema>_svc`-owned table (and write its `<schema>_svc`-owned
+      #      goose ledger) without any prior surgery — see
+      #      services/shared/dbaccess/migration_ownership_test.go.
+      #
+      # The direction matters: it's beekeepingit that needs membership in
+      # `<schema>_svc`, not the other way around. A manual `GRANT <schema>_svc TO
       # beekeepingit` run BY beekeepingit itself does NOT work (confirmed:
       # Postgres requires CREATEROLE + ADMIN OPTION on the target role to
       # grant its membership, which beekeepingit — a plain login role — has

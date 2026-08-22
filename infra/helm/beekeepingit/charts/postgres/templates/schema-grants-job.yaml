@@ -82,7 +82,7 @@ spec:
             - |
               set -eu
               {{- range .Values.schemas }}
-              until psql -v ON_ERROR_STOP=1 -c "GRANT USAGE, CREATE ON SCHEMA {{ . }} TO {{ . }}_svc;"; do
+              until psql -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA {{ . }} TO {{ . }}_svc;" -c "REVOKE CREATE ON SCHEMA {{ . }} FROM {{ . }}_svc;"; do
                 echo "role {{ . }}_svc not ready yet, retrying in 5s..."
                 sleep 5
               done
