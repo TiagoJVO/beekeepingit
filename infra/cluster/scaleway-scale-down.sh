@@ -81,7 +81,20 @@ else
 fi
 
 # 2. Cordon + drain every node before scaling pools to 0, rather than
-# yanking nodes out from under running pods.
+# yanking nodes out from under running pods. --disable-eviction: CNPG
+# creates a PodDisruptionBudget on its (single-instance, no-HA) Postgres
+# pod specifically to block eviction when there's no replica to fail
+# over to — correct for rolling maintenance on a live multi-node
+# cluster, but meaningless here, since we're about to scale every node
+# to 0 anyway and there is no "elsewhere" for the pod to go regardless.
+# --disable-eviction bypasses that PDB admission check by deleting the
+# pod directly instead of going through the Eviction API — it still
+# sends a graceful SIGTERM and honors terminationGracePeriodSeconds
+# (kubectl delete, not --force), so Postgres still gets a clean
+# shutdown; only the "wait for a safe moment" logic is skipped, and
+# there is no safe moment to wait for here (confirmed live: the plain
+# eviction path spins for the full default 5m timeout against
+# beekeepingit-postgres-1's PDB and then hard-fails, #539).
 nodes="$(kubectl get nodes -o name)"
 if [ -n "$nodes" ]; then
   echo "cordoning and draining nodes"
@@ -91,7 +104,7 @@ if [ -n "$nodes" ]; then
   done <<<"$nodes"
   while IFS= read -r node; do
     [ -n "$node" ] || continue
-    kubectl drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=300s
+    kubectl drain "$node" --ignore-daemonsets --delete-emptydir-data --disable-eviction --timeout=300s
   done <<<"$nodes"
 else
   echo "no nodes found — cluster is already scaled down"
