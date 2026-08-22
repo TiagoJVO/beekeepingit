@@ -39,18 +39,29 @@
 #      normalize and bound the list, and to write nothing at all without the
 #      restored-flow-token proof.
 #
+#   7. THE LINK IS PERSISTED. One sign-in is driven to the END through the real
+#      `FlowExecutorView`, then the DATABASE is read: the connection row exists
+#      and points at the matched account (so the next sign-in matches by
+#      subject), no second account was created, and a COMPLETED federated login
+#      left `attributes.upn` and the local `email` untouched.
+#
+# WHY THE POSITIVE CASES ARE LOAD-BEARING, NOT DECORATION. The resolver's whole
+# body runs inside a blanket `except: return {"username": None}`, and
+# `username_link` with no username DENIES. So ANY error in the resolver — an
+# exception, a bad query, a rename — looks exactly like a correct refusal from
+# the outside, and every negative assertion here still passes. Cases 2, 3 and 7
+# are the only things that tell a working resolver from a broken one. That is
+# not hypothetical: this probe once crashed before reaching them (it built a
+# fixture with `User(is_superuser=...)`, which is a read-only PROPERTY on
+# authentik's model, not a field), and behind that crash the resolver was
+# filtering on the same non-existent column and denying every single login.
+#
 # HONEST SCOPE LIMITS.
-#   * `get_action()` resolves a connection and never touches the `User` row, so
-#     "upn unchanged" proves the flow-manager path is non-mutating, NOT that a
-#     full federated login leaves `upn` alone. The only thing that could rewrite
-#     it is a `user_write` stage inside the authentication flow, and
-#     `default-source-authentication` has none; if one is ever bound there, this
-#     probe would NOT catch it.
-#   * Action.LINK returns an UNSAVED connection. Persisting it is
-#     `PostSourceStage`'s job, inside the flow this probe does not execute — so
-#     "the link is remembered next time" is proven by construction (upstream
-#     code), not by this probe.
-#   * Nothing here completes a real upstream token exchange. The browser e2e
+#   * Nothing here completes a real upstream token exchange — `info` is
+#     fabricated at the point the OAuth callback would have returned it, so
+#     Google's actual userinfo SHAPE (in particular that `verified_email` is
+#     present and boolean) is covered only by the manual checklist in
+#     infra/README.md. The browser e2e
 #     (client/e2e/tests/federation.spec.ts) covers the outbound half and the
 #     posture guard (scripts/check-federation-source-posture.sh) pins the
 #     config. Together they are the coverage; none of the three alone is.
@@ -82,7 +93,7 @@ def _run():
 
     from django.contrib.auth.models import AnonymousUser
 
-    from authentik.core.models import User, UserSourceConnection
+    from authentik.core.models import Group, User, UserSourceConnection
     from authentik.core.sources.flow_manager import Action
     from authentik.policies.expression.models import ExpressionPolicy
     from authentik.policies.types import PolicyRequest
@@ -195,14 +206,14 @@ def _run():
     def sweep():
         UserOAuthSourceConnection.objects.filter(identifier__startswith=prefix).delete()
         User.objects.filter(username__startswith=prefix).delete()
+        Group.objects.filter(name__startswith=prefix).delete()
 
     def make_user(suffix, email, verified=True, history=None, superuser=False):
-        return User.objects.create(
+        user = User.objects.create(
             username=prefix + suffix,
             name="CI Probe " + suffix,
             email=email,
             is_active=True,
-            is_superuser=superuser,
             attributes={
                 # Not a UUID on purpose: these rows are transient and never
                 # mint a token, so an obviously-probe-shaped value is more
@@ -212,6 +223,18 @@ def _run():
                 "known_emails": list(history) if history else [],
             },
         )
+        if superuser:
+            # `User.is_superuser` is a read-only PROPERTY on authentik's model —
+            # `all_groups().filter(is_superuser=True).exists()`; the column is on
+            # Group. Passing it to `User.objects.create()` raises TypeError, which
+            # is exactly how this probe used to die: at THIS line, after only the
+            # posture assertions, so every #364 linking proof below silently never
+            # ran — and the resolver bug they exist to catch shipped unnoticed.
+            # Granting it the way authentik actually models it also means the
+            # assertion covers superuser inherited through a parent group.
+            group = Group.objects.create(name=prefix + "superusers-" + suffix, is_superuser=True)
+            group.users.add(user)
+        return user
 
     def resolve(rf, identifier, payload):
         """Run the REAL flow manager (hence the real resolver mapping)."""
@@ -555,6 +578,100 @@ def _run():
             "no restore proof -> nothing written (neither the flag nor the history)",
             prompt_data3 == {},
             "got {!r}".format(prompt_data3),
+        )
+
+        # ---------- AC3: the link is actually PERSISTED -----------------------
+        # Everything above stops at `get_action()`, which returns an UNSAVED
+        # connection — so "resolves to the right account" was proven, but "and
+        # is still linked next time" was not: persisting is `PostSourceStage`'s
+        # job, and that runs inside the flow, which `get_action()` never enters.
+        # This drives the REAL `FlowExecutorView` to the end of a federated
+        # sign-in and then reads the database, closing the one gap this probe
+        # used to name as a scope limit.
+        #
+        # The executor is invoked as a VIEW over a shared in-memory session
+        # rather than over HTTP on purpose: a `django.test.Client` carrying the
+        # session key as a cookie does not resolve it here, and the executor
+        # then silently PLANS A FRESH FLOW with an empty context — which looks
+        # identical to a legitimate refusal while testing nothing at all.
+        import re
+        from importlib import import_module
+
+        from django.conf import settings
+
+        from authentik.flows.views.executor import FlowExecutorView
+
+        persist_user = make_user("persist", prefix + "persist@example.invalid")
+        persist_ident = prefix + "sub-persist"
+        persist_upn = (persist_user.attributes or {}).get("upn")
+        users_before = User.objects.count()
+
+        session = import_module(settings.SESSION_ENGINE).SessionStore()
+        session.save()
+        planning_request = rf.get("/", user=AnonymousUser())
+        planning_request.session = session
+        planned = OAuthSourceFlowManager(
+            source,
+            planning_request,
+            persist_ident,
+            {"info": upstream(persist_user.email)},
+            {},
+        ).get_flow()
+        session.save()
+
+        executed = None
+        matched_slug = re.search(r"/if/flow/([^/?]+)/", getattr(planned, "url", "") or "")
+        if check(
+            "a verified first link enters a flow (302 to the executor)",
+            matched_slug is not None,
+            "get_flow returned {!r}".format(getattr(planned, "url", planned)),
+        ):
+            slug = matched_slug.group(1)
+            path = "/api/v3/flows/executor/{}/?query=".format(slug)
+            view = FlowExecutorView.as_view()
+            hop_cap = 12
+            for _hop in range(hop_cap):
+                hop_request = rf.get(path, user=AnonymousUser())
+                hop_request.session = session
+                executed = view(hop_request, flow_slug=slug)
+                if getattr(executed, "status_code", None) not in (301, 302):
+                    break
+                path = executed["Location"]
+            # Exhausting the cap must FAIL rather than fall through: an
+            # unfinished flow leaves the database in exactly the state a correct
+            # refusal does, so the assertions below would report OK having
+            # exercised nothing.
+            check(
+                "the federated sign-in flow ran to completion (not still redirecting)",
+                getattr(executed, "status_code", None) not in (301, 302),
+                "still redirecting to {!r} after {} hops".format(path, hop_cap),
+            )
+
+        persisted = UserOAuthSourceConnection.objects.filter(
+            source=source, identifier=persist_ident
+        ).first()
+        check(
+            "the connection row is PERSISTED, so the next sign-in matches by subject",
+            persisted is not None and persisted.user_id == persist_user.pk,
+            "got {!r}".format(persisted),
+        )
+        check(
+            "completing the flow created no second account",
+            User.objects.count() == users_before,
+            "{} -> {}".format(users_before, User.objects.count()),
+        )
+        persist_user.refresh_from_db()
+        check(
+            "D-7: a COMPLETED federated login leaves attributes.upn untouched",
+            (persist_user.attributes or {}).get("upn") == persist_upn,
+            "before={!r} after={!r}".format(
+                persist_upn, (persist_user.attributes or {}).get("upn")
+            ),
+        )
+        check(
+            "a COMPLETED federated login leaves the local email untouched",
+            persist_user.email == prefix + "persist@example.invalid",
+            "got {!r}".format(persist_user.email),
         )
 
     # Defensive: if this deployment ever runs authentik multi-tenant, pin the

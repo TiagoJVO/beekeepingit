@@ -979,7 +979,18 @@ entries:
                 return {"username": None}
 
             candidates = {}
-            reachable = User.objects.filter(is_active=True, is_superuser=False).exclude(
+            # `is_superuser` is NOT a column on User — it is a PROPERTY derived
+            # from group membership (core/models.py: `all_groups().filter(
+            # is_superuser=True).exists()`; the column lives on Group). Passing
+            # it to `.filter()` raises FieldError, which the blanket `except`
+            # below would swallow into "deny everyone" — silently disabling this
+            # whole feature while every negative test still passed. Found live.
+            # The superuser test is therefore applied to the MATCHED INSTANCE
+            # further down, where the property works — and that spelling is also
+            # the more correct one, since the property honours superuser
+            # inherited through PARENT groups, which a flat
+            # `ak_groups__is_superuser` exclusion would miss.
+            reachable = User.objects.filter(is_active=True).exclude(
                 type__in=[UserTypes.SERVICE_ACCOUNT, UserTypes.INTERNAL_SERVICE_ACCOUNT]
             )
 
@@ -1008,6 +1019,17 @@ entries:
             if len(candidates) != 1:
                 return {"username": None}
             matched = list(candidates.values())[0]
+
+            # Blast radius: an upstream address must never reach a privileged
+            # account. Applied HERE, on the instance, because `is_superuser` is
+            # a computed property rather than a column (see the note on the
+            # `reachable` query above). Narrowing after the match rather than
+            # before it is also strictly safer: a superuser SHARING the address
+            # now makes the match ambiguous — two candidates — and ambiguity
+            # already denies, where excluding them up front would have quietly
+            # linked the other account.
+            if matched.is_superuser:
+                return {"username": None}
 
             # The account must itself have proven inbox control (#361).
             if (matched.attributes or {}).get("email_verified", False) is not True:

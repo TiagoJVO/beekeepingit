@@ -7,6 +7,20 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
+## `feat/account-linking-364` (#364 — federated account linking)
+
+- **Notify the account owner when a sign-in method is first linked.** The one missing detection
+  control for the residual risk #364 accepts and documents (`docs/architecture/auth.md` §8.14): an
+  upstream address that changes hands — a Workspace mailbox reassigned to a new hire — can link
+  into an account that was never deactivated, and nothing today tells the owner it happened.
+  Authentik already raises a `SOURCE_LINKED` Event when `PostSourceStage` persists a new
+  connection, so the work is binding a **notification rule + transport** to that event in the
+  blueprint; the SMTP path #361 built is already there. **Not a merge blocker:** federation is
+  inert until an environment has Google credentials, and none holds real user data yet (D-26). It
+  **is** a prerequisite for enabling federation on one that does — i.e. alongside
+  [#510](https://github.com/TiagoJVO/beekeepingit/issues/510), before #365's environment.
+  _Promote to a GitHub Issue and prune this entry once referenced._
+
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -28,8 +42,8 @@ _credentials Secret and running the manual verification checklist against a real
 _genuinely outstanding and now covers #364's first-link case too, so it is promoted to_
 _[#510](https://github.com/TiagoJVO/beekeepingit/issues/510), a sub-issue of EPIC-14_
 _[#15](https://github.com/TiagoJVO/beekeepingit/issues/15) — the same treatment #508 got in the_
-_#363 sweep — and pruned here. `feat/account-linking-364` adds no entry of its own: it owes_
-_nothing before merge beyond CI, and its one unverifiable-in-CI dependency is #510._
+_#363 sweep — and pruned here. #510 is also `feat/account-linking-364`'s one unverifiable-in-CI_
+_dependency; beyond CI and the entry below, that branch owes nothing before merge._
 
 _Earlier sweep note (#363): the `feat/authentik-admin-oidc-client` (#456) entry was stale — #456_
 _closed long ago. Its remaining work (tightening the admin client's `http://localhost:.*` redirect_

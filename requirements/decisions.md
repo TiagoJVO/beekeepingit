@@ -192,11 +192,16 @@ Core technology decisions (2026-06-27). Detail and rationale in
     #366 opened **username/password** enrollment (`auth.md` §8.11). Self-service registration **via
     Google** (#365) stays gated on the org-creation policy for self-registered users (#362 — a D-3
     question, decided there, not here) and on account linking (#364).
-  - **Account identity keys on the provider's stable subject, never on the email** (#364 — intent;
-    not yet built). Upstream emails are **mutable** (Google permits address changes), so linking
-    matches on the **stable subject identifier**, with a **per-user history of known email
-    addresses** as the secondary match that reunites a returning user whose address changed with
-    their existing account. An email match links **only** when that address is genuinely verified.
+  - **Account identity keys on the provider's stable subject, never on the email** (#364 —
+    **built**, `auth.md` §8.14). Upstream emails are **mutable** (Google permits address changes),
+    so linking matches on the **stable subject identifier**, with a **per-user history of known
+    email addresses** as the secondary match that reunites a returning user whose address changed
+    with their existing account. An email match links **only** when that address is genuinely
+    verified. As built this stays **entirely at the identity provider**: a source property mapping
+    resolves the account before the provider's own matching step runs, so **no domain service and
+    no client code changed** — the same IdP-agnostic boundary property #363 relied on. Account
+    **creation** is still not opened (no enrollment flow on any federation source); that remains
+    #365.
   - **Unchanged:** the two-layer model — app-side, org-scoped roles in `organizations.memberships`
     (NFR-ROL-1, never IdP roles) and the **FR-ONB first-login onboarding** (FR-ONB-1/2/3) — is
     untouched. Social login changes **how a user authenticates**, not **what they may do**.

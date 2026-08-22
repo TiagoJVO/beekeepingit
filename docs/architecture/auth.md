@@ -1258,6 +1258,29 @@ issuance. Everything is config-as-code in the blueprint
   chain, and the resolver has no write path to any of it. `attributes.upn` is never written by the
   federated path, so no existing user's `sub` can change (the frozen contract,
   [oidc-integration.md §4](oidc-integration.md#4-subject--audience--the-two-claim-decisions)).
+- **The residual risk this buys, named rather than left implicit (NFR-SEC-1).** Before #364 a
+  Google identity could only reach an account whose **subject** it already owned, so an address
+  changing hands upstream was irrelevant. The acceptance criterion "a user who signs in with Google
+  using the address of an existing account reaches that account" **requires** an address-based
+  path, and that path trusts exactly one thing: _the upstream reports this address as verified
+  right now_. Address ownership is not permanent — a Workspace domain can **reassign a departed
+  employee's mailbox to a new hire**. If that person's account here was never deactivated, the new
+  mailbox holder links into it: via `email__iexact`, or via a `known_emails` entry that outlives an
+  admin later repointing `email`. Every guard above holds and none of them helps, because the
+  account legitimately passed active / locally-verified / non-superuser while its original owner
+  held it.
+  - **Why it is accepted.** This is the standard trade of every "sign in with Google finds my
+    account" flow, it is what the issue asks for, and the compensating control is operational:
+    **deactivate the account when the person leaves** — the same class of accepted precondition as
+    §8.10's "an admin changing a user's email does not reset `email_verified`".
+  - **What is _not_ mitigated.** Nothing tells the account owner a new sign-in method was linked,
+    so there is no detection signal — the one cheap control that would let a real owner notice a
+    takeover in progress. Authentik already raises a `SOURCE_LINKED` **Event** when
+    `PostSourceStage` persists a new connection, so the work is binding a notification rule and
+    transport to it; §8.10's SMTP path already exists. Carried in
+    [`FOLLOWUPS.md`](../../FOLLOWUPS.md). It should land **before** federation is enabled on an
+    environment holding real user data — which today none does (D-26; and Google federation is
+    inert until its credentials Secret exists at all, [#510](https://github.com/TiagoJVO/beekeepingit/issues/510)).
 - **The guard evolved rather than weakened.**
   [`scripts/check-federation-source-posture.sh`](../../scripts/check-federation-source-posture.sh)
   no longer asserts `identifier` — it asserts `username_link` **plus** that the resolver is attached
@@ -1294,6 +1317,21 @@ issuance. Everything is config-as-code in the blueprint
   6. **The history is really written** — the deployed `beekeepingit-mark-email-verified` policy is
      evaluated for real and asserted to append, de-duplicate, lowercase and bound the list, and to
      write **nothing** without the restored-flow-token proof.
+  7. **The link is persisted.** One sign-in is driven to the **end** through the real
+     `FlowExecutorView`, then the database is read: the connection row exists and points at the
+     matched account, no second account appeared, and a **completed** federated login left
+     `attributes.upn` and the local `email` untouched.
+
+  > **Why the positive cases carry the weight.** The resolver's body runs inside a blanket
+  > `except: return {"username": None}`, and `username_link` with no username **denies** — so _any_
+  > fault in it is indistinguishable from a correct refusal, and every negative assertion still
+  > passes. Points 2, 3 and 7 are the only ones that separate a working resolver from a broken one.
+  > That is not theoretical: this probe originally crashed before reaching them, building a fixture
+  > with `User(is_superuser=…)` — a read-only **property** on authentik's model, derived from group
+  > membership, not a column. Behind that crash the resolver was filtering on the same non-existent
+  > column, so `FieldError` was being swallowed into "deny", and **every federated login was
+  > refused** while the suite looked healthy. Both are fixed; the probe is now the regression guard
+  > for it, verified by re-introducing the defect and watching points 2 and 3 go red.
 
   The static guard above pins the config offline in `task repo:lint`, and #363's browser spec
   ([`client/e2e/tests/federation.spec.ts`](../../client/e2e/tests/federation.spec.ts)) still covers
@@ -1309,9 +1347,11 @@ issuance. Everything is config-as-code in the blueprint
     [`infra/README.md`](../../infra/README.md) runs against a real Google client. **That checklist
     now has more to cover than #363 left it**: a first sign-in that links by verified email, and a
     second that resolves by subject.
-  - **`Action.LINK` returns an _unsaved_ connection.** That the link is remembered for next time is
-    `PostSourceStage`'s job, inside the flow the probe does not execute — proven by reading upstream
-    code, not by a test here.
+  - ~~**`Action.LINK` returns an _unsaved_ connection.**~~ **Now covered** by point 7 above: the
+    probe drives one sign-in through the real flow executor and reads the persisted connection row,
+    so "the link is remembered next time" is a live assertion rather than an appeal to upstream
+    code. The same case is what proves a **completed** federated login leaves `upn` alone — which
+    the earlier `get_action()`-only assertion could not, since it never touches the `User` row.
   - **The changed-address journey is proven at the resolver, not end to end.** A real Google address
     cannot be changed in CI, and #361 deliberately disabled self-service email change at the
     provider — so the "returning user whose address changed" case is exercised by seeding a history
