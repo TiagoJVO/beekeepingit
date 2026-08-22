@@ -75,8 +75,23 @@ spec:
         app.kubernetes.io/name: postgres
     spec:
       restartPolicy: OnFailure
+      # This Job connects as `beekeepingit` — the database owner — and performs
+      # the REASSIGN/REVOKE that the append-only guarantee depends on, so it is
+      # the highest-value target in this chart and is hardened to match
+      # charts/services' Deployment and migrate Job. (schema-grants-job.yaml is
+      # still unhardened; tracked separately rather than widened into this
+      # change.) The postgres image runs as uid 26 (`postgres`).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
       containers:
         - name: table-grants
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           image: {{ .Values.image }}
           env:
             - name: PGHOST
@@ -108,32 +123,53 @@ spec:
                 schema="$1"
                 svc_role="${schema}_svc"
 
-                psql -v ON_ERROR_STOP=1 \
+                # --single-transaction IS THE SECURITY CONTROL HERE, not a
+                # tidiness preference. psql autocommits each -c separately, so
+                # an earlier draft of this script committed the blanket GRANT
+                # below — which necessarily includes audit_log — and only
+                # REVOKEd it back in a LATER, SEPARATE psql process. That left
+                # <schema>_svc genuinely holding UPDATE/DELETE on the audit log
+                # for the duration, on EVERY upgrade of an existing cluster.
+                #
+                # It is not a theoretical window: Helm does not pause running
+                # Deployments while a hook runs, so the outgoing ReplicaSet's
+                # pods are serving with live <schema>_svc connections
+                # throughout. A compromised service retrying `DELETE FROM
+                # audit_log` in a loop would eventually land inside it — which
+                # is precisely the threat history.md §7.1 exists to stop.
+                # (Self-GRANT stays blocked either way: nothing here is granted
+                # WITH GRANT OPTION. The exposure was direct USE of a
+                # temporarily-held privilege, not a durable escalation.)
+                #
+                # Wrapping grant+revoke in one transaction means no session
+                # ever observes the intermediate state: the history tables go
+                # from their previous ACL straight to the post-revoke one.
+                #
+                # The revoke is a DO block rather than a separate psql call for
+                # the same reason — it has to commit atomically WITH the grant.
+                # It stays conditional because a schema whose service has not
+                # shipped its history table yet must not fail the release.
+                psql -v ON_ERROR_STOP=1 --single-transaction \
                   -c "REASSIGN OWNED BY ${svc_role} TO beekeepingit;" \
                   -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${svc_role};" \
                   -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${svc_role};" \
                   -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA ${schema} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${svc_role};" \
-                  -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA ${schema} GRANT USAGE, SELECT ON SEQUENCES TO ${svc_role};"
+                  -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA ${schema} GRANT USAGE, SELECT ON SEQUENCES TO ${svc_role};" \
+                  -c "DO \$do\$
+                      DECLARE t text;
+                      BEGIN
+                        FOREACH t IN ARRAY ARRAY['audit_log', 'sync_conflict_log'] LOOP
+                          IF EXISTS (SELECT 1 FROM pg_tables
+                                     WHERE schemaname = '${schema}' AND tablename = t) THEN
+                            EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON %I.%I FROM %I',
+                                           '${schema}', t, '${svc_role}');
+                            RAISE NOTICE '%.%: append-only (INSERT/SELECT only for %)',
+                                         '${schema}', t, '${svc_role}';
+                          END IF;
+                        END LOOP;
+                      END
+                      \$do\$;"
 
-                # history.md §7.1: append-only. Re-run after the blanket grant
-                # above, which deliberately includes these tables first.
-                for table in audit_log sync_conflict_log; do
-                  exists=$(psql -v ON_ERROR_STOP=1 -tA -c \
-                    "SELECT 1 FROM pg_tables WHERE schemaname = '${schema}' AND tablename = '${table}';")
-                  if [ "$exists" = "1" ]; then
-                    # Per-TABLE revoke only. ALTER DEFAULT PRIVILEGES is
-                    # per-SCHEMA and cannot be narrowed to one table, so using
-                    # it here would also strip UPDATE/DELETE from every future
-                    # DOMAIN table in this schema — breaking ordinary writes.
-                    # No window is opened by leaving defaults alone: a newly
-                    # created history table is granted at weight 3 in the same
-                    # deploy that created it at weight 2, and this revoke runs
-                    # immediately after, before any service pod rolls.
-                    psql -v ON_ERROR_STOP=1 \
-                      -c "REVOKE UPDATE, DELETE, TRUNCATE ON ${schema}.${table} FROM ${svc_role};"
-                    echo "${schema}.${table}: append-only (INSERT/SELECT only for ${svc_role})."
-                  fi
-                done
                 echo "${schema}: runtime grants applied."
               }
 
