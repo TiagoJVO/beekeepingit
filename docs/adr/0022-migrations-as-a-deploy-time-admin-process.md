@@ -103,6 +103,16 @@ table and write its `<schema>_svc`-owned ledger without any prior step — verif
   event, which is the point.
 - Migrations are coupled to the deploy rather than the process, so expand/contract
   (Fowler's _ParallelChange_) becomes the required discipline for breaking schema changes.
+- **On an upgrade, the rollout races the hooks.** Helm applies the release's Deployments before
+  running `post-install`/`post-upgrade` hooks, and this chart is installed without `--wait`
+  (see `infra/README.md`). So a new-version pod can pass `/readyz` — which checks DB connectivity,
+  never migration state — and start taking traffic while the migrate Job is still running. If that
+  pod's code needs this deploy's schema change, requests 5xx for those few seconds. This is why the
+  expand/contract discipline above is a requirement rather than a preference, and it is the reason
+  it is stated as one. Note it is a far weaker version of the failure this ADR fixes: bounded to
+  seconds instead of 25 days, and it fails loudly per-request instead of hiding behind a green
+  health check. Closing it entirely would mean either a migration-aware readiness check or gating
+  the rollout on hook completion; neither is done here.
 - `services/*/store/sqlc/schema.sql` remains sqlc codegen input only and is **not** a bootstrap
   baseline. Squashing/baselining migrations is a separate improvement, tracked apart from this ADR.
 

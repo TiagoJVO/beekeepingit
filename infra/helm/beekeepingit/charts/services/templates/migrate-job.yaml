@@ -84,7 +84,21 @@ spec:
     metadata:
       labels:
         {{- include "beekeepingit.labels" $root | nindent 8 }}
+        # Deliberately `<name>-migrate`, NOT `<name>`: charts/services'
+        # service.yaml selects on `app.kubernetes.io/name: <name>` +
+        # instance, so reusing the service's own name here would make the
+        # Service route live HTTP traffic to a migrate pod that serves
+        # nothing.
         app.kubernetes.io/name: {{ $name }}-migrate
+        # The NetworkPolicy hook. default-deny applies namespace-wide, so a
+        # brand-new pod identity with no matching edge simply cannot reach
+        # Postgres — the failure mode charts/networkpolicy/values.yaml
+        # records having already bitten activities and todos. Keying the
+        # edge on this shared component label rather than on each
+        # `<name>-migrate` means every current AND future DB-backed service
+        # is covered by one rule, instead of a per-service edge someone has
+        # to remember to add.
+        app.kubernetes.io/component: migrate
     spec:
       restartPolicy: OnFailure
       securityContext:

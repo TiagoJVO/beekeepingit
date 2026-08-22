@@ -379,12 +379,14 @@ edges:
     from: { app.kubernetes.io/name: apiaries }
     to: { cnpgCluster: true }
     port: 5432
-  # #39 (THE CRASH FIX): activities' dbaccess.Migrate + runtime pool connect
-  # to postgres-rw:5432. Without this edge the default-deny baseline blocks
-  # activities' egress to postgres, so its startup migration `dial` is refused
-  # and the pod CrashLoopBackOffs forever while postgres is healthy — the
+  # #39 (THE CRASH FIX): activities connects to postgres-rw:5432. Without this
+  # edge the default-deny baseline blocks activities' egress to postgres and
+  # the pod CrashLoopBackOffs forever while postgres is healthy — the
   # first-ever in-cluster deploy of activities (#38 shipped no image) was
   # never added to this allowlist. Mirrors apiaries-to-postgres above.
+  # (Originally this covered dbaccess.Migrate AND the runtime pool; since #541
+  # migrations run in the separate migrate Job below, so this edge is now
+  # needed for the runtime pool alone. Still required either way.)
   - name: activities-to-postgres
     from: { app.kubernetes.io/name: activities }
     to: { cnpgCluster: true }
@@ -403,10 +405,11 @@ edges:
   # #50 (THE CRASH FIX, again): todos' dbaccess.Migrate + runtime pool connect
   # to postgres-rw:5432 — the exact same gap activities hit on its own first
   # in-cluster deploy above (#39). Without this edge the default-deny baseline
-  # blocks todos' egress to postgres, so its startup migration `dial` is
-  # refused and the pod CrashLoopBackOffs forever while postgres is healthy
-  # (confirmed via 3 live helm-e2e runs, only `todos` ever timing out while
-  # every sibling recovered). Mirrors activities-to-postgres above.
+  # blocks todos' egress to postgres, so its `dial` is refused and the pod
+  # CrashLoopBackOffs forever while postgres is healthy (confirmed via 3 live
+  # helm-e2e runs, only `todos` ever timing out while every sibling
+  # recovered). Mirrors activities-to-postgres above. (Pre-#541 the refused
+  # dial was the startup migration's; now it is the runtime pool's.)
   - name: todos-to-postgres
     from: { app.kubernetes.io/name: todos }
     to: { cnpgCluster: true }
@@ -417,13 +420,32 @@ edges:
     from: { app.kubernetes.io/name: powersync }
     to: { cnpgCluster: true }
     port: 5432
-  # This chart's own migration-time Job/test-hook pods (schema-grants-job,
-  # audit-immutability-job, tests/postgis-smoke-test — each connects to
-  # Postgres as PGHOST at hook/test time, and each stamps `app.kubernetes.io/
-  # name: postgres` on its own pod, distinct from the CNPG instance pods'
-  # `cnpg.io/cluster` label).
+  # The postgres chart's own migration-time Job/test-hook pods
+  # (schema-grants-job, table-grants-job, tests/postgis-smoke-test — each
+  # connects to Postgres as PGHOST at hook/test time, and each stamps
+  # `app.kubernetes.io/name: postgres` on its own pod, distinct from the CNPG
+  # instance pods' `cnpg.io/cluster` label).
   - name: postgres-jobs-to-postgres
     from: { app.kubernetes.io/name: postgres }
+    to: { cnpgCluster: true }
+    port: 5432
+  # #541: charts/services' per-service deploy-time migrate Jobs. These are a
+  # NEW pod identity (`app.kubernetes.io/name: <service>-migrate`, kept
+  # distinct from `<service>` so the Service doesn't route HTTP to them), and
+  # a new identity with no edge here cannot reach Postgres at all under
+  # default-deny — the exact CrashLoopBackOff-while-Postgres-is-healthy shape
+  # recorded for activities and todos above. Here it would fail the weight-2
+  # hook and therefore the whole `helm upgrade`, including CI's helm-e2e.
+  #
+  # Keyed on the shared `component: migrate` label rather than one edge per
+  # `<service>-migrate`, so every DB-backed service — including ones not
+  # written yet — is covered without anyone remembering to extend this list.
+  # That is deliberately the opposite trade-off from the per-service runtime
+  # edges above, which stay explicit because a runtime service reaching
+  # Postgres is a decision worth stating one service at a time; a migrate Job
+  # reaching Postgres is definitional.
+  - name: service-migrate-jobs-to-postgres
+    from: { app.kubernetes.io/component: migrate }
     to: { cnpgCluster: true }
     port: 5432
   # The CNPG operator itself (cluster-scoped, its own namespace, ADR-0010) —
