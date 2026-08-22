@@ -16,9 +16,16 @@
 #
 # What it does, in order:
 #   1. Pre-flight: fail if the cluster doesn't exist.
-#   2. Scale every node pool on the cluster back up (default: 1 node, same as
-#      scaleway-up.sh's original pool; override with SCW_NODE_POOL_SIZE).
-#   3. Wait for a node to become Ready.
+#   2. Create a fresh node pool (scaleway-scale-down.sh deletes the pool
+#      object entirely — Scaleway rejects scaling a non-autoscaling pool to
+#      0 — so the common case is "no pool exists, create one"; default 1
+#      node, same as scaleway-up.sh's original pool, override with
+#      SCW_NODE_POOL_SIZE). If a pool somehow still exists (e.g. an
+#      interrupted scale-down), scale it up instead of creating a second one.
+#   3. Wait for a node to become Ready, then uncordon every node — defensive:
+#      a Ready node can still be SchedulingDisabled left over from an
+#      interrupted scale-down's cordon step, which "Ready" alone wouldn't
+#      catch.
 #   4. Re-run the same cluster-scoped-prerequisite install scaleway-up.sh does
 #      (CNPG operator, Traefik — which recreates the LoadBalancer
 #      scaleway-scale-down.sh deleted — cert-manager, Flux controllers): the
@@ -43,6 +50,9 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 app_host="${APP_HOST:-${STAGING_APP_HOST:-}}"
 auth_host="${AUTH_HOST:-${STAGING_AUTH_HOST:-}}"
 target_size="${SCW_NODE_POOL_SIZE:-1}"
+# Same default/rationale as scaleway-up.sh's node_type: DEV1-M proved
+# insufficient for the full stack's memory requests on first bring-up.
+node_type="${SCW_NODE_TYPE:-DEV1-L}"
 
 for bin in kubectl helm flux; do
   if ! command -v "$bin" >/dev/null 2>&1; then
@@ -67,19 +77,36 @@ fi
 scw k8s kubeconfig install "$cluster_id" region="$region"
 echo "active kubectl context: $(kubectl config current-context)"
 
-# 2. Scale every pool on this cluster back up.
+# 2. Ensure a node pool exists at the target size. scaleway-scale-down.sh
+# DELETES the pool entirely (Scaleway rejects size=0 on a non-autoscaling
+# pool), so the common case is "no pool found — create one", mirroring
+# scaleway-up.sh's original pool.0.* creation args. Scale an existing one
+# up instead, in case a prior scale-down was interrupted before its
+# pool-delete step ran.
 pool_ids="$(scw k8s pool list cluster-id="$cluster_id" region="$region" -o template='{{ .ID }}')"
 if [ -z "$pool_ids" ]; then
-  echo "error: cluster '$cluster_name' has no node pools — cannot scale up (this shouldn't happen; a Kapsule cluster always keeps at least one pool object)" >&2
-  exit 1
+  echo "no node pool found — creating one (node type $node_type, size $target_size)"
+  scw k8s pool create \
+    cluster-id="$cluster_id" \
+    region="$region" \
+    name=default \
+    node-type="$node_type" \
+    size="$target_size" \
+    autohealing=true \
+    autoscaling=false \
+    -w
+else
+  while IFS= read -r pool_id; do
+    [ -n "$pool_id" ] || continue
+    echo "scaling pool $pool_id to $target_size node(s)"
+    scw k8s pool update "$pool_id" region="$region" size="$target_size" -w
+  done <<<"$pool_ids"
 fi
-while IFS= read -r pool_id; do
-  [ -n "$pool_id" ] || continue
-  echo "scaling pool $pool_id to $target_size node(s)"
-  scw k8s pool update "$pool_id" region="$region" size="$target_size" -w
-done <<<"$pool_ids"
 
-# 3. Wait for at least one node to be Ready before installing anything onto it.
+# 3. Wait for at least one node to be Ready, then uncordon every node —
+# defensive: a Ready node can still be SchedulingDisabled left over from an
+# interrupted scale-down's cordon step, and "Ready" alone wouldn't catch
+# that (cordon doesn't affect the Ready condition).
 echo "waiting for at least one node to become Ready"
 for _ in $(seq 1 60); do
   ready_nodes="$(kubectl get nodes --no-headers 2>/dev/null | grep -c ' Ready' || true)"
@@ -91,6 +118,14 @@ if [ "${ready_nodes:-0}" -eq 0 ]; then
   exit 1
 fi
 kubectl cluster-info
+
+nodes="$(kubectl get nodes -o name)"
+if [ -n "$nodes" ]; then
+  while IFS= read -r node; do
+    [ -n "$node" ] || continue
+    kubectl uncordon "$node"
+  done <<<"$nodes"
+fi
 
 # 4. Cluster-scoped prerequisites — the pods providing these were deleted
 # along with the nodes, so they need reinstalling exactly as scaleway-up.sh
