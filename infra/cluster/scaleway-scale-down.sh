@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Pause a Scaleway Kapsule environment (#539, D-26) — staging by default, prod
 # via BK_CLUSTER_ENV=prod. Stops paying for compute WITHOUT losing anything:
-# scales the node pool to 0 so the cluster's control plane (free on Kapsule's
-# Mutualized tier, independent of node count — see infra/README.md) keeps
-# running with etcd intact, which means every PersistentVolumeClaim, the CNPG
-# `Cluster` custom resource, and Flux's own state never leave the Kubernetes
-# API — there is nothing to "reattach" later, because nothing was ever
-# detached from the cluster's object model, only from its compute. Undo with
-# scaleway-scale-up.sh.
+# deletes the node pool (Scaleway won't allow scaling a non-autoscaling
+# pool's size to 0 — see step 3 below) so the cluster's control plane (free
+# on Kapsule's Mutualized tier, independent of node count — see
+# infra/README.md) keeps running with etcd intact, which means every
+# PersistentVolumeClaim, the CNPG `Cluster` custom resource, and Flux's own
+# state never leave the Kubernetes API — there is nothing to "reattach"
+# later, because nothing was ever detached from the cluster's object model,
+# only from its compute. Undo with scaleway-scale-up.sh.
 #
 # This is NOT scaleway-down.sh. That script permanently destroys the cluster,
 # its volumes, and its Load Balancers — use it when you actually want to
@@ -26,7 +27,8 @@
 #   2. Cordon + drain every node (Scaleway's own documented safe-scale-down
 #      sequence — see infra/README.md), so workloads shut down cleanly instead
 #      of being yanked.
-#   3. Scale every node pool on the cluster to 0.
+#   3. Delete every node pool on the cluster (not resize to 0 — Scaleway
+#      rejects that on a non-autoscaling pool).
 #
 # Credentials/env come from the same place as scaleway-up.sh/-down.sh: a
 # `scw init` profile, or SCW_ACCESS_KEY/SCW_SECRET_KEY/... env vars — locally
@@ -81,7 +83,20 @@ else
 fi
 
 # 2. Cordon + drain every node before scaling pools to 0, rather than
-# yanking nodes out from under running pods.
+# yanking nodes out from under running pods. --disable-eviction: CNPG
+# creates a PodDisruptionBudget on its (single-instance, no-HA) Postgres
+# pod specifically to block eviction when there's no replica to fail
+# over to — correct for rolling maintenance on a live multi-node
+# cluster, but meaningless here, since we're about to scale every node
+# to 0 anyway and there is no "elsewhere" for the pod to go regardless.
+# --disable-eviction bypasses that PDB admission check by deleting the
+# pod directly instead of going through the Eviction API — it still
+# sends a graceful SIGTERM and honors terminationGracePeriodSeconds
+# (kubectl delete, not --force), so Postgres still gets a clean
+# shutdown; only the "wait for a safe moment" logic is skipped, and
+# there is no safe moment to wait for here (confirmed live: the plain
+# eviction path spins for the full default 5m timeout against
+# beekeepingit-postgres-1's PDB and then hard-fails, #539).
 nodes="$(kubectl get nodes -o name)"
 if [ -n "$nodes" ]; then
   echo "cordoning and draining nodes"
@@ -91,22 +106,33 @@ if [ -n "$nodes" ]; then
   done <<<"$nodes"
   while IFS= read -r node; do
     [ -n "$node" ] || continue
-    kubectl drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=300s
+    kubectl drain "$node" --ignore-daemonsets --delete-emptydir-data --disable-eviction --timeout=300s
   done <<<"$nodes"
 else
   echo "no nodes found — cluster is already scaled down"
 fi
 
-# 3. Scale every pool on this cluster to 0. Scale (not delete) the pool
-# object itself: Scaleway requires a cluster to keep at least one pool.
+# 3. Delete every pool on this cluster. NOT `pool update size=0`:
+# confirmed live against staging that Scaleway's API rejects size=0 on
+# a non-autoscaling pool ("Invalid arguments 'size' ... A kapsule
+# cluster can't have less than 1 nodes", #539) — a non-autoscaling
+# pool's size floor is 1, so 0 is only reachable by deleting the pool
+# object outright, not by resizing it. This still only touches compute:
+# a pool is pure compute, so deleting it has no effect on the cluster's
+# control plane/etcd or on any PVC/PV/CNPG-Cluster object, all of which
+# live in the control plane, independent of any pool. scaleway-up.sh's
+# original "does a pool need to keep existing" constraint is about a
+# cluster needing a pool to schedule workloads onto, not about a pool
+# object needing to persist while genuinely empty — scaleway-scale-up.sh
+# creates a fresh one on resume.
 pool_ids="$(scw k8s pool list cluster-id="$cluster_id" region="$region" -o template='{{ .ID }}')"
 if [ -z "$pool_ids" ]; then
   echo "cluster '$cluster_name' has no node pools — nothing to scale"
 else
   while IFS= read -r pool_id; do
     [ -n "$pool_id" ] || continue
-    echo "scaling pool $pool_id to 0 nodes"
-    scw k8s pool update "$pool_id" region="$region" size=0 -w
+    echo "deleting pool $pool_id"
+    scw k8s pool delete "$pool_id" region="$region" -w
   done <<<"$pool_ids"
 fi
 

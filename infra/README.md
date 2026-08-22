@@ -243,16 +243,19 @@ restart, it's a repeated data-loss event.
 Rather than deleting the cluster, `scale-down` deletes the environment's LoadBalancer-type
 Service(s) (so Scaleway's cloud-controller-manager cleanly deprovisions the billed Load Balancer
 behind them through its own reconciliation, instead of the script calling the Scaleway API directly
-against a Service the CCM still believes it owns) and scales the node pool to **0**. The
-**cluster itself — its control plane, its etcd, and therefore every `PersistentVolumeClaim`,
-`PersistentVolume`, and the CNPG `Cluster` custom resource — stays alive.** `scale-up` scales the
-pool back up and reinstalls the cluster-scoped prerequisites that lived on the deleted nodes (CNPG
-operator, Traefik — which provisions a fresh Load Balancer — cert-manager, Flux); CNPG Postgres,
-Authentik, and MinIO reschedule onto the new nodes and reattach their already-`Bound` PVCs through
-completely standard Kubernetes CSI semantics. **There is no volume-reattachment logic anywhere in
-this design, because nothing is ever detached from the cluster's object model** — only from its
-compute. `scale-up` fails with a clear error (rather than silently creating a new cluster) if the
-target cluster doesn't exist at all — it resumes a paused environment, it doesn't create one.
+against a Service the CCM still believes it owns) and deletes the node pool — confirmed live that
+Scaleway rejects scaling a non-autoscaling pool's size to 0 directly, so the pool object itself has
+to go, not just resize to empty. The **cluster itself — its control plane, its etcd, and therefore
+every `PersistentVolumeClaim`, `PersistentVolume`, and the CNPG `Cluster` custom resource — stays
+alive**, since a pool is pure compute. `scale-up` creates a fresh pool (or scales an existing one,
+if a prior scale-down was interrupted before deleting it) and reinstalls the cluster-scoped
+prerequisites that lived on the deleted nodes (CNPG operator, Traefik — which provisions a fresh
+Load Balancer — cert-manager, Flux); CNPG Postgres, Authentik, and MinIO reschedule onto the new
+nodes and reattach their already-`Bound` PVCs through completely standard Kubernetes CSI semantics.
+**There is no volume-reattachment logic anywhere in this design, because nothing is ever detached
+from the cluster's object model** — only from its compute. `scale-up` fails with a clear error
+(rather than silently creating a new cluster) if the target cluster doesn't exist at all — it
+resumes a paused environment, it doesn't create one.
 
 This works because Kapsule's control plane is **free on the default "Mutualized" tier, independent
 of node count** (confirmed on Scaleway's pricing page) — a cluster scaled to 0 nodes costs nothing
@@ -269,12 +272,12 @@ Two things this design does **not** have a documented answer for, so don't treat
   pauses without checking directly with Scaleway first — for that horizon, `scaleway-down.sh` (full
   teardown) is the safer, better-understood choice.
 
-| Script                   | Effect                                                          | Data          |
-| ------------------------ | --------------------------------------------------------------- | ------------- |
-| `scaleway-up.sh`         | create the cluster (or reconcile an existing one)               | n/a (fresh)   |
-| `scaleway-down.sh`       | **permanently destroy** the cluster + volumes + Load Balancers  | **destroyed** |
-| `scaleway-scale-down.sh` | scale the node pool to 0; cluster/control plane keep running    | **kept**      |
-| `scaleway-scale-up.sh`   | scale the node pool back up; fails if the cluster doesn't exist | **kept**      |
+| Script                   | Effect                                                         | Data          |
+| ------------------------ | -------------------------------------------------------------- | ------------- |
+| `scaleway-up.sh`         | create the cluster (or reconcile an existing one)              | n/a (fresh)   |
+| `scaleway-down.sh`       | **permanently destroy** the cluster + volumes + Load Balancers | **destroyed** |
+| `scaleway-scale-down.sh` | delete the node pool; cluster/control plane keep running       | **kept**      |
+| `scaleway-scale-up.sh`   | recreate the node pool; fails if the cluster doesn't exist     | **kept**      |
 
 ### Enabling "Continue with Google" on an environment (#363)
 
