@@ -66,8 +66,30 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
     "helm.sh/hook-weight": "3"
 spec:
-  backoffLimit: 10
-  activeDeadlineSeconds: 180
+  # FAILURE BUDGET (#551). 180s carried the same flaw charts/services' migrate
+  # Job was fixed for: Kubernetes starts activeDeadlineSeconds when the Job is
+  # created, so a budget meant for a handful of GRANTs was also paying for the
+  # PostGIS operand image to be pulled. The per-release trigger from #551 does
+  # NOT apply here — that image is a pinned third-party tag that moves on a
+  # Postgres upgrade, not on every deploy — but a cold cluster still pays it, so
+  # the deadline stops being the fast-fail control and becomes a backstop.
+  #
+  # backoffLimit takes that role instead, which fits this Job better than it fit
+  # the migrate one: every failure here is a psql exiting non-zero, so attempts,
+  # not wall-clock, are the natural bound. A grant that is going to be refused is
+  # refused in seconds, so three tries settle it in well under a minute — where
+  # ten only ever ran until the deadline, reporting a permission error as a
+  # timeout.
+  #
+  # The one failure that is NOT an exit is a statement waiting on a lock:
+  # REASSIGN OWNED needs ACCESS EXCLUSIVE on every table while the outgoing
+  # ReplicaSet is still serving with live <schema>_svc connections. That one is
+  # deliberately left to the backstop rather than capped with a `lock_timeout`.
+  # Waiting longer for a lock lets the release succeed; giving up early turns
+  # ordinary traffic into a failed deploy — and the one-time ownership
+  # transition above is the last thing that should be made to give up early.
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
   template:
     metadata:
       labels:
