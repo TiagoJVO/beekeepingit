@@ -49,15 +49,40 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
     "helm.sh/hook-weight": "1"
 spec:
-  backoffLimit: 30
-  activeDeadlineSeconds: 300
+  # FAILURE BUDGET (#551). The waiting this Job exists to do now happens inside
+  # the loop below, which carries its own deadline, so activeDeadlineSeconds is
+  # a backstop rather than the budget. It used to be the budget — and that budget
+  # included image pull, because Kubernetes starts the clock when the Job is
+  # created. #551 records that shape killing charts/services' migrate Job on
+  # staging; here the exposure is a cold cluster pulling the PostGIS operand
+  # image, which is a far bigger pull than a distroless Go service, out of the
+  # same 300s the role reconciliation was supposed to get.
+  #
+  # Unlike that Job, this one could never be caught by backoffLimit at all: the
+  # retry loop below does not exit on a permanent failure, so nothing but the pod
+  # deadline could stop it. That is exactly how the incident in the header
+  # comment played out — a permission error indistinguishable from "not ready
+  # yet", retried in silence and finally reported as a timeout, with the reason
+  # nowhere in the Job's own outcome. A deadline in the loop ends that: it gives
+  # up on purpose, and says what it was still failing at.
+  #
+  # backoffLimit drops to 1 for the same reason. With the wait bounded where the
+  # waiting happens, a Job-level retry is not a waiting mechanism — it is one
+  # free restart for a container that crashed, and thirty of them would only put
+  # the unbounded budget back by another route.
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
   template:
     metadata:
       labels:
         {{- include "beekeepingit.labels" . | nindent 8 }}
         app.kubernetes.io/name: postgres
     spec:
-      restartPolicy: OnFailure
+      # `Never`, not `OnFailure` (#551): with OnFailure the Job controller
+      # DELETES the pod once backoffLimit is exhausted, taking the psql output
+      # that explains the failure with it. `Never` gives each attempt its own
+      # retained pod, so a failed release can still be diagnosed.
+      restartPolicy: Never
       containers:
         - name: schema-grants
           image: {{ .Values.image }}
@@ -81,19 +106,43 @@ spec:
             - -c
             - |
               set -eu
+
+              # ONE deadline for the whole wait, not one per grant. Everything
+              # below is waiting on the same single event — CNPG's operator
+              # reconciling spec.managed.roles — so a slow reconciliation must
+              # not get its budget multiplied by however many schemas happen to
+              # be listed in values.yaml. 300s is what this Job was nominally
+              # given before; the difference is that it is now 300s of waiting
+              # rather than 300s shared with an image pull (#551).
+              budget=300
+              deadline=$(( $(date +%s) + budget ))
+
+              # Retry until the role exists — but give up on purpose rather than
+              # spinning until the pod is killed. A permission error and "the
+              # operator hasn't got there yet" are indistinguishable to this
+              # loop (see the header comment), so the only honest way to end it
+              # is a deadline plus the failing psql output, which stays on
+              # stderr above whatever we print here.
+              grant_when_ready() {
+                what="$1"
+                shift
+                until psql -v ON_ERROR_STOP=1 "$@"; do
+                  if [ "$(date +%s)" -ge "$deadline" ]; then
+                    echo "giving up on ${what}: still failing after ${budget}s of WAITING (image pull excluded, #551) — the psql error above is the real one, not a readiness delay" >&2
+                    exit 1
+                  fi
+                  echo "${what} not ready yet, retrying in 5s..."
+                  sleep 5
+                done
+              }
+
               {{- range .Values.schemas }}
-              until psql -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA {{ . }} TO {{ . }}_svc;" -c "REVOKE CREATE ON SCHEMA {{ . }} FROM {{ . }}_svc;"; do
-                echo "role {{ . }}_svc not ready yet, retrying in 5s..."
-                sleep 5
-              done
+              grant_when_ready "role {{ . }}_svc" -c "GRANT USAGE ON SCHEMA {{ . }} TO {{ . }}_svc;" -c "REVOKE CREATE ON SCHEMA {{ . }} FROM {{ . }}_svc;"
               {{- end }}
               # powersync_storage (PowerSync's bucket-storage DB, ADR-0005) is
               # created and owned by beekeepingit at postInitSQL time — before
               # the `powersync` role exists — so it can't own it at creation
               # time either; same reason as the schema grants above. GRANT ON
               # DATABASE doesn't require being connected to that database.
-              until psql -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON DATABASE powersync_storage TO powersync;"; do
-                echo "role powersync not ready yet, retrying in 5s..."
-                sleep 5
-              done
+              grant_when_ready "role powersync" -c "GRANT ALL PRIVILEGES ON DATABASE powersync_storage TO powersync;"
 {{- end }}

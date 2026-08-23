@@ -24,11 +24,18 @@ import (
 //
 // Config comes from config.LoadDB, not config.Load: this process serves no
 // HTTP, so it needs none of the OIDC settings and should not be given them.
+//
+// The run is bounded here rather than by the Job's activeDeadlineSeconds
+// (#551): that clock starts when the Job is created, so it charges image pull
+// to the migration's budget — which is what failed a staging release on the
+// first deploy of v0.0.1-rc9. See dbaccess.MigrationTimeout.
 func runMigrate(ctx context.Context) error {
 	dbCfg, err := config.LoadDB()
 	if err != nil {
 		return fmt.Errorf("load db config: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(ctx, dbaccess.MigrationTimeout)
+	defer cancel()
 	if err := dbaccess.Migrate(ctx, dbCfg.DSN(), store.MigrationsFS()); err != nil {
 		return fmt.Errorf("migrate db: %w", err)
 	}
