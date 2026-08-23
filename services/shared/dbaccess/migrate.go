@@ -3,8 +3,10 @@ package dbaccess
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver
@@ -58,6 +60,31 @@ func Migrate(ctx context.Context, dsn string, migrations fs.FS) error {
 	}
 	defer func() { _ = db.Close() }()
 
+	// WAIT FOR POSTGRES TO ANSWER BEFORE MIGRATING (#551), and only for that.
+	//
+	// At hook-weight 2 Postgres is usually up, but "usually" is not always:
+	// helm-e2e caught the migrate Job racing a CNPG instance that was still
+	// starting — three attempts at 23:46:39/:49/23:47:09 against a server whose
+	// instance manager only began at 23:46:24, each dying instantly with
+	// `dial tcp ...:5432: connect: connection refused`.
+	//
+	// That race was previously absorbed by accident: `backoffLimit: 10` on the
+	// Job meant ten pod restarts, which happened to outlast Postgres' startup.
+	// Cutting the limit so a BROKEN migration reports quickly (also #551) removed
+	// the tolerance along with the waste, because a Job retry cannot tell the two
+	// apart — every failure costs the same budget whether the SQL is wrong or the
+	// server merely isn't listening yet.
+	//
+	// Waiting here separates them exactly. An unreachable server is retried until
+	// the caller's deadline (MigrationTimeout); a migration that fails once
+	// connected is NOT retried at all and surfaces on the first attempt, which is
+	// the fast-fail property #541 made load-bearing. Same reasoning as the
+	// exit-code split in charts/postgres' table-grants Job — retry only what is
+	// worth retrying.
+	if err := waitForDB(ctx, db); err != nil {
+		return err
+	}
+
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations)
 	if err != nil {
 		return fmt.Errorf("dbaccess: new goose provider: %w", err)
@@ -67,4 +94,64 @@ func Migrate(ctx context.Context, dsn string, migrations fs.FS) error {
 		return fmt.Errorf("dbaccess: apply migrations: %w", err)
 	}
 	return nil
+}
+
+// dbProbeInterval is how often waitForDB re-probes a server that is not yet
+// listening. Short enough that a migration is not needlessly delayed once
+// Postgres comes up, long enough not to hammer a starting server.
+const dbProbeInterval = 2 * time.Second
+
+// waitForDB blocks until the server answers or ctx expires, and reports the
+// LAST connection error rather than a bare deadline — "connection refused" is
+// what tells an operator the server was not listening, whereas "context
+// deadline exceeded" alone would leave them guessing.
+//
+// Deliberately only used by Migrate, not by Connect: a serving process that
+// cannot reach Postgres should fail its readiness probe and be restarted by
+// Kubernetes, which is a better place to wait than inside a request path.
+func waitForDB(ctx context.Context, db *sql.DB) error {
+	lastErr := db.PingContext(ctx)
+	if lastErr == nil {
+		return nil
+	}
+
+	// TWO THINGS ARE DELIBERATELY NOT RETRIED, both learned by breaking them:
+	//
+	// 1. A failure that is not a dial failure. An unparseable DSN, a rejected
+	//    password, a missing database — none of those get better by asking
+	//    again, and retrying them for two minutes turns a clear error into a
+	//    timeout, which is the reporting regression this whole issue is about.
+	//    Only *net.OpError (the shape of "connection refused" / "no such host")
+	//    means the server might simply not be listening yet.
+	// 2. A context with no deadline. Callers that pass context.Background()
+	//    have not asked to wait for anything, and looping on them would hang
+	//    forever rather than return — which is exactly what an earlier version
+	//    of this function did to TestMigrate_InvalidDSN.
+	var opErr *net.OpError
+	if !errors.As(lastErr, &opErr) {
+		return fmt.Errorf("dbaccess: connect for migration: %w", lastErr)
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return fmt.Errorf("dbaccess: connect for migration: %w", lastErr)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("dbaccess: database did not become reachable before the deadline (%s): %w",
+				time.Until(deadline).Round(time.Second), lastErr)
+		case <-time.After(dbProbeInterval):
+		}
+
+		lastErr = db.PingContext(ctx)
+		if lastErr == nil {
+			return nil
+		}
+		// Stop as soon as the failure stops looking transient — the server is
+		// answering now, and whatever it is saying is the real error.
+		if !errors.As(lastErr, &opErr) {
+			return fmt.Errorf("dbaccess: connect for migration: %w", lastErr)
+		}
+	}
 }
