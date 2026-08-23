@@ -1,7 +1,13 @@
--- sqlc's virtual schema for codegen only — mirrors the "up" side of
--- ../migrations/00001_create_todos.sql, 00002_create_audit_log.sql and
--- 00003_add_apiary_id.sql (no down migration; runtime schema changes only
--- ever happen via goose). Update all files together.
+-- sqlc's virtual schema for codegen only — NOT a bootstrap baseline, and never
+-- applied to a database. It mirrors the cumulative "up" state of ../migrations/,
+-- which since #541's squash is the single 00003_baseline.sql (plus any migration
+-- added after it).
+--
+-- Keep in sync BY HAND when a migration changes a shape sqlc generates from. The
+-- migrations are the real schema; this file only teaches sqlc the column types, so
+-- drift surfaces as wrong generated Go types rather than as a failed migration —
+-- which is exactly why it is worth stating here.
+
 CREATE SCHEMA IF NOT EXISTS todos;
 
 CREATE TABLE todos.todos (

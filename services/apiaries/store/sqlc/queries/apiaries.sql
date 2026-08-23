@@ -39,7 +39,7 @@ LIMIT $2;
 -- (NULLS LAST) rather than being dropped, so an apiary missing a location
 -- still appears (with a null distance_m) instead of silently vanishing
 -- from the list. `public.geography`/`public.ST_MakePoint` follow
--- 00003_add_apiary_location.sql's schema-qualification note (bare
+-- 00008_baseline.sql (previously 00003_add_apiary_location.sql)'s schema-qualification note (bare
 -- `geography` fails to resolve under the service's restricted
 -- search_path) — and per #221, every PostGIS *function* call
 -- (ST_AsGeoJSON/ST_Distance/ST_SetSRID/ST_MakePoint) needs the same
@@ -56,7 +56,7 @@ LIMIT $2;
 -- not the exact geodesic calculation), though the `organization_id`
 -- equality filter here still forces a sequential scan over the org's own
 -- rows rather than an index-only KNN traversal via idx_apiaries_location
--- (00003_add_apiary_location.sql) — confirmed with EXPLAIN: Postgres can't
+-- (00008_baseline.sql (previously 00003_add_apiary_location.sql)) — confirmed with EXPLAIN: Postgres can't
 -- combine "top-N nearest" index access with an arbitrary equality filter on
 -- a different column without a matching partial/composite index, which
 -- isn't worth adding for the realistic per-org apiary count this query

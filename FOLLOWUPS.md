@@ -7,20 +7,12 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `claude/orch-change-feature-d959be` (#539 — pause/resume Scaleway environments without losing data)
+## `fix/551-migrate-job-pull-deadline` (#551 — migration bound moves off the pod's lifetime)
 
-Not a merge blocker for the code/docs in this branch, but the issue's own "Verification" AC
-("a staging round-trip is exercised end to end") cannot be executed by an agent — it needs a
-human operator with real Scaleway credentials, per `infra/README.md`'s own "an agent must not
-handle these values" convention:
-
-- **Run the staging round-trip**: seed a recognisable row, `scaleway-scale-down.sh`,
-  `scaleway-scale-up.sh`, confirm the row survives and the app works. Record the result on #539.
-  Until then, the pause/resume design is research-verified (ADR-0022) and shellcheck/actionlint-clean
-  but not execution-verified against real infra.
-- **Confirm the staging cluster's control-plane tier** is Mutualized (free), not a paid Dedicated
-  tier (`scw k8s cluster get <id> region=fr-par` → check `.Type`) — flagged as unconfirmed in
-  ADR-0022/`infra/README.md`.
+- **AC1 can only be confirmed by a real release.** "A first deploy of a not-yet-pulled version does
+  not fail the release on image-pull time" is unreproducible in `helm-e2e`, which pre-imports images
+  into k3d so pull time is always zero. Confirm on the next staging release that no `*-migrate` Job
+  reports `DeadlineExceeded` while the node pulls a cold image set, then prune this entry.
 
 ## `feat/account-linking-364` (#364 — federated account linking)
 
@@ -35,6 +27,11 @@ handle these values" convention:
   **is** a prerequisite for enabling federation on one that does — i.e. alongside
   [#510](https://github.com/TiagoJVO/beekeepingit/issues/510), before #365's environment.
   _Promote to a GitHub Issue and prune this entry once referenced._
+- **Nothing else is owed before merge.** This branch's one unverifiable-in-CI dependency is
+  [#510](https://github.com/TiagoJVO/beekeepingit/issues/510) — creating the Google credentials
+  Secret and running `infra/README.md`'s manual checklist against a real Google client, which now
+  covers #364's first-link case as well as #363's. Everything else is proven live in `helm-e2e`
+  by `infra/ci/authentik-federation-probe.py`.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -51,23 +48,24 @@ handle these values" convention:
 
 ---
 
-_Sweep note (#364): the `feat/google-federation-363` entry was stale — #363 closed with PR #509,_
-_so under this file's own rule it could no longer ride along. Its work (creating the Google_
-_credentials Secret and running the manual verification checklist against a real Google client) is_
-_genuinely outstanding and now covers #364's first-link case too, so it is promoted to_
-_[#510](https://github.com/TiagoJVO/beekeepingit/issues/510), a sub-issue of EPIC-14_
-_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15) — the same treatment #508 got in the_
-_#363 sweep — and pruned here. #510 is also `feat/account-linking-364`'s one unverifiable-in-CI_
-_dependency; beyond CI and the entry below, that branch owes nothing before merge._
+_Sweep note (#551): both remaining branch sections were stale — [#546](https://github.com/TiagoJVO/beekeepingit/pull/546)_
+_merged (closing [#541](https://github.com/TiagoJVO/beekeepingit/issues/541)) and_
+_[#539](https://github.com/TiagoJVO/beekeepingit/issues/539) closed, so under this file's own rule_
+_neither could ride along. Resolved rather than left to drift:_
 
-_Earlier sweep note (#363): the `feat/authentik-admin-oidc-client` (#456) entry was stale — #456_
-_closed long ago. Its remaining work (tightening the admin client's `http://localhost:.*` redirect_
-_entry for staging/prod) is now_
-_[#508](https://github.com/TiagoJVO/beekeepingit/issues/508), a sub-issue of EPIC-14_
-_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and was pruned then. #362's own sweep_
-_had already pruned the #449 and #290 entries in the same spirit._
+- _#541's **staging ownership transition** and **manual hand-fix reconciliation** are **done** —_
+  _`v0.0.1-rc9` deployed 2026-08-22 and all 26 tables are now owned by `beekeepingit`, with_
+  _`<schema>_svc` holding `INSERT`/`SELECT` only on `audit_log`/`sync_conflict_log`. Verified against_
+  _the live cluster; pruned, since git history and the PR already record it._
+- _#541's **baseline re-cut constraint** is now durable documentation, not pending work — it lives_
+  _in [ADR-0023](docs/adr/0023-migrations-as-a-deploy-time-admin-process.md) §5. Pruned._
+- _#541's **hardcoded history-table list** still has real work → promoted to_
+  _[#553](https://github.com/TiagoJVO/beekeepingit/issues/553)._
+- _#539's **staging round-trip** and **control-plane tier check** were never executed → promoted to_
+  _[#554](https://github.com/TiagoJVO/beekeepingit/issues/554). Operator work by design: it needs real_
+  _Scaleway credentials, which `infra/README.md` says an agent must not handle._
 
-_Sweep note (#539): the `feat/google-federation-363` (#363) entry was stale — #363 closed and its_
-_manual-verification follow-up was already promoted to_
-_[#510](https://github.com/TiagoJVO/beekeepingit/issues/510), so it's pruned here rather than_
-_riding along a second time._
+_Earlier sweep notes (#363, #539, #541) are dropped along with their entries — the Issues they point_
+_at carry the record now. One lesson worth keeping: a stale entry may already have been promoted on_
+_an unmerged branch, so check open Issues before filing a new one ([#544](https://github.com/TiagoJVO/beekeepingit/issues/544)_
+_was filed as a duplicate of [#510](https://github.com/TiagoJVO/beekeepingit/issues/510) exactly that way)._

@@ -18,7 +18,6 @@ import (
 	"os"
 
 	"github.com/TiagoJVO/beekeepingit/services/apiaries/api"
-	"github.com/TiagoJVO/beekeepingit/services/apiaries/store"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/authn"
 	"github.com/TiagoJVO/beekeepingit/services/servicetemplate/config"
@@ -29,7 +28,20 @@ import (
 )
 
 func main() {
-	if err := run(context.Background()); err != nil {
+	ctx := context.Background()
+
+	// "migrate" runs the deploy-time migration admin process and exits; with
+	// no argument the binary serves (#541, 12-factor XII). DDL never happens
+	// on the serving path any more — see migrate.go for why.
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		if err := runMigrate(ctx); err != nil {
+			slog.Error("fatal", slog.Any("error", err))
+			os.Exit(1)
+		}
+		return
+	}
+
+	if err := run(ctx); err != nil {
 		slog.Error("fatal", slog.Any("error", err))
 		os.Exit(1)
 	}
@@ -59,10 +71,6 @@ func run(ctx context.Context) error {
 
 	logger := logging.NewLogger(cfg, providers.LoggerProvider)
 	slog.SetDefault(logger)
-
-	if err := dbaccess.Migrate(ctx, cfg.DB.DSN(), store.MigrationsFS()); err != nil {
-		return fmt.Errorf("migrate db: %w", err)
-	}
 	pool, err := dbaccess.Connect(ctx, cfg.DB)
 	if err != nil {
 		return fmt.Errorf("connect db: %w", err)

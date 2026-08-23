@@ -3,7 +3,7 @@
 // vs activity-attribute events, the 2026-07-13 user decision recorded as the
 // next D-* in requirements/decisions.md). One row per (apiary, counter_type),
 // enforced by the table's UNIQUE(apiary_id, counter_type) constraint
-// (00005_create_apiary_counters.sql) — an apiary can never hold two counters
+// (00008_baseline.sql (previously 00005_create_apiary_counters.sql)) — an apiary can never hold two counters
 // of the same type.
 //
 // counter_type is validated here, in the OWNING SERVICE, against a known set

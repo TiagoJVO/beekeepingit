@@ -41,6 +41,14 @@ db:
   port: "5432"
   name: beekeepingit
   sslmode: require
+  # Credential for the deploy-time migrate Job ONLY (#541) — the postgres
+  # chart's app-owner Secret, i.e. `beekeepingit`, which owns every service
+  # schema and may therefore create/alter tables in it. Deliberately NOT a
+  # service's own `db.secret`: the migrator and the runtime role are different
+  # principals on purpose. `<schema>_svc` holds DML only and never owns a
+  # table, which is what makes the audit log's append-only guarantee durable
+  # (history.md §7.1) instead of something the owner could self-GRANT away.
+  migratorSecret: beekeepingit-postgres-app
 
 # The services to render. `name` is also the in-cluster Service name (stable
 # DNS: http://<name>:8080), which the resolver/coordinator/powersync configs

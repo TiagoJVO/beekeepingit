@@ -679,9 +679,9 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
 - **Decision (product owner, 2026-07-21):** apiary **`location` is now mandatory at every layer**
   — client create/edit form validation, offline sync-apply validation, the OpenAPI
   `ApiaryCreate.required` list, REST service validation, and a DB `NOT NULL` constraint
-  (`00008_apiary_location_not_null.sql`) — per **FR-AP-7** (see its refined entry in
+  (`00008_baseline.sql (previously 00008_apiary_location_not_null.sql)`) — per **FR-AP-7** (see its refined entry in
   `functional-requirements.md`) and **#341**. This **supersedes** the walking-skeleton-era
-  "location optional" stance the original `00003_add_apiary_location.sql` migration and
+  "location optional" stance the original `00008_baseline.sql (previously 00003_add_apiary_location.sql)` migration and
   `ApiaryCreate` schema assumed, and is distinct from #252's unrelated free-text `place_label`
   search field.
 - **Resulting breaking change accepted, not deferred:** marking `location` required on

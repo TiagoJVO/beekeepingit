@@ -131,8 +131,8 @@ syncConfig:
         # These land in the SAME local `audit_log` / `sync_conflict_log` tables
         # as the apiaries entries: PowerSync names the output table from the
         # unqualified FROM name, and both schemas' DDL is column-identical
-        # (services/activities/store/migrations/00002_create_audit_log.sql vs.
-        # services/apiaries/store/migrations/00002_create_audit_log.sql). That
+        # (services/activities/store/migrations/00002_baseline.sql (previously 00002_create_audit_log.sql) vs.
+        # services/apiaries/store/migrations/00008_baseline.sql (previously 00002_create_audit_log.sql)). That
         # is deliberate, not a collision — both logs are polymorphic on
         # (entity_type, entity_id) (history.md §3), so one local table per log
         # kind serves every entity's timeline and the client filters by

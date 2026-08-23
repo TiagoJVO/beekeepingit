@@ -53,6 +53,15 @@ helm dependency build infra/helm/beekeepingit
 #    time) has granted it access to `powersync_storage` — and Helm only runs
 #    post-install hooks *after* `--wait` is satisfied for the main resources, so
 #    waiting here would deadlock PowerSync against its own grant.
+#
+#    The post-install/post-upgrade hooks run in this order (ADR-0023/#541):
+#      1. schema-grants     schema USAGE + the powersync database grant
+#      2. <service>-migrate one Job per DB-backed service, running that service's
+#                           migrations as the migrator role (`beekeepingit`)
+#      3. table-grants      table DML grants, history-table REVOKEs, and the
+#                           ownership transition for pre-#541 clusters
+#    Weight 1 is deliberately kept independent of migrations: it is what unblocks
+#    PowerSync (see step 7), so a slow or stuck migration must never stall it.
 infra/cluster/with-lock.sh helm upgrade --install beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
   --namespace beekeepingit-dev --create-namespace
