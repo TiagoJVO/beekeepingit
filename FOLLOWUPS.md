@@ -7,51 +7,33 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `fix/541-migrations-as-migrator-role` (#541 — migrations as a deploy-time admin process)
+## `fix/545-per-schema-migrator-roles` (#545 — per-schema `<schema>_migrator` roles)
+
+Before merge:
+
+- **Nothing.** The chart renders and lints in all three environments with the transition gate in
+  both positions, and the two new testcontainers suites pass alongside the existing ones.
 
 After this merges and reaches staging via a release (D-27: merge → release → tag-bump PR → Flux
 reconciles — staging is never deployed from a branch):
 
-- **Validate the ownership transition on staging.** `REASSIGN OWNED BY <schema>_svc TO
-beekeepingit` (`charts/postgres/templates/table-grants-job.yaml`) has only ever run in
-  containers. Staging is the one environment carrying pre-#541 state, so it is the only place the
-  transition is genuinely exercised. As of 2026-08-22 it has **16 tables still owned by
-  `<schema>_svc`** (organizations 4, apiaries 3, journeys 3, todos 2, activities 2, identity 2) and
-  10 already owned by `beekeepingit`. Afterwards, confirm all 26 are owned by `beekeepingit` and
-  that `<schema>_svc` holds `INSERT`/`SELECT` only on `audit_log`/`sync_conflict_log`. Already
-  verified as safe to run: no `<schema>_svc` owns anything outside its own schema, which is the
-  one thing `REASSIGN OWNED`'s database-wide scope could have caught out.
-- **The same release reconciles a manual hand-fix.** On 2026-08-22 `organizations.audit_log`
-  ownership was moved by hand to unblock the stuck `v0.0.1-rc8` rollout (migrations 5 and 6
-  applied, ownership re-locked). Until this ships, staging looks correct for the wrong reason.
-- **The history-table list in `table-grants-job.yaml` is hardcoded** to `audit_log` and
-  `sync_conflict_log`. `ALTER DEFAULT PRIVILEGES` makes UPDATE/DELETE the default for anything a
-  future migration creates in the schema, and only those two literal names are revoked back. A
-  future history-style table under a different name would silently keep UPDATE/DELETE for the
-  runtime role. Decide before more history tables land: adopt a naming convention the job can
-  match, or an explicit allowlist that fails the release on an unrecognised table. From the
-  security review of this branch; promote to an Issue if it outlives this PR.
-- **Re-cutting a migration baseline requires every live environment at or above its version.**
-  This branch squashed each service's migrations into a single `0000N_baseline.sql` numbered at the
-  then-current max (verified equal to staging's ledger for all six services). Squashing below a
-  deployed cluster's version would make goose apply the baseline over tables that already exist.
-  The local k3d dev cluster was behind (organizations at 4) and must be recreated with
-  `infra/cluster/dev-up.sh` rather than upgraded in place.
-
-## `claude/orch-change-feature-d959be` (#539 — pause/resume Scaleway environments without losing data)
-
-Not a merge blocker for the code/docs in this branch, but the issue's own "Verification" AC
-("a staging round-trip is exercised end to end") cannot be executed by an agent — it needs a
-human operator with real Scaleway credentials, per `infra/README.md`'s own "an agent must not
-handle these values" convention:
-
-- **Run the staging round-trip**: seed a recognisable row, `scaleway-scale-down.sh`,
-  `scaleway-scale-up.sh`, confirm the row survives and the app works. Record the result on #539.
-  Until then, the pause/resume design is research-verified (ADR-0022) and shellcheck/actionlint-clean
-  but not execution-verified against real infra.
-- **Confirm the staging cluster's control-plane tier** is Mutualized (free), not a paid Dedicated
-  tier (`scw k8s cluster get <id> region=fr-par` → check `.Type`) — flagged as unconfirmed in
-  ADR-0022/`infra/README.md`.
+- **Run the #545 ownership transition on staging, once, and then turn the gate back off.** Runbook
+  and verification queries: `infra/README.md` → "Transitioning an existing cluster (#545)". Two
+  things make this a real step rather than a formality:
+  - **#541's release must have deployed to staging first.** The transition swaps `beekeepingit`'s
+    `<schema>_svc` memberships for the migrator ones, so any relation still owned by
+    `<schema>_svc` becomes unreachable. As of 2026-08-22 staging still had **16 tables owned by
+    `<schema>_svc`** (organizations 4, apiaries 3, journeys 3, todos 2, activities 2, identity 2)
+    plus a hand-fixed `organizations.audit_log` — all of which #541's own `REASSIGN OWNED BY` step
+    adopts on its first deploy. The adopt Job checks for this and fails the release naming the
+    offending relations, so the failure mode is loud, but it costs a staging round-trip.
+  - **Leaving the gate on is not harmless.** While it is on, `beekeepingit` is a member of all
+    seven migrator roles — the exact cross-schema bridge this change removes. Isolation is a
+    steady-state property (ADR-0024 §4).
+- **Confirm afterwards** that every relation in every schema is owned by its own
+  `<schema>_migrator`, that no `pg_default_acl` row is scoped to `beekeepingit`, and that
+  `<schema>_svc` still holds `INSERT`/`SELECT` only on `audit_log`/`sync_conflict_log` and nothing
+  on `goose_db_version`. Queries are in the runbook.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -68,22 +50,22 @@ handle these values" convention:
 
 ---
 
-_Sweep note (#363): the `feat/authentik-admin-oidc-client` (#456) entry was stale — #456 closed_
-_long ago, so under this file's own rule it could no longer ride along. Its remaining work_
-_(tightening the admin client's `http://localhost:.*` redirect entry for staging/prod) is now_
-_[#508](https://github.com/TiagoJVO/beekeepingit/issues/508), a sub-issue of EPIC-14_
-_[#15](https://github.com/TiagoJVO/beekeepingit/issues/15), and is pruned here. #362's own sweep_
-_had already pruned the #449 and #290 entries in the same spirit._
+_Sweep note (#545): the whole `fix/541-migrations-as-migrator-role` section was stale — #541 closed_
+_and PR [#546](https://github.com/TiagoJVO/beekeepingit/pull/546) merged, so under this file's own_
+_rule it could not ride along. Resolved rather than re-described:_
 
-_Sweep note (#539): the `feat/google-federation-363` (#363) entry was stale — #363 closed and its_
-_manual-verification follow-up was already promoted to_
-_[#510](https://github.com/TiagoJVO/beekeepingit/issues/510), so it's pruned here rather than_
-_riding along a second time._
+- _the staging **ownership-transition validation** is superseded by #545's own transition (the_
+  _`REASSIGN OWNED BY <schema>_svc` step it referred to no longer exists), and is carried forward_
+  _above, including the pre-#541 state it recorded and the hand-fixed `organizations.audit_log`;_
+- _the **hardcoded history-table name list** was already promoted to_
+  _[#553](https://github.com/TiagoJVO/beekeepingit/issues/553) — #545 narrowed half of it_
+  _(`ALTER DEFAULT PRIVILEGES` no longer makes a new history table mutable at creation) and_
+  _deliberately left the rest there;_
+- _the **baseline re-cut constraint** is recorded in_
+  _[ADR-0023](docs/adr/0023-migrations-as-a-deploy-time-admin-process.md)'s Consequences, which is_
+  _where a standing operational rule belongs — pruned here rather than kept in two places._
 
-_Sweep note (#541): this branch swept the same stale `feat/google-federation-363` entry_
-_independently, from a base that predated #539's sweep, and promoted it to a **duplicate**_
-_issue — [#544](https://github.com/TiagoJVO/beekeepingit/issues/544), since closed in favour of_
-_[#510](https://github.com/TiagoJVO/beekeepingit/issues/510). Worth remembering: a stale entry may_
-_already have been promoted on an unmerged branch, so check open Issues for the work before_
-_filing a new one. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
+_The `claude/orch-change-feature-d959be` (#539) section was also stale — #539 closed and its_
+_manual round-trip was promoted to [#554](https://github.com/TiagoJVO/beekeepingit/issues/554),_
+_so it is pruned. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
 _open — that entry stands._

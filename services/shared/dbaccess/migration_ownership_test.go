@@ -24,6 +24,14 @@ import (
 // while the previous ReplicaSet kept serving, so every health check stayed
 // green and nothing alerted.
 //
+// SINCE #545, "the migrator role" in this file means `beekeepingit` — the
+// shared owner #541 used — and that is now the LEGACY arrangement rather than
+// current wiring: each schema has its own `<schema>_migrator` today, and
+// `beekeepingit` owns no table at all. The tests below are unaffected, because
+// what they pin is about the split between the migrating principal and the
+// serving one, not about which specific role plays the first part. The
+// per-schema half of that story is in migrator_isolation_test.go.
+//
 // WHY CI NEVER CAUGHT IT, and what these tests therefore have to do: on a
 // FRESH cluster every migration runs at pod startup BEFORE the lockdown
 // (a post-install/post-upgrade Helm hook, weight 2) has ever applied, so

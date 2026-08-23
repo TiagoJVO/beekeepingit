@@ -1,65 +1,86 @@
 {{/*
 Runtime-role table grants, and the append-only guarantee for history tables
 (history.md §7.1, ADR-0007 §4). Replaces audit-immutability-job.yaml, which
-this change deletes.
+#541 deleted.
 
 WHY THE OLD JOB IS GONE, NOT JUST MOVED. #62 had a genuinely hard problem:
 each service's migrations ran AS `<schema>_svc`, so that role CREATEd — and
 therefore OWNED — its own `audit_log`. A plain `REVOKE UPDATE, DELETE` can
 never bind an owner (it can re-`GRANT` to itself at will, and keeps
 TRUNCATE/ALTER/DROP regardless), so the only durable fix available was to move
-ownership off the runtime role after the fact, with an idempotent
-`ALTER TABLE ... OWNER TO beekeepingit` + narrow re-GRANT.
+ownership off the runtime role after the fact.
 
-That ownership dance is now unnecessary, because #541 moved migrations into
-the deploy-time migrate Job running as `beekeepingit`. The runtime role never
-creates a table, so it never owns one, so there is nothing to take away.
-Immutability collapses back into the simple thing it always should have been:
-grant `<schema>_svc` INSERT/SELECT on history tables and never UPDATE/DELETE.
-It cannot self-GRANT its way back in, because Postgres silently no-ops a GRANT
-of a privilege the grantor does not hold, and it is never a member of
-`beekeepingit` (only the reverse direction is ever granted).
+That ownership dance is unnecessary now, because #541 moved migrations into a
+deploy-time Job. The runtime role never creates a table, so it never owns one,
+so there is nothing to take away. Immutability collapses back into the simple
+thing it always should have been: grant `<schema>_svc` INSERT/SELECT on history
+tables and never UPDATE/DELETE. It cannot self-GRANT its way back in, because
+Postgres silently no-ops a GRANT of a privilege the grantor does not hold, and
+it is a member of no other role at all.
 
-The old job's cost is worth remembering: it had to poll for each (schema,
-table) pair to appear, because it raced the service pods' startup migrations —
-something a Helm hook cannot sequence. It burned a documented ~55-minute retry
-budget before that was fixed. With migrations now at hook-weight 2 and this
-job at 3, the race is gone by construction: the tables are guaranteed to exist
-before this runs, so there is nothing to poll for.
+WHAT #545 CHANGED HERE, AND WHY THIS IS NOW SEVEN JOBS.
+
+The credential. This Job used to connect as `beekeepingit` and loop over every
+schema in one pod. It now connects as `<schema>_migrator` — the owner of that
+one schema's relations and nothing else — which forces one Job per schema,
+because the credential comes from a per-schema Secret via `secretKeyRef` and a
+pod cannot hold seven of those meaningfully. The cost is six extra short-lived
+pods per release; the benefit is that the last shared cross-schema credential
+disappears from the weight-3 hook. Fresh-install ownership needs no help: the
+migrate Job at weight 2 already ran as this same role, so it owns everything it
+created. See ADR-0024.
+
+The `REASSIGN OWNED BY <schema>_svc TO beekeepingit` line is GONE. It was #541's
+in-place transition for pre-#541 clusters, and it cannot live here any more for
+two independent reasons: `<schema>_migrator` is not a member of `<schema>_svc`
+(by design — that membership would be a cross-role bridge), and REASSIGN is
+database-wide, which is precisely what migrator-adopt-job.yaml's header explains
+must never appear in this chart again. The #545 transition is that Job's job,
+and it is gated.
 
 HOOK WEIGHTS:
-  1  schema-grants-job.yaml   schema USAGE + powersync database grant (fast,
-                              deliberately independent of migrations so it
-                              never gates PowerSync's rollout)
+  0  schema-grants-job.yaml     powersync DB grant + schema USAGE/CREATE
+  1  migrator-adopt-job.yaml    [gated] the #545 ownership transition
   2  charts/services migrate-job.yaml
   3  THIS JOB
 
-WHAT IT DOES, per schema, all idempotent:
+Nothing here polls. Migrations completed at weight 2, so the tables already
+exist. The job this replaced had to poll for each (schema, table) pair because
+it raced pod-startup migrations — something a Helm hook cannot sequence — and
+it burned a documented ~55-minute retry budget before that was fixed. With the
+weights above the race is gone by construction. A schema whose service has not
+shipped yet simply has no tables and every statement degrades to a no-op.
 
-  1. REASSIGN OWNED BY <schema>_svc TO beekeepingit — the transition for
-     already-deployed clusters (staging), where tables created by the OLD
-     startup-migration path are still owned by the runtime role. Fresh
-     installs no-op here, since beekeepingit created everything already.
-     Runs as beekeepingit, which is allowed because it holds privileges of
-     both roles: it is the target, and CNPG's operator reconciles its plain
-     membership in <schema>_svc from cluster.yaml's managed.roles.inRoles.
-  2. Blanket DML for the runtime role on the service's own tables, plus
-     ALTER DEFAULT PRIVILEGES so tables a FUTURE migration creates are
-     granted automatically rather than needing this job re-run first.
-  3. REVOKE UPDATE/DELETE/TRUNCATE back off the history tables. Deliberately
-     grant-then-revoke rather than enumerating non-history tables: the set of
-     history tables is small, fixed and known, while the domain tables are
-     not, and a missed REVOKE fails loudly in the immutability tests whereas
-     a missed GRANT would fail silently at runtime.
+WHAT IT DOES: see _helpers.tpl's `postgres.runtimeGrantsPsqlArgs`, which is the
+single definition of this ACL — shared with the adopt Job so a transitioned
+cluster and a fresh one cannot end up on different grants.
+
+`--single-transaction` IS THE SECURITY CONTROL HERE, not a tidiness preference.
+psql autocommits each `-c` separately, so an earlier draft of this script
+committed the blanket GRANT — which necessarily includes `audit_log` — and only
+REVOKEd it back in a LATER, SEPARATE psql process. That left `<schema>_svc`
+genuinely holding UPDATE/DELETE on the audit log for the duration, on EVERY
+upgrade of an existing cluster.
+
+It is not a theoretical window: Helm does not pause running Deployments while a
+hook runs, so the outgoing ReplicaSet's pods are serving with live
+`<schema>_svc` connections throughout. A compromised service retrying
+`DELETE FROM audit_log` in a loop would eventually land inside it — precisely
+the threat history.md §7.1 exists to stop. (Self-GRANT stays blocked either
+way: nothing here is granted WITH GRANT OPTION. The exposure was direct USE of
+a temporarily-held privilege, not a durable escalation.)
 */}}
 {{- if .Values.enabled }}
+{{- $root := . }}
+{{- range $schema := .Values.schemas }}
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "postgres.fullname" . }}-table-grants
-  namespace: {{ .Values.global.namespace }}
+  name: {{ include "postgres.fullname" $root }}-table-grants-{{ $schema }}
+  namespace: {{ $root.Values.global.namespace }}
   labels:
-    {{- include "beekeepingit.labels" . | nindent 4 }}
+    {{- include "beekeepingit.labels" $root | nindent 4 }}
     app.kubernetes.io/name: postgres
   annotations:
     "helm.sh/hook": post-install,post-upgrade
@@ -71,16 +92,18 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "beekeepingit.labels" . | nindent 8 }}
+        {{- include "beekeepingit.labels" $root | nindent 8 }}
+        # Keeps this pod inside the `postgres-jobs-to-postgres` NetworkPolicy
+        # edge (charts/networkpolicy/values.yaml) — default-deny is
+        # namespace-wide and a pod identity with no edge cannot reach Postgres
+        # at all. The per-schema rename above does not change this label, which
+        # is exactly why the edge keys on it rather than on Job names.
         app.kubernetes.io/name: postgres
     spec:
       restartPolicy: OnFailure
-      # This Job connects as `beekeepingit` — the database owner — and performs
-      # the REASSIGN/REVOKE that the append-only guarantee depends on, so it is
-      # the highest-value target in this chart and is hardened to match
-      # charts/services' Deployment and migrate Job. (schema-grants-job.yaml is
-      # still unhardened; tracked separately rather than widened into this
-      # change.) The postgres image runs as uid 26 (`postgres`).
+      # This Job performs the REVOKEs the append-only guarantee depends on, so
+      # it is hardened to match charts/services' Deployment and migrate Job.
+      # The postgres image runs as uid 26 (`postgres`).
       securityContext:
         runAsNonRoot: true
         runAsUser: 26
@@ -92,21 +115,25 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-          image: {{ .Values.image }}
+          image: {{ $root.Values.image }}
           env:
             - name: PGHOST
-              value: {{ include "postgres.fullname" . }}-rw
+              value: {{ include "postgres.fullname" $root }}-rw
             - name: PGDATABASE
               value: beekeepingit
+            # The schema's OWN migrator credential — never `beekeepingit`, and
+            # never another schema's. Derived from the schema name rather than
+            # configurable, so a Job pointed at the wrong schema's Secret is
+            # unrepresentable (#545).
             - name: PGUSER
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "postgres.fullname" . }}-app
+                  name: {{ $schema }}-migrator-credentials
                   key: username
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "postgres.fullname" . }}-app
+                  name: {{ $schema }}-migrator-credentials
                   key: password
           command:
             - /bin/sh
@@ -114,66 +141,9 @@ spec:
             - |
               set -eu
 
-              # Every statement below is idempotent and safe to re-run on each
-              # helm upgrade. Unlike the job this replaces, nothing here polls:
-              # migrations completed at hook-weight 2, so the tables already
-              # exist. A schema whose service has not shipped yet simply has no
-              # tables, and every statement degrades to a no-op.
-              grant_schema() {
-                schema="$1"
-                svc_role="${schema}_svc"
+              psql -v ON_ERROR_STOP=1 --single-transaction \
+                {{- include "postgres.runtimeGrantsPsqlArgs" $schema | nindent 16 }}
 
-                # --single-transaction IS THE SECURITY CONTROL HERE, not a
-                # tidiness preference. psql autocommits each -c separately, so
-                # an earlier draft of this script committed the blanket GRANT
-                # below — which necessarily includes audit_log — and only
-                # REVOKEd it back in a LATER, SEPARATE psql process. That left
-                # <schema>_svc genuinely holding UPDATE/DELETE on the audit log
-                # for the duration, on EVERY upgrade of an existing cluster.
-                #
-                # It is not a theoretical window: Helm does not pause running
-                # Deployments while a hook runs, so the outgoing ReplicaSet's
-                # pods are serving with live <schema>_svc connections
-                # throughout. A compromised service retrying `DELETE FROM
-                # audit_log` in a loop would eventually land inside it — which
-                # is precisely the threat history.md §7.1 exists to stop.
-                # (Self-GRANT stays blocked either way: nothing here is granted
-                # WITH GRANT OPTION. The exposure was direct USE of a
-                # temporarily-held privilege, not a durable escalation.)
-                #
-                # Wrapping grant+revoke in one transaction means no session
-                # ever observes the intermediate state: the history tables go
-                # from their previous ACL straight to the post-revoke one.
-                #
-                # The revoke is a DO block rather than a separate psql call for
-                # the same reason — it has to commit atomically WITH the grant.
-                # It stays conditional because a schema whose service has not
-                # shipped its history table yet must not fail the release.
-                psql -v ON_ERROR_STOP=1 --single-transaction \
-                  -c "REASSIGN OWNED BY ${svc_role} TO beekeepingit;" \
-                  -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${svc_role};" \
-                  -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${svc_role};" \
-                  -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA ${schema} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${svc_role};" \
-                  -c "ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA ${schema} GRANT USAGE, SELECT ON SEQUENCES TO ${svc_role};" \
-                  -c "DO \$do\$
-                      DECLARE t text;
-                      BEGIN
-                        FOREACH t IN ARRAY ARRAY['audit_log', 'sync_conflict_log'] LOOP
-                          IF EXISTS (SELECT 1 FROM pg_tables
-                                     WHERE schemaname = '${schema}' AND tablename = t) THEN
-                            EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON %I.%I FROM %I',
-                                           '${schema}', t, '${svc_role}');
-                            RAISE NOTICE '%.%: append-only (INSERT/SELECT only for %)',
-                                         '${schema}', t, '${svc_role}';
-                          END IF;
-                        END LOOP;
-                      END
-                      \$do\$;"
-
-                echo "${schema}: runtime grants applied."
-              }
-
-              {{- range .Values.schemas }}
-              grant_schema "{{ . }}"
-              {{- end }}
+              echo "{{ $schema }}: runtime grants applied."
+{{- end }}
 {{- end }}

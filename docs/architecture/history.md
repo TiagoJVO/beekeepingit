@@ -218,9 +218,38 @@ now fixed here.
   `INSERT` (and `SELECT`) but not `UPDATE`/`DELETE`** on its `audit_log` (and `sync_conflict_log`).
   A code path that tries to mutate history fails at the database — defense-in-depth, the same
   philosophy as the optional RLS backstop in [data-model.md](data-model.md) §5.
+- **The runtime role owns nothing, which is what makes that durable.** An owner can re-`GRANT` to
+  itself at will and keeps `TRUNCATE`/`ALTER`/`DROP` regardless of any `REVOKE`, so "not granted
+  `UPDATE`" only means something for a role that is not the table's owner. Since
+  [ADR-0023](../adr/0023-migrations-as-a-deploy-time-admin-process.md) migrations run in a
+  deploy-time Job, not in the serving process, so `<schema>_svc` never creates a table and
+  therefore never owns one. `CREATE` on the schema is revoked from it explicitly. It is also a
+  member of no other role, so it cannot borrow the owner's privileges either.
+- **The owner is `<schema>_migrator`, one per schema** — see
+  [ADR-0024](../adr/0024-per-schema-migrator-roles.md) (#545). Before that, a single
+  `beekeepingit` role owned every schema's tables and was the credential in every service's
+  migrate Job, so compromising any one service image reached every other service's audit log.
+  Now each migrator's authority stops at its own schema boundary.
 - **Corrections are new rows**, never edits — the record of "what the system believed and when"
   stays intact.
 - Purge for retention (§7.2) is a **separate, privileged** maintenance role, not the service role.
+
+**What this guarantee does and does not cover.** It is a guarantee against the service's **runtime
+role** — the credential the serving process holds while answering requests. It is **not** a
+guarantee against the service's **deploy artifact**.
+
+The migrate Job runs the service's own container image with a credential that owns that schema's
+tables, and the migration `.sql` files ship inside that image. So a malicious or compromised
+_build_ of a service can rewrite its own schema's history, and no arrangement of database roles
+inside this design prevents that: a migration that must be able to `ALTER TABLE audit_log` (as
+`audit_log.actor_scope`/#470 was) cannot be run by a principal that must not be able to alter
+`audit_log`. ADR-0024 §"Consequences" sets out why the obvious escapes — a neutral migration image,
+or an owner the image never holds — do not work.
+
+Closing that half needs history to leave the database's trust boundary: an out-of-band append-only
+sink (WAL archiving to immutable storage, or an external WORM store), which belongs to the
+compliance epic (**EPIC-14 #15**) rather than to the Helm chart. Recorded here so the guarantee is
+not read as broader than it is.
 
 ### 7.2 Retention — retain in v1, purge policy deferred
 
