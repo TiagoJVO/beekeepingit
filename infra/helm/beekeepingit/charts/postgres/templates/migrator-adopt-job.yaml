@@ -107,8 +107,21 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
     "helm.sh/hook-weight": "1"
 spec:
-  backoffLimit: 10
-  activeDeadlineSeconds: 300
+  # FAILURE BUDGET (#551's semantics, applied to a #545 Job). The only genuine
+  # waiting here — CNPG reconciling the gated membership — is bounded inside
+  # `wait_for_role` (_helpers.tpl, one 300s deadline started after image
+  # pull), so activeDeadlineSeconds is a backstop, not the budget. It is a
+  # generous one on purpose: the ALTER ... OWNER loop needs ACCESS EXCLUSIVE
+  # on each relation while the outgoing ReplicaSet is still serving as
+  # `<schema>_svc`, and a lock wait is the one failure that is not a psql
+  # exit — waiting longer for it lets the one-off transition succeed, and no
+  # `lock_timeout` is set for the same reason table-grants sets none.
+  # backoffLimit stays low: every other failure is a psql exiting non-zero
+  # (the preflight guards are deliberately deterministic EXCEPTIONs), so
+  # attempts, not wall-clock, are the natural bound, and a broken transition
+  # should be reported, not ground through ten retries.
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
   template:
     metadata:
       labels:
@@ -121,7 +134,11 @@ spec:
         # shared `postgres` component label means no new edge is owed.
         app.kubernetes.io/name: postgres
     spec:
-      restartPolicy: OnFailure
+      # `Never`, not `OnFailure` (#551): with OnFailure the Job controller
+      # DELETES the pod once backoffLimit is exhausted, taking the psql output
+      # that explains the failure with it — and this Job's failure messages
+      # (the preflight guards above) are the entire point of its guards.
+      restartPolicy: Never
       # This Job holds `beekeepingit` while it is temporarily a member of every
       # migrator role — the most privileged pod this chart ever runs. Hardened
       # like table-grants-job.yaml; the postgres image runs as uid 26.

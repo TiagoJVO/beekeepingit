@@ -130,6 +130,30 @@ to satisfy as more environments appear — not because fresh installs were slow.
   `ALTER` — a least-privilege improvement independent of the bug that prompted it.
 - A failed migration now fails the Helm release rather than crashlooping a pod behind a healthy
   older ReplicaSet. The specific way this bug hid itself is closed.
+- **The deploy-blocking budget had to move into the migration to survive contact with a real
+  cluster.** As first shipped, the Job was bounded only by `activeDeadlineSeconds: 300`. Kubernetes
+  starts that clock when the Job is _created_, so it pays for scheduling and image pull as well as
+  the migration — and on the first deploy of a new version every Deployment in the release rolls at
+  once, so the node is pulling the whole image set while the Job queues behind it. `v0.0.1-rc9`
+  failed its staging release exactly that way ([#551](https://github.com/TiagoJVO/beekeepingit/issues/551)):
+  `activities-migrate` hit `DeadlineExceeded`, Flux retried and it passed in 36s, and
+  `apiaries-migrate` — same SQL, image already cached — took 6s.
+
+  Kubernetes has no way to exclude pull time from that clock, so the fix is not a larger number.
+  The migration now carries its own `context` deadline (`dbaccess.MigrationTimeout`, 2 minutes),
+  which starts when the migration starts; `activeDeadlineSeconds` is demoted to a backstop for a
+  pod that never _runs_ (an unpullable tag never terminates, so `backoffLimit` cannot catch it),
+  and `backoffLimit` drops from 10 to 2 so that raising the backstop does not let a
+  deterministically failing migration — rc8's `must be owner of table audit_log`, the defect this
+  ADR exists for — grind for a quarter of an hour instead of failing in under a minute. The
+  fast-fail property above is preserved by a tighter control, not by the one that was misfiring.
+
+  **Knowingly untested in CI.** `helm-e2e` pre-imports every service image into k3d, so pull time
+  there is always zero and no job in this repo can reproduce the race — it needs a real cluster
+  meeting a version it has never seen. Moving the bound into the process is what made the load-
+  bearing half testable at all: `services/shared/dbaccess/dbaccess_test.go` asserts that a
+  migration honours its context deadline, and that the retry budget cannot reach the Job backstop.
+
 - Services no longer self-bootstrap their schema. A service pod started against an unmigrated
   database will serve errors rather than fixing itself. This is intended — the deploy is
   responsible for schema state — but it means the migrate Job failing is now a deploy-blocking

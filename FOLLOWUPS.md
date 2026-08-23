@@ -7,7 +7,7 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `fix/545-per-schema-migrator-roles` (#545 — per-schema `<schema>_migrator` roles)
+## `feat/545-per-schema-migrator-roles` (#545 — per-schema `<schema>_migrator` roles)
 
 Before merge:
 
@@ -22,11 +22,12 @@ reconciles — staging is never deployed from a branch):
   things make this a real step rather than a formality:
   - **#541's release must have deployed to staging first.** The transition swaps `beekeepingit`'s
     `<schema>_svc` memberships for the migrator ones, so any relation still owned by
-    `<schema>_svc` becomes unreachable. As of 2026-08-22 staging still had **16 tables owned by
-    `<schema>_svc`** (organizations 4, apiaries 3, journeys 3, todos 2, activities 2, identity 2)
-    plus a hand-fixed `organizations.audit_log` — all of which #541's own `REASSIGN OWNED BY` step
-    adopts on its first deploy. The adopt Job checks for this and fails the release naming the
-    offending relations, so the failure mode is loud, but it costs a staging round-trip.
+    `<schema>_svc` becomes unreachable. This precondition is now **met**: per the #551 sweep note
+    below, `v0.0.1-rc9` deployed 2026-08-22 and all 26 previously `<schema>_svc`-owned tables
+    (including the hand-fixed `organizations.audit_log`) are owned by `beekeepingit`, verified
+    against the live cluster. The adopt Job's preflight guard still checks and fails the release
+    naming any offending relations, so a regression stays loud rather than a bare
+    `must be owner of ...`.
   - **Leaving the gate on is not harmless.** While it is on, `beekeepingit` is a member of all
     seven migrator roles — the exact cross-schema bridge this change removes. Isolation is a
     steady-state property (ADR-0024 §4).
@@ -34,6 +35,13 @@ reconciles — staging is never deployed from a branch):
   `<schema>_migrator`, that no `pg_default_acl` row is scoped to `beekeepingit`, and that
   `<schema>_svc` still holds `INSERT`/`SELECT` only on `audit_log`/`sync_conflict_log` and nothing
   on `goose_db_version`. Queries are in the runbook.
+
+## `fix/551-migrate-job-pull-deadline` (#551 — migration bound moves off the pod's lifetime)
+
+- **AC1 can only be confirmed by a real release.** "A first deploy of a not-yet-pulled version does
+  not fail the release on image-pull time" is unreproducible in `helm-e2e`, which pre-imports images
+  into k3d so pull time is always zero. Confirm on the next staging release that no `*-migrate` Job
+  reports `DeadlineExceeded` while the node pulls a cold image set, then prune this entry.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -50,22 +58,35 @@ reconciles — staging is never deployed from a branch):
 
 ---
 
-_Sweep note (#545): the whole `fix/541-migrations-as-migrator-role` section was stale — #541 closed_
-_and PR [#546](https://github.com/TiagoJVO/beekeepingit/pull/546) merged, so under this file's own_
-_rule it could not ride along. Resolved rather than re-described:_
+_Sweep note (#551): both remaining branch sections were stale — [#546](https://github.com/TiagoJVO/beekeepingit/pull/546)_
+_merged (closing [#541](https://github.com/TiagoJVO/beekeepingit/issues/541)) and_
+_[#539](https://github.com/TiagoJVO/beekeepingit/issues/539) closed, so under this file's own rule_
+_neither could ride along. Resolved rather than left to drift:_
 
-- _the staging **ownership-transition validation** is superseded by #545's own transition (the_
-  _`REASSIGN OWNED BY <schema>_svc` step it referred to no longer exists), and is carried forward_
-  _above, including the pre-#541 state it recorded and the hand-fixed `organizations.audit_log`;_
-- _the **hardcoded history-table name list** was already promoted to_
-  _[#553](https://github.com/TiagoJVO/beekeepingit/issues/553) — #545 narrowed half of it_
-  _(`ALTER DEFAULT PRIVILEGES` no longer makes a new history table mutable at creation) and_
-  _deliberately left the rest there;_
-- _the **baseline re-cut constraint** is recorded in_
-  _[ADR-0023](docs/adr/0023-migrations-as-a-deploy-time-admin-process.md)'s Consequences, which is_
-  _where a standing operational rule belongs — pruned here rather than kept in two places._
+- _#541's **staging ownership transition** and **manual hand-fix reconciliation** are **done** —_
+  _`v0.0.1-rc9` deployed 2026-08-22 and all 26 tables are now owned by `beekeepingit`, with_
+  _`<schema>_svc` holding `INSERT`/`SELECT` only on `audit_log`/`sync_conflict_log`. Verified against_
+  _the live cluster; pruned, since git history and the PR already record it._
+- _#541's **baseline re-cut constraint** is now durable documentation, not pending work — it lives_
+  _in [ADR-0023](docs/adr/0023-migrations-as-a-deploy-time-admin-process.md) §5. Pruned._
+- _#541's **hardcoded history-table list** still has real work → promoted to_
+  _[#553](https://github.com/TiagoJVO/beekeepingit/issues/553)._
+- _#539's **staging round-trip** and **control-plane tier check** were never executed → promoted to_
+  _[#554](https://github.com/TiagoJVO/beekeepingit/issues/554). Operator work by design: it needs real_
+  _Scaleway credentials, which `infra/README.md` says an agent must not handle._
 
-_The `claude/orch-change-feature-d959be` (#539) section was also stale — #539 closed and its_
-_manual round-trip was promoted to [#554](https://github.com/TiagoJVO/beekeepingit/issues/554),_
-_so it is pruned. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
-_open — that entry stands._
+_Earlier sweep notes (#363, #539, #541) are dropped along with their entries — the Issues they point_
+_at carry the record now. One lesson worth keeping: a stale entry may already have been promoted on_
+_an unmerged branch, so check open Issues before filing a new one ([#544](https://github.com/TiagoJVO/beekeepingit/issues/544)_
+_was filed as a duplicate of [#510](https://github.com/TiagoJVO/beekeepingit/issues/510) exactly that way)._
+
+_Sweep note (#545, at the merge with main): the #545 branch had independently swept the same stale_
+_sections (#541/#546, #539) from its own base; the two sweeps concurred on every disposition, so the_
+_#551 note above stands as the single record rather than being repeated. What the merge reconciled:_
+_the #545 section's "deploy #541 first" precondition, written 2026-08-22 against a staging cluster_
+_that still had 16 `<schema>_svc`-owned tables, is **satisfied** by the `v0.0.1-rc9` deploy the #551_
+_sweep verified — the entry above now says so instead of describing the pre-rc9 state. #545 also_
+_narrowed half of [#553](https://github.com/TiagoJVO/beekeepingit/issues/553) — the default_
+_privileges no longer make a new history table mutable at creation — and deliberately left the_
+_rest there. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open —_
+_that entry stands._

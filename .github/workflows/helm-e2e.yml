@@ -669,6 +669,30 @@ jobs:
           kubectl -n beekeepingit-dev describe pods || true
           kubectl -n beekeepingit-dev get deployment -o wide || true
           kubectl -n beekeepingit-dev describe deployment || true
+          # Helm HOOK JOBS — schema-grants, the gated migrator-adopt (#545),
+          # <service>-migrate, and the per-schema table-grants
+          # (#551, and the ask in #246). These are the first thing that runs
+          # against a new release's database, so when the install fails they are
+          # usually the reason — and their logs were the one thing this step
+          # never captured. Two helm-e2e runs were spent guessing at a migrate
+          # failure whose log had already been discarded, which is what prompted
+          # this.
+          #
+          # Dumped per-pod rather than by `logs job/<name>`: a Job with
+          # backoffLimit > 0 has one pod per attempt, and the interesting one is
+          # usually the FIRST, not the last. `--previous` covers the in-place
+          # container restarts that any remaining `restartPolicy: OnFailure`
+          # Jobs still produce.
+          echo "===== hook jobs ====="
+          kubectl -n beekeepingit-dev get jobs -o wide || true
+          kubectl -n beekeepingit-dev describe jobs || true
+          for p in $(kubectl -n beekeepingit-dev get pods \
+                       -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
+                       2>/dev/null | grep -E -- '-migrate-|-schema-grants-|-table-grants-|-migrator-adopt-' || true); do
+            echo "----- logs: $p -----"
+            kubectl -n beekeepingit-dev logs "$p" --tail=200 --timestamps || true
+            kubectl -n beekeepingit-dev logs "$p" --tail=200 --timestamps --previous 2>/dev/null || true
+          done
           kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server --tail=120 --prefix || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker --tail=200 --prefix || true

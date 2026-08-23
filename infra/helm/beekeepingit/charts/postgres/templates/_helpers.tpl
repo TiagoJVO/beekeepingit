@@ -111,23 +111,39 @@ A failed `psql` inside the `$(...)` condition (Postgres not up yet, connection
 refused) yields an empty string, which is simply "not ready" — so server
 start-up is still tolerated by the same loop, which is the other thing the
 original blind retry was legitimately doing.
+
+THE BUDGET IS ONE DEADLINE FOR THE WHOLE WAIT, NOT ONE PER CALL (#551). Every
+wait_for_role call in a script is waiting on the same single event — CNPG's
+operator reconciling spec.managed.roles — so a slow reconciliation must not
+get its budget multiplied by however many schemas happen to be listed in
+values.yaml. The clock starts when the script starts, so image pull is
+excluded by construction, and on giving up the probe is re-run with stderr
+attached so the failing psql output — not a bare deadline — is the last thing
+in the log. The caller's activeDeadlineSeconds is a backstop above this, not
+the budget.
 */}}
 {{- define "postgres.waitForRoleShellFn" -}}
+# ONE deadline shared by every wait_for_role call below (#551): the clock
+# starts here, when the script starts — after image pull, which gets charged
+# to nothing.
+wait_budget=300
+wait_deadline=$(( $(date +%s) + wait_budget ))
+
 # wait_for_role <sql-boolean-predicate> <description>
 # Polls a predicate that must become true once CNPG reconciles managed.roles.
 wait_for_role() {
   predicate="$1"
   description="$2"
-  attempt=0
   until [ "$(psql -tAX -c "SELECT 1 WHERE ${predicate}" 2>/dev/null)" = "1" ]; do
-    attempt=$((attempt + 1))
-    if [ "${attempt}" -ge 30 ]; then
-      echo "FATAL: ${description} still not true after ${attempt} attempts (~150s)." >&2
+    if [ "$(date +%s)" -ge "${wait_deadline}" ]; then
+      echo "FATAL: ${description} still not true after ${wait_budget}s of WAITING (image pull excluded, #551)." >&2
       echo "CNPG has not reconciled spec.managed.roles, or the cluster is unreachable." >&2
-      echo "Failing now rather than retrying to the activeDeadlineSeconds (see #62)." >&2
+      echo "The probe's own output below is the real state, not a readiness delay:" >&2
+      psql -tAX -c "SELECT 1 WHERE ${predicate}" >&2 || true
+      echo "Failing now rather than retrying to the activeDeadlineSeconds (see #62, #551)." >&2
       exit 1
     fi
-    echo "${description}: not ready yet (attempt ${attempt}), retrying in 5s..."
+    echo "${description}: not ready yet, retrying in 5s..."
     sleep 5
   done
 }

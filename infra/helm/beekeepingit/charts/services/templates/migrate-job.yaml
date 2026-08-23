@@ -88,13 +88,46 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
     "helm.sh/hook-weight": "2"
 spec:
-  # A migration that is going to succeed does so in seconds once Postgres is
-  # reachable; these retries exist for "Postgres not up yet", not for a
-  # genuinely failing migration. A real failure must surface as a failed
-  # release rather than being retried into a timeout — that silent-retry
-  # behaviour is what let #541 hide for 25 days.
-  backoffLimit: 10
-  activeDeadlineSeconds: 300
+  # THE FAILURE BUDGET (#551). The bound that decides whether a migration
+  # succeeded lives INSIDE the migration — dbaccess.MigrationTimeout, a context
+  # deadline that starts when the migration starts. Read that constant's comment
+  # for the reasoning; what follows is why the two Job-level numbers here are
+  # what they are, because they are one budget and moving either alone breaks it.
+  #
+  # activeDeadlineSeconds is NOT that bound and never could be: Kubernetes starts
+  # its clock when the Job is created, so it pays for scheduling and image pull
+  # too. On the first deploy of a new version every Deployment in the release
+  # rolls at once, so a node pulls the whole image set while this Job queues
+  # behind it — and 300s was not enough. Staging's v0.0.1-rc9 lost
+  # `activities-migrate` to DeadlineExceeded and failed the release; Flux
+  # retried and it passed in 36s, while `apiaries-migrate`, same SQL with the
+  # image already cached, took 6s. It survives here only as a backstop for a pod
+  # that never RUNS at all — a typo'd tag sits in ImagePullBackOff without ever
+  # terminating, so backoffLimit cannot catch that one — sized far above any
+  # real budget so it can never again be what a migration is judged by.
+  #
+  # backoffLimit therefore has to come DOWN as that goes up. These retries only
+  # ever existed for "Postgres not up yet", and at hook-weight 2 that is close to
+  # impossible: the weight-1 grants job has already connected. What is left is a
+  # blip mid-deploy (a CNPG switchover), which three attempts covers. Ten
+  # attempts were harmless only while a 300s deadline cut them short; against a
+  # 900s backstop they would let a migration that fails DETERMINISTICALLY —
+  # rc8's `must be owner of table audit_log`, the #541 defect itself — grind for
+  # a quarter of an hour instead of failing in well under a minute. A real
+  # failure surfacing as a failed release, promptly, is the property #541 made
+  # load-bearing, and it is worth more than the retries.
+  #
+  # Worst case is now 3 x 2m of migration plus backoff, comfortably inside the
+  # backstop; the common case, an erroring migration, is seconds.
+  #
+  # KNOWINGLY UNTESTED IN CI. helm-e2e pre-imports every service image into k3d
+  # (`k3d image import`), so pull time there is always zero and no job in this
+  # repo can reproduce the cold-pull race that caused #551 — it needs a real
+  # cluster meeting a version it has never seen. The half that IS testable was
+  # moved somewhere a test can reach it: that a migration honours its own
+  # deadline is asserted in services/shared/dbaccess/dbaccess_test.go.
+  backoffLimit: 2
+  activeDeadlineSeconds: 900
   template:
     metadata:
       labels:
@@ -115,7 +148,18 @@ spec:
         # to remember to add.
         app.kubernetes.io/component: migrate
     spec:
-      restartPolicy: OnFailure
+      # `Never`, not `OnFailure` (#551). With `OnFailure` Kubernetes restarts the
+      # container IN PLACE, and when backoffLimit is exhausted the Job
+      # controller deletes the pod — so by the time a CI diagnostics step runs,
+      # `kubectl logs` has nothing to show and the reason the migration failed is
+      # simply gone. Two helm-e2e runs were spent guessing at a failure whose
+      # log had already been discarded.
+      #
+      # `Never` makes each attempt its own pod, which persists after the Job
+      # fails. That is what turns "the migrate Job failed" into "the migrate Job
+      # failed BECAUSE ...". The cost is a few extra pod objects on a failing
+      # deploy, which is exactly when you want them.
+      restartPolicy: Never
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

@@ -34,8 +34,10 @@ _helpers.tpl's `postgres.waitForRoleShellFn` for the full account: that shape
 cannot distinguish "not reconciled yet" from "permanently denied", and it once
 burned a whole live CI run to its deadline (#62, run 29146587211) on a
 permission error it retried 60 times. Here the async precondition (does the
-role exist yet) is polled on its own, and the grants then run ONCE under
-ON_ERROR_STOP=1 so a real error surfaces as a real error.
+role exist yet) is polled on its own — under ONE bounded budget for the whole
+wait, which gives up on purpose with the failing state on stderr (#551) — and
+the grants then run ONCE under ON_ERROR_STOP=1 so a real error surfaces as a
+real error.
 
 THE SCHEMA ACL THIS ESTABLISHES, per schema:
   <schema>_migrator  USAGE, CREATE   — it creates and owns every relation here
@@ -60,8 +62,31 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
     "helm.sh/hook-weight": "0"
 spec:
-  backoffLimit: 30
-  activeDeadlineSeconds: 300
+  # FAILURE BUDGET (#551). The waiting this Job exists to do happens inside
+  # `wait_for_role` (_helpers.tpl), which carries ONE bounded deadline for the
+  # whole wait — started when the script starts, so image pull is excluded by
+  # construction — so activeDeadlineSeconds is a backstop rather than the
+  # budget. It used to be the budget, and that budget included image pull,
+  # because Kubernetes starts the clock when the Job is created. #551 records
+  # that shape killing charts/services' migrate Job on staging; here the
+  # exposure is a cold cluster pulling the PostGIS operand image, which is a
+  # far bigger pull than a distroless Go service, out of the same 300s the
+  # role reconciliation was supposed to get.
+  #
+  # The old `until psql; sleep 5` loop could never be caught by backoffLimit
+  # at all: it did not exit on a permanent failure, so nothing but the pod
+  # deadline could stop it. That is exactly how the incident in the header
+  # comment played out — a permission error indistinguishable from "not ready
+  # yet", retried in silence and finally reported as a timeout. The bounded
+  # role probe ends that: it gives up on purpose, and says what it was still
+  # waiting for.
+  #
+  # backoffLimit drops to 1 for the same reason. With the wait bounded where
+  # the waiting happens, a Job-level retry is not a waiting mechanism — it is
+  # one free restart for a container that crashed, and thirty of them would
+  # only put the unbounded budget back by another route.
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
   template:
     metadata:
       labels:
@@ -72,7 +97,11 @@ spec:
         # Postgres at all — a failure this repo has hit repeatedly.
         app.kubernetes.io/name: postgres
     spec:
-      restartPolicy: OnFailure
+      # `Never`, not `OnFailure` (#551): with OnFailure the Job controller
+      # DELETES the pod once backoffLimit is exhausted, taking the psql output
+      # that explains the failure with it. `Never` gives each attempt its own
+      # retained pod, so a failed release can still be diagnosed.
+      restartPolicy: Never
       # Hardened to match table-grants-job.yaml and charts/services' workloads.
       # This was the LAST unhardened Job in the chart, and after #545 it also
       # holds the last cross-schema credential left in the hook path

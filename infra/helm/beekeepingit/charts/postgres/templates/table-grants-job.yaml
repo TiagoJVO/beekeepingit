@@ -44,12 +44,14 @@ HOOK WEIGHTS:
   2  charts/services migrate-job.yaml
   3  THIS JOB
 
-Nothing here polls. Migrations completed at weight 2, so the tables already
-exist. The job this replaced had to poll for each (schema, table) pair because
-it raced pod-startup migrations — something a Helm hook cannot sequence — and
-it burned a documented ~55-minute retry budget before that was fixed. With the
-weights above the race is gone by construction. A schema whose service has not
-shipped yet simply has no tables and every statement degrades to a no-op.
+Nothing here polls for tables. Migrations completed at weight 2, so the tables
+already exist. The job this replaced had to poll for each (schema, table) pair
+because it raced pod-startup migrations — something a Helm hook cannot
+sequence — and it burned a documented ~55-minute retry budget before that was
+fixed. With the weights above the race is gone by construction. A schema whose
+service has not shipped yet simply has no tables and every statement degrades
+to a no-op. The only retrying left is the psql-exit-2 connection loop below,
+which absorbs a Postgres blip and nothing else (#551).
 
 WHAT IT DOES: see _helpers.tpl's `postgres.runtimeGrantsPsqlArgs`, which is the
 single definition of this ACL — shared with the adopt Job so a transitioned
@@ -87,8 +89,33 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
     "helm.sh/hook-weight": "3"
 spec:
-  backoffLimit: 10
-  activeDeadlineSeconds: 180
+  # FAILURE BUDGET (#551, carried through the #545 per-schema split). 180s
+  # carried the same flaw charts/services' migrate Job was fixed for:
+  # Kubernetes starts activeDeadlineSeconds when the Job is created, so a
+  # budget meant for a handful of GRANTs was also paying for the PostGIS
+  # operand image to be pulled. The per-release trigger from #551 does NOT
+  # apply here — that image is a pinned third-party tag that moves on a
+  # Postgres upgrade, not on every deploy — but a cold cluster still pays it,
+  # so the deadline stops being the fast-fail control and becomes a backstop.
+  #
+  # backoffLimit takes that role instead, which fits this Job better than it
+  # fit the migrate one: every failure here is a psql exiting non-zero, so
+  # attempts, not wall-clock, are the natural bound. A grant that is going to
+  # be refused is refused in seconds, so three tries settle it in well under a
+  # minute — where ten only ever ran until the deadline, reporting a permission
+  # error as a timeout.
+  #
+  # The one failure that is NOT an exit is a statement waiting on a lock:
+  # GRANT/REVOKE need an exclusive lock on each table while the outgoing
+  # ReplicaSet is still serving with live <schema>_svc connections. (Under
+  # #541 the heavyweight case was REASSIGN OWNED's ACCESS EXCLUSIVE on every
+  # table at once; #545 moved that to the gated migrator-adopt Job, which
+  # keeps the same rationale.) That case is deliberately left to the backstop
+  # rather than capped with a `lock_timeout`: waiting longer for a lock lets
+  # the release succeed, while giving up early turns ordinary traffic into a
+  # failed deploy.
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
   template:
     metadata:
       labels:
@@ -100,7 +127,11 @@ spec:
         # is exactly why the edge keys on it rather than on Job names.
         app.kubernetes.io/name: postgres
     spec:
-      restartPolicy: OnFailure
+      # `Never`, not `OnFailure` (#551): with OnFailure the Job controller
+      # DELETES the pod once backoffLimit is exhausted, taking the psql output
+      # that explains the failure with it. `Never` gives each attempt its own
+      # retained pod, so a failed release can still be diagnosed.
+      restartPolicy: Never
       # This Job performs the REVOKEs the append-only guarantee depends on, so
       # it is hardened to match charts/services' Deployment and migrate Job.
       # The postgres image runs as uid 26 (`postgres`).
@@ -141,8 +172,65 @@ spec:
             - |
               set -eu
 
-              psql -v ON_ERROR_STOP=1 --single-transaction \
-                {{- include "postgres.runtimeGrantsPsqlArgs" $schema | nindent 16 }}
+              # RETRY ONLY WHAT IS WORTH RETRYING (#551). This Job previously
+              # leaned on a high backoffLimit to ride out a Postgres blip,
+              # which also meant a genuinely broken statement was retried many
+              # times before anyone heard about it. Lowering the limit alone
+              # went too far the other way and broke a real CI run: CNPG
+              # reported "DB not available, will retry (.s.PGSQL.5432: no such
+              # file or directory)" mid-deploy, and Job backoff is EXPONENTIAL,
+              # so a couple of attempts buys only tens of seconds — less than
+              # the outage.
+              #
+              # psql's exit codes separate the two cases exactly, so use them
+              # instead of guessing with a retry count:
+              #   2 -> could not connect / connection went bad  => transient,
+              #        worth retrying, and the thing an operator can do
+              #        nothing about
+              #   3 -> error in the script with ON_ERROR_STOP   => the SQL is
+              #        wrong; retrying cannot help and only delays the report
+              #   1 -> psql's own fatal error                   => same
+              # Retrying only on 2 means a Postgres restart is absorbed while a
+              # bad statement still fails on the FIRST attempt, which is the
+              # property #541 made load-bearing. Since the #545 split, each Job
+              # covers exactly one schema, so the loop guards this schema's
+              # single psql run rather than a loop over all of them.
+              attempt=1
+              max_attempts=10
+              while :; do
+                set +e
+                psql -v ON_ERROR_STOP=1 --single-transaction \
+                  {{- include "postgres.runtimeGrantsPsqlArgs" $schema | nindent 18 }}
+                rc=$?
+                set -e
+
+                # `if`, NOT `[ ... ] && break`. Under `set -e` the latter is a
+                # compound command whose exit status is non-zero whenever rc
+                # is non-zero, so the shell would exit right there — silently
+                # turning this retry loop into a single attempt. Caught by
+                # exercising the loop against a stubbed psql rather than by
+                # reading it.
+                if [ "$rc" -eq 0 ]; then
+                  break
+                fi
+
+                # Anything that is not a connection problem is the SQL's
+                # fault. Fail now, on the first attempt, with psql's own
+                # message already on stdout.
+                if [ "$rc" -ne 2 ]; then
+                  echo "{{ $schema }}: psql exited ${rc} (not a connection error) — failing without retry." >&2
+                  exit "$rc"
+                fi
+
+                if [ "$attempt" -ge "$max_attempts" ]; then
+                  echo "{{ $schema }}: still cannot reach Postgres after ${max_attempts} attempts — giving up." >&2
+                  exit 2
+                fi
+
+                echo "{{ $schema }}: cannot reach Postgres (psql exit 2), attempt ${attempt}/${max_attempts}; retrying in 5s..." >&2
+                attempt=$((attempt + 1))
+                sleep 5
+              done
 
               echo "{{ $schema }}: runtime grants applied."
 {{- end }}
