@@ -39,12 +39,21 @@ WHERE id = ANY(@ids::uuid[]);
 
 -- name: UpsertUserOnFirstSeen :one
 -- Get-or-create on first authenticated profile read (#25, FR-ONB-1): if no row
--- exists yet for oidc_sub, insert one with empty name/email so the client
--- can detect an incomplete profile and prompt onboarding. The ON CONFLICT
--- branch is a no-op update (bumps nothing semantically — updated_at is
--- reassigned to itself) purely so RETURNING gives back the existing row.
+-- exists yet for oidc_sub, insert one SEEDED from the caller's verified token
+-- claims (#365 follow-up) — the provider already knows the user's name and
+-- address, so onboarding must not ask them to retype it. A provider that
+-- emits no name seeds '' and the client still prompts; the email is seeded
+-- only when the token says it is verified, so an unverified address never
+-- enters the cache.
+--
+-- The ON CONFLICT branch is a no-op update (bumps nothing semantically —
+-- updated_at is reassigned to itself) purely so RETURNING gives back the
+-- existing row. That no-op is now load-bearing in a second way: it is what
+-- makes "seed once, never re-sync" STRUCTURAL rather than merely intended —
+-- the seed values are deliberately ignored on conflict, so a later login can
+-- never overwrite a name the user has since edited.
 INSERT INTO identity.users (id, oidc_sub, name, email, locale)
-VALUES ($1, $2, '', '', 'en')
+VALUES ($1, $2, sqlc.arg(name), sqlc.arg(email), 'en')
 ON CONFLICT (oidc_sub) DO UPDATE SET updated_at = identity.users.updated_at
 RETURNING id, oidc_sub, name, email, locale, created_at, updated_at;
 
