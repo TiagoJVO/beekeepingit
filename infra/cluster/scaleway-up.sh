@@ -179,6 +179,36 @@ else
   echo "AUTHENTIK_EMAIL_USERNAME/AUTHENTIK_EMAIL_PASSWORD not set — skipping the email-relay Secret (Authentik sends no authenticated outbound email until it exists)"
 fi
 
+# 4b. Out-of-band Google federation credentials (#363/#364, NFR-SEC-1) — the
+# SECOND external credential in the same class as the relay above, provisioned the
+# same way for the same reason: it belongs to an external provider, so the chart
+# cannot generate it. Without this block the credentials are a manual `kubectl`
+# step that a cluster rebuild silently drops — \"Continue with Google\" would just
+# stop appearing, with nothing failing to explain why (the blueprint entry is
+# `conditions:`-gated on these values, so an absent Secret is a clean no-op by
+# design, not an error).
+#
+# Same argv-safety as above: `--from-file` + process substitution of the printf
+# BUILTIN keeps the client secret out of `ps`/`/proc/*/cmdline`, which
+# `--from-literal` would not. Same idempotent apply, so a rotated client secret
+# lands on re-run.
+#
+# The key names (`client-id`/`client-secret`) are the contract with
+# charts/authentik/templates/config-secret.yaml, which merges them into
+# `beekeepingit-authentik-config` as BEEKEEPINGIT_GOOGLE_CLIENT_ID/_SECRET — the
+# env the blueprint's `!Env` tags read at import time. The Google-side half (OAuth
+# client + the exact redirect URI) is documented in this directory's README.
+if [ -n "${AUTHENTIK_GOOGLE_CLIENT_ID:-}" ] && [ -n "${AUTHENTIK_GOOGLE_CLIENT_SECRET:-}" ]; then
+  echo "creating/updating the beekeepingit-authentik-google-credentials Secret in $namespace"
+  kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n "$namespace" create secret generic beekeepingit-authentik-google-credentials \
+    --from-file=client-id=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_ID") \
+    --from-file=client-secret=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_SECRET") \
+    --dry-run=client -o yaml | kubectl apply -f -
+else
+  echo "AUTHENTIK_GOOGLE_CLIENT_ID/AUTHENTIK_GOOGLE_CLIENT_SECRET not set — skipping the Google federation Secret (no Continue-with-Google button until it exists, by design)"
+fi
+
 # 5. GitOps bootstrap — apply the gitops repo's clusters/<env>/ (Flux
 # GitRepository/Kustomizations + the cert-manager ClusterIssuer). Idempotent;
 # from here Flux reconciles the umbrella release + Authentik/MinIO on its own,
