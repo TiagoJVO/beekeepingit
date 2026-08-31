@@ -19,7 +19,8 @@
 # the full inventory + `gh secret set` commands):
 #   - secrets: SCW_ACCESS_KEY, SCW_SECRET_KEY, SCW_DEFAULT_PROJECT_ID,
 #     SCW_DEFAULT_ORGANIZATION_ID, CF_API_TOKEN, CF_ZONE_ID, and (optional)
-#     AUTHENTIK_EMAIL_USERNAME/AUTHENTIK_EMAIL_PASSWORD. Store them scoped to
+#     AUTHENTIK_EMAIL_USERNAME/AUTHENTIK_EMAIL_PASSWORD, and (#363/#364)
+#     AUTHENTIK_GOOGLE_CLIENT_ID/AUTHENTIK_GOOGLE_CLIENT_SECRET. Store them scoped to
 #     the gate ENVIRONMENTS (staging-gate/production-gate), not repo-wide: the
 #     `run` job carries the gate environment, so `secrets.X` resolves the
 #     environment copy first — and the ungated staging path then never holds
@@ -120,6 +121,8 @@ jobs:
       CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
       AUTHENTIK_EMAIL_USERNAME: ${{ secrets.AUTHENTIK_EMAIL_USERNAME }}
       AUTHENTIK_EMAIL_PASSWORD: ${{ secrets.AUTHENTIK_EMAIL_PASSWORD }}
+      AUTHENTIK_GOOGLE_CLIENT_ID: ${{ secrets.AUTHENTIK_GOOGLE_CLIENT_ID }}
+      AUTHENTIK_GOOGLE_CLIENT_SECRET: ${{ secrets.AUTHENTIK_GOOGLE_CLIENT_SECRET }}
       APP_HOST: ${{ vars.APP_HOST }}
       AUTH_HOST: ${{ vars.AUTH_HOST }}
     steps:

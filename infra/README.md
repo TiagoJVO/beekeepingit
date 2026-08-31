@@ -308,13 +308,14 @@ credentials, #361), which `scaleway-up.sh` creates when the variables below are 
   local run cannot read them back — which is why the `.env` file exists at all. Treat GitHub as
   the canonical store; the `.env` file is a local working copy.
 
-| Name                                                     | Kind                     | Used for                                                           |
-| -------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------ |
-| `SCW_ACCESS_KEY` / `SCW_SECRET_KEY`                      | environment secret       | Scaleway API auth (`scaleway-up.sh`/`scaleway-down.sh`)            |
-| `SCW_DEFAULT_PROJECT_ID` / `SCW_DEFAULT_ORGANIZATION_ID` | environment secret       | Scaleway project/org scoping                                       |
-| `CF_API_TOKEN` / `CF_ZONE_ID`                            | environment secret       | Cloudflare dynamic DNS on bring-up (optional)                      |
-| `AUTHENTIK_EMAIL_USERNAME` / `AUTHENTIK_EMAIL_PASSWORD`  | environment secret       | out-of-band SMTP relay Secret (optional, #361)                     |
-| `APP_HOST` / `AUTH_HOST`                                 | environment **variable** | per-environment public hostnames (scoped to each gate environment) |
+| Name                                                            | Kind                     | Used for                                                           |
+| --------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------ |
+| `SCW_ACCESS_KEY` / `SCW_SECRET_KEY`                             | environment secret       | Scaleway API auth (`scaleway-up.sh`/`scaleway-down.sh`)            |
+| `SCW_DEFAULT_PROJECT_ID` / `SCW_DEFAULT_ORGANIZATION_ID`        | environment secret       | Scaleway project/org scoping                                       |
+| `CF_API_TOKEN` / `CF_ZONE_ID`                                   | environment secret       | Cloudflare dynamic DNS on bring-up (optional)                      |
+| `AUTHENTIK_EMAIL_USERNAME` / `AUTHENTIK_EMAIL_PASSWORD`         | environment secret       | out-of-band SMTP relay Secret (optional, #361)                     |
+| `AUTHENTIK_GOOGLE_CLIENT_ID` / `AUTHENTIK_GOOGLE_CLIENT_SECRET` | environment secret       | out-of-band Google federation Secret (optional, #363/#364)         |
+| `APP_HOST` / `AUTH_HOST`                                        | environment **variable** | per-environment public hostnames (scoped to each gate environment) |
 
 Store the secrets **scoped to the gate environments** (`staging-gate`/`production-gate`), not
 repo-wide: the workflow's `run` job carries the gate environment, so environment secrets resolve
@@ -413,22 +414,39 @@ load-bearing). Turning it on is three steps, none of which put a secret in git.
    e.g. `https://auth.beekeepingit-rc.melargil.pt/source/oauth/callback/google/`. The slug
    (`google`) is the source's slug in the blueprint — change one and you change both.
 
-3. **Create the out-of-band Secret** in the target namespace (manual — an agent must not handle
-   these values). This is the same cluster-state-not-git idiom as the SMTP relay credentials
-   above; the chart merges it into `beekeepingit-authentik-config` via `lookup`, and the upstream
-   Authentik chart env-mounts it onto the server and worker:
+3. **Store the credentials as environment secrets and let `cluster-ops` provision them** —
+   `AUTHENTIK_GOOGLE_CLIENT_ID` and `AUTHENTIK_GOOGLE_CLIENT_SECRET`, scoped to that
+   environment's gate (_Settings → Environments → `<env>`_), exactly as the SMTP relay
+   credentials are. `scaleway-up.sh` step 4b then creates/updates the out-of-band
+   `beekeepingit-authentik-google-credentials` Secret on every run; the chart merges it into
+   `beekeepingit-authentik-config` via `lookup`, and the upstream Authentik chart env-mounts it
+   onto the server and worker.
 
-   ```sh
-   kubectl -n <namespace> create secret generic beekeepingit-authentik-google-credentials \
-     --from-literal=client-id='<the OAuth client id>' \
-     --from-literal=client-secret='<the OAuth client secret>'
-   ```
+   Run the **`cluster-ops`** workflow (`up`) against that environment to apply them. It is
+   idempotent, so this is also how a **rotated** client secret lands.
 
-   Then re-run the umbrella `helm upgrade` for that environment — the `lookup` only sees the
-   Secret on a subsequent render — and let the Authentik worker re-apply the blueprint. Verify
-   with `kubectl -n <namespace> get secret beekeepingit-authentik-config -o jsonpath='{.data}' |
-grep -o BEEKEEPINGIT_GOOGLE_CLIENT_ID` and by loading the login page: a **Continue with
-   Google** button appears on Authentik's own login card.
+   > **Prefer this to a manual `kubectl create secret`.** A hand-made Secret is invisible to the
+   > bring-up path, so the next cluster rebuild drops it — and because the blueprint entry is
+   > `conditions:`-gated, the deployment stays green while the Google button simply disappears,
+   > with nothing failing to explain why. If you must do it by hand (an environment with no
+   > `cluster-ops` path yet), mirror the script's form rather than `--from-literal`, which would
+   > expose the client secret through `ps` / `/proc/*/cmdline`:
+   >
+   > ```sh
+   > kubectl -n <namespace> create secret generic beekeepingit-authentik-google-credentials \
+   >   --from-file=client-id=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_ID") \
+   >   --from-file=client-secret=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_SECRET") \
+   >   --dry-run=client -o yaml | kubectl apply -f -
+   > ```
+
+   The `lookup` only sees the Secret on a **subsequent** render, so the release must be
+   re-rendered once it exists — on a Flux-managed environment
+   `flux reconcile helmrelease beekeepingit -n flux-system --force`, or a re-run of the umbrella
+   `helm upgrade` where the release is managed directly — and then the Authentik worker re-applies
+   the blueprint. Verify with
+   `kubectl -n <namespace> get secret beekeepingit-authentik-config -o jsonpath='{.data}' | grep -o BEEKEEPINGIT_GOOGLE_CLIENT_ID`
+   and by loading the login page: a **Continue with Google** button appears on Authentik's own
+   login card.
 
    Enabling this in the **dev** namespace leaves the dev/CI federation stand-in enabled too
    (`environments/dev.yaml`); the blueprint binds **both** buttons onto the login card in that
