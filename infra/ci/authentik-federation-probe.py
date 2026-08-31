@@ -1,5 +1,5 @@
-# Federation-posture + account-linking probe (#363, #364, NFR-SEC-1, NFR-TST-1)
-# — run inside the authentik worker:
+# Federation-posture + account-linking + enrollment probe (#363, #364, #365,
+# NFR-SEC-1, NFR-TST-1) — run inside the authentik worker:
 # `ak shell -c "$(cat authentik-federation-probe.py)"`.
 #
 # WHY THIS EXISTS. A live end-to-end against real Google is not automatable
@@ -10,8 +10,8 @@
 # deployed account-resolution property mapping) against the dev/CI stand-in
 # source, which carries the IDENTICAL posture as the Google one:
 # `user_matching_mode: username_link`, the `mapping-federation-account-link`
-# resolver attached, no `enrollment_flow`, `authentication_flow:
-# default-source-authentication`.
+# resolver attached, `enrollment_flow: beekeepingit-source-enrollment` (#365),
+# `authentication_flow: default-source-authentication`.
 #
 # WHAT IT PROVES (#364's acceptance criteria, live, against the real code):
 #   1. SUBJECT WINS. An identity whose `UserSourceConnection` already exists
@@ -29,10 +29,11 @@
 #   4. UNVERIFIED NEVER LINKS. The same address with the upstream's
 #      verification flag false / a string "true" / absent is DENIED, creating
 #      no rows. That is the #170 account-takeover shape, refused live.
-#   5. AMBIGUITY, SQUATTING, PRIVILEGE AND UNKNOWNS ALL FAIL CLOSED. Two
-#      accounts sharing the address, an account that never proved inbox control
-#      itself, a superuser, and an address nobody holds are each DENIED with no
-#      rows created — so invitation-only account creation still holds.
+#   5. AMBIGUITY, SQUATTING AND PRIVILEGE ALL FAIL CLOSED. Two accounts sharing
+#      the address, an account that never proved inbox control itself, and a
+#      superuser are each DENIED with no rows created. An UNVERIFIED unknown
+#      identity is denied too — the only path that ENROLLS is #365's: a
+#      strictly-verified upstream address that matches no local account.
 #   6. THE HISTORY IS ACTUALLY WRITTEN. The deployed
 #      `beekeepingit-mark-email-verified` expression policy — the ONE writer of
 #      `known_emails` — is evaluated for real and asserted to append, dedupe,
@@ -44,6 +45,23 @@
 #      and points at the matched account (so the next sign-in matches by
 #      subject), no second account was created, and a COMPLETED federated login
 #      left `attributes.upn` and the local `email` untouched.
+#
+#   8. ENROLLMENT IS OPEN, WELL-FORMED AND SUBJECT-KEYED (#365). A verified
+#      unknown identity resolves to Action.ENROLL with a resolver-GENERATED
+#      username — never the upstream-asserted one, and colliding with no local
+#      account (a collision would silently LINK, i.e. account takeover). One
+#      enrollment is driven END TO END through the real `FlowExecutorView`:
+#      exactly one account is created, active, non-privileged, carrying a
+#      fresh `attributes.upn` (the future OIDC `sub`) and
+#      `attributes.email_verified: true` from the upstream's strict boolean —
+#      and NOT seeding `attributes.known_emails`, whose single writer stays
+#      the #361 stamp policy. The connection row is persisted, and a second
+#      sign-in with the same subject resolves to Action.AUTH on the stored
+#      subject even when the upstream address has changed and is unverified.
+#      The enrollment flow's WRITE GUARD is then evaluated directly against
+#      the plan shapes the resolver would never author (missing upn, a string
+#      "true", no prompt_data, ...) — the real flow cannot produce them, and
+#      an ungated `user_write` is exactly what they exist to stop.
 #
 # WHY THE POSITIVE CASES ARE LOAD-BEARING, NOT DECORATION. The resolver's whole
 # body runs inside a blanket `except: return {"username": None}`, and
@@ -206,6 +224,9 @@ def _run():
     def sweep():
         UserOAuthSourceConnection.objects.filter(identifier__startswith=prefix).delete()
         User.objects.filter(username__startswith=prefix).delete()
+        # #365-enrolled accounts carry a resolver-GENERATED username, not the
+        # probe prefix — but their email is probe-prefixed, so sweep on that too.
+        User.objects.filter(email__startswith=prefix).delete()
         Group.objects.filter(name__startswith=prefix).delete()
 
     def make_user(suffix, email, verified=True, history=None, superuser=False):
@@ -295,10 +316,12 @@ def _run():
             mapping_names == [resolver_mapping_name],
             "got {!r}".format(mapping_names),
         )
+        enrollment_flow = source.enrollment_flow
         check(
-            "enrollment_flow is NULL (invitation-only still applies)",
-            source.enrollment_flow_id is None,
-            "got {!r}".format(source.enrollment_flow_id),
+            "enrollment_flow is the dedicated source-enrollment flow (#365)",
+            enrollment_flow is not None
+            and enrollment_flow.slug == "beekeepingit-source-enrollment",
+            "got {!r}".format(getattr(enrollment_flow, "slug", None)),
         )
         check("authentication_flow is set", source.authentication_flow_id is not None)
         check("source is enabled", source.enabled is True)
@@ -378,9 +401,9 @@ def _run():
                 None,
             ),
             (
-                "verified address nobody holds -> DENY (no account is ever created)",
+                "#365 verified address nobody holds -> ENROLL (self-service registration)",
                 upstream(addr_nobody),
-                Action.DENY,
+                Action.ENROLL,
                 None,
             ),
             # The adversarial case `username_link` looks like it should be
@@ -398,10 +421,14 @@ def _run():
                 Action.DENY,
                 None,
             ),
+            # #365 flips this case from DENY to ENROLL — but the takeover it
+            # aims at must still be impossible: the resolver must have REPLACED
+            # the upstream-asserted username with a generated one, which the
+            # dedicated property assertions right after this loop prove.
             (
-                "upstream asserts a real local username with a verified but UNKNOWN email -> DENY",
+                "#365 upstream asserts a real local username with a verified UNKNOWN email -> ENROLL, never LINK",
                 upstream(addr_nobody, username=prefix + "current"),
-                Action.DENY,
+                Action.ENROLL,
                 None,
             ),
         ]
@@ -428,20 +455,60 @@ def _run():
             "{} -> {}".format(conns_before, UserSourceConnection.objects.count()),
         )
 
-        # Enrollment stays closed at the code level too, not just by never
-        # being reached: #363's proof, kept because #365 is what changes it.
-        response = OAuthSourceFlowManager(
+        # ---------- #365: what the resolver hands an ENROLLMENT ----------
+        # Action.ENROLL alone is not enough — the properties the enrollment
+        # flow will WRITE must be resolver-authored, not upstream-authored.
+        # The takeover shape to refuse: a generated username that happens to
+        # (or is crafted to) match an existing account would make the matcher
+        # LINK instead of ENROLL, handing the upstream that account.
+        enroll_sfm = OAuthSourceFlowManager(
             source,
             rf.get("/", user=AnonymousUser()),
-            prefix + "enroll-probe",
-            {"info": upstream(addr_nobody)},
+            prefix + "enroll-props",
+            {"info": upstream(addr_nobody, username=prefix + "current")},
             {},
-        ).handle_enroll(UserOAuthSourceConnection(source=source, identifier=prefix + "enroll-probe"))
-        check(
-            "handle_enroll() -> HTTP 400 (source is not configured for enrollment)",
-            getattr(response, "status_code", None) == 400,
-            "got {!r}".format(getattr(response, "status_code", None)),
         )
+        enroll_action, _ = enroll_sfm.get_action()
+        if check(
+            "#365 enroll properties: action is ENROLL",
+            enroll_action == Action.ENROLL,
+            "got {!r}".format(enroll_action),
+        ):
+            props = enroll_sfm.user_properties
+            generated = props.get("username")
+            check(
+                "#365 enroll properties: username is resolver-GENERATED, never the upstream's",
+                isinstance(generated, str)
+                and generated.startswith("federated-")
+                and generated != prefix + "current",
+                "got {!r}".format(generated),
+            )
+            check(
+                "#365 enroll properties: generated username collides with NO local account",
+                isinstance(generated, str)
+                and not User.objects.filter(username__exact=generated).exists(),
+            )
+            enroll_attrs = props.get("attributes") or {}
+            check(
+                "#365 enroll properties: attributes.upn assigned (the future OIDC `sub`)",
+                isinstance(enroll_attrs.get("upn"), str) and enroll_attrs.get("upn") != "",
+                "got {!r}".format(enroll_attrs.get("upn")),
+            )
+            check(
+                "#365 enroll properties: attributes.email_verified stamped strictly True",
+                enroll_attrs.get("email_verified") is True,
+                "got {!r}".format(enroll_attrs.get("email_verified")),
+            )
+            check(
+                "#365 enroll properties: email is the normalized upstream address",
+                props.get("email") == addr_nobody,
+                "got {!r}".format(props.get("email")),
+            )
+            check(
+                "#365 enroll properties: known_emails NOT seeded (single writer stays #361's stamp policy)",
+                "known_emails" not in enroll_attrs,
+                "got {!r}".format(enroll_attrs.get("known_emails")),
+            )
 
         # ---------- AC1: the SUBJECT decides, not the email -------------------
         seed = User.objects.filter(email=seed_email).first()
@@ -601,50 +668,60 @@ def _run():
 
         from authentik.flows.views.executor import FlowExecutorView
 
-        persist_user = make_user("persist", prefix + "persist@example.invalid")
-        persist_ident = prefix + "sub-persist"
-        persist_upn = (persist_user.attributes or {}).get("upn")
-        users_before = User.objects.count()
+        def complete_flow(identifier, payload):
+            """Plan a federated sign-in and drive the REAL FlowExecutorView.
 
-        session = import_module(settings.SESSION_ENGINE).SessionStore()
-        session.save()
-        planning_request = rf.get("/", user=AnonymousUser())
-        planning_request.session = session
-        planned = OAuthSourceFlowManager(
-            source,
-            planning_request,
-            persist_ident,
-            {"info": upstream(persist_user.email)},
-            {},
-        ).get_flow()
-        session.save()
+            Returns (planned, executed): `planned` is get_flow()'s response,
+            `executed` is the final executor response, or None when no flow was
+            ever entered. Exhausting the hop cap leaves `executed` a redirect,
+            which callers must treat as FAILURE: an unfinished flow leaves the
+            database in exactly the state a correct refusal does, so any DB
+            assertion after it would report OK having exercised nothing.
+            """
+            session = import_module(settings.SESSION_ENGINE).SessionStore()
+            session.save()
+            planning_request = rf.get("/", user=AnonymousUser())
+            planning_request.session = session
+            planned = OAuthSourceFlowManager(
+                source,
+                planning_request,
+                identifier,
+                {"info": payload},
+                {},
+            ).get_flow()
+            session.save()
 
-        executed = None
-        matched_slug = re.search(r"/if/flow/([^/?]+)/", getattr(planned, "url", "") or "")
-        if check(
-            "a verified first link enters a flow (302 to the executor)",
-            matched_slug is not None,
-            "get_flow returned {!r}".format(getattr(planned, "url", planned)),
-        ):
+            matched_slug = re.search(r"/if/flow/([^/?]+)/", getattr(planned, "url", "") or "")
+            if matched_slug is None:
+                return planned, None
             slug = matched_slug.group(1)
             path = "/api/v3/flows/executor/{}/?query=".format(slug)
             view = FlowExecutorView.as_view()
-            hop_cap = 12
-            for _hop in range(hop_cap):
+            executed = None
+            for _hop in range(12):
                 hop_request = rf.get(path, user=AnonymousUser())
                 hop_request.session = session
                 executed = view(hop_request, flow_slug=slug)
                 if getattr(executed, "status_code", None) not in (301, 302):
                     break
                 path = executed["Location"]
-            # Exhausting the cap must FAIL rather than fall through: an
-            # unfinished flow leaves the database in exactly the state a correct
-            # refusal does, so the assertions below would report OK having
-            # exercised nothing.
+            return planned, executed
+
+        persist_user = make_user("persist", prefix + "persist@example.invalid")
+        persist_ident = prefix + "sub-persist"
+        persist_upn = (persist_user.attributes or {}).get("upn")
+        users_before = User.objects.count()
+
+        planned, executed = complete_flow(persist_ident, upstream(persist_user.email))
+        if check(
+            "a verified first link enters a flow (302 to the executor)",
+            executed is not None,
+            "get_flow returned {!r}".format(getattr(planned, "url", planned)),
+        ):
             check(
                 "the federated sign-in flow ran to completion (not still redirecting)",
                 getattr(executed, "status_code", None) not in (301, 302),
-                "still redirecting to {!r} after {} hops".format(path, hop_cap),
+                "still redirecting after the hop cap",
             )
 
         persisted = UserOAuthSourceConnection.objects.filter(
@@ -673,6 +750,164 @@ def _run():
             persist_user.email == prefix + "persist@example.invalid",
             "got {!r}".format(persist_user.email),
         )
+
+        # ---------- #365: enrollment is actually EXECUTED, and well-formed ----
+        # Everything above stops at get_action()'s ENROLL verdict. This drives
+        # one enrollment END TO END through the real FlowExecutorView — the
+        # source-enrollment flow's user_write is what creates the account — and
+        # then reads the database.
+        enroll_ident = prefix + "sub-enroll"
+        enroll_addr = prefix + "enroll@example.invalid"
+        users_before_enroll = User.objects.count()
+
+        planned, executed = complete_flow(enroll_ident, upstream(enroll_addr))
+        if check(
+            "#365 a verified unknown identity enters the source-enrollment flow",
+            executed is not None,
+            "get_flow returned {!r}".format(getattr(planned, "url", planned)),
+        ):
+            check(
+                "#365 the enrollment flow ran to completion (not still redirecting)",
+                getattr(executed, "status_code", None) not in (301, 302),
+                "still redirecting after the hop cap",
+            )
+
+        enrolled = User.objects.filter(email=enroll_addr).first()
+        check(
+            "#365 exactly ONE account was created by the enrollment",
+            enrolled is not None and User.objects.count() == users_before_enroll + 1,
+            "{} -> {} (user found: {})".format(
+                users_before_enroll, User.objects.count(), enrolled is not None
+            ),
+        )
+        if enrolled is not None:
+            enrolled_attrs = enrolled.attributes or {}
+            check(
+                "#365 enrolled account: username is resolver-generated",
+                enrolled.username.startswith("federated-"),
+                "got {!r}".format(enrolled.username),
+            )
+            check(
+                "#365 enrolled account: attributes.upn present (stable OIDC `sub`)",
+                isinstance(enrolled_attrs.get("upn"), str) and enrolled_attrs.get("upn") != "",
+                "got {!r}".format(enrolled_attrs.get("upn")),
+            )
+            check(
+                "#365 enrolled account: attributes.email_verified is True",
+                enrolled_attrs.get("email_verified") is True,
+                "got {!r}".format(enrolled_attrs.get("email_verified")),
+            )
+            check(
+                "#365 enrolled account: known_emails NOT seeded (#361 stamp policy stays the only writer)",
+                not enrolled_attrs.get("known_emails"),
+                "got {!r}".format(enrolled_attrs.get("known_emails")),
+            )
+            check(
+                "#365 enrolled account: active",
+                enrolled.is_active is True,
+            )
+            check(
+                "#365 enrolled account: no group membership granted",
+                enrolled.ak_groups.count() == 0,
+                "got {!r}".format([g.name for g in enrolled.ak_groups.all()]),
+            )
+            check(
+                "#365 enrolled account: not a superuser",
+                enrolled.is_superuser is False,
+            )
+            enroll_conn = UserOAuthSourceConnection.objects.filter(
+                source=source, identifier=enroll_ident
+            ).first()
+            check(
+                "#365 the connection row is PERSISTED, keyed on the subject",
+                enroll_conn is not None and enroll_conn.user_id == enrolled.pk,
+                "got {!r}".format(enroll_conn),
+            )
+            # The second sign-in must resolve on the STORED SUBJECT — even with
+            # a changed, unverified upstream address (the #364 invariant now
+            # holding for a #365-enrolled account).
+            action_again, connection_again = resolve(
+                rf,
+                enroll_ident,
+                upstream(prefix + "changed@example.invalid", verified_value=False),
+            )
+            check(
+                "#365 second sign-in -> Action.AUTH on the stored subject alone",
+                action_again == Action.AUTH
+                and connection_again is not None
+                and connection_again.user_id == enrolled.pk,
+                "got {!r} / {!r}".format(
+                    action_again, getattr(connection_again, "user_id", None)
+                ),
+            )
+
+        # ---------- #365 gate 2: the write guard, negative cases -------------
+        # The enrollment above is the guard's happy path. The guard exists for
+        # the plan shapes the resolver would never author, and those cannot be
+        # produced by driving the real flow (the resolver always authors a good
+        # payload when it enrolls) — so the DEPLOYED policy is evaluated
+        # directly, the same way the #361 stamp policy is above. A guard that
+        # passed these would let a non-resolver-shaped plan reach `user_write`.
+        guard_policy_name = "beekeepingit-source-enrollment-write-guard"
+        try:
+            write_guard = ExpressionPolicy.objects.get(name=guard_policy_name)
+        except ExpressionPolicy.DoesNotExist:
+            check("write-guard policy '{}' exists".format(guard_policy_name), False, "not found")
+            return
+        check("write-guard policy '{}' exists".format(guard_policy_name), True)
+
+        def run_guard(prompt_data, with_plan=True):
+            request = PolicyRequest(AnonymousUser())
+            if with_plan:
+                plan = StubPlan()
+                if prompt_data is not None:
+                    plan.context["prompt_data"] = prompt_data
+                request.context["flow_plan"] = plan
+            return write_guard.passes(request).passing
+
+        resolver_shaped = {
+            "username": "federated-" + "0" * 32,
+            "email": prefix + "guard@example.invalid",
+            "attributes": {"upn": "a-upn", "email_verified": True},
+        }
+        check(
+            "#365 write guard PASSES a resolver-shaped plan",
+            run_guard(resolver_shaped) is True,
+        )
+        guard_cases = [
+            ("no flow plan at all", None, False),
+            ("no prompt_data in the plan", None, True),
+            ("prompt_data is not a dict", "not-a-dict", True),
+            ("empty username", dict(resolver_shaped, username=""), True),
+            ("username is not a string", dict(resolver_shaped, username=123), True),
+            ("email without an @", dict(resolver_shaped, email="nope"), True),
+            ("no attributes", {k: v for k, v in resolver_shaped.items() if k != "attributes"}, True),
+            (
+                "email_verified is the STRING 'true'",
+                dict(resolver_shaped, attributes={"upn": "a-upn", "email_verified": "true"}),
+                True,
+            ),
+            (
+                "email_verified is False",
+                dict(resolver_shaped, attributes={"upn": "a-upn", "email_verified": False}),
+                True,
+            ),
+            (
+                "no upn assigned",
+                dict(resolver_shaped, attributes={"email_verified": True}),
+                True,
+            ),
+            (
+                "empty upn",
+                dict(resolver_shaped, attributes={"upn": "", "email_verified": True}),
+                True,
+            ),
+        ]
+        for label, prompt_data, with_plan in guard_cases:
+            check(
+                "#365 write guard REFUSES: {}".format(label),
+                run_guard(prompt_data, with_plan=with_plan) is not True,
+            )
 
     # Defensive: if this deployment ever runs authentik multi-tenant, pin the
     # probe to the public schema rather than whatever `ak shell` activated.

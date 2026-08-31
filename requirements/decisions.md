@@ -190,8 +190,9 @@ Core technology decisions (2026-06-27). Detail and rationale in
     #361 landed the real `email_verified` + outbound SMTP
     ([ADR-0019](../docs/adr/0019-outbound-email-and-real-email-verified.md), `auth.md` §8.10) before
     #366 opened **username/password** enrollment (`auth.md` §8.11). Self-service registration **via
-    Google** (#365) stays gated on the org-creation policy for self-registered users (#362 — a D-3
-    question, decided there, not here) and on account linking (#364).
+    Google** (#365) stayed gated on the org-creation policy for self-registered users (#362 — a D-3
+    question, decided there, not here) and on account linking (#364); with both landed, **#365 is
+    built** (`auth.md` §8.15).
   - **Account identity keys on the provider's stable subject, never on the email** (#364 —
     **built**, `auth.md` §8.14). Upstream emails are **mutable** (Google permits address changes),
     so linking matches on the **stable subject identifier**, with a **per-user history of known
@@ -199,9 +200,15 @@ Core technology decisions (2026-06-27). Detail and rationale in
     with their existing account. An email match links **only** when that address is genuinely
     verified. As built this stays **entirely at the identity provider**: a source property mapping
     resolves the account before the provider's own matching step runs, so **no domain service and
-    no client code changed** — the same IdP-agnostic boundary property #363 relied on. Account
-    **creation** is still not opened (no enrollment flow on any federation source); that remains
-    #365.
+    no client code changed** — the same IdP-agnostic boundary property #363 relied on.
+  - **Account creation via Google** (#365 — **built**, `auth.md` §8.15, 2026-08-31,
+    user-confirmed). An upstream identity whose **strictly-verified** address matches no local
+    account **enrolls** through a dedicated, SSO-gated flow whose written properties are entirely
+    authored by the #364 resolver (generated username, fresh `upn`, `email_verified: true` carried
+    from the upstream's strict boolean — a deliberate second writer of that attribute; an
+    unverified upstream address cannot register at all). Still IdP-only: no domain service, no
+    client code, no token change; onboarding, the invitation accept-on-login and the
+    single-active-membership invariant apply to enrolled accounts unchanged.
   - **Unchanged:** the two-layer model — app-side, org-scoped roles in `organizations.memberships`
     (NFR-ROL-1, never IdP roles) and the **FR-ONB first-login onboarding** (FR-ONB-1/2/3) — is
     untouched. Social login changes **how a user authenticates**, not **what they may do**.
