@@ -76,6 +76,6 @@ tasks:
       - ./scripts/check-platform-operator-mapping.sh
 
   federation-source-posture:
-    desc: "Verify federation sources stay enrollment-closed + subject-matched + !Env-credentialed (#363, NFR-SEC-1)"
+    desc: "Verify federation sources stay subject-matched + !Env-credentialed, enrollment-open only via the guarded flow (#363/#365, NFR-SEC-1)"
     cmds:
       - ./scripts/check-federation-source-posture.sh

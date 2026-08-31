@@ -7,12 +7,17 @@
 # are one careless line away from being lost — so they are asserted here rather
 # than left to review:
 #
-#   1. NO `enrollment_flow`. With it unset, an upstream identity that resolves
-#      to no local account can never create one
-#      (core/sources/flow_manager.py `handle_enroll`, authentik 2026.5.4).
-#      Setting it opens self-service account creation via the upstream, which
-#      is #365 and NOT this issue — invitation-only account creation still
-#      applies (auth.md §8.13/§8.14).
+#   1. `enrollment_flow` is EXACTLY the dedicated source-enrollment flow
+#      (#365: `!KeyOf flow-source-enrollment`). Self-service registration via
+#      an upstream is deliberately OPEN — but only through that one flow,
+#      whose write path the resolver (3) feeds. Any other flow — or an opaque
+#      `!Find` — could write upstream-authored properties, so only the
+#      `!KeyOf` spelling passes. Both of that flow's gates are pinned too, by
+#      POLICY ID and by the load-bearing term of each expression: the SSO-only
+#      policy on the flow (keeps a browser out) and the write guard on its
+#      `user_write` binding (keeps a non-resolver-shaped plan from creating an
+#      account). Asserting only that "a binding exists" would let an
+#      always-true policy read as a gate (auth.md §8.13/§8.15).
 #   2. `user_matching_mode: username_link` — and ONLY in combination with (3).
 #      Read that as "the matcher looks the account up by its UNIQUE key", not
 #      as "trust the upstream's username": #364's property mapping REPLACES the
@@ -70,6 +75,16 @@ blueprint="${1:-${repo_root}/infra/helm/beekeepingit/charts/authentik/files/beek
 # named value because both the per-source assertion and the "it exists at all"
 # END check key off it.
 link_mapping_id="mapping-federation-account-link"
+# The blueprint id of #365's source-enrollment flow — same double duty.
+enroll_flow_id="flow-source-enrollment"
+# ...and its two gates. Asserting the BINDINGS EXIST is not enough: a binding
+# carrying a different (or always-true) policy would read as "gated" while
+# gating nothing, so both the bound policy IDS and the load-bearing terms of
+# their expressions are pinned here — the same rigor assertion (3) applies to
+# the #364 resolver, which is checked by id rather than by "a mapping exists".
+sso_policy_id="policy-source-enrollment-sso-only"
+write_guard_policy_id="policy-source-enrollment-write-guard"
+write_binding_id="binding-source-enrollment-user-write"
 
 if [ ! -f "${blueprint}" ]; then
   printf '✗ [federation-source] blueprint not found: %s\n' "${blueprint}" >&2
@@ -80,7 +95,14 @@ fi
 # everything until the next one is that entry's body, joined into a single
 # space-separated string so a value a reformat wrapped across lines still
 # matches. Assertions run per entry in flush().
-awk -v MAPPING="${link_mapping_id}" '
+awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
+    -v SSO_POLICY="${sso_policy_id}" -v WRITE_GUARD="${write_guard_policy_id}" \
+    -v WRITE_BINDING="${write_binding_id}" '
+  function keyof(field, target,   pattern) {
+    pattern = field "[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" target "([^A-Za-z0-9_-]|$)"
+    return body ~ pattern
+  }
+
   function flush() {
     if (model == "") return
 
@@ -88,14 +110,17 @@ awk -v MAPPING="${link_mapping_id}" '
       sources++
       seen_ids = seen_ids " " id
 
-      # (1) enrollment_flow must be absent. The boundary is a NON-identifier
-      # character (not just whitespace) so a flow-style mapping — valid YAML,
-      # and a bypass found in review — is caught too:
+      # (1) enrollment_flow must be EXACTLY `!KeyOf flow-source-enrollment`
+      # (#365). The boundary is a NON-identifier character (not just
+      # whitespace) so a flow-style mapping — valid YAML, and a bypass found
+      # in review — is caught too:
       #   attrs: {..., authentication_flow: x,enrollment_flow: !KeyOf y}
       # A leading identifier char still excludes an unrelated longer key such
-      # as `pre_enrollment_flow:`.
-      if (body ~ /(^|[^A-Za-z0-9_-])enrollment_flow[[:space:]]*:/) {
-        printf("✗ [federation-source] %s sets `enrollment_flow` — that opens self-service account creation via the upstream (#365), which this posture forbids\n", id) > "/dev/stderr"
+      # as `pre_enrollment_flow:`. `!KeyOf` (never `!Find`) so the flow is
+      # provably THE one defined in this file, with its SSO gate and guarded
+      # write stage — an opaque reference could resolve to any flow.
+      if (body !~ ("(^|[^A-Za-z0-9_-])enrollment_flow[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" ENROLL_FLOW "([^A-Za-z0-9_-]|$)")) {
+        printf("✗ [federation-source] %s must set `enrollment_flow: !KeyOf %s` — self-service registration via the upstream (#365) is open ONLY through that dedicated, SSO-gated flow; absent, different or `!Find`-resolved flows all fail this posture\n", id, ENROLL_FLOW) > "/dev/stderr"
         status = 1
       }
 
@@ -116,8 +141,8 @@ awk -v MAPPING="${link_mapping_id}" '
         status = 1
       }
       n = gsub(/!KeyOf/, "&", body)
-      if (n != 1) {
-        printf("✗ [federation-source] %s carries %d `!KeyOf` references — a source entry must carry exactly one (the #364 resolver). A second property mapping merges AFTER it (name order) and could re-set `username`; if this is a deliberate addition, teach this guard about it in the same change\n", id, n) > "/dev/stderr"
+      if (n != 2) {
+        printf("✗ [federation-source] %s carries %d `!KeyOf` references — a source entry must carry exactly two (the #364 resolver and the #365 enrollment flow). A second property mapping merges AFTER the resolver (name order) and could re-set `username`; if this is a deliberate addition, teach this guard about it in the same change\n", id, n) > "/dev/stderr"
         status = 1
       }
 
@@ -142,6 +167,56 @@ awk -v MAPPING="${link_mapping_id}" '
     # mapping with the same id would resolve to nothing usable).
     if (model ~ /^authentik_sources_oauth[.]oauthsourcepropertymapping$/ && id == MAPPING) {
       link_mappings++
+    }
+
+    # The #365 source-enrollment flow must exist, exactly once, as a real flow
+    # entry (assertion (1) references it by `!KeyOf`, which the importer
+    # resolves against ids in THIS file).
+    if (model ~ /^authentik_flows[.]flow$/ && id == ENROLL_FLOW) {
+      enroll_flows++
+    }
+
+    # GATE 1 — the flow itself is SSO-only, so a browser cannot enter it
+    # outside a federated sign-in. Asserting the POLICY, not merely that some
+    # binding exists: a binding carrying an unrelated policy would still read
+    # as "gated". An unrecognized policy on this flow is an error rather than
+    # a pass, the same fail-closed-on-the-opaque posture as assertion (3).
+    if (model ~ /^authentik_policies[.]policybinding$/ && keyof("target", ENROLL_FLOW)) {
+      if (keyof("policy", SSO_POLICY)) {
+        enroll_flow_gates++
+      } else {
+        printf("✗ [federation-source] a policy binding targets `%s` with a policy OTHER than `%s` — the enrollment flow`s only gate is the SSO-only policy, and an unrecognized one cannot be reasoned about here; if this is a deliberate addition, teach this guard about it in the same change\n", ENROLL_FLOW, SSO_POLICY) > "/dev/stderr"
+        status = 1
+      }
+    }
+
+    # GATE 2 — the write guard is bound to the user_write binding, so a plan
+    # that is not resolver-shaped creates no account. Same reasoning as above.
+    if (model ~ /^authentik_policies[.]policybinding$/ && keyof("target", WRITE_BINDING)) {
+      if (keyof("policy", WRITE_GUARD)) {
+        write_binding_gates++
+      } else {
+        printf("✗ [federation-source] a policy binding targets `%s` with a policy OTHER than `%s` — that binding`s only gate is the write guard (#365)\n", WRITE_BINDING, WRITE_GUARD) > "/dev/stderr"
+        status = 1
+      }
+    }
+
+    # Both gate policies must exist AND still carry their load-bearing test.
+    # An expression edited to `return True` would otherwise keep every
+    # structural assertion above green while gating nothing.
+    if (model ~ /^authentik_policies_expression[.]expressionpolicy$/ && id == SSO_POLICY) {
+      sso_policies++
+      if (body !~ /ak_is_sso_flow/) {
+        printf("✗ [federation-source] `%s` no longer tests `ak_is_sso_flow` — that test IS the gate keeping a browser out of the enrollment flow (#365)\n", SSO_POLICY) > "/dev/stderr"
+        status = 1
+      }
+    }
+    if (model ~ /^authentik_policies_expression[.]expressionpolicy$/ && id == WRITE_GUARD) {
+      write_guards++
+      if (body !~ /email_verified/ || body !~ /upn/) {
+        printf("✗ [federation-source] `%s` no longer checks both `email_verified` and `upn` — those are what make an enrollment write resolver-authored rather than half-formed (#365)\n", WRITE_GUARD) > "/dev/stderr"
+        status = 1
+      }
     }
 
     # (6) no identification-stage entry may empty user_fields.
@@ -191,7 +266,7 @@ awk -v MAPPING="${link_mapping_id}" '
   # than teaching this script to expand them. Same fail-closed-on-the-opaque
   # posture as scripts/check-scope-mapping-provider.sh.
   /(^|[[:space:]])(<<[[:space:]]*:|&[A-Za-z_]|\*[A-Za-z_])/ {
-    printf("✗ [federation-source] line %d uses a YAML anchor/alias/merge key — this guard does not resolve them and cannot prove a source entry stays enrollment-closed; keep the blueprint anchor-free\n", FNR) > "/dev/stderr"
+    printf("✗ [federation-source] line %d uses a YAML anchor/alias/merge key — this guard does not resolve them and cannot prove a source entry keeps this posture (e.g. which enrollment flow it references); keep the blueprint anchor-free\n", FNR) > "/dev/stderr"
     status = 1
   }
 
@@ -213,8 +288,24 @@ awk -v MAPPING="${link_mapping_id}" '
       printf("✗ [federation-source] expected exactly ONE `authentik_sources_oauth.oauthsourcepropertymapping` entry with id `%s`, found %d — it is the #364 account resolver every source above references\n", MAPPING, link_mappings) > "/dev/stderr"
       status = 1
     }
+    if (enroll_flows != 1) {
+      printf("✗ [federation-source] expected exactly ONE `authentik_flows.flow` entry with id `%s`, found %d — it is the #365 source-enrollment flow every source above references by `!KeyOf`\n", ENROLL_FLOW, enroll_flows) > "/dev/stderr"
+      status = 1
+    }
+    if (enroll_flow_gates == 0) {
+      printf("✗ [federation-source] no `%s` binding targets `%s` — the source-enrollment flow must be SSO-gated or a browser could enter it directly, outside any federated sign-in (#365)\n", SSO_POLICY, ENROLL_FLOW) > "/dev/stderr"
+      status = 1
+    }
+    if (write_binding_gates == 0) {
+      printf("✗ [federation-source] no `%s` binding targets `%s` — an unguarded user_write would create an account from whatever the plan happened to carry (#365)\n", WRITE_GUARD, WRITE_BINDING) > "/dev/stderr"
+      status = 1
+    }
+    if (sso_policies != 1 || write_guards != 1) {
+      printf("✗ [federation-source] expected exactly one `%s` and one `%s` expression policy, found %d and %d — they are the enrollment flow`s two gates (#365)\n", SSO_POLICY, WRITE_GUARD, sso_policies, write_guards) > "/dev/stderr"
+      status = 1
+    }
     if (status == 0) {
-      printf("› [federation-source] ok: %d source(s) [%s ] are enrollment-closed, resolver-matched (%s), !Env-credentialed and conditions-gated\n", sources, seen_ids, MAPPING)
+      printf("› [federation-source] ok: %d source(s) [%s ] are resolver-matched (%s), enrollment-open only via %s (SSO-gated + write-guarded), !Env-credentialed and conditions-gated\n", sources, seen_ids, MAPPING, ENROLL_FLOW)
     }
     exit status
   }

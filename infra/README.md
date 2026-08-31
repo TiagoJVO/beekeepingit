@@ -423,7 +423,7 @@ Two things this design does **not** have a documented answer for, so don't treat
 | `scaleway-scale-down.sh` | delete the node pool; cluster/control plane keep running       | **kept**      |
 | `scaleway-scale-up.sh`   | recreate the node pool; fails if the cluster doesn't exist     | **kept**      |
 
-### Enabling "Continue with Google" on an environment (#363)
+### Enabling "Continue with Google" on an environment (#363, #365)
 
 Google federation is **off unless its credentials exist in the cluster** — the blueprint entry is
 condition-gated on them, so an environment without them deploys cleanly with no Google button and
@@ -488,16 +488,24 @@ load-bearing). Turning it on is three steps, none of which put a secret in git.
    resets `sources: []` so the button disappears. The `OAuthSource` row itself is left behind
    (blueprints don't delete) — remove it in the Authentik admin UI if you want it gone entirely.
 
-**Manual verification checklist (required once per environment).** CI proves the config, the deny
-posture and everything up to the outbound request, but **nothing automated completes a sign-in
-through a real Google account** — a live e2e against Google is not automatable (consent screen +
-bot detection). Run this by hand after step 3, and record the result on the PR/issue:
+**Manual verification checklist (required once per environment,
+[#510](https://github.com/TiagoJVO/beekeepingit/issues/510)).** CI proves the config, the
+deny/enroll posture and everything up to the outbound request, but **nothing automated completes a
+sign-in through a real Google account** — a live e2e against Google is not automatable (consent
+screen + bot detection). Run this by hand after step 3, and record the result on the issue:
 
 - [ ] The app's **Continue with Google** button goes straight to Google's consent screen — one
       hop, no stop at Authentik's login form.
-- [ ] Signing in with a Google account whose address matches **no** local account is refused
-      ("Request to authenticate with Google has been denied…") and creates **no** user (check
-      _Directory → Users_ in the Authentik admin UI). This is the invitation-only guarantee.
+- [ ] **(#365, registration.)** Signing in with a Google account whose address matches **no** local
+      account creates a **new** account and lands in the app's onboarding — profile creation, then
+      organization create (or, if a pending invitation matches the address, the inviting
+      organization is joined instead, with no create prompt). _Directory → Users_ in the Authentik
+      admin UI shows exactly **one** new user (username `federated-…`), with attributes
+      `email_verified: true` and a `upn`, and its source connections show Google. If it is instead
+      **denied**, Google's `verified_email` flag is missing or non-boolean — the fail-closed
+      direction; check _Events_ and re-read `docs/architecture/auth.md` §8.15 before changing
+      anything (the fix belongs in the `mapping-federation-account-link` resolver, never in a
+      `user_matching_mode` change).
 - [ ] **(#364, the one thing CI cannot reach at all.)** Signing in with a Google account whose
       verified address **does** match an existing, email-verified local account lands in the app on
       **that** account — no duplicate user is created, and _Directory → Users → that user → source

@@ -516,20 +516,23 @@ jobs:
           echo "::error::probe email never arrived in Mailpit"
           exit 1
 
-      # Federation posture + account linking (#363, #364, NFR-SEC-1, NFR-TST-1).
+      # Federation posture + account linking + enrollment (#363, #364, #365,
+      # NFR-SEC-1, NFR-TST-1).
       # A live e2e against real Google is not automatable (consent screen + bot
       # detection), so the INBOUND half of federation is proven here instead:
       # this drives the real `SourceFlowManager` — and therefore the real
       # `SourceMatcher` and the real, deployed account-resolution property
       # mapping — against the dev/CI stand-in source, which carries the same
       # posture as the Google one (same matching mode, same resolver attached,
-      # same absent enrollment flow).
+      # same source-enrollment flow).
       # It asserts #363's boundary (a linked identity resolves to the existing
-      # local user with an unchanged `upn`/`sub`, D-7) and #364's linking rules:
-      # a verified upstream address links to the existing account, a
+      # local user with an unchanged `upn`/`sub`, D-7), #364's linking rules
+      # (a verified upstream address links to the existing account, a
       # previously-known address matches through the history, and an
-      # UNVERIFIED / ambiguous / squatted / superuser / unknown address is
-      # refused creating no rows — so invitation-only account creation holds.
+      # UNVERIFIED / ambiguous / squatted / superuser address is refused
+      # creating no rows) and #365's enrollment: a strictly-verified UNKNOWN
+      # address enrolls end to end into a well-formed, non-privileged account,
+      # while an unverified one still creates nothing.
       # This step is load-bearing rather than belt-and-braces: the resolver's
       # matching runs inside a blanket `except` that turns any error into
       # "deny", so a broken resolver looks exactly like a correctly-refusing one
