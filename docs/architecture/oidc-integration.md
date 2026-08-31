@@ -200,9 +200,13 @@ all. Dev/CI seeds: `test.beekeeper@beekeepingit.local` (in the group) and
 
 Present: `sub, iss, aud, azp, exp, iat, email, email_verified, name, given_name (=full name),
 preferred_username, groups` — plus **`platform_operator`** on **admin-client tokens only** (§3.2).
-**Absent by default:** `family_name`, `locale`. The app collects
-profile (name/locale) during onboarding (FR-ONB-1), so it does **not** depend on IdP profile
-claims; add a `locale` scope mapping only if IdP-sourced locale is later wanted (NFR-I18N) —
+**Absent by default:** `family_name`, `locale`. `locale` is still collected during onboarding;
+since the #365 follow-up the app **does** consume `name` and `email` — **fail-soft**, as seeds for
+the profile row at first sight ([auth.md §8.16](auth.md)). That is standard-OIDC consumption, not
+an IdP dependency: a provider that omits `name` yields an empty field the user fills, and the
+`email` seed is gated on `email_verified`. It does mean the profile scope mapping's `name` is now
+**load-bearing contract** rather than incidental — losing it degrades to an empty field, never an
+error. Add a `locale` scope mapping only if IdP-sourced locale is later wanted (NFR-I18N) —
 optional.
 
 > **`email_verified` is REAL state since #361** ([auth.md §8.10](auth.md), ADR-0019). Authentik's

@@ -6,7 +6,7 @@ wins over earlier requirement wording.
 > Decisions are the working **default, not immutable**. If contradicting one makes sense,
 > propose it to the user; on confirmation, update it here (and the affected requirements).
 
-_Last updated: 2026-07-28._
+_Last updated: 2026-08-31._
 
 ---
 
@@ -209,6 +209,19 @@ Core technology decisions (2026-06-27). Detail and rationale in
     unverified upstream address cannot register at all). Still IdP-only: no domain service, no
     client code, no token change; onboarding, the invitation accept-on-login and the
     single-active-membership invariant apply to enrolled accounts unchanged.
+  - **The profile's email follows the same boundary — IdP-owned, app-displayed (#365 live
+    testing, 2026-08-31, user-confirmed).** Registration by Google exposed that the app was asking
+    a user to hand-type an address the IdP had already verified, into a **second, unverified**
+    field that authorizes nothing (#170) and can silently disagree with the real one. Two emails
+    where only one is authoritative is a defect, not a feature. So `identity.users.email` becomes
+    a **cache** of the verified address, seeded server-side from the token's `email` claim (only
+    when `email_verified`); the client shows it **read-only** and links out to `OIDC_ACCOUNT_URL`
+    to change it — the same link-out this decision already mandates for password, MFA and account
+    state. Consistently, the app now reads the standard `name` claim as a **fail-soft** seed
+    (absent ⇒ empty, the user fills it in), which is a standard-OIDC claim like every other and
+    moves no identity concern into the app. Self-service **change** of the address at the provider
+    stays closed and is EPIC-14 #15's, with a mandatory reset-of-verification-on-change policy
+    (#361 disabled it deliberately).
   - **Unchanged:** the two-layer model — app-side, org-scoped roles in `organizations.memberships`
     (NFR-ROL-1, never IdP roles) and the **FR-ONB first-login onboarding** (FR-ONB-1/2/3) — is
     untouched. Social login changes **how a user authenticates**, not **what they may do**.

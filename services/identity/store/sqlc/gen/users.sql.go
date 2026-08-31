@@ -23,16 +23,23 @@ LIMIT 1
 // GET /internal/users/by-email/{email} endpoint (#468's platform
 // cross-organization membership-lookup support tool, D-7: this stays a
 // LOCAL query against identity's own mirrored profile data -- no new IdP
-// integration). identity.users.email has NO uniqueness constraint (it is
-// the free-text profile field PATCH /v1/profile lets a caller set to
-// anything, #25 -- see organizations/api/organizations.go's ResolvedUser
-// doc comment for why it must never be used for anything
-// security-sensitive); the earliest-created match wins on the rare chance
+// integration). identity.users.email must never be used for anything
+// security-sensitive, and the reason OUTLIVED the one it was written with:
+// it used to be "the free-text field PATCH /v1/profile lets a caller set to
+// anything" (#25/#170), which stopped being true when the address became
+// IdP-owned and read-only (#365 follow-up). It still has NO uniqueness
+// constraint, it is a cache seeded once at first sight, and it is never
+// re-verified against the token afterwards -- so it can be stale, shared, or
+// both. A column that merely stopped being writable is not a reason to start
+// trusting it (see organizations/api/organizations.go's ResolvedUser doc).
+// The earliest-created match wins on the rare chance
 // two profiles share one address, the same "oldest wins" convention
 // organizations' own GetPendingInvitationByEmail uses for its analogous
-// ambiguity. Empty-string emails (UpsertUserOnFirstSeen's default for an
-// incomplete profile) are excluded explicitly so a blank query can never
-// match every never-completed profile in one row.
+// ambiguity. Empty-string emails are excluded explicitly so a blank query
+// can never match every such profile in one row -- still reachable after the
+// seeding change, because the seed is gated on `email_verified`: a caller
+// whose token carries an unverified address is stored with ” exactly as an
+// unseeded row was.
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (IdentityUser, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i IdentityUser

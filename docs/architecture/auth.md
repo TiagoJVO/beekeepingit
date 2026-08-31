@@ -1251,6 +1251,14 @@ issuance. Everything is config-as-code in the blueprint
   whose upstream address changed **before they ever linked**, to an address this deployment has
   never seen verified. There is nothing tying those two identities together, and guessing is the
   takeover shape. Such a user links through Connected services (§8.13) exactly as before.
+- **Changing an email address never unlinks Google — in either direction.** Once a
+  `UserSourceConnection` exists, `SourceMatcher` returns `Action.AUTH` on `(source, identifier)`
+  **before any property is consulted at all**, so no address is read on that sign-in: not the
+  upstream's, not the Authentik account's `email`, and not `identity.users.email` — which the IdP
+  never sees and which authorizes nothing anyway (§8.7, #170). Editing any of them leaves the link
+  intact; only deleting the connection from the provider's **Connected services** page unlinks it.
+  The address matters **exactly once**, on the **first, unlinked** sign-in, where it is what finds
+  the account (above) or enrolls a new one (§8.15).
 - **Every refusal is the same refusal — `Action.DENY`.** Ambiguous address, unverified upstream,
   unverified local account, superuser: all identical from outside, and each renders Authentik's own
   `AccessDeniedResponse` instead of #363's raw 400. _(Amended by §8.15: an **unknown** verified

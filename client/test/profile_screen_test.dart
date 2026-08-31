@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:beekeepingit_client/core/api/api_client.dart';
 import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/config/app_config.dart';
+import 'package:beekeepingit_client/core/platform/external_link_platform.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_repository.dart';
 import 'package:beekeepingit_client/features/profile/profile_screen.dart';
@@ -93,9 +95,25 @@ class _ErrorProfileController extends ProfileController {
   }
 }
 
-Widget _buildScreen(ProfileController controller) {
+/// Records link-outs instead of opening a browser tab. The real
+/// implementation is web-only and throws on the VM, so without this seam the
+/// "Manage account" affordance could not be asserted at all.
+class _RecordingExternalLinkPlatform implements ExternalLinkPlatform {
+  final List<String> opened = [];
+
+  @override
+  void openInNewTab(String url) => opened.add(url);
+}
+
+Widget _buildScreen(
+  ProfileController controller, {
+  ExternalLinkPlatform? links,
+}) {
   return ProviderScope(
-    overrides: [profileProvider.overrideWith(() => controller)],
+    overrides: [
+      profileProvider.overrideWith(() => controller),
+      if (links != null) externalLinkPlatformProvider.overrideWithValue(links),
+    ],
     child: const MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
@@ -131,6 +149,70 @@ void main() {
     expect(find.text('Ana'), findsOneWidget);
     expect(find.text('ana@example.com'), findsOneWidget);
   });
+
+  testWidgets(
+    'the manage-account action links out to the identity provider',
+    (tester) async {
+      final links = _RecordingExternalLinkPlatform();
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', email: 'ana@example.com', complete: true),
+          ),
+          links: links,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const Key('profile-manage-account-button')),
+      );
+      await tester.pumpAndSettle();
+
+      // Exactly the configured provider account page (D-7: the app links out,
+      // it does not own account identity) — not a hand-built URL.
+      expect(links.opened, [AppConfig.oidcAccountUrl]);
+    },
+  );
+
+  testWidgets(
+    'a server field error with no rendered slot still reaches the user',
+    (tester) async {
+      // Regression guard for `_save`'s unrendered-field filter: the email
+      // field is gone, so a 422 naming `email` has no errorText slot. It must
+      // surface via the snackbar rather than being silently swallowed.
+      await tester.pumpWidget(
+        _buildScreen(
+          _FakeProfileController(
+            _profile(name: 'Ana', complete: true),
+            onUpdate: ({name, email, locale}) async {
+              throw const ApiException(
+                statusCode: 422,
+                code: 'validation_failed',
+                detail: 'one or more fields are invalid',
+                fieldErrors: [
+                  ApiFieldError(
+                    field: 'email',
+                    code: 'read_only',
+                    message: 'email is read-only; change it at your provider',
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile-save-button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('email is read-only; change it at your provider'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('shows onboarding intro when profile is incomplete', (
     tester,
