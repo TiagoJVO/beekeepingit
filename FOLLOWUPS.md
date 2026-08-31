@@ -7,61 +7,6 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `feat/545-per-schema-migrator-roles` (#545 — per-schema `<schema>_migrator` roles)
-
-Before merge:
-
-- **Nothing.** The chart renders and lints in all three environments with the transition gate in
-  both positions, and the two new testcontainers suites pass alongside the existing ones.
-
-After this merges and reaches staging via a release (D-27: merge → release → tag-bump PR → Flux
-reconciles — staging is never deployed from a branch):
-
-- **Run the #545 ownership transition on staging, once, and then turn the gate back off.** Runbook
-  and verification queries: `infra/README.md` → "Transitioning an existing cluster (#545)". Two
-  things make this a real step rather than a formality:
-  - **#541's release must have deployed to staging first.** The transition swaps `beekeepingit`'s
-    `<schema>_svc` memberships for the migrator ones, so any relation still owned by
-    `<schema>_svc` becomes unreachable. This precondition is now **met**: per the #551 sweep note
-    below, `v0.0.1-rc9` deployed 2026-08-22 and all 26 previously `<schema>_svc`-owned tables
-    (including the hand-fixed `organizations.audit_log`) are owned by `beekeepingit`, verified
-    against the live cluster. The adopt Job's preflight guard still checks and fails the release
-    naming any offending relations, so a regression stays loud rather than a bare
-    `must be owner of ...`.
-  - **Leaving the gate on is not harmless.** While it is on, `beekeepingit` is a member of all
-    seven migrator roles — the exact cross-schema bridge this change removes. Isolation is a
-    steady-state property (ADR-0024 §4).
-- **Confirm afterwards** that every relation in every schema is owned by its own
-  `<schema>_migrator`, that no `pg_default_acl` row is scoped to `beekeepingit`, and that
-  `<schema>_svc` still holds `INSERT`/`SELECT` only on `audit_log`/`sync_conflict_log` and nothing
-  on `goose_db_version`. Queries are in the runbook.
-
-## `fix/551-migrate-job-pull-deadline` (#551 — migration bound moves off the pod's lifetime)
-
-- **AC1 can only be confirmed by a real release.** "A first deploy of a not-yet-pulled version does
-  not fail the release on image-pull time" is unreproducible in `helm-e2e`, which pre-imports images
-  into k3d so pull time is always zero. Confirm on the next staging release that no `*-migrate` Job
-  reports `DeadlineExceeded` while the node pulls a cold image set, then prune this entry.
-
-## `feat/account-linking-364` (#364 — federated account linking)
-
-- **Notify the account owner when a sign-in method is first linked.** The one missing detection
-  control for the residual risk #364 accepts and documents (`docs/architecture/auth.md` §8.14): an
-  upstream address that changes hands — a Workspace mailbox reassigned to a new hire — can link
-  into an account that was never deactivated, and nothing today tells the owner it happened.
-  Authentik already raises a `SOURCE_LINKED` Event when `PostSourceStage` persists a new
-  connection, so the work is binding a **notification rule + transport** to that event in the
-  blueprint; the SMTP path #361 built is already there. **Not a merge blocker:** federation is
-  inert until an environment has Google credentials, and none holds real user data yet (D-26). It
-  **is** a prerequisite for enabling federation on one that does — i.e. alongside
-  [#510](https://github.com/TiagoJVO/beekeepingit/issues/510), before #365's environment.
-  _Promote to a GitHub Issue and prune this entry once referenced._
-- **Nothing else is owed before merge.** This branch's one unverifiable-in-CI dependency is
-  [#510](https://github.com/TiagoJVO/beekeepingit/issues/510) — creating the Google credentials
-  Secret and running `infra/README.md`'s manual checklist against a real Google client, which now
-  covers #364's first-link case as well as #363's. Everything else is proven live in `helm-e2e`
-  by `infra/ci/authentik-federation-probe.py`.
-
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -77,35 +22,16 @@ reconciles — staging is never deployed from a branch):
 
 ---
 
-_Sweep note (#551): both remaining branch sections were stale — [#546](https://github.com/TiagoJVO/beekeepingit/pull/546)_
-_merged (closing [#541](https://github.com/TiagoJVO/beekeepingit/issues/541)) and_
-_[#539](https://github.com/TiagoJVO/beekeepingit/issues/539) closed, so under this file's own rule_
-_neither could ride along. Resolved rather than left to drift:_
+_Sweep note (post-#545/#551 deploy, 2026-08-23): all three remaining branch sections resolved._
 
-- _#541's **staging ownership transition** and **manual hand-fix reconciliation** are **done** —_
-  _`v0.0.1-rc9` deployed 2026-08-22 and all 26 tables are now owned by `beekeepingit`, with_
-  _`<schema>_svc` holding `INSERT`/`SELECT` only on `audit_log`/`sync_conflict_log`. Verified against_
-  _the live cluster; pruned, since git history and the PR already record it._
-- _#541's **baseline re-cut constraint** is now durable documentation, not pending work — it lives_
-  _in [ADR-0023](docs/adr/0023-migrations-as-a-deploy-time-admin-process.md) §5. Pruned._
-- _#541's **hardcoded history-table list** still has real work → promoted to_
-  _[#553](https://github.com/TiagoJVO/beekeepingit/issues/553)._
-- _#539's **staging round-trip** and **control-plane tier check** were never executed → promoted to_
-  _[#554](https://github.com/TiagoJVO/beekeepingit/issues/554). Operator work by design: it needs real_
-  _Scaleway credentials, which `infra/README.md` says an agent must not handle._
-
-_Earlier sweep notes (#363, #539, #541) are dropped along with their entries — the Issues they point_
-_at carry the record now. One lesson worth keeping: a stale entry may already have been promoted on_
-_an unmerged branch, so check open Issues before filing a new one ([#544](https://github.com/TiagoJVO/beekeepingit/issues/544)_
-_was filed as a duplicate of [#510](https://github.com/TiagoJVO/beekeepingit/issues/510) exactly that way)._
-
-_Sweep note (#545, at the merge with main): the #545 branch had independently swept the same stale_
-_sections (#541/#546, #539) from its own base; the two sweeps concurred on every disposition, so the_
-_#551 note above stands as the single record rather than being repeated. What the merge reconciled:_
-_the #545 section's "deploy #541 first" precondition, written 2026-08-22 against a staging cluster_
-_that still had 16 `<schema>_svc`-owned tables, is **satisfied** by the `v0.0.1-rc9` deploy the #551_
-_sweep verified — the entry above now says so instead of describing the pre-rc9 state. #545 also_
-_narrowed half of [#553](https://github.com/TiagoJVO/beekeepingit/issues/553) — the default_
-_privileges no longer make a new history table mutable at creation — and deliberately left the_
-_rest there. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open —_
-_that entry stands._
+- _The **#545 ownership transition ran on staging and is verified**: `v0.0.1-rc10` deployed with_
+  _the one-release gate on (gitops#11 + #12), all 26 tables moved to their `<schema>_migrator`,_
+  _history tables append-only, goose ledgers locked, and the gate then removed (gitops#13) —_
+  _`beekeepingit`'s temporary migrator memberships confirmed revoked (role-graph count 0). Pruned._
+- _**#551's AC1 — untestable in CI — is now confirmed live**: the rc10 rollout was exactly a first_
+  _deploy of a cold image set, and no `*-migrate` Job hit `DeadlineExceeded`. Pruned._
+- _#364's **first-link notification** item (its PR merged, #364 closed) → promoted to_
+  _[#563](https://github.com/TiagoJVO/beekeepingit/issues/563); its remaining dependency was_
+  _already tracked as [#510](https://github.com/TiagoJVO/beekeepingit/issues/510). Pruned._
+- _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that_
+  _entry stands. Prior sweep notes dropped with their entries, per this file's convention._
