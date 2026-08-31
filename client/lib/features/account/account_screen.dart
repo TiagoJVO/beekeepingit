@@ -108,7 +108,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 
   void _openChangePassword() {
-    ref.read(externalLinkPlatformProvider).openInNewTab(AppConfig.oidcAccountUrl);
+    ref
+        .read(externalLinkPlatformProvider)
+        .openInNewTab(AppConfig.oidcAccountUrl);
   }
 
   bool _syncing = false;

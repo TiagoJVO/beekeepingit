@@ -7,6 +7,7 @@ ExternalLinkPlatform makeExternalLinkPlatform() => _StubExternalLinkPlatform();
 
 class _StubExternalLinkPlatform implements ExternalLinkPlatform {
   @override
-  void openInNewTab(String url) =>
-      throw UnsupportedError('Opening an external URL is only available on web');
+  void openInNewTab(String url) => throw UnsupportedError(
+    'Opening an external URL is only available on web',
+  );
 }

@@ -54,10 +54,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     try {
       await ref
           .read(profileProvider.notifier)
-          .submit(
-            name: _nameController.text.trim(),
-            locale: _locale,
-          );
+          .submit(name: _nameController.text.trim(), locale: _locale);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

@@ -150,30 +150,27 @@ void main() {
     expect(find.text('ana@example.com'), findsOneWidget);
   });
 
-  testWidgets(
-    'the manage-account action links out to the identity provider',
-    (tester) async {
-      final links = _RecordingExternalLinkPlatform();
-      await tester.pumpWidget(
-        _buildScreen(
-          _FakeProfileController(
-            _profile(name: 'Ana', email: 'ana@example.com', complete: true),
-          ),
-          links: links,
+  testWidgets('the manage-account action links out to the identity provider', (
+    tester,
+  ) async {
+    final links = _RecordingExternalLinkPlatform();
+    await tester.pumpWidget(
+      _buildScreen(
+        _FakeProfileController(
+          _profile(name: 'Ana', email: 'ana@example.com', complete: true),
         ),
-      );
-      await tester.pumpAndSettle();
+        links: links,
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(const Key('profile-manage-account-button')),
-      );
-      await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('profile-manage-account-button')));
+    await tester.pumpAndSettle();
 
-      // Exactly the configured provider account page (D-7: the app links out,
-      // it does not own account identity) — not a hand-built URL.
-      expect(links.opened, [AppConfig.oidcAccountUrl]);
-    },
-  );
+    // Exactly the configured provider account page (D-7: the app links out,
+    // it does not own account identity) — not a hand-built URL.
+    expect(links.opened, [AppConfig.oidcAccountUrl]);
+  });
 
   testWidgets(
     'a server field error with no rendered slot still reaches the user',
