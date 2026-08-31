@@ -116,3 +116,47 @@ Consequence: `beekeepingit`'s Deployments page now carries two distinct environm
 `*-gate` (release approved to publish) and the plain name (GitOps merge landed, Flux reconciling)
 — rather than one name meaning both. No change to the approval mechanism itself, no new standing
 git-write credential (the new PAT can only create deployment records, nothing else).
+
+## Addendum (2026-08-31): the promotion PR pins the CHART too, not only image tags
+
+§2 described the promotion PR as bumping "the image tag", and that is literally all it did. The
+umbrella `HelmRelease` takes `chart: ./infra/helm/beekeepingit` from a `GitRepository` whose `ref`
+was **`branch: main`** on every environment, with `reconcileStrategy: Revision`. Flux produces a new
+chart artifact "when the source revision changes" in a `GitRepository`, and `chart.spec.version` "is
+applicable only when the Source reference is a `HelmRepository` — it is ignored for `GitRepository`"
+— so the source `ref` was the only available pin, and it pinned nothing.
+
+**Consequence, which was live:** every merge to `main` re-rendered the chart onto the running
+cluster within ~1–6 minutes — templates, `NetworkPolicy` objects, and the Authentik blueprint, i.e.
+**authentication configuration** — with no release, no PR in the GitOps repo, and no approval gate.
+Images were promoted deliberately; the chart arrived on merge. Prod's bootstrap manifests carried the
+same `branch: main`, so the `production-gate` reviewer would have gated prod's images while chart
+content flowed past it; prod is inert only because no cluster has been bootstrapped against
+`clusters/prod/`, and nothing carries `suspend: true`.
+
+This was drift from a recorded intention, not a decision: [ADR-0009](0009-flux-gitops.md) already
+said staging/prod would get their own `GitRepository` "**likely pointing at a release branch/tag
+rather than `main`**". Staging and prod were built by copying dev's pattern, and that note was never
+applied.
+
+**Change:** `release-deploy.yml`'s `open-pr` job now also rewrites the `beekeepingit` `GitRepository`
+`ref` in `clusters/<target>/flux-system.yaml` to `tag: <release tag>`, in the same PR as the image
+bump. A release is therefore promoted as one artifact — chart and images together — and reverting
+that merge rolls back both. Specifics worth keeping:
+
+- **`reconcileStrategy` stays `Revision`.** `ChartVersion` keys on `Chart.yaml`'s `version`, which is
+  frozen at `0.1.0` and never bumped, so a pinned-tag release would never deploy at all.
+- **Only the `beekeepingit` source moves.** `clusters/<env>/flux-system.yaml` declares two
+  `GitRepository` objects and the sibling `beekeepingit-gitops` one must keep tracking `main`, or the
+  GitOps repo could no longer update itself. The rewrite is therefore document-scoped `awk` rather
+  than a file-wide `sed`, and (like the image bump) `awk` also preserves the file's explanatory
+  comments where `yq` would strip them.
+- **It fails the release rather than shipping unpinned.** The step exits non-zero unless it made
+  exactly one substitution, so a renamed source or a restructured `ref:` block stops the promotion
+  instead of silently leaving the cluster tracking `main`.
+- **`dev` is deliberately unchanged.** It has no release to pin to, `release-deploy.yml` never
+  targets it, and tracking `main` is what makes it the post-merge integration environment
+  (`dev-up.sh` bypasses GitOps entirely for the pre-merge loop).
+
+The first release cut after this change performs the one-time `branch: main` → `tag:` conversion
+itself; no manual edit of the GitOps repo is needed, and re-bumps thereafter are the same operation.

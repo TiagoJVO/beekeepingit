@@ -10,11 +10,20 @@
 # CI builds + publishes that version's complete image set — every buildable Go
 # service AND the PWA (compiled with the *target* environment's OIDC/gateway URLs,
 # which are Dart compile-time constants — client/lib/core/config/app_config.dart)
-# — then opens a tag-bump PR against the beekeepingit-gitops repo with
+# — then opens a promotion PR against the beekeepingit-gitops repo with
 # GITOPS_PR_TOKEN (a fine-grained PAT scoped to that repo only). A human merges the
 # PR and Flux reconciles. No standing git-write credential lives in Flux, and the
 # PAT can only open a PR against the GitOps repo — it can't push to that repo's
 # branch-protected `main`, nor touch this repo.
+#
+# That PR moves BOTH halves of the release, which is the whole point: the image
+# tags in apps/<env>/, and the `beekeepingit` GitRepository's `ref` in
+# clusters/<env>/ so the umbrella CHART comes from this release too. Pinning the
+# chart is not optional bookkeeping — `chart.spec.version` is ignored for a git
+# source, so the source `ref` is the only pin there is, and while it read
+# `branch: main` every merge re-rendered templates, NetworkPolicies and the
+# Authentik blueprint straight onto the live cluster, ungated (ADR-0009 called for
+# a release ref here; staging/prod were built from dev's pattern and never got it).
 #
 # Gating: a single `approve` job references `environment:` (staging-gate ->
 # auto-created and ungated; prod -> production-gate's required-reviewer gate), so
@@ -414,6 +423,72 @@ jobs:
           grep -nE "tag:" "$file"
           echo "::endgroup::"
 
+      # Pin the CHART to the same release (ADR-0009's "likely pointing at a
+      # release branch/tag rather than `main`", finally implemented).
+      #
+      # Bumping image tags alone was only ever half a promotion. The umbrella
+      # HelmRelease takes `chart: ./infra/helm/beekeepingit` from a
+      # `GitRepository`, and `chart.spec.version` is IGNORED for a git source
+      # (it "is applicable only when the Source reference is a HelmRepository")
+      # — so the source's `ref` is the ONLY thing that pins chart content. With
+      # `ref.branch: main` plus `reconcileStrategy: Revision` (which produces a
+      # new artifact "when the source revision changes"), every merge to main
+      # re-rendered the chart onto the live cluster: templates, NetworkPolicies
+      # and the Authentik blueprint — authentication config — reaching staging
+      # and, once bootstrapped, prod, with no release, no PR here and no
+      # approval gate. Images were pinned; the chart was not.
+      #
+      # `reconcileStrategy` deliberately STAYS `Revision`: `ChartVersion` would
+      # key on `Chart.yaml`'s version, which is frozen at 0.1.0 and never
+      # bumped, so a pinned-tag release would never deploy at all.
+      #
+      # awk, not sed/yq: the file holds TWO GitRepository documents and only the
+      # `beekeepingit` one may move — `beekeepingit-gitops` must keep tracking
+      # main or the GitOps repo could no longer update itself. yq would also
+      # strip the file's explanatory comments. Fails the job (exit 3) unless it
+      # made exactly one substitution, so a renamed source or a restructured
+      # `ref:` block stops the release instead of silently shipping an
+      # unpinned cluster. Handles both the first conversion (`branch: main`)
+      # and every later re-bump (`tag: v…`).
+      - name: Pin the target environment's chart source to the release tag
+        env:
+          TARGET: ${{ needs.route.outputs.target }}
+          VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          file="clusters/${TARGET}/flux-system.yaml"
+          awk -v VER="$VERSION" '
+            BEGIN { changed = 0 }
+            /^---[[:space:]]*$/ { is_gitrepo = 0; in_target = 0; in_ref = 0 }
+            /^kind:[[:space:]]*GitRepository[[:space:]]*$/ { is_gitrepo = 1 }
+            is_gitrepo && /^[[:space:]]+name:[[:space:]]*beekeepingit[[:space:]]*$/ { in_target = 1 }
+            in_target && /^[[:space:]]+ref:[[:space:]]*$/ { in_ref = 1; print; next }
+            in_ref {
+              if ($0 ~ /^[[:space:]]+(branch|tag|semver|commit|name):[[:space:]]*[^[:space:]]/) {
+                if (changed) {
+                  print "ERROR: the beekeepingit ref block has more than one child" > "/dev/stderr"
+                  exit 3
+                }
+                match($0, /^[[:space:]]+/)
+                print substr($0, 1, RLENGTH) "tag: " VER
+                changed++
+                next
+              }
+              in_ref = 0
+            }
+            { print }
+            END {
+              if (changed != 1) {
+                print "ERROR: expected exactly one beekeepingit GitRepository ref, rewrote " changed > "/dev/stderr"
+                exit 3
+              }
+            }
+          ' "$file" > "${file}.new"
+          mv "${file}.new" "$file"
+          echo "::group::pinned $file"
+          grep -nE "name: beekeepingit|branch:|tag:" "$file"
+          echo "::endgroup::"
+
       - name: Open the tag-bump PR
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
@@ -426,6 +501,17 @@ jobs:
             Automated by `release-deploy.yml` (D-27, ADR-0018) for release
             **${{ github.event.release.tag_name }}** -> **${{ needs.route.outputs.target }}**.
 
-            Bumps every image tag in `apps/${{ needs.route.outputs.target }}/beekeepingit-helmrelease.yaml`
-            to the release version. Merge to let Flux reconcile onto the cluster;
-            roll back by reverting the merge.
+            Promotes the whole release, both halves of it:
+
+            - **Images** — every `tag:` in
+              `apps/${{ needs.route.outputs.target }}/beekeepingit-helmrelease.yaml`.
+            - **Chart** — the `beekeepingit` GitRepository's `ref` in
+              `clusters/${{ needs.route.outputs.target }}/flux-system.yaml`, so the
+              umbrella chart (templates, NetworkPolicies, the Authentik blueprint)
+              is taken from this release rather than from whatever `main` happens to
+              hold. The sibling `beekeepingit-gitops` source deliberately keeps
+              tracking `main`.
+
+            Until this PR merges, the cluster keeps running the previous release —
+            **merging is the deploy**. Roll back by reverting the merge, which now
+            reverts chart and images together.
