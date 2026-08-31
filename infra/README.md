@@ -333,6 +333,35 @@ gh variable set AUTH_HOST --env staging-gate --body auth.beekeepingit-rc.melargi
 (The `staging-gate`/`production-gate` environments are D-27's release-approval gates; create one
 under _Settings → Environments_ first if it doesn't exist yet.)
 
+**Adding another external credential** takes four coordinated edits: a guarded block in
+[`scaleway-up.sh`](cluster/scaleway-up.sh) that creates the Secret, the `run` job's `env:` in
+[`cluster-ops.yml`](../.github/workflows/cluster-ops.yml), a commented entry in
+[`.env.example`](cluster/.env.example), and a row in the table above. The two optional pairs listed
+there are this same shape twice — copy either.
+
+**Three of those four fail silently**, which is the reason this is written down at all. Miss the
+script block and no Secret is created; miss the workflow env and every CI run takes the script's
+"not set — skipping" path; miss `.env.example` and a local run has no way to discover the variable
+exists. Only the table row is merely documentation.
+
+**What the absence then does is per-consumer** — the two existing pairs differ, so check yours.
+Google's entries in the
+[Authentik blueprint](helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml) carry
+`conditions:`, which the importer evaluates before the model resolves, so the entries are skipped
+outright: a deliberate clean no-op — the deployment stays green and the button simply never
+appears. The SMTP pair is gated a layer further out instead, by a Helm `if` on the config Secret's
+keys; the blueprint's email-verification stage itself is unconditional, so it still runs and still
+tries to send — just unauthenticated against the configured relay. Silent either way, but only the
+first is a feature quietly not appearing.
+
+Name the pair `<CONSUMER>_<PURPOSE>` (`AUTHENTIK_EMAIL_*`, `AUTHENTIK_GOOGLE_*`) and scope it to the
+gate environments as above, never repo-wide. Compose the Secret with `--from-file` plus process
+substitution of the `printf` **builtin**, never `--from-literal` — that would put the value in argv,
+where `ps` / `/proc/*/cmdline` expose it. The Secret's **key** names are a contract with the chart
+template that `lookup`s them (e.g.
+[`charts/authentik/templates/config-secret.yaml`](helm/beekeepingit/charts/authentik/templates/config-secret.yaml)),
+not free-form.
+
 **On-demand runs from GitHub**: the [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml)
 `workflow_dispatch` workflow runs one of the four scripts below with those secrets — pick
 `environment` (staging/prod) and `action` (up/down/scale-down/scale-up) in the Actions tab. Staging
