@@ -54,13 +54,19 @@ helm dependency build infra/helm/beekeepingit
 #    post-install hooks *after* `--wait` is satisfied for the main resources, so
 #    waiting here would deadlock PowerSync against its own grant.
 #
-#    The post-install/post-upgrade hooks run in this order (ADR-0023/#541):
-#      1. schema-grants     schema USAGE + the powersync database grant
+#    The post-install/post-upgrade hooks run in this order (ADR-0023/#541,
+#    ADR-0024/#545):
+#      0. schema-grants     the powersync database grant FIRST, then schema
+#                           USAGE/CREATE for each `<schema>_migrator` and USAGE
+#                           (CREATE revoked) for each `<schema>_svc`
+#      1. migrator-adopt    OFF by default — the one-off #545 ownership
+#                           transition, one Job per schema. See "Transitioning
+#                           an existing cluster" below
 #      2. <service>-migrate one Job per DB-backed service, running that service's
-#                           migrations as the migrator role (`beekeepingit`)
-#      3. table-grants      table DML grants, history-table REVOKEs, and the
-#                           ownership transition for pre-#541 clusters
-#    Weight 1 is deliberately kept independent of migrations: it is what unblocks
+#                           migrations as its own `<schema>_migrator`
+#      3. table-grants      one Job per schema, as that schema's migrator: table
+#                           DML grants, history-table and goose-ledger REVOKEs
+#    Weight 0 is deliberately kept independent of migrations: it is what unblocks
 #    PowerSync (see step 7), so a slow or stuck migration must never stall it.
 infra/cluster/with-lock.sh helm upgrade --install beekeepingit infra/helm/beekeepingit \
   -f infra/helm/beekeepingit/environments/dev.yaml \
@@ -148,6 +154,112 @@ kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=powersync --tail=50
 PowerSync's real org-scoped Sync Rules + the `sync`-service JWKS connector landed with
 `#23`/`#106` (the `#22` placeholder sync-config + OIDC-JWKS stopgap are gone) — see
 `FOLLOWUPS.md` for any remaining wiring.
+
+## Database roles
+
+Two login roles per schema (`D-6`, [ADR-0024](../docs/adr/0024-per-schema-migrator-roles.md)),
+plus the database owner. Credentials are generated in-cluster
+(`charts/postgres/templates/secrets.yaml`) and never leave it.
+
+| Role                | Owns                            | Held by                     | May                                                                           |
+| ------------------- | ------------------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| `<schema>_migrator` | every relation in `<schema>`    | that service's migrate Job  | `USAGE, CREATE` on its own schema; full DDL/DML on what it owns               |
+| `<schema>_svc`      | nothing                         | that service's running pods | `USAGE` on its own schema; DML on domain tables; `INSERT`/`SELECT` on history |
+| `beekeepingit`      | the databases and all 7 schemas | `schema-grants`, adopt Job  | `GRANT ... ON SCHEMA`; **no** access to tables it does not own                |
+
+Neither per-schema role is a member of anything, in either direction — that is the isolation, and
+`services/shared/dbaccess/migrator_isolation_test.go` fails if a membership reappears.
+
+### Transitioning an existing cluster (#545)
+
+**A fresh install needs none of this.** The migrate Job creates every table as
+`<schema>_migrator` from the first release, so the adopt Jobs would be seven no-ops. This is only
+for a cluster (i.e. staging) that already deployed #541, where `beekeepingit` owns everything.
+
+**Prerequisite: the cluster must already be running #541's release.** Flipping the flag swaps
+`beekeepingit`'s `<schema>_svc` memberships for the migrator ones, so any relation still owned by
+`<schema>_svc` — the pre-#541 layout — becomes unreachable. The adopt Job checks for this first and
+fails the release naming the offending relations rather than emitting a bare `must be owner of
+table`; if you see that error, deploy #541's release first and retry.
+
+Run the transition release **once** with the flag on, then turn it off again:
+
+```sh
+# 1. Transition release. Renders the adopt Jobs (hook weight 1) and gives
+#    beekeepingit temporary membership in every <schema>_migrator.
+helm upgrade --install beekeepingit infra/helm/beekeepingit \
+  -f infra/helm/beekeepingit/environments/staging.yaml \
+  --namespace beekeepingit-staging \
+  --set postgres.migratorTransition.enabled=true
+
+# 2. Verify: every relation in every schema is owned by its own migrator, and
+#    no beekeepingit-scoped default privileges are left behind.
+kubectl -n beekeepingit-staging exec beekeepingit-postgres-1 -- psql -U postgres -d beekeepingit -c "
+  SELECT n.nspname, count(*) FILTER (WHERE pg_get_userbyid(c.relowner) <> n.nspname || '_migrator') AS not_yet_moved
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE c.relkind IN ('r','p','S','v','m','f')
+     AND n.nspname NOT IN ('pg_catalog','information_schema','public')
+   GROUP BY n.nspname ORDER BY 1;"
+kubectl -n beekeepingit-staging exec beekeepingit-postgres-1 -- psql -U postgres -d beekeepingit -c "
+  SELECT count(*) AS beekeepingit_scoped_default_acls
+    FROM pg_default_acl WHERE defaclrole = 'beekeepingit'::regrole;"
+
+# 3. Turn it off. This is not optional tidying: while it is on, beekeepingit is
+#    a member of all seven migrator roles, which is the cross-schema bridge the
+#    change exists to remove. CNPG's role reconciler issues the REVOKEs itself
+#    once the memberships leave cluster.yaml — no manual step.
+helm upgrade beekeepingit infra/helm/beekeepingit \
+  -f infra/helm/beekeepingit/environments/staging.yaml \
+  --namespace beekeepingit-staging
+```
+
+**`helm rollback` does not work across this change.** The pre-#545 `table-grants` Job connects as
+`beekeepingit` and issues `GRANT ... ON ALL TABLES`, which a non-owner cannot do once ownership has
+moved — so the rollback release's weight-3 hook fails. Recovery is forward-only, or a reverse adopt
+run by hand. The reverse SQL, per schema, as a **superuser** (`beekeepingit` cannot do it alone
+once the memberships are gone — it is not a member of the migrator roles in steady state):
+
+```sql
+-- Reverse adopt for one schema. Substitute <schema>; run one schema at a time,
+-- and keep the whole thing in ONE transaction for the same reason the forward
+-- Job does: serving pods hold live <schema>_svc connections throughout.
+BEGIN;
+DO $do$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT c.oid::regclass AS ident, c.relkind
+      FROM pg_class c
+     WHERE c.relnamespace = '<schema>'::regnamespace
+       AND c.relkind IN ('r','p','S','v','m','f')
+       AND c.relowner <> 'beekeepingit'::regrole
+     ORDER BY CASE c.relkind WHEN 'r' THEN 1 WHEN 'p' THEN 1 WHEN 'f' THEN 2
+                             WHEN 'S' THEN 3 WHEN 'v' THEN 4 ELSE 5 END
+  LOOP
+    EXECUTE format('ALTER %s %s OWNER TO beekeepingit',
+                   CASE r.relkind WHEN 'r' THEN 'TABLE' WHEN 'p' THEN 'TABLE'
+                                  WHEN 'f' THEN 'FOREIGN TABLE' WHEN 'S' THEN 'SEQUENCE'
+                                  WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' END,
+                   r.ident);
+  END LOOP;
+END
+$do$;
+ALTER DEFAULT PRIVILEGES FOR ROLE <schema>_migrator IN SCHEMA <schema> REVOKE ALL ON TABLES FROM <schema>_svc;
+ALTER DEFAULT PRIVILEGES FOR ROLE <schema>_migrator IN SCHEMA <schema> REVOKE ALL ON SEQUENCES FROM <schema>_svc;
+REVOKE ALL ON ALL TABLES IN SCHEMA <schema> FROM <schema>_svc;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA <schema> FROM <schema>_svc;
+SET LOCAL ROLE beekeepingit;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA <schema> TO <schema>_svc;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA <schema> TO <schema>_svc;
+ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA <schema> GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO <schema>_svc;
+ALTER DEFAULT PRIVILEGES FOR ROLE beekeepingit IN SCHEMA <schema> GRANT USAGE, SELECT ON SEQUENCES TO <schema>_svc;
+REVOKE UPDATE, DELETE, TRUNCATE ON <schema>.audit_log FROM <schema>_svc;
+REVOKE UPDATE, DELETE, TRUNCATE ON <schema>.sync_conflict_log FROM <schema>_svc;
+COMMIT;
+```
+
+Note this restores the **pre-#545** ACL, full-DML defaults included — it is a recovery path back to
+a known-good older release, not a state anything should be left in.
 
 ## Sharing the local cluster across concurrent sessions
 

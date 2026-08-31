@@ -5,7 +5,24 @@
 Postgres (CloudNativePG) + PostGIS. Schema-per-service (no cross-schema FKs;
 services own their data). Every owned row carries `organization_id` (tenancy).
 Soft-delete via `deleted_at`. Append-only `audit_log` per schema (`FR-HIS`).
-Migrations: goose, `services/<svc>/store/migrations/*.sql`, applied at boot.
+Migrations: goose, `services/<svc>/store/migrations/*.sql`, applied by a
+deploy-time Job (ADR-0023), never at boot.
+
+## Roles (two per schema, ADR-0024/#545)
+
+```text
+<schema>_migrator  owns every relation in <schema> (tables, indexes, sequences,
+                   audit_log, goose_db_version); USAGE+CREATE on that schema
+                   only; member of nothing. The migrate Job's credential.
+<schema>_svc       owns nothing; USAGE only (CREATE revoked); DML on domain
+                   tables; INSERT/SELECT on history; nothing on the ledger.
+                   The running service's credential.
+beekeepingit       database + schema owner. Grants ON SCHEMA. Owns no table,
+                   and is not mounted into any pod running application code.
+```
+
+No role is a member of any other, either direction — that is the isolation
+(negative proof: `services/shared/dbaccess/migrator_isolation_test.go`).
 
 ## Schemas & tables
 
@@ -172,8 +189,10 @@ shared/dbaccess:00001 create_example_items (template reference only)
 - **sqlc**: `store/sqlc/queries/*.sql` → `store/sqlc/gen/*.sql.go`; `schema.sql` is a
   codegen-only virtual mirror of the cumulative migrations (kept in sync by hand).
 - **History**: writes append an `audit_log` row (delta via `shared/history`); immutability holds
-  because the runtime role `<schema>_svc` never owns a table — the migrator (`beekeepingit`) does —
-  so granting it `INSERT`/`SELECT` and withholding `UPDATE`/`DELETE` is durable and it cannot
-  self-`GRANT` back in (`infra/helm/.../postgres/templates/table-grants-job.yaml`, ADR-0023/#541).
+  because the runtime role `<schema>_svc` never owns a table — that schema's `<schema>_migrator`
+  does — so granting it `INSERT`/`SELECT` and withholding `UPDATE`/`DELETE` is durable and it
+  cannot self-`GRANT` back in (`infra/helm/.../postgres/templates/table-grants-job.yaml`,
+  ADR-0023/#541, ADR-0024/#545). The guarantee binds the service's **runtime role**, not its
+  deploy artifact — the migration SQL ships in the service's own image (history.md §7.1).
 
 See [backend.md](backend.md) for the query layer, [architecture.md](architecture.md) for sync.

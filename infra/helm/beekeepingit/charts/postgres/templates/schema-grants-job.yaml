@@ -1,39 +1,52 @@
 {{/*
-D-6's "schema per service" grants — split from bootstrap (cluster.yaml) because
-spec.managed.roles is reconciled *after* initdb's postInitApplicationSQL runs,
-so the per-service roles don't exist yet at bootstrap time. This hook runs
-post-install/post-upgrade, connecting as the `beekeepingit` app owner (which
-owns every schema per cluster.yaml's `AUTHORIZATION beekeepingit`, so it can
-GRANT without needing superuser access) — and retries each grant until the
-matching role exists, since the operator's role reconciliation is async
-relative to this hook firing.
+D-6's "schema per service" SCHEMA-level grants — split from bootstrap
+(cluster.yaml) because spec.managed.roles is reconciled *after* initdb's
+postInitApplicationSQL runs, so the per-service roles don't exist yet at
+bootstrap time. This hook runs post-install/post-upgrade as the `beekeepingit`
+app owner, which owns every schema per cluster.yaml's `AUTHORIZATION
+beekeepingit` and can therefore `GRANT ... ON SCHEMA` without superuser.
 
-#62's audit-immutability lock-down (history.md §7.1) is a SEPARATE Job —
-see audit-immutability-job.yaml — deliberately not folded in here: it needs a
-much longer/looser retry budget (it waits on each service's own migration,
-which runs on pod startup, not on anything this install/upgrade directly
-controls) and must not delay or risk failing the powersync grant below, which
-PowerSync's rollout genuinely blocks on (infra/README.md step 4/7).
+WHY beekeepingit STILL OWNS THE SCHEMAS AFTER #545. It would look tidier to
+hand each schema to its own `<schema>_migrator` along with the tables. It is
+not: a non-owner cannot `GRANT ... ON SCHEMA`, so moving schema ownership would
+break exactly this Job, and it buys nothing — a schema's owner cannot read or
+alter a table it does not own. So schema ownership stays here and TABLE
+ownership is what #545 moves. ADR-0024 says so explicitly rather than leaving
+it to look like an oversight.
 
-That other Job needs `beekeepingit` to act with each `<schema>_svc` role's
-own privileges (the only way a non-superuser can `ALTER TABLE ... OWNER TO`
-a table it doesn't yet own) — its membership in every `<schema>_svc` role is
-granted DECLARATIVELY in cluster.yaml's `managed.roles` (an entry for
-`beekeepingit` itself, with `inRoles`), not by a manual GRANT run from this
-Job. A manual `GRANT <schema>_svc TO beekeepingit` executed BY beekeepingit
-does NOT work — confirmed the hard way (CI's live k3d/helm-e2e run failed
-with the schema-grants Job spinning its retry loop until
-`activeDeadlineSeconds` killed it): Postgres requires CREATEROLE + ADMIN
-OPTION on the target role to grant its membership, which beekeepingit (a
-plain login role, not superuser) has neither of, so every attempt returned a
-permission error indistinguishable (to the `until ... done` retry loop) from
-"role not ready yet" — it retried a permanent failure until the deadline. Only
-CNPG's own operator reconciliation connection is privileged enough to grant
-role membership unconditionally, which is why this now goes through
-`managed.roles` instead — see cluster.yaml's comment on the `beekeepingit`
-entry for the full mechanism and services/shared/dbaccess/
-audit_immutability_test.go for the testcontainers proof of the ALTER/GRANT
-sequence that membership then enables.
+HOOK WEIGHT 0, moved down from 1 to free a slot for the gated adopt Job:
+
+  0  THIS JOB               powersync DB grant + schema USAGE/CREATE
+  1  migrator-adopt-job     [gated] per-schema ownership transition
+  2  charts/services migrate-job.yaml
+  3  table-grants-job       table DML grants, history/ledger REVOKEs
+
+The powersync grant runs FIRST and stays free of any dependency on migrations.
+PowerSync's rollout genuinely blocks on it (infra/README.md step 4/7), so a
+slow or stuck migration must never be able to stall it — that independence is
+ADR-0023 §3's rule, and the ~55-minute retry incident recorded in the deleted
+audit-immutability-job.yaml is what it was learned from. Weight 0 rather than
+"first among the weight-1 hooks" because Helm gives no ordering guarantee
+WITHIN a weight.
+
+WHY THE BLIND `until psql ...; do sleep 5; done` IS GONE. See
+_helpers.tpl's `postgres.waitForRoleShellFn` for the full account: that shape
+cannot distinguish "not reconciled yet" from "permanently denied", and it once
+burned a whole live CI run to its deadline (#62, run 29146587211) on a
+permission error it retried 60 times. Here the async precondition (does the
+role exist yet) is polled on its own — under ONE bounded budget for the whole
+wait, which gives up on purpose with the failing state on stderr (#551) — and
+the grants then run ONCE under ON_ERROR_STOP=1 so a real error surfaces as a
+real error.
+
+THE SCHEMA ACL THIS ESTABLISHES, per schema:
+  <schema>_migrator  USAGE, CREATE   — it creates and owns every relation here
+  <schema>_svc       USAGE           — CREATE explicitly revoked, so the
+                                       runtime role can never create (and
+                                       therefore never own) a table. That is
+                                       the whole basis of the append-only
+                                       guarantee since #541: there is nothing
+                                       to take away because it never had it.
 */}}
 {{- if .Values.enabled }}
 apiVersion: batch/v1
@@ -47,35 +60,41 @@ metadata:
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
-    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-weight": "0"
 spec:
-  # FAILURE BUDGET (#551). The waiting this Job exists to do now happens inside
-  # the loop below, which carries its own deadline, so activeDeadlineSeconds is
-  # a backstop rather than the budget. It used to be the budget — and that budget
-  # included image pull, because Kubernetes starts the clock when the Job is
-  # created. #551 records that shape killing charts/services' migrate Job on
-  # staging; here the exposure is a cold cluster pulling the PostGIS operand
-  # image, which is a far bigger pull than a distroless Go service, out of the
-  # same 300s the role reconciliation was supposed to get.
+  # FAILURE BUDGET (#551). The waiting this Job exists to do happens inside
+  # `wait_for_role` (_helpers.tpl), which carries ONE bounded deadline for the
+  # whole wait — started when the script starts, so image pull is excluded by
+  # construction — so activeDeadlineSeconds is a backstop rather than the
+  # budget. It used to be the budget, and that budget included image pull,
+  # because Kubernetes starts the clock when the Job is created. #551 records
+  # that shape killing charts/services' migrate Job on staging; here the
+  # exposure is a cold cluster pulling the PostGIS operand image, which is a
+  # far bigger pull than a distroless Go service, out of the same 300s the
+  # role reconciliation was supposed to get.
   #
-  # Unlike that Job, this one could never be caught by backoffLimit at all: the
-  # retry loop below does not exit on a permanent failure, so nothing but the pod
+  # The old `until psql; sleep 5` loop could never be caught by backoffLimit
+  # at all: it did not exit on a permanent failure, so nothing but the pod
   # deadline could stop it. That is exactly how the incident in the header
   # comment played out — a permission error indistinguishable from "not ready
-  # yet", retried in silence and finally reported as a timeout, with the reason
-  # nowhere in the Job's own outcome. A deadline in the loop ends that: it gives
-  # up on purpose, and says what it was still failing at.
+  # yet", retried in silence and finally reported as a timeout. The bounded
+  # role probe ends that: it gives up on purpose, and says what it was still
+  # waiting for.
   #
-  # backoffLimit drops to 1 for the same reason. With the wait bounded where the
-  # waiting happens, a Job-level retry is not a waiting mechanism — it is one
-  # free restart for a container that crashed, and thirty of them would only put
-  # the unbounded budget back by another route.
+  # backoffLimit drops to 1 for the same reason. With the wait bounded where
+  # the waiting happens, a Job-level retry is not a waiting mechanism — it is
+  # one free restart for a container that crashed, and thirty of them would
+  # only put the unbounded budget back by another route.
   backoffLimit: 1
   activeDeadlineSeconds: 900
   template:
     metadata:
       labels:
         {{- include "beekeepingit.labels" . | nindent 8 }}
+        # Keeps this pod inside the `postgres-jobs-to-postgres` NetworkPolicy
+        # edge (charts/networkpolicy/values.yaml). default-deny is
+        # namespace-wide, so a pod identity with no matching edge cannot reach
+        # Postgres at all — a failure this repo has hit repeatedly.
         app.kubernetes.io/name: postgres
     spec:
       # `Never`, not `OnFailure` (#551): with OnFailure the Job controller
@@ -83,8 +102,24 @@ spec:
       # that explains the failure with it. `Never` gives each attempt its own
       # retained pod, so a failed release can still be diagnosed.
       restartPolicy: Never
+      # Hardened to match table-grants-job.yaml and charts/services' workloads.
+      # This was the LAST unhardened Job in the chart, and after #545 it also
+      # holds the last cross-schema credential left in the hook path
+      # (`beekeepingit` still owns all seven schemas), which makes it the
+      # highest-value target here — no longer a defensible place to leave the
+      # gap "tracked separately". The postgres image runs as uid 26
+      # (`postgres`).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
       containers:
         - name: schema-grants
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           image: {{ .Values.image }}
           env:
             - name: PGHOST
@@ -107,42 +142,28 @@ spec:
             - |
               set -eu
 
-              # ONE deadline for the whole wait, not one per grant. Everything
-              # below is waiting on the same single event — CNPG's operator
-              # reconciling spec.managed.roles — so a slow reconciliation must
-              # not get its budget multiplied by however many schemas happen to
-              # be listed in values.yaml. 300s is what this Job was nominally
-              # given before; the difference is that it is now 300s of waiting
-              # rather than 300s shared with an image pull (#551).
-              budget=300
-              deadline=$(( $(date +%s) + budget ))
+              {{- include "postgres.waitForRoleShellFn" . | nindent 14 }}
 
-              # Retry until the role exists — but give up on purpose rather than
-              # spinning until the pod is killed. A permission error and "the
-              # operator hasn't got there yet" are indistinguishable to this
-              # loop (see the header comment), so the only honest way to end it
-              # is a deadline plus the failing psql output, which stays on
-              # stderr above whatever we print here.
-              grant_when_ready() {
-                what="$1"
-                shift
-                until psql -v ON_ERROR_STOP=1 "$@"; do
-                  if [ "$(date +%s)" -ge "$deadline" ]; then
-                    echo "giving up on ${what}: still failing after ${budget}s of WAITING (image pull excluded, #551) — the psql error above is the real one, not a readiness delay" >&2
-                    exit 1
-                  fi
-                  echo "${what} not ready yet, retrying in 5s..."
-                  sleep 5
-                done
-              }
-
-              {{- range .Values.schemas }}
-              grant_when_ready "role {{ . }}_svc" -c "GRANT USAGE ON SCHEMA {{ . }} TO {{ . }}_svc;" -c "REVOKE CREATE ON SCHEMA {{ . }} FROM {{ . }}_svc;"
-              {{- end }}
               # powersync_storage (PowerSync's bucket-storage DB, ADR-0005) is
               # created and owned by beekeepingit at postInitSQL time — before
               # the `powersync` role exists — so it can't own it at creation
-              # time either; same reason as the schema grants above. GRANT ON
+              # time either; same reason as the schema grants below. GRANT ON
               # DATABASE doesn't require being connected to that database.
-              grant_when_ready "role powersync" -c "GRANT ALL PRIVILEGES ON DATABASE powersync_storage TO powersync;"
+              # Deliberately the FIRST thing this Job does: it is what unblocks
+              # PowerSync's readiness probe, and nothing below it may delay it.
+              wait_for_role "EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'powersync')" "role powersync"
+              psql -v ON_ERROR_STOP=1 \
+                -c "GRANT ALL PRIVILEGES ON DATABASE powersync_storage TO powersync;"
+              echo "powersync_storage: database grant applied."
+
+              {{- range .Values.schemas }}
+
+              wait_for_role "EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ . }}_migrator')" "role {{ . }}_migrator"
+              wait_for_role "EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ . }}_svc')" "role {{ . }}_svc"
+              psql -v ON_ERROR_STOP=1 --single-transaction \
+                -c "GRANT USAGE, CREATE ON SCHEMA {{ . }} TO {{ . }}_migrator;" \
+                -c "GRANT USAGE ON SCHEMA {{ . }} TO {{ . }}_svc;" \
+                -c "REVOKE CREATE ON SCHEMA {{ . }} FROM {{ . }}_svc;"
+              echo "{{ . }}: schema grants applied."
+              {{- end }}
 {{- end }}

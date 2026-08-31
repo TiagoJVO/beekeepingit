@@ -8,6 +8,10 @@
   [D-27](../../requirements/decisions.md) (release-triggered deploy)
 - **Amends:** [ADR-0007](0007-history-audit-append-only-per-service-in-transaction-capture.md) §4 —
   the append-only guarantee is unchanged, but the mechanism that enforces it is replaced
+- **Amended by:** [ADR-0024](0024-per-schema-migrator-roles.md) (#545) — §2's migrator/runtime
+  split stands, but the migrator stops being the single shared `beekeepingit` role and becomes one
+  `<schema>_migrator` per schema. The hook weights in §3 shift accordingly (schema-grants to 0, a
+  gated transition Job at 1) and §4's `REASSIGN OWNED BY` transition is replaced
 - **Design:** [history.md](../architecture/history.md) §7.1,
   [platform.md](../architecture/platform.md)
 
@@ -199,6 +203,12 @@ to satisfy as more environments appear — not because fresh installs were slow.
   > defect this ADR fixes was live and shipping, and the widened blast radius is a knowingly
   > accepted cost rather than a regression from a previously-safe state — but it should not be left
   > recorded as though it cost nothing.
+  >
+  > **Resolved: #545 adopted this alternative.** See
+  > [ADR-0024](0024-per-schema-migrator-roles.md). It cost seven Secrets, seven managed roles, six
+  > extra Jobs per release and a gated one-off transition — real moving parts, and less than the
+  > isolation is worth. §2, §3 and §4 below are superseded on the details noted in the
+  > "Amended by" line at the top; the migrator/runtime split itself is unchanged.
 
 - **Keeping startup migrations and dropping #62's guarantee.** Rejected: the append-only audit
   trail is a compliance-facing property (`FR-HIS-1`, `NFR-CMP-1`), not a nice-to-have.

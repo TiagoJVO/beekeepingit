@@ -421,10 +421,21 @@ edges:
     to: { cnpgCluster: true }
     port: 5432
   # The postgres chart's own migration-time Job/test-hook pods
-  # (schema-grants-job, table-grants-job, tests/postgis-smoke-test — each
-  # connects to Postgres as PGHOST at hook/test time, and each stamps
-  # `app.kubernetes.io/name: postgres` on its own pod, distinct from the CNPG
-  # instance pods' `cnpg.io/cluster` label).
+  # (schema-grants-job, table-grants-job, migrator-adopt-job,
+  # tests/postgis-smoke-test — each connects to Postgres as PGHOST at hook/test
+  # time, and each stamps `app.kubernetes.io/name: postgres` on its own pod,
+  # distinct from the CNPG instance pods' `cnpg.io/cluster` label).
+  #
+  # #545 multiplied the pods behind this one edge without touching it, which is
+  # the point of keying on the shared component label rather than on Job names:
+  # table-grants became SEVEN Jobs (one per schema, each connecting as its own
+  # `<schema>_migrator`) and the gated migrator-adopt Job added seven more. All
+  # fourteen carry `app.kubernetes.io/name: postgres`, so all fourteen are
+  # covered here already. Had any of them been given a distinct pod identity
+  # instead, it would have been silently unable to reach Postgres under
+  # default-deny — the CrashLoopBackOff-while-Postgres-is-healthy shape recorded
+  # for activities, journeys and todos above, except failing a hook and
+  # therefore the whole `helm upgrade`.
   - name: postgres-jobs-to-postgres
     from: { app.kubernetes.io/name: postgres }
     to: { cnpgCluster: true }

@@ -679,7 +679,8 @@ jobs:
           kubectl -n beekeepingit-dev describe pods || true
           kubectl -n beekeepingit-dev get deployment -o wide || true
           kubectl -n beekeepingit-dev describe deployment || true
-          # Helm HOOK JOBS — schema-grants, <service>-migrate, table-grants
+          # Helm HOOK JOBS — schema-grants, the gated migrator-adopt (#545),
+          # <service>-migrate, and the per-schema table-grants
           # (#551, and the ask in #246). These are the first thing that runs
           # against a new release's database, so when the install fails they are
           # usually the reason — and their logs were the one thing this step
@@ -697,7 +698,7 @@ jobs:
           kubectl -n beekeepingit-dev describe jobs || true
           for p in $(kubectl -n beekeepingit-dev get pods \
                        -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-                       2>/dev/null | grep -E -- '-migrate-|-schema-grants-|-table-grants-' || true); do
+                       2>/dev/null | grep -E -- '-migrate-|-schema-grants-|-table-grants-|-migrator-adopt-' || true); do
             echo "----- logs: $p -----"
             kubectl -n beekeepingit-dev logs "$p" --tail=200 --timestamps || true
             kubectl -n beekeepingit-dev logs "$p" --tail=200 --timestamps --previous 2>/dev/null || true

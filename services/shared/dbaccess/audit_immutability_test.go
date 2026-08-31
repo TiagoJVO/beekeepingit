@@ -10,12 +10,24 @@ import (
 	"github.com/TiagoJVO/beekeepingit/services/shared/dbaccess"
 )
 
-// auditImmutabilityFixture stands in for the production role/schema layout
-// that infra/helm/beekeepingit/charts/postgres/templates/cluster.yaml and
-// schema-grants-job.yaml set up: an app-owner role (`beekeepingit`) that owns
-// the schema, and a least-privilege per-service runtime login role
-// (`<schema>_svc`) granted only USAGE/CREATE on it — mirroring D-6 "schema
-// per service".
+// auditImmutabilityFixture reproduces the PRE-#545 role/schema layout: an
+// app-owner role (`beekeepingit`) that owns the schema, and a least-privilege
+// per-service runtime login role (`<schema>_svc`) granted only USAGE/CREATE
+// on it — mirroring D-6 "schema per service".
+//
+// READ THIS AS HISTORY, NOT AS CURRENT PRODUCTION WIRING. #545 gave each
+// schema its own `<schema>_migrator` owner role, so in production today
+// `beekeepingit` owns no table anywhere and is a member of nothing (see
+// cluster.yaml). This fixture is now the LEGACY state that
+// migrator-adopt-job.yaml transitions away from, which is exactly why it is
+// worth keeping: what it proves — that a runtime role cannot mutate a table it
+// does not own, and cannot self-GRANT its way back in — is unchanged by #545
+// and is the property the whole append-only guarantee rests on. Nothing in
+// this file needed to change for #545; only this comment did.
+//
+// For the post-#545 wiring see migrator_isolation_test.go (two schemas, no
+// role a member of any other), and for the move between the two see
+// migrator_transition_test.go.
 //
 // superuser is the testcontainers bootstrap role, and it now stands in
 // SPECIFICALLY for CNPG's own operator reconciliation connection (not just
