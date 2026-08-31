@@ -86,6 +86,25 @@ syncedSchemas:
   - journeys
   - todos
 
+# The append-only history tables (history.md §7.1, FR-HIS-1) — ONE list for
+# every schema, because the history mechanism is deliberately uniform across
+# schemas (history.md §5): each service keeps its own `audit_log` and
+# `sync_conflict_log` inside its own schema, same shape everywhere. Rendered
+# into `postgres.runtimeGrantsPsqlArgs` (_helpers.tpl), which both
+# table-grants-job.yaml and the gated migrator-adopt-job.yaml apply, so this is
+# the single place the classification lives.
+#
+# This list is FAIL-CLOSED (#553): a table whose name ends `_log` that is not
+# listed here FAILS the release at deploy time, by name, inside the same
+# transaction as the blanket DML grant — it never becomes mutable, not even on
+# the failed release. So adding a history table to a service means adding its
+# name here in the same change; forgetting produces a loud deploy failure, not
+# a silently mutable audit trail. A domain table must simply not take the
+# `_log` suffix — it is reserved for append-only history.
+historyTables:
+  - audit_log
+  - sync_conflict_log
+
 # Placeholder for standalone rendering only — the umbrella always injects the
 # real global.* via its own values.yaml.
 global:
