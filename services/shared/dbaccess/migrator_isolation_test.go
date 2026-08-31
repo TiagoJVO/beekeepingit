@@ -3,6 +3,7 @@ package dbaccess_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -209,11 +210,26 @@ func newMigratorIsolationFixture(t *testing.T) *migratorIsolationFixture {
 	return f
 }
 
+// defaultHistoryTables mirrors `historyTables` in
+// charts/postgres/values.yaml — the central append-only classification list
+// (#553). Kept in sync by hand, like the rest of the mirror below.
+var defaultHistoryTables = []string{"audit_log", "sync_conflict_log"}
+
 // applyRuntimeGrants mirrors the END STATE of
 // charts/postgres/templates/_helpers.tpl's `postgres.runtimeGrantsPsqlArgs` —
 // the single definition table-grants-job.yaml (weight 3) and the gated
 // migrator-adopt-job.yaml (weight 1) both apply, run here as the schema's own
-// migrator.
+// migrator, with the production default history-table list.
+func applyRuntimeGrants(t *testing.T, migrator *pgx.Conn, schema string) {
+	t.Helper()
+	if err := runRuntimeGrants(migrator, schema, defaultHistoryTables); err != nil {
+		t.Fatalf("table-grants: %v", err)
+	}
+}
+
+// runRuntimeGrants is the mirror itself, returning the error instead of
+// failing the test, so history_fail_closed_test.go can assert that the #553
+// guard trips — a t.Fatal-ing helper cannot express "this run MUST fail".
 //
 // Deliberately the END STATE and not the literal rendered SQL. That template
 // emits Helm-rendered `psql -c` arguments wrapped in a shell script; executing
@@ -225,13 +241,77 @@ func newMigratorIsolationFixture(t *testing.T) *migratorIsolationFixture {
 // must be kept in sync with the helper by hand; a divergence surfaces as this
 // file's assertions describing an ACL production does not have.
 //
-// The template's per-table `IF EXISTS` guards are dropped: they exist so a
-// schema whose service has not shipped its history table yet does not fail the
-// release, and in this fixture every table exists by construction.
-func applyRuntimeGrants(t *testing.T, migrator *pgx.Conn, schema string) {
-	t.Helper()
+// Everything runs in ONE transaction, mirroring the callers'
+// `--single-transaction` — since #553 that matters to the tests, not just to
+// production: the fail-closed guard aborting the transaction is what rolls the
+// blanket GRANT back, and history_fail_closed_test.go asserts that rollback.
+func runRuntimeGrants(migrator *pgx.Conn, schema string, historyTables []string) error {
 	ctx := context.Background()
-	for _, stmt := range []string{
+
+	tx, err := migrator.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin table-grants transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	for _, stmt := range runtimeGrantsStatements(schema, historyTables) {
+		if _, err := tx.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("table-grants (%q): %w", stmt, err)
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// runtimeGrantsStatements is the statement list itself, split out so
+// migrator_transition_test.go's adopt mirror can append the SAME list after
+// its `SET LOCAL ROLE` — reproducing in the tests the exact sharing production
+// gets from both Jobs including one helper, which is what keeps a transitioned
+// cluster and a fresh one on identical ACLs.
+func runtimeGrantsStatements(schema string, historyTables []string) []string {
+	quoted := make([]string, len(historyTables))
+	for i, tbl := range historyTables {
+		quoted[i] = "'" + tbl + "'"
+	}
+	// The template's DO block, with {schema} / {historyTables} in place of
+	// Helm's interpolations. A replacer, not fmt.Sprintf — the block is full
+	// of format()'s own %I/%s verbs.
+	doBlock := strings.NewReplacer(
+		"{schema}", schema,
+		"{historyTables}", strings.Join(quoted, ", "),
+	).Replace(`DO $do$
+    DECLARE
+      history_tables CONSTANT text[] := ARRAY[{historyTables}]::text[];
+      t text;
+      unclassified text;
+    BEGIN
+      FOREACH t IN ARRAY history_tables LOOP
+        IF EXISTS (SELECT 1 FROM pg_tables
+                   WHERE schemaname = '{schema}' AND tablename = t) THEN
+          EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON %I.%I FROM %I',
+                         '{schema}', t, '{schema}_svc');
+        END IF;
+      END LOOP;
+      IF EXISTS (SELECT 1 FROM pg_tables
+                 WHERE schemaname = '{schema}' AND tablename = 'goose_db_version') THEN
+        EXECUTE format('REVOKE ALL ON %I.%I FROM %I',
+                       '{schema}', 'goose_db_version', '{schema}_svc');
+      END IF;
+      -- FAIL-CLOSED GUARD (#553): a table named like a history table that this
+      -- release cannot classify fails the release, in this transaction, so the
+      -- blanket GRANT above rolls back with it and the table is never mutable.
+      SELECT string_agg(tablename, ', ' ORDER BY tablename) INTO unclassified
+        FROM pg_tables
+       WHERE schemaname = '{schema}'
+         AND lower(tablename) LIKE '%\_log'
+         AND NOT tablename = ANY (history_tables);
+      IF unclassified IS NOT NULL THEN
+        RAISE EXCEPTION '%: unclassified history-style table(s): %. Fail-closed (#553).',
+                        '{schema}', unclassified;
+      END IF;
+    END
+    $do$`)
+
+	return []string{
 		fmt.Sprintf(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %s TO %s_svc`, schema, schema),
 		fmt.Sprintf(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %s TO %s_svc`, schema, schema),
 		// SELECT, INSERT — not full DML (#545). A history table created by a
@@ -240,14 +320,9 @@ func applyRuntimeGrants(t *testing.T, migrator *pgx.Conn, schema string) {
 		// landing (weight 3).
 		fmt.Sprintf(`ALTER DEFAULT PRIVILEGES FOR ROLE %s_migrator IN SCHEMA %s GRANT SELECT, INSERT ON TABLES TO %s_svc`, schema, schema, schema),
 		fmt.Sprintf(`ALTER DEFAULT PRIVILEGES FOR ROLE %s_migrator IN SCHEMA %s GRANT USAGE, SELECT ON SEQUENCES TO %s_svc`, schema, schema, schema),
-		fmt.Sprintf(`REVOKE UPDATE, DELETE, TRUNCATE ON %s.audit_log FROM %s_svc`, schema, schema),
-		fmt.Sprintf(`REVOKE UPDATE, DELETE, TRUNCATE ON %s.sync_conflict_log FROM %s_svc`, schema, schema),
-		// Free since #541: nothing in the serving path reads the goose ledger.
-		fmt.Sprintf(`REVOKE ALL ON %s.goose_db_version FROM %s_svc`, schema, schema),
-	} {
-		if _, err := migrator.Exec(ctx, stmt); err != nil {
-			t.Fatalf("table-grants (%q): %v", stmt, err)
-		}
+		// The history and ledger REVOKEs, plus the #553 guard — one DO block,
+		// exactly as the template ships it.
+		doBlock,
 	}
 }
 
@@ -566,10 +641,12 @@ func TestMigratorIsolation_RuntimeRoleKeepsAppendOnlyGuarantee(t *testing.T) {
 // The domain-table half is what makes the narrowing safe: a new domain table
 // still reaches full DML, just at weight 3 instead of weight 2, on a table
 // nothing has written to yet. (A new HISTORY table additionally needs its name
-// in the REVOKE array in `postgres.runtimeGrantsPsqlArgs`, exactly as
-// audit_log and sync_conflict_log are today — the default privileges make it
-// append-only from birth, the REVOKE keeps it that way once the blanket GRANT
-// has run.)
+// in `postgres.historyTables` — charts/postgres/values.yaml, rendered into
+// `postgres.runtimeGrantsPsqlArgs`'s REVOKE loop — exactly as audit_log and
+// sync_conflict_log are today. The default privileges make it append-only from
+// birth, the REVOKE keeps it that way once the blanket GRANT has run, and
+// since #553 forgetting the list is a loud deploy failure, not a silently
+// mutable table — see history_fail_closed_test.go.)
 func TestMigratorIsolation_NewTableIsNeverMutableBeforeTableGrants(t *testing.T) {
 	f := newMigratorIsolationFixture(t)
 	ctx := context.Background()

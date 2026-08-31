@@ -4,7 +4,9 @@
 
 {{/*
 postgres.runtimeGrantsPsqlArgs — the steady-state runtime ACL for ONE schema,
-rendered as `psql -c` arguments. Takes the schema name as its context.
+rendered as `psql -c` arguments. Takes a dict as its context:
+  schema        — the schema name
+  historyTables — .Values.historyTables, the append-only classification list
 
 WHY THIS IS SHARED RATHER THAN WRITTEN TWICE. Exactly two Jobs establish this
 ACL and they must produce a byte-identical end state:
@@ -47,25 +49,68 @@ Grant-then-revoke, rather than enumerating the domain tables to grant: the set
 of history/ledger tables is small, fixed and known, while the domain tables are
 not. A missed REVOKE fails loudly in
 services/shared/dbaccess/audit_immutability_test.go, whereas a missed GRANT
-would fail silently at runtime. The REVOKE list being two LITERAL names is a
-known fail-open edge — a future history table under a third name would keep
-full DML after the blanket GRANT — tracked as #553. #545 narrowed half of it
-(the default privileges no longer make such a table mutable at creation) but
-did not close it, and deliberately did not widen its own scope to do so. The callers wrap this in
-`--single-transaction` so no session ever observes the intermediate state — see
-table-grants-job.yaml's header for why that is a security control and not a
-tidiness preference.
+would fail silently at runtime.
+
+THE REVOKE LIST IS `.Values.historyTables`, AND UNCLASSIFIED `*_log` TABLES
+FAIL THE RELEASE (#553). The list used to be two literal names inlined here,
+which was a fail-open edge: a future history table under a third name would
+keep the full DML the blanket GRANT above hands it, silently, forever — the
+safe outcome depended on a developer remembering to edit an infra file when
+adding a table in a service repo, and nothing in CI noticed when they did not.
+#545 narrowed half of it (`ALTER DEFAULT PRIVILEGES` no longer makes such a
+table mutable at creation) but left the steady state open. Two things close it:
+
+  - The list moved to charts/postgres/values.yaml (`historyTables`), still one
+    central definition for every schema — history tables are deliberately
+    uniform across schemas (history.md §5) — and still shared by both callers
+    of this helper, so fresh and transitioned clusters cannot drift.
+  - The DO block below ends with a GUARD: any table in the schema whose name
+    ends `_log` (the naming convention every history table follows — audit_log,
+    sync_conflict_log) that is NOT in the list RAISEs an EXCEPTION naming it.
+    That aborts psql with a script error (measured: exit 1 for a failed `-c`
+    command under ON_ERROR_STOP — not the connection code 2 either way), which
+    the table-grants retry loop deliberately does NOT retry, so the release
+    fails on the first attempt with the table's name in the log. And because
+    the callers wrap this in `--single-transaction`, the abort also rolls back
+    the blanket GRANT — the unclassified table is never mutable, not even for
+    the seconds a failed release lingers. Deploy-time error, never a silent
+    privilege.
+
+    The pattern is fixed here rather than configurable: a values overlay that
+    could widen or drop it would be a per-environment hole in a guard whose
+    whole point is that it cannot be forgotten. What remains honest to say is
+    that a history table named WITHOUT the `_log` suffix evades the guard and
+    lands back on the list being edited by hand — the guard enforces the
+    naming convention and the list classifies, so the failure mode left is
+    "broke the convention AND forgot the list", not "forgot the list".
+
+The callers wrap this in `--single-transaction` so no session ever observes the
+intermediate state — see table-grants-job.yaml's header for why that is a
+security control and not a tidiness preference.
 */}}
 {{- define "postgres.runtimeGrantsPsqlArgs" -}}
-{{- $schema := . -}}
+{{- $schema := .schema -}}
+{{- $historyTables := .historyTables -}}
+{{- if not $historyTables -}}
+{{- fail "postgres.historyTables must be a non-empty list (charts/postgres/values.yaml) — an empty list would mean no history table is ever revoked and every *_log table trips the #553 guard, which is never the intent" -}}
+{{- end -}}
+{{- range $t := $historyTables -}}
+{{- if not (regexMatch "^[a-z][a-z0-9_]*$" $t) -}}
+{{- fail (printf "postgres.historyTables entry %q is not a plain lower-case identifier — these names are interpolated into SQL string literals, so anything else fails the render rather than the deploy (#553)" $t) -}}
+{{- end -}}
+{{- end -}}
 -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {{ $schema }} TO {{ $schema }}_svc;" \
 -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {{ $schema }} TO {{ $schema }}_svc;" \
 -c "ALTER DEFAULT PRIVILEGES FOR ROLE {{ $schema }}_migrator IN SCHEMA {{ $schema }} GRANT SELECT, INSERT ON TABLES TO {{ $schema }}_svc;" \
 -c "ALTER DEFAULT PRIVILEGES FOR ROLE {{ $schema }}_migrator IN SCHEMA {{ $schema }} GRANT USAGE, SELECT ON SEQUENCES TO {{ $schema }}_svc;" \
 -c "DO \$do\$
-    DECLARE t text;
+    DECLARE
+      history_tables CONSTANT text[] :=
+        ARRAY[{{ range $i, $t := $historyTables }}{{ if $i }}, {{ end }}'{{ $t }}'{{ end }}]::text[];
+      t text;
+      unclassified text;
     BEGIN
-      FOREACH t IN ARRAY ARRAY['audit_log', 'sync_conflict_log'] LOOP
+      FOREACH t IN ARRAY history_tables LOOP
         IF EXISTS (SELECT 1 FROM pg_tables
                    WHERE schemaname = '{{ $schema }}' AND tablename = t) THEN
           EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON %I.%I FROM %I',
@@ -80,6 +125,20 @@ tidiness preference.
                        '{{ $schema }}', 'goose_db_version', '{{ $schema }}_svc');
         RAISE NOTICE '%.goose_db_version: no runtime access for %',
                      '{{ $schema }}', '{{ $schema }}_svc';
+      END IF;
+      -- FAIL-CLOSED GUARD (#553): a table named like a history table that this
+      -- release cannot classify fails the release, in this transaction, so the
+      -- blanket GRANT above rolls back with it and the table is never mutable.
+      -- lower() so a quoted mixed-case name cannot slip past the pattern while
+      -- also failing to match the (lower-case) list.
+      SELECT string_agg(tablename, ', ' ORDER BY tablename) INTO unclassified
+        FROM pg_tables
+       WHERE schemaname = '{{ $schema }}'
+         AND lower(tablename) LIKE '%\_log'
+         AND NOT tablename = ANY (history_tables);
+      IF unclassified IS NOT NULL THEN
+        RAISE EXCEPTION '%: unclassified history-style table(s): %. Fail-closed (#553): the blanket DML GRANT would hand these UPDATE/DELETE, so this transaction aborts instead. If it is a history table, add it to postgres.historyTables (charts/postgres/values.yaml); if it is a domain table, rename it — the _log suffix is reserved for append-only history (history.md §7.1).',
+                        '{{ $schema }}', unclassified;
       END IF;
     END
     \$do\$;"

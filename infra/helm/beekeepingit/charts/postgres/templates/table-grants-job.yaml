@@ -200,7 +200,7 @@ spec:
               while :; do
                 set +e
                 psql -v ON_ERROR_STOP=1 --single-transaction \
-                  {{- include "postgres.runtimeGrantsPsqlArgs" $schema | nindent 18 }}
+                  {{- include "postgres.runtimeGrantsPsqlArgs" (dict "schema" $schema "historyTables" $root.Values.historyTables) | nindent 18 }}
                 rc=$?
                 set -e
 

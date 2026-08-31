@@ -257,7 +257,7 @@ BEGIN
 END
 $do$`, schema)
 
-	return []string{
+	return append([]string{
 		// Non-negotiables 1 + 2: a per-relation loop scoped by relnamespace,
 		// guarded against the object kinds it cannot move.
 		ownershipLoop,
@@ -274,15 +274,13 @@ $do$`, schema)
 		fmt.Sprintf(`SET LOCAL ROLE %s_migrator`, schema),
 		// The shared steady-state ACL (_helpers.tpl's
 		// postgres.runtimeGrantsPsqlArgs), identical to what table-grants-job
-		// applies at weight 3.
-		fmt.Sprintf(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %s TO %s_svc`, schema, schema),
-		fmt.Sprintf(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %s TO %s_svc`, schema, schema),
-		fmt.Sprintf(`ALTER DEFAULT PRIVILEGES FOR ROLE %s_migrator IN SCHEMA %s GRANT SELECT, INSERT ON TABLES TO %s_svc`, schema, schema, schema),
-		fmt.Sprintf(`ALTER DEFAULT PRIVILEGES FOR ROLE %s_migrator IN SCHEMA %s GRANT USAGE, SELECT ON SEQUENCES TO %s_svc`, schema, schema, schema),
-		fmt.Sprintf(`REVOKE UPDATE, DELETE, TRUNCATE ON %s.audit_log FROM %s_svc`, schema, schema),
-		fmt.Sprintf(`REVOKE UPDATE, DELETE, TRUNCATE ON %s.sync_conflict_log FROM %s_svc`, schema, schema),
-		fmt.Sprintf(`REVOKE ALL ON %s.goose_db_version FROM %s_svc`, schema, schema),
-	}
+		// applies at weight 3 — literally the same statement list
+		// (runtimeGrantsStatements, migrator_isolation_test.go, including the
+		// #553 fail-closed guard), because sharing one definition is exactly
+		// how production keeps a transitioned cluster and a fresh one from
+		// drifting, and this mirror reproduces that property rather than
+		// re-typing the statements.
+	}, runtimeGrantsStatements(schema, defaultHistoryTables)...)
 }
 
 // runAdopt executes the adopt statements as beekeepingit, in ONE transaction —
