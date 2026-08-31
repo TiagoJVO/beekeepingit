@@ -22,7 +22,14 @@ entries:
       # must not detour through the verification email stage below. Seeding the
       # attribute is also the documented escape hatch for ops-provisioned accounts
       # whose address was verified out-of-band.
-      attributes: { upn: "11111111-1111-4111-8111-111111111111", email_verified: true }
+      # known_emails (#364): the same escape hatch, one level down. The
+      # verification stage is what normally writes this list (it is the only
+      # writer), and these seeds never run it — so seed it too, or a federated
+      # sign-in would find no history for an account that IS verified.
+      attributes:
+        upn: "11111111-1111-4111-8111-111111111111"
+        email_verified: true
+        known_emails: [test.beekeeper@beekeepingit.local]
       # In `platform-operator` since the Authentik cut-over (#191). Since #465 this
       # membership is LOAD-BEARING for CI: it is the POSITIVE half of the
       # platform-operator claim e2e (admin-token.spec.ts asserts this user's admin
@@ -64,7 +71,11 @@ entries:
       email: non.operator@beekeepingit.local
       is_active: true
       path: users
-      attributes: { upn: "33333333-3333-4333-8333-333333333333", email_verified: true }
+      attributes:
+        upn: "33333333-3333-4333-8333-333333333333"
+        email_verified: true
+        # Seeded for the same reason test.beekeeper is (see there) — #364.
+        known_emails: [non.operator@beekeepingit.local]
       password: dev-password123
   # Custom `email` scope mapping (#361, NFR-SEC-1): emits the user's GENUINE
   # verification state instead of the built-in managed mapping's hardcoded value.
@@ -461,11 +472,27 @@ entries:
   # write is MERGED into any existing prompt_data (setdefault + key assignment),
   # never assigned over it — assignment would silently discard whatever a
   # future stage placed in the plan (review finding on #361).
+  #
+  # KNOWN-EMAIL HISTORY (#364). This is also the ONLY writer of
+  # `attributes.known_emails` — the per-account list of addresses whose inbox
+  # control this deployment has actually proven. It is written here, and nowhere
+  # else, because here is the one moment that proof exists: the restored
+  # flow-token evidence gating the line above is the same evidence. The
+  # federated account resolver (`mapping-federation-account-link`, below) READS
+  # it to reunite a returning user whose CURRENT address has since changed with
+  # their existing account. Nothing an upstream identity provider asserts can
+  # ever add an entry.
+  #
+  # Bounded, de-duplicated and lowercase-normalized (the resolver compares
+  # lowercased). Oldest entries are dropped first — an address so old it has
+  # fallen out of the window simply stops matching, which is the safe direction.
   - model: authentik_policies_expression.expressionpolicy
     id: policy-mark-email-verified
     identifiers: { name: beekeepingit-mark-email-verified }
     attrs:
       expression: |
+        MAX_KNOWN_EMAILS = 10
+
         flow_plan = request.context.get("flow_plan")
         if not flow_plan:
             return False
@@ -479,6 +506,21 @@ entries:
             return False
         prompt_data = flow_plan.context.setdefault("prompt_data", {})
         prompt_data["attributes.email_verified"] = True
+
+        # The address just proven is `user.email` — the email stage sends to
+        # exactly that, and the token/user match was checked above.
+        stored = user.attributes.get("known_emails")
+        history = []
+        if isinstance(stored, list):
+            for entry in stored:
+                if isinstance(entry, str) and entry.strip():
+                    normalized = entry.strip().lower()
+                    if normalized not in history:
+                        history.append(normalized)
+        address = (user.email or "").strip().lower()
+        if address and address not in history:
+            history.append(address)
+        prompt_data["attributes.known_emails"] = history[-MAX_KNOWN_EMAILS:]
         return True
   # evaluate_on_plan: false + re_evaluate_policies: true on both bindings: at plan
   # time (flow start) there is no pending_user yet — identification only sets it
@@ -812,6 +854,200 @@ entries:
       # stage bound at order 20, NOT from this M2M (verified at 2026.5.4).
       sources: []
 
+  # === Federated account resolution (#364, FR-ONB-1, FR-TEN-1, NFR-SEC-1, D-7) =
+  #
+  # THE ONE PLACE that decides which local account an upstream identity may
+  # reach. #363 shipped federation with `user_matching_mode: identifier`, which
+  # links ONLY on a connection that already exists — so "Continue with Google"
+  # worked only for someone who had first connected Google from authentik's own
+  # "Connected services" page. This closes that, WITHOUT reintroducing the
+  # unverified-email link that #363 deliberately refused (the #170 shape).
+  #
+  # ---------------------------------------------------------------------------
+  # HOW IT PLUGS IN (authentik 2026.5.4, source-verified)
+  # ---------------------------------------------------------------------------
+  # `SourceFlowManager.__init__` builds `user_properties` through
+  # `SourceMapper.build_object_properties`, which starts from the source type's
+  # `get_base_user_properties(info=...)` and then MERGES each attached user
+  # property mapping over it (`MERGE_LIST_UNIQUE`, mappings ordered by name),
+  # finally dropping every None-valued key (`delete_none_values`). Then
+  # `SourceMatcher.get_action` runs, in this order:
+  #   1. a UserSourceConnection for (source, identifier) exists -> Action.AUTH.
+  #      `identifier` is the upstream's stable SUBJECT (Google: the `id` from
+  #      its userinfo; the stand-in: `sub`). So a once-linked account is reached
+  #      by SUBJECT ALONE — the email plays no part, which is exactly why an
+  #      upstream address change never loses the account (#364 AC1/AC5).
+  #   2. otherwise, with `user_matching_mode: username_link`, it requires
+  #      `properties["username"]` to be non-empty — MISSING/EMPTY IS
+  #      Action.DENY, not enroll — and matches `User.objects.filter(
+  #      username__exact=...)`.
+  #
+  # So this mapping is the resolver: it REPLACES `username` with the local
+  # account it resolved, or sets it to None so the whole attempt is DENIED.
+  # `username` (not `email`) because it is the only matchable property authentik
+  # declares UNIQUE — `matching_objects.first()` can therefore never pick an
+  # arbitrary account out of several, which `email_link` demonstrably can (this
+  # deployment ALLOWS duplicate emails by design, auth.md §8.11).
+  #
+  # ---------------------------------------------------------------------------
+  # WHY THIS IS NOT #363's REFUSED `email_link`
+  # ---------------------------------------------------------------------------
+  # `email_link` matches the RAW upstream email straight out of
+  # `get_base_user_properties`. For Google that value is unverified —
+  # `GoogleType.get_base_user_properties` returns only {email, name} and DROPS
+  # the verification flag. The correction #363 could not make (it never needed
+  # the raw payload) is that the flag is NOT gone: `get_base_user_properties`
+  # drops it, but the FULL upstream payload is handed to property mappings as
+  # `info`. Google's configured `profile_url`
+  # (https://www.googleapis.com/oauth2/v1/userinfo — hardcoded on GoogleType,
+  # not customizable) returns `verified_email`; an OIDC upstream returns
+  # `email_verified`. This mapping reads them itself, STRICTLY: only a JSON
+  # `true` counts. A string "true", a missing key, junk -> refuse.
+  #
+  # ---------------------------------------------------------------------------
+  # FAIL CLOSED, EVERY BRANCH
+  # ---------------------------------------------------------------------------
+  #   * upstream verification flag not strictly True -> DENY
+  #   * no usable email in the payload -> DENY
+  #   * zero candidate accounts -> DENY (so account creation via an upstream
+  #     stays impossible; `enrollment_flow` is unset as well — belt and braces)
+  #   * MORE THAN ONE candidate -> DENY. Never guess; duplicate emails exist.
+  #   * the candidate has not itself proven inbox control locally
+  #     (`attributes.email_verified is True`, #361) -> DENY. This keeps #361's
+  #     invariant ("no session before inbox control") true on the federated path
+  #     too — #363's argument for it (federation was only reachable AFTER a
+  #     password login) stops holding the moment this mapping links a stranger.
+  #     It also makes email squatting harmless rather than a denial-of-service:
+  #     an unverified account registered at a victim address is not a candidate,
+  #     so it cannot make the victim ambiguous.
+  #   * inactive / superuser / service accounts are never candidates. The
+  #     superuser exclusion is deliberate blast-radius reduction: ops accounts
+  #     link deliberately via Connected services, never by an inbound match.
+  #   * ANY exception -> DENY. A raising property mapping propagates out of
+  #     `SourceFlowManager.__init__` (mapper.py re-raises
+  #     PropertyMappingExpressionException) and would 500 the callback, so the
+  #     whole body is guarded.
+  # The mapping ALWAYS returns a dict containing `username` — never None and
+  # never {}: `iter_eval` skips a None return and `build_object_properties`
+  # skips a falsy one, either of which would leave the source type's own
+  # (upstream-controlled) `username` standing.
+  #
+  # DENY is the single outcome for every refusal on purpose: it leaks no
+  # account-existence oracle (an unknown address and an ambiguous one are
+  # indistinguishable) and renders authentik's own AccessDeniedResponse rather
+  # than #363's raw 400. Note for #365 (self-service registration via Google):
+  # opening enrollment needs a deliberate change HERE too — while every
+  # no-candidate case returns None, Action.ENROLL is unreachable for these
+  # sources.
+  #
+  # KNOWN-EMAIL HISTORY (`attributes.known_emails`). Written ONLY by
+  # `beekeepingit-mark-email-verified` above, at the one moment inbox control is
+  # proven for an address; read here. It is what reunites a returning user whose
+  # CURRENT address has since changed with their existing account. Its scope is
+  # honest and bounded: it holds addresses this deployment itself saw verified —
+  # it can never learn an upstream address we have never seen, and it is not a
+  # way to guess.
+  - model: authentik_sources_oauth.oauthsourcepropertymapping
+    id: mapping-federation-account-link
+    identifiers: { name: "BeekeepingIT Source Mapping: federated account resolution" }
+    attrs:
+      name: "BeekeepingIT Source Mapping: federated account resolution"
+      expression: |
+        from authentik.core.models import User, UserTypes
+
+        # Addresses are compared case-insensitively and length-bounded (RFC 5321
+        # caps a path at 256 and a full address at 320 octets).
+        MAX_ADDRESS_LENGTH = 320
+
+        try:
+            payload = info if isinstance(info, dict) else {}
+
+            # The upstream's OWN verification signal. `email_verified` is the
+            # OIDC claim; `verified_email` is what Google's v1 userinfo (the
+            # endpoint GoogleType hardcodes) returns. Strictly boolean True.
+            verified = payload.get("email_verified")
+            if verified is None:
+                verified = payload.get("verified_email")
+            if verified is not True:
+                return {"username": None}
+
+            address = payload.get("email")
+            if not isinstance(address, str):
+                return {"username": None}
+            address = address.strip().lower()
+            if "@" not in address or len(address) > MAX_ADDRESS_LENGTH:
+                return {"username": None}
+
+            candidates = {}
+            # `is_superuser` is NOT a column on User — it is a PROPERTY derived
+            # from group membership (core/models.py: `all_groups().filter(
+            # is_superuser=True).exists()`; the column lives on Group). Passing
+            # it to `.filter()` raises FieldError, which the blanket `except`
+            # below would swallow into "deny everyone" — silently disabling this
+            # whole feature while every negative test still passed. Found live.
+            # The superuser test is therefore applied to the MATCHED INSTANCE
+            # further down, where the property works — and that spelling is also
+            # the more correct one, since the property honours superuser
+            # inherited through PARENT groups, which a flat
+            # `ak_groups__is_superuser` exclusion would miss.
+            reachable = User.objects.filter(is_active=True).exclude(
+                type__in=[UserTypes.SERVICE_ACCOUNT, UserTypes.INTERNAL_SERVICE_ACCOUNT]
+            )
+
+            # (a) the account's CURRENT address.
+            for candidate in reachable.filter(email__iexact=address):
+                if (candidate.email or "").strip().lower() == address:
+                    candidates[candidate.pk] = candidate
+
+            # (b) an address this account previously PROVED inbox control of.
+            # The JSONB containment query narrows; the Python check below is
+            # what actually decides, so a looser lookup can never widen the
+            # match. NOTE the narrowing is real in one direction: Postgres `@>`
+            # is CASE-SENSITIVE, so a history entry stored in mixed case would
+            # never be reached. Entries are lowercase by construction — the
+            # stamp policy is the only writer and normalizes — and the seeded
+            # ones above are lowercase for the same reason. Keep it that way.
+            for candidate in reachable.filter(attributes__known_emails__contains=[address]):
+                history = (candidate.attributes or {}).get("known_emails")
+                if not isinstance(history, list):
+                    continue
+                for entry in history:
+                    if isinstance(entry, str) and entry.strip().lower() == address:
+                        candidates[candidate.pk] = candidate
+                        break
+
+            if len(candidates) != 1:
+                return {"username": None}
+            matched = list(candidates.values())[0]
+
+            # Blast radius: an upstream address must never reach a privileged
+            # account. Applied HERE, on the instance, because `is_superuser` is
+            # a computed property rather than a column (see the note on the
+            # `reachable` query above). Narrowing after the match rather than
+            # before it is also strictly safer: a superuser SHARING the address
+            # now makes the match ambiguous — two candidates — and ambiguity
+            # already denies, where excluding them up front would have quietly
+            # linked the other account.
+            if matched.is_superuser:
+                return {"username": None}
+
+            # The account must itself have proven inbox control (#361).
+            if (matched.attributes or {}).get("email_verified", False) is not True:
+                return {"username": None}
+
+            # The value handed back must identify EXACTLY this account. Django
+            # declares `username` unique, so this is an invariant check, not a
+            # search — it is the assumption the whole design rests on, so it is
+            # asserted rather than trusted.
+            if not matched.username:
+                return {"username": None}
+            if User.objects.filter(username__exact=matched.username).count() != 1:
+                return {"username": None}
+            return {"username": matched.username}
+        except Exception:
+            # Never raise: see FAIL CLOSED above.
+            return {"username": None}
+
   # === Google federation (#363, FR-ONB-1, FR-TEN-1, NFR-SEC-1, D-7, D-18) =====
   #
   # Google is added as an UPSTREAM federation source on Authentik. Domain
@@ -935,7 +1171,12 @@ entries:
       # any single-element `!Env`.
       consumer_key: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_ID, ""]
       consumer_secret: !Env [BEEKEEPINGIT_GOOGLE_CLIENT_SECRET, ""]
-      user_matching_mode: identifier
+      # #364: read `username_link` as "match on the account key the resolver
+      # returns", NOT as "trust Google's username" — Google sends none at all.
+      # The mapping below is what supplies (or withholds) that value; without
+      # it this source DENIES every unlinked login. See its section comment.
+      user_matching_mode: username_link
+      user_property_mappings: [!KeyOf mapping-federation-account-link]
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
       # enrollment_flow: intentionally UNSET — see the section comment.
 
@@ -990,7 +1231,13 @@ entries:
       access_token_url: "{{ .Values.federationStub.upstreamUrl }}"
       profile_url: "{{ .Values.federationStub.upstreamUrl }}"
       # Identical posture to the Google source above — that is the whole point.
-      user_matching_mode: identifier
+      # Note this source type DOES emit a `username` of its own (from the
+      # upstream's `nickname`/`preferred_username`), so unlike Google it would
+      # NOT fail closed if the resolver were ever detached — which is precisely
+      # why scripts/check-federation-source-posture.sh asserts the attachment
+      # rather than relying on the source type to be defensive for us.
+      user_matching_mode: username_link
+      user_property_mappings: [!KeyOf mapping-federation-account-link]
       authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
       # enrollment_flow: intentionally UNSET.
 

@@ -43,6 +43,25 @@ reconciles — staging is never deployed from a branch):
   into k3d so pull time is always zero. Confirm on the next staging release that no `*-migrate` Job
   reports `DeadlineExceeded` while the node pulls a cold image set, then prune this entry.
 
+## `feat/account-linking-364` (#364 — federated account linking)
+
+- **Notify the account owner when a sign-in method is first linked.** The one missing detection
+  control for the residual risk #364 accepts and documents (`docs/architecture/auth.md` §8.14): an
+  upstream address that changes hands — a Workspace mailbox reassigned to a new hire — can link
+  into an account that was never deactivated, and nothing today tells the owner it happened.
+  Authentik already raises a `SOURCE_LINKED` Event when `PostSourceStage` persists a new
+  connection, so the work is binding a **notification rule + transport** to that event in the
+  blueprint; the SMTP path #361 built is already there. **Not a merge blocker:** federation is
+  inert until an environment has Google credentials, and none holds real user data yet (D-26). It
+  **is** a prerequisite for enabling federation on one that does — i.e. alongside
+  [#510](https://github.com/TiagoJVO/beekeepingit/issues/510), before #365's environment.
+  _Promote to a GitHub Issue and prune this entry once referenced._
+- **Nothing else is owed before merge.** This branch's one unverifiable-in-CI dependency is
+  [#510](https://github.com/TiagoJVO/beekeepingit/issues/510) — creating the Google credentials
+  Secret and running `infra/README.md`'s manual checklist against a real Google client, which now
+  covers #364's first-link case as well as #363's. Everything else is proven live in `helm-e2e`
+  by `infra/ci/authentik-federation-probe.py`.
+
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript

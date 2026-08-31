@@ -446,9 +446,18 @@ bot detection). Run this by hand after step 3, and record the result on the PR/i
 
 - [ ] The app's **Continue with Google** button goes straight to Google's consent screen — one
       hop, no stop at Authentik's login form.
-- [ ] Signing in with a Google account that is **not** linked to any local account is refused with
-      _"Source is not configured for enrollment."_ and creates **no** user (check _Directory →
-      Users_ in the Authentik admin UI). This is the invitation-only guarantee.
+- [ ] Signing in with a Google account whose address matches **no** local account is refused
+      ("Request to authenticate with Google has been denied…") and creates **no** user (check
+      _Directory → Users_ in the Authentik admin UI). This is the invitation-only guarantee.
+- [ ] **(#364, the one thing CI cannot reach at all.)** Signing in with a Google account whose
+      verified address **does** match an existing, email-verified local account lands in the app on
+      **that** account — no duplicate user is created, and _Directory → Users → that user → source
+      connections_ now shows Google. This is the only check that proves Google really returns
+      `verified_email: true` in its userinfo; every automated test synthesizes that payload. If it
+      is instead **denied**, the flag is missing or non-boolean — check _Events_ in the admin UI and
+      re-read `docs/architecture/auth.md` §8.14 before changing anything.
+- [ ] Signing out and using **Continue with Google** again lands on the same account **immediately**
+      — the second time it resolves on the stored subject, not the email.
 - [ ] Signing in with a password, connecting Google under _Settings → Connected services_, then
       signing out and using **Continue with Google** lands in the app on the **same account** —
       same apiaries, same organization.
