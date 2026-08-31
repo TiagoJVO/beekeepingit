@@ -434,6 +434,66 @@ abstract class AppLocalizations {
   /// **'Could not create your organization: {error}'**
   String organizationSaveError(String error);
 
+  /// Title of the waiting-for-an-invitation onboarding screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Join an organization'**
+  String get organizationWaitingTitle;
+
+  /// Explains that creating an organization is not required when an invitation is expected.
+  ///
+  /// In en, this message translates to:
+  /// **'If someone is inviting you to their organization, you don\'t need to create one. Check again once the invitation has been sent.'**
+  String get organizationWaitingIntro;
+
+  /// Tells the user which address the invitation must target.
+  ///
+  /// In en, this message translates to:
+  /// **'The invitation must be sent to the email you signed in with. Ask the organization\'s admin to invite that address.'**
+  String get organizationWaitingHint;
+
+  /// Re-checks whether a pending invitation has arrived.
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get organizationWaitingCheckButton;
+
+  /// Screen-reader label while the check is in flight.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for an invitation'**
+  String get organizationWaitingChecking;
+
+  /// Shown when a check finds no pending invitation.
+  ///
+  /// In en, this message translates to:
+  /// **'No invitation yet. Try again in a moment, or create your own organization.'**
+  String get organizationWaitingStillNone;
+
+  /// Fixed error message for a failed check - never shows the raw exception.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not check for an invitation right now. Try again.'**
+  String get organizationWaitingCheckError;
+
+  /// Leaves the waiting screen for the create-organization form.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an organization instead'**
+  String get organizationWaitingCreateInsteadButton;
+
+  /// Leaves the create form for the waiting screen.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m waiting for an invitation'**
+  String get organizationJoinInsteadButton;
+
+  /// Warns that creating an organization is a one-way choice while #506 is open.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating an organization means you can\'t accept an invitation to another one later. If you\'re expecting an invitation, wait for it instead.'**
+  String get organizationCreateBlocksInvitationWarning;
+
   /// Members/invitations management screen app bar title
   ///
   /// In en, this message translates to:
