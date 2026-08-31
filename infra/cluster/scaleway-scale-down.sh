@@ -136,10 +136,23 @@ else
   done <<<"$pool_ids"
 fi
 
-pvc_count="$(kubectl get pvc -A --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+# The API endpoint may already be GONE by this point, and that is expected:
+# observed live (#554, 2026-08-31), once the last pool is deleted the cluster
+# goes `pool_required` and its `*.api.k8s.<region>.scw.cloud` DNS name stops
+# resolving — so a kubectl call here fails on DNS, not because anything broke.
+# The first workflow run of this script died on exactly this line (under
+# `set -e`, with the error hidden by 2>/dev/null) and reported FAILURE for a
+# scale-down that had fully succeeded. Tolerate it: the count is a nicety, and
+# "unreachable" is the normal post-scale-down state.
+if pvcs="$(kubectl get pvc -A --no-headers 2>/dev/null)"; then
+  pvc_count="$(printf '%s' "$pvcs" | grep -c . || true)"
+else
+  pvc_count="not queryable — the API endpoint stops resolving at 0 pools (expected; #554)"
+fi
 cat <<EOF
 
-Cluster '$cluster_name' ($env_name) scaled down — 0 nodes, control plane still running.
+Cluster '$cluster_name' ($env_name) scaled down — 0 nodes. The control-plane STATE is kept,
+but its API endpoint stops resolving until a pool exists again (status: pool_required).
 
 - PersistentVolumeClaims still Bound in the cluster: $pvc_count (none were touched)
 - Load Balancers: deleted (recreated automatically on scaleway-scale-up.sh)

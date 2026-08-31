@@ -94,6 +94,15 @@ recreates it (and therefore a fresh LB) by reinstalling Traefik.
   with no pool to reschedule onto after an interrupted run, taking Postgres down for ~15 minutes
   (data untouched throughout — confirmed via direct row counts pre/post) until manually uncordoned;
   `scale-up` now defensively uncordons every node on resume for exactly this case.
+- **Full round-trip executed through `cluster-ops.yml` itself (#554, 2026-08-31)** — the first run
+  driven end to end by the workflow rather than a local shell: marker row seeded, `scale-down`,
+  `scale-up`, marker row and all 26 migrator-owned tables intact, stack healthy, site serving.
+  Two findings: (1) the staging control plane **is** on the free Mutualized tier
+  (`scw k8s cluster get` → `type: kapsule`), closing that open check; (2) at 0 pools the cluster
+  goes `pool_required` and its API endpoint **stops resolving**, so anything that talks to the API
+  after the last pool is deleted fails on DNS — the scale-down script's own closing summary did
+  exactly that and reported failure for a successful run (fixed; the summary now tolerates the
+  unreachable endpoint and says why).
 
 ## Alternatives considered
 

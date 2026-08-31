@@ -333,6 +333,35 @@ gh variable set AUTH_HOST --env staging-gate --body auth.beekeepingit-rc.melargi
 (The `staging-gate`/`production-gate` environments are D-27's release-approval gates; create one
 under _Settings → Environments_ first if it doesn't exist yet.)
 
+**Adding another external credential** takes four coordinated edits: a guarded block in
+[`scaleway-up.sh`](cluster/scaleway-up.sh) that creates the Secret, the `run` job's `env:` in
+[`cluster-ops.yml`](../.github/workflows/cluster-ops.yml), a commented entry in
+[`.env.example`](cluster/.env.example), and a row in the table above. The two optional pairs listed
+there are this same shape twice — copy either.
+
+**Three of those four fail silently**, which is the reason this is written down at all. Miss the
+script block and no Secret is created; miss the workflow env and every CI run takes the script's
+"not set — skipping" path; miss `.env.example` and a local run has no way to discover the variable
+exists. Only the table row is merely documentation.
+
+**What the absence then does is per-consumer** — the two existing pairs differ, so check yours.
+Google's entries in the
+[Authentik blueprint](helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml) carry
+`conditions:`, which the importer evaluates before the model resolves, so the entries are skipped
+outright: a deliberate clean no-op — the deployment stays green and the button simply never
+appears. The SMTP pair is gated a layer further out instead, by a Helm `if` on the config Secret's
+keys; the blueprint's email-verification stage itself is unconditional, so it still runs and still
+tries to send — just unauthenticated against the configured relay. Silent either way, but only the
+first is a feature quietly not appearing.
+
+Name the pair `<CONSUMER>_<PURPOSE>` (`AUTHENTIK_EMAIL_*`, `AUTHENTIK_GOOGLE_*`) and scope it to the
+gate environments as above, never repo-wide. Compose the Secret with `--from-file` plus process
+substitution of the `printf` **builtin**, never `--from-literal` — that would put the value in argv,
+where `ps` / `/proc/*/cmdline` expose it. The Secret's **key** names are a contract with the chart
+template that `lookup`s them (e.g.
+[`charts/authentik/templates/config-secret.yaml`](helm/beekeepingit/charts/authentik/templates/config-secret.yaml)),
+not free-form.
+
 **On-demand runs from GitHub**: the [`cluster-ops.yml`](../.github/workflows/cluster-ops.yml)
 `workflow_dispatch` workflow runs one of the four scripts below with those secrets — pick
 `environment` (staging/prod) and `action` (up/down/scale-down/scale-up) in the Actions tab. Staging
@@ -378,8 +407,10 @@ data kept. `scale-down` does **not** require the `confirm` input `down` does: it
 Two things this design does **not** have a documented answer for, so don't treat them as settled:
 
 - **Control-plane tier.** This only holds if the cluster is on the Mutualized tier, not a paid
-  Dedicated one (`scw k8s cluster get <id> region=<region>` → check `.Type`). Confirm this once per
-  cluster if you're not sure how it was created.
+  Dedicated one (`scw k8s cluster get <id> region=<region>` → check `.Type`). Confirmed for
+  `beekeepingit-staging` on 2026-08-31 (`type: kapsule`, the Mutualized offer — #554); confirm once
+  per NEW cluster. Also observed on that same run: at 0 pools the cluster reports `pool_required`
+  and its API endpoint stops resolving until a pool exists again — expected, not breakage.
 - **Long-idle zero-node clusters.** Scaleway's docs don't state a policy either way on reaping
   clusters left at 0 nodes for extended periods. Don't rely on `scale-down` for multi-week/-month
   pauses without checking directly with Scaleway first — for that horizon, `scaleway-down.sh` (full
