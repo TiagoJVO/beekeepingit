@@ -407,8 +407,10 @@ data kept. `scale-down` does **not** require the `confirm` input `down` does: it
 Two things this design does **not** have a documented answer for, so don't treat them as settled:
 
 - **Control-plane tier.** This only holds if the cluster is on the Mutualized tier, not a paid
-  Dedicated one (`scw k8s cluster get <id> region=<region>` → check `.Type`). Confirm this once per
-  cluster if you're not sure how it was created.
+  Dedicated one (`scw k8s cluster get <id> region=<region>` → check `.Type`). Confirmed for
+  `beekeepingit-staging` on 2026-08-31 (`type: kapsule`, the Mutualized offer — #554); confirm once
+  per NEW cluster. Also observed on that same run: at 0 pools the cluster reports `pool_required`
+  and its API endpoint stops resolving until a pool exists again — expected, not breakage.
 - **Long-idle zero-node clusters.** Scaleway's docs don't state a policy either way on reaping
   clusters left at 0 nodes for extended periods. Don't rely on `scale-down` for multi-week/-month
   pauses without checking directly with Scaleway first — for that horizon, `scaleway-down.sh` (full
