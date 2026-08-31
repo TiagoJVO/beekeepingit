@@ -52,9 +52,7 @@ class _FakeProfileController extends ProfileController {
         name: name ?? _initial.name,
         email: email ?? _initial.email,
         locale: locale ?? _initial.locale,
-        complete:
-            (name ?? _initial.name).isNotEmpty &&
-            (email ?? _initial.email).isNotEmpty,
+        complete: (name ?? _initial.name).isNotEmpty,
       ),
     );
   }
@@ -107,7 +105,7 @@ Widget _buildScreen(ProfileController controller) {
 }
 
 void main() {
-  testWidgets('renders name/email fields with current profile state', (
+  testWidgets('renders the name field and the read-only account email', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -120,7 +118,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('profile-name-field')), findsOneWidget);
-    expect(find.byKey(const Key('profile-email-field')), findsOneWidget);
+    // The address is owned by the identity provider: shown, never editable.
+    expect(find.byKey(const Key('profile-email-field')), findsNothing);
+    expect(
+      find.byKey(const Key('profile-account-email-value')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('profile-manage-account-button')),
+      findsOneWidget,
+    );
     expect(find.text('Ana'), findsOneWidget);
     expect(find.text('ana@example.com'), findsOneWidget);
   });
@@ -137,7 +144,7 @@ void main() {
     );
   });
 
-  testWidgets('validates empty name and email client-side', (tester) async {
+  testWidgets('validates the empty name client-side', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
     await tester.pumpAndSettle();
 
@@ -145,20 +152,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Enter your name.'), findsOneWidget);
-    expect(find.text('Enter your email.'), findsOneWidget);
   });
 
-  testWidgets('submits valid name+email and shows success', (tester) async {
+  testWidgets('submits a valid name and shows success', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
     await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const Key('profile-name-field')),
       'Beatriz',
-    );
-    await tester.enterText(
-      find.byKey(const Key('profile-email-field')),
-      'bea@example.com',
     );
     await tester.tap(find.byKey(const Key('profile-save-button')));
     await tester.pumpAndSettle();
@@ -223,10 +225,6 @@ void main() {
         find.byKey(const Key('profile-name-field')),
         'Beatriz',
       );
-      await tester.enterText(
-        find.byKey(const Key('profile-email-field')),
-        'bea@example.com',
-      );
       await tester.tap(find.byKey(const Key('profile-save-button')));
       await tester.pumpAndSettle();
       expect(
@@ -249,9 +247,9 @@ void main() {
           detail: 'one or more fields are invalid',
           fieldErrors: [
             ApiFieldError(
-              field: 'email',
+              field: 'name',
               code: 'invalid',
-              message: 'email must be a valid email address',
+              message: 'name must not be empty',
             ),
           ],
         );
@@ -264,14 +262,10 @@ void main() {
       find.byKey(const Key('profile-name-field')),
       'Carlos',
     );
-    await tester.enterText(
-      find.byKey(const Key('profile-email-field')),
-      'carlos@example.com',
-    );
     await tester.tap(find.byKey(const Key('profile-save-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('email must be a valid email address'), findsOneWidget);
+    expect(find.text('name must not be empty'), findsOneWidget);
   });
 
   testWidgets(
@@ -323,10 +317,6 @@ void main() {
         find.byKey(const Key('profile-name-field')),
         'Carlos',
       );
-      await tester.enterText(
-        find.byKey(const Key('profile-email-field')),
-        'carlos@example.com',
-      );
       await tester.tap(find.byKey(const Key('profile-save-button')));
       await tester.pumpAndSettle();
 
@@ -370,10 +360,6 @@ void main() {
       await tester.enterText(
         find.byKey(const Key('profile-name-field')),
         'Carlos',
-      );
-      await tester.enterText(
-        find.byKey(const Key('profile-email-field')),
-        'carlos@example.com',
       );
       await tester.tap(find.byKey(const Key('profile-save-button')));
       await tester.pumpAndSettle();

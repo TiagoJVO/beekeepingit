@@ -185,6 +185,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileGenericError => 'Something went wrong. Please try again.';
 
   @override
+  String get profileAccountEmailLabel => 'Account email';
+
+  @override
+  String get profileAccountEmailHint =>
+      'This is the email you signed in with. Change it with our sign-in provider, in a new tab.';
+
+  @override
+  String get profileManageAccountButton => 'Manage account';
+
+  @override
+  String profileAccountEmailSemantics(String email) {
+    return 'Account email: $email';
+  }
+
+  @override
   String get organizationTitle => 'Your organization';
 
   @override

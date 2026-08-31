@@ -186,6 +186,21 @@ class AppLocalizationsPt extends AppLocalizations {
   String get profileGenericError => 'Ocorreu um erro. Tente novamente.';
 
   @override
+  String get profileAccountEmailLabel => 'Email da conta';
+
+  @override
+  String get profileAccountEmailHint =>
+      'É o email com que iniciou sessão. Altere-o junto do nosso fornecedor de login, numa nova aba.';
+
+  @override
+  String get profileManageAccountButton => 'Gerir conta';
+
+  @override
+  String profileAccountEmailSemantics(String email) {
+    return 'Email da conta: $email';
+  }
+
+  @override
   String get organizationTitle => 'A sua organização';
 
   @override

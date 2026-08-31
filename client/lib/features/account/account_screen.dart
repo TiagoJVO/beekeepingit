@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/app_config.dart';
-import '../../core/validation/email.dart';
+import '../../core/platform/external_link_platform.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../shell/sync_status.dart';
@@ -19,7 +19,6 @@ import '../settings/notification_event_toggles_list.dart';
 import '../settings/notification_settings_section.dart';
 import '../settings/sync_settings_repository.dart';
 import '../sync/sync_rejected_repository.dart';
-import 'account_platform.dart';
 
 /// Account settings screen (FR-AU-1, #29): update profile information
 /// in-app, and change password by delegating to the identity provider's own
@@ -56,7 +55,6 @@ class AccountScreen extends ConsumerStatefulWidget {
 class _AccountScreenState extends ConsumerState<AccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
   String _locale = 'en';
   bool _saving = false;
   bool _initialized = false;
@@ -65,7 +63,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     super.dispose();
   }
 
@@ -73,7 +70,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     if (_initialized) return;
     _initialized = true;
     _nameController.text = profile.name;
-    _emailController.text = profile.email;
     _locale = profile.locale;
   }
 
@@ -86,11 +82,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     try {
       await ref
           .read(profileProvider.notifier)
-          .submit(
-            name: _nameController.text.trim(),
-            email: _emailController.text.trim(),
-            locale: _locale,
-          );
+          .submit(name: _nameController.text.trim(), locale: _locale);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -116,7 +108,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 
   void _openChangePassword() {
-    createAccountPlatform().openInNewTab(AppConfig.oidcAccountUrl);
+    ref.read(externalLinkPlatformProvider).openInNewTab(AppConfig.oidcAccountUrl);
   }
 
   bool _syncing = false;
@@ -195,26 +187,6 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                             validator: (v) => (v == null || v.trim().isEmpty)
                                 ? l10n.profileNameRequired
                                 : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            key: const Key('account-email-field'),
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: InputDecoration(
-                              labelText: l10n.profileEmailLabel,
-                              errorText: _fieldErrors['email'],
-                            ),
-                            validator: (v) {
-                              final value = (v ?? '').trim();
-                              if (value.isEmpty) {
-                                return l10n.profileEmailRequired;
-                              }
-                              if (!looksLikeEmail(value)) {
-                                return l10n.profileEmailInvalid;
-                              }
-                              return null;
-                            },
                           ),
                           const SizedBox(height: 16),
                           DropdownButtonFormField<String>(
