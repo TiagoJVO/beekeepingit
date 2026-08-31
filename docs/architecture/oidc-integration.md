@@ -297,7 +297,12 @@ optional.
   single-audience services with no services change. Since #465 it additionally declares the
   **`scope-platform-operator`** mapping (the verified `platform_operator` claim, §3.2 — admin
   provider only) and a third seed user, `non.operator@beekeepingit.local`, deliberately outside the
-  `platform-operator` group so the claim's negative case is provable in e2e.
+  `platform-operator` group so the claim's negative case is provable in e2e. Since #363 it declares
+  the **Google federation source** (plus the dev/CI stand-in and the `beekeepingit_idp` hint chain),
+  and since #364 the **`mapping-federation-account-link`** OAuth-source property mapping every
+  federation source attaches — the single place that decides which local account an upstream
+  identity may reach ([auth.md §8.14](auth.md)) — with the sources' `user_matching_mode` set to
+  `username_link` to route the match through it.
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
@@ -354,7 +359,8 @@ optional.
   must go red in CI: the live pin is the same `admin-token.spec.ts` (operator ⇒ `true`, non-operator
   ⇒ `false`) plus `slice.spec.ts`'s assertion that a PWA token never carries it, and the static pin is
   `scripts/check-platform-operator-mapping.sh` (`task repo:lint`).
-- **Upstream federation (#363, auth.md §8.13)** adds four things to the watch-list, all pinned to
+- **Upstream federation (#363, [auth.md §8.13](auth.md)) and account linking (#364,
+  [auth.md §8.14](auth.md))** add the following to the watch-list, all pinned to
   authentik **2026.5.4** and all re-checkable on a version bump:
   - **`BlueprintEntry.conditions` skip validation entirely** (`Importer._validate_single` returns
     before the serializer runs). That is what lets the Google source entry — whose serializer
@@ -371,11 +377,38 @@ optional.
     (the PR #414 shape, reached by a different route). A structural YAML parse does **not** catch
     it, because the tag constructors only run inside authentik. Static pin:
     `scripts/check-federation-source-posture.sh` fails on any single-element `!Env`.
-  - **Google's source type drops `verified_email`** (`get_base_user_properties` returns only
-    `email`/`name`), which is why `user_matching_mode` **must** stay `identifier` and never an
-    `email_*` mode. If a bump starts surfacing the upstream's verification state, revisit
-    [#364](https://github.com/TiagoJVO/beekeepingit/issues/364) — do not silently switch modes.
-    Same static pin.
+  - **Google's source type drops `verified_email` from the BASE PROPERTIES** — but not from the
+    payload. `get_base_user_properties` returns only `email`/`name`, which is why no `email_*`
+    matching mode may ever be used; the raw userinfo, which **does** carry `verified_email`, is
+    handed to property mappings as `info`. That is what #364 reads
+    ([auth.md §8.14](auth.md)). Two things must hold on a bump: `GoogleType.profile_url` stays
+    `https://www.googleapis.com/oauth2/v1/userinfo` (the endpoint that returns
+    `verified_email`; `GoogleType` is not `urls_customizable`, so nothing in the blueprint can
+    compensate if upstream repoints it), and `SourceMapper.build_object_properties` keeps passing
+    the raw `info` through to mappings. If either changed, every Google login would be **denied**
+    — visibly broken, not silently permissive — and the fix belongs in the resolver, not in a
+    matching mode. Same static pin.
+  - **Account linking (#364, [auth.md §8.14](auth.md))** rides four more 2026.5.4 internals, all in
+    `authentik/core/sources/matcher.py` + `mapper.py`:
+    (a) `SourceMatcher.get_action` checks the existing `(source, identifier)` connection **first**,
+    before any property — that is the subject match;
+    (b) with a non-`identifier` mode, an **empty/absent** matchable property yields `Action.DENY`,
+    which is the fail-closed hinge the whole resolver hangs on;
+    (c) `matching_objects.first()` is used unguarded, which is why the mode must be
+    `username_link` (the only **unique** matchable property) and never `email_link` — this
+    deployment allows duplicate emails by design;
+    (d) `build_object_properties` merges mapping results **over** the base properties (mappings
+    ordered by **name**) and then drops `None`-valued keys (`delete_none_values`), which is how the
+    resolver both steers and withholds. A bump changing any of these must go red: the live pin is
+    `infra/ci/authentik-federation-probe.py` (run by `helm-e2e.yml`), which drives the real
+    `SourceFlowManager` through the verified/unverified/history/ambiguous/superuser cases; the
+    static pin is `scripts/check-federation-source-posture.sh` (`task repo:lint`), which asserts
+    `username_link` **and** that the resolver mapping is attached by `!KeyOf` and is the source's
+    only one.
+  - **`attributes.known_emails`** is the per-account known-email history (#364). Its **only** writer
+    is the `beekeepingit-mark-email-verified` expression policy (#361's stamp, same restored
+    flow-token gate); entries are lowercase by construction because the resolver's JSONB `@>`
+    lookup is **case-sensitive**. Anything that seeds this attribute by hand must lowercase it.
   - **The `beekeepingit_idp` hint chain** depends on `SESSION_KEY_GET`/`NEXT_ARG_NAME` still being
     how `FlowExecutorView` stores the pending authorize request, and on `xak-flow-redirect` still
     auto-following. A bump that changes either degrades "Continue with Google" to a plain login —
