@@ -399,21 +399,15 @@ jobs:
           repository: TiagoJVO/beekeepingit-gitops
           token: ${{ secrets.GITOPS_PR_TOKEN }}
 
-      # Promotes BOTH halves of the release: the component image tags in `apps/`,
-      # and the chart source `ref` in `clusters/`. The chart needs pinning at all
-      # because Flux IGNORES `chart.spec.version` for a `GitRepository` source — the
-      # source `ref` is the only pin there is — so while it read `branch: main`,
-      # every merge to main re-rendered the chart onto the live cluster, ungated
-      # (ADR-0018's 2026-08-31 addendum; ADR-0009 intended a release ref all along).
-      #
-      # One `sed` covers both files because `tag:` is the key in each: the image
-      # tags, and the chart source's `ref.tag`. The sibling `beekeepingit-gitops`
-      # source keeps `ref.branch` — it must stay on main or the GitOps repo could no
-      # longer update itself — so this expression cannot match it. The guard asserts
-      # that, and fails the release rather than shipping a cluster still tracking a
-      # branch. sed (not yq) keeps both files' heavy explanatory comments intact — a
-      # clean one-value-per-line diff for the human reviewer. VERSION is a
-      # semver-ish tag (no regex metachars that matter on the replacement side).
+      # Promotes both halves of the release: the component image tags in `apps/`,
+      # and the chart source's `ref.tag` in `clusters/`. One `sed` covers both
+      # because `tag:` is the key in each — and the sibling `beekeepingit-gitops`
+      # source keeps `ref.branch` (it must stay on main, or the GitOps repo could no
+      # longer update itself), so this expression cannot match it. The guard turns an
+      # unconverted cluster file into a failed release rather than one silently still
+      # tracking a branch. sed, not yq: it preserves both files' explanatory comments.
+      # WHY the chart needs pinning, and why `reconcileStrategy` must stay `Revision`,
+      # are in ADR-0018's 2026-08-31 addendum — deliberately not repeated here.
       - name: Promote the release (image tags + chart source ref)
         env:
           TARGET: ${{ needs.route.outputs.target }}
