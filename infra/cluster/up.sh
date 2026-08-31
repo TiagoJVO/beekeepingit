@@ -40,6 +40,26 @@ else
 fi
 
 kubectl config use-context "k3d-$cluster_name"
+
+# k3d prints "Cluster created successfully" once the container is up, but k3s's
+# API server can still be initializing behind it — and the next kubectl call is
+# a DISCOVERY call, which then fails with "the server is currently unable to
+# handle the request" (ServiceUnavailable) and, under `set -e`, aborts bring-up
+# before a single thing is installed. That is a pure cold-start race: it hits a
+# fresh CI runner far more often than a warm local machine, and the failure
+# looks nothing like its cause (the cluster IS there, and re-running usually
+# passes). Poll the API server's own `/readyz` endpoint rather than sleeping a
+# fixed guess — it reports ready only once the server can actually serve.
+echo "waiting for the API server to become ready"
+api_deadline=$((SECONDS + 180))
+until [ "$(kubectl get --raw='/readyz' 2>/dev/null || true)" = "ok" ]; do
+  if [ "$SECONDS" -ge "$api_deadline" ]; then
+    echo "error: the API server did not become ready within 180s" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 kubectl cluster-info
 
 # The CNPG operator is cluster-scoped (its CRDs/controller aren't per-release),
