@@ -102,10 +102,7 @@ class _OrganizationWaitingScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  l10n.organizationWaitingIntro,
-                  style: textTheme.bodyLarge,
-                ),
+                Text(l10n.organizationWaitingIntro, style: textTheme.bodyLarge),
                 const SizedBox(height: 16),
                 NotesCard(
                   icon: Icons.mark_email_unread_outlined,

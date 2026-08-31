@@ -72,9 +72,7 @@ void main() {
   );
 
   testWidgets('a check that finds nothing says so', (tester) async {
-    await tester.pumpWidget(
-      _buildScreen(_CountingOrganizationController()),
-    );
+    await tester.pumpWidget(_buildScreen(_CountingOrganizationController()));
     await tester.pumpAndSettle();
 
     expect(

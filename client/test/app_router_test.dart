@@ -179,29 +179,24 @@ void main() {
   // everything outside the two permitted onboarding destinations is still
   // bounced.
 
-  testWidgets(
-    'a profile-complete user with no organization may sit on '
-    '/organization/waiting',
-    (tester) async {
-      await tester.pumpWidget(
-        _buildApp(profileComplete: true, hasOrganization: false),
-      );
-      await tester.pumpAndSettle();
+  testWidgets('a profile-complete user with no organization may sit on '
+      '/organization/waiting', (tester) async {
+    await tester.pumpWidget(
+      _buildApp(profileComplete: true, hasOrganization: false),
+    );
+    await tester.pumpAndSettle();
 
-      // Reachable from the create form, which is where the router lands them.
-      await tester.tap(
-        find.byKey(const Key('organization-join-instead-button')),
-      );
-      await tester.pumpAndSettle();
+    // Reachable from the create form, which is where the router lands them.
+    await tester.tap(find.byKey(const Key('organization-join-instead-button')));
+    await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('organization-waiting-check-button')),
-        findsOneWidget,
-      );
-      // Not bounced back to the create form.
-      expect(find.byKey(const Key('organization-name-field')), findsNothing);
-    },
-  );
+    expect(
+      find.byKey(const Key('organization-waiting-check-button')),
+      findsOneWidget,
+    );
+    // Not bounced back to the create form.
+    expect(find.byKey(const Key('organization-name-field')), findsNothing);
+  });
 
   testWidgets(
     '/organization/members is STILL bounced pre-onboarding - the permitted '

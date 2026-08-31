@@ -63,7 +63,6 @@ void main() {
     },
   );
 
-
   testWidgets('renders the organization creation form', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
     await tester.pumpAndSettle();
