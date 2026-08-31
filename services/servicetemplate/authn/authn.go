@@ -78,6 +78,11 @@ func NewMiddleware(ctx context.Context, cfg Config) (func(http.Handler) http.Han
 			if email, ok := raw["email"].(string); ok {
 				claims.Email = email
 			}
+			// Fail-soft by construction: a non-string `name` leaves the
+			// zero value rather than rejecting the token (see Claims.Name).
+			if name, ok := raw["name"].(string); ok {
+				claims.Name = name
+			}
 			if verified, ok := raw["email_verified"].(bool); ok {
 				claims.EmailVerified = verified
 			}
