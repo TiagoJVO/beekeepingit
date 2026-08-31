@@ -175,7 +175,11 @@ async function completeProfile(page: Page, name: string, expectedEmail: string) 
   await page.waitForURL(/\/profile/, { timeout: 60_000 });
   await enableSemantics(page);
   await typeInto(page, page.getByLabel("Name", { exact: true }), name);
-  await expect(page.getByText(expectedEmail, { exact: true })).toBeVisible();
+  // Substring, not exact: the value is rendered read-only under a single
+  // combined semantics label ("Account email: <address>") rather than as bare
+  // text, so a screen reader announces it once instead of twice. The address
+  // still has to be THERE — and nothing in this test typed it.
+  await expect(page.getByText(expectedEmail, { exact: false })).toBeVisible();
   await page.getByText("Save profile", { exact: true }).click();
 }
 
