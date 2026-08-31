@@ -132,13 +132,32 @@ class OrganizationController extends AsyncNotifier<Organization?> {
     if (!ref.watch(isAuthenticatedProvider)) {
       return Completer<Organization?>().future;
     }
-    final repo = ref.watch(organizationRepositoryProvider);
+    return _fetch();
+  }
+
+  /// The fetch itself, without the logged-out gate, so [refresh] can re-run
+  /// exactly the same request-and-404-mapping [build] does.
+  Future<Organization?> _fetch() async {
+    final repo = ref.read(organizationRepositoryProvider);
     try {
       return await repo.fetchMine();
     } on ApiException catch (e) {
       if (e.statusCode == 404) return null;
       rethrow;
     }
+  }
+
+  /// Re-asks `GET /v1/organizations/me`, which is also the server's
+  /// accept-on-login step (auth.md §8.7) — so a pending invitation matching
+  /// the caller's verified address is claimed by this call. There is no
+  /// client-side accept endpoint and none is needed.
+  ///
+  /// Deliberately no `AsyncLoading` transition: the waiting screen drives its
+  /// own spinner, and emitting one here would wake every
+  /// `ref.watch(organizationProvider.future)` consumer across the app for a
+  /// check the user did not navigate away from.
+  Future<void> refresh() async {
+    state = await AsyncValue.guard(_fetch);
   }
 
   /// Creates the organization and refreshes state with the server's

@@ -120,6 +120,11 @@ const _routeTestJourney = Journey(
   status: journeyStatusOpen,
 );
 
+/// Reaches the live GoRouter of a pumped [BeekeepingitApp], so a test can
+/// navigate to a route the UI offers no button for.
+GoRouter _routerOf(WidgetTester tester) =>
+    GoRouter.of(tester.element(find.byType(Navigator).first));
+
 Widget _buildApp({required bool profileComplete, bool hasOrganization = true}) {
   return ProviderScope(
     overrides: [
@@ -164,6 +169,55 @@ void main() {
 
       expect(find.byKey(const Key('organization-name-field')), findsOneWidget);
       expect(find.text('Apiaries'), findsNothing);
+    },
+  );
+
+  // --- the second onboarding exit (#365 live testing, FR-ONB-2/D-3) -------
+  //
+  // The gate was WIDENED, not opened: /organization/new stays the default
+  // landing (pinned by the test above, deliberately left unchanged), and
+  // everything outside the two permitted onboarding destinations is still
+  // bounced.
+
+  testWidgets(
+    'a profile-complete user with no organization may sit on '
+    '/organization/waiting',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildApp(profileComplete: true, hasOrganization: false),
+      );
+      await tester.pumpAndSettle();
+
+      // Reachable from the create form, which is where the router lands them.
+      await tester.tap(
+        find.byKey(const Key('organization-join-instead-button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('organization-waiting-check-button')),
+        findsOneWidget,
+      );
+      // Not bounced back to the create form.
+      expect(find.byKey(const Key('organization-name-field')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    '/organization/members is STILL bounced pre-onboarding - the permitted '
+    'set is two explicit routes, not a /organization/* prefix',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildApp(profileComplete: true, hasOrganization: false),
+      );
+      await tester.pumpAndSettle();
+
+      _routerOf(tester).go('/organization/members');
+      await tester.pumpAndSettle();
+
+      // A prefix match would have let this through, and no other test would
+      // have noticed - a members screen before any membership exists.
+      expect(find.byKey(const Key('organization-name-field')), findsOneWidget);
     },
   );
 
