@@ -5,13 +5,14 @@ description: >-
   Use when asked to release, deploy, promote, or validate something live; when someone asks "is
   this on staging yet?" or "why isn't my change live?"; when bringing a cluster up/down or
   pausing it; or when adding an external credential. Captures the rules that surprise everyone:
-  the umbrella CHART is pulled from `main` on every environment, so chart/blueprint changes
-  deploy themselves ungated within minutes of merge — the release pipeline gates only IMAGE
-  tags; `infra/helm/beekeepingit/environments/*.yaml` is a hand-synced MIRROR, not what runs
-  (the deployed values live in the beekeepingit-gitops HelmRelease); GitHub environment secrets
-  live on `staging-gate`/`production-gate`, not `staging`/`production`; and an authentik
-  blueprint change has no restart wired anywhere, so it lands on an untimed delay and fails
-  silently when it fails.
+  a merge to `main` changes NOTHING on a live cluster — a release promotes the chart and the
+  images together, and merging the promotion PR is the deploy; the chart is pinned by the
+  GitRepository `ref` because Flux ignores `chart.spec.version` for git sources;
+  `infra/helm/beekeepingit/environments/*.yaml` is a hand-synced MIRROR, not what runs (the
+  deployed values live in the beekeepingit-gitops HelmRelease); GitHub environment secrets live
+  on `staging-gate`/`production-gate`, not `staging`/`production`; and an authentik blueprint
+  change has no restart wired anywhere, so it lands on an untimed delay and fails silently when
+  it fails.
 ---
 
 # Deploying & operating BeekeepingIT
@@ -42,27 +43,38 @@ That drift is not theoretical: **#556** is a live cert-renewal outage caused by 
 gitops HelmRelease never got `gateway.adminHost`/`global.adminOrigin`, so the chart's dev default
 `admin.beekeepingit.local` leaked into staging's ACME order and renewal has failed 24 times.
 
-## The rule that surprises everyone: chart changes deploy themselves, ungated
+## A merge to `main` changes nothing on a live cluster
 
-Every environment's chart source is a `GitRepository` on **`ref: branch: main`** (`interval: 1m`),
-and the umbrella HelmRelease sets **`reconcileStrategy: Revision`** — meaning Flux redeploys on
-every new Git revision, not on `Chart.yaml` version bumps. So:
+**Merging the promotion PR is the deploy.** A release promotes as one artifact — both the image
+tags in `apps/<env>/beekeepingit-helmrelease.yaml` **and** the `beekeepingit` `GitRepository`'s
+`ref` in `clusters/<env>/flux-system.yaml`, so the chart comes from the release too. Reverting that
+merge rolls both back together.
 
-> **Anything under `infra/helm/` merged to `main` reaches staging in ~1–6 minutes, with no
-> release, no PR in the gitops repo, and no approval gate.** The release pipeline pins and gates
-> **image tags only**. If your mental model is "staging is pinned to a release", that is true of
-> images and false of the chart.
+Two mechanics worth knowing, because they are the reason it is pinned that way:
 
-**Decision — does your change need a release?**
+- **The `ref` is the only pin there is.** Flux ignores `chart.spec.version` for a `GitRepository`
+  source ("applicable only when the Source reference is a `HelmRepository`"), so chart content is
+  whatever revision the source resolves to — nothing else constrains it.
+- **`reconcileStrategy` must stay `Revision`.** `ChartVersion` keys on `Chart.yaml`'s `version`,
+  frozen at `0.1.0` and never bumped, so a pinned-tag release would never deploy at all.
 
-| Change                                                              | Needs a release?                      |
-| ------------------------------------------------------------------- | ------------------------------------- |
-| Chart templates/values, authentik blueprint, NetworkPolicy, Ingress | **No** — merging to `main` deploys it |
-| Go service, Flutter client, or admin app code                       | **Yes** — those ship as images        |
-| Docs, CI scripts, tests                                             | No — nothing deploys                  |
+> **History worth knowing, because it explains stale docs and any un-migrated environment:** until
+> 2026-08-31 every environment's chart source read `ref: branch: main`, so merging re-rendered
+> templates, NetworkPolicies and the Authentik blueprint onto the live cluster within ~1–6 minutes,
+> ungated — images were pinned, the chart was not (ADR-0018 addendum; ADR-0009 had called for a
+> release ref all along). If an environment still shows `branch: main` under
+> `flux get sources git -A`, it predates that fix.
 
-Cutting an rc for a chart-only change is harmless but pointless: it bumps seven image tags to a
-version whose content is identical.
+**Decision — does your change reach an environment?**
+
+| Change                                                              | How it ships                                     |
+| ------------------------------------------------------------------- | ------------------------------------------------ |
+| Go service, Flutter client, or admin app code                       | Release → images                                 |
+| Chart templates/values, authentik blueprint, NetworkPolicy, Ingress | Release → chart (the pinned `ref` moves with it) |
+| Docs, CI scripts, tests                                             | Never deploys                                    |
+
+`dev` is the exception and deliberately so: it has no release to pin to and tracks `main`, which is
+what makes it the post-merge integration environment.
 
 ## Cutting a release (when images actually changed)
 
@@ -74,13 +86,15 @@ Manual steps are marked — nothing auto-deploys from a merge.
    staging-grade until `Q-DR` and #90 land.
 2. **[auto]** `release-deploy.yml` builds every Go service + the PWA + admin, Trivy-scans
    (HIGH/CRITICAL blocks the push even after approval), pushes to ghcr tagged with the release
-   tag, then opens a **tag-bump PR against the gitops repo**.
+   tag, then opens a **promotion PR against the gitops repo** bumping the image tags _and_ the
+   chart `ref`.
 3. **[you]** Merge that PR. **This is the actual deploy decision** — the PAT cannot merge it.
 4. **[auto]** Flux reconciles by **polling** (no webhooks). Force it with
    `flux reconcile helmrelease beekeepingit -n flux-system --force`.
 
-**Rollback = `git revert` the tag-bump PR** in the gitops repo. Manual `kubectl`/`helm` edits to
-anything Flux owns are reverted on the next reconcile (`prune: true`).
+**Rollback = `git revert` the promotion PR** in the gitops repo — which now takes the chart back
+with the images, rather than leaving it on whatever `main` had drifted to. Manual `kubectl`/`helm`
+edits to anything Flux owns are reverted on the next reconcile (`prune: true`).
 
 The PWA and admin bake their URLs in at **build time** (Dart `--dart-define`, Vite `VITE_*`), so
 one image cannot serve two environments — the release target picks them.
@@ -159,10 +173,15 @@ keyed by cluster name, so every worktree shares it.
 
 ## Known gaps (verified 2026-08-31 — re-check before relying on these)
 
-- **Prod's chart source also tracks `main`.** Prod is inert only because no cluster has been
-  bootstrapped against `clusters/prod/` — there is **no `suspend: true` anywhere**. When prod
-  exists, chart content (including authentication config) would reach it ungated, bypassing the
-  `production-gate` reviewer that gates images. Not tracked by any issue yet.
+- **Nothing carries `suspend: true`.** Prod is inert purely because no cluster has been
+  bootstrapped against `clusters/prod/`; the instant one is, Flux deploys whatever those manifests
+  say — today `v0.0.0` placeholder image tags and `.example` hostnames, with
+  `networkpolicy.gatewayNamespace` left at the `kube-system` default that
+  [ADR-0017](../../docs/adr/0017-staging-on-scaleway-kapsule.md) records as silently blocking every
+  gateway→backend edge on Kapsule.
+- **`flux get sources git -A` is the check that an environment is actually pinned.** Anything
+  still showing `branch: main` for the `beekeepingit` source predates the 2026-08-31 fix and is
+  taking its chart from `main`.
 - **Flux reports "reconciled" without health.** Every umbrella HelmRelease sets
   `disableWait: true` (a real fix — Helm's wait deadlocks against the `schema-grants` post-install
   hook) and no Kustomization has `healthChecks`, so `dependsOn` orders _application_, not
