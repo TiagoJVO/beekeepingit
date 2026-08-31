@@ -119,44 +119,42 @@ git-write credential (the new PAT can only create deployment records, nothing el
 
 ## Addendum (2026-08-31): the promotion PR pins the CHART too, not only image tags
 
-§2 described the promotion PR as bumping "the image tag", and that is literally all it did. The
-umbrella `HelmRelease` takes `chart: ./infra/helm/beekeepingit` from a `GitRepository` whose `ref`
-was **`branch: main`** on every environment, with `reconcileStrategy: Revision`. Flux produces a new
-chart artifact "when the source revision changes" in a `GitRepository`, and `chart.spec.version` "is
-applicable only when the Source reference is a `HelmRepository` — it is ignored for `GitRepository`"
-— so the source `ref` was the only available pin, and it pinned nothing.
+§2 described the promotion PR as bumping "the image tag", and that is all it did. But the umbrella
+`HelmRelease` takes `chart: ./infra/helm/beekeepingit` from a `GitRepository`, and
+`chart.spec.version` "is applicable only when the Source reference is a `HelmRepository` — it is
+ignored for `GitRepository`". The source `ref` was therefore the only available pin, and it read
+**`branch: main`** on every environment. With `reconcileStrategy: Revision` (a new artifact "when
+the source revision changes"), **every merge to `main` re-rendered the chart onto the running
+cluster** — templates, `NetworkPolicy` objects and the Authentik blueprint, i.e. authentication
+configuration — with no release, no PR here and no approval gate. Images were promoted
+deliberately; the chart arrived on merge. Prod's manifests carry the same pattern, so its
+`production-gate` reviewer would have gated images while chart content flowed past.
 
-**Consequence, which was live:** every merge to `main` re-rendered the chart onto the running
-cluster within ~1–6 minutes — templates, `NetworkPolicy` objects, and the Authentik blueprint, i.e.
-**authentication configuration** — with no release, no PR in the GitOps repo, and no approval gate.
-Images were promoted deliberately; the chart arrived on merge. Prod's bootstrap manifests carried the
-same `branch: main`, so the `production-gate` reviewer would have gated prod's images while chart
-content flowed past it; prod is inert only because no cluster has been bootstrapped against
-`clusters/prod/`, and nothing carries `suspend: true`.
-
-This was drift from a recorded intention, not a decision: [ADR-0009](0009-flux-gitops.md) already
+This was drift from a recorded intention, not a decision: [ADR-0009](0009-gitops-flux.md) already
 said staging/prod would get their own `GitRepository` "**likely pointing at a release branch/tag
-rather than `main`**". Staging and prod were built by copying dev's pattern, and that note was never
-applied.
+rather than `main`**". They were built from dev's pattern and never got it.
 
-**Change:** `release-deploy.yml`'s `open-pr` job now also rewrites the `beekeepingit` `GitRepository`
-`ref` in `clusters/<target>/flux-system.yaml` to `tag: <release tag>`, in the same PR as the image
-bump. A release is therefore promoted as one artifact — chart and images together — and reverting
-that merge rolls back both. Specifics worth keeping:
+**Change:** the promotion step now `sed`s the same `tag:` expression over **two** files — the image
+tags in `apps/<env>/`, and the chart source's `ref.tag` in `clusters/<env>/` — so a release is one
+artifact and reverting that merge rolls chart and images back together. Three things make that one
+line safe, and are worth keeping in mind before editing either file:
 
-- **`reconcileStrategy` stays `Revision`.** `ChartVersion` keys on `Chart.yaml`'s `version`, which is
-  frozen at `0.1.0` and never bumped, so a pinned-tag release would never deploy at all.
-- **Only the `beekeepingit` source moves.** `clusters/<env>/flux-system.yaml` declares two
-  `GitRepository` objects and the sibling `beekeepingit-gitops` one must keep tracking `main`, or the
-  GitOps repo could no longer update itself. The rewrite is therefore document-scoped `awk` rather
-  than a file-wide `sed`, and (like the image bump) `awk` also preserves the file's explanatory
-  comments where `yq` would strip them.
-- **It fails the release rather than shipping unpinned.** The step exits non-zero unless it made
-  exactly one substitution, so a renamed source or a restructured `ref:` block stops the promotion
-  instead of silently leaving the cluster tracking `main`.
-- **`dev` is deliberately unchanged.** It has no release to pin to, `release-deploy.yml` never
-  targets it, and tracking `main` is what makes it the post-merge integration environment
-  (`dev-up.sh` bypasses GitOps entirely for the pre-merge loop).
+- **`reconcileStrategy` stays `Revision`.** `ChartVersion` keys on `Chart.yaml`'s `version`, frozen
+  at `0.1.0` and never bumped, so a pinned-tag release would never deploy at all.
+- **Only the chart source uses `ref.tag`.** The sibling `beekeepingit-gitops` source keeps
+  `ref.branch` — it must stay on `main` or the GitOps repo could no longer update itself — so the
+  `tag:` expression cannot match it. A guard asserts exactly one `tag:` in the cluster file and
+  fails the release otherwise, rather than shipping a cluster still tracking a branch.
+- **The `branch:` → `tag:` conversion is one manual PR per environment**, deliberately not
+  automated: it is a one-time posture change that deserves a human, and the guard above makes
+  forgetting it loud rather than silent.
 
-The first release cut after this change performs the one-time `branch: main` → `tag:` conversion
-itself; no manual edit of the GitOps repo is needed, and re-bumps thereafter are the same operation.
+`semver` was rejected for the ref: Flux would move to a newly pushed tag on its own, deploying the
+chart the moment a release is published and before the promotion PR is merged — reintroducing
+exactly the ungated behaviour this fixes, and splitting chart from images. Publishing the chart as
+an OCI artifact (which would make `chart.spec.version` meaningful) remains rejected per
+[ADR-0012](0012-keycloak-minio-standalone-helmreleases.md) — it still costs a publish step and a
+registry dependency, and would not remove the per-release edit anyway.
+
+`dev` is unchanged: no release to pin to, never a target of `release-deploy.yml`, and tracking
+`main` is what makes it the post-merge integration environment.
