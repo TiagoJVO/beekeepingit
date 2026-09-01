@@ -52,6 +52,16 @@ const TEST_PASS = process.env.E2E_PASS ?? "dev-password123";
 // an earlier run. Kept inside the column's 50-char cap (FR-AP-9).
 const registrationNumber = `PT-E2E-${Date.now()}`;
 
+// Snackbar text, scoped to a <span>.
+//
+// Flutter web mirrors announcements into a transient
+// <flt-announcement-polite aria-live="polite"> node as well as the real
+// semantics <span>, so a bare getByText resolves to two elements and trips
+// Playwright's strict mode. slice.spec.ts hits the same thing on its
+// "Location set:" assertion and solves it the same way.
+const snackbar = (page: Page, text: string) =>
+  page.locator("span").filter({ hasText: text }).first();
+
 async function login(page: Page) {
   await submitIdpCredentials(page, TEST_USER, TEST_PASS);
   // After login the app lands on the Tasks tab (D-29, #427), not the apiaries
@@ -123,7 +133,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   await expect(numberField).toBeVisible({ timeout: 30_000 });
   await numberField.fill(registrationNumber);
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Registration number saved")).toBeVisible({
+  await expect(snackbar(page, "Registration number saved")).toBeVisible({
     timeout: 30_000,
   });
 
@@ -140,7 +150,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
     .getByRole("textbox", { name: /Note \(optional\)/ })
     .fill("e2e: filed via the IFAP portal");
   await page.getByRole("button", { name: "Record", exact: true }).click();
-  await expect(page.getByText("Declaration recorded")).toBeVisible({ timeout: 30_000 });
+  await expect(snackbar(page, "Declaration recorded")).toBeVisible({ timeout: 30_000 });
 
   // The log now shows it. The row reads "<localized date> — N hives"; assert on
   // the hive-count half plus the apiary-count subtitle rather than pinning a
@@ -192,7 +202,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   // removable", which apiary_counters deliberately does not allow.
   await goToDgav(page);
   await page.getByRole("button", { name: "Delete declaration" }).first().click();
-  await expect(page.getByText("No declarations recorded yet.")).toBeVisible({
+  await expect(snackbar(page, "No declarations recorded yet.")).toBeVisible({
     timeout: 30_000,
   });
 });
