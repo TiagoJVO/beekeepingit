@@ -3,7 +3,7 @@ import { enableSemantics, submitIdpCredentials } from "./helpers";
 
 /**
  * DGAV section end-to-end (#296/#298, FR-AP-9/FR-AP-10):
- *   log in → open DGAV → set the organization's registration
+ *   log in → open Account → open DGAV → set the organization's registration
  *   number → record a stock declaration → assert it lists → **assert a fresh
  *   client downloads it** → delete it again.
  *
@@ -42,7 +42,7 @@ import { enableSemantics, submitIdpCredentials } from "./helpers";
 // through the test, give the page room so every control this spec touches is
 // visible — which is also how a beekeeper on a real device sees this short
 // screen. Width stays desktop-default; only the height changes.
-test.use({ viewport: { width: 1280, height: 2200 } });
+test.use({ viewport: { width: 1280, height: 3000 } });
 
 const TEST_USER = process.env.E2E_USER ?? "test.beekeeper@beekeepingit.local";
 const TEST_PASS = process.env.E2E_PASS ?? "dev-password123";
@@ -68,30 +68,34 @@ async function login(page: Page) {
  * In the app the section is reachable only from Account by design (#298:
  * everything DGAV is advisory, so it never interrupts the field flows) — there
  * is deliberately no tab, banner or deep link. That entry point is asserted in
- * account_screen_test.dart; see the comment in the body for why this spec
- * navigates by URL instead of clicking it.
+ * account_screen_test.dart too; see the comment in the body for why this spec
+ * cannot reach the screen by URL.
  */
 async function goToDgav(page: Page) {
-  // Straight to the route, NOT via the Account button.
+  // In-app navigation via the Account screen — NOT `page.goto("/dgav")`.
   //
-  // The button is real and covered by a widget test
-  // (account_screen_test.dart: every member sees the DGAV action). What it
-  // is NOT is reliably clickable from headless Playwright: Flutter web
-  // renders to canvas and exposes a parallel DOM a11y tree, so a coordinate
-  // click only lands if the canvas hit-test target is under that point — and
-  // the DGAV action sits below Profile/Sync/Notifications/Security on the
-  // account screen. Two CI runs proved it: Playwright reported the click as
-  // successful, the failure snapshot showed the app still on Account with
-  // `button "DGAV"` right there, and dispatching a DOM click on the
-  // semantics node did not help either.
+  // Deep-linking straight to the route does not work, and that is an app
+  // behaviour worth knowing rather than a test quirk: on a hard page load the
+  // session has not been restored yet, so `isAuthenticatedProvider` is briefly
+  // false, the router sends /dgav → /login, and once auth resolves /login →
+  // /todos (app_router.dart's redirect). The original destination is dropped.
+  // A CI run proved it: waitForURL(/\/dgav/) passed, then the app landed on
+  // Todos. Flagged on the PR — a bookmark to any in-app route has the same
+  // problem, which is not this PR's to fix.
   //
-  // Rather than keep guessing at a canvas-tap workaround, each assertion now
-  // sits where it can actually be proven: the entry point's existence in a
-  // widget test, and everything only a live cluster can show — the sync-rules
-  // entry, download convergence — here. Navigating by URL is a real user
-  // action too (the route is bookmarkable), and it exercises the same router
-  // and screen.
-  await page.goto("/dgav");
+  // The click itself needs the tall viewport this spec sets. Flutter web
+  // renders to canvas, so a Playwright coordinate click only reaches the widget
+  // when the hit-test target is genuinely on screen — and at the default 720px
+  // height the DGAV action sits below Profile/Sync/Notifications/Security, so
+  // the click was reported as successful and landed nowhere (two earlier CI
+  // runs, same failure snapshot each time: still on Account, `button "DGAV"`
+  // right there in the tree).
+  await page.getByRole("button", { name: "Account settings" }).click();
+  await enableSemantics(page);
+  await expect(page.getByRole("heading", { name: "Account settings" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("button", { name: "DGAV", exact: true }).click();
   await page.waitForURL(/\/dgav/, { timeout: 30_000 });
   await enableSemantics(page);
   // The advisory framing is part of the requirement, not decoration (D-19 §7:
