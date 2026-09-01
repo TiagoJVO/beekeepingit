@@ -666,14 +666,6 @@
   "@syncNeedsFixGenericProblem": {
     "description": "Needs-fix list row fallback message when the server returned no field-level detail, or none of it could be mapped to safe localized copy (#426/#443)"
   },
-  "syncNeedsFixNotAllowedProblem": "You don't have permission to make this change.",
-  "@syncNeedsFixNotAllowedProblem": {
-    "description": "Needs-fix message for a rejection whose RFC 9457 problem code is auth.forbidden (#443)"
-  },
-  "syncNeedsFixConflictProblem": "This record changed elsewhere. Open it, check it, and save again.",
-  "@syncNeedsFixConflictProblem": {
-    "description": "Needs-fix message for a rejection whose RFC 9457 problem code is resource.conflict (#443)"
-  },
   "syncNeedsFixFieldProblem": "{field}: {problem}",
   "@syncNeedsFixFieldProblem": {
     "description": "Needs-fix message composed from a localized field label and the localized rule it broke (#443) — never the server's raw English validation text",
@@ -706,15 +698,15 @@
   "@syncNeedsFixRuleNotFound": {
     "description": "Needs-fix rule fragment for the server's `not_found` rejection code — a referenced apiary/journey/member the organization no longer owns (#443)"
   },
-  "syncNeedsFixRuleNonNegative": "must be 0 or more.",
+  "syncNeedsFixRuleNonNegative": "this must be 0 or more.",
   "@syncNeedsFixRuleNonNegative": {
     "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)"
   },
-  "syncNeedsFixRuleLatitudeRange": "must be between -90 and 90.",
+  "syncNeedsFixRuleLatitudeRange": "this must be between -90 and 90.",
   "@syncNeedsFixRuleLatitudeRange": {
     "description": "Needs-fix rule fragment for an out-of-range latitude (#443)"
   },
-  "syncNeedsFixRuleLongitudeRange": "must be between -180 and 180.",
+  "syncNeedsFixRuleLongitudeRange": "this must be between -180 and 180.",
   "@syncNeedsFixRuleLongitudeRange": {
     "description": "Needs-fix rule fragment for an out-of-range longitude (#443)"
   },
@@ -734,9 +726,9 @@
   "@syncNeedsFixFieldNotes": {
     "description": "Needs-fix field label for an apiary's notes (#443)"
   },
-  "syncNeedsFixFieldPlace": "Place",
+  "syncNeedsFixFieldPlace": "Place label",
   "@syncNeedsFixFieldPlace": {
-    "description": "Needs-fix field label for an apiary's place label (#443)"
+    "description": "Needs-fix field label for an apiary's place label — deliberately the same wording as apiaryPlaceLabelLabel, the label on the form the Fix action opens (#443)"
   },
   "syncNeedsFixFieldLocation": "Location",
   "@syncNeedsFixFieldLocation": {
@@ -750,9 +742,9 @@
   "@syncNeedsFixFieldLongitude": {
     "description": "Needs-fix field label for an apiary location's longitude (#443)"
   },
-  "syncNeedsFixFieldHiveCount": "Hive count",
+  "syncNeedsFixFieldHiveCount": "Number of hives",
   "@syncNeedsFixFieldHiveCount": {
-    "description": "Needs-fix field label for an apiary's hive count (#443)"
+    "description": "Needs-fix field label for an apiary's hive count — deliberately the same wording as hiveCountLabel, the label on the form the Fix action opens (#443)"
   },
   "syncNeedsFixFieldCount": "Count",
   "@syncNeedsFixFieldCount": {
@@ -776,7 +768,11 @@
   },
   "syncNeedsFixFieldActivityType": "Activity type",
   "@syncNeedsFixFieldActivityType": {
-    "description": "Needs-fix field label for an activity's type, and a journey's main activity type (#443)"
+    "description": "Needs-fix field label for an activity's type — deliberately the same wording as activityTypeFieldLabel (#443)"
+  },
+  "syncNeedsFixFieldMainActivityType": "Main activity type",
+  "@syncNeedsFixFieldMainActivityType": {
+    "description": "Needs-fix field label for a journey's main activity type — deliberately the same wording as journeyMainActivityTypeLabel (#443)"
   },
   "syncNeedsFixFieldDate": "Date",
   "@syncNeedsFixFieldDate": {
@@ -786,9 +782,9 @@
   "@syncNeedsFixFieldDueDate": {
     "description": "Needs-fix field label for a todo's due date (#443)"
   },
-  "syncNeedsFixFieldCompletedDate": "Completion date",
-  "@syncNeedsFixFieldCompletedDate": {
-    "description": "Needs-fix field label for a todo's completion timestamp (#443)"
+  "syncNeedsFixFieldCompletedAt": "Completed at",
+  "@syncNeedsFixFieldCompletedAt": {
+    "description": "Needs-fix field label for a todo's completion timestamp — deliberately the same wording as todoCompletedAtLabel (#443)"
   },
   "syncNeedsFixFieldPriority": "Priority",
   "@syncNeedsFixFieldPriority": {
@@ -800,7 +796,11 @@
   },
   "syncNeedsFixFieldDetails": "Details",
   "@syncNeedsFixFieldDetails": {
-    "description": "Needs-fix field label standing in for an activity's per-type attribute bag (and a journey's default attributes) — the individual attribute keys are internal names and are never rendered (#443)"
+    "description": "Needs-fix field label standing in for an activity's per-type attribute bag — the individual attribute keys are internal schema names and are never rendered (#443)"
+  },
+  "syncNeedsFixFieldActivityDefaults": "Defaults for activities",
+  "@syncNeedsFixFieldActivityDefaults": {
+    "description": "Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)"
   },
   "syncNeedsFixFixAction": "Fix",
   "@syncNeedsFixFixAction": {

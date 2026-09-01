@@ -119,11 +119,7 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
     // pairs — IS safe, so it is mapped to app-owned EN/PT copy here, giving
     // back the specific guidance #426's blanket generic message threw away.
     // Anything unmapped still degrades to that generic message.
-    final messages = localizedRejectionMessages(
-      l10n,
-      fieldIssues: op.fieldIssues,
-      errorCode: op.errorCode,
-    );
+    final messages = localizedRejectionMessages(l10n, op.fieldIssues);
 
     return Card(
       key: Key('needs-fix-${op.id}'),

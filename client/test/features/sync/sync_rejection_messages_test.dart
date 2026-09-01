@@ -19,55 +19,55 @@ void main() {
   group('localizedRejectionMessages', () {
     test('maps a known (field, code) pair to specific localized guidance', () {
       expect(
-        localizedRejectionMessages(
-          en,
-          fieldIssues: const [
-            RejectedFieldIssue(field: 'data.hive_count', code: 'out_of_range'),
-          ],
-          errorCode: 'validation.failed',
-        ),
-        ['Hive count: must be 0 or more.'],
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.hive_count', code: 'out_of_range'),
+        ]),
+        ['Number of hives: this must be 0 or more.'],
       );
     });
 
     test('translates the same rejection to Portuguese', () {
-      final messages = localizedRejectionMessages(
-        pt,
-        fieldIssues: const [
-          RejectedFieldIssue(field: 'data.hive_count', code: 'out_of_range'),
-        ],
-        errorCode: 'validation.failed',
-      );
+      final messages = localizedRejectionMessages(pt, const [
+        RejectedFieldIssue(field: 'data.hive_count', code: 'out_of_range'),
+      ]);
       expect(messages, hasLength(1));
       expect(messages.single, isNot(contains('hive_count')));
       expect(messages.single, contains('0 ou mais'));
     });
 
-    test('falls back to the generic message for an unmapped code', () {
-      expect(
-        localizedRejectionMessages(
-          en,
-          fieldIssues: const [
+    test(
+      'maps the exact #426 leak incident — a journey whose default_attributes '
+      'was not a JSON object — to safe localized copy',
+      () {
+        expect(
+          localizedRejectionMessages(en, const [
             RejectedFieldIssue(
               field: 'data.default_attributes',
-              code: 'invalid_type',
+              code: 'invalid',
             ),
-          ],
-          errorCode: 'validation.failed',
-        ),
+          ]),
+          ["Defaults for activities: this value isn't valid."],
+        );
+      },
+    );
+
+    test('falls back to the generic message for an unmapped code', () {
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(
+            field: 'data.default_attributes',
+            code: 'invalid_type',
+          ),
+        ]),
         [en.syncNeedsFixGenericProblem],
       );
     });
 
     test('falls back to the generic message for an unmapped field', () {
       expect(
-        localizedRejectionMessages(
-          en,
-          fieldIssues: const [
-            RejectedFieldIssue(field: 'data.secret_column', code: 'invalid'),
-          ],
-          errorCode: 'validation.failed',
-        ),
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.secret_column', code: 'invalid'),
+        ]),
         [en.syncNeedsFixGenericProblem],
       );
     });
@@ -85,11 +85,9 @@ void main() {
           'ops',
         ]) {
           expect(
-            localizedRejectionMessages(
-              en,
-              fieldIssues: [RejectedFieldIssue(field: field, code: 'invalid')],
-              errorCode: 'validation.failed',
-            ),
+            localizedRejectionMessages(en, [
+              RejectedFieldIssue(field: field, code: 'invalid'),
+            ]),
             [en.syncNeedsFixGenericProblem],
             reason: 'field "$field" must not be labelled to the user',
           );
@@ -97,36 +95,51 @@ void main() {
       },
     );
 
+    test("falls back to the generic message for a journey's default_attributes "
+        'byte cap, whose "text is too long" copy would be untrue', () {
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(
+            field: 'data.default_attributes',
+            code: 'too_long',
+          ),
+        ]),
+        [en.syncNeedsFixGenericProblem],
+      );
+      // An activity attribute's own too_long IS a real string-length cap.
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(
+            field: 'data.attributes.lot_batch',
+            code: 'too_long',
+          ),
+        ]),
+        ['Details: this text is too long.'],
+      );
+    });
+
     test('collapses an activity attribute key to the generic details label '
         '(the per-type attribute keys are internal names)', () {
       expect(
-        localizedRejectionMessages(
-          en,
-          fieldIssues: const [
-            RejectedFieldIssue(
-              field: 'data.attributes.queen_seen',
-              code: 'required',
-            ),
-          ],
-          errorCode: 'validation.failed',
-        ),
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(
+            field: 'data.attributes.queen_seen',
+            code: 'required',
+          ),
+        ]),
         ['Details: this is required.'],
       );
     });
 
     test('keeps every mapped issue, de-duplicated and capped', () {
-      final messages = localizedRejectionMessages(
-        en,
-        fieldIssues: const [
-          RejectedFieldIssue(field: 'data.name', code: 'required'),
-          RejectedFieldIssue(field: 'data.notes', code: 'too_long'),
-          // Duplicate of the first — must not be listed twice.
-          RejectedFieldIssue(field: 'data.name', code: 'required'),
-          RejectedFieldIssue(field: 'data.place_label', code: 'too_long'),
-          RejectedFieldIssue(field: 'data.location', code: 'required'),
-        ],
-        errorCode: 'validation.failed',
-      );
+      final messages = localizedRejectionMessages(en, const [
+        RejectedFieldIssue(field: 'data.name', code: 'required'),
+        RejectedFieldIssue(field: 'data.notes', code: 'too_long'),
+        // Duplicate of the first — must not be listed twice.
+        RejectedFieldIssue(field: 'data.name', code: 'required'),
+        RejectedFieldIssue(field: 'data.place_label', code: 'too_long'),
+        RejectedFieldIssue(field: 'data.location', code: 'required'),
+      ]);
       expect(messages, hasLength(maxRejectionMessages));
       expect(messages.first, 'Name: this is required.');
       expect(messages.toSet(), hasLength(messages.length));
@@ -134,53 +147,37 @@ void main() {
 
     test('drops unmappable issues but keeps the mappable ones', () {
       expect(
-        localizedRejectionMessages(
-          en,
-          fieldIssues: const [
-            RejectedFieldIssue(field: 'data.mystery', code: 'invalid'),
-            RejectedFieldIssue(field: 'data.title', code: 'too_long'),
-          ],
-          errorCode: 'validation.failed',
-        ),
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.mystery', code: 'invalid'),
+          RejectedFieldIssue(field: 'data.title', code: 'too_long'),
+        ]),
         ['Title: this text is too long.'],
       );
     });
 
     test(
-      'falls back to the problem-level code when there is no field detail',
+      'falls back to the generic message when the op carries no field detail '
+      '(the collateral op of an atomic push)',
       () {
-        expect(
-          localizedRejectionMessages(
-            en,
-            fieldIssues: const [],
-            errorCode: 'auth.forbidden',
-          ),
-          [en.syncNeedsFixNotAllowedProblem],
-        );
-        expect(
-          localizedRejectionMessages(
-            en,
-            fieldIssues: const [],
-            errorCode: 'resource.conflict',
-          ),
-          [en.syncNeedsFixConflictProblem],
-        );
+        expect(localizedRejectionMessages(en, const []), [
+          en.syncNeedsFixGenericProblem,
+        ]);
       },
     );
 
-    test('falls back to the generic message for an unmapped problem code '
-        '(the collateral op of an atomic push carries no field detail)', () {
+    test('an activity type and a journey main activity type get the label of '
+        'the form each Fix action opens', () {
       expect(
-        localizedRejectionMessages(
-          en,
-          fieldIssues: const [],
-          errorCode: 'validation.failed',
-        ),
-        [en.syncNeedsFixGenericProblem],
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.type', code: 'invalid'),
+        ]),
+        ["Activity type: this value isn't valid."],
       );
       expect(
-        localizedRejectionMessages(en, fieldIssues: const [], errorCode: ''),
-        [en.syncNeedsFixGenericProblem],
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.main_activity_type', code: 'invalid'),
+        ]),
+        ["Main activity type: this value isn't valid."],
       );
     });
   });
@@ -221,11 +218,9 @@ void main() {
         final l10n = await AppLocalizations.delegate.load(Locale(locale));
         for (final field in everyServerField) {
           for (final code in everyServerCode) {
-            final messages = localizedRejectionMessages(
-              l10n,
-              fieldIssues: [RejectedFieldIssue(field: field, code: code)],
-              errorCode: 'validation.failed',
-            );
+            final messages = localizedRejectionMessages(l10n, [
+              RejectedFieldIssue(field: field, code: code),
+            ]);
             expect(messages, isNotEmpty);
             for (final message in messages) {
               // A localized label may legitimately be the English word a

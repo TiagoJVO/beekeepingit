@@ -40,7 +40,7 @@ void main() {
       // non-technical message is shown instead (#426), now mapped from the
       // rejection's (field, code) pair rather than blanket-generic (#443).
       expect(find.text('value must be >= 0'), findsNothing);
-      expect(find.text('Count: must be 0 or more.'), findsNWidgets(2));
+      expect(find.text('Count: this must be 0 or more.'), findsNWidgets(2));
     },
   );
 
@@ -60,7 +60,10 @@ void main() {
         await tester.pumpWidget(_harness(store));
         await tester.pumpAndSettle();
 
-        expect(find.text('Hive count: must be 0 or more.'), findsOneWidget);
+        expect(
+          find.text('Number of hives: this must be 0 or more.'),
+          findsOneWidget,
+        );
         expect(find.textContaining('hive_count'), findsNothing);
         expect(
           find.text('This change was rejected and needs your attention.'),
@@ -113,22 +116,21 @@ void main() {
     );
 
     testWidgets(
-      'falls back to the problem-level error_code when the op carries no '
-      'field detail (a collateral op of an atomic push)',
+      'falls back to the generic message when the op carries no field detail '
+      '(a collateral op of an atomic push, rolled back for a sibling)',
       (tester) async {
         final store = _FakeRejectedStore([
           _row(
             id: 'r1',
             entityType: 'apiary',
-            errorCode: 'auth.forbidden',
-            errorDetail: '{"detail":"not allowed","errors":[]}',
+            errorDetail: '{"detail":"one or more ops are invalid","errors":[]}',
           ),
         ]);
         await tester.pumpWidget(_harness(store));
         await tester.pumpAndSettle();
 
         expect(
-          find.text("You don't have permission to make this change."),
+          find.text('This change was rejected and needs your attention.'),
           findsOneWidget,
         );
       },
@@ -137,10 +139,37 @@ void main() {
 
   testWidgets(
     'does not leak a raw snake_case DB column name from the server detail — '
-    'shows the localized generic message instead (#426)',
+    'shows localized copy instead (#426, now specific per #443)',
     (tester) async {
-      // Reproduces the field-tested leak: a rejected journey whose server
+      // Reproduces the field-tested leak, with the code the journeys
+      // validator actually emits for it (validateDefaultAttributes,
+      // services/journeys/api/types.go): a rejected journey whose server
       // detail named the `default_attributes` DB column verbatim.
+      final store = _FakeRejectedStore([
+        _row(
+          id: 'r1',
+          entityType: 'journey',
+          errorDetail:
+              '{"detail":"validation failed","errors":[{"field":"data.default_attributes","code":"invalid","message":"default_attributes must be a JSON object"}]}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+      // The internal column name must never reach the UI.
+      expect(find.textContaining('default_attributes'), findsNothing);
+      expect(
+        find.text("Defaults for activities: this value isn't valid."),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'a code the app has no copy for still degrades to the localized generic '
+    'message, so a new server validator cannot leak (#426/#443)',
+    (tester) async {
       final store = _FakeRejectedStore([
         _row(
           id: 'r1',
@@ -152,8 +181,6 @@ void main() {
       await tester.pumpWidget(_harness(store));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
-      // The internal column name must never reach the UI.
       expect(find.textContaining('default_attributes'), findsNothing);
       expect(
         find.text('This change was rejected and needs your attention.'),
@@ -460,14 +487,13 @@ Map<String, Object?> _row({
   String fixApiaryId = 'apiary-1',
   String? payload,
   String? errorDetail,
-  String errorCode = 'validation.failed',
 }) => {
   'id': id,
   'entity_type': entityType,
   'fix_apiary_id': fixApiaryId,
   'op': 'patch',
   'payload': payload ?? '{}',
-  'error_code': errorCode,
+  'error_code': 'validation.failed',
   'error_detail':
       errorDetail ??
       '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',

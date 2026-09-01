@@ -534,14 +534,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'This change was rejected and needs your attention.';
 
   @override
-  String get syncNeedsFixNotAllowedProblem =>
-      'You don\'t have permission to make this change.';
-
-  @override
-  String get syncNeedsFixConflictProblem =>
-      'This record changed elsewhere. Open it, check it, and save again.';
-
-  @override
   String syncNeedsFixFieldProblem(String field, String problem) {
     return '$field: $problem';
   }
@@ -564,13 +556,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'this no longer exists, or you no longer have access to it.';
 
   @override
-  String get syncNeedsFixRuleNonNegative => 'must be 0 or more.';
+  String get syncNeedsFixRuleNonNegative => 'this must be 0 or more.';
 
   @override
-  String get syncNeedsFixRuleLatitudeRange => 'must be between -90 and 90.';
+  String get syncNeedsFixRuleLatitudeRange =>
+      'this must be between -90 and 90.';
 
   @override
-  String get syncNeedsFixRuleLongitudeRange => 'must be between -180 and 180.';
+  String get syncNeedsFixRuleLongitudeRange =>
+      'this must be between -180 and 180.';
 
   @override
   String get syncNeedsFixFieldName => 'Name';
@@ -585,7 +579,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixFieldNotes => 'Notes';
 
   @override
-  String get syncNeedsFixFieldPlace => 'Place';
+  String get syncNeedsFixFieldPlace => 'Place label';
 
   @override
   String get syncNeedsFixFieldLocation => 'Location';
@@ -597,7 +591,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixFieldLongitude => 'Longitude';
 
   @override
-  String get syncNeedsFixFieldHiveCount => 'Hive count';
+  String get syncNeedsFixFieldHiveCount => 'Number of hives';
 
   @override
   String get syncNeedsFixFieldCount => 'Count';
@@ -618,13 +612,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixFieldActivityType => 'Activity type';
 
   @override
+  String get syncNeedsFixFieldMainActivityType => 'Main activity type';
+
+  @override
   String get syncNeedsFixFieldDate => 'Date';
 
   @override
   String get syncNeedsFixFieldDueDate => 'Due date';
 
   @override
-  String get syncNeedsFixFieldCompletedDate => 'Completion date';
+  String get syncNeedsFixFieldCompletedAt => 'Completed at';
 
   @override
   String get syncNeedsFixFieldPriority => 'Priority';
@@ -634,6 +631,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncNeedsFixFieldDetails => 'Details';
+
+  @override
+  String get syncNeedsFixFieldActivityDefaults => 'Defaults for activities';
 
   @override
   String get syncNeedsFixFixAction => 'Fix';

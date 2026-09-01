@@ -55,13 +55,26 @@ class RejectedOp {
   /// `put` | `patch` | `delete`.
   final String op;
 
-  /// RFC 9457 problem `code` (e.g. `validation.failed`), or `''`.
+  /// RFC 9457 problem `code` (e.g. `validation.failed`), or `''` when the
+  /// problem body couldn't be parsed.
+  ///
+  /// **Not usable as UI copy (#443).** It is the same value for effectively
+  /// every retained rejection: the connector only dead-letters a `422`/`400`
+  /// (`classifyUploadOutcome`), and the sync endpoints answer those solely
+  /// with `problem.ValidationFailed` — `auth.forbidden`/`resource.conflict`
+  /// are `403`/`409`, which the connector treats as transient and leaves
+  /// queued. The user-facing copy therefore comes from the per-field codes
+  /// ([fieldIssues]) alone; this stays for logs and for the day a new
+  /// rejection class is actually retained.
   final String errorCode;
 
-  /// Field-level messages the server returned for this op, in order — what the
-  /// user actually has to fix. Empty when the op was collateral in an atomic
-  /// push (valid itself, rolled back because a sibling op failed) or the body
-  /// carried no field detail.
+  /// The raw field-level messages the server returned for this op, in order.
+  ///
+  /// **Diagnostics only — never render these (#426)**, for the same reason
+  /// [primaryMessage] must not be rendered: they are English-only and can
+  /// embed internal DB column names. [fieldIssues] is the half the UI uses.
+  /// Empty when the op was collateral in an atomic push (valid itself, rolled
+  /// back because a sibling op failed) or the body carried no field detail.
   final List<String> fieldErrors;
 
   /// The **machine-readable** half of the same field errors — `(field, code)`
@@ -73,7 +86,10 @@ class RejectedOp {
   /// and not there.
   final List<RejectedFieldIssue> fieldIssues;
 
-  /// The problem's human `detail`, shown when there are no field-level messages.
+  /// The problem's human `detail`. **Diagnostics only**, like [fieldErrors] —
+  /// it is the server's English-only prose and has not been rendered since
+  /// #426; it is kept because [primaryMessage] (the log/diagnostics line)
+  /// falls back to it.
   final String detail;
 
   /// The single most useful raw server line for this rejection: the first field

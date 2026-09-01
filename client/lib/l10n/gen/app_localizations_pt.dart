@@ -537,14 +537,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Esta alteração foi rejeitada e precisa da sua atenção.';
 
   @override
-  String get syncNeedsFixNotAllowedProblem =>
-      'Não tem permissão para fazer esta alteração.';
-
-  @override
-  String get syncNeedsFixConflictProblem =>
-      'Este registo foi alterado noutro local. Abra-o, verifique e guarde novamente.';
-
-  @override
   String syncNeedsFixFieldProblem(String field, String problem) {
     return '$field: $problem';
   }
@@ -566,13 +558,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixRuleNotFound => 'já não existe ou já não tem acesso.';
 
   @override
-  String get syncNeedsFixRuleNonNegative => 'tem de ser 0 ou mais.';
+  String get syncNeedsFixRuleNonNegative => 'isto tem de ser 0 ou mais.';
 
   @override
-  String get syncNeedsFixRuleLatitudeRange => 'tem de estar entre -90 e 90.';
+  String get syncNeedsFixRuleLatitudeRange =>
+      'isto tem de estar entre -90 e 90.';
 
   @override
-  String get syncNeedsFixRuleLongitudeRange => 'tem de estar entre -180 e 180.';
+  String get syncNeedsFixRuleLongitudeRange =>
+      'isto tem de estar entre -180 e 180.';
 
   @override
   String get syncNeedsFixFieldName => 'Nome';
@@ -587,7 +581,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixFieldNotes => 'Notas';
 
   @override
-  String get syncNeedsFixFieldPlace => 'Local';
+  String get syncNeedsFixFieldPlace => 'Nome do local';
 
   @override
   String get syncNeedsFixFieldLocation => 'Localização';
@@ -599,7 +593,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixFieldLongitude => 'Longitude';
 
   @override
-  String get syncNeedsFixFieldHiveCount => 'Nº de colmeias';
+  String get syncNeedsFixFieldHiveCount => 'Número de colmeias';
 
   @override
   String get syncNeedsFixFieldCount => 'Contagem';
@@ -620,13 +614,16 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixFieldActivityType => 'Tipo de atividade';
 
   @override
+  String get syncNeedsFixFieldMainActivityType => 'Atividade principal';
+
+  @override
   String get syncNeedsFixFieldDate => 'Data';
 
   @override
-  String get syncNeedsFixFieldDueDate => 'Data limite';
+  String get syncNeedsFixFieldDueDate => 'Prazo';
 
   @override
-  String get syncNeedsFixFieldCompletedDate => 'Data de conclusão';
+  String get syncNeedsFixFieldCompletedAt => 'Concluída em';
 
   @override
   String get syncNeedsFixFieldPriority => 'Prioridade';
@@ -636,6 +633,10 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get syncNeedsFixFieldDetails => 'Detalhes';
+
+  @override
+  String get syncNeedsFixFieldActivityDefaults =>
+      'Predefinições para atividades';
 
   @override
   String get syncNeedsFixFixAction => 'Corrigir';

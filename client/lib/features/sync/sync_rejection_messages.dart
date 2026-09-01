@@ -70,14 +70,12 @@ const int maxRejectionMessages = 3;
 /// [maxRejectionMessages]).
 ///
 /// Never empty — when nothing maps (no field detail at all, an unknown field,
-/// or an unknown code) it degrades to the problem-level [errorCode]'s message
-/// and finally to `syncNeedsFixGenericProblem`, which is exactly #426's
-/// behavior.
+/// or an unknown code) it degrades to `syncNeedsFixGenericProblem`, which is
+/// exactly #426's behavior.
 List<String> localizedRejectionMessages(
-  AppLocalizations l10n, {
-  required List<RejectedFieldIssue> fieldIssues,
-  required String errorCode,
-}) {
+  AppLocalizations l10n,
+  List<RejectedFieldIssue> fieldIssues,
+) {
   final messages = <String>[];
   for (final issue in fieldIssues) {
     final message = localizedFieldIssueMessage(l10n, issue);
@@ -85,10 +83,7 @@ List<String> localizedRejectionMessages(
     messages.add(message);
     if (messages.length == maxRejectionMessages) break;
   }
-  if (messages.isNotEmpty) return messages;
-  return [
-    _problemCodeMessage(l10n, errorCode) ?? l10n.syncNeedsFixGenericProblem,
-  ];
+  return messages.isEmpty ? [l10n.syncNeedsFixGenericProblem] : messages;
 }
 
 /// The localized line for a single field issue, or null when either half of
@@ -100,7 +95,7 @@ String? localizedFieldIssueMessage(
   AppLocalizations l10n,
   RejectedFieldIssue issue,
 ) {
-  final field = normalizeRejectionField(issue.field);
+  final field = _normalizeField(issue.field);
   final label = _fieldLabel(l10n, field);
   if (label == null) return null;
   final rule = _ruleMessage(l10n, field, issue.code);
@@ -108,15 +103,20 @@ String? localizedFieldIssueMessage(
   return l10n.syncNeedsFixFieldProblem(label, rule);
 }
 
+/// The wire envelope every batch op's field path is nested under
+/// (`powersync_connector.dart`'s `_toOp`), stripped before the lookup.
+const _dataPrefix = 'data.';
+
 /// Reduces a wire field path to the key [_fieldLabel] looks up: drops the
-/// `data.` envelope prefix, and collapses an activity's per-type attribute
-/// path (`attributes.<key>`, `default_attributes.<key>`) onto the bag itself,
+/// [_dataPrefix] envelope, and collapses an attribute path
+/// (`attributes.<key>`, `default_attributes.<key>`) onto the bag itself,
 /// since the individual attribute keys are internal schema names with no
 /// localized label of their own (`ValidateActivity` in
 /// `services/activities/api/types.go`).
-@visibleForTesting
-String normalizeRejectionField(String field) {
-  var normalized = field.startsWith('data.') ? field.substring(5) : field;
+String _normalizeField(String field) {
+  var normalized = field.startsWith(_dataPrefix)
+      ? field.substring(_dataPrefix.length)
+      : field;
   final dot = normalized.indexOf('.');
   if (dot > 0) normalized = normalized.substring(0, dot);
   return normalized;
@@ -141,20 +141,24 @@ String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'apiary_id' => l10n.syncNeedsFixFieldApiary,
   'journey_id' => l10n.syncNeedsFixFieldJourney,
   'assignee_id' => l10n.syncNeedsFixFieldAssignee,
-  'type' || 'main_activity_type' => l10n.syncNeedsFixFieldActivityType,
+  'type' => l10n.syncNeedsFixFieldActivityType,
+  'main_activity_type' => l10n.syncNeedsFixFieldMainActivityType,
   'occurred_at' => l10n.syncNeedsFixFieldDate,
   'due_date' => l10n.syncNeedsFixFieldDueDate,
-  'completed_at' => l10n.syncNeedsFixFieldCompletedDate,
+  'completed_at' => l10n.syncNeedsFixFieldCompletedAt,
   'priority' => l10n.syncNeedsFixFieldPriority,
   'status' => l10n.syncNeedsFixFieldStatus,
-  'attributes' || 'default_attributes' => l10n.syncNeedsFixFieldDetails,
+  'attributes' => l10n.syncNeedsFixFieldDetails,
+  'default_attributes' => l10n.syncNeedsFixFieldActivityDefaults,
   _ => null,
 };
 
-/// The localized rule fragment for one `(field, code)` pair, or null for a
-/// code this app has no copy for. A few fields get a sharper message than the
-/// code alone can give — the exact bound is part of the contract, not of the
-/// server's wording, so restating it here can't drift into a leak.
+/// The localized rule fragment for one `(field, code)` pair, or null when
+/// this app has no truthful copy for it — an unmapped code, or a pair whose
+/// generic copy would misdescribe the actual constraint. A few fields get a
+/// sharper message than the code alone can give: the exact bound is part of
+/// the API contract, not of the server's wording, so restating it here can't
+/// drift into a leak.
 String? _ruleMessage(AppLocalizations l10n, String field, String code) {
   if (code == 'out_of_range') {
     return switch (field) {
@@ -164,6 +168,13 @@ String? _ruleMessage(AppLocalizations l10n, String field, String code) {
       _ => l10n.syncNeedsFixRuleOutOfRange,
     };
   }
+  // A journey's default_attributes is capped in BYTES of encoded JSON
+  // (`validateDefaultAttributes`, services/journeys/api/types.go), not in
+  // characters of a text field the user could shorten — "this text is too
+  // long" would be both untrue and unactionable, so this one pair falls
+  // through to the generic message. An activity's own attributes.<key>
+  // too_long IS a real string-length cap, and keeps the fragment.
+  if (code == 'too_long' && field == 'default_attributes') return null;
   return switch (code) {
     'required' => l10n.syncNeedsFixRuleRequired,
     'invalid' => l10n.syncNeedsFixRuleInvalid,
@@ -172,15 +183,3 @@ String? _ruleMessage(AppLocalizations l10n, String field, String code) {
     _ => null,
   };
 }
-
-/// Coarse copy from the problem-level RFC 9457 `code` (`problem.Problem.Code`
-/// — the dead-letter row's `error_code`), used when there is no usable
-/// field-level detail. Only the codes that tell the user something actionable
-/// are mapped; `validation.failed` with no mappable field detail is exactly
-/// the generic case.
-String? _problemCodeMessage(AppLocalizations l10n, String errorCode) =>
-    switch (errorCode) {
-      'auth.forbidden' => l10n.syncNeedsFixNotAllowedProblem,
-      'resource.conflict' => l10n.syncNeedsFixConflictProblem,
-      _ => null,
-    };
