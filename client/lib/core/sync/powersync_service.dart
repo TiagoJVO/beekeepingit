@@ -7,6 +7,7 @@ import 'package:powersync/powersync.dart';
 import '../../features/settings/sync_settings_repository.dart';
 import '../auth/auth_controller.dart';
 import 'connectivity_probe.dart';
+import 'connectivity_signal.dart';
 import 'local_store.dart';
 import 'powersync_connector.dart';
 import 'powersync_local_store.dart';
@@ -137,6 +138,11 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
       if (connected) return;
       await db.connect(connector: connector);
     },
+    // The browser's `online` event, so a reconnect cuts a pending backoff
+    // short and re-probes at once instead of leaving a queued offline write
+    // unflushed for up to the gate's ~2-min max backoff (#240, FR-OF-3). A
+    // hint only — the probe still decides whether the link is usable.
+    onConnectivityRestored: createConnectivitySignal().onRestored,
   );
 
   // Re-arm the gate whenever the engine transitions from connected to
