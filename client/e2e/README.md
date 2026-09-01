@@ -21,6 +21,19 @@ main's client bundle instead of the commit under test. The apiary the create ste
 leaves behind is deleted in `afterAll` (`tests/slice.spec.ts`) via the same REST
 API the app uses.
 
+A third spec, **`tests/dgav.spec.ts`** (#296/#298, FR-AP-9/FR-AP-10), covers the DGAV
+section: set the organization's registration number → record a stock declaration →
+assert a **fresh client downloads both** → delete the declaration again. The
+fresh-client step is the reason it exists. `stock_declarations` is a new table with
+a new Sync Rules entry, and `dgav_registration_number` is a new column on an
+**explicit** sync-rules column list — the exact shape that fails **silently** (the
+row never arrives, the column just stays NULL, and every local-only test still
+passes because the device that wrote it has it locally). That is the same failure
+`notes` hit when #33 rewrote the apiaries entry from `SELECT *`. Declarations have
+no REST surface (sync only, like `apiary_counters`), so the UI delete at the end is
+the teardown — and doubles as coverage of the one lifecycle operation a counter
+deliberately lacks.
+
 The server-side apply semantics (LWW, conflict log, idempotency, tombstones) and
 the sync coordinator are additionally covered by fast **Go integration tests**
 (`services/apiaries`, `services/sync`) that run in CI without a browser.
