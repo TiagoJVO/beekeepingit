@@ -232,6 +232,22 @@ harvest, which requires visiting all apiaries).
     (DB-enforced cap of 1; zero until onboarding completes). A user who already
     belongs to an organization cannot accept an invitation to another one; see
     D-3.
+  - _Amended (D-3 / #365 live testing, user-confirmed):_ organization
+    completion stays **enforced** — no main feature is reachable without an
+    active membership — but organization **creation is no longer the only
+    exit**. A registrant whose invitation has not arrived yet may instead
+    declare they are **joining an existing organization** and wait. Waiting is
+    a **client route**, not a membership status and not a pending
+    organization: the client re-checks `GET /v1/organizations/me` on
+    resume/refresh, and that call already performs the accept-on-login step
+    (FR-ONB-3), so the moment a matching invitation exists the user is joined.
+    **No new endpoint and no new server-side state.**
+  - _Warning (D-3 / #506):_ because an account holds **at most one** active
+    membership and there is **no leave path yet** (#506), creating an
+    organization **blocks** accepting a pending invitation to another one. The
+    create path must say so **before** the user commits — the choice is
+    one-way until #506 lands.
+
 - **FR-ONB-3** — **Organization membership & invitations**: the org admin can
   **invite members by email**; invited users join the existing organization. The
   org creator is the first admin (see NFR-ROL-1). _(Detail still open: invite

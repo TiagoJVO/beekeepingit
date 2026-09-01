@@ -21,6 +21,7 @@ import '../features/journeys/journeys_list_screen.dart';
 import '../features/members/members_screen.dart';
 import '../features/organization/organization_repository.dart';
 import '../features/organization/organization_screen.dart';
+import '../features/organization/organization_waiting_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/sync/sync_needs_fix_screen.dart';
@@ -57,6 +58,17 @@ final _assistantBranchKey = GlobalKey<NavigatorState>(
 /// neither is part of the onboarding gate itself, just normal authenticated
 /// routes. Exposed as a provider so widget tests can override
 /// auth/profile/organization.
+/// The onboarding destinations a profile-complete user with NO organization
+/// is allowed to sit on. `/organization/new` stays the default landing; the
+/// waiting route is the second exit added by the FR-ONB-2 / D-3 amendment
+/// (#365 live testing).
+///
+/// An explicit two-element set, never a `/organization/*` prefix match — a
+/// prefix would also admit `/organization/members`, making a members screen
+/// reachable before the user has any membership at all, and no existing test
+/// would have caught it.
+const _orgOnboardingLocations = {'/organization/new', '/organization/waiting'};
+
 final routerProvider = Provider<GoRouter>((ref) {
   // Re-evaluate redirects whenever auth, the profile fetch, or the
   // organization fetch itself changes (listening to the raw providers, not
@@ -90,18 +102,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       final profileComplete = profileAsync.value?.profileComplete ?? false;
       if (!profileComplete) return atProfile ? null : '/profile';
 
-      final atOrganization = state.matchedLocation == '/organization/new';
+      final atOrgOnboarding = _orgOnboardingLocations.contains(
+        state.matchedLocation,
+      );
       final organizationAsync = ref.read(organizationProvider);
       // Same "don't gate on loading" rule as the profile check above: only
       // react once the fetch has actually resolved, one way or the other.
       if (organizationAsync.isLoading) return null;
       final hasOrganization = organizationAsync.value != null;
       if (!hasOrganization) {
-        return atOrganization ? null : '/organization/new';
+        return atOrgOnboarding ? null : '/organization/new';
       }
       // A user who has just finished onboarding lands on the same Tasks home
       // as a returning user (#427, D-29), not the apiaries list.
-      if (atOrganization) return '/todos';
+      if (atOrgOnboarding) return '/todos';
 
       return null;
     },
@@ -120,6 +134,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/organization/new',
         name: 'organizationNew',
         builder: (context, state) => const OrganizationScreen(),
+      ),
+      GoRoute(
+        path: '/organization/waiting',
+        name: 'organizationWaiting',
+        builder: (context, state) => const OrganizationWaitingScreen(),
       ),
       GoRoute(
         path: '/organization/members',

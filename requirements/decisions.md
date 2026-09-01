@@ -95,6 +95,23 @@ _Last updated: 2026-08-31._
   **sole member** may leave their own organization, after which the ordinary accept-on-login path
   joins them to the inviting org — is tracked as **#506**, scheduled **before public
   launch**; it is not part of #365 or M1.1.
+- **Amended by #365 live testing (2026-08-31) — user-confirmed: the block is avoidable in
+  advance, not exitable.** Everything above stands, unweakened: an account with an active
+  membership still never auto-joins a second organization, the accept-on-login precondition
+  ("caller has **no** active membership") is untouched, `idx_memberships_one_active_per_user` is
+  untouched, there is still no self-service accept endpoint, and making the door exitable is still
+  **#506**, still scheduled before public launch. What changes is **upstream of the block**. Live
+  testing showed the onboarding gate offered a registrant exactly one exit — create an
+  organization — so a user whose invitation had not arrived yet was **pushed** through the only
+  door available and walked irreversibly into the block while trying to escape an empty screen.
+  Recording a dead end is correct; routing every early registrant into it is not. So org creation
+  stops being the sole exit: the client offers a **waiting state** to an authenticated caller with
+  no membership, re-checked on resume/refresh via `GET /v1/organizations/me` — **the same call
+  that already performs accept-on-login** — so there is **no new endpoint, no new server state and
+  no new membership status**; waiting is a client route, not a pending membership. The create path
+  additionally **warns** that creating an organization blocks a later invitation until #506 lands,
+  so the one-way choice is made knowingly. Net effect: the dead end stays a dead end and stays
+  recorded — it is simply no longer the default destination. _(FR-ONB-2 amended to match.)_
 - **Still open:** invitation expiry, re-invite (minor — for planning detail).
 
 ## D-4 — v1 scope deferrals

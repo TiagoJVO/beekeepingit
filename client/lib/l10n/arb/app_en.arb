@@ -264,6 +264,46 @@
       }
     }
   },
+  "organizationWaitingTitle": "Join an organization",
+  "@organizationWaitingTitle": {
+    "description": "Title of the waiting-for-an-invitation onboarding screen."
+  },
+  "organizationWaitingIntro": "If someone is inviting you to their organization, you don't need to create one. Check again once the invitation has been sent.",
+  "@organizationWaitingIntro": {
+    "description": "Explains that creating an organization is not required when an invitation is expected."
+  },
+  "organizationWaitingHint": "The invitation must be sent to the email you signed in with. Ask the organization's admin to invite that address.",
+  "@organizationWaitingHint": {
+    "description": "Tells the user which address the invitation must target."
+  },
+  "organizationWaitingCheckButton": "Check again",
+  "@organizationWaitingCheckButton": {
+    "description": "Re-checks whether a pending invitation has arrived."
+  },
+  "organizationWaitingChecking": "Checking for an invitation",
+  "@organizationWaitingChecking": {
+    "description": "Screen-reader label while the check is in flight."
+  },
+  "organizationWaitingStillNone": "No invitation yet. Try again in a moment, or create your own organization.",
+  "@organizationWaitingStillNone": {
+    "description": "Shown when a check finds no pending invitation."
+  },
+  "organizationWaitingCheckError": "Could not check for an invitation right now. Try again.",
+  "@organizationWaitingCheckError": {
+    "description": "Fixed error message for a failed check - never shows the raw exception."
+  },
+  "organizationWaitingCreateInsteadButton": "Create an organization instead",
+  "@organizationWaitingCreateInsteadButton": {
+    "description": "Leaves the waiting screen for the create-organization form."
+  },
+  "organizationJoinInsteadButton": "I'm waiting for an invitation",
+  "@organizationJoinInsteadButton": {
+    "description": "Leaves the create form for the waiting screen."
+  },
+  "organizationCreateBlocksInvitationWarning": "Creating an organization means you can't accept an invitation to another one later. If you're expecting an invitation, wait for it instead.",
+  "@organizationCreateBlocksInvitationWarning": {
+    "description": "Warns that creating an organization is a one-way choice while #506 is open."
+  },
   "membersTitle": "Members & invitations",
   "@membersTitle": {
     "description": "Members/invitations management screen app bar title"

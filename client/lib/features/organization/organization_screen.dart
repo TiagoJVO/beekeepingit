@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../../theming/brand_widgets.dart';
 import 'organization_repository.dart';
 
 /// Organization creation screen (FR-ONB-2, FR-TEN-2, NFR-ROL-1, #26). Reached
@@ -96,6 +97,15 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                     style: Theme.of(context).textTheme.bodyLarge,
                   ),
                   const SizedBox(height: 16),
+                  // The warning belongs where the irreversible choice is
+                  // made: creating an organization is a one-way door until
+                  // #506 lands (D-3's single-active-membership block).
+                  NotesCard(
+                    key: const Key('organization-create-blocks-invite-warning'),
+                    icon: Icons.info_outlined,
+                    text: l10n.organizationCreateBlocksInvitationWarning,
+                  ),
+                  const SizedBox(height: 16),
                   TextFormField(
                     key: const Key('organization-name-field'),
                     controller: _nameController,
@@ -123,6 +133,16 @@ class _OrganizationScreenState extends ConsumerState<OrganizationScreen> {
                     label: l10n.organizationSaveButton,
                     busy: _saving,
                     onPressed: () => _save(l10n),
+                  ),
+                  // AFTER the save button on purpose: the a11y focus-order
+                  // test asserts name -> address -> save, and this must not
+                  // come between them.
+                  const SizedBox(height: 12),
+                  SecondaryActionButton(
+                    key: const Key('organization-join-instead-button'),
+                    label: l10n.organizationJoinInsteadButton,
+                    icon: Icons.mail_outline,
+                    onPressed: () => context.go('/organization/waiting'),
                   ),
                 ],
               ),

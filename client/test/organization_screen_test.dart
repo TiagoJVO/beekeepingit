@@ -50,6 +50,19 @@ Widget _buildScreen(OrganizationController controller) {
 }
 
 void main() {
+  testWidgets(
+    'the create form warns that creating an organization is a one-way choice',
+    (tester) async {
+      await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('organization-create-blocks-invite-warning')),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('renders the organization creation form', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeOrganizationController()));
     await tester.pumpAndSettle();
