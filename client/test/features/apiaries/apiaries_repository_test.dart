@@ -47,9 +47,27 @@ class FakeLocalStore implements LocalStoreEngine {
     List<Object?> args = const [],
   ]) async => _select(sql, args);
 
+  /// The delete-time LWW stamp (#276) each deleted row id was removed with —
+  /// what `deleteWithLwwStamp` wrote into the hidden `_metadata` column and
+  /// PowerSync persists with the queued op.
+  final Map<String, String> deleteStamps = {};
+
   @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
+    // #276's metadata-carrying delete form (`UPDATE <table> SET _deleted =
+    // TRUE, _metadata = ? WHERE id = ?`) — checked BEFORE the broad
+    // `UPDATE APIARIES` branch below, which would otherwise swallow it and
+    // then mis-read its args as an edit's. The real core extension turns
+    // exactly this statement into a local row delete plus a queued DELETE op
+    // carrying the metadata.
+    if (normalized.startsWith('UPDATE APIARIES SET _DELETED')) {
+      final id = args[1] as String;
+      deleteStamps[id] = args[0] as String;
+      rows.removeWhere((r) => r['id'] == id);
+      _notify();
+      return;
+    }
     if (normalized.startsWith('INSERT INTO APIARY_COUNTERS')) {
       // (id, apiary_id, counter_type, value, created_at, updated_at)
       counterRows.add({
@@ -95,9 +113,6 @@ class FakeLocalStore implements LocalStoreEngine {
       row['location_lon'] = args[4];
       row['location_lat'] = args[5];
       row['updated_at'] = args[6];
-    } else if (normalized.startsWith('DELETE FROM APIARIES')) {
-      final id = args[0];
-      rows.removeWhere((r) => r['id'] == id);
     } else {
       throw UnsupportedError('FakeLocalStore.execute: unhandled SQL: $sql');
     }
@@ -240,6 +255,18 @@ void main() {
       await repo.delete(id);
 
       expect(await repo.getById(id), isNull);
+    });
+
+    test('delete() captures the delete-time LWW stamp on the queued op '
+        '(#276, FR-OF-1) — not left for the connector to invent at upload '
+        'time', () async {
+      final id = await repo.create(name: 'Temp', hiveCount: 0);
+
+      await repo.delete(id);
+
+      final stamp = store.deleteStamps[id];
+      expect(stamp, isNotNull);
+      expect(DateTime.parse(stamp!).isUtc, isTrue);
     });
 
     group('watchById() (#HIGH-1 narrow per-id watch)', () {

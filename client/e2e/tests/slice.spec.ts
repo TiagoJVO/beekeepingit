@@ -278,39 +278,28 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   // ── Reconnect → the queued change syncs ───────────────────────────────
   await context.setOffline(false);
 
-  // Return to the list first (shell Back is labeled "Back"), then nudge sync
-  // from there. In-app navigation (History API), NOT a page reload: this keeps
-  // the same in-memory session and PowerSync connection, so the assertions below
-  // isolate reconnect-sync from session restore. Reload-based session
-  // persistence is exercised on its own by the dedicated reload test below
-  // (#236) — no need to couple the two here.
+  // Return to the list (shell Back is labeled "Back"). In-app navigation
+  // (History API), NOT a page reload: this keeps the same in-memory session and
+  // PowerSync connection, so the assertions below isolate reconnect-sync from
+  // session restore. Reload-based session persistence is exercised on its own
+  // by the dedicated reload test below (#236) — no need to couple the two here.
   await page.getByRole("button", { name: "Back" }).click();
   await enableSemantics(page);
 
-  // Nudge the sync via the app's "Sync now" override before asserting. This is
-  // the intended user action for exactly this situation, not a test cheat: the
-  // connection-quality gate (#55, FR-OF-3) re-probes on an exponential backoff
-  // and — confirmed via trace — does NOT re-probe promptly on connectivity-
-  // return (no online-event listener interrupts the pending backoff; rearm() is
-  // a no-op while it's mid-wait), so a queued write can sit unflushed for up to
-  // the ~2-min max backoff. The app ships a manual "Sync now" (SyncGate.
-  // requestSync, which bypasses the gate) precisely for "reconnected but the
-  // gate hasn't re-probed yet". Exercising it makes the reconnect-sync assertion
-  // deterministic instead of racing the backoff. (Follow-up flagged for the
-  // gate's slow re-probe-on-reconnect — a real FR-OF-3 responsiveness gap, not
-  // just CI slowness; see the PR notes. Once the gate re-probes on reconnect,
-  // this nudge can be dropped.) Sync now lives on the Account screen (#197/#172
-  // IA); open it from the list's shell header account button, then return to the
-  // list with a single in-app Back (History API — keeps the session).
-  await page.getByRole("button", { name: "Account settings" }).click();
-  await enableSemantics(page);
-  await page.getByRole("button", { name: "Sync now" }).click();
-  await page.goBack();
-  await enableSemantics(page);
+  // NOTHING nudges the sync from here on: reconnect alone must flush the queue.
+  // This used to tap the app's "Sync now" override first, because the
+  // connection-quality gate (#55, FR-OF-3) only re-probed on its exponential
+  // backoff and never on connectivity-return, so a queued write could sit
+  // unflushed for up to the ~2-min max backoff. #240 made the gate listen for
+  // the browser's `online` event and cut a pending backoff short, which is
+  // exactly the user-visible behavior this test should be proving — so the
+  // nudge is gone and the poll below is now a real assertion about
+  // reconnect-driven sync rather than about the manual override (which has its
+  // own coverage in the unit tests).
 
   // Assert server-side: the edit reached the apiaries service. Runs a fetch
   // inside the page; works from any screen. Generous in case the flush takes a
-  // moment to land server-side after the nudge.
+  // moment to land server-side after the reconnect.
   await expect
     .poll(async () => (await serverApiary(page, capturedToken, apiaryName))?.hive_count ?? null, {
       timeout: 60_000,
@@ -327,7 +316,7 @@ test("login → create → offline edit → sync", async ({ page, context, brows
   createdApiaryId = serverRow?.id ?? null;
 
   // ── Local state converged on the list (#23 AC) ────────────────────────
-  // Back on the list (from the goBack above), the row read from local SQLite
+  // Back on the list (from the Back above), the row read from local SQLite
   // shows the synced value.
   await expect(apiaryRow(page, apiaryName)).toContainText("12 hives");
 

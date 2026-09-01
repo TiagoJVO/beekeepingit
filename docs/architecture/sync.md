@@ -283,6 +283,18 @@ client hides tombstoned rows. Physical purge (and tombstone retention) is a hist
 concern ([history.md](history.md) §7.2, deferred to EPIC-14). This is what makes deletes propagate to every device rather than resurrect
 on the next sync.
 
+**A delete's LWW comparator is captured on the device, at delete time** (#276, FR-OF-1). A
+queued delete op carries no row payload, so it has no `updated_at` of its own to compare — and
+inventing one when the op finally uploads makes it drift later on every retry and every app
+restart, so a delete that sat offline for a day could beat a genuinely newer concurrent edit
+under §4.1's strict comparison. The client therefore stamps the device time **once**, in the
+same statement that deletes the row, and persists it with the queued op: the synced tables the
+client deletes from enable PowerSync's `trackMetadata`, deletes go out as
+`UPDATE <table> SET _deleted = TRUE, _metadata = <device time>` (the only form the PowerSync
+core turns into a delete op that carries metadata), and the connector reads it back off
+`CrudEntry.metadata` as the op's `updated_at`. Client-side files:
+`client/lib/core/sync/lww_delete.dart`, `powersync_schema.dart`, `powersync_connector.dart`.
+
 ---
 
 ## 5. The sync-publication contract (what every owning service must honor)
@@ -496,8 +508,29 @@ the client gates sync on **measured link quality**, not the mere presence of a c
 - `sync_gate.dart`'s `SyncGate` is the probe → exponential-backoff → probe state machine
   (`SyncGateState`: `probing` / `waitingForSignal` / `passed`; default backoff 2s → 2min,
   ×2/attempt — tuning constants, adjustable without an interface change). It depends only on
-  `ConnectivityProbe` and a `Future<void> Function()` connect callback — never on a PowerSync
-  type — so it sits outside the §5 contract as intended.
+  `ConnectivityProbe`, a `Future<void> Function()` connect callback and an optional
+  `Stream<void>` of connectivity-return events — never on a PowerSync type — so it sits outside
+  the §5 contract as intended.
+- **Re-probe on connectivity-return (#240).** A backoff decided under weak signal must not
+  outlive the link that earned it: `connectivity_signal.dart`'s `ConnectivitySignal` (the browser
+  `online` event on web, a never-emitting stub off it) feeds `SyncGate`, which cancels the
+  pending backoff and probes at once. A return that lands _while_ a probe is in flight instead
+  drops that probe's verdict to `initialBackoff` — it measured the old link — rather than letting
+  it impose the grown delay. Without any of this, a write queued offline could sit unflushed for
+  up to the ~2-min max backoff after the device was back online, unless the user tapped "sync
+  now". Three deliberate limits keep the fix from undoing the gate:
+  - it **shortens one wait, it does not reset the schedule** — a marginal link flapping
+    `offline → online` is exactly what the exponential backoff is for, and restarting the
+    schedule per event would pin the gate at 2s and cause the churn this section set out to
+    avoid; every failed probe still grows the next delay;
+  - a mid-probe return still waits `initialBackoff`, so an `online` burst can't spin the probe;
+  - `navigator.onLine` stays a **hint that triggers a probe**, never a substitute for one
+    ("connectivity restored is necessary but not sufficient", above).
+
+  The signal is inert while the gate isn't running: a stopped gate is either auto-sync-off (the
+  user's choice) or `passed`, where the engine owns the connection and `rearm()` is what brings
+  the gate back.
+
 - `powersync_service.dart` wires the gate around `PowerSyncDatabase.connect()`: the first
   connect and every reconnect after a `statusStream` connected→disconnected transition go
   through the gate (`SyncGate.rearm()`); `shell/sync_status.dart`'s `syncNowProvider` (#58's
@@ -665,7 +698,7 @@ reasoning.
 | Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change                                                                                                                                                                                                                      | §6.3; EPIC-06                                                                                                                                                                                      |
 | Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                                                                                                                                                                                                                              | owning service                                                                                                                                                                                     |
 | Notify-and-fix screens                                                    | **First slice built (#256/#260)** — connector retention (dead-letter `sync_rejected_ops`) + `rejectedChanges` seam + needs-fix list/toast (§8 "As built"); screen polish still EPIC-06                                                                                                                                                                | `client/lib/core/sync/powersync_connector.dart`, `client/lib/features/sync/` · EPIC-06 (#7)                                                                                                        |
-| Connection-quality gate (FR-OF-3)                                         | **Resolved** — built in #55 (§7.1 "As built"); probe/backoff thresholds are the starting defaults, still tunable in field testing; a user-facing "Auto-sync" on/off setting was added in #81 (§7.1 "As built")                                                                                                                                        | `client/lib/core/sync/{connectivity_probe,sync_gate}.dart` (#55), `client/lib/features/settings/sync_settings_repository.dart` (#81)                                                               |
+| Connection-quality gate (FR-OF-3)                                         | **Resolved** — built in #55 (§7.1 "As built"); probe/backoff thresholds are the starting defaults, still tunable in field testing; a user-facing "Auto-sync" on/off setting was added in #81, and #240 made a pending backoff yield to connectivity-return (§7.1 "As built")                                                                          | `client/lib/core/sync/{connectivity_probe,connectivity_signal,sync_gate}.dart` (#55, #240), `client/lib/features/settings/sync_settings_repository.dart` (#81)                                     |
 | Validation-parity mechanism                                               | **Built (#584)** — shared rule description + verbatim client embed + pre-push check routed into the needs-fix flow (§9 "As built", [ADR-0025](../adr/0025-sync-validation-parity-description.md)); per-service constants bound to it by package tests. Exhaustive boundary contract tests are **#585**; a save-time (form-level) check is a follow-up | `contracts/validation/`, `client/lib/core/validation/`, `client/lib/core/sync/powersync_connector.dart`, `services/shared/syncvalidation/`, `services/*/api/sync_validation_parity_test.go` · #585 |
 | History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                                                                                                                                                                                                                            | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)                                                                                                                         |
 | History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity                                                                                                                                                                                                            | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved)                                                                                                            |
