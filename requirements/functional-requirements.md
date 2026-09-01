@@ -63,6 +63,52 @@ ambiguities flagged inline link to `open-questions.md`.
   are **history-tracked** (FR-HIS) like other apiary edits.
   - _Prototype:_ Melargil apiary detail (see
     [`docs/design/prototype.md`](../docs/design/prototype.md)).
+- **FR-AP-9** — An apiary may carry an optional **DGAV beekeeper registration
+  number**. DGAV issues **one number per beekeeper** (`número de registo do
+apicultor`), which must be displayed visibly at each of that beekeeper's
+  apiaries — apiaries themselves are identified to DGAV by their **coordinates**,
+  not by a number of their own. The number is therefore stored **once on the
+  organization as a default** and **overridable per apiary**, because a single
+  organization may cover **several beekeepers**; an apiary's **effective** number is
+  its own value when set, otherwise the organization's. Purely optional and
+  advisory — nothing in the app requires it. The per-apiary override syncs offline
+  and is **history-tracked** (FR-HIS-1) like any other apiary edit; the
+  organization-level default is read offline but edited online (FR-ONB-2's
+  organization surface is REST-backed).
+  - _Triaged from (D-19):_ the first of that decision's five flagged
+    "future-relevant data points", per its own "to be triaged into concrete FR/NFR
+    changes when the owning feature epic is planned" language (#296).
+  - _Source:_ [DGAV — Identificação e registo da atividade
+    apícola](https://www.dgav.pt/animais/conteudo/animais-de-producao/abelhas/identificacao-registo-e-movimentacao-animal/registo/),
+    summarized in
+    [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
+    §B.1.
+- **FR-AP-10** — The app keeps an optional log of **stock declarations**
+  (`Declaração de Existências`) — a **point-in-time regulatory record** of the hive
+  stock a beekeeper declared to DGAV, **distinct from the live hive counter**
+  (FR-AP-7, D-2, D-20): a counter is current state, a declaration is what was
+  declared on a date. A declaration is **scoped to one DGAV registration number**
+  (FR-AP-9) rather than to one apiary, matching how the real declaration is filed —
+  it covers the beekeeper's whole holding — and captures the declaration **date**,
+  the **total declared hive count**, a per-apiary **breakdown snapshot** taken at
+  record time, and an optional note. Declarations sync offline and are
+  **history-tracked** (FR-HIS-1).
+  - The app also **surfaces two advisory signals** per registration number, computed
+    from the declarations themselves: whether the **annual declaration window
+    (1–30 September)** is currently open, and whether the **interim-declaration
+    threshold** has been crossed since the last declaration — a hive-count change of
+    **more than 20% _and_ at least 20 colonies**, filed within 10 days.
+  - **Advisory, never enforcing.** These signals appear only in the app's own DGAV
+    section; nothing is blocked, no declaration is mandatory, and the app does **not**
+    submit anything to DGAV/SICOA (explicitly out of scope, D-19's research note §7).
+  - _Triaged from (D-19):_ the second of that decision's five flagged data points
+    (#298).
+  - _Source:_ [DGAV](https://www.dgav.pt/animais/conteudo/animais-de-producao/abelhas/identificacao-registo-e-movimentacao-animal/registo/)
+    — "alterações significativas **superiores a 20 %** no número de colmeias, sendo
+    estas alterações **iguais ou superiores a 20 colónias** do efetivo" — summarized
+    in
+    [`docs/research/regulatory-pt-eu-beekeeping.md`](../docs/research/regulatory-pt-eu-beekeeping.md)
+    §B.3.
 
 ## Activities (FR-AC)
 

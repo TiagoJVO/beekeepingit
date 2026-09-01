@@ -482,6 +482,17 @@ components:
               maxLength: 200
             address:
               type: [string, "null"]
+            dgav_registration_number:
+              type: [string, "null"]
+              maxLength: 50
+              description: >-
+                Optional DGAV beekeeper registration number (`número de registo do apicultor`,
+                FR-AP-9). DGAV issues ONE number per beekeeper and requires it displayed at each
+                of that beekeeper's apiaries; apiaries are identified to DGAV by coordinates, not
+                by a number of their own. This is therefore the organization-wide DEFAULT — an
+                apiary may override it (`Apiary.dgav_registration_number`) when one organization
+                covers several beekeepers, and an apiary's effective number is its override when
+                set, otherwise this value. Advisory only; nothing in the app requires it.
             created_by:
               allOf:
                 - $ref: './_shared/components.openapi.yaml#/components/schemas/Uuid'
@@ -556,6 +567,11 @@ components:
           maxLength: 200
         address:
           type: [string, "null"]
+        dgav_registration_number:
+          type: [string, "null"]
+          maxLength: 50
+          description: >-
+            Optional DGAV beekeeper registration number (FR-AP-9). Explicit null clears it.
       minProperties: 1
 
     Role:
