@@ -642,9 +642,14 @@ void main() {
         metadata: '2026-07-14T10:00:00.000Z',
       );
 
+      // Pinned to the exact captured value, not merely to each other: an
+      // implementation that ignored metadata and returned DateTime.now()
+      // twice would satisfy a self-equality assertion whenever both calls
+      // landed in the same millisecond.
+      expect(beforeRestart, '2026-07-14T10:00:00.000Z');
       expect(
         afterRestart,
-        beforeRestart,
+        '2026-07-14T10:00:00.000Z',
         reason:
             'the delete must not get a later LWW comparator just because '
             'the app was restarted while it was still queued',

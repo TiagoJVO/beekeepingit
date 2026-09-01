@@ -44,14 +44,16 @@ void main() {
 
       await deleteWithLwwStamp(store, apiariesTable, 'apiary-1');
 
+      final after = DateTime.now().toUtc();
       final stamp = store.statements.single.args.first as String;
       expect(stamp, endsWith('Z'), reason: 'must be UTC, not local time');
       final parsed = DateTime.parse(stamp);
       expect(parsed.isUtc, isTrue);
-      expect(
-        parsed.isBefore(before.subtract(const Duration(seconds: 5))),
-        isFalse,
-      );
+      // It is the DELETE moment: bracketed by the wall clock either side of
+      // the call, so a stamp taken from the wrong clock (local time, or an
+      // epoch default) fails rather than merely parsing.
+      expect(parsed.isBefore(before), isFalse);
+      expect(parsed.isAfter(after), isFalse);
       // Round-trips through the connector's own read-back seam.
       expect(lwwTimestampFromDeleteMetadata(stamp), stamp);
     });
@@ -103,6 +105,15 @@ void main() {
       expect(
         lwwTimestampFromDeleteMetadata('2026-07-14T10:00:00.000Z'),
         '2026-07-14T10:00:00.000Z',
+      );
+    });
+
+    test('it rejects, it does not normalize — an accepted value is never '
+        'rewritten (a zone-less string would be shifted by the device offset '
+        'if it were)', () {
+      expect(
+        lwwTimestampFromDeleteMetadata('2026-07-14T10:00:00'),
+        '2026-07-14T10:00:00',
       );
     });
   });

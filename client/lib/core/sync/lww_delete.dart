@@ -66,6 +66,15 @@ Future<void> deleteWithLwwStamp(
 /// - **anything else** would be a bug or a future metadata format, and must
 ///   never be POSTed as `updated_at` — the server compares it as a timestamp,
 ///   and a garbage comparator is a silent wrong-winner, not a loud failure.
+///
+/// It **rejects; it does not normalize.** An accepted value is forwarded
+/// byte-for-byte, exactly as a PUT/PATCH's own `updated_at` is
+/// ([lwwTimestampFor] branch 1) — normalizing here would silently rewrite the
+/// comparator the writer chose, and for a zone-less string `DateTime.parse`
+/// assumes *local* time, so `.toUtc()` would shift it by the device's offset
+/// and make a wrong value look right. Producing a well-formed UTC stamp is
+/// [deleteWithLwwStamp]'s job; this function's only job is to refuse anything
+/// that isn't a timestamp at all.
 String? lwwTimestampFromDeleteMetadata(String? metadata) {
   if (metadata == null) return null;
   return DateTime.tryParse(metadata) == null ? null : metadata;

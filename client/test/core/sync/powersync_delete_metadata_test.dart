@@ -46,7 +46,15 @@ void main() {
 
   tearDown(() async {
     await db.close();
-    if (dir.existsSync()) dir.deleteSync(recursive: true);
+    // Best-effort: on Windows a SQLite file handle can outlive close() just
+    // long enough to make the delete throw, and a cleanup failure must not be
+    // reported as a failure of the test that just passed. The directory is
+    // under the OS temp dir either way.
+    try {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    } on FileSystemException {
+      // Leave it for the OS to reap.
+    }
   });
 
   /// Drains and completes the queued transaction, returning its ops — so each

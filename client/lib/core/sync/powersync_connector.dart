@@ -42,10 +42,17 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
   Stream<RejectedChange> get rejectedChanges => _rejected.stream;
 
   /// Legacy per-delete-op device timestamps — the pre-#276 in-memory fallback
-  /// (see [lwwTimestampFor]'s doc), now reached only by a delete queued before
-  /// this app version and still in the upload queue after the upgrade. Kept
-  /// captured-once-per-op and cleared as that op leaves the queue
-  /// ([_clearResolved]/[_retainRejected]) so it never outlives its op.
+  /// (see [lwwTimestampFor]'s doc), now reached only when an op carries no
+  /// *usable* durable metadata: a delete queued by an app version predating
+  /// #276 and still in the queue after the upgrade, or (defensively) a
+  /// metadata value that failed validation. Kept captured-once-per-op and
+  /// cleared as that op leaves the queue ([_clearResolved]/[_retainRejected])
+  /// so it never outlives its op.
+  ///
+  /// **Removable** once no pre-#276 client can still have a delete queued —
+  /// i.e. one release cycle after this ships, since PowerSync drains the queue
+  /// on the first successful upload after the upgrade. Until then it is the
+  /// only thing standing between such an op and a `null` comparator.
   final _deleteTimestamps = <String, String>{};
 
   void dispose() {

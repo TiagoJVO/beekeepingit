@@ -48,10 +48,14 @@ class FakeLocalStore implements LocalStoreEngine {
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
     // #276's metadata-carrying delete form (`UPDATE <table> SET _deleted =
-    // TRUE, _metadata = ? WHERE id = ?`) — checked BEFORE the plain
-    // `UPDATE TODOS` branches below, which it would otherwise fall past. The
-    // real core extension turns exactly this statement into a local row
-    // delete plus a queued DELETE op carrying the metadata.
+    // TRUE, _metadata = ? WHERE id = ?`). The real core extension turns
+    // exactly this statement into a local row delete plus a queued DELETE op
+    // carrying the metadata. Unlike the other repositories' fakes there is no
+    // ordering hazard here — the two `UPDATE TODOS` branches below spell out
+    // their own SET clauses (`SET TITLE = ?, …` / `SET STATUS = ?, …`), so
+    // neither can match this form; without this branch the statement would
+    // simply fall through to the `else` and throw. Kept first anyway, so the
+    // four fakes read the same way.
     if (normalized.startsWith('UPDATE TODOS SET _DELETED')) {
       final id = args[1] as String;
       deleteStamps[id] = args[0] as String;

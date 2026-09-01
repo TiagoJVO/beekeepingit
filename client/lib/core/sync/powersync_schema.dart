@@ -160,6 +160,7 @@ const dedupKeyColumn = 'dedup_key';
 /// mirrors that — the repository reads the hive count via a local LEFT JOIN
 /// (0 when no row exists) and writes it as a counter row, never as an
 /// apiaries column.
+///
 /// Why several tables below set `trackMetadata: true` (#276, FR-OF-1, D-12).
 ///
 /// A queued DELETE carries **no payload** (`CrudEntry.opData` is null for a
@@ -168,10 +169,12 @@ const dedupKeyColumn = 'dedup_key';
 /// field-set (sync.md §4.3/§4.5). Inventing one at *upload* time makes a
 /// delete's comparator drift later on every retry and across every app
 /// restart, so a delete that sat offline could spuriously beat a genuinely
-/// newer concurrent edit. `trackMetadata` adds the hidden `_metadata` column
-/// PowerSync **persists with the queued op**, letting `lww_delete.dart`'s
-/// `deleteWithLwwStamp` capture the device time once at delete-time and the
-/// connector read it back off `CrudEntry.metadata` (`lwwTimestampFor`).
+/// newer concurrent edit. `trackMetadata` adds two hidden view columns,
+/// `_metadata` and `_deleted`, which `lww_delete.dart`'s `deleteWithLwwStamp`
+/// writes together in the one statement the core extension turns into a delete
+/// op that carries metadata. PowerSync **persists that metadata with the queued
+/// op**, so the device time captured at delete-time is what the connector reads
+/// back off `CrudEntry.metadata` (`lwwTimestampFor`) — even after a restart.
 ///
 /// It is enabled on exactly the tables this client issues DELETEs against —
 /// [apiariesTable], [activitiesTable], [journeysTable],
