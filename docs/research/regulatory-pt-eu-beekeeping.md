@@ -116,8 +116,14 @@ Beekeepers must provide **approximate geographic coordinates** for every apiary.
 - **First declaration:** within **10 business days** of starting activity.
 - **Annual declaration window:** **1–30 September** each year (re-affirmed for 2025 per
   [DGAV's 2025 notice](https://www.dgav.pt/destaques/noticias/declaracao-de-existencias-de-apiarios-2025/)).
-- **Interim declaration:** any change in hive count **≥ 20% and ≥ 20 colonies** must be
-  declared within **10 days** of occurring.
+- **Interim declaration:** a change in hive count **> 20% _and_ ≥ 20 colonies** must be
+  declared within **10 days** of occurring. The two halves use **different comparators** and
+  are joined by **AND**, in DGAV's own words: _"Sempre que ocorram alterações significativas
+  **superiores a 20 %** no número de colmeias, sendo estas alterações **iguais ou superiores a
+  20 colónias** do efetivo…"_ — so a small holding growing 3 → 4 hives (+33%, +1 colony) does
+  **not** trigger it. Re-verified against the DGAV source on 2026-09-01 while implementing
+  FR-AP-10 (#298); this bullet previously read "≥ 20% and ≥ 20 colonies", which was wrong on
+  the percentage's comparator.
 
 - **Maps to:** FR-AP-7 (hive count per apiary, per D-2) — the app already tracks a hive
   count; this obligation implies a **point-in-time declaration record**, not just a live
@@ -280,9 +286,9 @@ disease-notification regime, not as an independent new obligation.
 | #   | Finding                                                                             | Affirms / changes                                                              | Data-model impact                                         |
 | --- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | A   | HIPAA inapplicable; bee-health data ≠ GDPR Art. 9 special category                  | NFR-CMP-1 (edit: drop HIPAA)                                                   | None                                                      |
-| B.1 | Beekeeper/apiary DGAV registration number                                           | FR-ONB, FR-AP-1 (new optional field)                                           | **Yes** — flagged                                         |
+| B.1 | Beekeeper DGAV registration number                                                  | **FR-AP-9** (org default + per-apiary override)                                | **Implemented** — #296                                    |
 | B.2 | Apiary geo-coordinates mandatory                                                    | FR-AP-1/3 (affirms existing field)                                             | None (already covered)                                    |
-| B.3 | Annual stock declaration (Sept 1–30) + 20%/20-colony interim declaration            | FR-AP-7 (new: declaration record, distinct from live count)                    | **Yes** — flagged                                         |
+| B.3 | Annual stock declaration (Sept 1–30) + >20%-and-≥20-colony interim declaration      | **FR-AP-10** (declaration record, distinct from live count)                    | **Implemented** — #298                                    |
 | B.4 | Transhumance movement authorization                                                 | No current FR; future-only                                                     | Deferred, no near-term change                             |
 | B.5 | Hive density rules                                                                  | No current FR; informational                                                   | None near-term                                            |
 | B.6 | Mandatory-notification bee diseases (DDO list)                                      | FR-AC-1 Treatment type (optional structured disease field)                     | **Yes** — flagged                                         |
@@ -298,11 +304,14 @@ disease-notification regime, not as an independent new obligation.
 These are **flags, not commitments** — to be triaged by the team before the apiary/activity
 feature epics that would implement them:
 
-1. **Apiary/beekeeper registration number** — optional field on apiary or organization
-   profile (candidate: `FR-AP-1` extension or `FR-ONB-2` org profile field).
-2. **Stock declaration record** — a point-in-time "declared to DGAV" snapshot (date + hive
-   count), separate from the live hive-count on the apiary (FR-AP-7 / D-2). Could be a
-   lightweight new activity type or a dedicated small entity.
+1. ~~**Apiary/beekeeper registration number**~~ — **triaged and implemented as `FR-AP-9`**
+   (#296, 2026-09-01). Of the two candidates listed here, **neither alone** was right: the
+   number is the **beekeeper's**, and one organization may cover several beekeepers, so it is
+   an **organization-level default with a per-apiary override**.
+2. ~~**Stock declaration record**~~ — **triaged and implemented as `FR-AP-10`** (#298,
+   2026-09-01). Resolved as a **dedicated small entity**, not an activity type, and scoped to a
+   **registration number** (a declaration covers a beekeeper's whole holding) rather than to a
+   single apiary; it carries a per-apiary breakdown snapshot alongside the declared total.
 3. **Structured disease/condition field on Treatment activities** — optional, alongside the
    existing free-text notes (FR-AC-1).
 4. **Retention-policy note for Treatment records** — align any future data-retention/purge
