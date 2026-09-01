@@ -18,7 +18,10 @@ enum SyncGateState {
 
   /// The last probe failed; waiting out an exponential backoff before the
   /// next attempt (sync.md §7.1: "failed probes... back off exponentially,
-  /// so marginal-signal windows don't churn the radio and battery").
+  /// so marginal-signal windows don't churn the radio and battery"). Cut
+  /// short when the device reports connectivity has returned, so a reconnect
+  /// re-probes promptly instead of sitting out the backoff (#240 — see
+  /// [SyncGate]'s `onConnectivityRestored`).
   waitingForSignal,
 }
 
@@ -37,17 +40,27 @@ enum SyncGateState {
 /// ([requestSync]) and never blocks local reads/writes, which always go
 /// through the local store regardless of connectivity (FR-OF-1).
 class SyncGate {
+  /// [onConnectivityRestored] carries the device's own "connectivity came
+  /// back" events (the browser `online` event on web — see
+  /// `connectivity_signal.dart`). Optional: with no stream the gate behaves
+  /// exactly as before, which is what most unit tests want.
   SyncGate({
     required ConnectivityProbe probe,
     required Future<void> Function() onGatePassed,
+    Stream<void>? onConnectivityRestored,
     this.initialBackoff = const Duration(seconds: 2),
     this.maxBackoff = const Duration(minutes: 2),
     this.backoffMultiplier = 2,
   }) : _probe = probe,
-       _onGatePassed = onGatePassed;
+       _onGatePassed = onGatePassed {
+    _restoredSub = onConnectivityRestored?.listen(
+      (_) => _handleConnectivityRestored(),
+    );
+  }
 
   final ConnectivityProbe _probe;
   final Future<void> Function() _onGatePassed;
+  StreamSubscription<void>? _restoredSub;
 
   /// Backoff tuning (sync.md §7.1: "thresholds are configurable... with
   /// defaults tuned in EPIC-06 field testing, not hard-coded guesses"). These
@@ -65,6 +78,16 @@ class SyncGate {
 
   Duration _currentBackoff = Duration.zero;
   Timer? _timer;
+
+  /// Completes the in-flight backoff wait: `false` when the timer simply
+  /// elapsed, `true` when connectivity returned and cut it short (#240).
+  Completer<bool>? _backoffCompleter;
+
+  /// Set when a connectivity return lands while a probe is already in
+  /// flight — that probe measured the *pre-reconnect* link, so its verdict
+  /// must not decide the next backoff (#240).
+  bool _restoredDuringProbe = false;
+
   bool _disposed = false;
   bool _running = false;
 
@@ -84,15 +107,18 @@ class SyncGate {
   /// further state changes.
   void stop() {
     _running = false;
-    _timer?.cancel();
-    _timer = null;
+    // Release a pending backoff wait too, so [_loop] actually returns
+    // instead of parking forever on a Future nothing will ever complete.
+    _endWait(interrupted: false);
   }
 
   /// Re-arms the probe loop after the engine observes it has gone offline
   /// again (e.g. `PowerSyncDatabase.statusStream` reporting `connected ==
   /// false` after having been connected) — so the next connect attempt is
   /// gated again rather than left to the engine's own unconditional retry.
-  /// A no-op while a loop is already running (e.g. still backing off).
+  /// A no-op while a loop is already running (e.g. still backing off) — a
+  /// running loop's pending backoff is instead cut short by the
+  /// `onConnectivityRestored` stream (#240).
   void rearm() {
     if (_disposed || _running) return;
     start();
@@ -106,16 +132,50 @@ class SyncGate {
   /// schedule.
   Future<void> requestSync() => _onGatePassed();
 
+  /// Cuts a pending backoff short and re-probes now, because the device just
+  /// reported that connectivity came back (#240, FR-OF-3). Without this the
+  /// gate would sit out a backoff of up to [maxBackoff] (~2 min) after a
+  /// reconnect, leaving a queued offline write unflushed until it elapsed or
+  /// the user tapped "sync now" — sync.md §7.1's gate is meant to make weak
+  /// signal cheap, not to delay a link that has genuinely returned.
+  ///
+  /// Deliberately a **no-op while the loop isn't running**: a stopped gate is
+  /// either auto-sync-off (FR-ST-1 — the user's choice, not ours to undo) or
+  /// already `passed`, where the engine owns its connection lifecycle and
+  /// `rearm()` (driven by `statusStream`) is what brings the gate back.
+  void _handleConnectivityRestored() {
+    if (_disposed || !_running) return;
+    // Only meaningful if a probe is in flight right now; [_loop] clears it
+    // before every probe.
+    _restoredDuringProbe = true;
+    _endWait(interrupted: true);
+  }
+
   Future<void> _loop() async {
     while (_running && !_disposed) {
+      _restoredDuringProbe = false;
       _setState(SyncGateState.probing);
       final ok = await _probe.check();
       if (!_running || _disposed) return;
 
       if (!ok) {
+        // Connectivity returned while this probe was in flight, so its
+        // verdict describes the link *before* the reconnect (#240) — probe
+        // again straight away rather than backing off on stale evidence.
+        if (_restoredDuringProbe) {
+          _currentBackoff = initialBackoff;
+          continue;
+        }
+
         _setState(SyncGateState.waitingForSignal);
-        await _wait(_currentBackoff);
-        _currentBackoff = _nextBackoff(_currentBackoff);
+        final interrupted = await _wait(_currentBackoff);
+        if (!_running || _disposed) return;
+        // A connectivity-triggered re-probe starts the backoff schedule over:
+        // the grown delay was earned by the *previous* link, and the whole
+        // point of the interrupt is to attempt the new one promptly.
+        _currentBackoff = interrupted
+            ? initialBackoff
+            : _nextBackoff(_currentBackoff);
         continue;
       }
 
@@ -139,12 +199,22 @@ class SyncGate {
     return next > maxBackoff ? maxBackoff : next;
   }
 
-  Future<void> _wait(Duration d) {
-    final completer = Completer<void>();
-    _timer = Timer(d, () {
-      if (!completer.isCompleted) completer.complete();
-    });
+  /// Waits out [d], resolving `false` when the backoff simply elapsed and
+  /// `true` when [_handleConnectivityRestored] (or any other [_endWait]
+  /// caller) cut it short.
+  Future<bool> _wait(Duration d) {
+    final completer = Completer<bool>();
+    _backoffCompleter = completer;
+    _timer = Timer(d, () => _endWait(interrupted: false));
     return completer.future;
+  }
+
+  void _endWait({required bool interrupted}) {
+    _timer?.cancel();
+    _timer = null;
+    final pending = _backoffCompleter;
+    _backoffCompleter = null;
+    if (pending != null && !pending.isCompleted) pending.complete(interrupted);
   }
 
   void _setState(SyncGateState s) {
@@ -155,6 +225,8 @@ class SyncGate {
   void dispose() {
     _disposed = true;
     stop();
+    _restoredSub?.cancel();
+    _restoredSub = null;
     _stateController.close();
   }
 }
