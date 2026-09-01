@@ -40,12 +40,10 @@
 
 ---
 
-_Sweep note (2026-09-01, with #584):_
-
-- _The `claude/orch-add-feature-6993c5` section is **stale by definition** —_
-  _[#365](https://github.com/TiagoJVO/beekeepingit/issues/365) is closed and its PR merged, so its_
-  _before-merge Helm-E2E gate no longer has a PR to gate. Its after-merge sequencing bullet was_
-  _already only pointing at [#510](https://github.com/TiagoJVO/beekeepingit/issues/510) and_
-  _[#563](https://github.com/TiagoJVO/beekeepingit/issues/563), both live Issues. Pruned._
-- _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that_
-  _entry stands. Prior sweep notes dropped with their entries, per this file's convention._
+_Sweep note (2026-09-01, during #295): [#365](https://github.com/TiagoJVO/beekeepingit/issues/365)_
+_closed and its branch merged, so the `claude/orch-add-feature-6993c5` section is resolved by_
+_definition — its Helm-E2E merge precondition was met at merge, and its two after-merge items were_
+_already Issues ([#510](https://github.com/TiagoJVO/beekeepingit/issues/510),_
+_[#563](https://github.com/TiagoJVO/beekeepingit/issues/563)) that the entry itself said to prune on_
+_landing. Pruned. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
+_open — that entry stands. Prior sweep notes dropped with their entries, per this file's convention._
