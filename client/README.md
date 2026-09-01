@@ -110,6 +110,28 @@ raw lat/lon text). `lib/core/l10n/locale_formatting.dart`'s
 the active locale, ready for the first field that needs it — see its tests
 (`test/core/l10n/locale_formatting_test.dart`) for EN vs. PT output.
 
+## Tests
+
+`flutter test` from this directory runs the whole suite (unit + widget).
+
+`test/flutter_test_config.dart` is loaded automatically for every test file
+and stubs out the one thing no widget test can do for real: **opening the
+on-device PowerSync database**. `PowerSyncDatabase` registers its path in a
+process-wide instance registry from its constructor and only deregisters on
+`close()` — which under `testWidgets` never happens, because
+`initialize()` stays pending there (real disk/isolate I/O doesn't progress
+under the widget binding's fake-async clock), so `powerSyncProvider` never
+reaches its teardown. Every widget test therefore leaked one entry and the
+run filled up with
+`[PowerSync] WARNING: Multiple instances for the same database ...` (`#286`).
+The stub (`debugOpenPowerSyncDatabase` in `lib/core/sync/powersync_service.dart`)
+keeps `powerSyncProvider` pending, exactly as it already behaved in widget
+tests, without opening anything. A test that needs a **resolved** sync
+session overrides the providers it actually depends on (`syncStatusProvider`,
+a repository's stream provider, …) — see `test/account_screen_test.dart` and
+`test/app_shell_test.dart`; `await`ing `powerSyncProvider` itself without an
+override hangs until the test times out.
+
 ## Decisions this scaffold makes (AC of `#21`)
 
 - **State management: [Riverpod](https://riverpod.dev)** (`flutter_riverpod`, no code
