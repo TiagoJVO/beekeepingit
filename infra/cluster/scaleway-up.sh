@@ -171,10 +171,12 @@ install_cluster_prereqs
 if [ -n "${AUTHENTIK_EMAIL_USERNAME:-}" ] && [ -n "${AUTHENTIK_EMAIL_PASSWORD:-}" ]; then
   echo "creating/updating the beekeepingit-authentik-email-credentials Secret in $namespace"
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n "$namespace" create secret generic beekeepingit-authentik-email-credentials \
+  if kubectl -n "$namespace" create secret generic beekeepingit-authentik-email-credentials \
     --from-file=username=<(printf %s "$AUTHENTIK_EMAIL_USERNAME") \
     --from-file=password=<(printf %s "$AUTHENTIK_EMAIL_PASSWORD") \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl apply -f - | grep -qv "unchanged$"; then
+    authentik_secret_changed=1
+  fi
 else
   echo "AUTHENTIK_EMAIL_USERNAME/AUTHENTIK_EMAIL_PASSWORD not set — skipping the email-relay Secret (Authentik sends no authenticated outbound email until it exists)"
 fi
@@ -201,12 +203,36 @@ fi
 if [ -n "${AUTHENTIK_GOOGLE_CLIENT_ID:-}" ] && [ -n "${AUTHENTIK_GOOGLE_CLIENT_SECRET:-}" ]; then
   echo "creating/updating the beekeepingit-authentik-google-credentials Secret in $namespace"
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
-  kubectl -n "$namespace" create secret generic beekeepingit-authentik-google-credentials \
+  if kubectl -n "$namespace" create secret generic beekeepingit-authentik-google-credentials \
     --from-file=client-id=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_ID") \
     --from-file=client-secret=<(printf %s "$AUTHENTIK_GOOGLE_CLIENT_SECRET") \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl apply -f - | grep -qv "unchanged$"; then
+    authentik_secret_changed=1
+  fi
 else
   echo "AUTHENTIK_GOOGLE_CLIENT_ID/AUTHENTIK_GOOGLE_CLIENT_SECRET not set — skipping the Google federation Secret (no Continue-with-Google button until it exists, by design)"
+fi
+
+# 4c. Roll Authentik if either credential Secret above changed. Kubernetes does
+# NOT restart pods when a Secret they env-mount changes, so without this the
+# server/worker keep serving with the OLD credentials indefinitely — and because
+# the blueprint entries that consume them are `conditions:`-gated, nothing fails:
+# the deployment stays green and the feature just never appears. Found the hard
+# way on staging, where the Secret, the merged config and a full cluster restart
+# were all in place and "Continue with Google" still did not exist.
+#
+# Restart only on an ACTUAL change: `kubectl apply` reports "configured" when it
+# changed something and "unchanged" when it did not, so a re-run with identical
+# credentials is a no-op rather than a gratuitous auth outage. Deployments may not
+# exist yet on a first bring-up (Flux installs Authentik later) — that is not an
+# error, so this is best-effort.
+if [ "${authentik_secret_changed:-0}" = "1" ]; then
+  if kubectl -n "$namespace" get deployment authentik-server >/dev/null 2>&1; then
+    echo "credentials changed — restarting Authentik so it picks up the new env"
+    kubectl -n "$namespace" rollout restart deployment/authentik-server deployment/authentik-worker || true
+  else
+    echo "credentials changed, but Authentik is not deployed yet — Flux will start it with the new env"
+  fi
 fi
 
 # 5. GitOps bootstrap — apply the gitops repo's clusters/<env>/ (Flux
