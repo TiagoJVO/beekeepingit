@@ -6,7 +6,7 @@ wins over earlier requirement wording.
 > Decisions are the working **default, not immutable**. If contradicting one makes sense,
 > propose it to the user; on confirmation, update it here (and the affected requirements).
 
-_Last updated: 2026-07-28._
+_Last updated: 2026-08-31._
 
 ---
 
@@ -95,6 +95,23 @@ _Last updated: 2026-07-28._
   **sole member** may leave their own organization, after which the ordinary accept-on-login path
   joins them to the inviting org — is tracked as **#506**, scheduled **before public
   launch**; it is not part of #365 or M1.1.
+- **Amended by #365 live testing (2026-08-31) — user-confirmed: the block is avoidable in
+  advance, not exitable.** Everything above stands, unweakened: an account with an active
+  membership still never auto-joins a second organization, the accept-on-login precondition
+  ("caller has **no** active membership") is untouched, `idx_memberships_one_active_per_user` is
+  untouched, there is still no self-service accept endpoint, and making the door exitable is still
+  **#506**, still scheduled before public launch. What changes is **upstream of the block**. Live
+  testing showed the onboarding gate offered a registrant exactly one exit — create an
+  organization — so a user whose invitation had not arrived yet was **pushed** through the only
+  door available and walked irreversibly into the block while trying to escape an empty screen.
+  Recording a dead end is correct; routing every early registrant into it is not. So org creation
+  stops being the sole exit: the client offers a **waiting state** to an authenticated caller with
+  no membership, re-checked on resume/refresh via `GET /v1/organizations/me` — **the same call
+  that already performs accept-on-login** — so there is **no new endpoint, no new server state and
+  no new membership status**; waiting is a client route, not a pending membership. The create path
+  additionally **warns** that creating an organization blocks a later invitation until #506 lands,
+  so the one-way choice is made knowingly. Net effect: the dead end stays a dead end and stays
+  recorded — it is simply no longer the default destination. _(FR-ONB-2 amended to match.)_
 - **Still open:** invitation expiry, re-invite (minor — for planning detail).
 
 ## D-4 — v1 scope deferrals
@@ -190,8 +207,9 @@ Core technology decisions (2026-06-27). Detail and rationale in
     #361 landed the real `email_verified` + outbound SMTP
     ([ADR-0019](../docs/adr/0019-outbound-email-and-real-email-verified.md), `auth.md` §8.10) before
     #366 opened **username/password** enrollment (`auth.md` §8.11). Self-service registration **via
-    Google** (#365) stays gated on the org-creation policy for self-registered users (#362 — a D-3
-    question, decided there, not here) and on account linking (#364).
+    Google** (#365) stayed gated on the org-creation policy for self-registered users (#362 — a D-3
+    question, decided there, not here) and on account linking (#364); with both landed, **#365 is
+    built** (`auth.md` §8.15).
   - **Account identity keys on the provider's stable subject, never on the email** (#364 —
     **built**, `auth.md` §8.14). Upstream emails are **mutable** (Google permits address changes),
     so linking matches on the **stable subject identifier**, with a **per-user history of known
@@ -199,9 +217,28 @@ Core technology decisions (2026-06-27). Detail and rationale in
     with their existing account. An email match links **only** when that address is genuinely
     verified. As built this stays **entirely at the identity provider**: a source property mapping
     resolves the account before the provider's own matching step runs, so **no domain service and
-    no client code changed** — the same IdP-agnostic boundary property #363 relied on. Account
-    **creation** is still not opened (no enrollment flow on any federation source); that remains
-    #365.
+    no client code changed** — the same IdP-agnostic boundary property #363 relied on.
+  - **Account creation via Google** (#365 — **built**, `auth.md` §8.15, 2026-08-31,
+    user-confirmed). An upstream identity whose **strictly-verified** address matches no local
+    account **enrolls** through a dedicated, SSO-gated flow whose written properties are entirely
+    authored by the #364 resolver (generated username, fresh `upn`, `email_verified: true` carried
+    from the upstream's strict boolean — a deliberate second writer of that attribute; an
+    unverified upstream address cannot register at all). Still IdP-only: no domain service, no
+    client code, no token change; onboarding, the invitation accept-on-login and the
+    single-active-membership invariant apply to enrolled accounts unchanged.
+  - **The profile's email follows the same boundary — IdP-owned, app-displayed (#365 live
+    testing, 2026-08-31, user-confirmed).** Registration by Google exposed that the app was asking
+    a user to hand-type an address the IdP had already verified, into a **second, unverified**
+    field that authorizes nothing (#170) and can silently disagree with the real one. Two emails
+    where only one is authoritative is a defect, not a feature. So `identity.users.email` becomes
+    a **cache** of the verified address, seeded server-side from the token's `email` claim (only
+    when `email_verified`); the client shows it **read-only** and links out to `OIDC_ACCOUNT_URL`
+    to change it — the same link-out this decision already mandates for password, MFA and account
+    state. Consistently, the app now reads the standard `name` claim as a **fail-soft** seed
+    (absent ⇒ empty, the user fills it in), which is a standard-OIDC claim like every other and
+    moves no identity concern into the app. Self-service **change** of the address at the provider
+    stays closed and is EPIC-14 #15's, with a mandatory reset-of-verification-on-change policy
+    (#361 disabled it deliberately).
   - **Unchanged:** the two-layer model — app-side, org-scoped roles in `organizations.memberships`
     (NFR-ROL-1, never IdP roles) and the **FR-ONB first-login onboarding** (FR-ONB-1/2/3) — is
     untouched. Social login changes **how a user authenticates**, not **what they may do**.

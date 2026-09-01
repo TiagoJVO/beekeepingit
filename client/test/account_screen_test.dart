@@ -167,13 +167,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('account-name-field')), findsOneWidget);
-    expect(find.byKey(const Key('account-email-field')), findsOneWidget);
-    // Name + email now appear twice: once in the read-only avatar header
-    // (the prototype's account card) and once in the editable field below.
+    // The address is IdP-owned: the avatar header shows it, the form does
+    // not offer it. PATCH would refuse it with 422 read_only.
+    expect(find.byKey(const Key('account-email-field')), findsNothing);
+    // The name still appears twice: once in the read-only avatar header (the
+    // prototype's account card) and once in the editable field below. The
+    // email appears ONCE — the header only — now that the field is gone.
     expect(find.text('Ana'), findsNWidgets(2));
-    expect(find.text('ana@example.com'), findsNWidgets(2));
+    expect(find.text('ana@example.com'), findsOneWidget);
     // Presence/wiring only — not tapped: it opens a real browser tab via a
-    // web-only platform call (see account_platform.dart), matching how
+    // web-only platform call (see core/platform/external_link_platform.dart), matching how
     // widget_test.dart never taps 'login-button' for the same reason.
     expect(
       find.byKey(const Key('account-change-password-button')),
@@ -192,17 +195,15 @@ void main() {
     expect(find.textContaining('illing'), findsNothing);
   });
 
-  testWidgets('validates empty name and email client-side', (tester) async {
+  testWidgets('validates the empty name client-side', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byKey(const Key('account-name-field')), '');
-    await tester.enterText(find.byKey(const Key('account-email-field')), '');
     await tester.tap(find.byKey(const Key('account-save-button')));
     await tester.pumpAndSettle();
 
     expect(find.text('Enter your name.'), findsOneWidget);
-    expect(find.text('Enter your email.'), findsOneWidget);
   });
 
   testWidgets('submits updated profile fields and shows success', (
@@ -233,9 +234,9 @@ void main() {
           detail: 'one or more fields are invalid',
           fieldErrors: [
             ApiFieldError(
-              field: 'email',
+              field: 'name',
               code: 'invalid',
-              message: 'email must be a valid email address',
+              message: 'name must not be empty',
             ),
           ],
         );
@@ -247,7 +248,7 @@ void main() {
     await tester.tap(find.byKey(const Key('account-save-button')));
     await tester.pumpAndSettle();
 
-    expect(find.text('email must be a valid email address'), findsOneWidget);
+    expect(find.text('name must not be empty'), findsOneWidget);
   });
 
   testWidgets('org admins see the manage-members action (#172, #197)', (

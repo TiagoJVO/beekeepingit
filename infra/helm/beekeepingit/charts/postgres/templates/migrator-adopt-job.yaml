@@ -284,7 +284,7 @@ spec:
                 -c "REVOKE ALL ON ALL TABLES IN SCHEMA {{ $schema }} FROM {{ $schema }}_svc;" \
                 -c "REVOKE ALL ON ALL SEQUENCES IN SCHEMA {{ $schema }} FROM {{ $schema }}_svc;" \
                 -c "SET LOCAL ROLE {{ $schema }}_migrator;" \
-                {{- include "postgres.runtimeGrantsPsqlArgs" $schema | nindent 16 }}
+                {{- include "postgres.runtimeGrantsPsqlArgs" (dict "schema" $schema "historyTables" $root.Values.historyTables) | nindent 16 }}
 
               echo "{{ $schema }}: adopted by {{ $schema }}_migrator."
 {{- end }}

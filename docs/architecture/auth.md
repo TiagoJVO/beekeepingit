@@ -534,7 +534,7 @@ recovery/password-reset remains **provider flow config in EPIC-14**; the fixed c
 | **Email verification**        | **Built (#361, §8.10):** a login-time **email stage** in the authentication flow gates unverified, non-superuser users on an emailed one-time link; completion stamps the `email_verified` user attribute, and a **custom scope mapping** emits that genuine state as the `email_verified` claim (replacing the built-in's hardcoded constant — `true` before Authentik 2025.10, `false` since, either way cosmetic). SMTP is wired via `AUTHENTIK_EMAIL__*` (dev/CI: the Mailpit sink; prod: a real relay, credentials as infra config). App flows gate on `email_verified` (§3.4) — it now means something.                                                                                                                                |
 | **Password reset**            | An **Authentik recovery flow** (self-service, email link) — **not built in v1**; provisioned in EPIC-14 ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)) with SMTP. No recovery flow ships by default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **Registration**              | **Built (#366, §8.11):** self-service username/email/password **enrollment flow** at the provider, linked from the login page. A fresh registration is held **unverified** on an emailed one-time link (§8.10's machinery) — no session, and no invitation match, before inbox control is proven; "registration disabled" is no longer the control, the **real `email_verified` signal is**. **First login** (unchanged) triggers **profile creation** (FR-ONB-1, `identity`) and **org create/join** (FR-ONB-2/3, D-3, `organizations`) — which creates the **membership** authZ depends on. Creating an organization is **open to any self-registered user with a verified email**, with no invitation or approval gate (D-3/#362, §8.12). |
-| **Upstream federation**       | **Built (#363, §8.13):** Google as an Authentik **OAuth source**, offered as "Continue with Google" on the app's sign-in screen and on the provider's own login card. Credentials are infrastructure config (an out-of-band Secret env-mounted into the worker, read by the blueprint's `!Env`), never repo values or ConfigMap contents. **Account creation stays invitation-only** — the source has no `enrollment_flow` (#365 opens it). Domain services are unchanged: the minted token's `iss`/`aud`/`sub` are identical to a password login's (D-7).                                                                                                                                                                                   |
+| **Upstream federation**       | **Built (#363, §8.13):** Google as an Authentik **OAuth source**, offered as "Continue with Google" on the app's sign-in screen and on the provider's own login card. Credentials are infrastructure config (an out-of-band Secret env-mounted into the worker, read by the blueprint's `!Env`), never repo values or ConfigMap contents. **Self-service registration via Google is open (#365, §8.15)**: a strictly-verified upstream address matching no local account enrolls through a dedicated, SSO-gated flow; everything else still creates nothing. Domain services are unchanged: the minted token's `iss`/`aud`/`sub` are identical to a password login's (D-7).                                                                  |
 | **Account linking**           | **Built (#364, §8.14):** an already-linked identity resolves on the upstream's stable **subject** alone. A first, unlinked sign-in links **only** when the upstream's own verification flag is strictly `true` **and** exactly one active, non-superuser, already-`email_verified` local account claims that address — as its current address or in `attributes.known_emails`, the per-account history of addresses this deployment has itself seen verified (written solely by §8.10's stamp). Every ambiguity — unknown, duplicate, unverified either side — is the same `DENY`, creating nothing. No claim, contract or service changes; no user's `sub` ever changes.                                                                    |
 | **Account / password change** | The client links out to Authentik's user settings — **`OIDC_ACCOUNT_URL` = `https://auth.beekeepingit.local:8443/if/user/#/settings`** (a config value, not a derived path), replacing Keycloak's `/account` console.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **Access-token lifetime**     | **short, ≈ 15 min** (limits exposure; forces refresh). Blueprint validity **`minutes=15`** (Django-timedelta string). _Exact value still tuned/security-reviewed in EPIC-14._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -1039,13 +1039,16 @@ the two paths apart, which is precisely the "social/SSO-ready later" property D-
   for a `google` source — it falls back to `GoogleType`'s own `oidc_well_known_url`/`oidc_jwks_url`
   constants even when the blueprint sets neither — so dev/CI bring-up would otherwise depend on
   Google being reachable.
-- **Account posture — invitation-only still holds, provably.** `enrollment_flow` is **deliberately
-  unset**. At the pinned 2026.5.4, `SourceFlowManager.handle_enroll` returns
+- **Account posture.** _(**Superseded by §8.15** — #365 opened self-service registration via the
+  source; the historical posture below is why it was closed at the time.)_ As #363 shipped,
+  `enrollment_flow` was **deliberately unset**: at the pinned 2026.5.4,
+  `SourceFlowManager.handle_enroll` returns
   `bad_request_message("Source is not configured for enrollment.")` — an **HTTP 400** — _before_
-  `_prepare_flow`, and the connection row is only ever persisted later by `PostSourceStage`. So an
-  unknown Google identity creates **no `User` row and no connection row**. This issue changes _how
-  an existing user authenticates_, not _who may obtain an account_; opening registration via Google
-  is [#365](https://github.com/TiagoJVO/beekeepingit/issues/365).
+  `_prepare_flow`, and the connection row is only ever persisted later by `PostSourceStage`, so an
+  unknown Google identity created **no `User` row and no connection row**. #363 changed _how an
+  existing user authenticates_, not _who may obtain an account_; opening registration via Google
+  was gated on #361/#362/#364 and landed as
+  [#365](https://github.com/TiagoJVO/beekeepingit/issues/365) (§8.15).
 - **Identity keys on the provider's stable subject, never the email.** _(Matching mode
   **superseded by §8.14**; the reasoning below is why, and still holds.)_ `user_matching_mode:
 identifier` is stated explicitly because it is a security decision, not a default to inherit:
@@ -1147,17 +1150,21 @@ true` — so the invariant survives without extending this flow.)_ That flow als
   path is proven in parts:
   1. **Config, offline.** [`scripts/check-federation-source-posture.sh`](../../scripts/check-federation-source-posture.sh)
      (`task repo:lint` → CI) asserts on the blueprint source that every federation source is
-     enrollment-closed, `identifier`-matched, `!Env`-credentialed and conditions-gated, and that no
-     identification-stage entry is left with empty `user_fields` (which would trip
-     `AutoRedirectController` and remove every route to the password form).
+     `!Env`-credentialed and conditions-gated, and that no identification-stage entry is left with
+     empty `user_fields` (which would trip `AutoRedirectController` and remove every route to the
+     password form). _(As #363 shipped it also asserted enrollment-closed and `identifier`-matched;
+     those assertions evolved with §8.14 — `username_link` + resolver attachment — and §8.15 —
+     enrollment open only via the guarded source-enrollment flow.)_
   2. **The inbound half, live.** A **dev/CI stand-in source** — a generic `openidconnect` source
      with the **identical** posture, hermetic at apply time (with both `oidc_*` URL fields empty
      the serializer makes zero outbound calls) — plus
      [`infra/ci/authentik-federation-probe.py`](../../infra/ci/authentik-federation-probe.py), run
      by `helm-e2e.yml` through `ak shell` in the worker (the same idiom as §8.10's SMTP probe). It
-     drives the **real `SourceFlowManager`** and asserts an unknown upstream identity yields
-     `Action.ENROLL` → **HTTP 400 with no `User` and no connection row created**, while a linked
-     identity yields `Action.AUTH` resolving to the existing seed user with an unchanged `upn`.
+     drives the **real `SourceFlowManager`**; as #363 shipped it asserted an unknown upstream
+     identity's `Action.ENROLL` dead-ended in **HTTP 400 with no `User` and no connection row
+     created** _(superseded: §8.14 grew it into the linking test bed, §8.15 into the enrollment
+     one)_, while a linked identity yields `Action.AUTH` resolving to the existing seed user with
+     an unchanged `upn`.
   3. **The outbound half, live.** [`client/e2e/tests/federation.spec.ts`](../../client/e2e/tests/federation.spec.ts):
      both actions render on the app's sign-in screen; a plain "Sign in" is **not** hijacked by the
      redirect stage; a hinted request reaches the upstream **in one hop** with a well-formed
@@ -1244,14 +1251,24 @@ issuance. Everything is config-as-code in the blueprint
   whose upstream address changed **before they ever linked**, to an address this deployment has
   never seen verified. There is nothing tying those two identities together, and guessing is the
   takeover shape. Such a user links through Connected services (§8.13) exactly as before.
-- **Every refusal is the same refusal — `Action.DENY`.** Unknown address, ambiguous address,
-  unverified upstream, unverified local account, superuser: all identical from outside, so the
-  endpoint is not an account-existence oracle. It also renders Authentik's own
-  `AccessDeniedResponse` instead of #363's raw 400. `enrollment_flow` stays **unset** and is still
-  statically guarded — belt and braces, since `Action.ENROLL` is now unreachable for these sources.
-  **Note for [#365](https://github.com/TiagoJVO/beekeepingit/issues/365):** opening self-service
-  registration via Google therefore needs a deliberate change **here**, not only an
-  `enrollment_flow` — the resolver currently denies every no-candidate case.
+- **Changing an email address never unlinks Google — in either direction.** Once a
+  `UserSourceConnection` exists, `SourceMatcher` returns `Action.AUTH` on `(source, identifier)`
+  **before any property is consulted at all**, so no address is read on that sign-in: not the
+  upstream's, not the Authentik account's `email`, and not `identity.users.email` — which the IdP
+  never sees and which authorizes nothing anyway (§8.7, #170). Editing any of them leaves the link
+  intact; only deleting the connection from the provider's **Connected services** page unlinks it.
+  The address matters **exactly once**, on the **first, unlinked** sign-in, where it is what finds
+  the account (above) or enrolls a new one (§8.15).
+- **Every refusal is the same refusal — `Action.DENY`.** Ambiguous address, unverified upstream,
+  unverified local account, superuser: all identical from outside, and each renders Authentik's own
+  `AccessDeniedResponse` instead of #363's raw 400. _(Amended by §8.15: an **unknown** verified
+  address is no longer a refusal — it enrolls. The account-existence-oracle posture shifts
+  accordingly: a deny now implies "exists but is not reachable this way", a signal inherent to any
+  open registration and of the same class §8.11's duplicate-username rejection already accepted.)_
+  As #364 shipped, `enrollment_flow` stayed unset and the resolver denied every no-candidate case —
+  its own note recorded that opening registration needed a deliberate change in **both** places,
+  which is exactly what [#365](https://github.com/TiagoJVO/beekeepingit/issues/365) then did
+  (§8.15).
 - **Authorization is untouched (NFR-ROL-1, FR-TEN-1).** Linking picks **which account** a sign-in
   reaches; it never touches `organizations.memberships`. Org scope and role still resolve
   server-side per request (§5.1) from the same `sub` → `identity.users.oidc_sub` → membership
@@ -1287,11 +1304,14 @@ issuance. Everything is config-as-code in the blueprint
   by `!KeyOf` and is the source's **only** property mapping (a second one merges after it, in name
   order, and could re-set `username`), plus that the resolver entry exists exactly once as an
   `oauthsourcepropertymapping`. Everything #363 asserted — enrollment-closed, `!Env` credentials,
-  `conditions:`-gated, non-empty `user_fields`, two-element `!Env`, no YAML anchors — is unchanged.
-  Each new assertion was mutation-tested against a deliberately drifted copy of the blueprint before
-  the blueprint was changed (mode flipped to `identifier` and to `email_link`, resolver detached,
-  resolver referenced by `!Find`, a second mapping added, the resolver entry renamed,
-  `enrollment_flow` set — all seven go red).
+  `conditions:`-gated, non-empty `user_fields`, two-element `!Env`, no YAML anchors — was unchanged
+  as #364 shipped. _(§8.15 later **inverted** the enrollment-closed assertion — a source must now
+  reference the guarded source-enrollment flow — and added the two gate-policy assertions; the rest
+  still stands.)_ Each new assertion was mutation-tested against a deliberately drifted copy of the
+  blueprint before the blueprint was changed (mode flipped to `identifier` and to `email_link`,
+  resolver detached, resolver referenced by `!Find`, a second mapping added, the resolver entry
+  renamed, `enrollment_flow` set — all seven went red at the time; the last of those became the
+  required state in §8.15, which mutation-tested its own seven in turn).
 - **i18n / a11y — nothing new.** No new user-facing string and no new UI: the app's sign-in screen
   is unchanged (#363's `loginWithGoogleButton`, EN/PT, 56px target, WCAG 2.2 AA) and every refusal
   renders Authentik's own access-denied page, which carries the same upstream-owned localization
@@ -1310,10 +1330,13 @@ issuance. Everything is config-as-code in the blueprint
      `DENY`, creating no `User` and no connection row.
   4. **Every other ambiguity fails closed** — two accounts sharing the address, an account that
      never proved inbox control itself (which also makes email squatting harmless rather than a
-     denial of service), a superuser, an unknown address.
+     denial of service), a superuser. _(An **unknown** verified address now enrolls instead — the
+     #365 cases are listed in §8.15.)_
   5. **The adversarial `username_link` case** — the upstream asserts a **real local username** in
-     `preferred_username`; the resolver clears it and the attempt is denied. Without the resolver
-     this is precisely the link the mode's name suggests.
+     `preferred_username`; the resolver replaces it, so the attempt is denied (unverified email)
+     or enrolls under a **generated** username (verified unknown email, §8.15) — never linked to
+     the asserted account. Without the resolver this is precisely the link the mode's name
+     suggests.
   6. **The history is really written** — the deployed `beekeepingit-mark-email-verified` policy is
      evaluated for real and asserted to append, de-duplicate, lowercase and bound the list, and to
      write **nothing** without the restored-flow-token proof.
@@ -1344,9 +1367,10 @@ issuance. Everything is config-as-code in the blueprint
     **source-verified against the pinned 2026.5.4 and Google's documented v1 userinfo shape, not
     observed**. If Google's payload differed, the resolver would deny every Google login — visibly
     broken, not silently permissive — but it is unverified until the manual checklist in
-    [`infra/README.md`](../../infra/README.md) runs against a real Google client. **That checklist
-    now has more to cover than #363 left it**: a first sign-in that links by verified email, and a
-    second that resolves by subject.
+    [`infra/README.md`](../../infra/README.md) runs against a real Google client
+    ([#510](https://github.com/TiagoJVO/beekeepingit/issues/510)). **That checklist now has more
+    to cover than #363 left it**: a first sign-in that links by verified email, a second that
+    resolves by subject — and, since #365, a registration through a real Google account (§8.15).
   - ~~**`Action.LINK` returns an _unsaved_ connection.**~~ **Now covered** by point 7 above: the
     probe drives one sign-in through the real flow executor and reads the persisted connection row,
     so "the link is remembered next time" is a live assertion rather than an appeal to upstream
@@ -1363,6 +1387,106 @@ issuance. Everything is config-as-code in the blueprint
     nothing in this deployment gives such an account an org membership, so linking one would not
     widen authorization. They are probe-covered but exist to shrink blast radius, not to close a
     known path.
+
+## 8.15 As built (#365) — self-service registration via a federation source
+
+§8.14 closed "reach an **existing** account"; this opens "create a **new** one" (FR-ONB-1/2/3,
+FR-AU-1, FR-TEN-1, NFR-SEC-1, NFR-I18N-1, NFR-TST-1, D-7, D-3, D-18): a user with no invitation
+registers with Google and reaches a usable account. **Again: no Go service changed, no client
+changed, and no token changed** — everything is config-as-code in the blueprint, exactly where D-7's
+amendment said it should be ("prefer the provider's native federation; build app-side only what it
+cannot express").
+
+- **The two deliberate changes §8.14 named.** (1) The resolver's no-candidate branch: **zero**
+  candidates **and** a strictly-verified upstream address now return a **generated,
+  collision-checked username** — under `username_link` a value matching no account is
+  `Action.ENROLL`, while a colliding one would silently **link** (the takeover shape), so
+  non-existence is proven before returning and the absurd UUID collision fails closed. Every other
+  refusal branch is byte-identical to §8.14. (2) `enrollment_flow` on **both** sources now points at
+  a dedicated flow, `beekeepingit-source-enrollment`.
+- **The resolver authors everything the enrollment writes.** Alongside the generated username, the
+  enroll branch returns the normalized email, a display name, a fresh `attributes.upn` (the
+  app-facing `sub`, the same forward-requirement §8.11's upn policy satisfies for password
+  enrollment) and `attributes.email_verified: true` carried from the upstream's **strict boolean**.
+  Both upstream-derived strings are sanitized before they become account data: the address must be
+  structurally sound (exactly one `@`, non-empty local and domain parts, printable, no whitespace,
+  ≤ 320 octets) and the display name is bounded to 128 characters with every non-printable
+  codepoint dropped — control, bidi-override and zero-width characters are all
+  `not isprintable()`, so a Google profile name cannot render as somebody else's in a member list.
+  That is cosmetic-impersonation defense in depth; it confers no authority either way, since roles
+  are app-side (NFR-ROL-1).
+  Nothing upstream-controlled survives: the resolver is the source's only property mapping
+  (statically guarded), and it replaces the `username` the stand-in's source type would otherwise
+  emit from `preferred_username`.
+- **`email_verified` gains a second writer — deliberately, and user-confirmed.** §8.10's
+  restored-token stamp policy was the single writer; the enroll branch is now the second. The
+  justification: §8.14 already trusts the upstream's strict boolean for the **stronger** operation
+  of linking into an existing verified account, and #365 was gated (D-7 amendment) precisely on
+  that signal being genuine (#361). The fail-closed direction is preserved — an **unverified**
+  upstream address cannot register at all (deny, not enroll-unverified), so no unverified federated
+  account ever exists, and `POST /v1/organizations` still asserts the claim itself (D-3, §8.12).
+  `attributes.known_emails` is **not** seeded: it records addresses **this deployment** proved, and
+  its single writer stays §8.10's stamp policy.
+- **The flow writes once, gated twice.** `beekeepingit-source-enrollment` has **no prompt stage**
+  (every property is resolver-authored, via the plan's `prompt_data` — the documented `user_write`
+  contract) and **no email stage** (the address arrived verified or the attempt was denied). Gate 1:
+  an SSO-only policy on the flow (`return ak_is_sso_flow`, the upstream `default-source-enrollment`
+  idiom) denies a browser that walks straight into `/if/flow/beekeepingit-source-enrollment/` —
+  e2e-pinned. Gate 2: a guard policy on the `user_write` binding re-checks the plan carries a
+  resolver-shaped payload (non-empty username/email, an assigned upn, `email_verified` strictly
+  `True`) and otherwise **skips the write** — the same `failure_result` mechanics §8.11's upn
+  policy relies on, leaving no account created and so no pending user for the login stage to seat.
+  Fail closed. The guard's refusals are asserted directly by the probe, since the real flow cannot
+  produce a malformed plan to drive it with; both gates are additionally pinned **by policy id and
+  by the load-bearing term of each expression** in the static guard, so an always-true rewrite
+  cannot read as a gate. The write-safety
+  boundary of §8.13 is unchanged: the source **authentication** flow still has no `user_write`
+  stage, so a returning federated login can never overwrite `email`/`upn`/`email_verified`;
+  enrollment writes exactly once, at creation. The flow manager's own post-source stage persists the
+  `UserSourceConnection`, so every later sign-in resolves on the **subject** (§8.14's invariant now
+  holds for enrolled accounts too).
+- **Onboarding and invitations need nothing new.** A Google-enrolled account's first token carries
+  `email_verified: true` and the Google-verified address, so `GET /v1/organizations/me` runs the
+  same accept-on-login as any verified user: a **pending invitation matching that address joins the
+  inviting organization** (FR-ONB-3) — the registrant is never prompted to create one — and
+  otherwise the client's onboarding gate walks profile creation (FR-ONB-1) then organization
+  create (FR-ONB-2, open to any self-registered verified user per D-3/#362, §8.12). The
+  single-active-membership invariant is untouched — it is the partial unique index plus the
+  accept-on-login precondition (§8.12), neither of which this touches.
+- **i18n / a11y — no new client surface (NFR-I18N-1, D-18).** The registrant's interactive surface
+  is #363's "Continue with Google" button (EN/PT, 56px, WCAG 2.2 AA), Google's own consent screen,
+  and the existing EN/PT, a11y-tested onboarding screens. The dedicated flow renders no prompts;
+  its title carries the same upstream localization posture as every flow title
+  ([#412](https://github.com/TiagoJVO/beekeepingit/issues/412)).
+- **Guards evolved with the posture.**
+  [`scripts/check-federation-source-posture.sh`](../../scripts/check-federation-source-posture.sh)
+  **inverted** its enrollment assertion: every source must now reference exactly
+  `!KeyOf flow-source-enrollment` (absent, different, or `!Find`-resolved all fail), the flow entry
+  must exist exactly once, and **both gates are pinned by policy id** — the SSO-only policy bound to
+  the flow, the write guard bound to the `user_write` binding, each existing exactly once and each
+  still containing its load-bearing test (`ak_is_sso_flow`; `email_verified` + `upn`). A binding
+  carrying some _other_ policy is an error rather than a pass, so neither an always-true rewrite nor
+  a swapped-in unrelated binding can read as a gate. Mutation-tested the same way §8.14's assertions
+  were: seven drifted blueprints — enrollment flow removed, swapped for §8.11's password flow,
+  resolved by `!Find`, either gate's binding pointed at another policy, the SSO test rewritten to
+  `return True`, the guard's `email_verified` check removed — each go red.
+  [`infra/ci/authentik-federation-probe.py`](../../infra/ci/authentik-federation-probe.py) grew the
+  #365 cases: a verified unknown address resolves to `ENROLL` with a generated, collision-free
+  username (never the upstream-asserted one); an enrollment driven **end to end** through the real
+  `FlowExecutorView` creates exactly one active, non-privileged account with `upn`,
+  `email_verified: true`, no `known_emails`, and a persisted connection row; a second sign-in
+  resolves on the stored subject even with a changed, unverified upstream address; an unverified
+  unknown address still denies, creating nothing; and the **write guard is evaluated directly**
+  against the plan shapes the resolver would never author (missing `upn`, a string `"true"`, absent
+  `prompt_data`, …), each of which must refuse.
+  [`client/e2e/tests/federation.spec.ts`](../../client/e2e/tests/federation.spec.ts) pins the
+  direct-entry denial in a real browser.
+- **What is NOT tested, stated plainly.** The same boundary as §8.13/§8.14: no automated test
+  registers through **real** Google — the probe synthesizes the userinfo payload against the
+  stand-in source. The manual checklist in [`infra/README.md`](../../infra/README.md) (run once per
+  environment, [#510](https://github.com/TiagoJVO/beekeepingit/issues/510)) now covers a real
+  registration: a Google account matching no local account reaches onboarding with a **new**
+  account, rather than #363's refusal.
 
 ## 9. Acceptance-criteria traceability (#109)
 

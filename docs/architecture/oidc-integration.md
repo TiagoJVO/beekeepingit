@@ -56,8 +56,12 @@ the Authentik blueprint) but services still validate `OIDC_AUDIENCE=beekeepingit
 - **Registration** — **self-service enrollment since #366** ([auth.md §8.11](auth.md)): blueprint
   flow `beekeepingit-enrollment`, linked from the login page via the default identification
   stage's `enrollment_flow`. Registrations are held **unverified** on an emailed one-time link
-  (the #361 machinery) and a UUID `upn` is assigned at creation (§4). The provider/client
-  contract above is unchanged — enrollment is IdP-side flow config.
+  (the #361 machinery) and a UUID `upn` is assigned at creation (§4). **Since #365 registration is
+  also open via a federation source** ([auth.md §8.15](auth.md)): blueprint flow
+  `beekeepingit-source-enrollment`, referenced by each source's `enrollment_flow`, SSO-gated and
+  fed exclusively by the #364 resolver's properties (upstream address strictly verified, UUID
+  `upn` at creation, no prompts). The provider/client contract above is unchanged either way —
+  enrollment is IdP-side flow config.
 - **`platform-operator`** — an Authentik **group** (not a membership role); the dev/CI seed user has
   been a member since the Authentik cut-over (#191). It is the ops/infra marker **and**, since
   [#465](https://github.com/TiagoJVO/beekeepingit/issues/465), the **platform tier's** authority
@@ -181,9 +185,10 @@ all. Dev/CI seeds: `test.beekeeper@beekeepingit.local` (in the group) and
   The **seed user's `upn` = `11111111-1111-4111-8111-111111111111`** (continuity: `oidc_sub`
   keeps its prior value). _Rejected: `user_email` (mutable PII as identity key); `user_uuid` /
   `hashed_user_id` (unpinnable / secret-key-derived → not reproducible)._
-  **Forward-requirement — implemented by #366:** the self-service enrollment flow assigns a UUID
-  `upn` per user at creation (an expression policy on its `user_write` binding, fail closed: no
-  account is created without one — [auth.md §8.11](auth.md)).
+  **Forward-requirement — implemented by #366 and #365:** every self-service enrollment assigns a
+  UUID `upn` per user at creation — #366's flow via an expression policy on its `user_write`
+  binding, #365's source enrollment via the resolver's enroll branch with a guard policy on the
+  write binding; both fail closed: no account is created without one ([auth.md §8.11/§8.15](auth.md)).
 - **`aud` → services expect `beekeepingit-pwa`.** Authentik's default `aud` is the client id, so
   set **`OIDC_AUDIENCE=beekeepingit-pwa`** (no custom audience mapper for the pwa). A stale value =
   silent 401s. The **admin client** (`beekeepingit-admin`, §3.1) is the one exception that needs an
@@ -195,9 +200,13 @@ all. Dev/CI seeds: `test.beekeeper@beekeepingit.local` (in the group) and
 
 Present: `sub, iss, aud, azp, exp, iat, email, email_verified, name, given_name (=full name),
 preferred_username, groups` — plus **`platform_operator`** on **admin-client tokens only** (§3.2).
-**Absent by default:** `family_name`, `locale`. The app collects
-profile (name/locale) during onboarding (FR-ONB-1), so it does **not** depend on IdP profile
-claims; add a `locale` scope mapping only if IdP-sourced locale is later wanted (NFR-I18N) —
+**Absent by default:** `family_name`, `locale`. `locale` is still collected during onboarding;
+since the #365 follow-up the app **does** consume `name` and `email` — **fail-soft**, as seeds for
+the profile row at first sight ([auth.md §8.16](auth.md)). That is standard-OIDC consumption, not
+an IdP dependency: a provider that omits `name` yields an empty field the user fills, and the
+`email` seed is gated on `email_verified`. It does mean the profile scope mapping's `name` is now
+**load-bearing contract** rather than incidental — losing it degrades to an empty field, never an
+error. Add a `locale` scope mapping only if IdP-sourced locale is later wanted (NFR-I18N) —
 optional.
 
 > **`email_verified` is REAL state since #361** ([auth.md §8.10](auth.md), ADR-0019). Authentik's
@@ -302,7 +311,10 @@ optional.
   and since #364 the **`mapping-federation-account-link`** OAuth-source property mapping every
   federation source attaches — the single place that decides which local account an upstream
   identity may reach ([auth.md §8.14](auth.md)) — with the sources' `user_matching_mode` set to
-  `username_link` to route the match through it.
+  `username_link` to route the match through it. Since #365 it also declares the
+  **source-enrollment flow** `beekeepingit-source-enrollment` (SSO-gated, guarded `user_write`,
+  the reused default user-login stage) that each source's `enrollment_flow` references — the write
+  path for the resolver's enroll branch ([auth.md §8.15](auth.md)).
 - **Version pin + revalidation** — pin one Authentik version (align chart `appVersion` with the
   validated blueprint). **WS-A's first cluster task = re-run the OIDC end-to-end validation on the
   pin.** Watch: `end_session` behavior ([authentik#19201](https://github.com/goauthentik/authentik/issues/19201)),
@@ -392,8 +404,10 @@ optional.
     `authentik/core/sources/matcher.py` + `mapper.py`:
     (a) `SourceMatcher.get_action` checks the existing `(source, identifier)` connection **first**,
     before any property — that is the subject match;
-    (b) with a non-`identifier` mode, an **empty/absent** matchable property yields `Action.DENY`,
-    which is the fail-closed hinge the whole resolver hangs on;
+    (b) with a non-`identifier` mode, an **empty/absent** matchable property yields `Action.DENY` —
+    the fail-closed hinge the whole resolver hangs on — while a **present but unmatched** value
+    yields `Action.ENROLL`, which is how #365's generated-username branch opens registration
+    without ever letting the upstream pick an account;
     (c) `matching_objects.first()` is used unguarded, which is why the mode must be
     `username_link` (the only **unique** matchable property) and never `email_link` — this
     deployment allows duplicate emails by design;

@@ -58,10 +58,15 @@ the load-bearing points:
 5. **Standards-based logout.** Front-channel `end_session_endpoint` redirect with `id_token_hint`
    (client persists the `id_token`) + optional token revocation — replacing Keycloak's
    refresh-token POST.
-6. **Credential lifecycle stays where it was.** Registration remains disabled; **email
-   verification, password reset/recovery, and SMTP** remain **EPIC-14** ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)).
-   The `email_verified` claim is cosmetic in Authentik's default mapping — documented, with
-   registration-disabled as the actual control until EPIC-14 hardens it.
+6. **Credential lifecycle stays where it was.** _(As decided; since overtaken by EPIC-16 —
+   [auth.md §8.10–§8.15](../architecture/auth.md) is the as-built record.)_ At this ADR's time
+   registration was disabled and **email verification, password reset/recovery, and SMTP** were
+   deferred to **EPIC-14** ([#15](https://github.com/TiagoJVO/beekeepingit/issues/15)). The
+   `email_verified` claim was cosmetic in Authentik's default mapping, with registration-disabled
+   as the actual compensating control. That control has since been **withdrawn deliberately**: #361
+   made `email_verified` genuine (a custom scope mapping + a verification stage — the real control
+   now), #366 opened password registration, and #365 opened registration via Google, gated on that
+   genuine signal (D-7 amendment). Password reset/recovery remains EPIC-14.
 
 ## Consequences
 
@@ -84,8 +89,10 @@ the load-bearing points:
   [auth.md §7](../architecture/auth.md) + [ADR-0004](0004-authn-authz.md).
 - **New datastore dependency** — Authentik needs its own Postgres (bundled for now; external/CNPG is
   the EPIC-14 target). Heavier and slower to boot than Keycloak `start-dev` → CI budget bumped.
-- **`email_verified` is cosmetic by default** — the invitation accept-on-login gate relies on it;
-  mitigated by registration-disabled now, hardened in EPIC-14.
+- **`email_verified` is cosmetic by default** — the invitation accept-on-login gate relies on it.
+  _(Was mitigated by registration-disabled; that mitigation is gone — #361 replaced it with a
+  genuine `email_verified` signal before #366/#365 opened registration. See
+  [auth.md §8.10](../architecture/auth.md).)_
 - **No recovery flow ships by default** — password reset must be provisioned (EPIC-14).
 - **Version sensitivity** — spikes observed behavior across two Authentik versions; the pinned
   version is re-validated end-to-end as the infra workstream's first cluster task.

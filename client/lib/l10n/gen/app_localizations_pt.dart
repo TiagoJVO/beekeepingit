@@ -186,6 +186,21 @@ class AppLocalizationsPt extends AppLocalizations {
   String get profileGenericError => 'Ocorreu um erro. Tente novamente.';
 
   @override
+  String get profileAccountEmailLabel => 'Email da conta';
+
+  @override
+  String get profileAccountEmailHint =>
+      'É o email com que iniciou sessão. Altere-o junto do nosso fornecedor de login, numa nova aba.';
+
+  @override
+  String get profileManageAccountButton => 'Gerir conta';
+
+  @override
+  String profileAccountEmailSemantics(String email) {
+    return 'Email da conta: $email';
+  }
+
+  @override
   String get organizationTitle => 'A sua organização';
 
   @override
@@ -211,6 +226,41 @@ class AppLocalizationsPt extends AppLocalizations {
   String organizationSaveError(String error) {
     return 'Não foi possível criar a sua organização: $error';
   }
+
+  @override
+  String get organizationWaitingTitle => 'Juntar-se a uma organização';
+
+  @override
+  String get organizationWaitingIntro =>
+      'Se alguém o está a convidar para a organização dele, não precisa de criar uma. Verifique novamente assim que o convite tiver sido enviado.';
+
+  @override
+  String get organizationWaitingHint =>
+      'O convite tem de ser enviado para o email com que iniciou sessão. Peça ao administrador da organização para convidar esse endereço.';
+
+  @override
+  String get organizationWaitingCheckButton => 'Verificar novamente';
+
+  @override
+  String get organizationWaitingChecking => 'A verificar se existe um convite';
+
+  @override
+  String get organizationWaitingStillNone =>
+      'Ainda não há nenhum convite. Tente novamente daqui a pouco ou crie a sua própria organização.';
+
+  @override
+  String get organizationWaitingCheckError =>
+      'Não foi possível verificar se existe um convite agora. Tente novamente.';
+
+  @override
+  String get organizationWaitingCreateInsteadButton => 'Criar uma organização';
+
+  @override
+  String get organizationJoinInsteadButton => 'Estou à espera de um convite';
+
+  @override
+  String get organizationCreateBlocksInvitationWarning =>
+      'Se criar uma organização, deixa de poder aceitar um convite para outra mais tarde. Se está à espera de um convite, aguarde por ele.';
 
   @override
   String get membersTitle => 'Membros e convites';

@@ -19,10 +19,9 @@
 // profile's GET-as-completeness-probe pattern, client-side) -- after first
 // trying the accept-on-login fallback in getMyOrganization (#27, FR-ONB-3).
 // That fallback matches a pending invitation against the caller's verified
-// JWT claims.Email, never identity's resolve-response Email (the mutable
-// PATCH /v1/profile field, #25) -- see ResolvedUser's and
-// getMyOrganization's doc comments for why that distinction is
-// security-critical, not stylistic.
+// JWT claims.Email, never identity's resolve-response Email (a cached copy
+// of the address, #25/#170) -- see ResolvedUser's and getMyOrganization's doc
+// comments for why that distinction is security-critical, not stylistic.
 //
 // POST /organizations is open to ANY authenticated caller with a verified
 // email (D-3's #362 amendment: self-registered users may create an
@@ -123,14 +122,20 @@ type organizationCreateRequest struct {
 // ResolvedUser is what identity's internal resolve endpoint tells us about a
 // verified OIDC subject: identity.users' current row. UserID is the only
 // field used for anything security-sensitive. Email mirrors
-// identity.users.email -- the profile field PATCH /v1/profile (#25) lets the
-// caller set to an arbitrary string with no tie back to the IdP-verified
-// identity -- so it MUST NOT be used to decide access (e.g. which invitation
-// to auto-accept): doing so would let a caller self-edit their profile email
-// to someone else's pending invitation and join that org at the invited role.
-// Use the
-// JWT's verified claims.Email (via resolveCaller's verifiedCaller) for
-// anything security-sensitive instead. Kept here only because it's part of
+// identity.users.email, which MUST NOT be used to decide access (e.g. which
+// invitation to auto-accept).
+//
+// The reason has outlived the attack that produced it. Originally the field
+// was settable: PATCH /v1/profile let a caller point their profile email at
+// someone else's pending invitation and join that org at the invited role
+// (#170). Since the #365 follow-up the field is IdP-owned and read-only, so
+// that specific path is structurally gone -- but the rule is unchanged,
+// because the reason it was never trustworthy is broader: this column has no
+// uniqueness constraint, it is a cache seeded once at first sight, and it is
+// never re-verified against the token afterwards. A cache that stopped being
+// writable is not a cache that became authoritative. Use the JWT's verified
+// claims.Email (via resolveCaller's verifiedCaller) for anything
+// security-sensitive instead. Kept here only because it's part of
 // identity's resolve response and may be useful for non-security display
 // purposes later.
 type ResolvedUser struct {

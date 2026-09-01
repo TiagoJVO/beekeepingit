@@ -218,6 +218,14 @@ now fixed here.
   `INSERT` (and `SELECT`) but not `UPDATE`/`DELETE`** on its `audit_log` (and `sync_conflict_log`).
   A code path that tries to mutate history fails at the database — defense-in-depth, the same
   philosophy as the optional RLS backstop in [data-model.md](data-model.md) §5.
+- **The protected set is fail-closed, not remembered (#553).** The revokes key on one central list
+  (`postgres.historyTables` in `charts/postgres/values.yaml`), and the grants pass **errors the
+  release** — at deploy time, naming the table, inside the same transaction as the blanket DML
+  grant — if any table ending `_log` in a schema is not on it. So the `_log` suffix is reserved for
+  append-only history: shipping a new history table means adding its name to that list in the same
+  change, and forgetting produces a failed deploy rather than a silently mutable audit trail. (A
+  history table named _without_ the suffix evades the tripwire and rests on the list alone — the
+  guard enforces the naming convention, the list classifies.)
 - **The runtime role owns nothing, which is what makes that durable.** An owner can re-`GRANT` to
   itself at will and keeps `TRUNCATE`/`ALTER`/`DROP` regardless of any `REVOKE`, so "not granted
   `UPDATE`" only means something for a role that is not the table's owner. Since

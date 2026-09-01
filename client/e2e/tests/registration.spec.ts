@@ -164,14 +164,22 @@ async function typeInto(page: Page, field: ReturnType<Page["getByLabel"]>, value
 
 /**
  * Completes the FR-ONB-1 profile step (the app routes a fresh, verified user
- * here on first sign-in). The email field may arrive prefilled from the
- * first-seen profile row — overwrite it either way so the state is definite.
+ * here on first sign-in).
+ *
+ * The address is NOT typed: it is the IdP-verified one, seeded server-side
+ * from the token and rendered read-only. Asserting it is on screen before
+ * saving is therefore the live-stack regression test for the seeding itself —
+ * nothing here typed that address, so it can only have come from the token.
  */
-async function completeProfile(page: Page, name: string, email: string) {
+async function completeProfile(page: Page, name: string, expectedEmail: string) {
   await page.waitForURL(/\/profile/, { timeout: 60_000 });
   await enableSemantics(page);
   await typeInto(page, page.getByLabel("Name", { exact: true }), name);
-  await typeInto(page, page.getByLabel("Email", { exact: true }), email);
+  // Substring, not exact: the value is rendered read-only under a single
+  // combined semantics label ("Account email: <address>") rather than as bare
+  // text, so a screen reader announces it once instead of twice. The address
+  // still has to be THERE — and nothing in this test typed it.
+  await expect(page.getByText(expectedEmail, { exact: false })).toBeVisible();
   await page.getByText("Save profile", { exact: true }).click();
 }
 

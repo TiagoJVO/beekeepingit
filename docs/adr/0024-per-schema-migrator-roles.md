@@ -95,6 +95,17 @@ one, while the outgoing ReplicaSet is serving. Narrowing closes it by constructi
 table still reaches full DML at weight 3 via the blanket GRANT, on a table nothing has written to
 yet.
 
+> **Update (#553).** The REVOKE half of that weight-3 pass originally keyed on two table names
+> written literally into the template, which was fail-open in steady state: a future history table
+> under a third name kept the blanket DML silently, forever, and nothing in CI noticed. The list
+> now lives in chart values (`postgres.historyTables`, one central definition still shared by both
+> Jobs via `postgres.runtimeGrantsPsqlArgs`), and the shared DO block gained a fail-closed guard:
+> any table whose name ends `_log` that the list does not classify raises an exception, failing the
+> release with the table's name — inside the same transaction as the blanket GRANT, so the table is
+> never mutable even on the failed release. The `_log` suffix is thereby reserved for append-only
+> history; a mis-suffixed domain table fails the deploy until renamed or classified. Proven in
+> `services/shared/dbaccess/history_fail_closed_test.go`.
+
 ### 4. Existing clusters transition through a gated, one-off Job
 
 `postgres.migratorTransition.enabled` (default **false**) renders `migrator-adopt-job.yaml` and

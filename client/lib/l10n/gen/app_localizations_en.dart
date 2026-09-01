@@ -185,6 +185,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileGenericError => 'Something went wrong. Please try again.';
 
   @override
+  String get profileAccountEmailLabel => 'Account email';
+
+  @override
+  String get profileAccountEmailHint =>
+      'This is the email you signed in with. Change it with our sign-in provider, in a new tab.';
+
+  @override
+  String get profileManageAccountButton => 'Manage account';
+
+  @override
+  String profileAccountEmailSemantics(String email) {
+    return 'Account email: $email';
+  }
+
+  @override
   String get organizationTitle => 'Your organization';
 
   @override
@@ -210,6 +225,42 @@ class AppLocalizationsEn extends AppLocalizations {
   String organizationSaveError(String error) {
     return 'Could not create your organization: $error';
   }
+
+  @override
+  String get organizationWaitingTitle => 'Join an organization';
+
+  @override
+  String get organizationWaitingIntro =>
+      'If someone is inviting you to their organization, you don\'t need to create one. Check again once the invitation has been sent.';
+
+  @override
+  String get organizationWaitingHint =>
+      'The invitation must be sent to the email you signed in with. Ask the organization\'s admin to invite that address.';
+
+  @override
+  String get organizationWaitingCheckButton => 'Check again';
+
+  @override
+  String get organizationWaitingChecking => 'Checking for an invitation';
+
+  @override
+  String get organizationWaitingStillNone =>
+      'No invitation yet. Try again in a moment, or create your own organization.';
+
+  @override
+  String get organizationWaitingCheckError =>
+      'Could not check for an invitation right now. Try again.';
+
+  @override
+  String get organizationWaitingCreateInsteadButton =>
+      'Create an organization instead';
+
+  @override
+  String get organizationJoinInsteadButton => 'I\'m waiting for an invitation';
+
+  @override
+  String get organizationCreateBlocksInvitationWarning =>
+      'Creating an organization means you can\'t accept an invitation to another one later. If you\'re expecting an invitation, wait for it instead.';
 
   @override
   String get membersTitle => 'Members & invitations';
