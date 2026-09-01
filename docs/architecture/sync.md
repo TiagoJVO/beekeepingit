@@ -499,17 +499,26 @@ the client gates sync on **measured link quality**, not the mere presence of a c
   `ConnectivityProbe`, a `Future<void> Function()` connect callback and an optional
   `Stream<void>` of connectivity-return events — never on a PowerSync type — so it sits outside
   the §5 contract as intended.
-- **Re-probe on connectivity-return (#240).** Backoff is a response to _weak_ signal, so it must
-  not outlive the link that earned it: `connectivity_signal.dart`'s `ConnectivitySignal` (the
-  browser `online` event on web, a never-emitting stub off it) feeds `SyncGate`, which cancels a
-  pending backoff, resets it to `initialBackoff`, and probes immediately — including when the
-  reconnect lands _while_ a probe is already in flight, since that probe measured the old link.
-  Without it a write queued offline could sit unflushed for up to the ~2-min max backoff after
-  the device was back online, unless the user tapped "sync now". `navigator.onLine` stays a
-  **hint that triggers a probe**, never a substitute for one ("connectivity restored is
-  necessary but not sufficient", above). The signal is deliberately inert while the gate isn't
-  running: a stopped gate is either auto-sync-off (the user's choice) or `passed`, where the
-  engine owns the connection and `rearm()` is what brings the gate back.
+- **Re-probe on connectivity-return (#240).** A backoff decided under weak signal must not
+  outlive the link that earned it: `connectivity_signal.dart`'s `ConnectivitySignal` (the browser
+  `online` event on web, a never-emitting stub off it) feeds `SyncGate`, which cancels the
+  pending backoff and probes at once. A return that lands _while_ a probe is in flight instead
+  drops that probe's verdict to `initialBackoff` — it measured the old link — rather than letting
+  it impose the grown delay. Without any of this, a write queued offline could sit unflushed for
+  up to the ~2-min max backoff after the device was back online, unless the user tapped "sync
+  now". Three deliberate limits keep the fix from undoing the gate:
+  - it **shortens one wait, it does not reset the schedule** — a marginal link flapping
+    `offline → online` is exactly what the exponential backoff is for, and restarting the
+    schedule per event would pin the gate at 2s and cause the churn this section set out to
+    avoid; every failed probe still grows the next delay;
+  - a mid-probe return still waits `initialBackoff`, so an `online` burst can't spin the probe;
+  - `navigator.onLine` stays a **hint that triggers a probe**, never a substitute for one
+    ("connectivity restored is necessary but not sufficient", above).
+
+  The signal is inert while the gate isn't running: a stopped gate is either auto-sync-off (the
+  user's choice) or `passed`, where the engine owns the connection and `rearm()` is what brings
+  the gate back.
+
 - `powersync_service.dart` wires the gate around `PowerSyncDatabase.connect()`: the first
   connect and every reconnect after a `statusStream` connected→disconnected transition go
   through the gate (`SyncGate.rearm()`); `shell/sync_status.dart`'s `syncNowProvider` (#58's

@@ -14,12 +14,10 @@ void main() {
       await expectLater(signal.onRestored, emitsDone);
     });
 
-    test('can be listened to more than once (broadcast contract)', () async {
-      final signal = createConnectivitySignal();
-      final stream = signal.onRestored;
-
-      await expectLater(stream, emitsDone);
-      await expectLater(stream, emitsDone);
+    test('is broadcast, as the interface promises', () {
+      // `SyncGate` is one listener today, but the contract is documented as
+      // broadcast so a second consumer doesn't silently fail at runtime.
+      expect(createConnectivitySignal().onRestored.isBroadcast, isTrue);
     });
   });
 }
