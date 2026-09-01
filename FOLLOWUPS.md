@@ -7,6 +7,7 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
+<<<<<<< HEAD
 ## `fix/sync-gate-reprobe-on-connectivity-return` (#240 — gate re-probes on reconnect)
 
 - **Before merge: Helm-E2E is the only place the e2e change is actually exercised.** This
@@ -17,6 +18,8 @@
   the live run proves the browser event reaches it. If that run flakes, restore the nudge in
   `slice.spec.ts` (gate fix stays) rather than widening the poll timeout, and say so on the PR.
 
+=======
+>>>>>>> origin/main
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -32,6 +35,7 @@
 
 ---
 
+<<<<<<< HEAD
 _Sweep note (#240, 2026-09-01): the `claude/orch-add-feature-6993c5` section is gone._
 
 - _Its owning PR [#569](https://github.com/TiagoJVO/beekeepingit/pull/569) merged and #365 closed,_
@@ -41,3 +45,12 @@ _Sweep note (#240, 2026-09-01): the `claude/orch-add-feature-6993c5` section is 
   _[#563](https://github.com/TiagoJVO/beekeepingit/issues/563)) — nothing was lost. Pruned._
 - _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that_
   _entry stands. Prior sweep notes dropped with their entries, per this file's convention._
+=======
+_Sweep note (2026-09-01, during #295): [#365](https://github.com/TiagoJVO/beekeepingit/issues/365)_
+_closed and its branch merged, so the `claude/orch-add-feature-6993c5` section is resolved by_
+_definition — its Helm-E2E merge precondition was met at merge, and its two after-merge items were_
+_already Issues ([#510](https://github.com/TiagoJVO/beekeepingit/issues/510),_
+_[#563](https://github.com/TiagoJVO/beekeepingit/issues/563)) that the entry itself said to prune on_
+_landing. Pruned. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
+_open — that entry stands. Prior sweep notes dropped with their entries, per this file's convention._
+>>>>>>> origin/main

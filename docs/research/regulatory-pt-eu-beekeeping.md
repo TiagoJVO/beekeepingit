@@ -309,6 +309,8 @@ feature epics that would implement them:
    feature with the 5-year (or batch-expiry+1-year) floor from Reg 2019/6; interacts with
    FR-HIS-1's erasure handling (GDPR right-to-erasure vs. regulatory retention — the two need
    reconciling policy language, not just code).
+   **Triaged (#295):** that policy language is now written — see
+   [`docs/architecture/history.md`](../architecture/history.md) §7.4.
 5. **Optional lot/batch identifier on Honey harvest activities** — for future traceability/
    export/sale features (Reg 178/2002 Art. 18, Reg 931/2011, Dir 2011/91/EU). Not needed for
    personal record-keeping-only use.
