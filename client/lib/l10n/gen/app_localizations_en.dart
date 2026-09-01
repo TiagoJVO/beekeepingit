@@ -537,6 +537,122 @@ class AppLocalizationsEn extends AppLocalizations {
       'This change was rejected and needs your attention.';
 
   @override
+  String syncNeedsFixFieldProblem(String field, String problem) {
+    return '$field: $problem';
+  }
+
+  @override
+  String get syncNeedsFixRuleRequired => 'this is required.';
+
+  @override
+  String get syncNeedsFixRuleInvalid => 'this value isn\'t valid.';
+
+  @override
+  String get syncNeedsFixRuleOutOfRange =>
+      'this value is outside the allowed range.';
+
+  @override
+  String get syncNeedsFixRuleTooLong => 'this text is too long.';
+
+  @override
+  String get syncNeedsFixRuleNotFound =>
+      'this no longer exists, or you no longer have access to it.';
+
+  @override
+  String get syncNeedsFixRuleAttributeRequired =>
+      'an entry here still needs filling in.';
+
+  @override
+  String get syncNeedsFixRuleAttributeInvalid => 'an entry here isn\'t valid.';
+
+  @override
+  String get syncNeedsFixRuleAttributeTooLong => 'an entry here is too long.';
+
+  @override
+  String get syncNeedsFixRuleAttributeOutOfRange =>
+      'an entry here is outside the allowed range.';
+
+  @override
+  String get syncNeedsFixRuleNonNegative => 'this must be 0 or more.';
+
+  @override
+  String get syncNeedsFixRuleLatitudeRange =>
+      'this must be between -90 and 90.';
+
+  @override
+  String get syncNeedsFixRuleLongitudeRange =>
+      'this must be between -180 and 180.';
+
+  @override
+  String get syncNeedsFixFieldName => 'Name';
+
+  @override
+  String get syncNeedsFixFieldTitle => 'Title';
+
+  @override
+  String get syncNeedsFixFieldDescription => 'Description';
+
+  @override
+  String get syncNeedsFixFieldNotes => 'Notes';
+
+  @override
+  String get syncNeedsFixFieldPlace => 'Place label';
+
+  @override
+  String get syncNeedsFixFieldLocation => 'Location';
+
+  @override
+  String get syncNeedsFixFieldLatitude => 'Latitude';
+
+  @override
+  String get syncNeedsFixFieldLongitude => 'Longitude';
+
+  @override
+  String get syncNeedsFixFieldHiveCount => 'Number of hives';
+
+  @override
+  String get syncNeedsFixFieldCount => 'Count';
+
+  @override
+  String get syncNeedsFixFieldCountType => 'Count type';
+
+  @override
+  String get syncNeedsFixFieldApiary => 'Apiary';
+
+  @override
+  String get syncNeedsFixFieldJourney => 'Journey';
+
+  @override
+  String get syncNeedsFixFieldAssignee => 'Assignee';
+
+  @override
+  String get syncNeedsFixFieldActivityType => 'Activity type';
+
+  @override
+  String get syncNeedsFixFieldMainActivityType => 'Main activity type';
+
+  @override
+  String get syncNeedsFixFieldDate => 'Date';
+
+  @override
+  String get syncNeedsFixFieldDueDate => 'Due date';
+
+  @override
+  String get syncNeedsFixFieldCompletedAt => 'Completed at';
+
+  @override
+  String get syncNeedsFixFieldPriority => 'Priority';
+
+  @override
+  String get syncNeedsFixFieldStatus => 'Status';
+
+  @override
+  String get syncNeedsFixFieldDetails => 'Details';
+
+  @override
+  String get syncNeedsFixFieldActivityDefaults => 'Defaults for activities';
+
+  @override
   String get syncNeedsFixLocalProblem =>
       'This change wasn\'t sent yet — please correct it.';
 

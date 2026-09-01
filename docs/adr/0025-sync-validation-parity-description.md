@@ -43,7 +43,7 @@ with.
 ### 1. A first-class, language-neutral rule description, not an OpenAPI schema
 
 `contracts/validation/sync-ops.validation.json` is the single definition of the mechanical
-sync-op rules for all six entity types. It is a real, addressable artifact (part 2 of §9), sitting
+sync-op rules for every syncable entity type. It is a real, addressable artifact (part 2 of §9), sitting
 beside `contracts/openapi/` rather than inside it, with its own README. `contracts/openapi/`
 remains the contract for the HTTP surface; this file is the contract for what a queued op must
 contain.

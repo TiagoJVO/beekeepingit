@@ -950,11 +950,227 @@ abstract class AppLocalizations {
   /// **'{label} · {name}'**
   String syncNeedsFixTitleWithName(String label, String name);
 
-  /// Needs-fix list row fallback message when the server returned no field-level detail
+  /// Needs-fix list row fallback message when the server returned no field-level detail, or none of it could be mapped to safe localized copy (#426/#443)
   ///
   /// In en, this message translates to:
   /// **'This change was rejected and needs your attention.'**
   String get syncNeedsFixGenericProblem;
+
+  /// Needs-fix message composed from a localized field label and the localized rule it broke (#443) — never the server's raw English validation text
+  ///
+  /// In en, this message translates to:
+  /// **'{field}: {problem}'**
+  String syncNeedsFixFieldProblem(String field, String problem);
+
+  /// Needs-fix rule fragment for the server's `required` rejection code, composed into syncNeedsFixFieldProblem (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this is required.'**
+  String get syncNeedsFixRuleRequired;
+
+  /// Needs-fix rule fragment for the server's `invalid` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this value isn\'t valid.'**
+  String get syncNeedsFixRuleInvalid;
+
+  /// Needs-fix rule fragment for the server's `out_of_range` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this value is outside the allowed range.'**
+  String get syncNeedsFixRuleOutOfRange;
+
+  /// Needs-fix rule fragment for the server's `too_long` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this text is too long.'**
+  String get syncNeedsFixRuleTooLong;
+
+  /// Needs-fix rule fragment for the server's `not_found` rejection code — a referenced apiary/journey/member the organization no longer owns (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this no longer exists, or you no longer have access to it.'**
+  String get syncNeedsFixRuleNotFound;
+
+  /// Needs-fix rule fragment for a `required` rejection on an activity's per-type attribute bag (#443) — phrased about the entries inside the bag, since the server reports one error per offending key and they all collapse onto the single "Details" label
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here still needs filling in.'**
+  String get syncNeedsFixRuleAttributeRequired;
+
+  /// Needs-fix rule fragment for an `invalid` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here isn\'t valid.'**
+  String get syncNeedsFixRuleAttributeInvalid;
+
+  /// Needs-fix rule fragment for a `too_long` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here is too long.'**
+  String get syncNeedsFixRuleAttributeTooLong;
+
+  /// Needs-fix rule fragment for an `out_of_range` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here is outside the allowed range.'**
+  String get syncNeedsFixRuleAttributeOutOfRange;
+
+  /// Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be 0 or more.'**
+  String get syncNeedsFixRuleNonNegative;
+
+  /// Needs-fix rule fragment for an out-of-range latitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be between -90 and 90.'**
+  String get syncNeedsFixRuleLatitudeRange;
+
+  /// Needs-fix rule fragment for an out-of-range longitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be between -180 and 180.'**
+  String get syncNeedsFixRuleLongitudeRange;
+
+  /// Needs-fix field label for an apiary's or journey's name (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get syncNeedsFixFieldName;
+
+  /// Needs-fix field label for a todo's title (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get syncNeedsFixFieldTitle;
+
+  /// Needs-fix field label for a todo's description (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get syncNeedsFixFieldDescription;
+
+  /// Needs-fix field label for an apiary's notes (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get syncNeedsFixFieldNotes;
+
+  /// Needs-fix field label for an apiary's place label — deliberately the same wording as apiaryPlaceLabelLabel, the label on the form the Fix action opens (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Place label'**
+  String get syncNeedsFixFieldPlace;
+
+  /// Needs-fix field label for an apiary's location (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get syncNeedsFixFieldLocation;
+
+  /// Needs-fix field label for an apiary location's latitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Latitude'**
+  String get syncNeedsFixFieldLatitude;
+
+  /// Needs-fix field label for an apiary location's longitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Longitude'**
+  String get syncNeedsFixFieldLongitude;
+
+  /// Needs-fix field label for an apiary's hive count — deliberately the same wording as hiveCountLabel, the label on the form the Fix action opens (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Number of hives'**
+  String get syncNeedsFixFieldHiveCount;
+
+  /// Needs-fix field label for an apiary counter's value (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Count'**
+  String get syncNeedsFixFieldCount;
+
+  /// Needs-fix field label for an apiary counter's type (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Count type'**
+  String get syncNeedsFixFieldCountType;
+
+  /// Needs-fix field label for the apiary a record belongs to (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get syncNeedsFixFieldApiary;
+
+  /// Needs-fix field label for the journey a record belongs to (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey'**
+  String get syncNeedsFixFieldJourney;
+
+  /// Needs-fix field label for a todo's assignee (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Assignee'**
+  String get syncNeedsFixFieldAssignee;
+
+  /// Needs-fix field label for an activity's type — deliberately the same wording as activityTypeFieldLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity type'**
+  String get syncNeedsFixFieldActivityType;
+
+  /// Needs-fix field label for a journey's main activity type — deliberately the same wording as journeyMainActivityTypeLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Main activity type'**
+  String get syncNeedsFixFieldMainActivityType;
+
+  /// Needs-fix field label for the date an activity occurred (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get syncNeedsFixFieldDate;
+
+  /// Needs-fix field label for a todo's due date (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get syncNeedsFixFieldDueDate;
+
+  /// Needs-fix field label for a todo's completion timestamp — deliberately the same wording as todoCompletedAtLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Completed at'**
+  String get syncNeedsFixFieldCompletedAt;
+
+  /// Needs-fix field label for a todo's priority (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get syncNeedsFixFieldPriority;
+
+  /// Needs-fix field label for a journey's or todo's status (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get syncNeedsFixFieldStatus;
+
+  /// Needs-fix field label standing in for an activity's per-type attribute bag — the individual attribute keys are internal schema names and are never rendered (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get syncNeedsFixFieldDetails;
+
+  /// Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Defaults for activities'**
+  String get syncNeedsFixFieldActivityDefaults;
 
   /// Needs-fix list row message for a change the app itself found a problem with before sending it (validation parity, FR-OF-2/D-12, #584) — as opposed to one the server rejected
   ///

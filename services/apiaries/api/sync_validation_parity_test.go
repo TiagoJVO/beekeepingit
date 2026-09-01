@@ -67,3 +67,34 @@ func TestSharedValidationDescription_MatchesCounterOp(t *testing.T) {
 	paritytest.AssertNoVocabulary(t, e, "counter_type")
 	paritytest.AssertDescribesOnlyWireFields(t, e, counterData{})
 }
+
+func TestSharedValidationDescription_MatchesDeclarationOp(t *testing.T) {
+	e := paritytest.Entity(t, paritytest.Load(t, 3), entityTypeStockDeclaration)
+
+	// Unlike a counter, a declaration is an independent record with its own
+	// lifecycle, so it DOES accept delete (validateDeclarationOp).
+	paritytest.AssertOps(t, e, "put", "patch", "delete")
+	// The two facts that make a declaration a declaration are required on a
+	// full put only; a patch is partial (#378).
+	paritytest.AssertRequiredOn(t, e, "declared_on", "put")
+	paritytest.AssertRequiredOn(t, e, "total_hive_count", "put")
+	paritytest.AssertLimit(t, e, "total_hive_count", "min", 0)
+	paritytest.AssertLimit(t, e, "dgav_registration_number", "maxLength", maxDgavRegistrationNumberLength)
+	paritytest.AssertLimit(t, e, "notes", "maxLength", maxDeclarationNotesLength)
+	// validateDeclarationOp guards every field on nil alone — no "" special
+	// case anywhere in it.
+	paritytest.AssertAbsentWhen(t, e, "declared_on", paritytest.AbsentNull)
+	paritytest.AssertAbsentWhen(t, e, "total_hive_count", paritytest.AbsentNull)
+	paritytest.AssertAbsentWhen(t, e, "dgav_registration_number", paritytest.AbsentNull)
+	paritytest.AssertAbsentWhen(t, e, "notes", paritytest.AbsentNull)
+
+	// breakdown is deliberately server-only: its shape rules (bounded array of
+	// objects) don't fit the field-check vocabulary, and the client is the side
+	// that builds it. Describing it as a jsonObject would be actively WRONG —
+	// it is an array — and would reject every declaration.
+	if _, ok := e.Field("breakdown"); ok {
+		t.Fatal("description constrains breakdown; it is server-only (and is an array, not an object)")
+	}
+
+	paritytest.AssertDescribesOnlyWireFields(t, e, declarationData{})
+}

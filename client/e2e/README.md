@@ -57,6 +57,77 @@ tracked. Unskip it when its bug is fixed:
   of redirecting to the app's `post_logout_redirect_uri`, so the browser never
   gets back to `/login`. Fix is on the Authentik/logout-flow side.
 
+## Watched flake — PowerSync's download stream never establishes (#246)
+
+Seen **once**, on `helm-e2e` run
+[29251456225](https://github.com/TiagoJVO/beekeepingit/actions/runs/29251456225)
+attempt 2 (2026-07-13), and not reproduced since. It is **not fixed** — it is
+watched, because the one occurrence predates the diagnostics that would settle
+it. Read this before re-diagnosing from scratch.
+
+**Signature.** The fresh-client download-convergence assertion in
+`tests/slice.spec.ts` times out while everything else passes. In the Playwright
+trace: `GET /v1/sync/token` returns **200 every ~5.0s, continuously** (the
+PowerSync SDK's engine retry — fetch credentials, attempt the stream, fail,
+wait 5s), the sync pill stays **"Offline"**, uploads and local reads keep
+working. The connectivity probe (#55/#222) fires **once** and passes, so it is
+not the gate: its own backoff would be exponential, not a flat 5s. Deterministic
+within a run (both in-test attempts failed); a plain re-run was green on an
+equivalent image.
+
+**Already eliminated** — each checked at the time, do not re-spend a run on
+them: the SyncGate/probe; the enforced CSP (Report-Only); COEP on the worker
+scripts; the self-signed cert inside the SharedWorker; JWKS staleness in its
+simple form (powersync-service refreshes on an unknown `kid`); worker-asset and
+SDK version drift (both version-pinned by `pubspec.lock` + `setup_web`); and the
+`offline_access` scope change that was the original suspect (exonerated by the
+green re-run).
+
+**Why the first occurrence was undiagnosable.** The stream itself runs inside
+`powersync_sync.worker.js`, a SharedWorker whose network Playwright does not
+trace — the page-side evidence tops out at the 5s retry loop. The server side
+should have covered that, but `helm-e2e.yml`'s on-failure
+`kubectl logs -l app.kubernetes.io/part-of=beekeepingit` selects **pods** while
+that label was only on the **Deployments**, so it matched nothing and dumped
+nothing. Fixed in #246 (the shared label helper is now on the pod templates);
+#242 had already added explicit `powersync`/`sync`/`traefik` dumps.
+
+**Evidence a recurrence now leaves**, all in the job's "Diagnostics (on
+failure)" step: every owned pod's logs via the (now live) `part-of` selector;
+`--timestamps` on the `powersync`, `sync` and `traefik` dumps so they can be put
+on one timeline; each Deployment's `--previous` logs; and — from #246 — a
+`sync-token signing key ready` line with the signing **`kid`** logged by every
+`sync` boot.
+
+**Watch procedure**, on the next occurrence:
+
+1. Confirm the signature above from the `playwright-report` artifact (flat ~5s
+   `/v1/sync/token` 200s, probe passed once). A different cadence is a different
+   bug.
+2. In the diagnostics step, read `deploy/beekeepingit-powersync` first — it is
+   the only place a rejected sync-stream connection is named. Classify the
+   rejection: **auth** (a `kid`/JWKS/audience complaint), **replication** (the
+   engine has no checkpoint to serve yet), or **no connection reaching it at
+   all** (then it is the gateway — check the `traefik` dump).
+3. If it is auth, compare the `kid` PowerSync rejects with the `kid` in
+   `deploy/sync`'s `sync-token signing key ready` lines, and compare their
+   timestamps with the blanket `kubectl rollout restart` (#215) earlier in the
+   job. In dev/CI `sync` signs with an **ephemeral per-boot key**
+   (`services/sync/token/token.go`, `LoadOrGenerateKey`), so that restart
+   rotates the `kid` under a PowerSync that is restarting at the same moment.
+   A mismatch confirms the restart-ordering hypothesis — the fix is then to
+   order the restart (settle `sync` before `powersync`) or to give dev/CI a
+   stable signing key, and it stops being a guess.
+4. If it is replication, the same two dumps plus the CNPG logs show whether the
+   logical-replication slot survived the restart.
+5. Either way, attach the dumps to a **new issue** (or reopen #246) with the run
+   id — that is the evidence trail this section exists to make collectable.
+
+The restart ordering was deliberately **left unchanged** by #246: changing it
+speculatively would have removed the one signal that can still confirm or kill
+the hypothesis, on a flake that has not recurred in the ~7 weeks of `helm-e2e`
+runs since.
+
 ## Cold-stack robustness
 
 The e2e runs against a k3d stack the CI job brings up fresh each run, so the spec

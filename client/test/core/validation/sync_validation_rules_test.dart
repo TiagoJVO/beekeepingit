@@ -41,6 +41,7 @@ void main() {
       expect(rules.entities.keys.toSet(), {
         apiaryEntityType,
         apiaryCounterEntityType,
+        stockDeclarationEntityType,
         activityEntityType,
         journeyEntityType,
         journeyPlanItemEntityType,

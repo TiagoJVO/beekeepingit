@@ -294,6 +294,110 @@ void main() {
     });
   });
 
+  group('stock_declaration (#298, FR-AP-10)', () {
+    test('a complete put passes', () {
+      expect(
+        _failures(
+          _op(
+            stockDeclarationEntityType,
+            'put',
+            data: {
+              'dgav_registration_number': 'PT-1234',
+              'declared_on': '2026-08-31',
+              'total_hive_count': 42,
+              'breakdown': <dynamic>[
+                {'apiary_id': _otherUuid, 'hive_count': 42},
+              ],
+              'notes': null,
+              'updated_at': _now,
+            },
+          ),
+        ),
+        isEmpty,
+      );
+    });
+
+    test(
+      'a put without the two facts that make it a declaration is rejected',
+      () {
+        expect(
+          _failures(
+            _op(stockDeclarationEntityType, 'put', data: {'notes': 'draft'}),
+          ),
+          containsAll([
+            ('data.declared_on', 'required'),
+            ('data.total_hive_count', 'required'),
+          ]),
+        );
+      },
+    );
+
+    test('the same partial payload as a PATCH passes (#378)', () {
+      expect(
+        _failures(
+          _op(
+            stockDeclarationEntityType,
+            'patch',
+            data: {'notes': 'Corrected'},
+          ),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a mis-entered declaration can be deleted — unlike a counter, it has '
+        'its own lifecycle', () {
+      expect(
+        _failures(_op(stockDeclarationEntityType, 'delete', data: null)),
+        isEmpty,
+      );
+    });
+
+    test('a malformed declared_on is rejected', () {
+      expect(
+        _failures(
+          _op(
+            stockDeclarationEntityType,
+            'patch',
+            data: {'declared_on': '31/08/2026'},
+          ),
+        ),
+        contains(('data.declared_on', 'invalid')),
+      );
+    });
+
+    test('a negative total is rejected', () {
+      expect(
+        _failures(
+          _op(
+            stockDeclarationEntityType,
+            'patch',
+            data: {'total_hive_count': -1},
+          ),
+        ),
+        contains(('data.total_hive_count', 'out_of_range')),
+      );
+    });
+
+    test('the breakdown ARRAY passes untouched — it is server-only, and a '
+        'jsonObject rule here would reject every declaration ever written', () {
+      expect(
+        _failures(
+          _op(
+            stockDeclarationEntityType,
+            'patch',
+            data: {
+              'breakdown': <dynamic>[
+                {'apiary_id': _otherUuid, 'hive_count': 3},
+              ],
+            },
+          ),
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('activity', () {
     test('a complete put passes', () {
       expect(

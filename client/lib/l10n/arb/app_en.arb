@@ -668,7 +668,159 @@
   },
   "syncNeedsFixGenericProblem": "This change was rejected and needs your attention.",
   "@syncNeedsFixGenericProblem": {
-    "description": "Needs-fix list row fallback message when the server returned no field-level detail"
+    "description": "Needs-fix list row fallback message when the server returned no field-level detail, or none of it could be mapped to safe localized copy (#426/#443)"
+  },
+  "syncNeedsFixFieldProblem": "{field}: {problem}",
+  "@syncNeedsFixFieldProblem": {
+    "description": "Needs-fix message composed from a localized field label and the localized rule it broke (#443) — never the server's raw English validation text",
+    "placeholders": {
+      "field": {
+        "type": "String"
+      },
+      "problem": {
+        "type": "String"
+      }
+    }
+  },
+  "syncNeedsFixRuleRequired": "this is required.",
+  "@syncNeedsFixRuleRequired": {
+    "description": "Needs-fix rule fragment for the server's `required` rejection code, composed into syncNeedsFixFieldProblem (#443)"
+  },
+  "syncNeedsFixRuleInvalid": "this value isn't valid.",
+  "@syncNeedsFixRuleInvalid": {
+    "description": "Needs-fix rule fragment for the server's `invalid` rejection code (#443)"
+  },
+  "syncNeedsFixRuleOutOfRange": "this value is outside the allowed range.",
+  "@syncNeedsFixRuleOutOfRange": {
+    "description": "Needs-fix rule fragment for the server's `out_of_range` rejection code (#443)"
+  },
+  "syncNeedsFixRuleTooLong": "this text is too long.",
+  "@syncNeedsFixRuleTooLong": {
+    "description": "Needs-fix rule fragment for the server's `too_long` rejection code (#443)"
+  },
+  "syncNeedsFixRuleNotFound": "this no longer exists, or you no longer have access to it.",
+  "@syncNeedsFixRuleNotFound": {
+    "description": "Needs-fix rule fragment for the server's `not_found` rejection code — a referenced apiary/journey/member the organization no longer owns (#443)"
+  },
+  "syncNeedsFixRuleAttributeRequired": "an entry here still needs filling in.",
+  "@syncNeedsFixRuleAttributeRequired": {
+    "description": "Needs-fix rule fragment for a `required` rejection on an activity's per-type attribute bag (#443) — phrased about the entries inside the bag, since the server reports one error per offending key and they all collapse onto the single \"Details\" label"
+  },
+  "syncNeedsFixRuleAttributeInvalid": "an entry here isn't valid.",
+  "@syncNeedsFixRuleAttributeInvalid": {
+    "description": "Needs-fix rule fragment for an `invalid` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleAttributeTooLong": "an entry here is too long.",
+  "@syncNeedsFixRuleAttributeTooLong": {
+    "description": "Needs-fix rule fragment for a `too_long` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleAttributeOutOfRange": "an entry here is outside the allowed range.",
+  "@syncNeedsFixRuleAttributeOutOfRange": {
+    "description": "Needs-fix rule fragment for an `out_of_range` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleNonNegative": "this must be 0 or more.",
+  "@syncNeedsFixRuleNonNegative": {
+    "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)"
+  },
+  "syncNeedsFixRuleLatitudeRange": "this must be between -90 and 90.",
+  "@syncNeedsFixRuleLatitudeRange": {
+    "description": "Needs-fix rule fragment for an out-of-range latitude (#443)"
+  },
+  "syncNeedsFixRuleLongitudeRange": "this must be between -180 and 180.",
+  "@syncNeedsFixRuleLongitudeRange": {
+    "description": "Needs-fix rule fragment for an out-of-range longitude (#443)"
+  },
+  "syncNeedsFixFieldName": "Name",
+  "@syncNeedsFixFieldName": {
+    "description": "Needs-fix field label for an apiary's or journey's name (#443)"
+  },
+  "syncNeedsFixFieldTitle": "Title",
+  "@syncNeedsFixFieldTitle": {
+    "description": "Needs-fix field label for a todo's title (#443)"
+  },
+  "syncNeedsFixFieldDescription": "Description",
+  "@syncNeedsFixFieldDescription": {
+    "description": "Needs-fix field label for a todo's description (#443)"
+  },
+  "syncNeedsFixFieldNotes": "Notes",
+  "@syncNeedsFixFieldNotes": {
+    "description": "Needs-fix field label for an apiary's notes (#443)"
+  },
+  "syncNeedsFixFieldPlace": "Place label",
+  "@syncNeedsFixFieldPlace": {
+    "description": "Needs-fix field label for an apiary's place label — deliberately the same wording as apiaryPlaceLabelLabel, the label on the form the Fix action opens (#443)"
+  },
+  "syncNeedsFixFieldLocation": "Location",
+  "@syncNeedsFixFieldLocation": {
+    "description": "Needs-fix field label for an apiary's location (#443)"
+  },
+  "syncNeedsFixFieldLatitude": "Latitude",
+  "@syncNeedsFixFieldLatitude": {
+    "description": "Needs-fix field label for an apiary location's latitude (#443)"
+  },
+  "syncNeedsFixFieldLongitude": "Longitude",
+  "@syncNeedsFixFieldLongitude": {
+    "description": "Needs-fix field label for an apiary location's longitude (#443)"
+  },
+  "syncNeedsFixFieldHiveCount": "Number of hives",
+  "@syncNeedsFixFieldHiveCount": {
+    "description": "Needs-fix field label for an apiary's hive count — deliberately the same wording as hiveCountLabel, the label on the form the Fix action opens (#443)"
+  },
+  "syncNeedsFixFieldCount": "Count",
+  "@syncNeedsFixFieldCount": {
+    "description": "Needs-fix field label for an apiary counter's value (#443)"
+  },
+  "syncNeedsFixFieldCountType": "Count type",
+  "@syncNeedsFixFieldCountType": {
+    "description": "Needs-fix field label for an apiary counter's type (#443)"
+  },
+  "syncNeedsFixFieldApiary": "Apiary",
+  "@syncNeedsFixFieldApiary": {
+    "description": "Needs-fix field label for the apiary a record belongs to (#443)"
+  },
+  "syncNeedsFixFieldJourney": "Journey",
+  "@syncNeedsFixFieldJourney": {
+    "description": "Needs-fix field label for the journey a record belongs to (#443)"
+  },
+  "syncNeedsFixFieldAssignee": "Assignee",
+  "@syncNeedsFixFieldAssignee": {
+    "description": "Needs-fix field label for a todo's assignee (#443)"
+  },
+  "syncNeedsFixFieldActivityType": "Activity type",
+  "@syncNeedsFixFieldActivityType": {
+    "description": "Needs-fix field label for an activity's type — deliberately the same wording as activityTypeFieldLabel (#443)"
+  },
+  "syncNeedsFixFieldMainActivityType": "Main activity type",
+  "@syncNeedsFixFieldMainActivityType": {
+    "description": "Needs-fix field label for a journey's main activity type — deliberately the same wording as journeyMainActivityTypeLabel (#443)"
+  },
+  "syncNeedsFixFieldDate": "Date",
+  "@syncNeedsFixFieldDate": {
+    "description": "Needs-fix field label for the date an activity occurred (#443)"
+  },
+  "syncNeedsFixFieldDueDate": "Due date",
+  "@syncNeedsFixFieldDueDate": {
+    "description": "Needs-fix field label for a todo's due date (#443)"
+  },
+  "syncNeedsFixFieldCompletedAt": "Completed at",
+  "@syncNeedsFixFieldCompletedAt": {
+    "description": "Needs-fix field label for a todo's completion timestamp — deliberately the same wording as todoCompletedAtLabel (#443)"
+  },
+  "syncNeedsFixFieldPriority": "Priority",
+  "@syncNeedsFixFieldPriority": {
+    "description": "Needs-fix field label for a todo's priority (#443)"
+  },
+  "syncNeedsFixFieldStatus": "Status",
+  "@syncNeedsFixFieldStatus": {
+    "description": "Needs-fix field label for a journey's or todo's status (#443)"
+  },
+  "syncNeedsFixFieldDetails": "Details",
+  "@syncNeedsFixFieldDetails": {
+    "description": "Needs-fix field label standing in for an activity's per-type attribute bag — the individual attribute keys are internal schema names and are never rendered (#443)"
+  },
+  "syncNeedsFixFieldActivityDefaults": "Defaults for activities",
+  "@syncNeedsFixFieldActivityDefaults": {
+    "description": "Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)"
   },
   "syncNeedsFixLocalProblem": "This change wasn't sent yet — please correct it.",
   "@syncNeedsFixLocalProblem": {

@@ -5,7 +5,8 @@
     "Cross-organization ownership of apiary_id / journey_id / assignee_id — needs server state the device does not have offline.",
     "The per-activity-type attribute-bag schema (services/activities/api/types.go ValidateActivity) — a rich schema, not a mechanical constraint.",
     "The extensible controlled vocabularies counter_type, main_activity_type, journey status and todo priority/status (D-20). A frozen client copy would PERMANENTLY reject a value a newer server accepts (a newer vocabulary value can reach an older client by down-sync and be re-uploaded), with no server to overrule it — the asymmetry makes mirroring them worse than not mirroring them.",
-    "The apiary 'patch must change at least one field' rule (services/apiaries/api/sync.go) — defined over an exact field list, so a field added server-side would make the client reject valid patches, for no user-visible benefit.",
+    "The 'patch must change at least one field' rules (apiary in services/apiaries/api/sync.go, stock_declaration in declarations.go) — each defined over an exact field list, so a field added server-side would make the client reject valid patches, for no user-visible benefit.",
+    "A stock_declaration's breakdown snapshot (validateBreakdown, services/apiaries/api/declarations.go) — a bounded array of objects whose contents the server never reads. Its shape rules do not fit the field-check vocabulary here, and the client is the side that BUILDS it, so a client-side re-check would only restate the writer's own invariant.",
     "Batch-size and body-size caps (maxBatchOps, maxSyncBatchBodyBytes) — properties of a whole request, not of a queued edit the user can fix."
   ],
   "envelope": {
@@ -194,6 +195,71 @@
               "limit": 0,
               "code": "out_of_range",
               "message": "value must be >= 0"
+            }
+          ]
+        }
+      ]
+    },
+    "stock_declaration": {
+      "source": "services/apiaries/api/declarations.go validateDeclarationOp",
+      "ops": {
+        "allowed": ["put", "patch", "delete"],
+        "code": "invalid",
+        "message": "op must be put, patch or delete"
+      },
+      "fields": [
+        {
+          "name": "declared_on",
+          "checks": [
+            {
+              "kind": "required",
+              "on": ["put"],
+              "code": "required",
+              "message": "declared_on is required"
+            },
+            {
+              "kind": "date",
+              "code": "invalid",
+              "message": "declared_on must be a date in YYYY-MM-DD form"
+            }
+          ]
+        },
+        {
+          "name": "total_hive_count",
+          "checks": [
+            {
+              "kind": "required",
+              "on": ["put"],
+              "code": "required",
+              "message": "total_hive_count is required"
+            },
+            {
+              "kind": "min",
+              "limit": 0,
+              "code": "out_of_range",
+              "message": "total_hive_count must be >= 0"
+            }
+          ]
+        },
+        {
+          "name": "dgav_registration_number",
+          "checks": [
+            {
+              "kind": "maxLength",
+              "limit": 50,
+              "code": "too_long",
+              "message": "dgav_registration_number must be at most 50 characters"
+            }
+          ]
+        },
+        {
+          "name": "notes",
+          "checks": [
+            {
+              "kind": "maxLength",
+              "limit": 2000,
+              "code": "too_long",
+              "message": "notes must be at most 2000 characters"
             }
           ]
         }
