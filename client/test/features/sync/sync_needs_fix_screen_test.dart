@@ -37,14 +37,103 @@ void main() {
       expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
       expect(find.byKey(const Key('needs-fix-r2')), findsOneWidget);
       // The server's raw field-level message is NOT surfaced — a localized,
-      // non-technical message is shown instead (#426).
+      // non-technical message is shown instead (#426), now mapped from the
+      // rejection's (field, code) pair rather than blanket-generic (#443).
       expect(find.text('value must be >= 0'), findsNothing);
-      expect(
-        find.text('This change was rejected and needs your attention.'),
-        findsWidgets,
-      );
+      expect(find.text('Count: must be 0 or more.'), findsNWidgets(2));
     },
   );
+
+  group('rejection-code → localized field guidance (#443)', () {
+    testWidgets(
+      'maps a known (field, code) pair to specific localized guidance instead '
+      'of the blanket generic message',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'apiary',
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.hive_count","code":"out_of_range","message":"hive_count must be >= 0"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Hive count: must be 0 or more.'), findsOneWidget);
+        expect(find.textContaining('hive_count'), findsNothing);
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('renders one line per mapped field problem', (tester) async {
+      final store = _FakeRejectedStore([
+        _row(
+          id: 'r1',
+          entityType: 'todo',
+          errorDetail:
+              '{"detail":"one or more ops are invalid","errors":['
+              '{"field":"data.title","code":"required","message":"title is required"},'
+              '{"field":"data.due_date","code":"invalid","message":"due_date must be a YYYY-MM-DD date"}'
+              ']}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Title: this is required.'), findsOneWidget);
+      expect(find.text("Due date: this value isn't valid."), findsOneWidget);
+      expect(find.textContaining('due_date'), findsNothing);
+    });
+
+    testWidgets(
+      'falls back to the generic message when the server reports a field the '
+      'app has no copy for (a new validator can never leak by default)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'apiary',
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.internal_column","code":"invalid","message":"internal_column must be a widget"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.textContaining('internal_column'), findsNothing);
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'falls back to the problem-level error_code when the op carries no '
+      'field detail (a collateral op of an atomic push)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'apiary',
+            errorCode: 'auth.forbidden',
+            errorDetail: '{"detail":"not allowed","errors":[]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text("You don't have permission to make this change."),
+          findsOneWidget,
+        );
+      },
+    );
+  });
 
   testWidgets(
     'does not leak a raw snake_case DB column name from the server detail — '
@@ -371,13 +460,14 @@ Map<String, Object?> _row({
   String fixApiaryId = 'apiary-1',
   String? payload,
   String? errorDetail,
+  String errorCode = 'validation.failed',
 }) => {
   'id': id,
   'entity_type': entityType,
   'fix_apiary_id': fixApiaryId,
   'op': 'patch',
   'payload': payload ?? '{}',
-  'error_code': 'validation.failed',
+  'error_code': errorCode,
   'error_detail':
       errorDetail ??
       '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',

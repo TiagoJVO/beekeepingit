@@ -6,6 +6,7 @@ import '../../core/sync/powersync_schema.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_widgets.dart';
 import 'sync_rejected_repository.dart';
+import 'sync_rejection_messages.dart';
 
 /// The **needs-fix list** (sync.md §8 notify-and-fix, D-12, EPIC-06 #7): the
 /// offline writes the server permanently rejected, retained in the local
@@ -112,10 +113,17 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
     // It is English-only (breaks EN/PT i18n) and can embed internal DB
     // field/column names — a rejected journey once rendered
     // "default_attributes must be a JSON object", leaking the column name.
-    // Show a localized, non-technical message; the raw detail
-    // (op.primaryMessage / op.detail) stays confined to the dead-letter row
-    // and the connector's log for diagnostics only.
-    final message = l10n.syncNeedsFixGenericProblem;
+    // The raw detail (op.primaryMessage / op.detail) therefore stays confined
+    // to the dead-letter row and the connector's log, for diagnostics only.
+    // #443: the machine-readable half of the same detail — the `(field, code)`
+    // pairs — IS safe, so it is mapped to app-owned EN/PT copy here, giving
+    // back the specific guidance #426's blanket generic message threw away.
+    // Anything unmapped still degrades to that generic message.
+    final messages = localizedRejectionMessages(
+      l10n,
+      fieldIssues: op.fieldIssues,
+      errorCode: op.errorCode,
+    );
 
     return Card(
       key: Key('needs-fix-${op.id}'),
@@ -140,7 +148,19 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
                     children: [
                       Text(title, style: theme.textTheme.titleSmall),
                       const SizedBox(height: 2),
-                      Text(message, style: theme.textTheme.bodyMedium),
+                      // One line per mapped field problem (localizedRejection
+                      // Messages caps and de-duplicates them, and is never
+                      // empty). Separate Text widgets rather than one joined
+                      // string so each problem is its own semantics node for
+                      // a screen reader (WCAG 2.2 AA).
+                      for (final (i, message) in messages.indexed)
+                        Padding(
+                          padding: EdgeInsets.only(top: i == 0 ? 0 : 2),
+                          child: Text(
+                            message,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
                     ],
                   ),
                 ),

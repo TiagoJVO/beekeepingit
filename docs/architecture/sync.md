@@ -559,6 +559,18 @@ of the local slice by `clear()` on logout / membership loss (§3.5). Every **oth
 (`401/403/404/429/…`) is treated as transient and **left queued** for idempotent forward-retry
 (§6.2), so a recoverable auth/route fault is never discarded.
 
+**What the needs-fix row actually says (#426/#443).** The server's `errors[].message` is
+**English-only and can name internal DB columns** ("default_attributes must be a JSON object"),
+so it is **never rendered** — it stays in the dead-letter row and the connector's log for
+diagnostics. The **machine-readable** half of the same problem body is safe, and is what the UI
+reads: `client/lib/features/sync/sync_rejection_messages.dart` maps each `(field, code)` pair
+onto **app-owned EN/PT copy** (a localized field label + the rule it broke), falling back to the
+problem-level `code` and then to a generic message. The mapping is an **allow-list**: a field or
+code the client has no copy for degrades to the generic message, so a service adding a new
+validator can never leak by default. The module deliberately depends on neither the dead-letter
+read model nor widgets, so the client-side pre-push revalidation (§9) can render locally-detected
+failures through the same copy.
+
 Accessibility (WCAG 2.2 AA, gloves-friendly) and EN/PT apply as everywhere. Remaining
 polish of the needs-fix screens/interaction design stays **EPIC-06**'s (#7).
 

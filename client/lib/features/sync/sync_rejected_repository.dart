@@ -6,6 +6,7 @@ import '../../core/sync/local_store.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import 'sync_rejection_messages.dart';
 
 /// One rejected offline write held in the local `sync_rejected_ops` dead-letter
 /// (powersync_schema.dart) — the read model behind the needs-fix list
@@ -21,6 +22,7 @@ class RejectedOp {
     required this.op,
     required this.errorCode,
     required this.fieldErrors,
+    required this.fieldIssues,
     required this.detail,
     this.displayName,
     this.journeyId,
@@ -61,6 +63,15 @@ class RejectedOp {
   /// push (valid itself, rolled back because a sibling op failed) or the body
   /// carried no field detail.
   final List<String> fieldErrors;
+
+  /// The **machine-readable** half of the same field errors — `(field, code)`
+  /// pairs with no server prose in them (#443). This is what the needs-fix
+  /// screen renders from, via `sync_rejection_messages.dart`'s allow-listed
+  /// EN/PT mapping; [fieldErrors] stays diagnostics-only for the same reason
+  /// [primaryMessage] does. Same order and length as [fieldErrors] is NOT
+  /// guaranteed — an error carrying a `code` but no `message` appears here
+  /// and not there.
+  final List<RejectedFieldIssue> fieldIssues;
 
   /// The problem's human `detail`, shown when there are no field-level messages.
   final String detail;
@@ -140,8 +151,9 @@ class SyncRejectedRepository {
       fixApiaryId: r['fix_apiary_id'] as String,
       op: r['op'] as String,
       errorCode: r['error_code'] as String? ?? '',
-      fieldErrors: parsed.$1,
-      detail: parsed.$2,
+      fieldErrors: parsed.messages,
+      fieldIssues: parsed.issues,
+      detail: parsed.detail,
       displayName: _displayNameFor(entityType, payloadData),
       journeyId: payloadData?['journey_id'] as String?,
     );
@@ -184,23 +196,43 @@ class SyncRejectedRepository {
   }
 
   /// Parses the connector's stored `error_detail` JSON
-  /// (`{ detail, errors: [{field, code, message}] }`) into (field messages,
-  /// detail). Tolerant of a malformed/absent value — the row must still render
-  /// (with a generic message) rather than throw, matching the connector's own
-  /// best-effort parsing.
-  (List<String>, String) _parseDetail(String? raw) {
-    if (raw == null || raw.isEmpty) return (const [], '');
+  /// (`{ detail, errors: [{field, code, message}] }`) into the raw field
+  /// messages (diagnostics), the machine-readable `(field, code)` issues the
+  /// UI copy is derived from (#443), and the problem detail. Tolerant of a
+  /// malformed/absent value — the row must still render (with a generic
+  /// message) rather than throw, matching the connector's own best-effort
+  /// parsing.
+  ({List<String> messages, List<RejectedFieldIssue> issues, String detail})
+  _parseDetail(String? raw) {
+    const empty = (
+      messages: <String>[],
+      issues: <RejectedFieldIssue>[],
+      detail: '',
+    );
+    if (raw == null || raw.isEmpty) return empty;
     try {
       final json = jsonDecode(raw) as Map<String, dynamic>;
-      final errors = json['errors'] as List<dynamic>?;
-      final messages = <String>[
-        for (final e in errors ?? const [])
-          if (e is Map<String, dynamic> && (e['message'] as String?) != null)
-            e['message'] as String,
+      final errors = <Map<String, dynamic>>[
+        for (final e in (json['errors'] as List<dynamic>?) ?? const [])
+          if (e is Map<String, dynamic>) e,
       ];
-      return (messages, (json['detail'] as String?) ?? '');
+      return (
+        messages: <String>[
+          for (final e in errors)
+            if (e['message'] case final String message) message,
+        ],
+        issues: <RejectedFieldIssue>[
+          for (final e in errors)
+            if (e['field'] case final String field)
+              RejectedFieldIssue(
+                field: field,
+                code: (e['code'] as String?) ?? '',
+              ),
+        ],
+        detail: (json['detail'] as String?) ?? '',
+      );
     } catch (_) {
-      return (const [], '');
+      return empty;
     }
   }
 }
