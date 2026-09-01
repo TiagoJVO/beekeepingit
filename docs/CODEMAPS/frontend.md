@@ -136,6 +136,9 @@ BeekeepingitConnector (powersync_connector.dart):
      400/422 → retain in sync_rejected_ops dead-letter + surface (D-12) + complete
      else → throw → stays queued (idempotent forward-retry)
 SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reconnect (FR-OF-3)
+lww_delete.dart: every synced delete goes through deleteWithLwwStamp() — stamps the device
+  delete time into the trackMetadata `_metadata` column so the op's LWW comparator survives
+  retries AND app restarts; read back in _toOp via CrudEntry.metadata (#276, sync.md §4.5)
 ```
 
 ## Client-side schema (core/sync/powersync_schema.dart)

@@ -40,7 +40,7 @@ const journeyEntityType = 'journey';
 /// establishes for a parent-row-plus-child-rows shape owned by one service.
 /// Unlike apiary_counters, a plan item's local row `id` IS its stable
 /// server identity too (mirrors [activitiesTable]'s convention) — so
-/// removing an apiary from a journey's plan is a plain local DELETE, no
+/// removing an apiary from a journey's plan is a plain local delete, no
 /// identity-enrichment needed before upload (powersync_connector.dart's
 /// `_toOp` doc comment).
 const journeyPlanItemsTable = 'journey_plan_items';
@@ -160,6 +160,29 @@ const dedupKeyColumn = 'dedup_key';
 /// mirrors that — the repository reads the hive count via a local LEFT JOIN
 /// (0 when no row exists) and writes it as a counter row, never as an
 /// apiaries column.
+/// Why several tables below set `trackMetadata: true` (#276, FR-OF-1, D-12).
+///
+/// A queued DELETE carries **no payload** (`CrudEntry.opData` is null for a
+/// delete), so it has no `updated_at` of its own — yet `updated_at` is the
+/// last-write-wins comparator and a delete participates in LWW like any other
+/// field-set (sync.md §4.3/§4.5). Inventing one at *upload* time makes a
+/// delete's comparator drift later on every retry and across every app
+/// restart, so a delete that sat offline could spuriously beat a genuinely
+/// newer concurrent edit. `trackMetadata` adds the hidden `_metadata` column
+/// PowerSync **persists with the queued op**, letting `lww_delete.dart`'s
+/// `deleteWithLwwStamp` capture the device time once at delete-time and the
+/// connector read it back off `CrudEntry.metadata` (`lwwTimestampFor`).
+///
+/// It is enabled on exactly the tables this client issues DELETEs against —
+/// [apiariesTable], [activitiesTable], [journeysTable],
+/// [journeyPlanItemsTable] and [todosTable]. Deliberately **not** on:
+/// - [apiaryCountersTable] — a counter has no lifecycle apart from its apiary
+///   and is never deleted locally (the owning service rejects a counter delete
+///   op; apiaries_repository.dart's `delete` doc), so a hidden column and an
+///   extra trigger there would be dead weight;
+/// - [auditLogTable]/[syncConflictLogTable] — never written locally at all;
+/// - [rejectedOpsTable] — local-only, and the SDK asserts that a local-only
+///   table cannot track metadata.
 const appSchema = Schema([
   Table(apiariesTable, [
     Column.text('organization_id'),
@@ -170,7 +193,7 @@ const appSchema = Schema([
     Column.text('updated_at'),
     Column.real('location_lon'),
     Column.real('location_lat'),
-  ]),
+  ], trackMetadata: true),
   // apiary_counters (#256): one row per (apiary, counter_type) — the server
   // enforces that uniqueness (a UNIQUE constraint + upsert keyed by
   // (apiary_id, counter_type), never by this table's client-generated row
@@ -209,7 +232,7 @@ const appSchema = Schema([
     Column.text('attributes'),
     Column.text('created_at'),
     Column.text('updated_at'),
-  ]),
+  ], trackMetadata: true),
   // journeys (#45, FR-JO-4, D-21): name + one main activity type + lifecycle
   // status, matching the owning service's shape
   // (services/journeys/store/migrations/00001_create_journeys.sql).
@@ -227,7 +250,7 @@ const appSchema = Schema([
     Column.text('default_attributes'),
     Column.text('created_at'),
     Column.text('updated_at'),
-  ]),
+  ], trackMetadata: true),
   // journey_plan_items (#45, FR-JO-4): the "apiaries to visit" plan, one row
   // per (journey, apiary) pair — a separate table/entity type from
   // [journeysTable] (this table's own doc comment above explains why).
@@ -236,7 +259,7 @@ const appSchema = Schema([
     Column.text('journey_id'),
     Column.text('apiary_id'),
     Column.text('created_at'),
-  ]),
+  ], trackMetadata: true),
   // todos (#50, FR-TD-1, FR-TEN-2): one row per todo, matching the owning
   // service's shape (services/todos/store/migrations/00001_create_todos.sql,
   // 00003_add_apiary_id.sql). `organization_id` is never written locally by
@@ -261,7 +284,7 @@ const appSchema = Schema([
     Column.text('apiary_id'),
     Column.text('created_at'),
     Column.text('updated_at'),
-  ]),
+  ], trackMetadata: true),
   // audit_log (#60, FR-HIS-1): the applied create/update/delete trail, streamed
   // read-only from every owning service's own `<schema>.audit_log` (see
   // [auditLogTable]'s doc for why they share one local table). Column set

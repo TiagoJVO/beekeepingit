@@ -44,9 +44,37 @@ class FakeLocalStore implements LocalStoreEngine {
     List<Object?> args = const [],
   ]) async => _select(sql, args);
 
+  /// The delete-time LWW stamp (#276) each deleted row id was removed with —
+  /// what `deleteWithLwwStamp` wrote into the hidden `_metadata` column and
+  /// PowerSync persists with the queued op.
+  final Map<String, String> deleteStamps = {};
+
   @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
+    // #276's metadata-carrying delete form (`UPDATE <table> SET _deleted =
+    // TRUE, _metadata = ? WHERE id = ?`) — checked BEFORE the plain
+    // `UPDATE JOURNEYS` branch below, which it would otherwise shadow. The
+    // real core extension turns exactly this statement into a local row
+    // delete plus a queued DELETE op carrying the metadata.
+    if (normalized.startsWith(
+      'UPDATE $journeyPlanItemsTable SET _DELETED'.toUpperCase(),
+    )) {
+      final id = args[1] as String;
+      deleteStamps[id] = args[0] as String;
+      planRows.removeWhere((r) => r['id'] == id);
+      _notify();
+      return;
+    }
+    if (normalized.startsWith(
+      'UPDATE $journeysTable SET _DELETED'.toUpperCase(),
+    )) {
+      final id = args[1] as String;
+      deleteStamps[id] = args[0] as String;
+      rows.removeWhere((r) => r['id'] == id);
+      _notify();
+      return;
+    }
     if (normalized.startsWith('INSERT INTO $journeysTable'.toUpperCase())) {
       // (id, name, main_activity_type, status, default_attributes,
       //  created_at, updated_at)
@@ -81,16 +109,6 @@ class FakeLocalStore implements LocalStoreEngine {
       row['status'] = args[2];
       row['default_attributes'] = args[3];
       row['updated_at'] = args[4];
-    } else if (normalized.startsWith(
-      'DELETE FROM $journeyPlanItemsTable'.toUpperCase(),
-    )) {
-      final id = args[0];
-      planRows.removeWhere((r) => r['id'] == id);
-    } else if (normalized.startsWith(
-      'DELETE FROM $journeysTable'.toUpperCase(),
-    )) {
-      final id = args[0];
-      rows.removeWhere((r) => r['id'] == id);
     } else {
       throw UnsupportedError('FakeLocalStore.execute: unhandled SQL: $sql');
     }
@@ -723,6 +741,41 @@ void main() {
         expect(store.planRows, hasLength(1));
       },
     );
+
+    test('captures the delete-time LWW stamp on the queued op (#276, '
+        'FR-OF-1)', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+      );
+
+      await repo.delete(id);
+
+      expect(DateTime.parse(store.deleteStamps[id]!).isUtc, isTrue);
+    });
+
+    test('a plan-item removed by update() is also delete-time stamped '
+        '(#276) — the plan diff queues a real delete op too', () async {
+      final id = await repo.create(
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        apiaryIds: const ['a1'],
+      );
+      final planItemId = store.planRows.single['id'] as String;
+
+      await repo.update(
+        id,
+        name: 'Journey',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+        apiaryIds: const [],
+        defaultAttributes: const {},
+      );
+
+      expect(store.planRows, isEmpty);
+      expect(DateTime.parse(store.deleteStamps[planItemId]!).isUtc, isTrue);
+    });
   });
 
   group('JourneysRepository.watchAll() org-scoping (FR-TEN-2)', () {

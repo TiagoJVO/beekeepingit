@@ -601,6 +601,96 @@ void main() {
       expect(cache, hasLength(2));
     });
   });
+
+  group('lwwTimestampFor — the DURABLE delete stamp (#276: survives an app '
+      'restart with the delete still queued)', () {
+    test('a queued delete uses the timestamp captured at delete-time and '
+        'persisted on the op, not a fresh now()', () {
+      // What the op carries after `deleteWithLwwStamp` wrote it into the
+      // hidden `_metadata` column: PowerSync persists it with the queued op,
+      // so it is still there after an app restart — unlike the in-memory
+      // cache, which starts empty on every launch.
+      final cache = <String, String>{};
+
+      final result = lwwTimestampFor(
+        'row-1',
+        null,
+        cache,
+        metadata: '2026-07-14T10:00:00.000Z',
+      );
+
+      expect(result, '2026-07-14T10:00:00.000Z');
+      // Nothing is cached for it — the durable value is authoritative, so
+      // the in-memory cache never shadows or drifts from it.
+      expect(cache, isEmpty);
+    });
+
+    test('a restart mid-retry replays the SAME timestamp — the ever-later '
+        'timestamp the in-memory cache could not prevent', () {
+      // First launch: the op uploads, fails transiently, stays queued.
+      final beforeRestart = lwwTimestampFor(
+        'row-1',
+        null,
+        <String, String>{},
+        metadata: '2026-07-14T10:00:00.000Z',
+      );
+      // App restarts → a brand-new connector with a brand-new empty cache.
+      final afterRestart = lwwTimestampFor(
+        'row-1',
+        null,
+        <String, String>{},
+        metadata: '2026-07-14T10:00:00.000Z',
+      );
+
+      expect(
+        afterRestart,
+        beforeRestart,
+        reason:
+            'the delete must not get a later LWW comparator just because '
+            'the app was restarted while it was still queued',
+      );
+    });
+
+    test('a put/patch payload\'s own updated_at still wins over any '
+        'metadata', () {
+      final result = lwwTimestampFor(
+        'row-1',
+        {'updated_at': '2026-07-14T09:00:00Z'},
+        <String, String>{},
+        metadata: '2026-07-14T10:00:00.000Z',
+      );
+
+      expect(result, '2026-07-14T09:00:00Z');
+    });
+
+    test('a delete queued by a PRE-#276 app version (no metadata) still '
+        'falls back to the in-memory once-per-op cache', () async {
+      final cache = <String, String>{};
+
+      final first = lwwTimestampFor('row-1', null, cache, metadata: null);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final retry = lwwTimestampFor('row-1', null, cache, metadata: null);
+
+      expect(retry, first);
+      expect(cache, hasLength(1));
+    });
+
+    test('an unparseable metadata string is ignored rather than sent as the '
+        'LWW comparator', () {
+      final cache = <String, String>{};
+
+      final result = lwwTimestampFor(
+        'row-1',
+        null,
+        cache,
+        metadata: 'not-a-timestamp',
+      );
+
+      expect(result, isNot('not-a-timestamp'));
+      expect(DateTime.tryParse(result), isNotNull);
+      expect(cache, hasLength(1), reason: 'fell back to the cache');
+    });
+  });
 }
 
 /// A minimal [http.Client] that records whether [close] was called, so

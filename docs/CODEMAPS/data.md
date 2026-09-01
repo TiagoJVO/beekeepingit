@@ -171,6 +171,12 @@ Projection: server `location geography` → client `location_lon/lat` via `ST_X`
 in PowerSync Sync Rules (`infra/helm/.../powersync/values.yaml`). Tombstones excluded
 down-sync (no local `deleted_at`).
 
+`apiaries`, `activities`, `journeys`, `journey_plan_items`, `todos` also carry PowerSync's
+hidden `_metadata`/`_deleted` columns (`trackMetadata: true`) — never domain data: they exist
+only so a delete can persist its device-time LWW comparator with the queued op (#276,
+sync.md §4.5). Not on `apiary_counters` (never deleted locally) or the read-only/local-only
+tables.
+
 ## Migration history
 
 ```text
