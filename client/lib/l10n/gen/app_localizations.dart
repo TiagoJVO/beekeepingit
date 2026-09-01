@@ -362,6 +362,30 @@ abstract class AppLocalizations {
   /// **'Something went wrong. Please try again.'**
   String get profileGenericError;
 
+  /// Label for the read-only account email on the profile screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Account email'**
+  String get profileAccountEmailLabel;
+
+  /// Explains that the account email is owned by the identity provider.
+  ///
+  /// In en, this message translates to:
+  /// **'This is the email you signed in with. Change it with our sign-in provider, in a new tab.'**
+  String get profileAccountEmailHint;
+
+  /// Opens the identity provider account page in a new tab.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage account'**
+  String get profileManageAccountButton;
+
+  /// Screen-reader label for the read-only account email value.
+  ///
+  /// In en, this message translates to:
+  /// **'Account email: {email}'**
+  String profileAccountEmailSemantics(String email);
+
   /// Organization creation screen app bar title
   ///
   /// In en, this message translates to:

@@ -11,9 +11,10 @@ info:
   version: 0.1.0
   description: >-
     The authenticated caller's own profile (name, email, locale). On first login the
-    profile is get-or-created lazily (empty name/email); the client-side onboarding flow
-    then completes it via PATCH. `profile_complete` is derived (name and email both
-    non-empty), never stored (FR-ONB-1).
+    profile is get-or-created lazily with name/email SEEDED from the verified token
+    claims; the client-side onboarding flow then completes the name if the provider
+    emitted none. The email is the IdP-verified account address and is never set here.
+    `profile_complete` is derived (name non-empty), never stored (FR-ONB-1).
   license:
     name: AGPL-3.0-only
     identifier: AGPL-3.0-only
@@ -36,8 +37,10 @@ paths:
       summary: Get (or lazily create) the caller's profile
       description: >-
         Resolves the profile for the authenticated caller (JWT `sub`). If no
-        identity.users row exists yet, one is created with empty name/email so the
-        client can detect an incomplete profile and prompt onboarding.
+        identity.users row exists yet, one is created with name/email seeded from the
+        verified token claims, so a provider that supplies both completes onboarding's
+        profile step immediately; a missing `name` leaves the field empty and the client
+        prompts for it.
       tags: [Profile]
       responses:
         '200':
@@ -52,9 +55,9 @@ paths:
       operationId: updateProfile
       summary: Update the caller's profile (partial)
       description: >-
-        Accepts any subset of name/email/locale; omitted fields keep their current
-        value. Always returns the full updated Profile representation. Onboarding's
-        first submission sends name+email together.
+        Accepts any subset of name/locale; omitted fields keep their current value.
+        Always returns the full updated Profile representation. The email is owned by
+        the identity provider and is rejected here with 422 `read_only` (FR-ONB-1, D-7).
       tags: [Profile]
       requestBody:
         required: true
@@ -103,14 +106,24 @@ components:
               type: string
               format: email
               maxLength: 320
+              readOnly: true
+              description: >-
+                The IdP-verified account address, carried on the token. Changed at the
+                identity provider, never through this API (D-7).
+            email_verified:
+              type: boolean
+              readOnly: true
+              description: >-
+                Whether the provider reports the account address as verified. Sensitive
+                flows gate on this, never on the stored profile row (#170).
             locale:
               type: string
               description: BCP 47 language tag used for i18n (EN/PT today).
             profile_complete:
               type: boolean
               readOnly: true
-              description: Derived — true once both name and email are non-empty. Never stored.
-          required: [id, name, email, locale, profile_complete]
+              description: Derived — true once name is non-empty. Never stored.
+          required: [id, name, email, email_verified, locale, profile_complete]
 
     ProfileUpdate:
       type: object
@@ -120,10 +133,6 @@ components:
           type: string
           minLength: 1
           maxLength: 200
-        email:
-          type: string
-          format: email
-          maxLength: 320
         locale:
           type: string
       minProperties: 1

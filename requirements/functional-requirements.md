@@ -200,9 +200,27 @@ harvest, which requires visiting all apiaries).
 
 ## Onboarding — Profile & Organization (FR-ONB)
 
-- **FR-ONB-1** — On first login, users must **create their profile** (name, email,
-  and other relevant info). Profile completion is **enforced** before accessing
+- **FR-ONB-1** — On first login, users must **create their profile** (name and
+  other relevant info). Profile completion is **enforced** before accessing
   main features.
+  - _Amended (D-7 / EPIC-16 #365 follow-up, user-confirmed):_ the profile's
+    **email is not user-entered**. The account's address is the
+    **IdP-verified** one carried on the token (`email` + `email_verified`),
+    **seeded server-side** when the profile row is first created; the client
+    **displays it read-only** and links out to the provider's account page
+    (`OIDC_ACCOUNT_URL`) to change it — account identity lives at the IdP and
+    the app links out (D-7). The **name** is seeded the same way when the
+    provider emits a `name` claim; a token without one simply leaves the field
+    empty for the user to fill, so the gate still holds. Consequently
+    **profile completeness is `name` alone**, and `identity.users.email` is a
+    **cache** of the verified address, never input.
+  - _Security (#170):_ the stored profile email **authorizes nothing** and must
+    never be made to. Every decision that depends on an address — invitation
+    accept-on-login (FR-ONB-3) and the organization-creation gate (FR-ONB-2,
+    D-3/#362) — reads the **token's** verified `email` + `email_verified`,
+    never the profile row. Making the field read-only removes the surface that
+    made #170 exploitable; it does **not** relax that rule, which still holds
+    server-side.
 - **FR-ONB-2** — Before viewing apiaries, users must **create their organization**
   (name, address, and other relevant info; some fields may be optional).
   Organization completion is **enforced** before accessing main features.

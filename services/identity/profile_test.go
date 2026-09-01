@@ -182,6 +182,48 @@ func (f *profileFixture) token(t *testing.T, sub string) string {
 	return "Bearer " + f.idp.Mint(t, sub, profileTestAudience)
 }
 
+// decodeProfile unmarshals a successful profile response, failing the test
+// on a non-200 or a malformed body.
+func decodeProfile(t *testing.T, rec *httptest.ResponseRecorder) api.ProfileResponse {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var p api.ProfileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode profile: %v", err)
+	}
+	return p
+}
+
+// problemDoc is the RFC 9457 shape these handlers emit for a validation
+// failure, narrowed to the fields the assertions below read.
+type problemDoc struct {
+	Errors []struct {
+		Field   string `json:"field"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+func decodeProblem(t *testing.T, rec *httptest.ResponseRecorder) problemDoc {
+	t.Helper()
+	var p problemDoc
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	return p
+}
+
+// tokenWithClaims mints a bearer carrying extra claims. f.token above emits
+// only sub/aud/exp, so every first-seen SEEDING assertion (#365 follow-up)
+// needs this: the whole behaviour under test is what the handler does with
+// `name` / `email` / `email_verified`.
+func (f *profileFixture) tokenWithClaims(t *testing.T, sub string, extra map[string]any) string {
+	t.Helper()
+	return "Bearer " + f.idp.MintWithClaims(t, sub, profileTestAudience, extra)
+}
+
 // TestProfile_Unauthenticated asserts GET/PATCH both require a bearer token.
 func TestProfile_Unauthenticated(t *testing.T) {
 	f := newProfileFixture(t)
@@ -194,8 +236,154 @@ func TestProfile_Unauthenticated(t *testing.T) {
 	}
 }
 
+// TestProfile_FirstGetSeedsNameAndEmailFromVerifiedClaims is the regression
+// test for the bug #365 live testing reported: after signing in with Google,
+// the user was shown an EMPTY profile form and asked to retype the name and
+// address the provider had just verified. One GET, no PATCH, complete profile.
+func TestProfile_FirstGetSeedsNameAndEmailFromVerifiedClaims(t *testing.T) {
+	f := newProfileFixture(t)
+	bearer := f.tokenWithClaims(t, "sub-seeded", map[string]any{
+		"name": "Ana Silva", "email": "ana@example.com", "email_verified": true,
+	})
+
+	rec := f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	p := decodeProfile(t, rec)
+	if p.Name != "Ana Silva" || p.Email != "ana@example.com" {
+		t.Errorf("seeded name/email = %q/%q, want Ana Silva/ana@example.com", p.Name, p.Email)
+	}
+	if !p.EmailVerified {
+		t.Error("email_verified = false, want true (the token said so)")
+	}
+	if !p.ProfileComplete {
+		t.Error("profile_complete = false, want true - a seeded profile needs no onboarding step")
+	}
+}
+
+// TestProfile_FirstGetWithNoNameClaim_LeavesProfileIncomplete pins the
+// fail-soft half: a provider that emits no `name` must not break the flow,
+// it just leaves the gate closed so the client prompts for it.
+func TestProfile_FirstGetWithNoNameClaim_LeavesProfileIncomplete(t *testing.T) {
+	f := newProfileFixture(t)
+	bearer := f.tokenWithClaims(t, "sub-noname", map[string]any{
+		"email": "noname@example.com", "email_verified": true,
+	})
+
+	p := decodeProfile(t, f.do(t, http.MethodGet, "/v1/profile", bearer, nil))
+	if p.Name != "" {
+		t.Errorf("name = %q, want empty", p.Name)
+	}
+	if p.Email != "noname@example.com" {
+		t.Errorf("email = %q, want it seeded anyway", p.Email)
+	}
+	if p.ProfileComplete {
+		t.Error("profile_complete = true, want false - the name gate must still hold")
+	}
+}
+
+// TestProfile_FirstGet_UnverifiedEmailClaimIsNotSeeded keeps #170's blast
+// radius closed: an UNVERIFIED address must never enter identity.users.email,
+// or the cache would carry a value nobody proved control of.
+func TestProfile_FirstGet_UnverifiedEmailClaimIsNotSeeded(t *testing.T) {
+	f := newProfileFixture(t)
+	bearer := f.tokenWithClaims(t, "sub-unverified", map[string]any{
+		"name": "Mallory", "email": "victim@example.com", "email_verified": false,
+	})
+
+	if rec := f.do(t, http.MethodGet, "/v1/profile", bearer, nil); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var stored string
+	const q = "SELECT email FROM identity.users WHERE oidc_sub = $1"
+	if err := f.pool.QueryRow(t.Context(), q, "sub-unverified").Scan(&stored); err != nil {
+		t.Fatalf("read back stored email: %v", err)
+	}
+	if stored != "" {
+		t.Errorf("stored email = %q, want empty - an unverified claim must not be cached", stored)
+	}
+}
+
+// TestProfile_SubsequentLoginDoesNotOverwriteUserEditedName pins "seed once,
+// never re-sync": the ON CONFLICT branch deliberately ignores the seed, so a
+// later login can never clobber a name the user has since corrected.
+func TestProfile_SubsequentLoginDoesNotOverwriteUserEditedName(t *testing.T) {
+	f := newProfileFixture(t)
+	first := f.tokenWithClaims(t, "sub-stable", map[string]any{
+		"name": "Provider Name", "email": "stable@example.com", "email_verified": true,
+	})
+	f.do(t, http.MethodGet, "/v1/profile", first, nil)
+	f.do(t, http.MethodPatch, "/v1/profile", first, map[string]string{"name": "My Chosen Name"})
+
+	later := f.tokenWithClaims(t, "sub-stable", map[string]any{
+		"name": "Provider Renamed Me", "email": "stable@example.com", "email_verified": true,
+	})
+	p := decodeProfile(t, f.do(t, http.MethodGet, "/v1/profile", later, nil))
+	if p.Name != "My Chosen Name" {
+		t.Errorf("name = %q, want My Chosen Name - a later login must not re-sync over the user's edit", p.Name)
+	}
+}
+
+// TestProfile_EmailIsIdPSourced_NotUserSettable is #170's pin in its new
+// form. The attack is no longer "edit your own profile email" - the field is
+// refused outright - but the invariant it protected is unchanged.
+func TestProfile_EmailIsIdPSourced_NotUserSettable(t *testing.T) {
+	f := newProfileFixture(t)
+	bearer := f.tokenWithClaims(t, "sub-readonly", map[string]any{
+		"name": "Mallory", "email": "mallory@example.com", "email_verified": true,
+	})
+	f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+
+	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"email": "victim@example.com"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	p := decodeProblem(t, rec)
+	if len(p.Errors) != 1 || p.Errors[0].Field != "email" || p.Errors[0].Code != "read_only" {
+		t.Errorf("errors = %+v, want one email/read_only", p.Errors)
+	}
+
+	after := decodeProfile(t, f.do(t, http.MethodGet, "/v1/profile", bearer, nil))
+	if after.Email != "mallory@example.com" {
+		t.Errorf("email = %q, want the token's address unchanged", after.Email)
+	}
+}
+
+// TestProfile_PatchEmailOnly_Returns422ReadOnlyNotMissingField pins the check
+// ORDER: a body of only {"email": ...} must be told the field is read-only,
+// not that it sent no fields.
+func TestProfile_PatchEmailOnly_Returns422ReadOnlyNotMissingField(t *testing.T) {
+	f := newProfileFixture(t)
+	bearer := f.token(t, "sub-emailonly")
+	f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
+
+	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"email": "x@example.com"})
+	p := decodeProblem(t, rec)
+	if len(p.Errors) != 1 || p.Errors[0].Code != "read_only" {
+		t.Errorf("errors = %+v, want read_only rather than an at-least-one-field complaint", p.Errors)
+	}
+}
+
+// TestProfile_ProfileCompleteIsNameOnly - the email is no longer something
+// onboarding can complete, so it must not gate completeness.
+func TestProfile_ProfileCompleteIsNameOnly(t *testing.T) {
+	f := newProfileFixture(t)
+	bearer := f.tokenWithClaims(t, "sub-nameonly", map[string]any{"name": "Solo"})
+
+	p := decodeProfile(t, f.do(t, http.MethodGet, "/v1/profile", bearer, nil))
+	if p.Email != "" {
+		t.Errorf("email = %q, want empty (no verified claim)", p.Email)
+	}
+	if !p.ProfileComplete {
+		t.Error("profile_complete = false, want true - a name alone completes the profile")
+	}
+}
+
 // TestProfile_FirstGetCreatesRow asserts a brand-new sub's first GET
-// lazily creates the identity.users row with an incomplete profile.
+// lazily creates the identity.users row. With no name/email claims on the
+// token there is nothing to seed, so the profile is still incomplete.
 func TestProfile_FirstGetCreatesRow(t *testing.T) {
 	f := newProfileFixture(t)
 	sub := "22222222-2222-4222-8222-222222222222"
@@ -229,10 +417,10 @@ func TestProfile_FirstGetCreatesRow(t *testing.T) {
 	}
 }
 
-// TestProfile_PatchNameAndEmail_CompletesProfile covers the onboarding path:
+// TestProfile_PatchName_CompletesProfile covers the onboarding path:
 // submitting name+email together completes the profile and is reflected on
 // a subsequent GET.
-func TestProfile_PatchNameAndEmail_CompletesProfile(t *testing.T) {
+func TestProfile_PatchName_CompletesProfile(t *testing.T) {
 	f := newProfileFixture(t)
 	sub := "33333333-3333-4333-8333-333333333333"
 	bearer := f.token(t, sub)
@@ -241,7 +429,7 @@ func TestProfile_PatchNameAndEmail_CompletesProfile(t *testing.T) {
 	f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
 
 	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
-		"name": "Ana Silva", "email": "ana@example.com",
+		"name": "Ana Silva",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PATCH status = %d, want 200, body = %s", rec.Code, rec.Body.String())
@@ -250,8 +438,8 @@ func TestProfile_PatchNameAndEmail_CompletesProfile(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if p.Name != "Ana Silva" || p.Email != "ana@example.com" {
-		t.Errorf("patched name/email = %q/%q, want Ana Silva/ana@example.com", p.Name, p.Email)
+	if p.Name != "Ana Silva" {
+		t.Errorf("patched name = %q, want Ana Silva", p.Name)
 	}
 	if !p.ProfileComplete {
 		t.Error("profile_complete = false after name+email set, want true")
@@ -276,7 +464,7 @@ func TestProfile_PatchLocaleOnly_IsPartial(t *testing.T) {
 	bearer := f.token(t, sub)
 	f.do(t, http.MethodGet, "/v1/profile", bearer, nil)
 	f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
-		"name": "Beatriz", "email": "bea@example.com",
+		"name": "Beatriz",
 	})
 
 	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"locale": "pt"})
@@ -290,8 +478,8 @@ func TestProfile_PatchLocaleOnly_IsPartial(t *testing.T) {
 	if p.Locale != "pt" {
 		t.Errorf("locale = %q, want pt", p.Locale)
 	}
-	if p.Name != "Beatriz" || p.Email != "bea@example.com" {
-		t.Errorf("name/email changed by locale-only PATCH: %+v", p)
+	if p.Name != "Beatriz" {
+		t.Errorf("name changed by locale-only PATCH: %+v", p)
 	}
 }
 
@@ -319,7 +507,11 @@ func TestProfile_PatchEmptyName_Returns422(t *testing.T) {
 	}
 }
 
-// TestProfile_PatchMalformedEmail_Returns422 covers email format validation.
+// TestProfile_PatchMalformedEmail_Returns422 used to cover email FORMAT
+// validation. Since the address became IdP-owned (#365 follow-up) the field is
+// refused before any format check runs, so what is pinned here is that a
+// malformed value is rejected as `read_only` rather than `invalid` — i.e. the
+// refusal is about ownership, not syntax.
 func TestProfile_PatchMalformedEmail_Returns422(t *testing.T) {
 	f := newProfileFixture(t)
 	sub := "66666666-6666-4666-8666-666666666666"
@@ -330,16 +522,9 @@ func TestProfile_PatchMalformedEmail_Returns422(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422, body = %s", rec.Code, rec.Body.String())
 	}
-	var p struct {
-		Errors []struct {
-			Field string `json:"field"`
-		} `json:"errors"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(p.Errors) != 1 || p.Errors[0].Field != "email" {
-		t.Errorf("errors = %+v, want one error on field \"email\"", p.Errors)
+	p := decodeProblem(t, rec)
+	if len(p.Errors) != 1 || p.Errors[0].Field != "email" || p.Errors[0].Code != "read_only" {
+		t.Errorf("errors = %+v, want one email/read_only error", p.Errors)
 	}
 }
 
@@ -363,7 +548,7 @@ func TestProfile_ResponsesConformToOpenAPIContract(t *testing.T) {
 	doc.ValidateResponseBody(t, http.MethodGet, "/v1/profile", http.StatusOK, recGet.Body.Bytes())
 
 	recPatch := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
-		"name": "Carlos", "email": "carlos@example.com",
+		"name": "Carlos",
 	})
 	if recPatch.Code != http.StatusOK {
 		t.Fatalf("PATCH status = %d, want 200", recPatch.Code)
@@ -419,7 +604,7 @@ func TestProfile_History_CreateThenUpdateEachProduceOneAuditRow(t *testing.T) {
 	if err := json.Unmarshal(create.Change, &createChange); err != nil {
 		t.Fatalf("unmarshal create change: %v", err)
 	}
-	if createChange["name"] != "" || createChange["email"] != "" {
+	if createChange["name"] != "" {
 		t.Fatalf("create change = %+v, want the baseline (empty name/email for a brand-new profile)", createChange)
 	}
 
@@ -433,7 +618,7 @@ func TestProfile_History_CreateThenUpdateEachProduceOneAuditRow(t *testing.T) {
 	// PATCH (update) writes exactly one more row, a diff of only the changed
 	// fields.
 	recPatch := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
-		"name": "Ana Silva", "email": "ana@example.com",
+		"name": "Ana Silva",
 	})
 	if recPatch.Code != http.StatusOK {
 		t.Fatalf("PATCH status = %d, want 200, body = %s", recPatch.Code, recPatch.Body.String())
@@ -447,7 +632,7 @@ func TestProfile_History_CreateThenUpdateEachProduceOneAuditRow(t *testing.T) {
 	if update.ChangeType != "update" {
 		t.Fatalf("update audit change_type = %q, want update", update.ChangeType)
 	}
-	wantFields := map[string]bool{"name": true, "email": true}
+	wantFields := map[string]bool{"name": true}
 	if len(update.ChangedFields) != len(wantFields) {
 		t.Fatalf("update audit changed_fields = %v, want name and email", update.ChangedFields)
 	}
@@ -486,7 +671,7 @@ func TestProfile_History_PartialPatchOnlyRecordsChangedFields(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
-		"name": "Beatriz", "email": "bea@example.com",
+		"name": "Beatriz",
 	})
 
 	rec := f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{"locale": "pt"})
@@ -533,7 +718,7 @@ func TestProfile_History_ChangePayloadNeverEmbedsPersonalDataOfOthers(t *testing
 		t.Fatalf("decode: %v", err)
 	}
 	f.do(t, http.MethodPatch, "/v1/profile", bearer, map[string]string{
-		"name": "Carlos Mendes", "email": "carlos.mendes@example.com",
+		"name": "Carlos Mendes",
 	})
 
 	for _, row := range f.auditLogFor(t, p.ID) {
@@ -708,10 +893,12 @@ func TestProfile_PatchInvalidFields_Returns422(t *testing.T) {
 			wantCode:  "too_long",
 		},
 		{
-			name:      "email too long (over 320 chars)",
-			body:      map[string]string{"email": strings.Repeat("a", 315) + "@example.com"},
+			// Succeeds the old "email too long" case: length is no longer
+			// validated because the field is refused outright (#365 follow-up).
+			name:      "email is read-only",
+			body:      map[string]string{"email": "someone@example.com"},
 			wantField: "email",
-			wantCode:  "invalid",
+			wantCode:  "read_only",
 		},
 		{
 			name:      "empty locale",
