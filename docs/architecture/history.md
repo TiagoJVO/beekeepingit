@@ -264,7 +264,7 @@ not read as broader than it is.
 - **v1 retains history indefinitely** (it is immutable and small relative to domain data). No
   automatic purge ships in v1.
 - A **configurable retention window** and **legal-hold** semantics are **deferred to the compliance
-  epic (EPIC-14 #15)**; nothing in this design blocks adding a purge job later (it operates via the
+  epic (#586, EPIC-14 #15)**; nothing in this design blocks adding a purge job later (it operates via the
   privileged role of §7.1). Tombstone/soft-delete physical purge is the same concern.
 - **One retention _floor_ is already fixed**, though, and constrains that future purge job:
   Treatment activities carry a ~5-year veterinary record-keeping expectation and may not be
@@ -339,7 +339,7 @@ the regulated record are different data**, and erasure only reaches the first.
    because after it the app holds no copy at all. #90 should therefore treat a full-tenant erasure
    as an explicit, confirmed, audited act with the export offered first, not as a bulk `DELETE`.
 
-**The design constraint this leaves for the deferred purge work (EPIC-14 #15, §7.2).** v1 satisfies
+**The design constraint this leaves for the deferred purge work (#586, §7.2).** v1 satisfies
 all of the above by doing nothing: deletes are soft-delete tombstones
 ([data-model.md](data-model.md) §2), no physical purge ships, and history is retained indefinitely.
 The constraint bites when an automatic retention window is actually built:
@@ -351,7 +351,7 @@ The constraint bites when an automatic retention window is actually built:
   the floor becomes the **longer** of the two, per the regulation.
 - This is a **retention floor on one activity type**, not a legal hold on everything: other
   activity types carry no equivalent obligation and remain purgeable under whatever window
-  EPIC-14 chooses.
+  #586 chooses.
 - The floor is **a constraint on physical purge only**. It does not stop a user from soft-deleting
   a Treatment activity in the UI, and it does not stop erasure from anonymizing its attribution —
   both leave the regulated record recoverable for its window.
@@ -417,8 +417,8 @@ so the AI write-safety guarantee and the audit trail reinforce each other.
 | Item                                                                                                                            | Status                                                                                                                                                                   | Where                                      |
 | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | Global / cross-entity audit timeline (outbox → projection)                                                                      | **Reserved, not built** — API composition suffices for v1; projection behind the boundary later (§5.1)                                                                   | future; EPIC-07 if needed                  |
-| Configurable retention window / automatic purge / legal-hold                                                                    | **Deferred** — v1 retains indefinitely (§7.2)                                                                                                                            | EPIC-14 (#15)                              |
-| Treatment-activity retention floor (~5y, Reg (EU) 2019/6) vs. GDPR erasure                                                      | **Policy fixed** (#295) — anonymize attribution, never purge inside the floor; export-before-erase (§7.4)                                                                | EPIC-14 (#15) / #90 build it               |
+| Configurable retention window / automatic purge / legal-hold                                                                    | **Deferred** — v1 retains indefinitely (§7.2)                                                                                                                            | #586 (EPIC-14 #15)                         |
+| Treatment-activity retention floor (~5y, Reg (EU) 2019/6) vs. GDPR erasure                                                      | **Policy fixed** (#295) — anonymize attribution, never purge inside the floor; export-before-erase (§7.4)                                                                | #586 (purge) / #90 (erasure)               |
 | Diff / `changed_fields` presentation in the timeline                                                                            | **Built** (#60) — rendered as a localized "Changed: Name, Notes" sub-line; unmapped columns fall through to their raw server name                                        | EPIC-07 (#8), entity EPICs                 |
 | Build: in-tx audit append on each service write + sync-apply path; INSERT-only grant; append-only + pseudonymity contract tests | **Built** for `identity`/`organizations`/`apiaries` (in-tx append on both the REST and sync-apply paths); remaining domain services follow the same pattern as they land | EPIC-07 (#8), per-service EPIC-02/03/04/05 |
 | History view screens (per-entity timeline, EN/PT, a11y)                                                                         | **Built** for apiaries + activities (#60) — one entity-agnostic component pair (§8), local-first with a REST fallback; journeys #315, todos EPIC-05 reuse it             | EPIC-02/03/04, EPIC-07 (#8)                |
@@ -447,6 +447,6 @@ so the AI write-safety guarantee and the audit trail reinforce each other.
   [decisions.md](../../requirements/decisions.md) (D-6, D-11, D-19) — resolves
   [Q-HIS](../../requirements/open-questions.md)
 - Regulatory basis for §7.4: [regulatory-pt-eu-beekeeping.md](../research/regulatory-pt-eu-beekeeping.md)
-  §B.7 (#91) · GDPR export/erasure build: **#90** (M6) · retention/purge: **EPIC-14 (#15)**
+  §B.7 (#91) · GDPR export/erasure build: **#90** (M6) · retention/purge: **#586** (EPIC-14 #15)
 - Build: **EPIC-07 — History & Audit (#8)**
 - Last in EPIC-DESIGN's data/sync chain: #105 → #106 → **#107** → #108 (contracts) / #110 (skeleton)

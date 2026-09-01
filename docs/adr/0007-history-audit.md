@@ -67,7 +67,7 @@ recorded).
 - **Immutable, DB-enforced:** the service runtime role has `INSERT`/`SELECT` but **not
   `UPDATE`/`DELETE`** on `audit_log`; corrections are new rows. Purge is a separate privileged role.
 - **Retention:** **retain indefinitely in v1**; configurable window / legal-hold / purge
-  **deferred to EPIC-14 (#15)**.
+  **deferred to #586** (EPIC-14 #15).
 - **GDPR (right-to-erasure) — no clash:** history is **pseudonymous by construction**. It stores only
   opaque internal IDs; personal data lives solely in `identity.users` and is joined at display time.
   **Erasure scrubs `identity.users`**; audit rows keep the opaque ID with **no link to a person** —
@@ -140,7 +140,7 @@ so no edit silently disappears.
   tests** (NFR-TST); surface `sync_conflict_log` as `superseded` timeline events (with EPIC-06 #7).
 - **EPIC-02/03/04/05** — each domain service records its entities' history via the shared helper and
   renders the per-entity timeline (EN/PT, WCAG 2.2 AA).
-- **EPIC-14 (#15)** — retention window / automatic purge / legal-hold; GDPR-erasure runbook that
+- **#586 (EPIC-14 #15)** — retention window / automatic purge / legal-hold; GDPR-erasure runbook that
   scrubs `identity.users`.
   That purge is **not unbounded**: Treatment activities carry a ~5-year veterinary
   record-keeping floor (Reg (EU) 2019/6, D-19) they may not be physically purged inside, and
