@@ -142,6 +142,7 @@
   "syncNeedsFixTodoLabel": "Alteração de tarefa",
   "syncNeedsFixTitleWithName": "{label} · {name}",
   "syncNeedsFixGenericProblem": "Esta alteração foi rejeitada e precisa da sua atenção.",
+  "syncNeedsFixLocalProblem": "Esta alteração ainda não foi enviada — corrija-a, por favor.",
   "syncNeedsFixFixAction": "Corrigir",
   "syncNeedsFixDismissAction": "Dispensar",
   "accountSyncSectionTitle": "Sincronização",

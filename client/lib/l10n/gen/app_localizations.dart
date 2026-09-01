@@ -950,6 +950,12 @@ abstract class AppLocalizations {
   /// **'This change was rejected and needs your attention.'**
   String get syncNeedsFixGenericProblem;
 
+  /// Needs-fix list row message for a change the app itself found a problem with before sending it (validation parity, FR-OF-2/D-12, #584) — as opposed to one the server rejected
+  ///
+  /// In en, this message translates to:
+  /// **'This change wasn\'t sent yet — please correct it.'**
+  String get syncNeedsFixLocalProblem;
+
   /// Needs-fix action (and rejection toast action) that opens the offending record's edit screen to correct and re-save it
   ///
   /// In en, this message translates to:

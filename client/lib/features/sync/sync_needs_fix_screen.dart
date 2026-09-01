@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/sync/powersync_schema.dart';
+import '../../core/validation/sync_op_validator.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_widgets.dart';
 import 'sync_rejected_repository.dart';
@@ -115,7 +116,15 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
     // Show a localized, non-technical message; the raw detail
     // (op.primaryMessage / op.detail) stays confined to the dead-letter row
     // and the connector's log for diagnostics only.
-    final message = l10n.syncNeedsFixGenericProblem;
+    //
+    // #584: a rejection the client's own validation-parity pass predicted
+    // BEFORE pushing (sync.md §9) gets its own wording — the change was never
+    // sent, so telling the user it "was rejected" would be wrong. Per-field,
+    // per-code localized messages (for both origins) are #443's mapping; this
+    // stays a two-way branch until that lands.
+    final message = op.errorCode == localValidationFailedCode
+        ? l10n.syncNeedsFixLocalProblem
+        : l10n.syncNeedsFixGenericProblem;
 
     return Card(
       key: Key('needs-fix-${op.id}'),

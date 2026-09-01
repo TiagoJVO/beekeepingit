@@ -537,6 +537,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Esta alteração foi rejeitada e precisa da sua atenção.';
 
   @override
+  String get syncNeedsFixLocalProblem =>
+      'Esta alteração ainda não foi enviada — corrija-a, por favor.';
+
+  @override
   String get syncNeedsFixFixAction => 'Corrigir';
 
   @override

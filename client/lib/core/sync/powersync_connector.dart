@@ -8,6 +8,7 @@ import 'package:powersync/powersync.dart';
 import 'package:uuid/uuid.dart';
 
 import '../config/app_config.dart';
+import '../validation/sync_op_validator.dart';
 import 'local_store.dart';
 import 'powersync_local_store.dart';
 import 'powersync_schema.dart';
@@ -78,12 +79,29 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     final tx = await database.getNextCrudTransaction();
     if (tx == null) return;
 
-    final token = await getAccessToken();
-    if (token == null) return; // will retry once authenticated
-
     final ops = <Map<String, dynamic>>[
       for (final e in tx.crud) await _toOp(database, e),
     ];
+
+    // Validation parity (FR-OF-2, D-12, sync.md §9): re-check the queued edits
+    // against the shared description of the server's own rules BEFORE spending
+    // a push on them. Deliberately runs before the token fetch and before any
+    // HTTP — it needs no network, so a problem is caught with the device
+    // offline rather than coming back as a post-hoc rejection.
+    final parityErrors = validateSyncOps(ops);
+    if (parityErrors.isNotEmpty) {
+      await handleLocalValidationFailure(
+        ops: ops,
+        errors: parityErrors,
+        store: PowerSyncLocalStore(database),
+        complete: () => tx.complete(),
+      );
+      return;
+    }
+
+    final token = await getAccessToken();
+    if (token == null) return; // will retry once authenticated
+
     final resp = await _http.post(
       Uri.parse(AppConfig.syncBatchUrl),
       headers: {
@@ -141,6 +159,40 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
       case UploadDisposition.retry:
         throw http.ClientException('sync batch failed: $status');
     }
+  }
+
+  /// Handles a push the client's own **validation-parity** pass rejected
+  /// (FR-OF-2, D-12, sync.md §9) — the pre-push twin of the `422` branch of
+  /// [handleUploadResponse], and deliberately the *same* landing place: the
+  /// offending edit goes into the local `sync_rejected_ops` dead-letter, is
+  /// surfaced through [rejectedChanges] into the existing needs-fix flow, and
+  /// the CRUD transaction is `complete()`d so the queue advances instead of
+  /// wedging on an op that can never succeed as-is (the FIFO
+  /// `getNextCrudTransaction` would otherwise block every later write behind
+  /// it).
+  ///
+  /// The whole (atomic) transaction is retained, not just the offending ops —
+  /// exactly as for a server rejection, and for the same reason: a push is
+  /// all-or-nothing, so a valid op batched with an invalid one would otherwise
+  /// be lost.
+  ///
+  /// The synthesized problem carries [localValidationFailedCode] rather than
+  /// the server's `validation.failed`, so the needs-fix UI can tell the user
+  /// their change *couldn't be sent yet* rather than that a server rejected it,
+  /// and so a client-predicted rejection stays distinguishable from a real one.
+  ///
+  /// `@visibleForTesting` and taking [store]/[complete] as parameters, matching
+  /// [handleUploadResponse]: the whole decision is unit-testable with a fake
+  /// [LocalStoreEngine] and no PowerSync database.
+  @visibleForTesting
+  Future<void> handleLocalValidationFailure({
+    required List<Map<String, dynamic>> ops,
+    required List<SyncOpFieldError> errors,
+    required LocalStoreEngine store,
+    required Future<void> Function() complete,
+  }) async {
+    await _retainRejected(store, ops, localValidationProblem(errors));
+    await complete();
   }
 
   /// Writes one dead-letter row per op of a rejected push and emits a
@@ -567,6 +619,34 @@ class RejectedFieldError {
   final String field;
   final String code;
   final String message;
+}
+
+/// Builds the [RejectedProblem] a **client-side** validation-parity failure
+/// records, from the errors [validateSyncOps] produced — the same shape the
+/// server's `422` body parses into ([parseRejectedProblem]), so one dead-letter
+/// writer ([BeekeepingitConnector._retainRejected]) and one needs-fix read model
+/// (`sync_rejected_repository.dart`) serve both origins.
+///
+/// The `detail` is deliberately a short, stable English diagnostic, never
+/// rendered to the beekeeper (#426) — the needs-fix screen shows a localized
+/// message keyed off [localValidationFailedCode] instead.
+///
+/// Pure and `@visibleForTesting`, matching this file's other seams.
+@visibleForTesting
+RejectedProblem localValidationProblem(List<SyncOpFieldError> errors) {
+  return RejectedProblem(
+    code: localValidationFailedCode,
+    detail: 'client-side validation parity check rejected this push',
+    fieldErrors: [
+      for (final e in errors)
+        RejectedFieldError(
+          opIndex: e.opIndex,
+          field: e.field,
+          code: e.code,
+          message: e.message,
+        ),
+    ],
+  );
 }
 
 /// Parses a `422`/`400` problem+json body into a [RejectedProblem]. Pure and
