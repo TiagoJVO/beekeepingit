@@ -20,12 +20,18 @@ func TestSharedValidationDescription_MatchesTodoOp(t *testing.T) {
 	paritytest.AssertLimit(t, e, "title", "maxLength", maxTitleLength)
 	paritytest.AssertLimit(t, e, "description", "maxLength", maxDescriptionLength)
 
-	// title is the one field this service trims before deciding it is missing;
-	// the description has to say so per-field, since apiaries/journeys do not.
-	f, ok := e.Field("title")
-	if !ok || f.AbsentWhen != "blank" {
-		t.Fatalf("described title absentWhen = %q, this service trims (want \"blank\")", f.AbsentWhen)
-	}
+	// title is the one field in the whole description this service TRIMS before
+	// deciding it is missing; the four optional strings below are guarded with
+	// `!= "" `, so a cleared field is absent rather than malformed; description
+	// and priority/status are guarded on nil alone. Getting any of these wrong
+	// makes the client reject an edit this service accepts.
+	paritytest.AssertAbsentWhen(t, e, "title", paritytest.AbsentBlank)
+	paritytest.AssertAbsentWhen(t, e, "due_date", paritytest.AbsentEmpty)
+	paritytest.AssertAbsentWhen(t, e, "completed_at", paritytest.AbsentEmpty)
+	paritytest.AssertAbsentWhen(t, e, "assignee_id", paritytest.AbsentEmpty)
+	paritytest.AssertAbsentWhen(t, e, "apiary_id", paritytest.AbsentEmpty)
+	paritytest.AssertAbsentWhen(t, e, "description", paritytest.AbsentNull)
+	paritytest.AssertAbsentWhen(t, e, "priority", paritytest.AbsentNull)
 
 	// priority/status are extensible vocabularies (D-20) — server-owned.
 	paritytest.AssertNoVocabulary(t, e, "priority")

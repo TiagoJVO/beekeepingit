@@ -87,5 +87,77 @@ void main() {
         throwsA(isA<FormatException>()),
       );
     });
+
+    test(
+      'a check whose kind needs a limit but carries none throws AT PARSE '
+      'time — the evaluator null-asserts it, so accepting this would mean '
+      'green tests and a crash against a real op on a beekeeper\'s device',
+      () {
+        expect(
+          () => SyncValidationRules.parse(
+            _withNameChecks(
+              '{"kind": "maxLength", '
+              '"code": "too_long", "message": "too long"}',
+            ),
+          ),
+          throwsA(isA<FormatException>()),
+        );
+      },
+    );
+
+    test('a range check missing a bound throws at parse time too', () {
+      expect(
+        () => SyncValidationRules.parse(
+          _withNameChecks(
+            '{"kind": "range", '
+            '"min": -180, "code": "out_of_range", "message": "out of range"}',
+          ),
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('a non-numeric limit is reported as a FormatException, matching the '
+        'documented parse contract, not a raw TypeError', () {
+      expect(
+        () => SyncValidationRules.parse(
+          _withNameChecks(
+            '{"kind": "maxLength", '
+            '"limit": "200", "code": "too_long", "message": "too long"}',
+          ),
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('a well-formed limit-bearing check still parses', () {
+      expect(
+        () => SyncValidationRules.parse(
+          _withNameChecks(
+            '{"kind": "maxLength", '
+            '"limit": 200, "code": "too_long", "message": "too long"}',
+          ),
+        ),
+        returnsNormally,
+      );
+    });
   });
 }
+
+/// A minimal one-entity description whose only field carries [checks], for
+/// exercising the parser's own guards without dragging in the real artifact.
+String _withNameChecks(String checks) =>
+    '''
+{
+  "envelope": {
+    "id": {"code": "invalid", "message": "id must be a UUID"},
+    "updatedAt": {"code": "required", "message": "updated_at is required"}
+  },
+  "entities": {
+    "apiary": {
+      "ops": {"allowed": ["put"], "code": "invalid", "message": "bad op"},
+      "fields": [{"name": "name", "checks": [$checks]}]
+    }
+  }
+}
+''';

@@ -109,6 +109,10 @@ rejection stays distinguishable from a real one in logs and in the UI.
 - A false positive drops the op from the upload queue (it must, or the FIFO queue wedges) and the
   user has to re-save from the needs-fix card. The edit is retained, never lost, but the cost of a
   wrong rule is real — which is why §3 exists.
+- The deployed client runs whatever copy its last release embedded, so **relaxing** a described
+  limit or range server-first makes older clients reject values the server now accepts. Relaxations
+  ship with a client release; tightenings are always safe. Recorded in
+  [`contracts/validation/README.md`](../../contracts/validation/README.md).
 
 ## Alternatives considered
 

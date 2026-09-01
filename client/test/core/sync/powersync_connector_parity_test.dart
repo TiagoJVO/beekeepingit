@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// so the parity work and the in-flight `_toOp`/`lwwTimestampFor` changes don't
 /// collide in the same test file.
 const _uuid = '018f5f4e-2a3b-7c1d-9e2f-0a1b2c3d4e5f';
-const _apiaryUuid = '018f5f4e-2a3b-7c1d-9e2f-0a1b2c3d4e60';
+const _otherUuid = '018f5f4e-2a3b-7c1d-9e2f-0a1b2c3d4e60';
 const _now = '2026-09-01T10:00:00.000Z';
 
 void main() {
@@ -71,7 +71,7 @@ void main() {
       {
         'op': 'delete',
         'entity_type': apiaryEntityType,
-        'id': _apiaryUuid,
+        'id': _otherUuid,
         'data': null,
         'updated_at': _now,
       },
@@ -84,27 +84,10 @@ void main() {
       },
     ];
 
-    test(
-      'retains EVERY op of the push, not only the offending one — a push is '
-      'atomic, so a valid op batched with an invalid one would be lost',
-      () async {
-        final ops = opsWithOneInvalidTodo();
-        var completed = false;
-
-        await connector.handleLocalValidationFailure(
-          ops: ops,
-          errors: validateSyncOps(ops),
-          store: store,
-          complete: () async => completed = true,
-        );
-
-        expect(store.rejected, hasLength(2));
-        expect(completed, isTrue);
-      },
-    );
-
-    test('completes the transaction so the FIFO queue advances instead of '
-        'wedging on an op that can never succeed as-is', () async {
+    test('retains EVERY op of the push and still completes the transaction — a '
+        'push is atomic (so a valid op batched with an invalid one would '
+        'otherwise be lost), and the FIFO queue must advance rather than wedge '
+        'on an op that can never succeed as-is', () async {
       final ops = opsWithOneInvalidTodo();
       var completed = false;
 
@@ -115,6 +98,7 @@ void main() {
         complete: () async => completed = true,
       );
 
+      expect(store.rejected, hasLength(2));
       expect(completed, isTrue);
     });
 

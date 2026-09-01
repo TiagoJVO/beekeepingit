@@ -29,6 +29,15 @@ rule _data_ on the device cannot drift from this file. A stale copy fails
 3. Run `./scripts/gen-sync-validation.sh` and commit the regenerated Dart file.
 4. `go test ./api/...` in the owning service and `flutter test` in `client/` must pass.
 
+**Relaxing a described limit is a client-breaking change; tightening one is not.** The
+parity tests bind this file to the server's constants at build time, but the copy actually
+running on a device is whatever the last client release embedded. So if `notes`'
+`maxLength` goes 10000 → 20000 server-side, an older client keeps rejecting a valid
+15000-character note it received by down-sync — the same permanent-rejection asymmetry
+that keeps the extensible vocabularies out of this file entirely. **Ship a relaxation with
+a client release**, or move the rule to `serverOnly`. A tightening only makes the client
+defer more often, which is always safe.
+
 ## What is deliberately **not** here
 
 The `serverOnly` array at the top of the file is the list, with the reason for each. The
@@ -82,6 +91,23 @@ patch would reject perfectly valid edits. That is the client-side face of
 [#378](https://github.com/TiagoJVO/beekeepingit/issues/378), and it is asserted from both
 sides: `AssertRequiredOn` in each service's parity test, and an explicit
 `patch`-passes case per rule in `client/test/core/validation/sync_op_validator_test.dart`.
+
+## Known rough edge: `journey.default_attributes` and an explicit `null`
+
+`validateDefaultAttributes` (`services/journeys/api/types.go`) treats an **absent**
+`default_attributes` as "don't touch" but a present JSON `null` as invalid — `len(raw) == 0`
+skips, whereas the four bytes `null` unmarshal to a nil map and report
+`default_attributes must be a JSON object`. The client's `jsonObject` check mirrors that
+faithfully, which is why it is described here.
+
+The rough edge is that `journeys_repository.dart` stores SQL **NULL** for an empty bag. If
+PowerSync includes null columns in a `put`'s `opData` (not verified either way), clearing a
+journey's defaults already produces an op this service rejects today — the parity check
+would then surface it before the push rather than after, but would not have caused it.
+Every other "absent means don't touch" field on that struct treats `null` as absent, so the
+fix, if it is real, belongs server-side in `validateDefaultAttributes`; the `jsonObject`
+check here would then need to skip an explicit null for that field. Tracked in
+`FOLLOWUPS.md`.
 
 ## Status
 

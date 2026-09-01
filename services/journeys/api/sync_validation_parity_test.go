@@ -18,6 +18,12 @@ func TestSharedValidationDescription_MatchesJourneyOp(t *testing.T) {
 	paritytest.AssertRequiredOn(t, e, "name", "put")
 	paritytest.AssertRequiredOn(t, e, "main_activity_type", "put")
 	paritytest.AssertLimit(t, e, "name", "maxLength", maxNameLength)
+	// validateJourneyOp guards name with `nil || ""`; main_activity_type and
+	// status on nil alone (an empty string is a value that fails the vocabulary
+	// check server-side, not an absent field).
+	paritytest.AssertAbsentWhen(t, e, "name", paritytest.AbsentEmpty)
+	paritytest.AssertAbsentWhen(t, e, "main_activity_type", paritytest.AbsentNull)
+	paritytest.AssertAbsentWhen(t, e, "default_attributes", paritytest.AbsentNull)
 
 	// default_attributes' SHAPE is mirrored (object + byte cap,
 	// validateDefaultAttributes) — uploading it as a JSON string instead of an
@@ -45,5 +51,7 @@ func TestSharedValidationDescription_MatchesJourneyPlanItemOp(t *testing.T) {
 	// Both ids are required unconditionally on the content-bearing op.
 	paritytest.AssertRequiredOn(t, e, "journey_id", "put", "patch")
 	paritytest.AssertRequiredOn(t, e, "apiary_id", "put", "patch")
+	paritytest.AssertAbsentWhen(t, e, "journey_id", paritytest.AbsentNull)
+	paritytest.AssertAbsentWhen(t, e, "apiary_id", paritytest.AbsentNull)
 	paritytest.AssertDescribesOnlyWireFields(t, e, journeyPlanItemData{})
 }

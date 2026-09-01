@@ -1,5 +1,6 @@
 import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
 import 'package:beekeepingit_client/core/validation/sync_op_validator.dart';
+import 'package:beekeepingit_client/core/validation/sync_validation_rules.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Unit tests for the pre-push **validation-parity** pass (FR-OF-2, D-12,
@@ -640,6 +641,29 @@ void main() {
       expect(errors.every((e) => e.opIndex == 1), isTrue);
     });
 
+    test('an uppercase URN-prefixed id passes — Go\'s uuid.Parse compares that '
+        'prefix case-insensitively, so rejecting it would be the one direction '
+        'this check must never take', () {
+      expect(
+        _failures(
+          _op(apiaryEntityType, 'delete', data: null, id: 'URN:UUID:$_uuid'),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('validation FAILS OPEN: an unusable rule set reports no errors rather '
+        'than throwing, because a throw would escape uploadData and PowerSync '
+        'would retry it forever, stalling every pending write (D-12: the '
+        'server is authoritative, this pass is only an optimization)', () {
+      expect(
+        validateSyncOps([
+          _op(todoEntityType, 'put', data: {'title': ''}),
+        ], rules: _BrokenRules()),
+        isEmpty,
+      );
+    });
+
     test('a fully valid batch produces no errors at all', () {
       expect(
         validateSyncOps([
@@ -654,4 +678,16 @@ void main() {
       );
     });
   });
+}
+
+/// A rule set whose entity lookup blows up — standing in for any way the shared
+/// description could become unusable at runtime. Used to pin the fail-open
+/// contract without needing a malformed embedded artifact.
+class _BrokenRules implements SyncValidationRules {
+  @override
+  SyncEnvelopeRules get envelope => throw UnimplementedError();
+
+  @override
+  Map<String, SyncEntityRules> get entities =>
+      throw StateError('rule set unusable');
 }

@@ -28,12 +28,12 @@ import (
 )
 
 // RepoRelativePath is where the description lives, relative to the repository
-// root. Use [PathFrom] from a test rather than joining this by hand.
+// root. This package never takes a path from its caller — see [Load].
 const RepoRelativePath = "contracts/validation/sync-ops.validation.json"
 
-// PathFrom builds the description's path from a package directory that sits
+// pathFrom builds the description's path from a package directory that sits
 // depth levels below the repository root — e.g. services/apiaries/api is 3.
-func PathFrom(depth int) string {
+func pathFrom(depth int) string {
 	parts := make([]string, 0, depth+1)
 	for range depth {
 		parts = append(parts, "..")
@@ -226,9 +226,15 @@ func (d Description) Entity(entityType string) (Entity, error) {
 	return e, nil
 }
 
-// Load reads and parses the description at path.
-func Load(path string) (*Description, error) {
-	raw, err := os.ReadFile(path) //nolint:gosec // repo-relative test fixture path
+// Load reads and parses the description, resolved from a package directory
+// that sits depth levels below the repository root (services/<svc>/api is 3).
+//
+// It takes a depth rather than a path on purpose: the only file this package
+// may ever open is the committed description at [RepoRelativePath], and making
+// that structural means no future caller can hand it a request-derived path and
+// inherit the file-read suppression below.
+func Load(depth int) (*Description, error) {
+	raw, err := os.ReadFile(pathFrom(depth)) //nolint:gosec // fixed repo-relative path, see doc
 	if err != nil {
 		return nil, fmt.Errorf("read validation description: %w", err)
 	}

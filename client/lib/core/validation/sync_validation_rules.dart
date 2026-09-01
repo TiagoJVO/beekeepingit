@@ -199,15 +199,45 @@ class SyncCheck {
     this.onlyWithAll = const [],
   });
 
-  factory SyncCheck._fromJson(Map<String, dynamic> json) => SyncCheck(
-    kind: _checkKind(_requireString(json, 'kind')),
-    outcome: SyncOutcome._fromJson(json),
-    on: _stringList(json['on'] ?? const [], 'on'),
-    limit: json['limit'] as num?,
-    min: json['min'] as num?,
-    max: json['max'] as num?,
-    onlyWithAll: _stringList(json['onlyWithAll'] ?? const [], 'onlyWithAll'),
-  );
+  /// Parses one check, rejecting a kind whose numeric parameters are missing.
+  /// That coherence check earns its keep: the evaluator null-asserts `limit`/
+  /// `min`/`max`, so a `maxLength` with no `limit` would otherwise parse
+  /// cleanly and only blow up later, against a real op — i.e. green tests and a
+  /// broken artifact. Failing here means the committed description's own parse
+  /// test catches it instead.
+  factory SyncCheck._fromJson(Map<String, dynamic> json) {
+    final kind = _checkKind(_requireString(json, 'kind'));
+    final limit = _optionalNum(json, 'limit');
+    final min = _optionalNum(json, 'min');
+    final max = _optionalNum(json, 'max');
+    switch (kind) {
+      case SyncCheckKind.maxLength:
+      case SyncCheckKind.maxBytes:
+      case SyncCheckKind.min:
+        if (limit == null) {
+          throw FormatException('check kind $kind needs a limit');
+        }
+      case SyncCheckKind.range:
+        if (min == null || max == null) {
+          throw const FormatException('check kind range needs min and max');
+        }
+      case SyncCheckKind.requiredOn:
+      case SyncCheckKind.uuid:
+      case SyncCheckKind.date:
+      case SyncCheckKind.dateTime:
+      case SyncCheckKind.jsonObject:
+        break;
+    }
+    return SyncCheck(
+      kind: kind,
+      outcome: SyncOutcome._fromJson(json),
+      on: _stringList(json['on'] ?? const [], 'on'),
+      limit: limit,
+      min: min,
+      max: max,
+      onlyWithAll: _stringList(json['onlyWithAll'] ?? const [], 'onlyWithAll'),
+    );
+  }
 
   final SyncCheckKind kind;
   final SyncOutcome outcome;
@@ -315,6 +345,16 @@ List<Object?> _list(Object? value) {
   if (value == null) return const [];
   if (value is List) return List<Object?>.from(value);
   throw const FormatException('expected a list');
+}
+
+/// Reads an optional numeric field, reporting a wrong-typed value as the
+/// [FormatException] this file's `parse` contract promises rather than as the
+/// `TypeError` a bare `as num?` would throw.
+num? _optionalNum(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is num) return value;
+  throw FormatException('$key must be a number');
 }
 
 String _requireString(Map<String, dynamic> json, String key) {

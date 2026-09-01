@@ -18,6 +18,17 @@
   the one case where the client **owns** the `(field, code)` pair, so #443 can render a real
   per-field message ("Name is required", EN/PT) for it at no extra cost — worth doing when that
   mapping lands, and it should replace the two-way branch rather than sit beside it.
+- **Confirm (or rule out) the `journey.default_attributes` null case, and open an Issue if
+  it's real.** `journeys_repository.dart` stores SQL NULL for an empty defaults bag, while
+  `validateDefaultAttributes` (`services/journeys/api/types.go`) rejects a present JSON `null`
+  — it skips only on `len(raw) == 0`. Whether that ever reaches the wire depends on whether
+  PowerSync includes null columns in a `put`'s `opData`, which this branch did **not** verify.
+  If it does, clearing a journey's defaults is already failing server-side today and #584 only
+  makes it visible one step earlier; the fix belongs in `validateDefaultAttributes` (treat the
+  `null` literal as absent, like every other optional field on that struct), after which the
+  description's `jsonObject` check must skip an explicit null for that field. Written up in
+  `contracts/validation/README.md`. Cheapest check: log one op's `opData` for a journey with no
+  defaults, or add a `journeys` integration case.
 - **The same evaluator wants a save-time call site.** `validateSyncOps`
   (`client/lib/core/validation/sync_op_validator.dart`) is a pure function of the wire op, so the
   form/repository write path can run it and tell the beekeeper _in the form_, with the record

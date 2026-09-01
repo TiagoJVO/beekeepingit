@@ -9,8 +9,8 @@
 // single definition of the mechanical sync-op validation rules. It is embedded
 // here VERBATIM rather than translated into Dart literals, so the rule data on
 // the client is byte-identical to the shared file and cannot silently drift
-// from it. `SyncValidationRules.fromJsonString` (../sync_validation_rules.dart)
-// parses it once, lazily.
+// from it. `SyncValidationRules.parse` (../sync_validation_rules.dart) turns it
+// into rules; `SyncValidationRules.shared` does that once, lazily.
 
 /// The shared sync-op validation description, verbatim.
 const syncValidationRulesJson = r'''

@@ -23,6 +23,14 @@ if [ ! -f "$src" ]; then
   exit 1
 fi
 
+# The JSON is embedded in a Dart raw triple-quoted string, so a literal ''' in
+# the source would terminate it early and emit a file that does not compile —
+# with an error pointing at the generated Dart, not at the JSON that caused it.
+if grep -q "'''" "$src"; then
+  echo "gen-sync-validation: $src contains ''' — it cannot be embedded in a Dart raw string" >&2
+  exit 1
+fi
+
 mkdir -p "$(dirname "$out")"
 
 {
@@ -38,8 +46,8 @@ mkdir -p "$(dirname "$out")"
 // single definition of the mechanical sync-op validation rules. It is embedded
 // here VERBATIM rather than translated into Dart literals, so the rule data on
 // the client is byte-identical to the shared file and cannot silently drift
-// from it. `SyncValidationRules.fromJsonString` (../sync_validation_rules.dart)
-// parses it once, lazily.
+// from it. `SyncValidationRules.parse` (../sync_validation_rules.dart) turns it
+// into rules; `SyncValidationRules.shared` does that once, lazily.
 
 /// The shared sync-op validation description, verbatim.
 const syncValidationRulesJson = r'''

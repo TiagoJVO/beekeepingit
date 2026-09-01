@@ -26,7 +26,7 @@ import (
 // the repository root (services/<svc>/api is 3).
 func Load(t testing.TB, depth int) *syncvalidation.Description {
 	t.Helper()
-	d, err := syncvalidation.Load(syncvalidation.PathFrom(depth))
+	d, err := syncvalidation.Load(depth)
 	if err != nil {
 		t.Fatalf("load shared validation description: %v", err)
 	}
@@ -85,6 +85,45 @@ func AssertRequiredOn(t testing.TB, e syncvalidation.Entity, field string, want 
 	}
 }
 
+// AbsentNull / AbsentEmpty / AbsentBlank are the values [AssertAbsentWhen]
+// takes, mirroring the three shapes a service's "field not supplied" guard
+// takes: `data.X == nil`, `data.X == nil || *data.X == ""`, and
+// `strings.TrimSpace(*data.X) == ""`.
+const (
+	AbsentNull  = ""
+	AbsentEmpty = "empty"
+	AbsentBlank = "blank"
+)
+
+// AssertAbsentWhen pins the described "not supplied" rule for one field against
+// the guard this service actually uses.
+//
+// This is the dimension that most easily produces a FALSE POSITIVE, which is the
+// expensive direction: describing apiaries' name as "blank" when validateApiaryOp
+// only tests `*data.Name == ""` makes the client reject a whitespace-only name
+// the service accepts, and describing todos' due_date as null-only when the
+// service guards `!= ""` makes the client reject every cleared due date. Neither
+// mistake changes a cap or an op kind, so nothing else here would catch it.
+func AssertAbsentWhen(t testing.TB, e syncvalidation.Entity, field, want string) {
+	t.Helper()
+	f, ok := e.Field(field)
+	if !ok {
+		t.Fatalf("description does not describe %s", field)
+	}
+	if f.AbsentWhen != want {
+		t.Fatalf("described absentWhen for %s = %q, this service guards %q", field, f.AbsentWhen, want)
+	}
+}
+
+// vocabularyFreeKinds is every check kind that constrains a field's SHAPE rather
+// than its value set. AssertNoVocabulary requires a field's checks to stay within
+// it, so any future value-set kind (an "enum", a "oneOf", a "pattern" pinning a
+// vocabulary) fails rather than slipping through a name-specific test.
+var vocabularyFreeKinds = map[string]bool{
+	"required": true, "maxLength": true, "maxBytes": true, "min": true,
+	"range": true, "uuid": true, "date": true, "dateTime": true, "jsonObject": true,
+}
+
 // AssertNoVocabulary checks the description does NOT mirror a field's controlled
 // vocabulary. These sets are server-owned and extensible (D-20), and a value from
 // a newer release can reach an older client by down-sync and be re-uploaded — a
@@ -92,8 +131,13 @@ func AssertRequiredOn(t testing.TB, e syncvalidation.Entity, field string, want 
 func AssertNoVocabulary(t testing.TB, e syncvalidation.Entity, field string) {
 	t.Helper()
 	f, ok := e.Field(field)
-	if ok && f.Check("enum") != nil {
-		t.Fatalf("description mirrors the extensible %s vocabulary; it must not", field)
+	if !ok {
+		return // not described at all: nothing to mirror
+	}
+	for _, c := range f.Checks {
+		if !vocabularyFreeKinds[c.Kind] {
+			t.Fatalf("description constrains %s's value set with a %q check; that vocabulary is server-owned and extensible (D-20)", field, c.Kind)
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/core/validation/sync_op_validator.dart';
 import 'package:beekeepingit_client/features/sync/sync_needs_fix_screen.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -42,6 +43,50 @@ void main() {
       expect(
         find.text('This change was rejected and needs your attention.'),
         findsWidgets,
+      );
+    },
+  );
+
+  testWidgets(
+    'a change the CLIENT rejected before pushing says it was not sent, not '
+    'that it was rejected — the server never saw it (#584, FR-OF-2/D-12)',
+    (tester) async {
+      final store = _FakeRejectedStore([
+        _row(id: 'r1', errorCode: localValidationFailedCode),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+      expect(
+        find.text("This change wasn't sent yet — please correct it."),
+        findsOneWidget,
+      );
+      // The server-rejection wording must NOT appear: nothing was refused.
+      expect(
+        find.text('This change was rejected and needs your attention.'),
+        findsNothing,
+      );
+      // Still no raw validation text either (#426 holds for both origins).
+      expect(find.text('value must be >= 0'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a server rejection keeps the original wording — the #584 branch must not '
+    'swallow the case it was added beside',
+    (tester) async {
+      final store = _FakeRejectedStore([_row(id: 'r1')]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('This change was rejected and needs your attention.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text("This change wasn't sent yet — please correct it."),
+        findsNothing,
       );
     },
   );
@@ -371,13 +416,14 @@ Map<String, Object?> _row({
   String fixApiaryId = 'apiary-1',
   String? payload,
   String? errorDetail,
+  String errorCode = 'validation.failed',
 }) => {
   'id': id,
   'entity_type': entityType,
   'fix_apiary_id': fixApiaryId,
   'op': 'patch',
   'payload': payload ?? '{}',
-  'error_code': 'validation.failed',
+  'error_code': errorCode,
   'error_detail':
       errorDetail ??
       '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',

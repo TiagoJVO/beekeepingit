@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:meta/meta.dart';
 
@@ -52,24 +53,50 @@ class SyncOpFieldError {
 /// decoded JSON columns), so what is checked is exactly what would go on the
 /// wire.
 ///
-/// **Never admits what the server would reject** on a rule it mirrors, and
-/// never rejects what the server would accept: every `required` check is gated
-/// on the same op kinds the server gates it on, so a partial `patch` is
-/// validated as a partial update (#378) rather than as a full row. Rules the
-/// description deliberately omits (cross-organization ownership, activities'
-/// per-type attribute schema) simply pass here and are decided by the
-/// authoritative server.
+/// **Never rejects what the server would accept** — the property that actually
+/// costs a user something if it breaks, since a rejected op leaves the upload
+/// queue and only a re-save re-queues it. Every `required` check is gated on the
+/// same op kinds the server gates it on, so a partial `patch` is validated as a
+/// partial update (#378) rather than as a full row.
+///
+/// The converse holds only *approximately*, on purpose: where a rule is hard to
+/// mirror exactly, this errs toward **admitting** and letting the server decide
+/// (see [_isUuid], which is looser than Go's `uuid.Parse` in a few unreachable
+/// corners). Rules the description omits outright — cross-organization
+/// ownership, activities' per-type attribute schema, the extensible
+/// vocabularies — pass here by design.
 ///
 /// An op whose `entity_type` the description doesn't know is passed through
 /// unvalidated — deferring to the server is always the safe direction.
+///
+/// **Fails open, on purpose.** If the description can't be loaded or evaluated
+/// at all, this reports **no** errors rather than throwing. D-12 makes the
+/// server authoritative and this pass a UX optimization, so the correct
+/// degraded mode is "skip the optimization and let the server decide", never
+/// "stop syncing": a throw here would escape `uploadData`, which PowerSync
+/// treats as transient and retries forever, stalling every pending write behind
+/// a defect in an artifact that isn't a security control. A malformed
+/// description is still caught at build time, by
+/// `sync_validation_rules_test.dart` — that is where it should fail, not on a
+/// beekeeper's device.
 List<SyncOpFieldError> validateSyncOps(
   List<Map<String, dynamic>> ops, {
   SyncValidationRules? rules,
 }) {
-  final ruleSet = rules ?? SyncValidationRules.shared;
-  return [
-    for (var i = 0; i < ops.length; i++) ..._validateOp(ruleSet, i, ops[i]),
-  ];
+  try {
+    final ruleSet = rules ?? SyncValidationRules.shared;
+    return [
+      for (var i = 0; i < ops.length; i++) ..._validateOp(ruleSet, i, ops[i]),
+    ];
+  } on Object catch (error, stackTrace) {
+    developer.log(
+      'validation parity unavailable; deferring to the authoritative server',
+      name: 'sync',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    return const [];
+  }
 }
 
 List<SyncOpFieldError> _validateOp(
@@ -200,14 +227,22 @@ bool _isAbsent(SyncFieldAbsence absence, Map<String, dynamic> data, String f) {
   };
 }
 
-/// Deliberately as permissive as Go's `uuid.Parse` (the server side of this
-/// rule), which accepts the canonical 8-4-4-4-12 form, a bare 32-hex string, a
-/// `urn:uuid:` prefix and a braced form, and checks **no** version/variant bits.
-/// A stricter RFC-4122 check here would reject ids the server accepts — the one
-/// direction client-side validation must never take.
+/// Deliberately **at least** as permissive as Go's `uuid.Parse` (the server side
+/// of this rule), which accepts the canonical 8-4-4-4-12 form, a bare 32-hex
+/// string, a `urn:uuid:` prefix (compared with `strings.EqualFold`, hence
+/// `caseSensitive: false` here) and a braced form, and checks **no**
+/// version/variant bits. A stricter RFC-4122 check would reject ids the server
+/// accepts — the one direction client-side validation must never take.
+///
+/// It is a little *looser* than `uuid.Parse` in corners the client cannot reach:
+/// each hyphen is independently optional and the braces need not balance, so a
+/// hand-crafted half-hyphenated id would pass here and be rejected server-side.
+/// That is the safe direction (defer to the server), and unreachable anyway —
+/// ids come from `package:uuid` or from the server, always lowercase canonical.
 final _uuidPattern = RegExp(
-  r'^(urn:uuid:|\{)?[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?'
-  r'[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}\}?$',
+  r'^(urn:uuid:|\{)?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?'
+  r'[0-9a-f]{4}-?[0-9a-f]{12}\}?$',
+  caseSensitive: false,
 );
 
 bool _isUuid(Object? value) => value is String && _uuidPattern.hasMatch(value);

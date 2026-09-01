@@ -595,8 +595,16 @@ reasoning.
   `scripts/gen-sync-validation.sh` wraps the JSON byte-for-byte into
   `client/lib/core/validation/gen/sync_validation_rules.g.dart` (committed, like the generated
   l10n); `sync_validation_rules.dart` parses it and `sync_op_validator.dart` evaluates it. A stale
-  copy fails a client test. The parser **throws** on an unknown rule kind rather than skipping it,
-  so a rule the evaluator cannot run can never be silently ignored.
+  copy fails a client test. The parser **throws** on an unknown check kind, and on a known kind
+  whose numeric parameters are missing, rather than accepting either — so a malformed artifact
+  fails at build time. One field is descriptive-only by design: `entityTypeCheck` records the
+  server's own `entity_type` guard, which the client cannot fail because it dispatches _by_
+  `entity_type` (`contracts/validation/README.md`).
+- **The check itself fails open.** If the description can't be loaded or evaluated at all,
+  `validateSyncOps` reports no errors instead of throwing. D-12 makes this pass an optimization and
+  the server the authority, so the right degraded mode is "skip the optimization", never "stop
+  syncing" — a throw would escape `uploadData`, which PowerSync retries indefinitely, stalling
+  every pending write behind a defect in an artifact that isn't a security control.
 - **Where it runs.** `powersync_connector.dart`'s `uploadData` validates the ops **after** `_toOp`
   has built them — so what is checked is exactly the bytes that would go on the wire (counter
   identity already enriched, JSON columns already decoded) — and **before** the token fetch and any
