@@ -632,8 +632,8 @@ authoritative.
   server, with the server as the single source of truth;
 - treat any client/server divergence as a **bug caught by boundary contract tests** (NFR-TST).
 
-**As built (#584).** The middle bullet is what shipped; the first one could not, and the third is
-scoped to #585. See [ADR-0025](../adr/0025-sync-validation-parity-description.md) for the full
+**As built (#584, #585).** The middle bullet shipped with #584 and the third with #585; the first
+one could not. See [ADR-0025](../adr/0025-sync-validation-parity-description.md) for the full
 reasoning.
 
 - **The shared description is a real artifact:**
@@ -682,11 +682,28 @@ reasoning.
   op kinds, `put`/`patch` required gating, and that no described field has fallen off the struct.
   Changing a rule in Go without updating the description fails `go test`. The services' validators
   are **not** driven by the description: the server stays the authority and is checked against it.
-- **Still open:** the exhaustive **boundary contract tests** (synthesize an op violating exactly one
-  described rule; assert the service reports exactly that field path and code, and that the client
-  evaluator agrees) are **#585**, built on this artifact. Running the same evaluator at **save
-  time**, so the beekeeper is told in the form rather than at the next push, is a natural follow-up
-  the pure evaluator already supports.
+- **What binds the two INTERPRETATIONS (#585).** The tests above compare declarations to constants;
+  they never call a validator, so they cannot see a described rule a service quietly stopped
+  applying, a drifted `code`/`message`/`ops[i].data.x` string, or the two evaluators reading one
+  declared rule differently. A second shared artifact closes all three:
+  [`contracts/validation/sync-ops.corpus.json`](../../contracts/validation/) — concrete wire ops,
+  valid and invalid, `put` and `patch`, replayed through **both real evaluators** (each service's
+  own `validate*Op` and the client's `validateSyncOps`) and asserted to reach the same verdict with
+  the same `(field, code, message)`. One corpus, two consumers, so a hand-maintained second copy
+  cannot drift. Each case declares what **both** sides must report and, separately, what **only**
+  the server reports (ownership, the vocabularies, the attribute schema, `breakdown`, the
+  patch-changes-any rule) with the reason — so the deliberate asymmetries read as decisions rather
+  than as undetected divergence. Guarded in turn by coverage tests in
+  `services/shared/syncvalidation`: every described rule must have a case, every entity must have a
+  case both sides **accept**, and every message must match the description's.
+- **CI has to fan the parity suites out explicitly.** Those tests live inside the four services and
+  the client, and `build-publish.yml` picks a component up only when a changed path is prefixed by
+  that component's own directory — so a change to `contracts/validation/` alone used to land with
+  none of them run. `ci.yml`'s `parity` steps run the four service suites and the client's
+  validation tests whenever the description, the corpus, `services/shared/syncvalidation/`, any
+  service's sync validators or the client's validation layer change.
+- **Still open:** running the same evaluator at **save time**, so the beekeeper is told in the form
+  rather than at the next push, is a natural follow-up the pure evaluator already supports.
 
 ---
 

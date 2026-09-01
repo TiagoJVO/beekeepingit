@@ -1,0 +1,2233 @@
+{
+  "version": 1,
+  "description": "Shared BOUNDARY CONTRACT CORPUS for sync write-back ops (docs/architecture/sync.md §9, ADR-0025, D-12, FR-OF-2, NFR-TST-1, #585). Concrete ops run through BOTH the owning service's real validate*Op (Go) and the client's real validateSyncOps (Dart), asserting identical accept/reject decisions and identical (field, code, message) outcomes. One artifact, two consumers — see contracts/validation/README.md.",
+  "conventions": {
+    "op": "A sync op exactly as it goes on the wire. Field paths in expect/serverOnly are OP-RELATIVE: the server prefixes them with ops[i]. — the harness strips that prefix, which is itself part of what is checked.",
+    "expect": "The field errors BOTH sides must report for this op — same field path, same code, same message — and nothing else. An empty list means both sides must ACCEPT the op.",
+    "serverOnly": "Field errors ONLY the authoritative server reports, because the rule is in the description's serverOnly list (ownership lookups, extensible vocabularies, the per-activity-type attribute schema, breakdown, patch-changes-any) or because the client structurally cannot run it. The client must report NONE of these. `message` is optional here — a server-only message is not mirrored in the description, so pinning it would only make the corpus break when an unrelated vocabulary grows.",
+    "@repeat": "A string of the exact form \"@repeat:<count>:<unit>\" expands to <unit> repeated <count> times, on both sides, so a 10001-character notes field does not have to be spelled out. Nothing else in a string is interpreted.",
+    "escaping": "Avoid < > and & in string values: Go's encoding/json escapes them by default and Dart's jsonEncode does not, which would make the two sides measure different byte lengths for the maxBytes rule.",
+    "entityType": "Routes the case to the owning service's validator. It is NOT read from op.entity_type, so a case can deliberately carry a wrong entity_type and still reach the right validator."
+  },
+  "ids": {
+    "op": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+    "apiary": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+    "journey": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
+    "assignee": "3d9f6e4c-5a7b-4c8d-ae1f-2a3b4c5d6e7f",
+    "unowned": "4ea07f5d-6b8c-4d9e-bf20-3b4c5d6e7f80",
+    "note": "The Go harness pre-resolves ownership for the apiary/journey/assignee ids above and for nothing else, so `unowned` is what a cross-organization reference looks like. Ownership is server-only by design (the device cannot decide it offline)."
+  },
+  "cases": [
+    {
+      "name": "apiary/put/valid",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "name": "Melgar Norte",
+          "hive_count": 12,
+          "notes": "Colmeias em bom estado.",
+          "place_label": "Encosta norte",
+          "dgav_registration_number": "PT-1234",
+          "location_lon": -8.5,
+          "location_lat": 41.2
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/patch/partial-is-not-a-full-row",
+      "why": "#378: a patch carries only the columns that changed. Demanding name or location of one would reject a valid edit with no server to overrule it.",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "hive_count": 13 }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/delete/carries-no-payload",
+      "why": "Both validators return right after the envelope checks on a delete, so no data-shaped rule may fire against an op that has no data.",
+      "entityType": "apiary",
+      "op": {
+        "op": "delete",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z"
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/delete/ignores-a-payload-that-would-otherwise-fail",
+      "why": "Pins the delete short-circuit itself: this data would produce three errors on a put.",
+      "entityType": "apiary",
+      "op": {
+        "op": "delete",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "@repeat:201:a", "hive_count": -5 }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/put/name-missing",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": [{ "field": "data.name", "code": "required", "message": "name is required" }]
+    },
+    {
+      "name": "apiary/put/name-empty-string-counts-as-absent",
+      "why": "absentWhen: empty — validateApiaryOp guards `*data.Name == \"\"`, not TrimSpace.",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": [{ "field": "data.name", "code": "required", "message": "name is required" }]
+    },
+    {
+      "name": "apiary/put/name-whitespace-only-is-accepted",
+      "why": "The other half of absentWhen: empty. Describing name as `blank` would make the client reject a name this service accepts.",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "   ", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/patch/name-empty-string-is-accepted",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "" }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/put/name-at-the-200-byte-limit-is-accepted",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "@repeat:200:a", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/put/name-one-byte-over-the-limit",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "@repeat:201:a", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": [
+        {
+          "field": "data.name",
+          "code": "too_long",
+          "message": "name must be at most 200 characters"
+        }
+      ]
+    },
+    {
+      "name": "apiary/put/name-length-is-utf8-bytes-not-code-units",
+      "why": "101 accented characters are 202 UTF-8 bytes but only 101 Dart string units. Go compares len() on a UTF-8 string, so measuring anything else on the client rejects Portuguese names this service accepts.",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "@repeat:101:é", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": [
+        {
+          "field": "data.name",
+          "code": "too_long",
+          "message": "name must be at most 200 characters"
+        }
+      ]
+    },
+    {
+      "name": "apiary/patch/name-too-long",
+      "why": "A cap applies to a patch as well as a put — only `required` is op-gated.",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "@repeat:201:a" }
+      },
+      "expect": [
+        {
+          "field": "data.name",
+          "code": "too_long",
+          "message": "name must be at most 200 characters"
+        }
+      ]
+    },
+    {
+      "name": "apiary/patch/hive-count-negative",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "hive_count": -1 }
+      },
+      "expect": [
+        {
+          "field": "data.hive_count",
+          "code": "out_of_range",
+          "message": "hive_count must be >= 0"
+        }
+      ]
+    },
+    {
+      "name": "apiary/patch/hive-count-zero-is-accepted",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "hive_count": 0 }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/patch/notes-too-long",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "notes": "@repeat:10001:n" }
+      },
+      "expect": [
+        {
+          "field": "data.notes",
+          "code": "too_long",
+          "message": "notes must be at most 10000 characters"
+        }
+      ]
+    },
+    {
+      "name": "apiary/patch/place-label-too-long",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "place_label": "@repeat:201:p" }
+      },
+      "expect": [
+        {
+          "field": "data.place_label",
+          "code": "too_long",
+          "message": "place_label must be at most 200 characters"
+        }
+      ]
+    },
+    {
+      "name": "apiary/patch/dgav-registration-number-too-long",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "dgav_registration_number": "@repeat:51:9" }
+      },
+      "expect": [
+        {
+          "field": "data.dgav_registration_number",
+          "code": "too_long",
+          "message": "dgav_registration_number must be at most 50 characters"
+        }
+      ]
+    },
+    {
+      "name": "apiary/put/location-missing-entirely",
+      "why": "entityChecks.requiredGroup — reported under the synthetic path data.location, which is neither coordinate's own path.",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Melgar Norte" }
+      },
+      "expect": [
+        { "field": "data.location", "code": "required", "message": "location is required" }
+      ]
+    },
+    {
+      "name": "apiary/patch/longitude-without-latitude",
+      "why": "entityChecks.requiredWhenPresent — the failure is reported against the MISSING half, not against the field that triggered the rule.",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "location_lon": -8.5 }
+      },
+      "expect": [
+        {
+          "field": "data.location_lat",
+          "code": "required",
+          "message": "location_lat is required when location_lon is set"
+        }
+      ]
+    },
+    {
+      "name": "apiary/patch/latitude-without-longitude",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "location_lat": 41.2 }
+      },
+      "expect": [
+        {
+          "field": "data.location_lon",
+          "code": "required",
+          "message": "location_lon is required when location_lat is set"
+        }
+      ]
+    },
+    {
+      "name": "apiary/put/longitude-out-of-range",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Melgar Norte", "location_lon": 180.5, "location_lat": 41.2 }
+      },
+      "expect": [
+        {
+          "field": "data.location_lon",
+          "code": "out_of_range",
+          "message": "location_lon must be between -180 and 180"
+        }
+      ]
+    },
+    {
+      "name": "apiary/put/latitude-out-of-range",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": -90.5 }
+      },
+      "expect": [
+        {
+          "field": "data.location_lat",
+          "code": "out_of_range",
+          "message": "location_lat must be between -90 and 90"
+        }
+      ]
+    },
+    {
+      "name": "apiary/put/both-coordinates-at-their-bounds-are-accepted",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Melgar Norte", "location_lon": -180, "location_lat": 90 }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary/put/several-rules-fail-at-once",
+      "why": "Aggregation: a validator that returned on the first failure would drop two of these.",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "hive_count": -3, "notes": "@repeat:10001:n" }
+      },
+      "expect": [
+        { "field": "data.name", "code": "required", "message": "name is required" },
+        { "field": "data.location", "code": "required", "message": "location is required" },
+        {
+          "field": "data.hive_count",
+          "code": "out_of_range",
+          "message": "hive_count must be >= 0"
+        },
+        {
+          "field": "data.notes",
+          "code": "too_long",
+          "message": "notes must be at most 10000 characters"
+        }
+      ]
+    },
+    {
+      "name": "apiary/put/unknown-op-kind",
+      "entityType": "apiary",
+      "op": {
+        "op": "upsert",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": [{ "field": "op", "code": "invalid", "message": "op must be put, patch or delete" }]
+    },
+    {
+      "name": "apiary/put/id-is-not-a-uuid",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "not-a-uuid",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": [{ "field": "id", "code": "invalid", "message": "id must be a UUID" }]
+    },
+    {
+      "name": "apiary/put/updated-at-missing",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
+    },
+    {
+      "name": "apiary/put/entity-type-not-a-known-type",
+      "why": "entityTypeCheck is descriptive-only for the client, which dispatches BY entity_type and so passes an unknown one through to the server. Pinning the message here is what keeps the described string honest.",
+      "entityType": "apiary",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary_ledger",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": 41.2 }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "entity_type",
+          "code": "invalid",
+          "message": "entity_type must be apiary, apiary_counter or stock_declaration",
+          "why": "The client never reaches an entity type it has no rules for."
+        }
+      ]
+    },
+    {
+      "name": "apiary/patch/that-changes-nothing",
+      "entityType": "apiary",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {}
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data",
+          "code": "required",
+          "message": "patch must change at least one field",
+          "why": "serverOnly: defined over an exact field list, so a field added server-side would turn valid patches into client-side rejections."
+        }
+      ]
+    },
+
+    {
+      "name": "apiary_counter/put/valid",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "counter_type": "hive",
+          "value": 12
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary_counter/patch/without-a-value",
+      "why": "#378: a value-less patch is an idempotent no-op here, not a rejection.",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "counter_type": "hive"
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "apiary_counter/put/apiary-id-missing",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "counter_type": "hive", "value": 12 }
+      },
+      "expect": [
+        { "field": "data.apiary_id", "code": "required", "message": "apiary_id is required" }
+      ]
+    },
+    {
+      "name": "apiary_counter/patch/apiary-id-missing",
+      "why": "The identity pair is required on BOTH op kinds — a counter is identified by (apiary_id, counter_type), never by the client row id.",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "counter_type": "hive", "value": 12 }
+      },
+      "expect": [
+        { "field": "data.apiary_id", "code": "required", "message": "apiary_id is required" }
+      ]
+    },
+    {
+      "name": "apiary_counter/put/apiary-id-is-not-a-uuid",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "apiary_id": "1b7d4c2a", "counter_type": "hive", "value": 12 }
+      },
+      "expect": [
+        {
+          "field": "data.apiary_id",
+          "code": "invalid",
+          "message": "apiary_id must be a UUID"
+        }
+      ]
+    },
+    {
+      "name": "apiary_counter/patch/counter-type-missing",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d", "value": 12 }
+      },
+      "expect": [
+        {
+          "field": "data.counter_type",
+          "code": "required",
+          "message": "counter_type is required"
+        }
+      ]
+    },
+    {
+      "name": "apiary_counter/put/counter-type-outside-the-vocabulary",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "counter_type": "nucleus",
+          "value": 12
+        }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.counter_type",
+          "code": "invalid",
+          "why": "serverOnly (D-20): the vocabulary is extensible server-side, and a frozen client copy would reject a newer value permanently."
+        }
+      ]
+    },
+    {
+      "name": "apiary_counter/put/value-missing",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "counter_type": "hive"
+        }
+      },
+      "expect": [{ "field": "data.value", "code": "required", "message": "value is required" }]
+    },
+    {
+      "name": "apiary_counter/patch/value-negative",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "patch",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "counter_type": "hive",
+          "value": -1
+        }
+      },
+      "expect": [
+        {
+          "field": "data.value",
+          "code": "out_of_range",
+          "message": "value must be >= 0"
+        }
+      ]
+    },
+    {
+      "name": "apiary_counter/delete/is-not-an-allowed-op-kind",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "delete",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "counter_type": "hive",
+          "value": 12
+        }
+      },
+      "expect": [
+        {
+          "field": "op",
+          "code": "invalid",
+          "message": "op must be put or patch for apiary_counter (counters have no delete)"
+        }
+      ]
+    },
+    {
+      "name": "apiary_counter/delete/without-data",
+      "why": "validateCounterOp has no delete short-circuit (delete is not an allowed kind for it at all), while the client's evaluator short-circuits every delete. The client therefore under-reports here, which is the safe direction — it defers to the server — but it is an asymmetry, so it is recorded rather than left to be discovered.",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "delete",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z"
+      },
+      "expect": [
+        {
+          "field": "op",
+          "code": "invalid",
+          "message": "op must be put or patch for apiary_counter (counters have no delete)"
+        }
+      ],
+      "serverOnly": [
+        {
+          "field": "data.apiary_id",
+          "code": "required",
+          "message": "apiary_id is required",
+          "why": "Reached only because validateCounterOp keeps validating an op kind it has already rejected."
+        },
+        {
+          "field": "data.counter_type",
+          "code": "required",
+          "message": "counter_type is required",
+          "why": "Same."
+        }
+      ]
+    },
+    {
+      "name": "apiary_counter/put/id-is-not-a-uuid",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary_counter",
+        "id": "",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "counter_type": "hive",
+          "value": 12
+        }
+      },
+      "expect": [{ "field": "id", "code": "invalid", "message": "id must be a UUID" }]
+    },
+    {
+      "name": "apiary_counter/put/updated-at-missing",
+      "entityType": "apiary_counter",
+      "op": {
+        "op": "put",
+        "entity_type": "apiary_counter",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "counter_type": "hive",
+          "value": 12
+        }
+      },
+      "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
+    },
+
+    {
+      "name": "stock_declaration/put/valid",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "put",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "declared_on": "2026-03-01",
+          "total_hive_count": 40,
+          "dgav_registration_number": "PT-1234",
+          "notes": "Declaração anual.",
+          "breakdown": [{ "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d", "hive_count": 40 }]
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "stock_declaration/patch/notes-only",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "notes": "Corrigido." }
+      },
+      "expect": []
+    },
+    {
+      "name": "stock_declaration/delete/valid",
+      "why": "Unlike a counter, a declaration is an independent record and DOES accept delete.",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "delete",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z"
+      },
+      "expect": []
+    },
+    {
+      "name": "stock_declaration/put/declared-on-missing",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "put",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "total_hive_count": 40 }
+      },
+      "expect": [
+        {
+          "field": "data.declared_on",
+          "code": "required",
+          "message": "declared_on is required"
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/patch/declared-on-in-the-wrong-format",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "declared_on": "01-03-2026" }
+      },
+      "expect": [
+        {
+          "field": "data.declared_on",
+          "code": "invalid",
+          "message": "declared_on must be a date in YYYY-MM-DD form"
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/patch/declared-on-is-a-date-that-does-not-exist",
+      "why": "Go's time.Parse range-checks the day; Dart's DateTime.parse silently rolls 2026-02-30 into March, so only a calendar round-trip on the client keeps the two sides equal.",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "declared_on": "2026-02-30" }
+      },
+      "expect": [
+        {
+          "field": "data.declared_on",
+          "code": "invalid",
+          "message": "declared_on must be a date in YYYY-MM-DD form"
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/patch/declared-on-in-a-leap-year-is-accepted",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "declared_on": "2028-02-29" }
+      },
+      "expect": []
+    },
+    {
+      "name": "stock_declaration/put/total-hive-count-missing",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "put",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "declared_on": "2026-03-01" }
+      },
+      "expect": [
+        {
+          "field": "data.total_hive_count",
+          "code": "required",
+          "message": "total_hive_count is required"
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/patch/total-hive-count-negative",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "total_hive_count": -1 }
+      },
+      "expect": [
+        {
+          "field": "data.total_hive_count",
+          "code": "out_of_range",
+          "message": "total_hive_count must be >= 0"
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/patch/dgav-registration-number-too-long",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "dgav_registration_number": "@repeat:51:9" }
+      },
+      "expect": [
+        {
+          "field": "data.dgav_registration_number",
+          "code": "too_long",
+          "message": "dgav_registration_number must be at most 50 characters"
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/patch/notes-too-long",
+      "why": "A declaration's notes cap is 2000, not apiaries' 10000 — a corpus case per entity is what keeps a copy-pasted cap from going unnoticed.",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "notes": "@repeat:2001:n" }
+      },
+      "expect": [
+        {
+          "field": "data.notes",
+          "code": "too_long",
+          "message": "notes must be at most 2000 characters"
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/patch/breakdown-is-not-an-array",
+      "why": "breakdown is serverOnly and is an ARRAY — describing it as a jsonObject would reject every declaration. The client must stay silent about it; this case is what proves the exclusion is deliberate rather than a divergence.",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "breakdown": { "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d" } }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.breakdown",
+          "code": "invalid",
+          "message": "breakdown must be a JSON array",
+          "why": "serverOnly: a bounded array of client-owned objects, outside the field-check vocabulary."
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/patch/breakdown-array-is-accepted-by-both",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "breakdown": [{ "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d", "hive_count": 7 }]
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "stock_declaration/patch/that-changes-nothing",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "patch",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {}
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data",
+          "code": "required",
+          "message": "patch must change at least one field",
+          "why": "serverOnly, for the same reason as apiaries'."
+        }
+      ]
+    },
+    {
+      "name": "stock_declaration/put/unknown-op-kind",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "merge",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "declared_on": "2026-03-01", "total_hive_count": 40 }
+      },
+      "expect": [{ "field": "op", "code": "invalid", "message": "op must be put, patch or delete" }]
+    },
+    {
+      "name": "stock_declaration/put/id-is-not-a-uuid",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "put",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "declared_on": "2026-03-01", "total_hive_count": 40 }
+      },
+      "expect": [{ "field": "id", "code": "invalid", "message": "id must be a UUID" }]
+    },
+    {
+      "name": "stock_declaration/put/updated-at-missing",
+      "entityType": "stock_declaration",
+      "op": {
+        "op": "put",
+        "entity_type": "stock_declaration",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "data": { "declared_on": "2026-03-01", "total_hive_count": 40 }
+      },
+      "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
+    },
+
+    {
+      "name": "activity/put/valid",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "type": "generic",
+          "occurred_at": "2026-03-01",
+          "attributes": { "notes": "Visita de rotina." },
+          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e"
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "activity/patch/attributes-only",
+      "why": "#378: neither apiary_id, type nor occurred_at is demanded of a partial update.",
+      "entityType": "activity",
+      "op": {
+        "op": "patch",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "attributes": { "notes": "Corrigido." } }
+      },
+      "expect": []
+    },
+    {
+      "name": "activity/delete/valid",
+      "entityType": "activity",
+      "op": {
+        "op": "delete",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z"
+      },
+      "expect": []
+    },
+    {
+      "name": "activity/put/apiary-id-missing",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "type": "generic", "occurred_at": "2026-03-01" }
+      },
+      "expect": [
+        { "field": "data.apiary_id", "code": "required", "message": "apiary_id is required" }
+      ]
+    },
+    {
+      "name": "activity/patch/apiary-id-is-not-a-uuid",
+      "entityType": "activity",
+      "op": {
+        "op": "patch",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "apiary_id": "apiary-1" }
+      },
+      "expect": [
+        {
+          "field": "data.apiary_id",
+          "code": "invalid",
+          "message": "apiary_id must be a UUID"
+        }
+      ]
+    },
+    {
+      "name": "activity/put/apiary-id-in-another-organization",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "4ea07f5d-6b8c-4d9e-bf20-3b4c5d6e7f80",
+          "type": "generic",
+          "occurred_at": "2026-03-01"
+        }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.apiary_id",
+          "code": "not_found",
+          "why": "serverOnly: cross-organization ownership needs server state the device does not have offline."
+        }
+      ]
+    },
+    {
+      "name": "activity/put/occurred-at-missing",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "type": "generic"
+        }
+      },
+      "expect": [
+        {
+          "field": "data.occurred_at",
+          "code": "required",
+          "message": "occurred_at is required"
+        }
+      ]
+    },
+    {
+      "name": "activity/put/occurred-at-empty-string-counts-as-absent",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "type": "generic",
+          "occurred_at": ""
+        }
+      },
+      "expect": [
+        {
+          "field": "data.occurred_at",
+          "code": "required",
+          "message": "occurred_at is required"
+        }
+      ]
+    },
+    {
+      "name": "activity/patch/occurred-at-empty-string-is-accepted",
+      "entityType": "activity",
+      "op": {
+        "op": "patch",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "occurred_at": "" }
+      },
+      "expect": []
+    },
+    {
+      "name": "activity/patch/occurred-at-is-not-a-date",
+      "entityType": "activity",
+      "op": {
+        "op": "patch",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "occurred_at": "2026/03/01" }
+      },
+      "expect": [
+        {
+          "field": "data.occurred_at",
+          "code": "invalid",
+          "message": "occurred_at must be a YYYY-MM-DD date"
+        }
+      ]
+    },
+    {
+      "name": "activity/put/type-missing",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "occurred_at": "2026-03-01"
+        }
+      },
+      "expect": [{ "field": "data.type", "code": "required", "message": "type is required" }]
+    },
+    {
+      "name": "activity/put/type-empty-string-counts-as-absent",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "occurred_at": "2026-03-01",
+          "type": ""
+        }
+      },
+      "expect": [{ "field": "data.type", "code": "required", "message": "type is required" }]
+    },
+    {
+      "name": "activity/patch/attributes-is-an-array",
+      "entityType": "activity",
+      "op": {
+        "op": "patch",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "attributes": [1, 2] }
+      },
+      "expect": [
+        {
+          "field": "data.attributes",
+          "code": "invalid",
+          "message": "attributes must be a JSON object"
+        }
+      ]
+    },
+    {
+      "name": "activity/patch/attributes-is-an-explicit-null",
+      "why": "An explicit null is present-but-not-an-object on both sides, not absent — the server unmarshals it into a nil map and rejects it.",
+      "entityType": "activity",
+      "op": {
+        "op": "patch",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "attributes": null }
+      },
+      "expect": [
+        {
+          "field": "data.attributes",
+          "code": "invalid",
+          "message": "attributes must be a JSON object"
+        }
+      ]
+    },
+    {
+      "name": "activity/patch/attributes-absent-is-accepted",
+      "entityType": "activity",
+      "op": {
+        "op": "patch",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "occurred_at": "2026-03-01" }
+      },
+      "expect": []
+    },
+    {
+      "name": "activity/patch/journey-id-is-not-a-uuid",
+      "entityType": "activity",
+      "op": {
+        "op": "patch",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "journey_id": "journey-1" }
+      },
+      "expect": [
+        {
+          "field": "data.journey_id",
+          "code": "invalid",
+          "message": "journey_id must be a UUID"
+        }
+      ]
+    },
+    {
+      "name": "activity/put/type-outside-the-registry",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "type": "requeening",
+          "occurred_at": "2026-03-01",
+          "attributes": {}
+        }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.type",
+          "code": "invalid",
+          "why": "serverOnly (D-20): the activity-type registry is extensible server-side."
+        }
+      ]
+    },
+    {
+      "name": "activity/put/required-attribute-missing-for-its-type",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "type": "harvest",
+          "occurred_at": "2026-03-01",
+          "attributes": {}
+        }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.attributes.honey_supers",
+          "code": "required",
+          "why": "serverOnly: the per-activity-type attribute-bag schema is a rich schema, not a mechanical constraint."
+        }
+      ]
+    },
+    {
+      "name": "activity/put/unknown-op-kind",
+      "entityType": "activity",
+      "op": {
+        "op": "upsert",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d" }
+      },
+      "expect": [{ "field": "op", "code": "invalid", "message": "op must be put, patch or delete" }]
+    },
+    {
+      "name": "activity/put/entity-type-is-not-activity",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "inspection",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "type": "generic",
+          "occurred_at": "2026-03-01"
+        }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "entity_type",
+          "code": "invalid",
+          "message": "entity_type must be activity",
+          "why": "The client dispatches BY entity_type and so cannot fail this check."
+        }
+      ]
+    },
+    {
+      "name": "activity/put/id-is-not-a-uuid",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "type": "generic",
+          "occurred_at": "2026-03-01"
+        }
+      },
+      "expect": [{ "field": "id", "code": "invalid", "message": "id must be a UUID" }]
+    },
+    {
+      "name": "activity/put/updated-at-missing",
+      "entityType": "activity",
+      "op": {
+        "op": "put",
+        "entity_type": "activity",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "data": {
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "type": "generic",
+          "occurred_at": "2026-03-01"
+        }
+      },
+      "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
+    },
+
+    {
+      "name": "journey/put/valid",
+      "entityType": "journey",
+      "op": {
+        "op": "put",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "name": "Rota Norte",
+          "main_activity_type": "harvest",
+          "status": "open",
+          "default_attributes": { "notes": "Levar alças." }
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "journey/patch/status-only",
+      "why": "#378's concrete case: closing a journey uploads only the status column.",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "status": "closed" }
+      },
+      "expect": []
+    },
+    {
+      "name": "journey/delete/valid",
+      "entityType": "journey",
+      "op": {
+        "op": "delete",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z"
+      },
+      "expect": []
+    },
+    {
+      "name": "journey/put/name-missing",
+      "entityType": "journey",
+      "op": {
+        "op": "put",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "main_activity_type": "harvest" }
+      },
+      "expect": [{ "field": "data.name", "code": "required", "message": "name is required" }]
+    },
+    {
+      "name": "journey/put/name-empty-string-counts-as-absent",
+      "entityType": "journey",
+      "op": {
+        "op": "put",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "", "main_activity_type": "harvest" }
+      },
+      "expect": [{ "field": "data.name", "code": "required", "message": "name is required" }]
+    },
+    {
+      "name": "journey/patch/name-too-long",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "@repeat:201:r" }
+      },
+      "expect": [
+        {
+          "field": "data.name",
+          "code": "too_long",
+          "message": "name must be at most 200 characters"
+        }
+      ]
+    },
+    {
+      "name": "journey/put/main-activity-type-missing",
+      "entityType": "journey",
+      "op": {
+        "op": "put",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Rota Norte" }
+      },
+      "expect": [
+        {
+          "field": "data.main_activity_type",
+          "code": "required",
+          "message": "main_activity_type is required"
+        }
+      ]
+    },
+    {
+      "name": "journey/patch/main-activity-type-outside-the-vocabulary",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "main_activity_type": "requeening" }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.main_activity_type",
+          "code": "invalid",
+          "why": "serverOnly (D-20): extensible vocabulary."
+        }
+      ]
+    },
+    {
+      "name": "journey/patch/status-outside-the-vocabulary",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "status": "archived" }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.status",
+          "code": "invalid",
+          "why": "serverOnly (D-20): status is not described at all, so the client has no rule to run."
+        }
+      ]
+    },
+    {
+      "name": "journey/patch/default-attributes-is-an-array",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "default_attributes": [1] }
+      },
+      "expect": [
+        {
+          "field": "data.default_attributes",
+          "code": "invalid",
+          "message": "default_attributes must be a JSON object"
+        }
+      ]
+    },
+    {
+      "name": "journey/patch/default-attributes-is-an-explicit-null",
+      "why": "The rough edge recorded in contracts/validation/README.md: validateDefaultAttributes skips only on an ABSENT bag, so a present `null` is rejected. Both sides agree today; if the server is ever relaxed here, this case is what says the description must be relaxed with it.",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "default_attributes": null }
+      },
+      "expect": [
+        {
+          "field": "data.default_attributes",
+          "code": "invalid",
+          "message": "default_attributes must be a JSON object"
+        }
+      ]
+    },
+    {
+      "name": "journey/patch/default-attributes-well-under-the-byte-cap",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "default_attributes": { "notes": "@repeat:8000:x" } }
+      },
+      "expect": []
+    },
+    {
+      "name": "journey/patch/default-attributes-over-the-byte-cap",
+      "why": "maxBytes is measured on the encoded bag, not on a field's characters — and it is checked BEFORE the object check, so an over-cap OBJECT reports too_long alone.",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "default_attributes": { "notes": "@repeat:9000:x" } }
+      },
+      "expect": [
+        {
+          "field": "data.default_attributes",
+          "code": "too_long",
+          "message": "default_attributes must be at most 8192 bytes"
+        }
+      ]
+    },
+    {
+      "name": "journey/put/unknown-op-kind",
+      "entityType": "journey",
+      "op": {
+        "op": "replace",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Rota Norte", "main_activity_type": "harvest" }
+      },
+      "expect": [{ "field": "op", "code": "invalid", "message": "op must be put, patch or delete" }]
+    },
+    {
+      "name": "journey/put/entity-type-is-not-a-journey-type",
+      "entityType": "journey",
+      "op": {
+        "op": "put",
+        "entity_type": "route",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Rota Norte", "main_activity_type": "harvest" }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "entity_type",
+          "code": "invalid",
+          "message": "entity_type must be journey or journey_plan_item",
+          "why": "The client dispatches BY entity_type and so cannot fail this check."
+        }
+      ]
+    },
+    {
+      "name": "journey/put/id-is-not-a-uuid",
+      "entityType": "journey",
+      "op": {
+        "op": "put",
+        "entity_type": "journey",
+        "id": "rota-norte",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "name": "Rota Norte", "main_activity_type": "harvest" }
+      },
+      "expect": [{ "field": "id", "code": "invalid", "message": "id must be a UUID" }]
+    },
+    {
+      "name": "journey/put/updated-at-missing",
+      "entityType": "journey",
+      "op": {
+        "op": "put",
+        "entity_type": "journey",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "data": { "name": "Rota Norte", "main_activity_type": "harvest" }
+      },
+      "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
+    },
+
+    {
+      "name": "journey_plan_item/put/valid",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "journey_plan_item/delete/valid",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "delete",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z"
+      },
+      "expect": []
+    },
+    {
+      "name": "journey_plan_item/patch/is-not-an-allowed-op-kind",
+      "why": "A plan item has no mutable content of its own. Because the description declares journey_id/apiary_id required on put AND patch, both sides validate the payload of the rejected patch identically.",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+        }
+      },
+      "expect": [
+        {
+          "field": "op",
+          "code": "invalid",
+          "message": "op must be put or delete for journey_plan_item (plan items have no patch)"
+        }
+      ]
+    },
+    {
+      "name": "journey_plan_item/put/journey-id-missing",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d" }
+      },
+      "expect": [
+        {
+          "field": "data.journey_id",
+          "code": "required",
+          "message": "journey_id is required"
+        }
+      ]
+    },
+    {
+      "name": "journey_plan_item/put/journey-id-is-not-a-uuid",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "journey_id": "rota-norte",
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+        }
+      },
+      "expect": [
+        {
+          "field": "data.journey_id",
+          "code": "invalid",
+          "message": "journey_id must be a UUID"
+        }
+      ]
+    },
+    {
+      "name": "journey_plan_item/put/apiary-id-missing",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e" }
+      },
+      "expect": [
+        { "field": "data.apiary_id", "code": "required", "message": "apiary_id is required" }
+      ]
+    },
+    {
+      "name": "journey_plan_item/put/both-ids-missing",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {}
+      },
+      "expect": [
+        {
+          "field": "data.journey_id",
+          "code": "required",
+          "message": "journey_id is required"
+        },
+        { "field": "data.apiary_id", "code": "required", "message": "apiary_id is required" }
+      ]
+    },
+    {
+      "name": "journey_plan_item/put/apiary-id-is-not-a-uuid",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e", "apiary_id": "a1" }
+      },
+      "expect": [
+        {
+          "field": "data.apiary_id",
+          "code": "invalid",
+          "message": "apiary_id must be a UUID"
+        }
+      ]
+    },
+    {
+      "name": "journey_plan_item/put/apiary-id-in-another-organization",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
+          "apiary_id": "4ea07f5d-6b8c-4d9e-bf20-3b4c5d6e7f80"
+        }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.apiary_id",
+          "code": "not_found",
+          "why": "serverOnly: cross-organization ownership."
+        }
+      ]
+    },
+    {
+      "name": "journey_plan_item/put/id-is-not-a-uuid",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "item-1",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+        }
+      },
+      "expect": [{ "field": "id", "code": "invalid", "message": "id must be a UUID" }]
+    },
+    {
+      "name": "journey_plan_item/put/updated-at-missing",
+      "entityType": "journey_plan_item",
+      "op": {
+        "op": "put",
+        "entity_type": "journey_plan_item",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "data": {
+          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+        }
+      },
+      "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
+    },
+
+    {
+      "name": "todo/put/valid",
+      "entityType": "todo",
+      "op": {
+        "op": "put",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": {
+          "title": "Rever colmeias",
+          "description": "Antes da colheita.",
+          "due_date": "2026-03-01",
+          "priority": "high",
+          "status": "open",
+          "assignee_id": "3d9f6e4c-5a7b-4c8d-ae1f-2a3b4c5d6e7f",
+          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/patch/completion-only",
+      "why": "#378: completing a todo uploads status + completed_at, never the title or priority.",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "status": "done", "completed_at": "2026-03-02T09:30:00Z" }
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/delete/valid",
+      "entityType": "todo",
+      "op": {
+        "op": "delete",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z"
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/put/title-missing",
+      "entityType": "todo",
+      "op": {
+        "op": "put",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "priority": "low" }
+      },
+      "expect": [{ "field": "data.title", "code": "required", "message": "title is required" }]
+    },
+    {
+      "name": "todo/put/title-whitespace-only-counts-as-absent",
+      "why": "absentWhen: blank — unlike apiaries' name, validateTodoOp DOES TrimSpace here. Getting the two the same way round is exactly the mistake nothing else catches.",
+      "entityType": "todo",
+      "op": {
+        "op": "put",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "title": "   ", "priority": "low" }
+      },
+      "expect": [{ "field": "data.title", "code": "required", "message": "title is required" }]
+    },
+    {
+      "name": "todo/patch/title-whitespace-only-is-accepted",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "title": "   " }
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/patch/title-too-long",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "title": "@repeat:501:t" }
+      },
+      "expect": [
+        {
+          "field": "data.title",
+          "code": "too_long",
+          "message": "title must be at most 500 characters"
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/description-too-long",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "description": "@repeat:10001:d" }
+      },
+      "expect": [
+        {
+          "field": "data.description",
+          "code": "too_long",
+          "message": "description must be at most 10000 characters"
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/due-date-is-not-a-date",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "due_date": "amanhã" }
+      },
+      "expect": [
+        {
+          "field": "data.due_date",
+          "code": "invalid",
+          "message": "due_date must be a YYYY-MM-DD date"
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/due-date-cleared-to-an-empty-string-is-accepted",
+      "why": "absentWhen: empty. Describing due_date as null-only would make the client reject every cleared due date.",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "due_date": "" }
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/put/priority-missing",
+      "entityType": "todo",
+      "op": {
+        "op": "put",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "title": "Rever colmeias" }
+      },
+      "expect": [
+        { "field": "data.priority", "code": "required", "message": "priority is required" }
+      ]
+    },
+    {
+      "name": "todo/patch/priority-outside-the-vocabulary",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "priority": "urgent" }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.priority",
+          "code": "invalid",
+          "why": "serverOnly (D-20): extensible vocabulary."
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/status-outside-the-vocabulary",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "status": "blocked" }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.status",
+          "code": "invalid",
+          "why": "serverOnly (D-20): status is not described at all."
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/completed-at-is-not-rfc3339",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "completed_at": "2026-03-02 09:30:00" }
+      },
+      "expect": [
+        {
+          "field": "data.completed_at",
+          "code": "invalid",
+          "message": "completed_at must be an RFC3339 timestamp"
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/completed-at-without-a-zone-offset",
+      "why": "Go's RFC3339Nano demands a Z or ±hh:mm; Dart's DateTime.parse does not. A client leaning on DateTime.parse would accept this and only find out at the next push.",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "completed_at": "2026-03-02T09:30:00" }
+      },
+      "expect": [
+        {
+          "field": "data.completed_at",
+          "code": "invalid",
+          "message": "completed_at must be an RFC3339 timestamp"
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/completed-at-with-a-numeric-offset-is-accepted",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "completed_at": "2026-03-02T09:30:00.123+01:00" }
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/patch/completed-at-cleared-to-an-empty-string-is-accepted",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "completed_at": "" }
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/patch/assignee-id-is-not-a-uuid",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "assignee_id": "member-1" }
+      },
+      "expect": [
+        {
+          "field": "data.assignee_id",
+          "code": "invalid",
+          "message": "assignee_id must be a UUID"
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/assignee-id-unassigned-to-an-empty-string-is-accepted",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "assignee_id": "" }
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/patch/assignee-id-outside-the-organization",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "assignee_id": "4ea07f5d-6b8c-4d9e-bf20-3b4c5d6e7f80" }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "data.assignee_id",
+          "code": "not_found",
+          "why": "serverOnly: organization membership is server state."
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/apiary-id-is-not-a-uuid",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "apiary_id": "a1" }
+      },
+      "expect": [
+        {
+          "field": "data.apiary_id",
+          "code": "invalid",
+          "message": "apiary_id must be a UUID"
+        }
+      ]
+    },
+    {
+      "name": "todo/patch/apiary-id-cleared-to-an-empty-string-is-accepted",
+      "entityType": "todo",
+      "op": {
+        "op": "patch",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "apiary_id": "" }
+      },
+      "expect": []
+    },
+    {
+      "name": "todo/put/unknown-op-kind",
+      "entityType": "todo",
+      "op": {
+        "op": "complete",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "title": "Rever colmeias", "priority": "low" }
+      },
+      "expect": [{ "field": "op", "code": "invalid", "message": "op must be put, patch or delete" }]
+    },
+    {
+      "name": "todo/put/entity-type-is-not-todo",
+      "entityType": "todo",
+      "op": {
+        "op": "put",
+        "entity_type": "task",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "title": "Rever colmeias", "priority": "low" }
+      },
+      "expect": [],
+      "serverOnly": [
+        {
+          "field": "entity_type",
+          "code": "invalid",
+          "message": "entity_type must be todo",
+          "why": "The client dispatches BY entity_type and so cannot fail this check."
+        }
+      ]
+    },
+    {
+      "name": "todo/put/id-is-not-a-uuid",
+      "entityType": "todo",
+      "op": {
+        "op": "put",
+        "entity_type": "todo",
+        "id": "todo-1",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "title": "Rever colmeias", "priority": "low" }
+      },
+      "expect": [{ "field": "id", "code": "invalid", "message": "id must be a UUID" }]
+    },
+    {
+      "name": "todo/put/updated-at-missing",
+      "entityType": "todo",
+      "op": {
+        "op": "put",
+        "entity_type": "todo",
+        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "data": { "title": "Rever colmeias", "priority": "low" }
+      },
+      "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
+    }
+  ]
+}
