@@ -45,7 +45,7 @@ const syncValidationRulesJson = r'''
       },
       "entityTypeCheck": {
         "code": "invalid",
-        "message": "entity_type must be apiary or apiary_counter"
+        "message": "entity_type must be apiary, apiary_counter or stock_declaration"
       },
       "fields": [
         {

@@ -20,6 +20,13 @@
   description's `jsonObject` check must skip an explicit null for that field. Written up in
   `contracts/validation/README.md`. Cheapest check: log one op's `opData` for a journey with no
   defaults, or add a `journeys` integration case.
+- **Give #443's `_fieldLabel` table entries for the stock-declaration fields.**
+  `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
+  `total_hive_count` or `dgav_registration_number`, so a rejected DGAV stock declaration (#298)
+  degrades to the generic "needs your attention" line even though #584 now produces exact
+  `(field, code)` pairs for it. Graceful, not broken — but it throws away guidance that is
+  already there. Three labels plus their EN/PT strings; belongs to #443's table rather than to
+  the parity description, so it was left out of #584's PR deliberately.
 - **The same evaluator wants a save-time call site.** `validateSyncOps`
   (`client/lib/core/validation/sync_op_validator.dart`) is a pure function of the wire op, so the
   form/repository write path can run it and tell the beekeeper _in the form_, with the record
