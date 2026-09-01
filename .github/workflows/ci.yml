@@ -24,6 +24,20 @@ jobs:
         with:
           fetch-depth: 0 # full history for gitleaks
       - name: Set up toolchains from mise.toml
-        uses: jdx/mise-action@v4
+        id: mise
+        continue-on-error: true
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+
+      # Retried once. The mise setup downloads a release binary from GitHub and
+      # has failed transiently in CI: release-deploy run 33490109770 lost an
+      # otherwise-green rc12 build to `curl` exit 35 (TLS handshake) on a cold
+      # cache, and because `open-pr` needs every publish job green, NO promotion
+      # PR opened — a network blip silently cost a deploy. A `uses:` step cannot
+      # use this repo's bash retry loop (see helm-e2e.yml's image import), so
+      # this is the equivalent shape: attempt, tolerate the failure, attempt
+      # again. A second failure fails the job, as it should.
+      - name: Set up toolchains from mise.toml (retry)
+        if: steps.mise.outcome == 'failure'
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
       - name: Lint + test
         run: task ci
