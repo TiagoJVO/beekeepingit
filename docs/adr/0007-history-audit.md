@@ -142,5 +142,9 @@ so no edit silently disappears.
   renders the per-entity timeline (EN/PT, WCAG 2.2 AA).
 - **EPIC-14 (#15)** — retention window / automatic purge / legal-hold; GDPR-erasure runbook that
   scrubs `identity.users`.
+  That purge is **not unbounded**: Treatment activities carry a ~5-year veterinary
+  record-keeping floor (Reg (EU) 2019/6, D-19) they may not be physically purged inside, and
+  erasure anonymizes their attribution rather than deleting them — reconciled in
+  [history.md](../architecture/history.md) §7.4 (#295), which #90 implements.
 - Build the **central history projection** (outbox → timeline) **iff** a cross-entity/global audit
   feed is needed — reachable behind the service boundary (§5.1).
