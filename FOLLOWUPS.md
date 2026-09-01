@@ -20,6 +20,32 @@
   `slice.spec.ts` (the gate fix stays) rather than widening the poll timeout, and say so on the
   PR. Prune this entry when #240's PR merges.
 
+## `claude/orch-add-feature-8816f4` (#296, #298 — EPIC-02's two remaining regulatory stories)
+
+- ~~**Before merge: a green Helm-E2E.**~~ **Met** — [run
+  33522048949](https://github.com/TiagoJVO/beekeepingit/actions/runs/33522048949) passed
+  (17m). That gate is the first place all three migrations (`apiaries` `00009`/`00010`,
+  `organizations` `00007`) and the new PowerSync sync-rules entries actually execute together;
+  local Go/Dart tests cover the service and client halves in isolation but never the
+  replication path, and a sync-rules entry that fails to parse is historically **silent** (the
+  #23-deploy shape: replication fatals, nothing reports the file invalid). It is green, so this
+  item is closed rather than pending — kept only until the PR merges, as the reviewer's
+  evidence.
+- **Still open: `stock_declarations` runtime grants on a real environment.** The Helm-E2E run
+  above proves the table is CREATEd and that `charts/postgres`'s blanket
+  `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES` (hook weight 3) applies without error —
+  but **nothing in E2E writes a declaration**, so the grant is not exercised end-to-end. The
+  reasoning holds (the table is new and NOT a `*_log`, and the publication is schema-scoped so
+  PowerSync captures it automatically); confirm on the first environment where a beekeeper
+  actually records one.
+- **Deferred, not forgotten: two of D-19's five flagged data points remain untriaged** — the
+  structured disease/condition field on Treatment activities, and the honey lot/batch
+  identifier. (The retention-policy note was triaged separately by #295 while this branch was
+  in flight; #296/#298 triage the registration number and the stock-declaration record.) The
+  two that remain belong to their own owning epics (activities, import/export), are recorded in
+  D-19 and in `docs/research/regulatory-pt-eu-beekeeping.md` §6, and need no entry of their own
+  here once this PR merges — prune this bullet with the section.
+
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript

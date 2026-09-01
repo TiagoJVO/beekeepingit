@@ -516,6 +516,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixCounterLabel => 'Alteração de nº de colmeias';
 
   @override
+  String get syncNeedsFixDeclarationLabel =>
+      'Alteração de declaração de existências';
+
+  @override
   String get syncNeedsFixActivityLabel => 'Alteração de atividade';
 
   @override
@@ -535,6 +539,124 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get syncNeedsFixGenericProblem =>
       'Esta alteração foi rejeitada e precisa da sua atenção.';
+
+  @override
+  String syncNeedsFixFieldProblem(String field, String problem) {
+    return '$field: $problem';
+  }
+
+  @override
+  String get syncNeedsFixRuleRequired => 'isto é obrigatório.';
+
+  @override
+  String get syncNeedsFixRuleInvalid => 'este valor não é válido.';
+
+  @override
+  String get syncNeedsFixRuleOutOfRange =>
+      'este valor está fora do intervalo permitido.';
+
+  @override
+  String get syncNeedsFixRuleTooLong => 'este texto é demasiado longo.';
+
+  @override
+  String get syncNeedsFixRuleNotFound => 'já não existe ou já não tem acesso.';
+
+  @override
+  String get syncNeedsFixRuleAttributeRequired =>
+      'falta preencher um dos campos aqui.';
+
+  @override
+  String get syncNeedsFixRuleAttributeInvalid =>
+      'um dos campos aqui não é válido.';
+
+  @override
+  String get syncNeedsFixRuleAttributeTooLong =>
+      'um dos campos aqui é demasiado longo.';
+
+  @override
+  String get syncNeedsFixRuleAttributeOutOfRange =>
+      'um dos campos aqui está fora do intervalo permitido.';
+
+  @override
+  String get syncNeedsFixRuleNonNegative => 'isto tem de ser 0 ou mais.';
+
+  @override
+  String get syncNeedsFixRuleLatitudeRange =>
+      'isto tem de estar entre -90 e 90.';
+
+  @override
+  String get syncNeedsFixRuleLongitudeRange =>
+      'isto tem de estar entre -180 e 180.';
+
+  @override
+  String get syncNeedsFixFieldName => 'Nome';
+
+  @override
+  String get syncNeedsFixFieldTitle => 'Título';
+
+  @override
+  String get syncNeedsFixFieldDescription => 'Descrição';
+
+  @override
+  String get syncNeedsFixFieldNotes => 'Notas';
+
+  @override
+  String get syncNeedsFixFieldPlace => 'Nome do local';
+
+  @override
+  String get syncNeedsFixFieldLocation => 'Localização';
+
+  @override
+  String get syncNeedsFixFieldLatitude => 'Latitude';
+
+  @override
+  String get syncNeedsFixFieldLongitude => 'Longitude';
+
+  @override
+  String get syncNeedsFixFieldHiveCount => 'Número de colmeias';
+
+  @override
+  String get syncNeedsFixFieldCount => 'Contagem';
+
+  @override
+  String get syncNeedsFixFieldCountType => 'Tipo de contagem';
+
+  @override
+  String get syncNeedsFixFieldApiary => 'Apiário';
+
+  @override
+  String get syncNeedsFixFieldJourney => 'Jornada';
+
+  @override
+  String get syncNeedsFixFieldAssignee => 'Responsável';
+
+  @override
+  String get syncNeedsFixFieldActivityType => 'Tipo de atividade';
+
+  @override
+  String get syncNeedsFixFieldMainActivityType => 'Atividade principal';
+
+  @override
+  String get syncNeedsFixFieldDate => 'Data';
+
+  @override
+  String get syncNeedsFixFieldDueDate => 'Prazo';
+
+  @override
+  String get syncNeedsFixFieldCompletedAt => 'Concluída em';
+
+  @override
+  String get syncNeedsFixFieldPriority => 'Prioridade';
+
+  @override
+  String get syncNeedsFixFieldStatus => 'Estado';
+
+  @override
+  String get syncNeedsFixFieldDetails => 'Detalhes';
+
+  @override
+  String get syncNeedsFixFieldActivityDefaults =>
+      'Predefinições para atividades';
 
   @override
   String get syncNeedsFixFixAction => 'Corrigir';
@@ -740,6 +862,103 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get apiaryPlaceLabelHint => 'ex.: Montargil';
+
+  @override
+  String get apiaryDgavNumberLabel => 'Número de registo DGAV';
+
+  @override
+  String get apiaryDgavNumberHint => 'Só se for diferente do da organização';
+
+  @override
+  String get apiaryDgavNumberInherited => 'Da organização';
+
+  @override
+  String get dgavSectionTitle => 'DGAV';
+
+  @override
+  String get dgavSectionSubtitle =>
+      'Número de registo e declarações de existências';
+
+  @override
+  String get dgavIntro =>
+      'Registo opcional para apoiar as obrigações DGAV. A aplicação nunca submete nada por si.';
+
+  @override
+  String get dgavOrgNumberLabel => 'Número de registo da organização';
+
+  @override
+  String get dgavOrgNumberHint =>
+      'O número de apicultor afixado nos seus apiários';
+
+  @override
+  String get dgavOrgNumberSaved => 'Número de registo guardado';
+
+  @override
+  String get dgavOrgNumberSaveFailed =>
+      'Não foi possível guardar o número de registo';
+
+  @override
+  String get dgavOrgNumberAdminOnly =>
+      'Apenas um administrador da organização pode alterar este campo.';
+
+  @override
+  String get dgavDeclarationsTitle => 'Declarações de existências';
+
+  @override
+  String get dgavDeclarationsEmpty => 'Ainda não há declarações registadas.';
+
+  @override
+  String get dgavNoRegistrationNumber => 'Sem número de registo';
+
+  @override
+  String get dgavRecordDeclarationAction => 'Registar declaração';
+
+  @override
+  String get dgavDeclarationSaved => 'Declaração registada';
+
+  @override
+  String get dgavDeclarationDeleteAction => 'Eliminar declaração';
+
+  @override
+  String dgavDeclarationSummary(String date, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count colmeias',
+      one: '1 colmeia',
+    );
+    return '$date — $_temp0';
+  }
+
+  @override
+  String dgavDeclarationApiaryCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiários',
+      one: '1 apiário',
+      zero: 'sem apiários',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get dgavWindowOpen =>
+      'O período de declaração anual está aberto até 30 de setembro.';
+
+  @override
+  String get dgavWindowOpenDeclared =>
+      'Já declarou este ano. O período está aberto até 30 de setembro.';
+
+  @override
+  String dgavInterimTriggerMet(int change, int last, int current) {
+    return 'O número de colmeias mudou $change desde a última declaração ($last para $current) — pode ser devida uma declaração de alterações.';
+  }
+
+  @override
+  String dgavCurrentHiveCount(int count) {
+    return 'Colmeias atuais: $count';
+  }
 
   @override
   String get apiaryLocationSectionLabel => 'Localização';

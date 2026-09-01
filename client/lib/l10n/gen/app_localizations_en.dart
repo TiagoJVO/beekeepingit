@@ -513,6 +513,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixCounterLabel => 'Hive count change';
 
   @override
+  String get syncNeedsFixDeclarationLabel => 'Stock declaration change';
+
+  @override
   String get syncNeedsFixActivityLabel => 'Activity change';
 
   @override
@@ -532,6 +535,122 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get syncNeedsFixGenericProblem =>
       'This change was rejected and needs your attention.';
+
+  @override
+  String syncNeedsFixFieldProblem(String field, String problem) {
+    return '$field: $problem';
+  }
+
+  @override
+  String get syncNeedsFixRuleRequired => 'this is required.';
+
+  @override
+  String get syncNeedsFixRuleInvalid => 'this value isn\'t valid.';
+
+  @override
+  String get syncNeedsFixRuleOutOfRange =>
+      'this value is outside the allowed range.';
+
+  @override
+  String get syncNeedsFixRuleTooLong => 'this text is too long.';
+
+  @override
+  String get syncNeedsFixRuleNotFound =>
+      'this no longer exists, or you no longer have access to it.';
+
+  @override
+  String get syncNeedsFixRuleAttributeRequired =>
+      'an entry here still needs filling in.';
+
+  @override
+  String get syncNeedsFixRuleAttributeInvalid => 'an entry here isn\'t valid.';
+
+  @override
+  String get syncNeedsFixRuleAttributeTooLong => 'an entry here is too long.';
+
+  @override
+  String get syncNeedsFixRuleAttributeOutOfRange =>
+      'an entry here is outside the allowed range.';
+
+  @override
+  String get syncNeedsFixRuleNonNegative => 'this must be 0 or more.';
+
+  @override
+  String get syncNeedsFixRuleLatitudeRange =>
+      'this must be between -90 and 90.';
+
+  @override
+  String get syncNeedsFixRuleLongitudeRange =>
+      'this must be between -180 and 180.';
+
+  @override
+  String get syncNeedsFixFieldName => 'Name';
+
+  @override
+  String get syncNeedsFixFieldTitle => 'Title';
+
+  @override
+  String get syncNeedsFixFieldDescription => 'Description';
+
+  @override
+  String get syncNeedsFixFieldNotes => 'Notes';
+
+  @override
+  String get syncNeedsFixFieldPlace => 'Place label';
+
+  @override
+  String get syncNeedsFixFieldLocation => 'Location';
+
+  @override
+  String get syncNeedsFixFieldLatitude => 'Latitude';
+
+  @override
+  String get syncNeedsFixFieldLongitude => 'Longitude';
+
+  @override
+  String get syncNeedsFixFieldHiveCount => 'Number of hives';
+
+  @override
+  String get syncNeedsFixFieldCount => 'Count';
+
+  @override
+  String get syncNeedsFixFieldCountType => 'Count type';
+
+  @override
+  String get syncNeedsFixFieldApiary => 'Apiary';
+
+  @override
+  String get syncNeedsFixFieldJourney => 'Journey';
+
+  @override
+  String get syncNeedsFixFieldAssignee => 'Assignee';
+
+  @override
+  String get syncNeedsFixFieldActivityType => 'Activity type';
+
+  @override
+  String get syncNeedsFixFieldMainActivityType => 'Main activity type';
+
+  @override
+  String get syncNeedsFixFieldDate => 'Date';
+
+  @override
+  String get syncNeedsFixFieldDueDate => 'Due date';
+
+  @override
+  String get syncNeedsFixFieldCompletedAt => 'Completed at';
+
+  @override
+  String get syncNeedsFixFieldPriority => 'Priority';
+
+  @override
+  String get syncNeedsFixFieldStatus => 'Status';
+
+  @override
+  String get syncNeedsFixFieldDetails => 'Details';
+
+  @override
+  String get syncNeedsFixFieldActivityDefaults => 'Defaults for activities';
 
   @override
   String get syncNeedsFixFixAction => 'Fix';
@@ -737,6 +856,103 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryPlaceLabelHint => 'e.g. Montargil';
+
+  @override
+  String get apiaryDgavNumberLabel => 'DGAV registration number';
+
+  @override
+  String get apiaryDgavNumberHint =>
+      'Only if different from the organization\'s';
+
+  @override
+  String get apiaryDgavNumberInherited => 'From the organization';
+
+  @override
+  String get dgavSectionTitle => 'DGAV';
+
+  @override
+  String get dgavSectionSubtitle =>
+      'Registration number and stock declarations';
+
+  @override
+  String get dgavIntro =>
+      'Optional record-keeping to help with DGAV obligations. The app never files anything for you.';
+
+  @override
+  String get dgavOrgNumberLabel => 'Organization registration number';
+
+  @override
+  String get dgavOrgNumberHint => 'The beekeeper number shown at your apiaries';
+
+  @override
+  String get dgavOrgNumberSaved => 'Registration number saved';
+
+  @override
+  String get dgavOrgNumberSaveFailed =>
+      'Could not save the registration number';
+
+  @override
+  String get dgavOrgNumberAdminOnly =>
+      'Only an organization admin can change this.';
+
+  @override
+  String get dgavDeclarationsTitle => 'Stock declarations';
+
+  @override
+  String get dgavDeclarationsEmpty => 'No declarations recorded yet.';
+
+  @override
+  String get dgavNoRegistrationNumber => 'No registration number';
+
+  @override
+  String get dgavRecordDeclarationAction => 'Record declaration';
+
+  @override
+  String get dgavDeclarationSaved => 'Declaration recorded';
+
+  @override
+  String get dgavDeclarationDeleteAction => 'Delete declaration';
+
+  @override
+  String dgavDeclarationSummary(String date, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count hives',
+      one: '1 hive',
+    );
+    return '$date — $_temp0';
+  }
+
+  @override
+  String dgavDeclarationApiaryCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries',
+      one: '1 apiary',
+      zero: 'no apiaries',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get dgavWindowOpen =>
+      'The annual declaration window is open until 30 September.';
+
+  @override
+  String get dgavWindowOpenDeclared =>
+      'Declared this year. The window is open until 30 September.';
+
+  @override
+  String dgavInterimTriggerMet(int change, int last, int current) {
+    return 'Hive count changed by $change since the last declaration ($last to $current) — an interim declaration may be due.';
+  }
+
+  @override
+  String dgavCurrentHiveCount(int count) {
+    return 'Current hive count: $count';
+  }
 
   @override
   String get apiaryLocationSectionLabel => 'Location';

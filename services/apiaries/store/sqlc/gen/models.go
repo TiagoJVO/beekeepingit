@@ -9,16 +9,17 @@ import (
 )
 
 type ApiariesApiary struct {
-	ID             pgtype.UUID        `json:"id"`
-	OrganizationID pgtype.UUID        `json:"organization_id"`
-	Name           string             `json:"name"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	Location       interface{}        `json:"location"`
-	Notes          pgtype.Text        `json:"notes"`
-	PlaceLabel     pgtype.Text        `json:"place_label"`
+	ID                     pgtype.UUID        `json:"id"`
+	OrganizationID         pgtype.UUID        `json:"organization_id"`
+	Name                   string             `json:"name"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	RecordedAt             pgtype.Timestamptz `json:"recorded_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	Location               interface{}        `json:"location"`
+	Notes                  pgtype.Text        `json:"notes"`
+	PlaceLabel             pgtype.Text        `json:"place_label"`
+	DgavRegistrationNumber pgtype.Text        `json:"dgav_registration_number"`
 }
 
 type ApiariesApiaryCounter struct {
@@ -42,6 +43,20 @@ type ApiariesAuditLog struct {
 	RecordedAt     pgtype.Timestamptz `json:"recorded_at"`
 	ChangedFields  []string           `json:"changed_fields"`
 	Change         []byte             `json:"change"`
+}
+
+type ApiariesStockDeclaration struct {
+	ID                     pgtype.UUID        `json:"id"`
+	OrganizationID         pgtype.UUID        `json:"organization_id"`
+	DgavRegistrationNumber string             `json:"dgav_registration_number"`
+	DeclaredOn             pgtype.Date        `json:"declared_on"`
+	TotalHiveCount         int32              `json:"total_hive_count"`
+	Breakdown              []byte             `json:"breakdown"`
+	Notes                  pgtype.Text        `json:"notes"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	RecordedAt             pgtype.Timestamptz `json:"recorded_at"`
+	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ApiariesSyncConflictLog struct {

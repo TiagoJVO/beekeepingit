@@ -914,6 +914,12 @@ abstract class AppLocalizations {
   /// **'Hive count change'**
   String get syncNeedsFixCounterLabel;
 
+  /// Needs-fix list row title for a rejected DGAV stock-declaration write (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Stock declaration change'**
+  String get syncNeedsFixDeclarationLabel;
+
   /// Needs-fix list row title for a rejected activity write (#379)
   ///
   /// In en, this message translates to:
@@ -944,11 +950,227 @@ abstract class AppLocalizations {
   /// **'{label} · {name}'**
   String syncNeedsFixTitleWithName(String label, String name);
 
-  /// Needs-fix list row fallback message when the server returned no field-level detail
+  /// Needs-fix list row fallback message when the server returned no field-level detail, or none of it could be mapped to safe localized copy (#426/#443)
   ///
   /// In en, this message translates to:
   /// **'This change was rejected and needs your attention.'**
   String get syncNeedsFixGenericProblem;
+
+  /// Needs-fix message composed from a localized field label and the localized rule it broke (#443) — never the server's raw English validation text
+  ///
+  /// In en, this message translates to:
+  /// **'{field}: {problem}'**
+  String syncNeedsFixFieldProblem(String field, String problem);
+
+  /// Needs-fix rule fragment for the server's `required` rejection code, composed into syncNeedsFixFieldProblem (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this is required.'**
+  String get syncNeedsFixRuleRequired;
+
+  /// Needs-fix rule fragment for the server's `invalid` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this value isn\'t valid.'**
+  String get syncNeedsFixRuleInvalid;
+
+  /// Needs-fix rule fragment for the server's `out_of_range` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this value is outside the allowed range.'**
+  String get syncNeedsFixRuleOutOfRange;
+
+  /// Needs-fix rule fragment for the server's `too_long` rejection code (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this text is too long.'**
+  String get syncNeedsFixRuleTooLong;
+
+  /// Needs-fix rule fragment for the server's `not_found` rejection code — a referenced apiary/journey/member the organization no longer owns (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this no longer exists, or you no longer have access to it.'**
+  String get syncNeedsFixRuleNotFound;
+
+  /// Needs-fix rule fragment for a `required` rejection on an activity's per-type attribute bag (#443) — phrased about the entries inside the bag, since the server reports one error per offending key and they all collapse onto the single "Details" label
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here still needs filling in.'**
+  String get syncNeedsFixRuleAttributeRequired;
+
+  /// Needs-fix rule fragment for an `invalid` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here isn\'t valid.'**
+  String get syncNeedsFixRuleAttributeInvalid;
+
+  /// Needs-fix rule fragment for a `too_long` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here is too long.'**
+  String get syncNeedsFixRuleAttributeTooLong;
+
+  /// Needs-fix rule fragment for an `out_of_range` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here is outside the allowed range.'**
+  String get syncNeedsFixRuleAttributeOutOfRange;
+
+  /// Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be 0 or more.'**
+  String get syncNeedsFixRuleNonNegative;
+
+  /// Needs-fix rule fragment for an out-of-range latitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be between -90 and 90.'**
+  String get syncNeedsFixRuleLatitudeRange;
+
+  /// Needs-fix rule fragment for an out-of-range longitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'this must be between -180 and 180.'**
+  String get syncNeedsFixRuleLongitudeRange;
+
+  /// Needs-fix field label for an apiary's or journey's name (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get syncNeedsFixFieldName;
+
+  /// Needs-fix field label for a todo's title (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get syncNeedsFixFieldTitle;
+
+  /// Needs-fix field label for a todo's description (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Description'**
+  String get syncNeedsFixFieldDescription;
+
+  /// Needs-fix field label for an apiary's notes (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get syncNeedsFixFieldNotes;
+
+  /// Needs-fix field label for an apiary's place label — deliberately the same wording as apiaryPlaceLabelLabel, the label on the form the Fix action opens (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Place label'**
+  String get syncNeedsFixFieldPlace;
+
+  /// Needs-fix field label for an apiary's location (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Location'**
+  String get syncNeedsFixFieldLocation;
+
+  /// Needs-fix field label for an apiary location's latitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Latitude'**
+  String get syncNeedsFixFieldLatitude;
+
+  /// Needs-fix field label for an apiary location's longitude (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Longitude'**
+  String get syncNeedsFixFieldLongitude;
+
+  /// Needs-fix field label for an apiary's hive count — deliberately the same wording as hiveCountLabel, the label on the form the Fix action opens (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Number of hives'**
+  String get syncNeedsFixFieldHiveCount;
+
+  /// Needs-fix field label for an apiary counter's value (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Count'**
+  String get syncNeedsFixFieldCount;
+
+  /// Needs-fix field label for an apiary counter's type (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Count type'**
+  String get syncNeedsFixFieldCountType;
+
+  /// Needs-fix field label for the apiary a record belongs to (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Apiary'**
+  String get syncNeedsFixFieldApiary;
+
+  /// Needs-fix field label for the journey a record belongs to (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Journey'**
+  String get syncNeedsFixFieldJourney;
+
+  /// Needs-fix field label for a todo's assignee (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Assignee'**
+  String get syncNeedsFixFieldAssignee;
+
+  /// Needs-fix field label for an activity's type — deliberately the same wording as activityTypeFieldLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Activity type'**
+  String get syncNeedsFixFieldActivityType;
+
+  /// Needs-fix field label for a journey's main activity type — deliberately the same wording as journeyMainActivityTypeLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Main activity type'**
+  String get syncNeedsFixFieldMainActivityType;
+
+  /// Needs-fix field label for the date an activity occurred (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get syncNeedsFixFieldDate;
+
+  /// Needs-fix field label for a todo's due date (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Due date'**
+  String get syncNeedsFixFieldDueDate;
+
+  /// Needs-fix field label for a todo's completion timestamp — deliberately the same wording as todoCompletedAtLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Completed at'**
+  String get syncNeedsFixFieldCompletedAt;
+
+  /// Needs-fix field label for a todo's priority (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get syncNeedsFixFieldPriority;
+
+  /// Needs-fix field label for a journey's or todo's status (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get syncNeedsFixFieldStatus;
+
+  /// Needs-fix field label standing in for an activity's per-type attribute bag — the individual attribute keys are internal schema names and are never rendered (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get syncNeedsFixFieldDetails;
+
+  /// Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'Defaults for activities'**
+  String get syncNeedsFixFieldActivityDefaults;
 
   /// Needs-fix action (and rejection toast action) that opens the offending record's edit screen to correct and re-save it
   ///
@@ -1267,6 +1489,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'e.g. Montargil'**
   String get apiaryPlaceLabelHint;
+
+  /// Optional DGAV beekeeper registration number field label on the apiary form, and its label on the apiary detail screen (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'DGAV registration number'**
+  String get apiaryDgavNumberLabel;
+
+  /// Placeholder hint in the apiary form's DGAV registration number field, explaining that it is an override of the organization-wide default (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'Only if different from the organization\'s'**
+  String get apiaryDgavNumberHint;
+
+  /// Marker shown next to the DGAV registration number on the apiary detail when the value is inherited from the organization rather than set on the apiary itself (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'From the organization'**
+  String get apiaryDgavNumberInherited;
+
+  /// Title of the DGAV screen, reached from Account — holds the beekeeper registration number and the stock-declaration log (FR-AP-9/FR-AP-10, #296/#298)
+  ///
+  /// In en, this message translates to:
+  /// **'DGAV'**
+  String get dgavSectionTitle;
+
+  /// Subtitle on the Account screen's row that opens the DGAV screen (#296/#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Registration number and stock declarations'**
+  String get dgavSectionSubtitle;
+
+  /// Intro paragraph on the DGAV screen making explicit that everything there is advisory and nothing is submitted to DGAV (FR-AP-10, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Optional record-keeping to help with DGAV obligations. The app never files anything for you.'**
+  String get dgavIntro;
+
+  /// Label of the organization-wide DGAV beekeeper registration number field on the DGAV screen (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'Organization registration number'**
+  String get dgavOrgNumberLabel;
+
+  /// Helper text under the organization DGAV registration number field (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'The beekeeper number shown at your apiaries'**
+  String get dgavOrgNumberHint;
+
+  /// Confirmation shown after the organization DGAV registration number is saved (#296)
+  ///
+  /// In en, this message translates to:
+  /// **'Registration number saved'**
+  String get dgavOrgNumberSaved;
+
+  /// Error shown when saving the organization DGAV registration number fails, e.g. offline or not an admin (#296)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the registration number'**
+  String get dgavOrgNumberSaveFailed;
+
+  /// Note shown to non-admin members, who can read but not edit the organization's DGAV registration number (#296, NFR-ROL-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Only an organization admin can change this.'**
+  String get dgavOrgNumberAdminOnly;
+
+  /// Heading of the stock-declaration log section on the DGAV screen (FR-AP-10, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Stock declarations'**
+  String get dgavDeclarationsTitle;
+
+  /// Empty state of the stock-declaration log (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'No declarations recorded yet.'**
+  String get dgavDeclarationsEmpty;
+
+  /// Group heading used for declarations recorded before any DGAV registration number was entered (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'No registration number'**
+  String get dgavNoRegistrationNumber;
+
+  /// Action that records a stock declaration for a registration number, pre-filled from the current hive counts (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Record declaration'**
+  String get dgavRecordDeclarationAction;
+
+  /// Confirmation shown after a stock declaration is recorded (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declaration recorded'**
+  String get dgavDeclarationSaved;
+
+  /// Action that deletes a mis-entered stock declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete declaration'**
+  String get dgavDeclarationDeleteAction;
+
+  /// One row of the stock-declaration log: the declared date and the declared hive total (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'{date} — {count, plural, =1{1 hive} other{{count} hives}}'**
+  String dgavDeclarationSummary(String date, int count);
+
+  /// Secondary line of a declaration row: how many apiaries the snapshot covered (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{no apiaries} =1{1 apiary} other{{count} apiaries}}'**
+  String dgavDeclarationApiaryCount(int count);
+
+  /// Advisory status shown during the 1-30 September annual declaration window when nothing has been declared this year (FR-AP-10, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'The annual declaration window is open until 30 September.'**
+  String get dgavWindowOpen;
+
+  /// Advisory status shown during the September window when a declaration already exists for this year (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declared this year. The window is open until 30 September.'**
+  String get dgavWindowOpenDeclared;
+
+  /// Advisory status shown when the hive count has changed by more than 20% AND at least 20 colonies since the last declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Hive count changed by {change} since the last declaration ({last} to {current}) — an interim declaration may be due.'**
+  String dgavInterimTriggerMet(int change, int last, int current);
+
+  /// The live hive total across the beekeeper's apiaries, shown next to the declaration log so the two are visibly distinct (#298, FR-AP-7)
+  ///
+  /// In en, this message translates to:
+  /// **'Current hive count: {count}'**
+  String dgavCurrentHiveCount(int count);
 
   /// Section label above the map-pin picker on the apiary form (#252)
   ///

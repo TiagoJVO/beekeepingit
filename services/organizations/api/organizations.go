@@ -88,6 +88,13 @@ const (
 	// full postal address (street, locality, region, postal code, country)
 	// with room for PT diacritics, matching name's rune-count semantics.
 	maxOrgAddressLength = 500
+	// maxDgavRegistrationNumberLength bounds the DGAV beekeeper
+	// registration number (FR-AP-9, #296). Real DGAV identifiers are far
+	// shorter; 50 is simply a bound, and it matches the column CHECK added
+	// by migration 00007 so a value that passes validation here can never
+	// fail the constraint. Rune-counted like name/address, so PT diacritics
+	// are not penalised.
+	maxDgavRegistrationNumberLength = 50
 )
 
 // OrganizationResponse is the client-facing organization shape
@@ -99,13 +106,19 @@ const (
 // property of the organization itself (two callers viewing the same org see
 // their own, possibly different, role here).
 type OrganizationResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Address   string    `json:"address"`
-	CreatedBy string    `json:"created_by"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	// DgavRegistrationNumber (FR-AP-9, #296) is the organization-wide
+	// DEFAULT DGAV beekeeper registration number. Apiaries may override it
+	// individually (apiaries.apiaries.dgav_registration_number), for an
+	// organization covering several beekeepers; the client resolves an
+	// apiary's EFFECTIVE number as override-or-this. Empty means unset.
+	DgavRegistrationNumber string    `json:"dgav_registration_number"`
+	CreatedBy              string    `json:"created_by"`
+	Role                   string    `json:"role"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 // organizationCreateRequest is the POST /organizations request body
@@ -916,15 +929,19 @@ func getOrganization(q *sqlcgen.Queries, resolver UserResolver) http.HandlerFunc
 var errStaleIfMatch = errors.New("api: stale If-Match on organization update")
 
 // updateOrganizationRequest is the PATCH /organizations/{orgId} request body
-// (OrganizationUpdate schema): name and/or address. Both are pointers so an
-// absent key is distinguishable from a supplied one, and presence is tracked
-// separately (via the raw field map) so an explicit JSON null on address --
-// which the schema's `[string, "null"]` type allows, meaning "clear it" --
-// isn't confused with "leave unchanged". name is a non-nullable string
-// (schema `type: string`), so a null there is rejected.
+// (OrganizationUpdate schema): name, address and/or dgav_registration_number.
+// All are pointers so an absent key is distinguishable from a supplied one,
+// and presence is tracked separately (via the raw field map) so an explicit
+// JSON null on a nullable field -- which the schema's `[string, "null"]` type
+// allows, meaning "clear it" -- isn't confused with "leave unchanged". name is
+// a non-nullable string (schema `type: string`), so a null there is rejected.
 type updateOrganizationRequest struct {
 	Name    *string `json:"name"`
 	Address *string `json:"address"`
+	// DgavRegistrationNumber (FR-AP-9, #296) is nullable in the contract
+	// like Address: an explicit JSON null clears it, an absent key leaves
+	// it unchanged.
+	DgavRegistrationNumber *string `json:"dgav_registration_number"`
 }
 
 // updateOrganization applies an admin's edit of their own org's mutable
@@ -964,8 +981,9 @@ func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 		}
 		_, nameSet := fields["name"]
 		_, addressSet := fields["address"]
+		_, dgavSet := fields["dgav_registration_number"]
 
-		if fieldErrs := validateOrganizationUpdate(body, nameSet, addressSet); len(fieldErrs) > 0 {
+		if fieldErrs := validateOrganizationUpdate(body, nameSet, addressSet, dgavSet); len(fieldErrs) > 0 {
 			problem.Write(w, r, problem.ValidationFailed("one or more fields are invalid", fieldErrs...))
 			return
 		}
@@ -1014,11 +1032,21 @@ func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 				}
 			}
 
+			wantDgav := current.DgavRegistrationNumber
+			if dgavSet {
+				if body.DgavRegistrationNumber == nil {
+					wantDgav = ""
+				} else {
+					wantDgav = strings.TrimSpace(*body.DgavRegistrationNumber)
+				}
+			}
+
 			updated, err = txq.UpdateOrganization(r.Context(), sqlcgen.UpdateOrganizationParams{
-				ID:        member.OrgID,
-				Name:      wantName,
-				Address:   wantAddress,
-				UpdatedAt: now,
+				ID:                     member.OrgID,
+				Name:                   wantName,
+				Address:                wantAddress,
+				DgavRegistrationNumber: wantDgav,
+				UpdatedAt:              now,
 			})
 			if err != nil {
 				return fmt.Errorf("update organization: %w", err)
@@ -1057,12 +1085,12 @@ func updateOrganization(pool *pgxpool.Pool, q *sqlcgen.Queries, resolver UserRes
 // validateOrganizationUpdate enforces the OrganizationUpdate schema server-side
 // (NFR-SEC-1): at least one field present (minProperties:1); name, when
 // present, a non-null non-empty string of at most maxOrgNameLength runes;
-// address, when present, either null (clear) or at most maxOrgAddressLength
-// runes. Rune counts (not byte lengths) match createOrganization's own limits
-// so PT diacritics aren't penalized.
-func validateOrganizationUpdate(body updateOrganizationRequest, nameSet, addressSet bool) []problem.FieldError {
+// address and dgav_registration_number (FR-AP-9, #296), when present, either
+// null (clear) or at most their own rune cap. Rune counts (not byte lengths)
+// match createOrganization's own limits so PT diacritics aren't penalized.
+func validateOrganizationUpdate(body updateOrganizationRequest, nameSet, addressSet, dgavSet bool) []problem.FieldError {
 	var fieldErrs []problem.FieldError
-	if !nameSet && !addressSet {
+	if !nameSet && !addressSet && !dgavSet {
 		fieldErrs = append(fieldErrs, problem.FieldError{Field: "(body)", Code: "required", Message: "request must change at least one field"})
 	}
 	if nameSet {
@@ -1076,6 +1104,16 @@ func validateOrganizationUpdate(body updateOrganizationRequest, nameSet, address
 	if addressSet && body.Address != nil {
 		if utf8.RuneCountInString(strings.TrimSpace(*body.Address)) > maxOrgAddressLength {
 			fieldErrs = append(fieldErrs, problem.FieldError{Field: "address", Code: "too_long", Message: "address must be at most 500 characters"})
+		}
+	}
+	// FR-AP-9 (#296): bounded exactly like address -- present-and-null
+	// clears, present-and-set is trimmed then rune-capped. Nothing here
+	// constrains the FORMAT: DGAV identifiers are not documented as a
+	// stable pattern, and a format guess that rejects a real number would
+	// be worse than no check at all.
+	if dgavSet && body.DgavRegistrationNumber != nil {
+		if utf8.RuneCountInString(strings.TrimSpace(*body.DgavRegistrationNumber)) > maxDgavRegistrationNumberLength {
+			fieldErrs = append(fieldErrs, problem.FieldError{Field: "dgav_registration_number", Code: "too_long", Message: "dgav_registration_number must be at most 50 characters"})
 		}
 	}
 	return fieldErrs
@@ -1123,13 +1161,14 @@ func toOrganizationResponse(o sqlcgen.OrganizationsOrganization, callerRole stri
 		createdBy = uuidString(o.CreatedBy)
 	}
 	return OrganizationResponse{
-		ID:        uuidString(o.ID),
-		Name:      o.Name,
-		Address:   o.Address,
-		CreatedBy: createdBy,
-		Role:      callerRole,
-		CreatedAt: o.CreatedAt.Time,
-		UpdatedAt: o.UpdatedAt.Time,
+		ID:                     uuidString(o.ID),
+		Name:                   o.Name,
+		Address:                o.Address,
+		DgavRegistrationNumber: o.DgavRegistrationNumber,
+		CreatedBy:              createdBy,
+		Role:                   callerRole,
+		CreatedAt:              o.CreatedAt.Time,
+		UpdatedAt:              o.UpdatedAt.Time,
 	}
 }
 

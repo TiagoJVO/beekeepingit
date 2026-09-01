@@ -32,7 +32,11 @@ file://charts/<service>`) — `helm lint` requires every subchart under `charts/
    down to every subchart automatically. Don't hardcode CPU/memory; use
    `{{ index .Values.global.resources <tier> | toYaml }}` (`small`/`medium`/`large`).
 5. Reuse the shared label helper: `{{- include "beekeepingit.labels" . | nindent 4 }}` (defined
-   in `templates/_helpers.tpl`), plus your own `app.kubernetes.io/name`.
+   in `templates/_helpers.tpl`), plus your own `app.kubernetes.io/name`. Include it on the
+   **pod template** of a Deployment too, not only the Deployment's own metadata — CI's
+   on-failure diagnostics select pods by `app.kubernetes.io/part-of` and a pod inherits only
+   what its template carries (#246; the helper's own comment has the full story). It emits
+   `app.kubernetes.io/instance`, so don't also set that key explicitly in the same block.
 
 `charts/postgres/` and `charts/gateway/` are live examples of this pattern (so is the
 observability chart's `charts/alert-webhook-sink/`) — copy whichever shape fits.

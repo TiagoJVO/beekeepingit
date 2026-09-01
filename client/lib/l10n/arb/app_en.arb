@@ -634,6 +634,10 @@
   "@syncNeedsFixCounterLabel": {
     "description": "Needs-fix list row title for a rejected apiary hive-counter write (#256)"
   },
+  "syncNeedsFixDeclarationLabel": "Stock declaration change",
+  "@syncNeedsFixDeclarationLabel": {
+    "description": "Needs-fix list row title for a rejected DGAV stock-declaration write (#298)"
+  },
   "syncNeedsFixActivityLabel": "Activity change",
   "@syncNeedsFixActivityLabel": {
     "description": "Needs-fix list row title for a rejected activity write (#379)"
@@ -664,7 +668,159 @@
   },
   "syncNeedsFixGenericProblem": "This change was rejected and needs your attention.",
   "@syncNeedsFixGenericProblem": {
-    "description": "Needs-fix list row fallback message when the server returned no field-level detail"
+    "description": "Needs-fix list row fallback message when the server returned no field-level detail, or none of it could be mapped to safe localized copy (#426/#443)"
+  },
+  "syncNeedsFixFieldProblem": "{field}: {problem}",
+  "@syncNeedsFixFieldProblem": {
+    "description": "Needs-fix message composed from a localized field label and the localized rule it broke (#443) — never the server's raw English validation text",
+    "placeholders": {
+      "field": {
+        "type": "String"
+      },
+      "problem": {
+        "type": "String"
+      }
+    }
+  },
+  "syncNeedsFixRuleRequired": "this is required.",
+  "@syncNeedsFixRuleRequired": {
+    "description": "Needs-fix rule fragment for the server's `required` rejection code, composed into syncNeedsFixFieldProblem (#443)"
+  },
+  "syncNeedsFixRuleInvalid": "this value isn't valid.",
+  "@syncNeedsFixRuleInvalid": {
+    "description": "Needs-fix rule fragment for the server's `invalid` rejection code (#443)"
+  },
+  "syncNeedsFixRuleOutOfRange": "this value is outside the allowed range.",
+  "@syncNeedsFixRuleOutOfRange": {
+    "description": "Needs-fix rule fragment for the server's `out_of_range` rejection code (#443)"
+  },
+  "syncNeedsFixRuleTooLong": "this text is too long.",
+  "@syncNeedsFixRuleTooLong": {
+    "description": "Needs-fix rule fragment for the server's `too_long` rejection code (#443)"
+  },
+  "syncNeedsFixRuleNotFound": "this no longer exists, or you no longer have access to it.",
+  "@syncNeedsFixRuleNotFound": {
+    "description": "Needs-fix rule fragment for the server's `not_found` rejection code — a referenced apiary/journey/member the organization no longer owns (#443)"
+  },
+  "syncNeedsFixRuleAttributeRequired": "an entry here still needs filling in.",
+  "@syncNeedsFixRuleAttributeRequired": {
+    "description": "Needs-fix rule fragment for a `required` rejection on an activity's per-type attribute bag (#443) — phrased about the entries inside the bag, since the server reports one error per offending key and they all collapse onto the single \"Details\" label"
+  },
+  "syncNeedsFixRuleAttributeInvalid": "an entry here isn't valid.",
+  "@syncNeedsFixRuleAttributeInvalid": {
+    "description": "Needs-fix rule fragment for an `invalid` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleAttributeTooLong": "an entry here is too long.",
+  "@syncNeedsFixRuleAttributeTooLong": {
+    "description": "Needs-fix rule fragment for a `too_long` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleAttributeOutOfRange": "an entry here is outside the allowed range.",
+  "@syncNeedsFixRuleAttributeOutOfRange": {
+    "description": "Needs-fix rule fragment for an `out_of_range` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleNonNegative": "this must be 0 or more.",
+  "@syncNeedsFixRuleNonNegative": {
+    "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)"
+  },
+  "syncNeedsFixRuleLatitudeRange": "this must be between -90 and 90.",
+  "@syncNeedsFixRuleLatitudeRange": {
+    "description": "Needs-fix rule fragment for an out-of-range latitude (#443)"
+  },
+  "syncNeedsFixRuleLongitudeRange": "this must be between -180 and 180.",
+  "@syncNeedsFixRuleLongitudeRange": {
+    "description": "Needs-fix rule fragment for an out-of-range longitude (#443)"
+  },
+  "syncNeedsFixFieldName": "Name",
+  "@syncNeedsFixFieldName": {
+    "description": "Needs-fix field label for an apiary's or journey's name (#443)"
+  },
+  "syncNeedsFixFieldTitle": "Title",
+  "@syncNeedsFixFieldTitle": {
+    "description": "Needs-fix field label for a todo's title (#443)"
+  },
+  "syncNeedsFixFieldDescription": "Description",
+  "@syncNeedsFixFieldDescription": {
+    "description": "Needs-fix field label for a todo's description (#443)"
+  },
+  "syncNeedsFixFieldNotes": "Notes",
+  "@syncNeedsFixFieldNotes": {
+    "description": "Needs-fix field label for an apiary's notes (#443)"
+  },
+  "syncNeedsFixFieldPlace": "Place label",
+  "@syncNeedsFixFieldPlace": {
+    "description": "Needs-fix field label for an apiary's place label — deliberately the same wording as apiaryPlaceLabelLabel, the label on the form the Fix action opens (#443)"
+  },
+  "syncNeedsFixFieldLocation": "Location",
+  "@syncNeedsFixFieldLocation": {
+    "description": "Needs-fix field label for an apiary's location (#443)"
+  },
+  "syncNeedsFixFieldLatitude": "Latitude",
+  "@syncNeedsFixFieldLatitude": {
+    "description": "Needs-fix field label for an apiary location's latitude (#443)"
+  },
+  "syncNeedsFixFieldLongitude": "Longitude",
+  "@syncNeedsFixFieldLongitude": {
+    "description": "Needs-fix field label for an apiary location's longitude (#443)"
+  },
+  "syncNeedsFixFieldHiveCount": "Number of hives",
+  "@syncNeedsFixFieldHiveCount": {
+    "description": "Needs-fix field label for an apiary's hive count — deliberately the same wording as hiveCountLabel, the label on the form the Fix action opens (#443)"
+  },
+  "syncNeedsFixFieldCount": "Count",
+  "@syncNeedsFixFieldCount": {
+    "description": "Needs-fix field label for an apiary counter's value (#443)"
+  },
+  "syncNeedsFixFieldCountType": "Count type",
+  "@syncNeedsFixFieldCountType": {
+    "description": "Needs-fix field label for an apiary counter's type (#443)"
+  },
+  "syncNeedsFixFieldApiary": "Apiary",
+  "@syncNeedsFixFieldApiary": {
+    "description": "Needs-fix field label for the apiary a record belongs to (#443)"
+  },
+  "syncNeedsFixFieldJourney": "Journey",
+  "@syncNeedsFixFieldJourney": {
+    "description": "Needs-fix field label for the journey a record belongs to (#443)"
+  },
+  "syncNeedsFixFieldAssignee": "Assignee",
+  "@syncNeedsFixFieldAssignee": {
+    "description": "Needs-fix field label for a todo's assignee (#443)"
+  },
+  "syncNeedsFixFieldActivityType": "Activity type",
+  "@syncNeedsFixFieldActivityType": {
+    "description": "Needs-fix field label for an activity's type — deliberately the same wording as activityTypeFieldLabel (#443)"
+  },
+  "syncNeedsFixFieldMainActivityType": "Main activity type",
+  "@syncNeedsFixFieldMainActivityType": {
+    "description": "Needs-fix field label for a journey's main activity type — deliberately the same wording as journeyMainActivityTypeLabel (#443)"
+  },
+  "syncNeedsFixFieldDate": "Date",
+  "@syncNeedsFixFieldDate": {
+    "description": "Needs-fix field label for the date an activity occurred (#443)"
+  },
+  "syncNeedsFixFieldDueDate": "Due date",
+  "@syncNeedsFixFieldDueDate": {
+    "description": "Needs-fix field label for a todo's due date (#443)"
+  },
+  "syncNeedsFixFieldCompletedAt": "Completed at",
+  "@syncNeedsFixFieldCompletedAt": {
+    "description": "Needs-fix field label for a todo's completion timestamp — deliberately the same wording as todoCompletedAtLabel (#443)"
+  },
+  "syncNeedsFixFieldPriority": "Priority",
+  "@syncNeedsFixFieldPriority": {
+    "description": "Needs-fix field label for a todo's priority (#443)"
+  },
+  "syncNeedsFixFieldStatus": "Status",
+  "@syncNeedsFixFieldStatus": {
+    "description": "Needs-fix field label for a journey's or todo's status (#443)"
+  },
+  "syncNeedsFixFieldDetails": "Details",
+  "@syncNeedsFixFieldDetails": {
+    "description": "Needs-fix field label standing in for an activity's per-type attribute bag — the individual attribute keys are internal schema names and are never rendered (#443)"
+  },
+  "syncNeedsFixFieldActivityDefaults": "Defaults for activities",
+  "@syncNeedsFixFieldActivityDefaults": {
+    "description": "Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)"
   },
   "syncNeedsFixFixAction": "Fix",
   "@syncNeedsFixFixAction": {
@@ -926,6 +1082,113 @@
   "apiaryPlaceLabelHint": "e.g. Montargil",
   "@apiaryPlaceLabelHint": {
     "description": "Placeholder hint text in the apiary form's place label field (#252)"
+  },
+  "apiaryDgavNumberLabel": "DGAV registration number",
+  "@apiaryDgavNumberLabel": {
+    "description": "Optional DGAV beekeeper registration number field label on the apiary form, and its label on the apiary detail screen (FR-AP-9, #296)"
+  },
+  "apiaryDgavNumberHint": "Only if different from the organization's",
+  "@apiaryDgavNumberHint": {
+    "description": "Placeholder hint in the apiary form's DGAV registration number field, explaining that it is an override of the organization-wide default (FR-AP-9, #296)"
+  },
+  "apiaryDgavNumberInherited": "From the organization",
+  "@apiaryDgavNumberInherited": {
+    "description": "Marker shown next to the DGAV registration number on the apiary detail when the value is inherited from the organization rather than set on the apiary itself (FR-AP-9, #296)"
+  },
+  "dgavSectionTitle": "DGAV",
+  "@dgavSectionTitle": {
+    "description": "Title of the DGAV screen, reached from Account — holds the beekeeper registration number and the stock-declaration log (FR-AP-9/FR-AP-10, #296/#298)"
+  },
+  "dgavSectionSubtitle": "Registration number and stock declarations",
+  "@dgavSectionSubtitle": {
+    "description": "Subtitle on the Account screen's row that opens the DGAV screen (#296/#298)"
+  },
+  "dgavIntro": "Optional record-keeping to help with DGAV obligations. The app never files anything for you.",
+  "@dgavIntro": {
+    "description": "Intro paragraph on the DGAV screen making explicit that everything there is advisory and nothing is submitted to DGAV (FR-AP-10, D-19)"
+  },
+  "dgavOrgNumberLabel": "Organization registration number",
+  "@dgavOrgNumberLabel": {
+    "description": "Label of the organization-wide DGAV beekeeper registration number field on the DGAV screen (FR-AP-9, #296)"
+  },
+  "dgavOrgNumberHint": "The beekeeper number shown at your apiaries",
+  "@dgavOrgNumberHint": {
+    "description": "Helper text under the organization DGAV registration number field (FR-AP-9, #296)"
+  },
+  "dgavOrgNumberSaved": "Registration number saved",
+  "@dgavOrgNumberSaved": {
+    "description": "Confirmation shown after the organization DGAV registration number is saved (#296)"
+  },
+  "dgavOrgNumberSaveFailed": "Could not save the registration number",
+  "@dgavOrgNumberSaveFailed": {
+    "description": "Error shown when saving the organization DGAV registration number fails, e.g. offline or not an admin (#296)"
+  },
+  "dgavOrgNumberAdminOnly": "Only an organization admin can change this.",
+  "@dgavOrgNumberAdminOnly": {
+    "description": "Note shown to non-admin members, who can read but not edit the organization's DGAV registration number (#296, NFR-ROL-1)"
+  },
+  "dgavDeclarationsTitle": "Stock declarations",
+  "@dgavDeclarationsTitle": {
+    "description": "Heading of the stock-declaration log section on the DGAV screen (FR-AP-10, #298)"
+  },
+  "dgavDeclarationsEmpty": "No declarations recorded yet.",
+  "@dgavDeclarationsEmpty": {
+    "description": "Empty state of the stock-declaration log (#298)"
+  },
+  "dgavNoRegistrationNumber": "No registration number",
+  "@dgavNoRegistrationNumber": {
+    "description": "Group heading used for declarations recorded before any DGAV registration number was entered (#298)"
+  },
+  "dgavRecordDeclarationAction": "Record declaration",
+  "@dgavRecordDeclarationAction": {
+    "description": "Action that records a stock declaration for a registration number, pre-filled from the current hive counts (#298)"
+  },
+  "dgavDeclarationSaved": "Declaration recorded",
+  "@dgavDeclarationSaved": {
+    "description": "Confirmation shown after a stock declaration is recorded (#298)"
+  },
+  "dgavDeclarationDeleteAction": "Delete declaration",
+  "@dgavDeclarationDeleteAction": {
+    "description": "Action that deletes a mis-entered stock declaration (#298)"
+  },
+  "dgavDeclarationSummary": "{date} — {count, plural, =1{1 hive} other{{count} hives}}",
+  "@dgavDeclarationSummary": {
+    "description": "One row of the stock-declaration log: the declared date and the declared hive total (#298)",
+    "placeholders": {
+      "date": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "dgavDeclarationApiaryCount": "{count, plural, =0{no apiaries} =1{1 apiary} other{{count} apiaries}}",
+  "@dgavDeclarationApiaryCount": {
+    "description": "Secondary line of a declaration row: how many apiaries the snapshot covered (#298)",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "dgavWindowOpen": "The annual declaration window is open until 30 September.",
+  "@dgavWindowOpen": {
+    "description": "Advisory status shown during the 1-30 September annual declaration window when nothing has been declared this year (FR-AP-10, #298)"
+  },
+  "dgavWindowOpenDeclared": "Declared this year. The window is open until 30 September.",
+  "@dgavWindowOpenDeclared": {
+    "description": "Advisory status shown during the September window when a declaration already exists for this year (#298)"
+  },
+  "dgavInterimTriggerMet": "Hive count changed by {change} since the last declaration ({last} to {current}) — an interim declaration may be due.",
+  "@dgavInterimTriggerMet": {
+    "description": "Advisory status shown when the hive count has changed by more than 20% AND at least 20 colonies since the last declaration (#298)",
+    "placeholders": {
+      "change": { "type": "int" },
+      "last": { "type": "int" },
+      "current": { "type": "int" }
+    }
+  },
+  "dgavCurrentHiveCount": "Current hive count: {count}",
+  "@dgavCurrentHiveCount": {
+    "description": "The live hive total across the beekeeper's apiaries, shown next to the declaration log so the two are visibly distinct (#298, FR-AP-7)",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
   },
   "apiaryLocationSectionLabel": "Location",
   "@apiaryLocationSectionLabel": {
