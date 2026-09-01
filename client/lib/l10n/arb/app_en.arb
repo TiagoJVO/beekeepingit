@@ -634,6 +634,10 @@
   "@syncNeedsFixCounterLabel": {
     "description": "Needs-fix list row title for a rejected apiary hive-counter write (#256)"
   },
+  "syncNeedsFixDeclarationLabel": "Stock declaration change",
+  "@syncNeedsFixDeclarationLabel": {
+    "description": "Needs-fix list row title for a rejected DGAV stock-declaration write (#298)"
+  },
   "syncNeedsFixActivityLabel": "Activity change",
   "@syncNeedsFixActivityLabel": {
     "description": "Needs-fix list row title for a rejected activity write (#379)"
@@ -926,6 +930,113 @@
   "apiaryPlaceLabelHint": "e.g. Montargil",
   "@apiaryPlaceLabelHint": {
     "description": "Placeholder hint text in the apiary form's place label field (#252)"
+  },
+  "apiaryDgavNumberLabel": "DGAV registration number",
+  "@apiaryDgavNumberLabel": {
+    "description": "Optional DGAV beekeeper registration number field label on the apiary form, and its label on the apiary detail screen (FR-AP-9, #296)"
+  },
+  "apiaryDgavNumberHint": "Only if different from the organization's",
+  "@apiaryDgavNumberHint": {
+    "description": "Placeholder hint in the apiary form's DGAV registration number field, explaining that it is an override of the organization-wide default (FR-AP-9, #296)"
+  },
+  "apiaryDgavNumberInherited": "From the organization",
+  "@apiaryDgavNumberInherited": {
+    "description": "Marker shown next to the DGAV registration number on the apiary detail when the value is inherited from the organization rather than set on the apiary itself (FR-AP-9, #296)"
+  },
+  "dgavSectionTitle": "DGAV",
+  "@dgavSectionTitle": {
+    "description": "Title of the DGAV screen, reached from Account — holds the beekeeper registration number and the stock-declaration log (FR-AP-9/FR-AP-10, #296/#298)"
+  },
+  "dgavSectionSubtitle": "Registration number and stock declarations",
+  "@dgavSectionSubtitle": {
+    "description": "Subtitle on the Account screen's row that opens the DGAV screen (#296/#298)"
+  },
+  "dgavIntro": "Optional record-keeping to help with DGAV obligations. The app never files anything for you.",
+  "@dgavIntro": {
+    "description": "Intro paragraph on the DGAV screen making explicit that everything there is advisory and nothing is submitted to DGAV (FR-AP-10, D-19)"
+  },
+  "dgavOrgNumberLabel": "Organization registration number",
+  "@dgavOrgNumberLabel": {
+    "description": "Label of the organization-wide DGAV beekeeper registration number field on the DGAV screen (FR-AP-9, #296)"
+  },
+  "dgavOrgNumberHint": "The beekeeper number shown at your apiaries",
+  "@dgavOrgNumberHint": {
+    "description": "Helper text under the organization DGAV registration number field (FR-AP-9, #296)"
+  },
+  "dgavOrgNumberSaved": "Registration number saved",
+  "@dgavOrgNumberSaved": {
+    "description": "Confirmation shown after the organization DGAV registration number is saved (#296)"
+  },
+  "dgavOrgNumberSaveFailed": "Could not save the registration number",
+  "@dgavOrgNumberSaveFailed": {
+    "description": "Error shown when saving the organization DGAV registration number fails, e.g. offline or not an admin (#296)"
+  },
+  "dgavOrgNumberAdminOnly": "Only an organization admin can change this.",
+  "@dgavOrgNumberAdminOnly": {
+    "description": "Note shown to non-admin members, who can read but not edit the organization's DGAV registration number (#296, NFR-ROL-1)"
+  },
+  "dgavDeclarationsTitle": "Stock declarations",
+  "@dgavDeclarationsTitle": {
+    "description": "Heading of the stock-declaration log section on the DGAV screen (FR-AP-10, #298)"
+  },
+  "dgavDeclarationsEmpty": "No declarations recorded yet.",
+  "@dgavDeclarationsEmpty": {
+    "description": "Empty state of the stock-declaration log (#298)"
+  },
+  "dgavNoRegistrationNumber": "No registration number",
+  "@dgavNoRegistrationNumber": {
+    "description": "Group heading used for declarations recorded before any DGAV registration number was entered (#298)"
+  },
+  "dgavRecordDeclarationAction": "Record declaration",
+  "@dgavRecordDeclarationAction": {
+    "description": "Action that records a stock declaration for a registration number, pre-filled from the current hive counts (#298)"
+  },
+  "dgavDeclarationSaved": "Declaration recorded",
+  "@dgavDeclarationSaved": {
+    "description": "Confirmation shown after a stock declaration is recorded (#298)"
+  },
+  "dgavDeclarationDeleteAction": "Delete declaration",
+  "@dgavDeclarationDeleteAction": {
+    "description": "Action that deletes a mis-entered stock declaration (#298)"
+  },
+  "dgavDeclarationSummary": "{date} — {count, plural, =1{1 hive} other{{count} hives}}",
+  "@dgavDeclarationSummary": {
+    "description": "One row of the stock-declaration log: the declared date and the declared hive total (#298)",
+    "placeholders": {
+      "date": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "dgavDeclarationApiaryCount": "{count, plural, =0{no apiaries} =1{1 apiary} other{{count} apiaries}}",
+  "@dgavDeclarationApiaryCount": {
+    "description": "Secondary line of a declaration row: how many apiaries the snapshot covered (#298)",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "dgavWindowOpen": "The annual declaration window is open until 30 September.",
+  "@dgavWindowOpen": {
+    "description": "Advisory status shown during the 1-30 September annual declaration window when nothing has been declared this year (FR-AP-10, #298)"
+  },
+  "dgavWindowOpenDeclared": "Declared this year. The window is open until 30 September.",
+  "@dgavWindowOpenDeclared": {
+    "description": "Advisory status shown during the September window when a declaration already exists for this year (#298)"
+  },
+  "dgavInterimTriggerMet": "Hive count changed by {change} since the last declaration ({last} to {current}) — an interim declaration may be due.",
+  "@dgavInterimTriggerMet": {
+    "description": "Advisory status shown when the hive count has changed by more than 20% AND at least 20 colonies since the last declaration (#298)",
+    "placeholders": {
+      "change": { "type": "int" },
+      "last": { "type": "int" },
+      "current": { "type": "int" }
+    }
+  },
+  "dgavCurrentHiveCount": "Current hive count: {count}",
+  "@dgavCurrentHiveCount": {
+    "description": "The live hive total across the beekeeper's apiaries, shown next to the declaration log so the two are visibly distinct (#298, FR-AP-7)",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
   },
   "apiaryLocationSectionLabel": "Location",
   "@apiaryLocationSectionLabel": {

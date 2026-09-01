@@ -52,9 +52,18 @@ audit_log     (… entity_type[organization|membership|invitation], change JSONB
 ```text
 apiaries          (id PK, organization_id, name, created_at, updated_at, recorded_at,
                    deleted_at, location geography(Point,4326) NULL, notes NULL≤10k,
-                   place_label NULL≤200)          -- hive_count column RETIRED (#256)
+                   place_label NULL≤200, dgav_registration_number NULL≤50)
+                                                 -- hive_count column RETIRED (#256)
+                                                 -- dgav_reg_number = per-apiary OVERRIDE of
+                                                    the org default (FR-AP-9, #296)
 apiary_counters   (id PK, organization_id, apiary_id FK→apiaries ON DELETE CASCADE,
                    counter_type, value≥0, UNIQUE(apiary_id,counter_type))   -- 1-N (#256)
+stock_declarations(id PK, organization_id, dgav_registration_number, declared_on DATE,
+                   total_hive_count≥0, breakdown JSONB[array], notes NULL≤2k,
+                   created_at, updated_at, recorded_at, deleted_at)
+                   -- DGAV "Declaração de Existências" (FR-AP-10, #298). Keyed by
+                      REGISTRATION NUMBER, not apiary; identity is its own row id
+                      (unlike apiary_counters); NOT the live hive counter.
 sync_conflict_log (id PK, org_id, entity_type, entity_id, winning/losing_payload JSONB,
                    winner[server|client], actor_user_id, occurred_at, recorded_at)
 audit_log         (… change_type[create|update|delete], changed_fields[], change JSONB)
@@ -131,6 +140,8 @@ an ordinary patch, no bespoke wire op). List/filter (#53) is out of scope.
 identity.users ──(oidc_sub ← JWT sub; user_id ref, no FK)──► organizations.memberships
 organizations.organizations ─1─N─► memberships, invitations
 apiaries.apiaries ─1─N─► apiary_counters (hive count lives here, not on apiaries)
+apiaries.stock_declarations — org-scoped, keyed by dgav_registration_number (a VALUE,
+                              not an FK: what the declaration was filed under)
 apiaries.apiaries ─1─N─► audit_log / sync_conflict_log  (by entity_id, same schema)
 ```
 
@@ -143,6 +154,8 @@ never SQL FKs — each schema is independently owned.
 apiaries          (id, organization_id, name, notes, place_label,
                    location_lon REAL, location_lat REAL, created_at, updated_at)
 apiary_counters   (id, organization_id, apiary_id, counter_type, value, timestamps)
+stock_declarations(id, dgav_registration_number, declared_on, total_hive_count,
+                   breakdown TEXT(JSON-encoded array), notes, created_at, updated_at)
 sync_rejected_ops (LOCAL-ONLY dead-letter: dedup_key, fix_apiary_id, op, payload,
                    error_code, error_detail, rejected_at)               -- D-12
 activities        (id, organization_id, apiary_id, performed_by, journey_id, type,
@@ -176,8 +189,11 @@ down-sync (no local `deleted_at`).
 ```text
 identity:       00001 create_users · 00002 rename keycloak_sub→oidc_sub · 00003 audit_log
 organizations:  00001 create_organizations · 00002 create_invitations · 00003 audit_log
+                … · 00006 BASELINE · 00007 add_organization_dgav_registration_number
 apiaries:       00001 create_apiaries · 00002 audit_log · 00003 add_location(PostGIS)
                 00004 add_notes · 00005 create_apiary_counters · 00006 add_place_label
+                00007 org-scoped counter unique · 00008 BASELINE (squash of 00001-00008)
+                00009 add_apiary_dgav_registration_number · 00010 create_stock_declarations
 activities:     00001 create_activities(+sync_conflict_log) · 00002 audit_log
 journeys:       00001 create_journeys(+journey_plan_items,+sync_conflict_log) · 00002 audit_log
 todos:          00001 create_todos(+sync_conflict_log) · 00002 audit_log · 00003 add_apiary_id

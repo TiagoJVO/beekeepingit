@@ -35,6 +35,7 @@ class Apiary {
     this.locationLon,
     this.locationLat,
     this.placeLabel,
+    this.dgavRegistrationNumber,
     this.notes,
   });
 
@@ -44,6 +45,13 @@ class Apiary {
   final double? locationLon;
   final double? locationLat;
   final String? placeLabel;
+
+  /// The per-apiary OVERRIDE of the organization's DGAV beekeeper
+  /// registration-number default (FR-AP-9, #296). Null means "no override",
+  /// i.e. this apiary belongs to the beekeeper whose number the organization
+  /// carries -- the normal case. Resolve the number actually displayed with
+  /// [effectiveDgavRegistrationNumber], never by reading this field alone.
+  final String? dgavRegistrationNumber;
   final String? notes;
 
   bool get hasLocation => locationLon != null && locationLat != null;
@@ -99,7 +107,7 @@ class ApiariesRepository {
   Stream<List<Apiary>> watchAll() {
     return _store
         .watch(
-          'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
+          'SELECT a.id, a.name, a.notes, a.place_label, a.dgav_registration_number, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
           'FROM $apiariesTable a ORDER BY a.created_at DESC, a.name',
         )
@@ -108,7 +116,7 @@ class ApiariesRepository {
 
   Future<Apiary?> getById(String id) async {
     final row = await _store.getOptional(
-      'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
+      'SELECT a.id, a.name, a.notes, a.place_label, a.dgav_registration_number, a.location_lon, a.location_lat, '
       'COALESCE($_hiveCountSubquery, 0) AS hive_count '
       'FROM $apiariesTable a WHERE a.id = ?',
       [id],
@@ -128,7 +136,7 @@ class ApiariesRepository {
   Stream<Apiary?> watchById(String id) {
     return _store
         .watch(
-          'SELECT a.id, a.name, a.notes, a.place_label, a.location_lon, a.location_lat, '
+          'SELECT a.id, a.name, a.notes, a.place_label, a.dgav_registration_number, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
           'FROM $apiariesTable a WHERE a.id = ?',
           [id],
@@ -172,6 +180,7 @@ class ApiariesRepository {
     int? hiveCount,
     String? notes,
     String? placeLabel,
+    String? dgavRegistrationNumber,
     double? locationLon,
     double? locationLat,
   }) async {
@@ -183,9 +192,20 @@ class ApiariesRepository {
     // parent exists by the time the counter op applies.
     await _store.execute(
       'INSERT INTO $apiariesTable '
-      '(id, name, notes, place_label, location_lon, location_lat, created_at, updated_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, name, notes, placeLabel, locationLon, locationLat, now, now],
+      '(id, name, notes, place_label, dgav_registration_number, '
+      'location_lon, location_lat, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        name,
+        notes,
+        placeLabel,
+        dgavRegistrationNumber,
+        locationLon,
+        locationLat,
+        now,
+        now,
+      ],
     );
     if (hiveCount != null) {
       await _insertCounter(id, counterTypeHive, hiveCount, now);
@@ -235,6 +255,8 @@ class ApiariesRepository {
     bool notesProvided = false,
     String? placeLabel,
     bool placeLabelProvided = false,
+    String? dgavRegistrationNumber,
+    bool dgavRegistrationNumberProvided = false,
     double? locationLon,
     double? locationLat,
     bool locationProvided = false,
@@ -245,17 +267,31 @@ class ApiariesRepository {
     final newName = name ?? current.name;
     final newNotes = notesProvided ? notes : current.notes;
     final newPlaceLabel = placeLabelProvided ? placeLabel : current.placeLabel;
+    final newDgav = dgavRegistrationNumberProvided
+        ? dgavRegistrationNumber
+        : current.dgavRegistrationNumber;
     final newLon = locationProvided ? locationLon : current.locationLon;
     final newLat = locationProvided ? locationLat : current.locationLat;
     if (newName != current.name ||
         newNotes != current.notes ||
         newPlaceLabel != current.placeLabel ||
+        newDgav != current.dgavRegistrationNumber ||
         newLon != current.locationLon ||
         newLat != current.locationLat) {
       await _store.execute(
         'UPDATE $apiariesTable SET name = ?, notes = ?, place_label = ?, '
+        'dgav_registration_number = ?, '
         'location_lon = ?, location_lat = ?, updated_at = ? WHERE id = ?',
-        [newName, newNotes, newPlaceLabel, newLon, newLat, _nowIso(), id],
+        [
+          newName,
+          newNotes,
+          newPlaceLabel,
+          newDgav,
+          newLon,
+          newLat,
+          _nowIso(),
+          id,
+        ],
       );
     }
 
@@ -328,6 +364,7 @@ class ApiariesRepository {
     locationLon: (r['location_lon'] as num?)?.toDouble(),
     locationLat: (r['location_lat'] as num?)?.toDouble(),
     placeLabel: r['place_label'] as String?,
+    dgavRegistrationNumber: r['dgav_registration_number'] as String?,
     notes: r['notes'] as String?,
   );
 

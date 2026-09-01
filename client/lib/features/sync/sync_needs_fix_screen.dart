@@ -98,6 +98,7 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
 
     final entityLabel = switch (op.entityType) {
       apiaryCounterEntityType => l10n.syncNeedsFixCounterLabel,
+      stockDeclarationEntityType => l10n.syncNeedsFixDeclarationLabel,
       activityEntityType => l10n.syncNeedsFixActivityLabel,
       journeyEntityType => l10n.syncNeedsFixJourneyLabel,
       journeyPlanItemEntityType => l10n.syncNeedsFixJourneyPlanLabel,
@@ -202,6 +203,12 @@ void _navigateToFix(BuildContext context, RejectedOp op) {
       } else {
         context.goNamed('journeyDetail', pathParameters: {'id': journeyId});
       }
+    case stockDeclarationEntityType:
+      // A declaration has no per-record edit screen: the DGAV section IS
+      // its editor, so "Fix" lands there and the beekeeper re-records or
+      // deletes it. fixApiaryId is meaningless for this entity type (a
+      // declaration is scoped to a registration number, not to an apiary).
+      context.go('/dgav');
     case todoEntityType:
       // fixApiaryId doubles as the todo's own id for this entity type too.
       context.goNamed('todoEdit', pathParameters: {'id': op.fixApiaryId});

@@ -249,6 +249,17 @@ components:
               description: >-
                 Optional free-text place name (e.g. "Montargil"), independent of `location`'s
                 coordinates and of the apiary's own `name` (#252).
+            dgav_registration_number:
+              type: [string, "null"]
+              maxLength: 50
+              description: >-
+                Optional per-apiary OVERRIDE of the organization's DGAV beekeeper registration
+                number (FR-AP-9). DGAV issues one number per BEEKEEPER, displayed at each of that
+                beekeeper's apiaries; the default therefore lives on the organization
+                (`Organization.dgav_registration_number`) and this field exists only for an
+                organization covering several beekeepers. Absent means "inherits the
+                organization's value" — an apiary's effective number is this when set, otherwise
+                the organization's. Advisory only.
             notes:
               type: [string, "null"]
               maxLength: 10000
@@ -284,6 +295,13 @@ components:
           description: >-
             Optional free-text place name (e.g. "Montargil"), independent of `location`'s
             coordinates and of the apiary's own `name` (#252).
+        dgav_registration_number:
+          type: [string, "null"]
+          maxLength: 50
+          description: >-
+            Optional per-apiary OVERRIDE of the organization's DGAV beekeeper registration
+            number (FR-AP-9). Absent means the apiary inherits
+            `Organization.dgav_registration_number`.
         notes:
           type: [string, "null"]
           maxLength: 10000
@@ -309,6 +327,13 @@ components:
           description: >-
             Optional free-text place name (e.g. "Montargil"), independent of `location`'s
             coordinates and of the apiary's own `name` (#252).
+        dgav_registration_number:
+          type: [string, "null"]
+          maxLength: 50
+          description: >-
+            Optional per-apiary OVERRIDE of the organization's DGAV beekeeper registration
+            number (FR-AP-9). Absent means the apiary inherits
+            `Organization.dgav_registration_number`.
         notes:
           type: [string, "null"]
           maxLength: 10000
