@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/sync/local_store.dart';
+import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
@@ -254,9 +255,13 @@ class JourneysRepository {
 
     for (final row in existing) {
       if (!desired.contains(row['apiary_id'])) {
-        await _store.execute(
-          'DELETE FROM $journeyPlanItemsTable WHERE id = ?',
-          [row['id']],
+        // #276: through the stamping seam like every other synced delete, so
+        // a plan-item removal queued offline keeps its own delete-time LWW
+        // comparator across retries and app restarts.
+        await deleteWithLwwStamp(
+          _store,
+          journeyPlanItemsTable,
+          row['id'] as String,
         );
       }
     }
@@ -285,15 +290,16 @@ class JourneysRepository {
     );
   }
 
-  /// Deletes the journey row (FR-JO-4). A plain local DELETE — PowerSync's
+  /// Deletes the journey row (FR-JO-4). A local delete — PowerSync's
   /// CRUD queue observes it as a `delete` op regardless, applied server-side
   /// as a tombstone (services/journeys/api/sync.go's applyJourneyOp). The
   /// journey's plan-item rows are deliberately left in place: inert and
   /// invisible once their parent journey is gone, mirroring
   /// apiaries_repository.dart's own "delete apiary, leave its counter rows"
-  /// convention.
+  /// convention. Issued through [deleteWithLwwStamp] (#276) so the op's LWW
+  /// comparator is the delete moment, not the upload moment.
   Future<void> delete(String id) =>
-      _store.execute('DELETE FROM $journeysTable WHERE id = ?', [id]);
+      deleteWithLwwStamp(_store, journeysTable, id);
 
   /// Every journey in the caller's org (#45's minimal list screen; #47 adds
   /// filters later), newest-first. Tenancy (FR-TEN-2) is primarily enforced

@@ -283,6 +283,18 @@ client hides tombstoned rows. Physical purge (and tombstone retention) is a hist
 concern ([history.md](history.md) §7.2, deferred to EPIC-14). This is what makes deletes propagate to every device rather than resurrect
 on the next sync.
 
+**A delete's LWW comparator is captured on the device, at delete time** (#276, FR-OF-1). A
+queued delete op carries no row payload, so it has no `updated_at` of its own to compare — and
+inventing one when the op finally uploads makes it drift later on every retry and every app
+restart, so a delete that sat offline for a day could beat a genuinely newer concurrent edit
+under §4.1's strict comparison. The client therefore stamps the device time **once**, in the
+same statement that deletes the row, and persists it with the queued op: the synced tables the
+client deletes from enable PowerSync's `trackMetadata`, deletes go out as
+`UPDATE <table> SET _deleted = TRUE, _metadata = <device time>` (the only form the PowerSync
+core turns into a delete op that carries metadata), and the connector reads it back off
+`CrudEntry.metadata` as the op's `updated_at`. Client-side files:
+`client/lib/core/sync/lww_delete.dart`, `powersync_schema.dart`, `powersync_connector.dart`.
+
 ---
 
 ## 5. The sync-publication contract (what every owning service must honor)
@@ -496,8 +508,29 @@ the client gates sync on **measured link quality**, not the mere presence of a c
 - `sync_gate.dart`'s `SyncGate` is the probe → exponential-backoff → probe state machine
   (`SyncGateState`: `probing` / `waitingForSignal` / `passed`; default backoff 2s → 2min,
   ×2/attempt — tuning constants, adjustable without an interface change). It depends only on
-  `ConnectivityProbe` and a `Future<void> Function()` connect callback — never on a PowerSync
-  type — so it sits outside the §5 contract as intended.
+  `ConnectivityProbe`, a `Future<void> Function()` connect callback and an optional
+  `Stream<void>` of connectivity-return events — never on a PowerSync type — so it sits outside
+  the §5 contract as intended.
+- **Re-probe on connectivity-return (#240).** A backoff decided under weak signal must not
+  outlive the link that earned it: `connectivity_signal.dart`'s `ConnectivitySignal` (the browser
+  `online` event on web, a never-emitting stub off it) feeds `SyncGate`, which cancels the
+  pending backoff and probes at once. A return that lands _while_ a probe is in flight instead
+  drops that probe's verdict to `initialBackoff` — it measured the old link — rather than letting
+  it impose the grown delay. Without any of this, a write queued offline could sit unflushed for
+  up to the ~2-min max backoff after the device was back online, unless the user tapped "sync
+  now". Three deliberate limits keep the fix from undoing the gate:
+  - it **shortens one wait, it does not reset the schedule** — a marginal link flapping
+    `offline → online` is exactly what the exponential backoff is for, and restarting the
+    schedule per event would pin the gate at 2s and cause the churn this section set out to
+    avoid; every failed probe still grows the next delay;
+  - a mid-probe return still waits `initialBackoff`, so an `online` burst can't spin the probe;
+  - `navigator.onLine` stays a **hint that triggers a probe**, never a substitute for one
+    ("connectivity restored is necessary but not sufficient", above).
+
+  The signal is inert while the gate isn't running: a stopped gate is either auto-sync-off (the
+  user's choice) or `passed`, where the engine owns the connection and `rearm()` is what brings
+  the gate back.
+
 - `powersync_service.dart` wires the gate around `PowerSyncDatabase.connect()`: the first
   connect and every reconnect after a `statusStream` connected→disconnected transition go
   through the gate (`SyncGate.rearm()`); `shell/sync_status.dart`'s `syncNowProvider` (#58's
@@ -559,6 +592,25 @@ of the local slice by `clear()` on logout / membership loss (§3.5). Every **oth
 (`401/403/404/429/…`) is treated as transient and **left queued** for idempotent forward-retry
 (§6.2), so a recoverable auth/route fault is never discarded.
 
+**What the needs-fix row actually says (#426/#443).** The server's `errors[].message` is
+**English-only and can name internal DB columns** ("default_attributes must be a JSON object"),
+so it is **never rendered** — it stays in the dead-letter row and the connector's log for
+diagnostics. The **machine-readable** half of the same problem body is safe, and is what the UI
+reads: `client/lib/features/sync/sync_rejection_messages.dart` maps each `(field, code)` pair
+onto **app-owned EN/PT copy** (a localized field label + the rule it broke). The mapping is an
+**allow-list**: a field or code the client has no copy for — and any pair whose generic copy
+would misdescribe the real constraint — degrades to the generic message, so a service adding a
+new validator can never leak by default. The same truthfulness rule shapes the copy itself: an
+activity's per-type attribute keys are internal schema names, so they collapse onto one
+"Details" label whose wording is phrased about the **entries inside** the bag, staying true
+whether one or several are wrong. The row's record name is held to it too — an activity has no
+name, only a wire type enum, which is resolved through `activity_types.dart`'s
+`activityTypeLabel` and dropped entirely for a type this client version doesn't know. The problem-level `code` carries no extra signal here
+(a retained rejection is always `validation.failed`, since the connector only dead-letters the
+`422`/`400` the sync endpoints answer with `problem.ValidationFailed`). The module deliberately
+depends on neither the dead-letter read model nor widgets, so the client-side pre-push
+revalidation (§9) can render locally-detected failures through the same copy.
+
 Accessibility (WCAG 2.2 AA, gloves-friendly) and EN/PT apply as everywhere. Remaining
 polish of the needs-fix screens/interaction design stays **EPIC-06**'s (#7).
 
@@ -584,20 +636,20 @@ authoritative.
 
 ## 10. Open items, deferred scope & hand-offs
 
-| Item                                                                      | Status                                                                                                                                                                                                         | Where                                                                                                                                |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Field-level merge                                                         | **Deferred** — record-level LWW + log for v1; add per-field where the conflict log shows it hurts (§4.4)                                                                                                       | owning service apply step; behind the seam (§6)                                                                                      |
-| Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change                                                                               | §6.3; EPIC-06                                                                                                                        |
-| Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                                                                                       | owning service                                                                                                                       |
-| Notify-and-fix screens                                                    | **First slice built (#256/#260)** — connector retention (dead-letter `sync_rejected_ops`) + `rejectedChanges` seam + needs-fix list/toast (§8 "As built"); screen polish still EPIC-06                         | `client/lib/core/sync/powersync_connector.dart`, `client/lib/features/sync/` · EPIC-06 (#7)                                          |
-| Connection-quality gate (FR-OF-3)                                         | **Resolved** — built in #55 (§7.1 "As built"); probe/backoff thresholds are the starting defaults, still tunable in field testing; a user-facing "Auto-sync" on/off setting was added in #81 (§7.1 "As built") | `client/lib/core/sync/{connectivity_probe,sync_gate}.dart` (#55), `client/lib/features/settings/sync_settings_repository.dart` (#81) |
-| Validation-parity mechanism                                               | **Design hand-off** — approach fixed here (§9)                                                                                                                                                                 | EPIC-06                                                                                                                              |
-| History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                                                                                     | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)                                                           |
-| History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity                                                                     | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved)                                              |
-| Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on                                                                                                                                                                                                     | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13                                                                                                |
-| iOS PWA storage durability (OPFS/IndexedDB eviction)                      | Validate when iOS is in scope (D-10)                                                                                                                                                                           | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5                                                                               |
-| Local-data purge on logout & membership loss                              | **Resolved** — `LocalStoreEngine.clear()` wired into `AuthController.logout()` and a background membership-loss watcher (§3.5)                                                                                 | `client/lib/core/auth/auth_controller.dart`, `client/lib/core/sync/local_data_purge.dart` (#125)                                     |
-| Local-data purge on active-org switch (multi-org, C-1)                    | **Deferred** — v1 is single-active-org per device; no switch UI exists yet to trigger it (§3.5)                                                                                                                | future, when multi-org lands                                                                                                         |
+| Item                                                                      | Status                                                                                                                                                                                                                                                                       | Where                                                                                                                                                          |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field-level merge                                                         | **Deferred** — record-level LWW + log for v1; add per-field where the conflict log shows it hurts (§4.4)                                                                                                                                                                     | owning service apply step; behind the seam (§6)                                                                                                                |
+| Compensation / true cross-service rollback                                | **Specified, not built** — A-lite (validate-first + forward-retry) covers v1; prior-state capture (§5.2) keeps it a later change                                                                                                                                             | §6.3; EPIC-06                                                                                                                                                  |
+| Clock source → HLC                                                        | **Deferred** — device `updated_at` for v1; HLC is a comparator swap if skew hurts (§4.3)                                                                                                                                                                                     | owning service                                                                                                                                                 |
+| Notify-and-fix screens                                                    | **First slice built (#256/#260)** — connector retention (dead-letter `sync_rejected_ops`) + `rejectedChanges` seam + needs-fix list/toast (§8 "As built"); screen polish still EPIC-06                                                                                       | `client/lib/core/sync/powersync_connector.dart`, `client/lib/features/sync/` · EPIC-06 (#7)                                                                    |
+| Connection-quality gate (FR-OF-3)                                         | **Resolved** — built in #55 (§7.1 "As built"); probe/backoff thresholds are the starting defaults, still tunable in field testing; a user-facing "Auto-sync" on/off setting was added in #81, and #240 made a pending backoff yield to connectivity-return (§7.1 "As built") | `client/lib/core/sync/{connectivity_probe,connectivity_signal,sync_gate}.dart` (#55, #240), `client/lib/features/settings/sync_settings_repository.dart` (#81) |
+| Validation-parity mechanism                                               | **Design hand-off** — approach fixed here (§9)                                                                                                                                                                                                                               | EPIC-06                                                                                                                                                        |
+| History capture mechanism                                                 | **Resolved** — per-service, in the apply transaction (§7); no events/outbox/triggers in v1                                                                                                                                                                                   | [history.md](history.md) / [ADR-0007](../adr/0007-history-audit.md) (#107)                                                                                     |
+| History retention / immutability / offline behavior                       | **Resolved** — append-only + DB-enforced immutability; retain in v1 (purge → EPIC-14); recent-history offline slice; GDPR via pseudonymity                                                                                                                                   | [history.md](history.md) §7 / [ADR-0007](../adr/0007-history-audit.md) (Q-HIS resolved)                                                                        |
+| Build the PowerSync subchart + per-service connector + sync/offline tests | Depends-on                                                                                                                                                                                                                                                                   | EPIC-06 (#7) / EPIC-00 (#1) / EPIC-13                                                                                                                          |
+| iOS PWA storage durability (OPFS/IndexedDB eviction)                      | Validate when iOS is in scope (D-10)                                                                                                                                                                                                                                         | [ADR-0005](../adr/0005-sync-engine-choice.md), SP-1 §5                                                                                                         |
+| Local-data purge on logout & membership loss                              | **Resolved** — `LocalStoreEngine.clear()` wired into `AuthController.logout()` and a background membership-loss watcher (§3.5)                                                                                                                                               | `client/lib/core/auth/auth_controller.dart`, `client/lib/core/sync/local_data_purge.dart` (#125)                                                               |
+| Local-data purge on active-org switch (multi-org, C-1)                    | **Deferred** — v1 is single-active-org per device; no switch UI exists yet to trigger it (§3.5)                                                                                                                                                                              | future, when multi-org lands                                                                                                                                   |
 
 ---
 

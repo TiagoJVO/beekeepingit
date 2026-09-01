@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/geo/distance.dart';
 import '../../core/l10n/diacritics.dart';
 import '../../core/sync/local_store.dart';
+import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
@@ -308,8 +309,13 @@ class ApiariesRepository {
   /// through the apiary row, which is gone) and inert — mirroring the
   /// server's own soft-delete treatment, where a tombstoned apiary's
   /// counter rows survive unreferenced.
+  ///
+  /// Goes through [deleteWithLwwStamp] (#276) rather than a plain
+  /// `DELETE FROM`, so the delete's LWW comparator is the moment the user
+  /// deleted — captured here and persisted with the queued op — instead of
+  /// whenever the op happens to upload.
   Future<void> delete(String id) =>
-      _store.execute('DELETE FROM $apiariesTable WHERE id = ?', [id]);
+      deleteWithLwwStamp(_store, apiariesTable, id);
 
   /// Insert-or-update of one counter row by (apiary_id, counter_type) — the
   /// client half of #256's "enforce the uniqueness by upsert semantics".

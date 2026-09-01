@@ -7,6 +7,7 @@ import 'package:powersync/powersync.dart';
 import '../../features/settings/sync_settings_repository.dart';
 import '../auth/auth_controller.dart';
 import 'connectivity_probe.dart';
+import 'connectivity_signal.dart';
 import 'local_store.dart';
 import 'powersync_connector.dart';
 import 'powersync_local_store.dart';
@@ -14,6 +15,51 @@ import 'powersync_schema.dart';
 import 'sync_gate.dart';
 
 const _dbFilename = 'beekeepingit.db';
+
+/// Test-only seam over the single step in [powerSyncProvider] that needs a
+/// real device: constructing and initializing the on-device
+/// [PowerSyncDatabase]. When non-null, [_openDatabase] calls this instead.
+///
+/// Why it exists (#286): `PowerSyncDatabase`'s *constructor* immediately
+/// registers the database path in PowerSync's process-wide active-instance
+/// registry (`ActiveDatabaseGroup`), and only `close()` deregisters it —
+/// after awaiting the same initialization the constructor kicked off. Under
+/// `testWidgets` that initialization never resolves: its real disk/isolate
+/// I/O doesn't progress under the widget binding's fake-async clock (probed
+/// locally: `initialize()` completes in a plain `test()`, and is still
+/// pending after 2s of pumped time inside `testWidgets`). So the provider
+/// body below stays suspended right here, never reaches its `ref.onDispose`,
+/// and the registration is never released — the same outcome an *erroring*
+/// open would have. Every widget test rendering a screen that watches
+/// `syncStatusProvider` (or any repository provider) therefore leaked one
+/// registration, and PowerSync logged "Multiple instances for the same
+/// database have been detected" from the second one onward — hundreds of
+/// lines of noise across an otherwise green `flutter test` run.
+///
+/// `test/flutter_test_config.dart` sets this once for the whole suite to a
+/// future that never completes, which is what widget tests already observe
+/// today (`powerSyncProvider` stays pending) minus the leaked database
+/// handle and the stray on-disk `beekeepingit.db`. A widget test that needs
+/// a *resolved* sync session still overrides the Riverpod providers it
+/// depends on, as `account_screen_test.dart`/`app_shell_test.dart` already
+/// do; awaiting `powerSyncProvider` itself without an override hangs until
+/// the test times out.
+///
+/// Never set outside tests — production leaves it null and opens the real
+/// database below.
+@visibleForTesting
+Future<PowerSyncDatabase> Function()? debugOpenPowerSyncDatabase;
+
+/// Opens (and initializes) the on-device database, honoring the
+/// [debugOpenPowerSyncDatabase] test seam.
+Future<PowerSyncDatabase> _openDatabase() async {
+  final openOverride = debugOpenPowerSyncDatabase;
+  if (openOverride != null) return openOverride();
+
+  final db = PowerSyncDatabase(schema: appSchema, path: _dbFilename);
+  await db.initialize();
+  return db;
+}
 
 /// Serializes a sequence of async teardowns against the *next* caller's
 /// startup — the general pattern behind [powerSyncProvider]'s dispose-race
@@ -72,8 +118,7 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
   // one's `db.close()` is still in flight.
   await _teardownGuard.waitForPrior();
 
-  final db = PowerSyncDatabase(schema: appSchema, path: _dbFilename);
-  await db.initialize();
+  final db = await _openDatabase();
 
   final connector = BeekeepingitConnector(
     getAccessToken: () =>
@@ -93,6 +138,11 @@ final powerSyncProvider = FutureProvider<PowerSyncSession>((ref) async {
       if (connected) return;
       await db.connect(connector: connector);
     },
+    // The browser's `online` event, so a reconnect cuts a pending backoff
+    // short and re-probes at once instead of leaving a queued offline write
+    // unflushed for up to the gate's ~2-min max backoff (#240, FR-OF-3). A
+    // hint only — the probe still decides whether the link is usable.
+    onConnectivityRestored: createConnectivitySignal().onRestored,
   );
 
   // Re-arm the gate whenever the engine transitions from connected to

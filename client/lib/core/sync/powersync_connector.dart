@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../config/app_config.dart';
 import 'local_store.dart';
+import 'lww_delete.dart';
 import 'powersync_local_store.dart';
 import 'powersync_schema.dart';
 import 'sync_events.dart';
@@ -40,10 +41,18 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
   final _rejected = StreamController<RejectedChange>.broadcast();
   Stream<RejectedChange> get rejectedChanges => _rejected.stream;
 
-  /// Per-delete-op device timestamps (MEDIUM finding: see [lwwTimestampFor]'s
-  /// doc) — captured once per queued delete and reused across retries of the
-  /// *same* op, cleared once that op leaves the upload queue
-  /// ([_clearResolved]/[_retainRejected]).
+  /// Legacy per-delete-op device timestamps — the pre-#276 in-memory fallback
+  /// (see [lwwTimestampFor]'s doc), now reached only when an op carries no
+  /// *usable* durable metadata: a delete queued by an app version predating
+  /// #276 and still in the queue after the upgrade, or (defensively) a
+  /// metadata value that failed validation. Kept captured-once-per-op and
+  /// cleared as that op leaves the queue ([_clearResolved]/[_retainRejected])
+  /// so it never outlives its op.
+  ///
+  /// **Removable** once no pre-#276 client can still have a delete queued —
+  /// i.e. one release cycle after this ships, since PowerSync drains the queue
+  /// on the first successful upload after the upgrade. Until then it is the
+  /// only thing standing between such an op and a `null` comparator.
   final _deleteTimestamps = <String, String>{};
 
   void dispose() {
@@ -275,9 +284,14 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
     // so the next JSON column can't regress the same way.
     data = decodeJsonColumns(e.table, data);
     // Device edit time is the LWW comparator (sync.md §4.3) — see
-    // [lwwTimestampFor]'s doc for why DELETE needs a per-op cache rather than
-    // a bare `DateTime.now()` fallback.
-    final updatedAt = lwwTimestampFor(e.id, data, _deleteTimestamps);
+    // [lwwTimestampFor]'s doc for why a DELETE reads its timestamp off the
+    // op's durable metadata rather than a bare `DateTime.now()` fallback.
+    final updatedAt = lwwTimestampFor(
+      e.id,
+      data,
+      _deleteTimestamps,
+      metadata: e.metadata,
+    );
     return {
       'op': _opName(e.op),
       'entity_type': entityTypeForTable(e.table),
@@ -330,48 +344,49 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
 }
 
 /// The device-time LWW comparator a queued CRUD entry's wire op carries in
-/// `updated_at` (sync.md §4.3). PUT/PATCH carry it in [data]'s own
-/// `updated_at` (read straight through). DELETE has no payload
-/// (`CrudEntry.opData` is null for a delete, per the `powersync` package's own
-/// doc), so it falls back to a device timestamp — captured **once**, on the
-/// first upload attempt of a given queued op, and **reused** on every later
-/// call for that same still-queued op via [deleteTimestampCache] (keyed by
-/// the CRUD entry's own id — a client-generated UUID, so it's stable and
-/// unique across tables).
+/// `updated_at` (sync.md §4.3), resolved from the first source that has one:
 ///
-/// **MEDIUM finding this fixes:** the previous code recomputed
-/// `DateTime.now()` on every call, including every retry of the *same*
-/// queued delete (PowerSync's own idempotent forward-retry, sync.md §6.2)
-/// — so a delete stuck retrying for a while kept getting an ever-later
-/// timestamp purely from retry timing, which could let it spuriously "win" a
-/// last-write-wins conflict against a genuinely newer concurrent edit.
-/// Capturing the timestamp once and reusing it removes that drift.
+/// 1. **PUT/PATCH** carry it in [data]'s own `updated_at` — read straight
+///    through, the row's real edit time.
+/// 2. **DELETE** has no payload at all (`CrudEntry.opData` is null for a
+///    delete, per the `powersync` package's own doc), so it carries its
+///    device time in the op's [metadata] instead — captured at **delete-time**
+///    by `lww_delete.dart`'s `deleteWithLwwStamp` and persisted with the
+///    queued op by PowerSync (`Table.trackMetadata`, powersync_schema.dart).
+/// 3. **[deleteTimestampCache]** — the legacy in-memory fallback, kept only
+///    for a delete that was already queued by an app version predating #276
+///    (no metadata) and is still in the queue after the upgrade. Keyed by the
+///    CRUD entry's own id (a client-generated UUID, so it's stable and unique
+///    across tables), captured once and reused across that op's retries.
 ///
-/// **Scope of this fix:** [deleteTimestampCache] is owned by the connector
-/// instance ([BeekeepingitConnector._deleteTimestamps]) and cleared once an
-/// op leaves the upload queue ([BeekeepingitConnector._clearResolved]/
-/// [BeekeepingitConnector._retainRejected]), so it fixes the realistic case —
-/// the SDK's own fast in-session retry loop — without a local schema change.
-/// It does **not** survive an app restart mid-retry (the cache is in-memory
-/// only); the fully durable fix would persist the delete's device time on the
-/// row itself at delete-time (e.g. via PowerSync's `Table.trackMetadata`
-/// hidden `_metadata` column, captured before the row disappears) and read it
-/// back here instead of a cache — tracked as a follow-up
-/// (github.com/TiagoJVO/beekeepingit#276, under EPIC-06) rather than risked
-/// in this PR, since it requires coordinated changes at every repository call
-/// site that issues a delete.
+/// **The drift this prevents (#276, FR-OF-1):** a delete's comparator must be
+/// the moment the user deleted, not the moment the op happened to upload. An
+/// upload-time `DateTime.now()` gets later on every retry of the *same* queued
+/// op — so a delete that sat offline could spuriously "win" a last-write-wins
+/// conflict against a genuinely newer concurrent edit purely from retry
+/// timing. Capturing at upload time and caching in memory (the earlier fix)
+/// held that still only while the app stayed open; capturing at **delete
+/// time** into durable op metadata holds it still across an app restart with
+/// the delete still queued, which is the case the cache could never cover.
+///
+/// [metadata] is validated, not trusted (`lwwTimestampFromDeleteMetadata`): an
+/// unparseable value falls through to the cache rather than being POSTed as a
+/// timestamp the server would compare as garbage.
 ///
 /// `@visibleForTesting` and taking [deleteTimestampCache] as a parameter (not
-/// reaching for connector state) so the once-per-id behavior is unit-testable
-/// with a plain `Map`, no PowerSync database needed.
+/// reaching for connector state) so the resolution order is unit-testable with
+/// a plain `Map`, no PowerSync database needed.
 @visibleForTesting
 String lwwTimestampFor(
   String entryId,
   Map<String, dynamic>? data,
-  Map<String, String> deleteTimestampCache,
-) {
+  Map<String, String> deleteTimestampCache, {
+  String? metadata,
+}) {
   final fromPayload = data?['updated_at'] as String?;
   if (fromPayload != null) return fromPayload;
+  final fromMetadata = lwwTimestampFromDeleteMetadata(metadata);
+  if (fromMetadata != null) return fromMetadata;
   return deleteTimestampCache.putIfAbsent(
     entryId,
     () => DateTime.now().toUtc().toIso8601String(),

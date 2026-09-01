@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:beekeepingit_client/core/sync/connectivity_probe.dart';
 import 'package:beekeepingit_client/core/sync/powersync_service.dart';
 import 'package:beekeepingit_client/core/sync/sync_gate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:powersync/powersync.dart';
 
 /// A scripted [ConnectivityProbe] — always resolves immediately with a fixed
 /// result and counts invocations, so tests can tell whether [SyncGate]'s
@@ -27,6 +29,44 @@ class _FakeProbe implements ConnectivityProbe {
 }
 
 void main() {
+  group(
+    'debugOpenPowerSyncDatabase (#286 — "Multiple instances" test noise)',
+    () {
+      test('the suite-wide test config installs the stub, so no test opens a '
+          'real on-device database', () {
+        // Set by test/flutter_test_config.dart, which `flutter test` runs for
+        // every file under test/. If this ever goes null, widget tests start
+        // leaking un-closable PowerSyncDatabase handles again and PowerSync
+        // floods the run with "Multiple instances for the same database".
+        expect(debugOpenPowerSyncDatabase, isNotNull);
+      });
+
+      test('powerSyncProvider opens through the seam rather than constructing '
+          'a PowerSyncDatabase directly', () async {
+        final previous = debugOpenPowerSyncDatabase;
+        addTearDown(() => debugOpenPowerSyncDatabase = previous);
+        var opens = 0;
+        debugOpenPowerSyncDatabase = () {
+          opens++;
+          // Never completes — mirroring what a *widget* test observes, and
+          // what test/flutter_test_config.dart installs suite-wide. A plain
+          // `test()` like this one is the opposite case: here the real open
+          // would actually succeed and leave a `beekeepingit.db` behind,
+          // which is exactly why what's asserted is that the provider goes
+          // through the seam at all.
+          return Completer<PowerSyncDatabase>().future;
+        };
+
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(powerSyncProvider);
+        await pumpEventQueue();
+
+        expect(opens, 1);
+      });
+    },
+  );
+
   group('TeardownGuard (HIGH #2 — async ref.onDispose is fire-and-forget)', () {
     test('waitForPrior resolves immediately when nothing is pending', () async {
       final guard = TeardownGuard();
