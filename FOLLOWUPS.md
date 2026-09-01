@@ -23,11 +23,13 @@
   at hook weight 3 should cover it with no infra change (and the publication is schema-scoped,
   so PowerSync captures it automatically). That is reasoned from the chart, not observed —
   confirm on the first environment that actually runs migration `00010`.
-- **Deferred, not forgotten: three of D-19's five flagged data points remain untriaged** — the
-  structured disease/condition field on Treatment activities, the treatment-retention policy
-  note, and the honey lot/batch identifier. They belong to their own owning epics (activities,
-  import/export), are recorded in D-19 and in `docs/research/regulatory-pt-eu-beekeeping.md` §6,
-  and need no entry of their own here once this PR merges — prune this bullet with the section.
+- **Deferred, not forgotten: two of D-19's five flagged data points remain untriaged** — the
+  structured disease/condition field on Treatment activities, and the honey lot/batch
+  identifier. (The retention-policy note was triaged separately by #295 while this branch was
+  in flight; #296/#298 triage the registration number and the stock-declaration record.) The
+  two that remain belong to their own owning epics (activities, import/export), are recorded in
+  D-19 and in `docs/research/regulatory-pt-eu-beekeeping.md` §6, and need no entry of their own
+  here once this PR merges — prune this bullet with the section.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -44,10 +46,10 @@
 
 ---
 
-_Sweep note (#296/#298, 2026-09-01): the `claude/orch-add-feature-6993c5` (#365) section was_
-_pruned — [#365](https://github.com/TiagoJVO/beekeepingit/issues/365) is closed, so its_
-_before-merge Helm-E2E item is spent, and both of its after-merge bullets were already tracked as_
-_their own Issues ([#510](https://github.com/TiagoJVO/beekeepingit/issues/510),_
-_[#563](https://github.com/TiagoJVO/beekeepingit/issues/563)), which remain open there._
-_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that_
-_entry stands. Prior sweep notes dropped with their entries, per this file's convention._
+_Sweep note (2026-09-01, during #295): [#365](https://github.com/TiagoJVO/beekeepingit/issues/365)_
+_closed and its branch merged, so the `claude/orch-add-feature-6993c5` section is resolved by_
+_definition — its Helm-E2E merge precondition was met at merge, and its two after-merge items were_
+_already Issues ([#510](https://github.com/TiagoJVO/beekeepingit/issues/510),_
+_[#563](https://github.com/TiagoJVO/beekeepingit/issues/563)) that the entry itself said to prune on_
+_landing. Pruned. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
+_open — that entry stands. Prior sweep notes dropped with their entries, per this file's convention._

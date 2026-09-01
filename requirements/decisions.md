@@ -535,9 +535,11 @@ Core technology decisions (2026-06-27). Detail and rationale in
     per-apiary breakdown snapshot.
     Both are **advisory**: the app surfaces the September window and the interim threshold in its
     own DGAV section and never blocks anything, and it still submits nothing to DGAV/SICOA (the
-    research note's §7 out-of-scope line stands). The remaining **three** data points — the
-    structured disease/condition field, the treatment-retention policy note, and the honey lot/batch
-    identifier — stay flagged-not-committed, awaiting their own owning epics.
+    research note's §7 out-of-scope line stands). Of the remaining data points, the
+    **treatment-retention policy note** was triaged separately by **#295** (its policy language
+    now lives in `docs/architecture/history.md` §7.4), leaving **two** flagged-not-committed —
+    the structured disease/condition field on Treatment activities, and the honey lot/batch
+    identifier — each awaiting its own owning epic.
 
 ## D-20 — Apiary counters: typed 1-N child table, decoupled from the apiaries row
 
