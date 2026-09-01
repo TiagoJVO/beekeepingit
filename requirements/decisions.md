@@ -516,6 +516,30 @@ Core technology decisions (2026-06-27). Detail and rationale in
 - **Not decided here (deferred to feature epics):** whether/when to actually implement any of
   the five future-relevant data points above. This decision **scopes the obligations**, it
   does not commit to schema changes.
+- **Triaged (2026-09-01, user-confirmed) — the first two data points are now real requirements.**
+  EPIC-02's closing stories (#296, #298) carried out exactly the triage this decision defers
+  above, so the DGAV **registration number** and the **annual stock-declaration record** are no
+  longer "flagged, not committed": they are minted as **FR-AP-9** and **FR-AP-10**. Three
+  substantive points were settled in that triage, none of them derivable from the text here:
+  - **The registration number is the _beekeeper's_, not the apiary's** — DGAV issues one
+    `número de registo do apicultor` per beekeeper and requires it displayed at each of that
+    beekeeper's apiaries, while apiaries are identified to DGAV by **coordinates**. Since one
+    organization may cover **several beekeepers**, FR-AP-9 stores an **organization-level
+    default** with a **per-apiary override**, rather than the plain per-apiary field the
+    research note's §6.1 listed as one of its two candidates.
+  - **The interim trigger is `AND`, with mixed comparators** — `> 20%` of the hive count **and**
+    `>= 20` colonies (DGAV's own wording; the research note said `>= 20%`, corrected in the same
+    change). The bullet above's shorthand "20%/20-colony" is that rule, not an `OR`.
+  - **A declaration is scoped to a registration number, not to an apiary** — it covers a
+    beekeeper's whole holding, so FR-AP-10 records one declaration per number, carrying a
+    per-apiary breakdown snapshot.
+    Both are **advisory**: the app surfaces the September window and the interim threshold in its
+    own DGAV section and never blocks anything, and it still submits nothing to DGAV/SICOA (the
+    research note's §7 out-of-scope line stands). Of the remaining data points, the
+    **treatment-retention policy note** was triaged separately by **#295** (its policy language
+    now lives in `docs/architecture/history.md` §7.4), leaving **two** flagged-not-committed —
+    the structured disease/condition field on Treatment activities, and the honey lot/batch
+    identifier — each awaiting its own owning epic.
 
 ## D-20 — Apiary counters: typed 1-N child table, decoupled from the apiaries row
 

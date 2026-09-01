@@ -99,6 +99,17 @@ const syncValidationRulesJson = r'''
           ]
         },
         {
+          "name": "dgav_registration_number",
+          "checks": [
+            {
+              "kind": "maxLength",
+              "limit": 50,
+              "code": "too_long",
+              "message": "dgav_registration_number must be at most 50 characters"
+            }
+          ]
+        },
+        {
           "name": "location_lon",
           "checks": [
             {

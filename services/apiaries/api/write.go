@@ -35,6 +35,12 @@ const maxNameLength = 200
 const maxNotesLength = 10000
 const maxPlaceLabelLength = 200
 
+// maxDgavRegistrationNumberLength bounds the per-apiary DGAV
+// registration-number OVERRIDE (FR-AP-9, #296). Same 50 as the
+// organizations service's own default field and as the column CHECK
+// (migration 00009), so REST, sync-apply and the database all agree.
+const maxDgavRegistrationNumberLength = 50
+
 // apiaryCreateRequest is the POST /v1/apiaries request body (ApiaryCreate
 // schema). id is client-supplied (offline-generatable UUID, api-contracts.md
 // §4); hive_count defaults to 0 when omitted (schema default); notes is
@@ -47,6 +53,11 @@ type apiaryCreateRequest struct {
 	HiveCount  *int32         `json:"hive_count"`
 	Notes      *string        `json:"notes"`
 	PlaceLabel *string        `json:"place_label"`
+	// DgavRegistrationNumber (FR-AP-9, #296) is the per-apiary OVERRIDE of
+	// the organization's DGAV registration-number default -- only set when
+	// one organization covers several beekeepers. Absent/empty means the
+	// apiary inherits the organization's value.
+	DgavRegistrationNumber *string `json:"dgav_registration_number"`
 }
 
 // apiaryUpdateRequest is the PATCH /v1/apiaries/{id} request body
@@ -61,6 +72,11 @@ type apiaryUpdateRequest struct {
 	HiveCount  *int32         `json:"hive_count"`
 	Notes      *string        `json:"notes"`
 	PlaceLabel *string        `json:"place_label"`
+	// DgavRegistrationNumber (FR-AP-9, #296) is the per-apiary OVERRIDE of
+	// the organization's DGAV registration-number default -- only set when
+	// one organization covers several beekeepers. Absent/empty means the
+	// apiary inherits the organization's value.
+	DgavRegistrationNumber *string `json:"dgav_registration_number"`
 }
 
 // createApiary, updateApiary and deleteApiary are wired into apiaries.go's
@@ -97,14 +113,15 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 		err := withTx(r.Context(), pool, func(q *sqlcgen.Queries) error {
 			var err error
 			row, err = q.InsertApiaryWithLocation(r.Context(), sqlcgen.InsertApiaryWithLocationParams{
-				ID:             pgID,
-				OrganizationID: org,
-				Name:           body.Name,
-				Notes:          notesParam(body.Notes),
-				PlaceLabel:     notesParam(body.PlaceLabel),
-				UpdatedAt:      pgtype.Timestamptz{Time: now, Valid: true},
-				Lon:            body.Location.lon(),
-				Lat:            body.Location.lat(),
+				ID:                     pgID,
+				OrganizationID:         org,
+				Name:                   body.Name,
+				Notes:                  notesParam(body.Notes),
+				PlaceLabel:             notesParam(body.PlaceLabel),
+				DgavRegistrationNumber: notesParam(body.DgavRegistrationNumber),
+				UpdatedAt:              pgtype.Timestamptz{Time: now, Valid: true},
+				Lon:                    body.Location.lon(),
+				Lat:                    body.Location.lat(),
 			})
 			if isUniqueViolation(err) {
 				// Idempotency (Idempotency-Key + client-generated UUID PK,
@@ -142,7 +159,7 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 				return fmt.Errorf("upsert hive counter: %w", err)
 			}
 
-			want := restRowState{name: row.Name, hive: hiveCount, notes: textOf(row.Notes), placeLabel: textOf(row.PlaceLabel)}
+			want := restRowState{name: row.Name, hive: hiveCount, notes: textOf(row.Notes), placeLabel: textOf(row.PlaceLabel), dgav: textOf(row.DgavRegistrationNumber)}
 			if err := writeAuditLogTx(r.Context(), q, org, userID, id, history.ChangeCreate, now, restRowState{}, want); err != nil {
 				return fmt.Errorf("write audit log: %w", err)
 			}
@@ -159,15 +176,16 @@ func createApiary(pool *pgxpool.Pool) http.HandlerFunc {
 		w.Header().Set("Location", "/v1/apiaries/"+uuidString(row.ID))
 		w.Header().Set("ETag", etagFor(row.UpdatedAt))
 		writeJSON(w, r, http.StatusCreated, apiaryDTO{
-			ID:             uuidString(row.ID),
-			OrganizationID: uuidString(row.OrganizationID),
-			Name:           row.Name,
-			HiveCount:      hiveCount,
-			Location:       parseGeoJSONPoint(row.LocationGeojson),
-			PlaceLabel:     textPtr(row.PlaceLabel),
-			Notes:          textPtr(row.Notes),
-			CreatedAt:      row.CreatedAt.Time,
-			UpdatedAt:      row.UpdatedAt.Time,
+			ID:                     uuidString(row.ID),
+			OrganizationID:         uuidString(row.OrganizationID),
+			Name:                   row.Name,
+			HiveCount:              hiveCount,
+			Location:               parseGeoJSONPoint(row.LocationGeojson),
+			PlaceLabel:             textPtr(row.PlaceLabel),
+			DgavRegistrationNumber: textPtr(row.DgavRegistrationNumber),
+			Notes:                  textPtr(row.Notes),
+			CreatedAt:              row.CreatedAt.Time,
+			UpdatedAt:              row.UpdatedAt.Time,
 		})
 	}
 }
@@ -189,22 +207,24 @@ func respondIdempotentCreateOrConflict(w http.ResponseWriter, r *http.Request, q
 	sameLocation := existing.LocationGeojson == geoJSONOf(body.Location)
 	sameNotes := textOf(existing.Notes) == strPtrValue(body.Notes)
 	samePlaceLabel := textOf(existing.PlaceLabel) == strPtrValue(body.PlaceLabel)
-	if existing.Name != body.Name || existing.HiveCount != hiveCount || !sameLocation || !sameNotes || !samePlaceLabel {
+	sameDgav := textOf(existing.DgavRegistrationNumber) == strPtrValue(body.DgavRegistrationNumber)
+	if existing.Name != body.Name || existing.HiveCount != hiveCount || !sameLocation || !sameNotes || !samePlaceLabel || !sameDgav {
 		problem.Write(w, r, problem.Conflict("an apiary with this id already exists with different content"))
 		return
 	}
 	w.Header().Set("Location", "/v1/apiaries/"+uuidString(existing.ID))
 	w.Header().Set("ETag", etagFor(existing.UpdatedAt))
 	writeJSON(w, r, http.StatusCreated, apiaryDTO{
-		ID:             uuidString(existing.ID),
-		OrganizationID: uuidString(existing.OrganizationID),
-		Name:           existing.Name,
-		HiveCount:      existing.HiveCount,
-		Location:       parseGeoJSONPoint(existing.LocationGeojson),
-		PlaceLabel:     textPtr(existing.PlaceLabel),
-		Notes:          textPtr(existing.Notes),
-		CreatedAt:      existing.CreatedAt.Time,
-		UpdatedAt:      existing.UpdatedAt.Time,
+		ID:                     uuidString(existing.ID),
+		OrganizationID:         uuidString(existing.OrganizationID),
+		Name:                   existing.Name,
+		HiveCount:              existing.HiveCount,
+		Location:               parseGeoJSONPoint(existing.LocationGeojson),
+		PlaceLabel:             textPtr(existing.PlaceLabel),
+		DgavRegistrationNumber: textPtr(existing.DgavRegistrationNumber),
+		Notes:                  textPtr(existing.Notes),
+		CreatedAt:              existing.CreatedAt.Time,
+		UpdatedAt:              existing.UpdatedAt.Time,
 	})
 }
 
@@ -287,6 +307,9 @@ func validateCreate(body apiaryCreateRequest) (uuid.UUID, []problem.FieldError) 
 	if body.PlaceLabel != nil && len(*body.PlaceLabel) > maxPlaceLabelLength {
 		errs = append(errs, problem.FieldError{Field: "place_label", Code: "too_long", Message: "place_label must be at most 200 characters"})
 	}
+	if body.DgavRegistrationNumber != nil && len(*body.DgavRegistrationNumber) > maxDgavRegistrationNumberLength {
+		errs = append(errs, problem.FieldError{Field: "dgav_registration_number", Code: "too_long", Message: "dgav_registration_number must be at most 50 characters"})
+	}
 	// Location is mandatory on create (FR-AP-7, #341 — the product owner's
 	// directed requirement change): an apiary can never be created without
 	// coordinates. Enforced here (422) as well as at the DB (NOT NULL,
@@ -346,7 +369,7 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 				return errResponseWritten
 			}
 
-			before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel)}
+			before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel), dgav: textOf(current.DgavRegistrationNumber)}
 			want = before
 			if nameSet {
 				want.name = *body.Name
@@ -361,6 +384,10 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			_, placeLabelSet := fields["place_label"]
 			if placeLabelSet {
 				want.placeLabel = strPtrValue(body.PlaceLabel)
+			}
+			_, dgavSet := fields["dgav_registration_number"]
+			if dgavSet {
+				want.dgav = strPtrValue(body.DgavRegistrationNumber)
 			}
 			var lon, lat pgtype.Float8
 			if locationSet {
@@ -378,11 +405,12 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 			var updateErr error
 			updated, updateErr = q.UpdateApiaryWithLocation(r.Context(), sqlcgen.UpdateApiaryWithLocationParams{
 				OrganizationID: org, ID: pgID,
-				Name:       want.name,
-				Notes:      notesParamFromState(want.notes),
-				PlaceLabel: notesParamFromState(want.placeLabel),
-				UpdatedAt:  nowTS,
-				Lon:        lon, Lat: lat,
+				Name:                   want.name,
+				Notes:                  notesParamFromState(want.notes),
+				PlaceLabel:             notesParamFromState(want.placeLabel),
+				DgavRegistrationNumber: notesParamFromState(want.dgav),
+				UpdatedAt:              nowTS,
+				Lon:                    lon, Lat: lat,
 			})
 			if updateErr != nil {
 				return fmt.Errorf("update apiary: %w", updateErr)
@@ -419,15 +447,16 @@ func updateApiary(pool *pgxpool.Pool) http.HandlerFunc {
 
 		w.Header().Set("ETag", etagFor(updated.UpdatedAt))
 		writeJSON(w, r, http.StatusOK, apiaryDTO{
-			ID:             uuidString(updated.ID),
-			OrganizationID: uuidString(updated.OrganizationID),
-			Name:           updated.Name,
-			HiveCount:      want.hive,
-			Location:       parseGeoJSONPoint(updated.LocationGeojson),
-			PlaceLabel:     textPtr(updated.PlaceLabel),
-			Notes:          textPtr(updated.Notes),
-			CreatedAt:      updated.CreatedAt.Time,
-			UpdatedAt:      updated.UpdatedAt.Time,
+			ID:                     uuidString(updated.ID),
+			OrganizationID:         uuidString(updated.OrganizationID),
+			Name:                   updated.Name,
+			HiveCount:              want.hive,
+			Location:               parseGeoJSONPoint(updated.LocationGeojson),
+			PlaceLabel:             textPtr(updated.PlaceLabel),
+			DgavRegistrationNumber: textPtr(updated.DgavRegistrationNumber),
+			Notes:                  textPtr(updated.Notes),
+			CreatedAt:              updated.CreatedAt.Time,
+			UpdatedAt:              updated.UpdatedAt.Time,
 		})
 	}
 }
@@ -438,7 +467,8 @@ func validateUpdate(fields map[string]json.RawMessage, body apiaryUpdateRequest,
 	_, locSet := fields["location"]
 	_, notesSet := fields["notes"]
 	_, placeLabelSet := fields["place_label"]
-	if !nameSet && !hiveSet && !locSet && !notesSet && !placeLabelSet {
+	_, dgavSet := fields["dgav_registration_number"]
+	if !nameSet && !hiveSet && !locSet && !notesSet && !placeLabelSet && !dgavSet {
 		errs = append(errs, problem.FieldError{Field: "(body)", Code: "required", Message: "request must change at least one field"})
 	}
 	if nameSet {
@@ -457,6 +487,9 @@ func validateUpdate(fields map[string]json.RawMessage, body apiaryUpdateRequest,
 	}
 	if body.PlaceLabel != nil && len(*body.PlaceLabel) > maxPlaceLabelLength {
 		errs = append(errs, problem.FieldError{Field: "place_label", Code: "too_long", Message: "place_label must be at most 200 characters"})
+	}
+	if body.DgavRegistrationNumber != nil && len(*body.DgavRegistrationNumber) > maxDgavRegistrationNumberLength {
+		errs = append(errs, problem.FieldError{Field: "dgav_registration_number", Code: "too_long", Message: "dgav_registration_number must be at most 50 characters"})
 	}
 	// Location is mandatory (FR-AP-7, #341): a PATCH may leave it untouched
 	// (key absent), but it may not CLEAR it — sending `"location": null`
@@ -505,7 +538,7 @@ func deleteApiary(pool *pgxpool.Pool) http.HandlerFunc {
 				return errResponseWritten
 			}
 
-			before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel)}
+			before := restRowState{name: current.Name, hive: current.HiveCount, location: current.LocationGeojson, notes: textOf(current.Notes), placeLabel: textOf(current.PlaceLabel), dgav: textOf(current.DgavRegistrationNumber)}
 			if err := writeAuditLogTx(r.Context(), q, org, userID, id, history.ChangeDelete, now, before, restRowState{}); err != nil {
 				return fmt.Errorf("write audit log: %w", err)
 			}
@@ -571,6 +604,11 @@ type restRowState struct {
 	location   string // "" means unset, matching location_geojson's sentinel
 	notes      string // "" means unset — an apiary's own free-text content, not personal data (§7.3)
 	placeLabel string // "" means unset — a place NAME (e.g. "Montargil"), not personal data (#252, §7.3)
+	// dgav is the per-apiary DGAV registration-number OVERRIDE (FR-AP-9,
+	// #296); "" means "no override, inherit the organization's default".
+	// A business registration identifier the beekeeper must display at the
+	// apiary in any case, so not personal data (§7.3).
+	dgav string
 }
 
 // fields projects a restRowState to the plain field map history.ComputeChange
@@ -590,6 +628,9 @@ func (a restRowState) fields() map[string]any {
 	}
 	if a.placeLabel != "" {
 		m["place_label"] = a.placeLabel
+	}
+	if a.dgav != "" {
+		m["dgav_registration_number"] = a.dgav
 	}
 	return m
 }

@@ -36,6 +36,16 @@
   of truth — but it touches every entity's form screen, so it is out of this PR's scope. Promote
   to an Issue under EPIC-06 (#7) if it isn't picked up with #585.
 
+## `#296`/`#298` — DGAV registration + stock declarations (PR #593, merged)
+
+- **`stock_declarations` runtime grants are still unexercised on a real environment.** Helm-E2E
+  proved the table is CREATEd and that `charts/postgres`'s blanket
+  `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES` (hook weight 3) applies without error —
+  but **nothing in E2E writes a declaration**, so the grant is not exercised end-to-end. The
+  reasoning holds (the table is new and NOT a `*_log`, and the publication is schema-scoped so
+  PowerSync captures it automatically); confirm on the first environment where a beekeeper
+  actually records one. Promote to an Issue if it isn't confirmed at the next deploy.
+
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -51,10 +61,11 @@
 
 ---
 
-_Sweep note (2026-09-01, during #295): [#365](https://github.com/TiagoJVO/beekeepingit/issues/365)_
-_closed and its branch merged, so the `claude/orch-add-feature-6993c5` section is resolved by_
-_definition — its Helm-E2E merge precondition was met at merge, and its two after-merge items were_
-_already Issues ([#510](https://github.com/TiagoJVO/beekeepingit/issues/510),_
-_[#563](https://github.com/TiagoJVO/beekeepingit/issues/563)) that the entry itself said to prune on_
-_landing. Pruned. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
-_open — that entry stands. Prior sweep notes dropped with their entries, per this file's convention._
+_Sweep note (2026-09-01, during #584): PR [#593](https://github.com/TiagoJVO/beekeepingit/pull/593)_
+_merged, so its `claude/orch-add-feature-8816f4` branch section is stale by definition. Its_
+_before-merge Helm-E2E gate was met at merge and its D-19 bullet said to "prune this bullet with the_
+_section" — both pruned; the one genuinely open item (unexercised `stock_declarations` runtime_
+_grants) is kept above under the merged issues it belongs to, since it is a live post-deploy_
+_verification rather than a branch precondition. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495)_
+_re-checked and still open — that entry stands. Prior sweep notes dropped with their entries, per_
+_this file's convention._

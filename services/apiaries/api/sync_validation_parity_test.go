@@ -39,6 +39,8 @@ func TestSharedValidationDescription_MatchesApiaryOp(t *testing.T) {
 	paritytest.AssertLimit(t, e, "notes", "maxLength", 10000)
 	paritytest.AssertLimit(t, e, "place_label", "maxLength", maxPlaceLabelLength)
 	paritytest.AssertLimit(t, e, "hive_count", "min", 0)
+	paritytest.AssertLimit(t, e, "dgav_registration_number", "maxLength", maxDgavRegistrationNumberLength)
+	paritytest.AssertAbsentWhen(t, e, "dgav_registration_number", paritytest.AbsentNull)
 	paritytest.AssertRange(t, e, "location_lon", -180, 180)
 	paritytest.AssertRange(t, e, "location_lat", -90, 90)
 	paritytest.AssertDescribesOnlyWireFields(t, e, apiaryData{})
