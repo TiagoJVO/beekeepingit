@@ -40,9 +40,25 @@ class FakeLocalStore implements LocalStoreEngine {
     List<Object?> args = const [],
   ]) async => _select();
 
+  /// The delete-time LWW stamp (#276) each deleted row id was removed with —
+  /// what `deleteWithLwwStamp` wrote into the hidden `_metadata` column and
+  /// PowerSync persists with the queued op.
+  final Map<String, String> deleteStamps = {};
+
   @override
   Future<void> execute(String sql, [List<Object?> args = const []]) async {
     final normalized = sql.trim().toUpperCase();
+    // #276's metadata-carrying delete form (`UPDATE <table> SET _deleted =
+    // TRUE, _metadata = ? WHERE id = ?`). The real core extension turns
+    // exactly this statement into a local row delete plus a queued DELETE op
+    // carrying the metadata — a plain `DELETE FROM` cannot carry one.
+    if (normalized.startsWith('UPDATE STOCK_DECLARATIONS SET _DELETED')) {
+      final id = args[1] as String;
+      deleteStamps[id] = args[0] as String;
+      rows.removeWhere((r) => r['id'] == id);
+      _notify();
+      return;
+    }
     if (normalized.startsWith('INSERT INTO STOCK_DECLARATIONS')) {
       // (id, dgav_registration_number, declared_on, total_hive_count,
       //  breakdown, notes, created_at, updated_at)
@@ -56,8 +72,6 @@ class FakeLocalStore implements LocalStoreEngine {
         'created_at': args[6],
         'updated_at': args[7],
       });
-    } else if (normalized.startsWith('DELETE FROM STOCK_DECLARATIONS')) {
-      rows.removeWhere((r) => r['id'] == args[0]);
     } else {
       throw UnsupportedError('FakeLocalStore.execute: unhandled SQL: $sql');
     }
@@ -249,6 +263,19 @@ void main() {
       );
       await repo.delete(id);
       expect(await repo.watchAll().first, isEmpty);
+    });
+
+    test('delete() captures the delete-time LWW stamp on the queued op '
+        '(#276, FR-OF-1)', () async {
+      final id = await repo.create(
+        dgavRegistrationNumber: 'PT-123456',
+        declaredOn: DateTime(2026, 9, 12),
+        totalHiveCount: 42,
+      );
+
+      await repo.delete(id);
+
+      expect(DateTime.parse(store.deleteStamps[id]!).isUtc, isTrue);
     });
 
     test('notes are optional and round-trip when set', () async {

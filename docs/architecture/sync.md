@@ -283,6 +283,18 @@ client hides tombstoned rows. Physical purge (and tombstone retention) is a hist
 concern ([history.md](history.md) §7.2, deferred to EPIC-14). This is what makes deletes propagate to every device rather than resurrect
 on the next sync.
 
+**A delete's LWW comparator is captured on the device, at delete time** (#276, FR-OF-1). A
+queued delete op carries no row payload, so it has no `updated_at` of its own to compare — and
+inventing one when the op finally uploads makes it drift later on every retry and every app
+restart, so a delete that sat offline for a day could beat a genuinely newer concurrent edit
+under §4.1's strict comparison. The client therefore stamps the device time **once**, in the
+same statement that deletes the row, and persists it with the queued op: the synced tables the
+client deletes from enable PowerSync's `trackMetadata`, deletes go out as
+`UPDATE <table> SET _deleted = TRUE, _metadata = <device time>` (the only form the PowerSync
+core turns into a delete op that carries metadata), and the connector reads it back off
+`CrudEntry.metadata` as the op's `updated_at`. Client-side files:
+`client/lib/core/sync/lww_delete.dart`, `powersync_schema.dart`, `powersync_connector.dart`.
+
 ---
 
 ## 5. The sync-publication contract (what every owning service must honor)
