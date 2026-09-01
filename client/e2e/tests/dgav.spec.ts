@@ -152,10 +152,16 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(snackbar(page, "Declaration recorded")).toBeVisible({ timeout: 30_000 });
 
-  // The log now shows it. The row reads "<localized date> — N hives"; assert on
-  // the hive-count half plus the apiary-count subtitle rather than pinning a
-  // formatted date, which legitimately varies with the browser locale.
-  const declarationRow = page.getByText(/\d+ hives?$/);
+  // The log now shows it.
+  //
+  // Matched on the em dash plus hive count, WITHOUT anchoring to the end of the
+  // text: Flutter merges the whole declaration card into one semantics node, so
+  // its accessible name is the group's entire contents ("PT-… Current hive
+  // count: 0 … Sep 1, 2026 — 0 hives 1 apiary") and nothing's text ends with
+  // "0 hives". The em dash is what makes this specific to the declaration row —
+  // "Current hive count: 0" in the same node has no dash. The date itself is
+  // deliberately not pinned: it is locale-formatted.
+  const declarationRow = page.getByText(/— \d+ hives?/);
   await expect(declarationRow.first()).toBeVisible({ timeout: 30_000 });
 
   // ── Nudge the flush, exactly as slice.spec.ts does ────────────────────
@@ -191,7 +197,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
 
     // The declaration itself replicated (FR-AP-10) — this is the assertion the
     // new sync-rules entry lives or dies by.
-    await expect(p2.getByText(/\d+ hives?$/).first()).toBeVisible({ timeout: 60_000 });
+    await expect(p2.getByText(/— \d+ hives?/).first()).toBeVisible({ timeout: 60_000 });
   } finally {
     await fresh.close();
   }
@@ -202,7 +208,8 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   // removable", which apiary_counters deliberately does not allow.
   await goToDgav(page);
   await page.getByRole("button", { name: "Delete declaration" }).first().click();
-  await expect(snackbar(page, "No declarations recorded yet.")).toBeVisible({
-    timeout: 30_000,
-  });
+  // Gone from the log. Asserting the ROW disappears, not the empty-state text:
+  // that text lives inside the same merged group node, so a getByText for it
+  // would also match the group while a declaration is still present.
+  await expect(page.getByText(/— \d+ hives?/)).toHaveCount(0, { timeout: 30_000 });
 });
