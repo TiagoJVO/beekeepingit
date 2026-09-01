@@ -9,20 +9,22 @@
 
 ## `claude/orch-add-feature-8816f4` (#296, #298 — EPIC-02's two remaining regulatory stories)
 
-- **Before merge: the Helm-E2E gate is the first place the new sync rules and both new
-  migrations actually run together.** The apiaries service gains two migrations (`00009`
-  per-apiary `dgav_registration_number`, `00010` `stock_declarations`) and organizations gains
-  one (`00007`), and the PowerSync sync-rules bucket gains a column plus a whole table entry
-  (`infra/helm/beekeepingit/charts/powersync/values.yaml`). Local Go/Dart tests cover the
-  service and client halves in isolation; what they cannot exercise is the replication path —
-  a sync-rules entry that fails to parse is historically **silent** (the #23-deploy shape:
-  replication fatals, nothing reports the file invalid). Treat a green Helm-E2E as a merge
-  precondition, not a formality.
-- **Watch the first deploy's `stock_declarations` table grants.** The table is new and NOT a
-  `*_log`, so `charts/postgres`'s blanket `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES`
-  at hook weight 3 should cover it with no infra change (and the publication is schema-scoped,
-  so PowerSync captures it automatically). That is reasoned from the chart, not observed —
-  confirm on the first environment that actually runs migration `00010`.
+- ~~**Before merge: a green Helm-E2E.**~~ **Met** — [run
+  33522048949](https://github.com/TiagoJVO/beekeepingit/actions/runs/33522048949) passed
+  (17m). That gate is the first place all three migrations (`apiaries` `00009`/`00010`,
+  `organizations` `00007`) and the new PowerSync sync-rules entries actually execute together;
+  local Go/Dart tests cover the service and client halves in isolation but never the
+  replication path, and a sync-rules entry that fails to parse is historically **silent** (the
+  #23-deploy shape: replication fatals, nothing reports the file invalid). It is green, so this
+  item is closed rather than pending — kept only until the PR merges, as the reviewer's
+  evidence.
+- **Still open: `stock_declarations` runtime grants on a real environment.** The Helm-E2E run
+  above proves the table is CREATEd and that `charts/postgres`'s blanket
+  `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES` (hook weight 3) applies without error —
+  but **nothing in E2E writes a declaration**, so the grant is not exercised end-to-end. The
+  reasoning holds (the table is new and NOT a `*_log`, and the publication is schema-scoped so
+  PowerSync captures it automatically); confirm on the first environment where a beekeeper
+  actually records one.
 - **Deferred, not forgotten: two of D-19's five flagged data points remain untriaged** — the
   structured disease/condition field on Treatment activities, and the honey lot/batch
   identifier. (The retention-policy note was triaged separately by #295 while this branch was
