@@ -9,15 +9,18 @@
 
 ## `feat/client-validation-parity` (#584 — revalidate queued edits before pushing)
 
-- **After merge, fold the pre-push failure into #443's message mapping.**
-  [#443](https://github.com/TiagoJVO/beekeepingit/issues/443) is building a rejection-code →
-  localized-message mapping in `sync_needs_fix_screen.dart` /
-  `sync_rejected_repository.dart`. This branch deliberately kept its surface to a single extra
-  string: the needs-fix row shows `syncNeedsFixLocalProblem` when `errorCode` is
-  `validation.failed.local`, and the generic message otherwise. A client-predicted rejection is
-  the one case where the client **owns** the `(field, code)` pair, so #443 can render a real
-  per-field message ("Name is required", EN/PT) for it at no extra cost — worth doing when that
-  mapping lands, and it should replace the two-way branch rather than sit beside it.
+- **Before merge: reconcile with #443 (PR #590), which lands first.** Both branches edit
+  `client/lib/features/sync/sync_needs_fix_screen.dart` and both ARBs, so whoever merges second
+  owns it — that is this branch. #590 was built with this seam in mind, so it is one line:
+  `localValidationProblem` already writes the same `{field, code, message}` shape into the
+  dead-letter row, so #590's per-field mapping applies to client-detected failures unchanged;
+  **pass `syncNeedsFixLocalProblem` as the `fallback` argument #590 added to
+  `localizedRejectionMessages`, and delete the two-way
+  `op.errorCode == localValidationFailedCode ? … : …` branch** (the code comment there already
+  says so). #590 also drops `fieldErrors`/`detail`/`primaryMessage` from `RejectedOp` and adds
+  `activityType`; this branch reads none of them. The two widget tests added here (the "wasn't
+  sent yet" wording, and that a server rejection keeps the original wording) need retargeting at
+  the mapped output. Prune this bullet once done.
 - **Confirm (or rule out) the `journey.default_attributes` null case, and open an Issue if
   it's real.** `journeys_repository.dart` stores SQL NULL for an empty defaults bag, while
   `validateDefaultAttributes` (`services/journeys/api/types.go`) rejects a present JSON `null`
