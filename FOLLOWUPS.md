@@ -7,19 +7,6 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `fix/sync-gate-reprobe-on-connectivity-return` (#240 — gate re-probes on reconnect)
-
-- **Keep Helm-E2E green on the final pre-merge run — it is the only place the e2e change is
-  actually exercised.** This branch removes the "Sync now" nudge `client/e2e/tests/slice.spec.ts`
-  used after `context.setOffline(false)` (it existed precisely because the gate didn't re-probe
-  on connectivity-return), so the reconnect-sync poll now depends on the new `online`-event
-  interrupt firing under Playwright's offline emulation. Unit tests cover the gate itself; only
-  the live run proves the browser event reaches it. **Verified: green twice** (runs
-  `33513344172` and `33519801347`) — the walking-skeleton case (login → create → offline edit →
-  sync) passed in ~1.1–1.2 min each, nudge-free. If a later run flakes, restore the nudge in
-  `slice.spec.ts` (the gate fix stays) rather than widening the poll timeout, and say so on the
-  PR. Prune this entry when #240's PR merges.
-
 ## `claude/orch-add-feature-8816f4` (#296, #298 — EPIC-02's two remaining regulatory stories)
 
 - ~~**Before merge: a green Helm-E2E.**~~ **Met** — [run
