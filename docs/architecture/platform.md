@@ -247,9 +247,14 @@ updated once a change merges. See that repo's README for layout and day-to-day o
 **Release-triggered promotion** closes the CI/CD loop (D-27,
 [ADR-0018](../adr/0018-release-triggered-deploy-pipeline.md), superseding the image-automation plan
 in [ADR-0014](../adr/0014-cicd-pipeline.md) §4): a published Release makes CI build the release
-version's images and open a tag-bump **PR** against the GitOps manifests; a human merges it and Flux
-reconciles. Flux stays **read-only** — no image-automation controllers, no standing git-write
-credential. `-rc` releases target `staging`; un-suffixed releases target `prod` behind the
+version's images and open a promotion **PR** against the GitOps manifests; a human merges it and Flux
+reconciles. That PR moves **both halves of the release** — the image tags in `apps/<env>/` **and**
+the `beekeepingit` `GitRepository`'s `ref` in `clusters/<env>/`, so the umbrella **chart** is taken
+from the release rather than from `main` (the source `ref` is the only pin available: Flux ignores
+`chart.spec.version` for a git source). A merge to `main` therefore changes **nothing** on a live
+cluster; merging the promotion PR is the deploy, and reverting it rolls chart and images back
+together (ADR-0018 addendum, 2026-08-31). Flux stays **read-only** — no image-automation
+controllers, no standing git-write credential. `-rc` releases target `staging`; un-suffixed releases target `prod` behind the
 `production-gate` GitHub Environment's approval. `dev` is out of this path (CI can't reach a local
 cluster) and stays a manual `helm ... -f environments/dev.yaml` loop. The `-gate` environments only
 record "approved to publish" — the plain `staging`/`production` environments on this repo instead
