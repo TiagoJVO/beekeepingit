@@ -7,24 +7,27 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `claude/orch-add-feature-6993c5` (#365 — self-service registration via Google)
+## `claude/orch-add-feature-8816f4` (#296, #298 — EPIC-02's two remaining regulatory stories)
 
-- **Before merge: the Helm-E2E gate is the first place the enrollment path ever executes.**
-  Everything in this branch is IdP config plus its guards, and the enrollment half cannot run
-  locally: `scripts/check-federation-source-posture.sh` is offline-verified (and
-  mutation-tested against seven drifted blueprints), but the new
-  `infra/ci/authentik-federation-probe.py` cases (a verified unknown identity enrolling end to
-  end through the real `FlowExecutorView`; the write guard's refusals) and the new
-  `client/e2e/tests/federation.spec.ts` direct-entry denial need a live cluster. Treat a green
-  Helm-E2E as a merge precondition rather than a formality — a blueprint that fails to apply is
-  historically silent (the PR #414 shape: OIDC discovery 404s, nothing reports the file invalid).
-- **After merge, sequencing for enabling Google on a real environment:**
-  [#510](https://github.com/TiagoJVO/beekeepingit/issues/510)'s manual checklist — rewritten in
-  this branch, `infra/README.md` — now covers registration, and
-  [#563](https://github.com/TiagoJVO/beekeepingit/issues/563) (notify an account owner that a
-  sign-in method was linked) should land **before** federation is enabled on an environment
-  holding real user data. Neither blocks this merge; both are already Issues, so prune this
-  bullet once the PR lands rather than tracking them here.
+- **Before merge: the Helm-E2E gate is the first place the new sync rules and both new
+  migrations actually run together.** The apiaries service gains two migrations (`00009`
+  per-apiary `dgav_registration_number`, `00010` `stock_declarations`) and organizations gains
+  one (`00007`), and the PowerSync sync-rules bucket gains a column plus a whole table entry
+  (`infra/helm/beekeepingit/charts/powersync/values.yaml`). Local Go/Dart tests cover the
+  service and client halves in isolation; what they cannot exercise is the replication path —
+  a sync-rules entry that fails to parse is historically **silent** (the #23-deploy shape:
+  replication fatals, nothing reports the file invalid). Treat a green Helm-E2E as a merge
+  precondition, not a formality.
+- **Watch the first deploy's `stock_declarations` table grants.** The table is new and NOT a
+  `*_log`, so `charts/postgres`'s blanket `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES`
+  at hook weight 3 should cover it with no infra change (and the publication is schema-scoped,
+  so PowerSync captures it automatically). That is reasoned from the chart, not observed —
+  confirm on the first environment that actually runs migration `00010`.
+- **Deferred, not forgotten: three of D-19's five flagged data points remain untriaged** — the
+  structured disease/condition field on Treatment activities, the treatment-retention policy
+  note, and the honey lot/batch identifier. They belong to their own owning epics (activities,
+  import/export), are recorded in D-19 and in `docs/research/regulatory-pt-eu-beekeeping.md` §6,
+  and need no entry of their own here once this PR merges — prune this bullet with the section.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -41,16 +44,10 @@
 
 ---
 
-_Sweep note (post-#545/#551 deploy, 2026-08-23): all three remaining branch sections resolved._
-
-- _The **#545 ownership transition ran on staging and is verified**: `v0.0.1-rc10` deployed with_
-  _the one-release gate on (gitops#11 + #12), all 26 tables moved to their `<schema>_migrator`,_
-  _history tables append-only, goose ledgers locked, and the gate then removed (gitops#13) —_
-  _`beekeepingit`'s temporary migrator memberships confirmed revoked (role-graph count 0). Pruned._
-- _**#551's AC1 — untestable in CI — is now confirmed live**: the rc10 rollout was exactly a first_
-  _deploy of a cold image set, and no `*-migrate` Job hit `DeadlineExceeded`. Pruned._
-- _#364's **first-link notification** item (its PR merged, #364 closed) → promoted to_
-  _[#563](https://github.com/TiagoJVO/beekeepingit/issues/563); its remaining dependency was_
-  _already tracked as [#510](https://github.com/TiagoJVO/beekeepingit/issues/510). Pruned._
-- _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that_
-  _entry stands. Prior sweep notes dropped with their entries, per this file's convention._
+_Sweep note (#296/#298, 2026-09-01): the `claude/orch-add-feature-6993c5` (#365) section was_
+_pruned — [#365](https://github.com/TiagoJVO/beekeepingit/issues/365) is closed, so its_
+_before-merge Helm-E2E item is spent, and both of its after-merge bullets were already tracked as_
+_their own Issues ([#510](https://github.com/TiagoJVO/beekeepingit/issues/510),_
+_[#563](https://github.com/TiagoJVO/beekeepingit/issues/563)), which remain open there._
+_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that_
+_entry stands. Prior sweep notes dropped with their entries, per this file's convention._

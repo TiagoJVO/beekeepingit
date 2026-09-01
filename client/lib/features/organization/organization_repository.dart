@@ -16,6 +16,10 @@ class Organization {
     required this.id,
     required this.name,
     required this.address,
+    // Defaulted rather than required (FR-AP-9, #296): empty IS the unset value
+    // server-side (a NOT NULL DEFAULT '' column), so every existing construction
+    // site means exactly "no number" without restating it.
+    this.dgavRegistrationNumber = '',
     required this.createdBy,
     required this.role,
     required this.createdAt,
@@ -26,6 +30,7 @@ class Organization {
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
     address: json['address'] as String? ?? '',
+    dgavRegistrationNumber: json['dgav_registration_number'] as String? ?? '',
     createdBy: json['created_by'] as String? ?? '',
     role: json['role'] as String? ?? 'user',
     createdAt: DateTime.parse(json['created_at'] as String),
@@ -35,6 +40,20 @@ class Organization {
   final String id;
   final String name;
   final String address;
+
+  /// The organization-wide DEFAULT DGAV beekeeper registration number
+  /// (FR-AP-9, #296) — empty when unset. DGAV issues one number per
+  /// BEEKEEPER, so this is where it belongs; an apiary may override it
+  /// (`Apiary.dgavRegistrationNumber`) when one organization covers several
+  /// beekeepers. Resolve what an apiary actually displays through
+  /// `features/dgav/dgav_registration.dart`, never from either half alone.
+  ///
+  /// Read offline: [OrganizationRepository.fetchMine] caches the whole
+  /// organization JSON in local prefs, so the DGAV section still resolves
+  /// numbers with no connectivity. WRITING it needs connectivity (it is a
+  /// REST PATCH, not a synced entity) — acceptable for a reference number
+  /// entered once, and the reason FR-AP-9 says "read offline, edited online".
+  final String dgavRegistrationNumber;
   final String createdBy;
 
   /// The caller's own membership role in this org (admin/user) — not a
@@ -55,14 +74,23 @@ class Organization {
           id == other.id &&
           name == other.name &&
           address == other.address &&
+          dgavRegistrationNumber == other.dgavRegistrationNumber &&
           createdBy == other.createdBy &&
           role == other.role &&
           createdAt == other.createdAt &&
           updatedAt == other.updatedAt);
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, address, createdBy, role, createdAt, updatedAt);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    address,
+    dgavRegistrationNumber,
+    createdBy,
+    role,
+    createdAt,
+    updatedAt,
+  );
 }
 
 /// Reads/creates the caller's organization via `GET /v1/organizations/me` and
@@ -109,6 +137,27 @@ class OrganizationRepository {
       if (address != null && address.isNotEmpty) 'address': address,
     };
     final json = await _api.postJson('/organizations', body);
+    return Organization.fromJson(json);
+  }
+
+  /// Updates the organization-wide DGAV registration-number default
+  /// (FR-AP-9, #296) via `PATCH /v1/organizations/{id}`, and refreshes the
+  /// offline cache with the server's response so the DGAV section resolves
+  /// numbers correctly the next time the device is offline.
+  ///
+  /// Admin-only server-side (the same guard every other org edit carries);
+  /// a non-admin caller gets a 403 [ApiException] the calling screen
+  /// surfaces. An empty [number] clears it — the contract's explicit-null
+  /// clear — so a mistyped number can be removed, not only overwritten.
+  Future<Organization> updateDgavRegistrationNumber(
+    String organizationId,
+    String number,
+  ) async {
+    final trimmed = number.trim();
+    final json = await _api.patchJson('/organizations/$organizationId', {
+      'dgav_registration_number': trimmed.isEmpty ? null : trimmed,
+    });
+    _prefs.write(kOrganizationCacheKey, jsonEncode(json));
     return Organization.fromJson(json);
   }
 }
@@ -167,6 +216,22 @@ class OrganizationController extends AsyncNotifier<Organization?> {
     final repo = ref.read(organizationRepositoryProvider);
     final created = await repo.create(name: name, address: address);
     state = AsyncData(created);
+  }
+
+  /// Saves the organization-wide DGAV registration-number default (FR-AP-9,
+  /// #296) and refreshes state with the server's response, so every apiary's
+  /// effective number re-resolves immediately.
+  ///
+  /// No-ops when there is no organization yet — the DGAV section is only
+  /// reachable once onboarded, so this is a defensive guard rather than a
+  /// reachable path. Rethrows on failure (403 for a non-admin, 422 for an
+  /// over-long value) so the calling screen can surface it.
+  Future<void> saveDgavRegistrationNumber(String number) async {
+    final current = state.value;
+    if (current == null) return;
+    final repo = ref.read(organizationRepositoryProvider);
+    final updated = await repo.updateDgavRegistrationNumber(current.id, number);
+    state = AsyncData(updated);
   }
 }
 
