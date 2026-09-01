@@ -109,6 +109,13 @@ func buildTokenMinter(e env, logger *slog.Logger) (*token.Minter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build token minter: %w", err)
 	}
+	// Log the key id on every boot. PowerSync validates sync tokens against the
+	// JWKS this key backs, so when a sync-stream connection is rejected, the kid
+	// here is what the powersync-service log line has to be compared against —
+	// and with the dev/CI ephemeral key it changes on every restart, which is
+	// exactly the ordering hypothesis the helm-e2e download-stream flake needs to
+	// confirm or rule out (#246, NFR-TST-1).
+	logger.Info("sync-token signing key ready", "kid", minter.KID(), "generated", generated)
 	return minter, nil
 }
 
