@@ -1,4 +1,4 @@
-import { test, expect, Page } from "@playwright/test";
+import { test, expect, Locator, Page } from "@playwright/test";
 import { enableSemantics, submitIdpCredentials } from "./helpers";
 
 /**
@@ -53,6 +53,35 @@ async function login(page: Page) {
 }
 
 /**
+ * Taps a Flutter-web semantics node by dispatching a DOM click on the node
+ * itself, rather than Playwright's coordinate click.
+ *
+ * WHY, because this is a real deviation from the rest of the suite. Flutter
+ * web renders to canvas and exposes a PARALLEL DOM accessibility tree. A
+ * coordinate click only reaches the widget if the canvas hit-test target is
+ * under that point — so for a control below the fold, Playwright happily finds
+ * the semantics node, auto-scrolls the DOM, reports the click as successful,
+ * and the tap lands nowhere. That is exactly how this spec first failed: the
+ * Account screen's DGAV button (below Profile/Sync/Notifications/Security)
+ * clicked "fine" and the app never navigated.
+ *
+ * Flutter's own engine attaches a `click` listener to a tappable semantics
+ * node (web_ui/.../semantics/tappable.dart) and routes it to the widget's tap
+ * action, so dispatching the DOM click drives the SAME path a real assistive
+ * -technology activation would — no coordinates involved. The scroll first is
+ * belt-and-braces so the node is realized before we touch it.
+ *
+ * The rest of the suite gets away with plain .click() because everything it
+ * touches is above the fold. The one existing bottom-of-Account click (the
+ * logout test) is `test.fixme`, so there was no working precedent to copy.
+ */
+async function tapSemantic(page: Page, locator: Locator) {
+  await expect(locator).toBeVisible({ timeout: 30_000 });
+  await locator.scrollIntoViewIfNeeded();
+  await locator.evaluate((el: HTMLElement) => el.click());
+}
+
+/**
  * Account → DGAV. The DGAV section is reachable ONLY from Account by design
  * (#298: everything DGAV is advisory, so it never interrupts the field flows) —
  * there is deliberately no tab, banner or deep link, which is why this helper is
@@ -61,7 +90,10 @@ async function login(page: Page) {
 async function goToDgav(page: Page) {
   await page.getByRole("button", { name: "Account settings" }).click();
   await enableSemantics(page);
-  await page.getByRole("button", { name: "DGAV", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Account settings" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await tapSemantic(page, page.getByRole("button", { name: "DGAV", exact: true }));
   await page.waitForURL(/\/dgav/, { timeout: 30_000 });
   await enableSemantics(page);
   // The advisory framing is part of the requirement, not decoration (D-19 §7:
@@ -88,7 +120,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   });
   await expect(numberField).toBeVisible({ timeout: 30_000 });
   await numberField.fill(registrationNumber);
-  await page.getByRole("button", { name: "Save" }).click();
+  await tapSemantic(page, page.getByRole("button", { name: "Save" }));
   await expect(page.getByText("Registration number saved")).toBeVisible({
     timeout: 30_000,
   });
@@ -97,7 +129,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   // The record action opens a dialog rather than writing immediately: a
   // beekeeper files with DGAV first and logs it here after, so the date is
   // editable and must not be assumed to be today. Here we accept the default.
-  await page.getByRole("button", { name: "Record declaration" }).first().click();
+  await tapSemantic(page, page.getByRole("button", { name: "Record declaration" }).first());
   await enableSemantics(page);
   await expect(page.getByRole("textbox", { name: /Note \(optional\)/ })).toBeVisible({
     timeout: 30_000,
@@ -105,7 +137,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   await page
     .getByRole("textbox", { name: /Note \(optional\)/ })
     .fill("e2e: filed via the IFAP portal");
-  await page.getByRole("button", { name: "Record", exact: true }).click();
+  await tapSemantic(page, page.getByRole("button", { name: "Record", exact: true }));
   await expect(page.getByText("Declaration recorded")).toBeVisible({ timeout: 30_000 });
 
   // The log now shows it. The row reads "<localized date> — N hives"; assert on
@@ -121,7 +153,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   // race with the backoff.
   await page.goBack();
   await enableSemantics(page);
-  await page.getByRole("button", { name: "Sync now" }).click();
+  await tapSemantic(page, page.getByRole("button", { name: "Sync now" }));
 
   // ── A fresh client downloads both (the sync-rules guard) ──────────────
   // THE point of this spec. An empty local SQLite can only show these if
@@ -157,7 +189,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   // available — and it covers FR-AP-10's "a mis-entered declaration must be
   // removable", which apiary_counters deliberately does not allow.
   await goToDgav(page);
-  await page.getByRole("button", { name: "Delete declaration" }).first().click();
+  await tapSemantic(page, page.getByRole("button", { name: "Delete declaration" }).first());
   await expect(page.getByText("No declarations recorded yet.")).toBeVisible({
     timeout: 30_000,
   });
