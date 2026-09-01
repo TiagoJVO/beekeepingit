@@ -1038,6 +1038,37 @@
       "count": { "type": "int" }
     }
   },
+  "dgavRecordDialogTitle": "Record declaration",
+  "@dgavRecordDialogTitle": {
+    "description": "Title of the dialog that records a DGAV stock declaration (#298)"
+  },
+  "dgavDeclarationDateLabel": "Declaration date",
+  "@dgavDeclarationDateLabel": {
+    "description": "Label of the date field in the record-declaration dialog — the day the declaration was filed with DGAV, which may be earlier than today (#298)"
+  },
+  "dgavDeclarationNotesLabel": "Note (optional)",
+  "@dgavDeclarationNotesLabel": {
+    "description": "Label of the optional free-text note field in the record-declaration dialog (#298)"
+  },
+  "dgavDeclarationNotesHint": "e.g. filed via the IFAP portal",
+  "@dgavDeclarationNotesHint": {
+    "description": "Placeholder hint in the record-declaration dialog's note field (#298)"
+  },
+  "dgavRecordDialogCancelAction": "Cancel",
+  "@dgavRecordDialogCancelAction": {
+    "description": "Cancel action in the record-declaration dialog (#298)"
+  },
+  "dgavRecordDialogConfirmAction": "Record",
+  "@dgavRecordDialogConfirmAction": {
+    "description": "Confirm action in the record-declaration dialog, which writes the declaration (#298)"
+  },
+  "dgavDeclarationHiveTotal": "{count, plural, =1{1 hive} other{{count} hives}}",
+  "@dgavDeclarationHiveTotal": {
+    "description": "The declared hive total shown in the record-declaration dialog, pre-filled from the current live count (#298)",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "apiaryLocationSectionLabel": "Location",
   "@apiaryLocationSectionLabel": {
     "description": "Section label above the map-pin picker on the apiary form (#252)"

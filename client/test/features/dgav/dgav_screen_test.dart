@@ -1,3 +1,4 @@
+import 'package:beekeepingit_client/core/l10n/locale_formatting.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
 import 'package:beekeepingit_client/features/dgav/dgav_screen.dart';
 import 'package:beekeepingit_client/features/dgav/stock_declarations_repository.dart';
@@ -64,6 +65,7 @@ Widget _buildScreen({
 }
 
 void main() {
+  _recordFlowTests();
   testWidgets(
     "states up front that nothing is filed on the beekeeper's behalf — "
     'everything here is advisory (D-19 §7)',
@@ -245,7 +247,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('dgav-declaration-d1')), findsOneWidget);
-      expect(find.text('2026-09-12 — 30 hives'), findsOneWidget);
+      // Localized via LocaleFormatting (DateFormat.yMMMd), not the raw stored
+      // YYYY-MM-DD — the regression this assertion exists to catch.
+      expect(find.text('Sep 12, 2026 — 30 hives'), findsOneWidget);
       expect(find.text('2 apiaries'), findsOneWidget);
     },
   );
@@ -262,5 +266,128 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No declarations recorded yet.'), findsOneWidget);
+  });
+}
+
+/// The record flow (#298): recording asks for the declaration date and an
+/// optional note rather than writing silently at `DateTime.now()`.
+void _recordFlowTests() {
+  group('record-declaration dialog (FR-AP-10, #298)', () {
+    testWidgets('the record action opens a dialog rather than writing '
+        'immediately — a regulatory record should not appear from one '
+        'unconfirmed tap', (tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          orgDgavNumber: 'PT-111',
+          apiaries: const [
+            Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('dgav-record-PT-111')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Record declaration'), findsWidgets);
+      expect(
+        find.byKey(const Key('dgav-declaration-date-field')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('dgav-declaration-notes-field')),
+        findsOneWidget,
+      );
+      // The declared total is shown, pre-filled from the live counters.
+      expect(find.text('12 hives'), findsOneWidget);
+    });
+
+    testWidgets('the date defaults to today, rendered localized', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          orgDgavNumber: 'PT-111',
+          apiaries: const [
+            Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('dgav-record-PT-111')));
+      await tester.pumpAndSettle();
+
+      final today = DateTime.now();
+      final expected = const LocaleFormatting.forLocale('en').date(today);
+      expect(find.text(expected), findsOneWidget);
+    });
+
+    testWidgets('cancelling writes nothing', (tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          orgDgavNumber: 'PT-111',
+          apiaries: const [
+            Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('dgav-record-PT-111')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('dgav-record-cancel')));
+      await tester.pumpAndSettle();
+
+      // Still the empty state — the stream override never changes, so the only
+      // observable effect of a write would be the snackbar, which must not appear.
+      expect(find.text('Declaration recorded'), findsNothing);
+    });
+
+    testWidgets("the dialog's actions meet the 44x44 gloves-friendly minimum "
+        '(D-18)', (tester) async {
+      await tester.pumpWidget(
+        _buildScreen(
+          orgDgavNumber: 'PT-111',
+          apiaries: const [
+            Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The group's own record action first.
+      final record = tester.getSize(
+        find.byKey(const Key('dgav-record-PT-111')),
+      );
+      expect(record.height, greaterThanOrEqualTo(44));
+
+      await tester.tap(find.byKey(const Key('dgav-record-PT-111')));
+      await tester.pumpAndSettle();
+
+      for (final key in const [
+        Key('dgav-record-cancel'),
+        Key('dgav-record-confirm'),
+        Key('dgav-declaration-date-field'),
+      ]) {
+        final size = tester.getSize(find.byKey(key));
+        expect(
+          size.height,
+          greaterThanOrEqualTo(44),
+          reason: '$key must clear the 44px minimum tap target (D-18)',
+        );
+      }
+    });
+
+    testWidgets('the organization number save action also meets the minimum', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_buildScreen(orgDgavNumber: 'PT-111'));
+      await tester.pumpAndSettle();
+
+      final size = tester.getSize(
+        find.byKey(const Key('dgav-org-number-save')),
+      );
+      expect(size.height, greaterThanOrEqualTo(44));
+    });
   });
 }

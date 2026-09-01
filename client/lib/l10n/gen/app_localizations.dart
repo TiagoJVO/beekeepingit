@@ -1412,6 +1412,48 @@ abstract class AppLocalizations {
   /// **'Current hive count: {count}'**
   String dgavCurrentHiveCount(int count);
 
+  /// Title of the dialog that records a DGAV stock declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Record declaration'**
+  String get dgavRecordDialogTitle;
+
+  /// Label of the date field in the record-declaration dialog — the day the declaration was filed with DGAV, which may be earlier than today (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declaration date'**
+  String get dgavDeclarationDateLabel;
+
+  /// Label of the optional free-text note field in the record-declaration dialog (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Note (optional)'**
+  String get dgavDeclarationNotesLabel;
+
+  /// Placeholder hint in the record-declaration dialog's note field (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. filed via the IFAP portal'**
+  String get dgavDeclarationNotesHint;
+
+  /// Cancel action in the record-declaration dialog (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get dgavRecordDialogCancelAction;
+
+  /// Confirm action in the record-declaration dialog, which writes the declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Record'**
+  String get dgavRecordDialogConfirmAction;
+
+  /// The declared hive total shown in the record-declaration dialog, pre-filled from the current live count (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 hive} other{{count} hives}}'**
+  String dgavDeclarationHiveTotal(int count);
+
   /// Section label above the map-pin picker on the apiary form (#252)
   ///
   /// In en, this message translates to:

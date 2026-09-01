@@ -843,6 +843,35 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get dgavRecordDialogTitle => 'Registar declaração';
+
+  @override
+  String get dgavDeclarationDateLabel => 'Data da declaração';
+
+  @override
+  String get dgavDeclarationNotesLabel => 'Nota (opcional)';
+
+  @override
+  String get dgavDeclarationNotesHint => 'ex.: submetida via portal do IFAP';
+
+  @override
+  String get dgavRecordDialogCancelAction => 'Cancelar';
+
+  @override
+  String get dgavRecordDialogConfirmAction => 'Registar';
+
+  @override
+  String dgavDeclarationHiveTotal(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count colmeias',
+      one: '1 colmeia',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get apiaryLocationSectionLabel => 'Localização';
 
   @override

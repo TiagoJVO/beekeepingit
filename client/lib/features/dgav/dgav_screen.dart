@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/l10n/locale_formatting.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../apiaries/apiaries_repository.dart';
 import '../organization/organization_repository.dart';
@@ -324,11 +325,30 @@ class _NumberGroup extends ConsumerWidget {
   ) async {
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
+
+    // Ask for the date and an optional note rather than writing
+    // immediately. Two reasons: a beekeeper files with DGAV first and logs
+    // it here afterwards, so "today" is often the WRONG date and there must
+    // be a way to say so (FR-AP-10 captures the declaration date, not the
+    // record-keeping date); and a regulatory record appearing from a single
+    // unconfirmed tap is abrupt for something that is only correctable by
+    // deleting it.
+    final result = await showDialog<_DeclarationDraft>(
+      context: context,
+      builder: (context) => _RecordDeclarationDialog(totalHives: currentHives),
+    );
+    if (result == null) return;
+
     final repo = await ref.read(stockDeclarationsRepositoryProvider.future);
     await repo.create(
       dgavRegistrationNumber: number,
-      declaredOn: DateTime.now(),
+      declaredOn: result.declaredOn,
       totalHiveCount: currentHives,
+      // The snapshot is taken NOW, from the live counters, even when the
+      // declaration is back-dated: it records what this app knows the
+      // holding to be, which is the only per-apiary breakdown it can
+      // honestly produce. Reconstructing counts as they stood on an earlier
+      // date would need per-apiary history this screen does not read.
       breakdown: [
         for (final apiary in apiaries)
           StockDeclarationApiary(
@@ -337,6 +357,7 @@ class _NumberGroup extends ConsumerWidget {
             hiveCount: apiary.hiveCount,
           ),
       ],
+      notes: result.notes,
     );
     messenger.showSnackBar(SnackBar(content: Text(l10n.dgavDeclarationSaved)));
   }
@@ -356,7 +377,11 @@ class _DeclarationRow extends ConsumerWidget {
       contentPadding: EdgeInsets.zero,
       title: Text(
         l10n.dgavDeclarationSummary(
-          formatDeclaredOn(declaration.declaredOn),
+          // Localized (LocaleFormatting → intl DateFormat.yMMMd), matching every
+          // other date in the app. The raw YYYY-MM-DD form is the STORAGE
+          // shape — right for the column and the wire, wrong to show a
+          // beekeeper, and inconsistent with the activity/todo screens.
+          LocaleFormatting.of(context).date(declaration.declaredOn),
           declaration.totalHiveCount,
         ),
       ),
@@ -375,5 +400,118 @@ class _DeclarationRow extends ConsumerWidget {
         },
       ),
     );
+  }
+}
+
+/// What the record-declaration dialog returns: the date the declaration was
+/// filed, and an optional note. Null from the dialog means cancelled.
+class _DeclarationDraft {
+  const _DeclarationDraft({required this.declaredOn, this.notes});
+
+  final DateTime declaredOn;
+  final String? notes;
+}
+
+/// Collects the declaration date and an optional note before a declaration is
+/// written (FR-AP-10, #298).
+///
+/// The date defaults to today but is editable, and cannot be in the future — a
+/// declaration records something that has been filed, not something planned.
+/// The declared hive total is shown read-only: it comes from the live counters
+/// at record time and is what makes this a snapshot rather than a form.
+class _RecordDeclarationDialog extends StatefulWidget {
+  const _RecordDeclarationDialog({required this.totalHives});
+
+  final int totalHives;
+
+  @override
+  State<_RecordDeclarationDialog> createState() =>
+      _RecordDeclarationDialogState();
+}
+
+class _RecordDeclarationDialogState extends State<_RecordDeclarationDialog> {
+  late DateTime _declaredOn = DateTime.now();
+  final _notesController = TextEditingController();
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final formatting = LocaleFormatting.of(context);
+
+    return AlertDialog(
+      title: Text(l10n.dgavRecordDialogTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(l10n.dgavDeclarationHiveTotal(widget.totalHives)),
+          const SizedBox(height: 16),
+          // A tappable row rather than a bare text button so the target
+          // comfortably clears the 44x44 gloves-friendly minimum (D-18).
+          InkWell(
+            key: const Key('dgav-declaration-date-field'),
+            onTap: _pickDate,
+            child: InputDecorator(
+              decoration: InputDecoration(
+                labelText: l10n.dgavDeclarationDateLabel,
+                suffixIcon: const Icon(Icons.calendar_today_outlined),
+              ),
+              child: Text(formatting.date(_declaredOn)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const Key('dgav-declaration-notes-field'),
+            controller: _notesController,
+            maxLength: 2000,
+            maxLines: 2,
+            decoration: InputDecoration(
+              labelText: l10n.dgavDeclarationNotesLabel,
+              hintText: l10n.dgavDeclarationNotesHint,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          key: const Key('dgav-record-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.dgavRecordDialogCancelAction),
+        ),
+        FilledButton(
+          key: const Key('dgav-record-confirm'),
+          onPressed: () {
+            final notes = _notesController.text.trim();
+            Navigator.of(context).pop(
+              _DeclarationDraft(
+                declaredOn: _declaredOn,
+                notes: notes.isEmpty ? null : notes,
+              ),
+            );
+          },
+          child: Text(l10n.dgavRecordDialogConfirmAction),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _declaredOn,
+      // A declaration is filed, then logged — so earlier dates are the point,
+      // and future ones are meaningless. Five years back comfortably covers
+      // back-filling a history of annual declarations.
+      firstDate: DateTime(now.year - 5),
+      lastDate: now,
+    );
+    if (picked != null) setState(() => _declaredOn = picked);
   }
 }
