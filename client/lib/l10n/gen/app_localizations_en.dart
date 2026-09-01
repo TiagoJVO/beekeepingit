@@ -556,6 +556,20 @@ class AppLocalizationsEn extends AppLocalizations {
       'this no longer exists, or you no longer have access to it.';
 
   @override
+  String get syncNeedsFixRuleAttributeRequired =>
+      'an entry here still needs filling in.';
+
+  @override
+  String get syncNeedsFixRuleAttributeInvalid => 'an entry here isn\'t valid.';
+
+  @override
+  String get syncNeedsFixRuleAttributeTooLong => 'an entry here is too long.';
+
+  @override
+  String get syncNeedsFixRuleAttributeOutOfRange =>
+      'an entry here is outside the allowed range.';
+
+  @override
   String get syncNeedsFixRuleNonNegative => 'this must be 0 or more.';
 
   @override

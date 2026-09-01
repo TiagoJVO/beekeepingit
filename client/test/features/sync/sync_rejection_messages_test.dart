@@ -114,7 +114,7 @@ void main() {
             code: 'too_long',
           ),
         ]),
-        ['Details: this text is too long.'],
+        ['Details: an entry here is too long.'],
       );
     });
 
@@ -127,7 +127,47 @@ void main() {
             code: 'required',
           ),
         ]),
-        ['Details: this is required.'],
+        ['Details: an entry here still needs filling in.'],
+      );
+    });
+
+    test(
+      'two missing attributes of the same activity collapse to ONE line that '
+      'is still true of both (a feeding needs feed_type AND feed_amount)',
+      () {
+        final messages = localizedRejectionMessages(en, const [
+          RejectedFieldIssue(
+            field: 'data.attributes.feed_type',
+            code: 'required',
+          ),
+          RejectedFieldIssue(
+            field: 'data.attributes.feed_amount',
+            code: 'required',
+          ),
+        ]);
+        // The bag has one label, so both errors de-duplicate onto one line.
+        // That line must therefore not claim "Details" itself is missing —
+        // the user did fill the section in; entries inside it are missing.
+        expect(messages, ['Details: an entry here still needs filling in.']);
+        expect(messages.single, isNot(contains('this is required')));
+      },
+    );
+
+    test('an unmapped issue falls back to the caller\'s message when one is '
+        'given (the #584 pre-push path, whose edits were never sent)', () {
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.mystery', code: 'invalid'),
+        ], fallback: 'not sent yet'),
+        ['not sent yet'],
+      );
+      // A mapped issue still wins over the fallback — the per-field mapping
+      // applies to locally-detected failures unchanged.
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.title', code: 'required'),
+        ], fallback: 'not sent yet'),
+        ['Title: this is required.'],
       );
     });
 
@@ -222,6 +262,33 @@ void main() {
               RejectedFieldIssue(field: field, code: code),
             ]);
             expect(messages, isNotEmpty);
+            // Guard the guard: a pair that degrades to the generic message
+            // satisfies the no-leak assertions trivially, so pairs that are
+            // supposed to map must be seen to actually map. Every `data.`
+            // field maps for the five codes the validators emit, except two
+            // deliberate non-mappings: a journey's default_attributes byte
+            // cap, and not_found on the attribute bag (which the bag's own
+            // wording has no truthful phrasing for).
+            final unmappedOnPurpose =
+                (field == 'data.default_attributes' && code == 'too_long') ||
+                (field.startsWith('data.attributes') && code == 'not_found');
+            final mapped =
+                field.startsWith('data.') &&
+                !unmappedOnPurpose &&
+                const [
+                  'required',
+                  'invalid',
+                  'out_of_range',
+                  'too_long',
+                  'not_found',
+                ].contains(code);
+            expect(
+              messages.single == l10n.syncNeedsFixGenericProblem,
+              mapped ? isFalse : isTrue,
+              reason: mapped
+                  ? '($field, $code) should map to specific guidance'
+                  : '($field, $code) should degrade to the generic message',
+            );
             for (final message in messages) {
               // A localized label may legitimately be the English word a
               // column was named after ("Name"); what must never appear is

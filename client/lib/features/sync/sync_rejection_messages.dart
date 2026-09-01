@@ -70,12 +70,20 @@ const int maxRejectionMessages = 3;
 /// [maxRejectionMessages]).
 ///
 /// Never empty — when nothing maps (no field detail at all, an unknown field,
-/// or an unknown code) it degrades to `syncNeedsFixGenericProblem`, which is
-/// exactly #426's behavior.
+/// or an unknown code) it degrades to [fallback], defaulting to
+/// `syncNeedsFixGenericProblem`, which is exactly #426's behavior.
+///
+/// [fallback] exists for the pre-push validation-parity path (#584): a failure
+/// the client predicted itself was never sent, so "this change was rejected"
+/// would be wrong for it. That path produces the same `(field, code)` shape
+/// (its `localValidationProblem` synthesizes a `RejectedProblem`), so the
+/// per-field mapping below already applies to it unchanged — only the
+/// nothing-mapped wording differs.
 List<String> localizedRejectionMessages(
   AppLocalizations l10n,
-  List<RejectedFieldIssue> fieldIssues,
-) {
+  List<RejectedFieldIssue> fieldIssues, {
+  String? fallback,
+}) {
   final messages = <String>[];
   for (final issue in fieldIssues) {
     final message = localizedFieldIssueMessage(l10n, issue);
@@ -83,7 +91,8 @@ List<String> localizedRejectionMessages(
     messages.add(message);
     if (messages.length == maxRejectionMessages) break;
   }
-  return messages.isEmpty ? [l10n.syncNeedsFixGenericProblem] : messages;
+  if (messages.isNotEmpty) return messages;
+  return [fallback ?? l10n.syncNeedsFixGenericProblem];
 }
 
 /// The localized line for a single field issue, or null when either half of
@@ -108,11 +117,13 @@ String? localizedFieldIssueMessage(
 const _dataPrefix = 'data.';
 
 /// Reduces a wire field path to the key [_fieldLabel] looks up: drops the
-/// [_dataPrefix] envelope, and collapses an attribute path
-/// (`attributes.<key>`, `default_attributes.<key>`) onto the bag itself,
-/// since the individual attribute keys are internal schema names with no
-/// localized label of their own (`ValidateActivity` in
-/// `services/activities/api/types.go`).
+/// [_dataPrefix] envelope, and collapses an activity's per-type attribute path
+/// (`attributes.<key>`) onto the bag itself, since the individual attribute
+/// keys are internal schema names with no localized label of their own
+/// (`ValidateActivity` in `services/activities/api/types.go`). A journey's
+/// `default_attributes` is only ever reported as the whole bag — journeys
+/// validates its shape, not its keys — so there is no nested variant of it to
+/// collapse.
 String _normalizeField(String field) {
   var normalized = field.startsWith(_dataPrefix)
       ? field.substring(_dataPrefix.length)
@@ -160,6 +171,22 @@ String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
 /// the API contract, not of the server's wording, so restating it here can't
 /// drift into a leak.
 String? _ruleMessage(AppLocalizations l10n, String field, String code) {
+  // An activity's attributes are a BAG: the server reports one error per
+  // offending entry (`attributes.<key>`), all of which collapse onto the one
+  // "Details" label. The plain fragments would then say "Details: this is
+  // required." about a Details section the user did fill in — and two missing
+  // entries would de-duplicate down to that single misleading line. So the bag
+  // gets its own wording, phrased about the entries inside it, which stays
+  // true for one offending entry or several.
+  if (field == 'attributes') {
+    return switch (code) {
+      'required' => l10n.syncNeedsFixRuleAttributeRequired,
+      'invalid' => l10n.syncNeedsFixRuleAttributeInvalid,
+      'too_long' => l10n.syncNeedsFixRuleAttributeTooLong,
+      'out_of_range' => l10n.syncNeedsFixRuleAttributeOutOfRange,
+      _ => null,
+    };
+  }
   if (code == 'out_of_range') {
     return switch (field) {
       'hive_count' || 'value' => l10n.syncNeedsFixRuleNonNegative,

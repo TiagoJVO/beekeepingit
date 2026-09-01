@@ -698,6 +698,22 @@
   "@syncNeedsFixRuleNotFound": {
     "description": "Needs-fix rule fragment for the server's `not_found` rejection code — a referenced apiary/journey/member the organization no longer owns (#443)"
   },
+  "syncNeedsFixRuleAttributeRequired": "an entry here still needs filling in.",
+  "@syncNeedsFixRuleAttributeRequired": {
+    "description": "Needs-fix rule fragment for a `required` rejection on an activity's per-type attribute bag (#443) — phrased about the entries inside the bag, since the server reports one error per offending key and they all collapse onto the single \"Details\" label"
+  },
+  "syncNeedsFixRuleAttributeInvalid": "an entry here isn't valid.",
+  "@syncNeedsFixRuleAttributeInvalid": {
+    "description": "Needs-fix rule fragment for an `invalid` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleAttributeTooLong": "an entry here is too long.",
+  "@syncNeedsFixRuleAttributeTooLong": {
+    "description": "Needs-fix rule fragment for a `too_long` rejection on an activity's per-type attribute bag (#443)"
+  },
+  "syncNeedsFixRuleAttributeOutOfRange": "an entry here is outside the allowed range.",
+  "@syncNeedsFixRuleAttributeOutOfRange": {
+    "description": "Needs-fix rule fragment for an `out_of_range` rejection on an activity's per-type attribute bag (#443)"
+  },
   "syncNeedsFixRuleNonNegative": "this must be 0 or more.",
   "@syncNeedsFixRuleNonNegative": {
     "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)"

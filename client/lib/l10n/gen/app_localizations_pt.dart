@@ -558,6 +558,22 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixRuleNotFound => 'já não existe ou já não tem acesso.';
 
   @override
+  String get syncNeedsFixRuleAttributeRequired =>
+      'falta preencher um dos campos aqui.';
+
+  @override
+  String get syncNeedsFixRuleAttributeInvalid =>
+      'um dos campos aqui não é válido.';
+
+  @override
+  String get syncNeedsFixRuleAttributeTooLong =>
+      'um dos campos aqui é demasiado longo.';
+
+  @override
+  String get syncNeedsFixRuleAttributeOutOfRange =>
+      'um dos campos aqui está fora do intervalo permitido.';
+
+  @override
   String get syncNeedsFixRuleNonNegative => 'isto tem de ser 0 ou mais.';
 
   @override

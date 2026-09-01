@@ -115,6 +115,32 @@ void main() {
       },
     );
 
+    testWidgets('a malformed error_detail still renders the row with the generic '
+        'message rather than throwing or losing the edit', (tester) async {
+      final store = _FakeRejectedStore([
+        _row(id: 'r1', entityType: 'apiary', errorDetail: 'not json at all'),
+        // Well-formed JSON, but an errors[] entry missing its `code`: the
+        // entry is skipped rather than defaulted, so it can't masquerade
+        // as a real issue — and it can't take the whole row down with it.
+        _row(
+          id: 'r2',
+          entityType: 'apiary',
+          errorDetail:
+              '{"detail":"x","errors":[{"field":"data.name","message":"name is required"}]}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+      expect(find.byKey(const Key('needs-fix-r2')), findsOneWidget);
+      expect(
+        find.text('This change was rejected and needs your attention.'),
+        findsNWidgets(2),
+      );
+      expect(find.textContaining('name is required'), findsNothing);
+    });
+
     testWidgets(
       'falls back to the generic message when the op carries no field detail '
       '(a collateral op of an atomic push, rolled back for a sibling)',
@@ -299,6 +325,46 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Journey change · Spring Round'), findsOneWidget);
+      },
+    );
+
+    testWidgets("localizes an activity's wire type rather than printing it raw "
+        '(#443 — the row used to read "Activity change · harvest")', (
+      tester,
+    ) async {
+      final store = _FakeRejectedStore([
+        _row(
+          id: 'r1',
+          entityType: 'activity',
+          payload: '{"data":{"type":"harvest"}}',
+        ),
+      ]);
+      await tester.pumpWidget(_harness(store));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Activity change · Honey harvest'), findsOneWidget);
+      // The raw wire enum must not be what's rendered. ("Honey harvest"
+      // legitimately contains "harvest", so assert on the exact raw title
+      // the old behavior produced rather than on a substring.)
+      expect(find.text('Activity change · harvest'), findsNothing);
+    });
+
+    testWidgets(
+      'falls back to the plain entity label for an activity type this client '
+      "version doesn't know, rather than showing the raw identifier",
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'activity',
+            payload: '{"data":{"type":"some_new_type"}}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Activity change'), findsOneWidget);
+        expect(find.textContaining('some_new_type'), findsNothing);
       },
     );
 

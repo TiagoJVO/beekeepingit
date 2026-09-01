@@ -986,6 +986,30 @@ abstract class AppLocalizations {
   /// **'this no longer exists, or you no longer have access to it.'**
   String get syncNeedsFixRuleNotFound;
 
+  /// Needs-fix rule fragment for a `required` rejection on an activity's per-type attribute bag (#443) — phrased about the entries inside the bag, since the server reports one error per offending key and they all collapse onto the single "Details" label
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here still needs filling in.'**
+  String get syncNeedsFixRuleAttributeRequired;
+
+  /// Needs-fix rule fragment for an `invalid` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here isn\'t valid.'**
+  String get syncNeedsFixRuleAttributeInvalid;
+
+  /// Needs-fix rule fragment for a `too_long` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here is too long.'**
+  String get syncNeedsFixRuleAttributeTooLong;
+
+  /// Needs-fix rule fragment for an `out_of_range` rejection on an activity's per-type attribute bag (#443)
+  ///
+  /// In en, this message translates to:
+  /// **'an entry here is outside the allowed range.'**
+  String get syncNeedsFixRuleAttributeOutOfRange;
+
   /// Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)
   ///
   /// In en, this message translates to:

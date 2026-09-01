@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_widgets.dart';
+import '../activities/activity_types.dart';
 import 'sync_rejected_repository.dart';
 import 'sync_rejection_messages.dart';
 
@@ -106,81 +107,99 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
       // apiaryEntityType, and the fallback for anything unrecognized.
       _ => l10n.syncNeedsFixApiaryLabel,
     };
-    final title = op.displayName == null
+    // An activity has no name of its own — only a wire type enum, which must
+    // be localized before it is shown or the row reads "Activity change ·
+    // harvest" (and identically so in Portuguese). An unknown/newer type
+    // yields null and the row falls back to the plain entity label (#443).
+    final recordName = op.entityType == activityEntityType
+        ? (op.activityType == null
+              ? null
+              : activityTypeLabel(l10n, op.activityType!))
+        : op.displayName;
+    final title = recordName == null
         ? entityLabel
-        : l10n.syncNeedsFixTitleWithName(entityLabel, op.displayName!);
+        : l10n.syncNeedsFixTitleWithName(entityLabel, recordName);
     // #426: never surface the server's raw validation text to the beekeeper.
     // It is English-only (breaks EN/PT i18n) and can embed internal DB
     // field/column names — a rejected journey once rendered
     // "default_attributes must be a JSON object", leaking the column name.
-    // The raw detail (op.primaryMessage / op.detail) therefore stays confined
-    // to the dead-letter row and the connector's log, for diagnostics only.
+    // The raw text is therefore not even carried on RejectedOp; it stays in
+    // the dead-letter row and the connector's log, for diagnostics only.
     // #443: the machine-readable half of the same detail — the `(field, code)`
     // pairs — IS safe, so it is mapped to app-owned EN/PT copy here, giving
     // back the specific guidance #426's blanket generic message threw away.
     // Anything unmapped still degrades to that generic message.
     final messages = localizedRejectionMessages(l10n, op.fieldIssues);
 
-    return Card(
-      key: Key('needs-fix-${op.id}'),
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.sync_problem_outlined,
-                  color: theme.colorScheme.error,
-                  size: 22,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: theme.textTheme.titleSmall),
-                      const SizedBox(height: 2),
-                      // One line per mapped field problem (localizedRejection
-                      // Messages caps and de-duplicates them, and is never
-                      // empty). Separate Text widgets rather than one joined
-                      // string so each problem is its own semantics node for
-                      // a screen reader (WCAG 2.2 AA).
-                      for (final (i, message) in messages.indexed)
-                        Padding(
-                          padding: EdgeInsets.only(top: i == 0 ? 0 : 2),
-                          child: Text(
-                            message,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                    ],
+    return Semantics(
+      // Group the row as one container so a screen reader announces a
+      // boundary between rows: this tile now emits several text nodes (title
+      // + one per problem) plus two buttons whose labels ("Dismiss", "Fix")
+      // are identical on every row, and without a container they all run
+      // together into one flat list (WCAG 2.2 AA). `container` groups without
+      // merging, so both buttons stay individually focusable and actionable.
+      container: true,
+      child: Card(
+        key: Key('needs-fix-${op.id}'),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.sync_problem_outlined,
+                    color: theme.colorScheme.error,
+                    size: 22,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  key: Key('needs-fix-dismiss-${op.id}'),
-                  onPressed: _dismissing ? null : _dismiss,
-                  child: Text(l10n.syncNeedsFixDismissAction),
-                ),
-                const SizedBox(width: 4),
-                FilledButton.tonalIcon(
-                  key: Key('needs-fix-fix-${op.id}'),
-                  onPressed: () => _navigateToFix(context, op),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: Text(l10n.syncNeedsFixFixAction),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: theme.textTheme.titleSmall),
+                        const SizedBox(height: 2),
+                        // One line per mapped field problem (localizedRejection
+                        // Messages caps and de-duplicates them, and is never
+                        // empty). Separate Text widgets rather than one joined
+                        // string so each problem is its own semantics node for
+                        // a screen reader (WCAG 2.2 AA).
+                        for (final (i, message) in messages.indexed)
+                          Padding(
+                            padding: EdgeInsets.only(top: i == 0 ? 0 : 2),
+                            child: Text(
+                              message,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    key: Key('needs-fix-dismiss-${op.id}'),
+                    onPressed: _dismissing ? null : _dismiss,
+                    child: Text(l10n.syncNeedsFixDismissAction),
+                  ),
+                  const SizedBox(width: 4),
+                  FilledButton.tonalIcon(
+                    key: Key('needs-fix-fix-${op.id}'),
+                    onPressed: () => _navigateToFix(context, op),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: Text(l10n.syncNeedsFixFixAction),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
