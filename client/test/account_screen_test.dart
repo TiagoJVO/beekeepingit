@@ -280,6 +280,23 @@ void main() {
     },
   );
 
+  testWidgets(
+    'every member sees the DGAV action, admin or not (#296/#298, FR-AP-9/'
+    'FR-AP-10)',
+    (tester) async {
+      // Deliberately NOT gated behind isOrgAdminProvider, unlike manage-members
+      // above: a non-admin can read the registration number and record
+      // declarations. Only CHANGING the organization-wide number is admin-only,
+      // which the DGAV screen enforces on the field itself (and the server
+      // enforces regardless of either).
+      await tester.pumpWidget(
+        _buildScreen(_FakeProfileController(_profile()), orgRole: 'user'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('account-dgav-button')), findsOneWidget);
+    },
+  );
   testWidgets('shows a sign-out action (#197)', (tester) async {
     await tester.pumpWidget(_buildScreen(_FakeProfileController(_profile())));
     await tester.pumpAndSettle();

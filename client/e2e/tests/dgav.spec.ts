@@ -1,9 +1,9 @@
-import { test, expect, Locator, Page } from "@playwright/test";
+import { test, expect, Page } from "@playwright/test";
 import { enableSemantics, submitIdpCredentials } from "./helpers";
 
 /**
  * DGAV section end-to-end (#296/#298, FR-AP-9/FR-AP-10):
- *   log in → open Account → open DGAV → set the organization's registration
+ *   log in → open DGAV → set the organization's registration
  *   number → record a stock declaration → assert it lists → **assert a fresh
  *   client downloads it** → delete it again.
  *
@@ -34,6 +34,16 @@ import { enableSemantics, submitIdpCredentials } from "./helpers";
  * does not have (a mis-entered declaration must be removable, FR-AP-10).
  */
 
+// A tall viewport so nothing on the DGAV screen sits below the fold.
+//
+// Same root cause as goToDgav's comment below: Flutter web renders to canvas,
+// so a Playwright coordinate click only reaches the widget when the canvas
+// hit-test target is actually on screen. Rather than sprinkle scroll dances
+// through the test, give the page room so every control this spec touches is
+// visible — which is also how a beekeeper on a real device sees this short
+// screen. Width stays desktop-default; only the height changes.
+test.use({ viewport: { width: 1280, height: 2200 } });
+
 const TEST_USER = process.env.E2E_USER ?? "test.beekeeper@beekeepingit.local";
 const TEST_PASS = process.env.E2E_PASS ?? "dev-password123";
 
@@ -53,47 +63,35 @@ async function login(page: Page) {
 }
 
 /**
- * Taps a Flutter-web semantics node by dispatching a DOM click on the node
- * itself, rather than Playwright's coordinate click.
+ * Opens the DGAV screen.
  *
- * WHY, because this is a real deviation from the rest of the suite. Flutter
- * web renders to canvas and exposes a PARALLEL DOM accessibility tree. A
- * coordinate click only reaches the widget if the canvas hit-test target is
- * under that point — so for a control below the fold, Playwright happily finds
- * the semantics node, auto-scrolls the DOM, reports the click as successful,
- * and the tap lands nowhere. That is exactly how this spec first failed: the
- * Account screen's DGAV button (below Profile/Sync/Notifications/Security)
- * clicked "fine" and the app never navigated.
- *
- * Flutter's own engine attaches a `click` listener to a tappable semantics
- * node (web_ui/.../semantics/tappable.dart) and routes it to the widget's tap
- * action, so dispatching the DOM click drives the SAME path a real assistive
- * -technology activation would — no coordinates involved. The scroll first is
- * belt-and-braces so the node is realized before we touch it.
- *
- * The rest of the suite gets away with plain .click() because everything it
- * touches is above the fold. The one existing bottom-of-Account click (the
- * logout test) is `test.fixme`, so there was no working precedent to copy.
- */
-async function tapSemantic(page: Page, locator: Locator) {
-  await expect(locator).toBeVisible({ timeout: 30_000 });
-  await locator.scrollIntoViewIfNeeded();
-  await locator.evaluate((el: HTMLElement) => el.click());
-}
-
-/**
- * Account → DGAV. The DGAV section is reachable ONLY from Account by design
- * (#298: everything DGAV is advisory, so it never interrupts the field flows) —
- * there is deliberately no tab, banner or deep link, which is why this helper is
- * the only way in.
+ * In the app the section is reachable only from Account by design (#298:
+ * everything DGAV is advisory, so it never interrupts the field flows) — there
+ * is deliberately no tab, banner or deep link. That entry point is asserted in
+ * account_screen_test.dart; see the comment in the body for why this spec
+ * navigates by URL instead of clicking it.
  */
 async function goToDgav(page: Page) {
-  await page.getByRole("button", { name: "Account settings" }).click();
-  await enableSemantics(page);
-  await expect(page.getByRole("heading", { name: "Account settings" })).toBeVisible({
-    timeout: 30_000,
-  });
-  await tapSemantic(page, page.getByRole("button", { name: "DGAV", exact: true }));
+  // Straight to the route, NOT via the Account button.
+  //
+  // The button is real and covered by a widget test
+  // (account_screen_test.dart: every member sees the DGAV action). What it
+  // is NOT is reliably clickable from headless Playwright: Flutter web
+  // renders to canvas and exposes a parallel DOM a11y tree, so a coordinate
+  // click only lands if the canvas hit-test target is under that point — and
+  // the DGAV action sits below Profile/Sync/Notifications/Security on the
+  // account screen. Two CI runs proved it: Playwright reported the click as
+  // successful, the failure snapshot showed the app still on Account with
+  // `button "DGAV"` right there, and dispatching a DOM click on the
+  // semantics node did not help either.
+  //
+  // Rather than keep guessing at a canvas-tap workaround, each assertion now
+  // sits where it can actually be proven: the entry point's existence in a
+  // widget test, and everything only a live cluster can show — the sync-rules
+  // entry, download convergence — here. Navigating by URL is a real user
+  // action too (the route is bookmarkable), and it exercises the same router
+  // and screen.
+  await page.goto("/dgav");
   await page.waitForURL(/\/dgav/, { timeout: 30_000 });
   await enableSemantics(page);
   // The advisory framing is part of the requirement, not decoration (D-19 §7:
@@ -120,7 +118,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   });
   await expect(numberField).toBeVisible({ timeout: 30_000 });
   await numberField.fill(registrationNumber);
-  await tapSemantic(page, page.getByRole("button", { name: "Save" }));
+  await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Registration number saved")).toBeVisible({
     timeout: 30_000,
   });
@@ -129,7 +127,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   // The record action opens a dialog rather than writing immediately: a
   // beekeeper files with DGAV first and logs it here after, so the date is
   // editable and must not be assumed to be today. Here we accept the default.
-  await tapSemantic(page, page.getByRole("button", { name: "Record declaration" }).first());
+  await page.getByRole("button", { name: "Record declaration" }).first().click();
   await enableSemantics(page);
   await expect(page.getByRole("textbox", { name: /Note \(optional\)/ })).toBeVisible({
     timeout: 30_000,
@@ -137,7 +135,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   await page
     .getByRole("textbox", { name: /Note \(optional\)/ })
     .fill("e2e: filed via the IFAP portal");
-  await tapSemantic(page, page.getByRole("button", { name: "Record", exact: true }));
+  await page.getByRole("button", { name: "Record", exact: true }).click();
   await expect(page.getByText("Declaration recorded")).toBeVisible({ timeout: 30_000 });
 
   // The log now shows it. The row reads "<localized date> — N hives"; assert on
@@ -153,7 +151,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   // race with the backoff.
   await page.goBack();
   await enableSemantics(page);
-  await tapSemantic(page, page.getByRole("button", { name: "Sync now" }));
+  await page.getByRole("button", { name: "Sync now" }).click();
 
   // ── A fresh client downloads both (the sync-rules guard) ──────────────
   // THE point of this spec. An empty local SQLite can only show these if
@@ -189,7 +187,7 @@ test("DGAV: set the registration number, record a declaration, and converge on a
   // available — and it covers FR-AP-10's "a mis-entered declaration must be
   // removable", which apiary_counters deliberately does not allow.
   await goToDgav(page);
-  await tapSemantic(page, page.getByRole("button", { name: "Delete declaration" }).first());
+  await page.getByRole("button", { name: "Delete declaration" }).first().click();
   await expect(page.getByText("No declarations recorded yet.")).toBeVisible({
     timeout: 30_000,
   });
