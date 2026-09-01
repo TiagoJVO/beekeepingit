@@ -130,7 +130,10 @@ tests, without opening anything. A test that needs a **resolved** sync
 session overrides the providers it actually depends on (`syncStatusProvider`,
 a repository's stream provider, …) — see `test/account_screen_test.dart` and
 `test/app_shell_test.dart`; `await`ing `powerSyncProvider` itself without an
-override hangs until the test times out.
+override hangs until the test times out. A test that deliberately wants the
+**real** database (a plain `test()`, not a widget test — the open does
+complete there) opts back in by setting `debugOpenPowerSyncDatabase = null`
+and restoring it in an `addTearDown`.
 
 ## Decisions this scaffold makes (AC of `#21`)
 

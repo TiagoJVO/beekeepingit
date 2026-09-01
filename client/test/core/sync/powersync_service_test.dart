@@ -48,9 +48,12 @@ void main() {
         var opens = 0;
         debugOpenPowerSyncDatabase = () {
           opens++;
-          // Never completes — the same thing the real open does under
-          // `flutter_tester` (no PowerSync SQLite extension), minus the
-          // leaked registration.
+          // Never completes — mirroring what a *widget* test observes, and
+          // what test/flutter_test_config.dart installs suite-wide. A plain
+          // `test()` like this one is the opposite case: here the real open
+          // would actually succeed and leave a `beekeepingit.db` behind,
+          // which is exactly why what's asserted is that the provider goes
+          // through the seam at all.
           return Completer<PowerSyncDatabase>().future;
         };
 
