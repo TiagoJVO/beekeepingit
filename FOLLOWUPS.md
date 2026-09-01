@@ -7,31 +7,42 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `claude/orch-add-feature-8816f4` (#296, #298 — EPIC-02's two remaining regulatory stories)
+## `feat/client-validation-parity` (#584 — revalidate queued edits before pushing)
 
-- ~~**Before merge: a green Helm-E2E.**~~ **Met** — [run
-  33522048949](https://github.com/TiagoJVO/beekeepingit/actions/runs/33522048949) passed
-  (17m). That gate is the first place all three migrations (`apiaries` `00009`/`00010`,
-  `organizations` `00007`) and the new PowerSync sync-rules entries actually execute together;
-  local Go/Dart tests cover the service and client halves in isolation but never the
-  replication path, and a sync-rules entry that fails to parse is historically **silent** (the
-  #23-deploy shape: replication fatals, nothing reports the file invalid). It is green, so this
-  item is closed rather than pending — kept only until the PR merges, as the reviewer's
-  evidence.
-- **Still open: `stock_declarations` runtime grants on a real environment.** The Helm-E2E run
-  above proves the table is CREATEd and that `charts/postgres`'s blanket
+- **Confirm (or rule out) the `journey.default_attributes` null case, and open an Issue if
+  it's real.** `journeys_repository.dart` stores SQL NULL for an empty defaults bag, while
+  `validateDefaultAttributes` (`services/journeys/api/types.go`) rejects a present JSON `null`
+  — it skips only on `len(raw) == 0`. Whether that ever reaches the wire depends on whether
+  PowerSync includes null columns in a `put`'s `opData`, which this branch did **not** verify.
+  If it does, clearing a journey's defaults is already failing server-side today and #584 only
+  makes it visible one step earlier; the fix belongs in `validateDefaultAttributes` (treat the
+  `null` literal as absent, like every other optional field on that struct), after which the
+  description's `jsonObject` check must skip an explicit null for that field. Written up in
+  `contracts/validation/README.md`. Cheapest check: log one op's `opData` for a journey with no
+  defaults, or add a `journeys` integration case.
+- **Give #443's `_fieldLabel` table entries for the stock-declaration fields.**
+  `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
+  `total_hive_count` or `dgav_registration_number`, so a rejected DGAV stock declaration (#298)
+  degrades to the generic "needs your attention" line even though #584 now produces exact
+  `(field, code)` pairs for it. Graceful, not broken — but it throws away guidance that is
+  already there. Three labels plus their EN/PT strings; belongs to #443's table rather than to
+  the parity description, so it was left out of #584's PR deliberately.
+- **The same evaluator wants a save-time call site.** `validateSyncOps`
+  (`client/lib/core/validation/sync_op_validator.dart`) is a pure function of the wire op, so the
+  form/repository write path can run it and tell the beekeeper _in the form_, with the record
+  open, instead of at the next push. That is a genuine FR-OF-2 improvement and needs no new source
+  of truth — but it touches every entity's form screen, so it is out of this PR's scope. Promote
+  to an Issue under EPIC-06 (#7) if it isn't picked up with #585.
+
+## `#296`/`#298` — DGAV registration + stock declarations (PR #593, merged)
+
+- **`stock_declarations` runtime grants are still unexercised on a real environment.** Helm-E2E
+  proved the table is CREATEd and that `charts/postgres`'s blanket
   `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES` (hook weight 3) applies without error —
   but **nothing in E2E writes a declaration**, so the grant is not exercised end-to-end. The
   reasoning holds (the table is new and NOT a `*_log`, and the publication is schema-scoped so
   PowerSync captures it automatically); confirm on the first environment where a beekeeper
-  actually records one.
-- **Deferred, not forgotten: two of D-19's five flagged data points remain untriaged** — the
-  structured disease/condition field on Treatment activities, and the honey lot/batch
-  identifier. (The retention-policy note was triaged separately by #295 while this branch was
-  in flight; #296/#298 triage the registration number and the stock-declaration record.) The
-  two that remain belong to their own owning epics (activities, import/export), are recorded in
-  D-19 and in `docs/research/regulatory-pt-eu-beekeeping.md` §6, and need no entry of their own
-  here once this PR merges — prune this bullet with the section.
+  actually records one. Promote to an Issue if it isn't confirmed at the next deploy.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -48,10 +59,11 @@
 
 ---
 
-_Sweep note (2026-09-01, during #295): [#365](https://github.com/TiagoJVO/beekeepingit/issues/365)_
-_closed and its branch merged, so the `claude/orch-add-feature-6993c5` section is resolved by_
-_definition — its Helm-E2E merge precondition was met at merge, and its two after-merge items were_
-_already Issues ([#510](https://github.com/TiagoJVO/beekeepingit/issues/510),_
-_[#563](https://github.com/TiagoJVO/beekeepingit/issues/563)) that the entry itself said to prune on_
-_landing. Pruned. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still_
-_open — that entry stands. Prior sweep notes dropped with their entries, per this file's convention._
+_Sweep note (2026-09-01, during #584): PR [#593](https://github.com/TiagoJVO/beekeepingit/pull/593)_
+_merged, so its `claude/orch-add-feature-8816f4` branch section is stale by definition. Its_
+_before-merge Helm-E2E gate was met at merge and its D-19 bullet said to "prune this bullet with the_
+_section" — both pruned; the one genuinely open item (unexercised `stock_declarations` runtime_
+_grants) is kept above under the merged issues it belongs to, since it is a live post-deploy_
+_verification rather than a branch precondition. [#495](https://github.com/TiagoJVO/beekeepingit/issues/495)_
+_re-checked and still open — that entry stands. Prior sweep notes dropped with their entries, per_
+_this file's convention._

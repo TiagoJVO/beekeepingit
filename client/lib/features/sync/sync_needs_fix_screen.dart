@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/sync/powersync_schema.dart';
+import '../../core/validation/sync_op_validator.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_widgets.dart';
 import '../activities/activity_types.dart';
@@ -130,7 +131,20 @@ class _RejectedTileState extends ConsumerState<_RejectedTile> {
     // pairs — IS safe, so it is mapped to app-owned EN/PT copy here, giving
     // back the specific guidance #426's blanket generic message threw away.
     // Anything unmapped still degrades to that generic message.
-    final messages = localizedRejectionMessages(l10n, op.fieldIssues);
+    //
+    // #584: a rejection the client's own validation-parity pass predicted
+    // BEFORE pushing (sync.md §9) reaches this the same way — the connector
+    // synthesizes the identical `(field, code)` pairs — so it gets the same
+    // specific guidance for free. Only the nothing-mapped wording differs:
+    // that change was never sent, so "was rejected" would be wrong, and
+    // `fallback` (the seam #443 left for this) says so instead.
+    final messages = localizedRejectionMessages(
+      l10n,
+      op.fieldIssues,
+      fallback: op.errorCode == localValidationFailedCode
+          ? l10n.syncNeedsFixLocalProblem
+          : null,
+    );
 
     return Semantics(
       // Group the row as one container so a screen reader announces a
