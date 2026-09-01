@@ -89,9 +89,12 @@ class SyncGate {
   /// [stop]).
   Completer<void>? _backoffCompleter;
 
-  /// Set when a connectivity return lands while a probe is already in
-  /// flight — that probe measured the *pre-reconnect* link, so its verdict
-  /// shouldn't impose a long backoff (#240).
+  /// Set by *every* connectivity return while the loop runs, and cleared by
+  /// [_loop] immediately before each probe — so at its single read site (the
+  /// failure branch) it means exactly "a return landed while this probe was
+  /// in flight", i.e. the probe measured the *pre-reconnect* link and its
+  /// verdict shouldn't impose a long backoff (#240). Keep the clear adjacent
+  /// to the probe: widening that window is what would break the invariant.
   bool _restoredDuringProbe = false;
 
   /// Bumped by every [start]/[stop], and captured by [_loop] at entry: an
