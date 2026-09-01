@@ -513,6 +513,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixCounterLabel => 'Hive count change';
 
   @override
+  String get syncNeedsFixDeclarationLabel => 'Stock declaration change';
+
+  @override
   String get syncNeedsFixActivityLabel => 'Activity change';
 
   @override
@@ -853,6 +856,103 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get apiaryPlaceLabelHint => 'e.g. Montargil';
+
+  @override
+  String get apiaryDgavNumberLabel => 'DGAV registration number';
+
+  @override
+  String get apiaryDgavNumberHint =>
+      'Only if different from the organization\'s';
+
+  @override
+  String get apiaryDgavNumberInherited => 'From the organization';
+
+  @override
+  String get dgavSectionTitle => 'DGAV';
+
+  @override
+  String get dgavSectionSubtitle =>
+      'Registration number and stock declarations';
+
+  @override
+  String get dgavIntro =>
+      'Optional record-keeping to help with DGAV obligations. The app never files anything for you.';
+
+  @override
+  String get dgavOrgNumberLabel => 'Organization registration number';
+
+  @override
+  String get dgavOrgNumberHint => 'The beekeeper number shown at your apiaries';
+
+  @override
+  String get dgavOrgNumberSaved => 'Registration number saved';
+
+  @override
+  String get dgavOrgNumberSaveFailed =>
+      'Could not save the registration number';
+
+  @override
+  String get dgavOrgNumberAdminOnly =>
+      'Only an organization admin can change this.';
+
+  @override
+  String get dgavDeclarationsTitle => 'Stock declarations';
+
+  @override
+  String get dgavDeclarationsEmpty => 'No declarations recorded yet.';
+
+  @override
+  String get dgavNoRegistrationNumber => 'No registration number';
+
+  @override
+  String get dgavRecordDeclarationAction => 'Record declaration';
+
+  @override
+  String get dgavDeclarationSaved => 'Declaration recorded';
+
+  @override
+  String get dgavDeclarationDeleteAction => 'Delete declaration';
+
+  @override
+  String dgavDeclarationSummary(String date, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count hives',
+      one: '1 hive',
+    );
+    return '$date — $_temp0';
+  }
+
+  @override
+  String dgavDeclarationApiaryCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count apiaries',
+      one: '1 apiary',
+      zero: 'no apiaries',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get dgavWindowOpen =>
+      'The annual declaration window is open until 30 September.';
+
+  @override
+  String get dgavWindowOpenDeclared =>
+      'Declared this year. The window is open until 30 September.';
+
+  @override
+  String dgavInterimTriggerMet(int change, int last, int current) {
+    return 'Hive count changed by $change since the last declaration ($last to $current) — an interim declaration may be due.';
+  }
+
+  @override
+  String dgavCurrentHiveCount(int count) {
+    return 'Current hive count: $count';
+  }
 
   @override
   String get apiaryLocationSectionLabel => 'Location';

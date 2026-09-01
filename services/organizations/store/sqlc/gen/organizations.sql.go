@@ -14,7 +14,7 @@ import (
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations.organizations (id, name, address, created_by)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, address, created_by, created_at, updated_at
+RETURNING id, name, address, dgav_registration_number, created_by, created_at, updated_at
 `
 
 type CreateOrganizationParams struct {
@@ -39,6 +39,7 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		&i.ID,
 		&i.Name,
 		&i.Address,
+		&i.DgavRegistrationNumber,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -47,7 +48,7 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 }
 
 const getOrganizationForUpdate = `-- name: GetOrganizationForUpdate :one
-SELECT id, name, address, created_by, created_at, updated_at
+SELECT id, name, address, dgav_registration_number, created_by, created_at, updated_at
 FROM organizations.organizations
 WHERE id = $1
 FOR UPDATE
@@ -66,6 +67,7 @@ func (q *Queries) GetOrganizationForUpdate(ctx context.Context, id pgtype.UUID) 
 		&i.ID,
 		&i.Name,
 		&i.Address,
+		&i.DgavRegistrationNumber,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -160,16 +162,18 @@ const updateOrganization = `-- name: UpdateOrganization :one
 UPDATE organizations.organizations
 SET name = $2,
     address = $3,
-    updated_at = $4
+    dgav_registration_number = $4,
+    updated_at = $5
 WHERE id = $1
-RETURNING id, name, address, created_by, created_at, updated_at
+RETURNING id, name, address, dgav_registration_number, created_by, created_at, updated_at
 `
 
 type UpdateOrganizationParams struct {
-	ID        pgtype.UUID        `json:"id"`
-	Name      string             `json:"name"`
-	Address   string             `json:"address"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID                     pgtype.UUID        `json:"id"`
+	Name                   string             `json:"name"`
+	Address                string             `json:"address"`
+	DgavRegistrationNumber string             `json:"dgav_registration_number"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Applies an admin's org-detail edit (PATCH /organizations/{orgId}, #289,
@@ -181,6 +185,7 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		arg.ID,
 		arg.Name,
 		arg.Address,
+		arg.DgavRegistrationNumber,
 		arg.UpdatedAt,
 	)
 	var i OrganizationsOrganization
@@ -188,6 +193,7 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		&i.ID,
 		&i.Name,
 		&i.Address,
+		&i.DgavRegistrationNumber,
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,

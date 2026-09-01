@@ -13,6 +13,7 @@ import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/dgav/dgav_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/journeys/journey_detail_screen.dart';
 import '../features/journeys/journey_form_screen.dart';
@@ -149,6 +150,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/account',
         name: 'account',
         builder: (context, state) => const AccountScreen(),
+      ),
+      // The DGAV section (#296/#298, FR-AP-9/FR-AP-10): the beekeeper
+      // registration number and the stock-declaration log. A normal
+      // authenticated route reached only from the account screen — nothing
+      // else in the app links here, deliberately (everything DGAV is
+      // advisory, so it never interrupts the field flows).
+      GoRoute(
+        path: '/dgav',
+        name: 'dgav',
+        builder: (context, state) => const DgavScreen(),
       ),
       // The needs-fix list (EPIC-06 #7, D-12 notify-and-fix): offline writes
       // the server permanently rejected, retained in the local dead-letter so

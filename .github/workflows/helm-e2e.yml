@@ -723,17 +723,38 @@ jobs:
           kubectl -n beekeepingit-dev logs -l cnpg.io/cluster=beekeepingit-postgres --tail=100 || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server --tail=120 --prefix || true
           kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=worker --tail=200 --prefix || true
-          kubectl -n beekeepingit-dev logs -l app.kubernetes.io/part-of=beekeepingit --tail=50 --prefix || true
+          # Everything this release owns, in one selector. This line only
+          # started matching anything with #246: `kubectl logs -l` selects
+          # PODS, and `app.kubernetes.io/part-of` used to be set on the
+          # Deployments' own metadata ONLY — so it matched zero running pods
+          # and silently dumped nothing while looking like it worked, which is
+          # exactly why the download-stream flake of run 29251456225 left no
+          # server-side evidence at all. The shared label helper is now
+          # included on the pod templates too
+          # (infra/helm/beekeepingit/templates/_helpers.tpl). The
+          # `!batch.kubernetes.io/job-name` half drops the kept hook-Job pods,
+          # already dumped in full above.
+          kubectl -n beekeepingit-dev logs -l 'app.kubernetes.io/part-of=beekeepingit,!batch.kubernetes.io/job-name' --tail=100 --prefix --timestamps || true
           # PowerSync's own stdout is the only place a rejected/failing client
           # sync-stream connection is named: the browser side of that connection
           # runs inside a SharedWorker, invisible to Playwright's page-level
           # trace (all the trace shows is the SDK's ~5s fetchCredentials retry
-          # loop — learned diagnosing #236's follow-up e2e failure, where the
-          # part-of dump above also happened to miss this pod's logs). Dump it,
-          # the sync service, and the gateway explicitly.
-          kubectl -n beekeepingit-dev logs deploy/beekeepingit-powersync --tail=300 || true
-          kubectl -n beekeepingit-dev logs deploy/sync --tail=150 || true
-          kubectl -n kube-system logs deploy/traefik --tail=150 || true
+          # loop — learned diagnosing #236's follow-up e2e failure). The
+          # selector dump above now reaches these pods too; these stay because
+          # they can afford a far deeper tail than a whole-namespace fan-out,
+          # and this is the pair the download-stream flake is read from.
+          #
+          # --timestamps on all three (#246): the leading hypothesis for that
+          # flake is a restart-ordering race — in dev/CI `sync` signs sync
+          # tokens with an EPHEMERAL per-boot key (services/sync/token/token.go),
+          # so its `kid` changes across the blanket `rollout restart` above
+          # (#215), and PowerSync may be validating against a JWKS it cached
+          # from the previous sync pod. Settling that needs both logs on one
+          # timeline: `sync` logs "sync-token signing key ready" with its kid
+          # on every boot, PowerSync names the kid/reason it rejects.
+          kubectl -n beekeepingit-dev logs deploy/beekeepingit-powersync --tail=1000 --timestamps || true
+          kubectl -n beekeepingit-dev logs deploy/sync --tail=300 --timestamps || true
+          kubectl -n kube-system logs deploy/traefik --tail=150 --timestamps || true
           # Mailpit sink (#361): a red verification e2e usually means the email
           # never arrived (SMTP wiring) or the flow never sent it (blueprint) —
           # the sink's log + message count tells the two apart fast.
@@ -757,9 +778,16 @@ jobs:
           fi
           # Crashlooping containers keep their crash output on the PREVIOUS instance;
           # plain `logs` on a just-restarted container is usually empty.
-          for d in identity organizations apiaries activities journeys todos sync pwa admin beekeepingit-powersync; do
+          #
+          # Enumerated from the shared part-of label rather than a hand-written
+          # name list (#246): the list had already drifted (mailpit was never in
+          # it), and every future subchart would have had to remember to add
+          # itself here. The label is on every Deployment this release owns.
+          for d in $(kubectl -n beekeepingit-dev get deploy \
+                       -l app.kubernetes.io/part-of=beekeepingit \
+                       -o name 2>/dev/null || true); do
             echo "=== previous logs: $d ==="
-            kubectl -n beekeepingit-dev logs "deploy/$d" --previous --tail=30 || true
+            kubectl -n beekeepingit-dev logs "$d" --previous --tail=30 --timestamps || true
           done
           kubectl get helmrelease -A || true
           kubectl -n beekeepingit-dev get events --sort-by=.lastTimestamp || true
