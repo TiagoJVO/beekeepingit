@@ -914,6 +914,12 @@ abstract class AppLocalizations {
   /// **'Hive count change'**
   String get syncNeedsFixCounterLabel;
 
+  /// Needs-fix list row title for a rejected DGAV stock-declaration write (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Stock declaration change'**
+  String get syncNeedsFixDeclarationLabel;
+
   /// Needs-fix list row title for a rejected activity write (#379)
   ///
   /// In en, this message translates to:
@@ -1267,6 +1273,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'e.g. Montargil'**
   String get apiaryPlaceLabelHint;
+
+  /// Optional DGAV beekeeper registration number field label on the apiary form, and its label on the apiary detail screen (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'DGAV registration number'**
+  String get apiaryDgavNumberLabel;
+
+  /// Placeholder hint in the apiary form's DGAV registration number field, explaining that it is an override of the organization-wide default (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'Only if different from the organization\'s'**
+  String get apiaryDgavNumberHint;
+
+  /// Marker shown next to the DGAV registration number on the apiary detail when the value is inherited from the organization rather than set on the apiary itself (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'From the organization'**
+  String get apiaryDgavNumberInherited;
+
+  /// Title of the DGAV screen, reached from Account — holds the beekeeper registration number and the stock-declaration log (FR-AP-9/FR-AP-10, #296/#298)
+  ///
+  /// In en, this message translates to:
+  /// **'DGAV'**
+  String get dgavSectionTitle;
+
+  /// Subtitle on the Account screen's row that opens the DGAV screen (#296/#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Registration number and stock declarations'**
+  String get dgavSectionSubtitle;
+
+  /// Intro paragraph on the DGAV screen making explicit that everything there is advisory and nothing is submitted to DGAV (FR-AP-10, D-19)
+  ///
+  /// In en, this message translates to:
+  /// **'Optional record-keeping to help with DGAV obligations. The app never files anything for you.'**
+  String get dgavIntro;
+
+  /// Label of the organization-wide DGAV beekeeper registration number field on the DGAV screen (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'Organization registration number'**
+  String get dgavOrgNumberLabel;
+
+  /// Helper text under the organization DGAV registration number field (FR-AP-9, #296)
+  ///
+  /// In en, this message translates to:
+  /// **'The beekeeper number shown at your apiaries'**
+  String get dgavOrgNumberHint;
+
+  /// Confirmation shown after the organization DGAV registration number is saved (#296)
+  ///
+  /// In en, this message translates to:
+  /// **'Registration number saved'**
+  String get dgavOrgNumberSaved;
+
+  /// Error shown when saving the organization DGAV registration number fails, e.g. offline or not an admin (#296)
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save the registration number'**
+  String get dgavOrgNumberSaveFailed;
+
+  /// Note shown to non-admin members, who can read but not edit the organization's DGAV registration number (#296, NFR-ROL-1)
+  ///
+  /// In en, this message translates to:
+  /// **'Only an organization admin can change this.'**
+  String get dgavOrgNumberAdminOnly;
+
+  /// Heading of the stock-declaration log section on the DGAV screen (FR-AP-10, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Stock declarations'**
+  String get dgavDeclarationsTitle;
+
+  /// Empty state of the stock-declaration log (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'No declarations recorded yet.'**
+  String get dgavDeclarationsEmpty;
+
+  /// Group heading used for declarations recorded before any DGAV registration number was entered (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'No registration number'**
+  String get dgavNoRegistrationNumber;
+
+  /// Action that records a stock declaration for a registration number, pre-filled from the current hive counts (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Record declaration'**
+  String get dgavRecordDeclarationAction;
+
+  /// Confirmation shown after a stock declaration is recorded (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declaration recorded'**
+  String get dgavDeclarationSaved;
+
+  /// Action that deletes a mis-entered stock declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Delete declaration'**
+  String get dgavDeclarationDeleteAction;
+
+  /// One row of the stock-declaration log: the declared date and the declared hive total (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'{date} — {count, plural, =1{1 hive} other{{count} hives}}'**
+  String dgavDeclarationSummary(String date, int count);
+
+  /// Secondary line of a declaration row: how many apiaries the snapshot covered (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{no apiaries} =1{1 apiary} other{{count} apiaries}}'**
+  String dgavDeclarationApiaryCount(int count);
+
+  /// Advisory status shown during the 1-30 September annual declaration window when nothing has been declared this year (FR-AP-10, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'The annual declaration window is open until 30 September.'**
+  String get dgavWindowOpen;
+
+  /// Advisory status shown during the September window when a declaration already exists for this year (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declared this year. The window is open until 30 September.'**
+  String get dgavWindowOpenDeclared;
+
+  /// Advisory status shown when the hive count has changed by more than 20% AND at least 20 colonies since the last declaration (#298)
+  ///
+  /// In en, this message translates to:
+  /// **'Hive count changed by {change} since the last declaration ({last} to {current}) — an interim declaration may be due.'**
+  String dgavInterimTriggerMet(int change, int last, int current);
+
+  /// The live hive total across the beekeeper's apiaries, shown next to the declaration log so the two are visibly distinct (#298, FR-AP-7)
+  ///
+  /// In en, this message translates to:
+  /// **'Current hive count: {count}'**
+  String dgavCurrentHiveCount(int count);
 
   /// Section label above the map-pin picker on the apiary form (#252)
   ///

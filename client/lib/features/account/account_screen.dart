@@ -278,6 +278,23 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         onPressed: () => context.go('/organization/members'),
                       ),
                     ],
+                    // DGAV (#296/#298, FR-AP-9/FR-AP-10): the beekeeper
+                    // registration number and the stock-declaration log.
+                    // Available to EVERY member, not gated behind
+                    // isOrgAdminProvider like the members row above — a
+                    // non-admin can read the number and record declarations;
+                    // only CHANGING the organization-wide number is
+                    // admin-only, which the DGAV screen enforces on the field
+                    // itself (and the server enforces regardless).
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    SecondaryActionButton(
+                      key: const Key('account-dgav-button'),
+                      label: l10n.dgavSectionTitle,
+                      icon: Icons.badge_outlined,
+                      onPressed: () => context.go('/dgav'),
+                    ),
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),

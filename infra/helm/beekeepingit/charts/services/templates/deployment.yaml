@@ -19,8 +19,12 @@ spec:
   template:
     metadata:
       labels:
+        # Carried through to the POD template on purpose (#246) — see
+        # templates/_helpers.tpl. Supplies app.kubernetes.io/instance, so it
+        # replaces the explicit line this block used to carry; the immutable
+        # spec.selector above still matches.
+        {{- include "beekeepingit.labels" $root | nindent 8 }}
         app.kubernetes.io/name: {{ $name }}
-        app.kubernetes.io/instance: {{ $root.Release.Name }}
     spec:
       # Hardened pod/container security context (EPIC-14 #89, NFR-SEC-1,
       # trivy-config KSV-0014/KSV-0118). Safe for every service here: each
