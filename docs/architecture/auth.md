@@ -1067,7 +1067,11 @@ identifier` is stated explicitly because it is a security decision, not a defaul
   "Continue with Google" works only for a user who has connected Google there first; everyone else
   lands on the normal login form. That is the deliberate, issue-scoped posture — not an oversight —
   and it is what keeps invitation-only intact without inventing an unverified-email link.
-- **`email_verified` and the #361 gate.** The source's `authentication_flow` is upstream's
+- **`email_verified` and the #361 gate.** _(The flow's **provenance** is **superseded by §8.16** —
+  #594 replaced this `!Find` at upstream's slug with an in-blueprint copy the file owns, because the
+  `!Find` raced authentik's own default blueprints and landed **null**, silently. Everything the
+  paragraph says about the flow's **shape** — user_login at order 0, no `user_write` — still holds,
+  and is now enforced rather than inherited.)_ The source's `authentication_flow` is upstream's
   `default-source-authentication`, **unchanged**. It is not extended with §8.10's login-time email
   stage, and the reason is structural rather than an omission: its `user_login` stage sits at
   **order 0**, and `unique_together (target, stage, order)` means a blueprint cannot move an
@@ -1141,8 +1145,13 @@ true` — so the invariant survives without extending this flow.)_ That flow als
 - **Sign-out is unaffected (verified, not assumed).** Logout is a front-channel `end_session` GET
   with `id_token_hint` (§8.5), and federation changes neither the token nor the session model —
   the Authentik SSO session a federated login creates is the same session object a password login
-  creates (`default-source-authentication`'s `user_login` stage is the _same stage object_ the
-  default flow uses). The local PowerSync invalidation is client-side and untouched. The §7
+  creates — a `UserLoginStage` with the default `session_duration` either way. _(The parenthetical
+  this line originally carried — "the _same stage object_ the default flow uses" — was **wrong even
+  in #363**: upstream's `default-source-authentication` binds its own
+  `default-source-authentication-login` stage, not the default flow's `default-authentication-login`.
+  Since §8.16 the stage is `beekeepingit-source-authentication-login`, ours, with the same defaults.
+  The session claim is unaffected — it never depended on the stage row's identity.)_ The local
+  PowerSync invalidation is client-side and untouched. The §7
   "Logout" row is unchanged. **Not** verified end-to-end through a real Google round-trip — see
   the honesty note below.
 - **Testing (NFR-TST-1) — three layers, because no single one can cover this.** A live e2e through
@@ -1181,6 +1190,8 @@ true` — so the invariant survives without extending this flow.)_ That flow als
   looks — `get_action()` never touches the `User` row, so it proves the flow-manager path is
   non-mutating, not that a full federated login leaves `upn` alone; the guarantee there rests on
   `default-source-authentication` having no `user_write` stage, which the probe does not enforce.
+  _(**Closed by §8.16**: the flow is now the blueprint's own, and both the offline guard and the
+  probe assert that its only stage is a `user_login`.)_
 
 ## 8.14 As built (#364) — subject-keyed account linking, with a known-email history
 
@@ -1241,8 +1252,8 @@ issuance. Everything is config-as-code in the blueprint
   `beekeepingit-mark-email-verified` policy — the same expression, gated on the same restored
   flow-token evidence, that stamps `attributes.email_verified`. So an entry exists **only** for an
   address whose inbox control was actually proven. Nothing an upstream asserts can add one; the
-  federated path never writes to the user at all (`default-source-authentication` still has no
-  `user_write` stage, §8.13). The two dev/CI seed users that are seeded verified without running the
+  federated path never writes to the user at all (the source-authentication flow still has no
+  `user_write` stage — §8.13, and §8.16 for where that flow now comes from). The two dev/CI seed users that are seeded verified without running the
   stage have their history seeded too — the same documented escape hatch, one level down.
 - **What the history actually buys, precisely.** The **subject** covers "my Google address changed
   after I linked" (the connection carries it; the email is never consulted). The **history** covers
@@ -1487,6 +1498,57 @@ cannot express").
   environment, [#510](https://github.com/TiagoJVO/beekeepingit/issues/510)) now covers a real
   registration: a Google account matching no local account reaches onboarding with a **new**
   account, rather than #363's refusal.
+
+## 8.16 As built (#594) — the source-authentication flow is ours, not a lookup
+
+§8.13 wired both federation sources' `authentication_flow` with
+`!Find [authentik_flows.flow, [slug, default-source-authentication]]` — a lookup of a flow
+**authentik's own bundled blueprints** create. That was a cross-file dependency with no ordering
+guarantee and a silent failure mode, and it red-lit `helm-e2e` on unrelated PRs. This replaces the
+lookup with a flow the blueprint **owns** (NFR-TST-1, NFR-SEC-1). No Go service, no client, no
+token and no requirement changed — only
+[`charts/authentik/files/beekeepingit.blueprint.yaml`](../../infra/helm/beekeepingit/charts/authentik/files/beekeepingit.blueprint.yaml)
+and its two guards.
+
+- **The defect, precisely — and why nothing reported it.** authentik's defaults are ordinary
+  blueprint **files** (`/blueprints/default/flow-default-source-authentication.yaml`), discovered by
+  the same `blueprints_discovery` pass as our ConfigMap-mounted one, and each is applied by a
+  **separate async actor** (`apply_blueprint.send_with_options`, `blueprints/v1/tasks.py`). Nothing
+  orders theirs before ours: on a freshly-bootstrapped cluster the default files' `last_applied`
+  timestamps are interleaved across ~2 minutes. When ours won that race,
+  `Find.resolve` (`blueprints/v1/common.py`) returned **`None` with no exception and no log line**,
+  the entry still validated because `authentication_flow` is an **optional** FK, and the source was
+  created with no authentication flow. It stayed that way for the cluster's life — authentik skips
+  a re-apply while the file hash is unchanged. The only symptom appeared two steps later:
+  `handle_auth` → `_prepare_flow` 400s with "Configured flow does not exist.".
+- **The fix is ownership, not ordering.** The blueprint now defines
+  `beekeepingit-source-authentication` itself — a faithful copy of upstream's flow: designation
+  `authentication`, `require_unauthenticated`, an `ak_is_sso_flow` policy binding, and exactly one
+  `user_login` stage (`beekeepingit-source-authentication-login`) at order 0. Both sources reference
+  it with `!KeyOf`. The **login stage is owned too**, for the same reason the flow is: an `!Find` at
+  upstream's stage would have put the same race straight back into the fix.
+- **`!KeyOf` is the loud spelling, and that is the point.** `KeyOf.resolve` **raises**
+  `EntryInvalidError` when the referenced entry is missing or failed to apply, where `Find.resolve`
+  returns `None`. `apply_blueprint` catches that, marks the `BlueprintInstance` **ERROR** and — since
+  `last_applied_hash` is only stored on success — retries on the next discovery pass. A genuinely
+  missing flow is therefore a reported failure that heals, never a silently half-wired source.
+- **A security property became enforceable.** §8.13 rested "Google can never overwrite the local
+  `email`, `attributes.upn` or `attributes.email_verified`" on the flow having no `user_write`
+  stage, and admitted nothing checked it. Owning the flow makes it checkable, and both layers now
+  do: [`scripts/check-federation-source-posture.sh`](../../scripts/check-federation-source-posture.sh)
+  asserts offline that every source sets `authentication_flow: !KeyOf flow-source-authentication`,
+  that the flow, its login stage and its SSO policy each exist exactly once, that its SSO gate is
+  bound, and that **every** stage binding on it is the login stage (a `user_write` bound there is an
+  error, not a warning); [`infra/ci/authentik-federation-probe.py`](../../infra/ci/authentik-federation-probe.py)
+  asserts the same two properties **live**, on the deployed flow, replacing the old
+  "`authentication_flow` is set" check that could not tell which flow it was.
+- **How it was proven, not assumed.** Against the local k3d cluster, with authentik's
+  `default-source-authentication` renamed away — i.e. the race, deterministically forced — the
+  pre-fix blueprint applied `valid`, `applied`, and left `authentication_flow` **null**; the fixed
+  blueprint applied under the identical condition and produced
+  `authentication_flow = beekeepingit-source-authentication`, one `UserLoginStage` at order 0, and
+  the SSO binding. Removing the flow entry from the fixed blueprint raised
+  `EntryInvalidError: KeyOf: failed to find entry with id …` instead of yielding a null.
 
 ## 9. Acceptance-criteria traceability (#109)
 

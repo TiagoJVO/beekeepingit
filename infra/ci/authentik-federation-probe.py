@@ -11,7 +11,10 @@
 # source, which carries the IDENTICAL posture as the Google one:
 # `user_matching_mode: username_link`, the `mapping-federation-account-link`
 # resolver attached, `enrollment_flow: beekeepingit-source-enrollment` (#365),
-# `authentication_flow: default-source-authentication`.
+# `authentication_flow: beekeepingit-source-authentication` (#594 — a flow the
+# blueprint OWNS, rather than an `!Find` at authentik's bundled
+# `default-source-authentication`, which raced authentik's own default
+# blueprints and resolved to null silently).
 #
 # WHAT IT PROVES (#364's acceptance criteria, live, against the real code):
 #   1. SUBJECT WINS. An identity whose `UserSourceConnection` already exists
@@ -113,6 +116,7 @@ def _run():
 
     from authentik.core.models import Group, User, UserSourceConnection
     from authentik.core.sources.flow_manager import Action
+    from authentik.flows.models import FlowStageBinding, Stage
     from authentik.policies.expression.models import ExpressionPolicy
     from authentik.policies.types import PolicyRequest
     from authentik.sources.oauth.models import OAuthSource, UserOAuthSourceConnection
@@ -323,7 +327,42 @@ def _run():
             and enrollment_flow.slug == "beekeepingit-source-enrollment",
             "got {!r}".format(getattr(enrollment_flow, "slug", None)),
         )
-        check("authentication_flow is set", source.authentication_flow_id is not None)
+        # #594: not merely "set". `authentication_flow` used to be an `!Find` at
+        # authentik's bundled `default-source-authentication`, which resolves to
+        # None SILENTLY when our blueprint applies before authentik's own
+        # default ones — nothing orders them, and the optional FK still
+        # validates — so the source shipped with a null flow and every federated
+        # sign-in 400ed with "Configured flow does not exist.". The blueprint now
+        # OWNS the flow and references it by `!KeyOf` (which raises instead of
+        # yielding None), so assert the identity of the flow, not just that a
+        # row is there.
+        authentication_flow = source.authentication_flow
+        check(
+            "authentication_flow is the dedicated source-authentication flow (#594)",
+            authentication_flow is not None
+            and authentication_flow.slug == "beekeepingit-source-authentication",
+            "got {!r}".format(getattr(authentication_flow, "slug", None)),
+        )
+        # ...and that flow signs the returning identity in and does NOTHING
+        # else. auth.md §8.13 rests the "Google can never overwrite the local
+        # `email`/`attributes.upn`/`attributes.email_verified`" guarantee on this
+        # flow having no `user_write` stage, and called out that the probe did
+        # not enforce it. Now it does — live, on the deployed flow.
+        if authentication_flow is not None:
+            bound_stages = sorted(
+                (binding.order, type(stage).__name__, stage.name)
+                for binding, stage in (
+                    (b, Stage.objects.filter(pk=b.stage_id).select_subclasses().first())
+                    for b in FlowStageBinding.objects.filter(target=authentication_flow)
+                )
+            )
+            check(
+                "the source-authentication flow's ONLY stage is a user_login — no "
+                "user_write, so a returning federated login cannot overwrite "
+                "email/upn/email_verified",
+                [name for _order, name, _stage_name in bound_stages] == ["UserLoginStage"],
+                "got {!r}".format(bound_stages),
+            )
         check("source is enabled", source.enabled is True)
 
         # ---------- fixtures ----------

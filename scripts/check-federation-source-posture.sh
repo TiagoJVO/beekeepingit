@@ -29,6 +29,21 @@
 #      dead end), and any `email_*` mode matches the RAW upstream email — which
 #      for Google is unverified, because `GoogleType.get_base_user_properties`
 #      drops `verified_email`. That is the #170 account-takeover shape.
+#   1b. `authentication_flow` is EXACTLY the source-authentication flow this
+#      blueprint OWNS (#594: `!KeyOf flow-source-authentication`), and that flow
+#      carries its login stage, its SSO gate and NOTHING ELSE. Two properties
+#      ride on this. First, DETERMINISM: the previous spelling — an `!Find` at
+#      authentik's bundled `default-source-authentication` — depended on
+#      another blueprint file having applied first, which nothing orders, and
+#      `Find.resolve` returns None SILENTLY for an optional FK. The source then
+#      shipped with a null authentication flow, permanently, and only 400ed
+#      ("Configured flow does not exist.") two steps later. `!KeyOf` resolves
+#      inside the file and RAISES, so a genuinely missing flow is loud. Second,
+#      WRITE SAFETY: that flow must contain a user_login stage and no other —
+#      above all no `user_write`, which is what stops a RETURNING federated
+#      login overwriting the local `email`, `attributes.upn` or
+#      `attributes.email_verified`. An opaque `!Find` could resolve to any flow
+#      at all, including one that writes.
 #   3. The #364 account-resolution property mapping is attached, by `!KeyOf`,
 #      and it is the ONLY property mapping on the source. It is what makes (2)
 #      safe: it refuses unless the upstream's own verification signal is
@@ -77,6 +92,13 @@ blueprint="${1:-${repo_root}/infra/helm/beekeepingit/charts/authentik/files/beek
 link_mapping_id="mapping-federation-account-link"
 # The blueprint id of #365's source-enrollment flow — same double duty.
 enroll_flow_id="flow-source-enrollment"
+# #594's source-AUTHENTICATION flow: the one a RETURNING federated identity is
+# signed in through. Owned by the blueprint (not `!Find`-ed at authentik's
+# bundled `default-source-authentication`) so it cannot race the default
+# blueprints and land null, and so its stage list is ours to pin.
+auth_flow_id="flow-source-authentication"
+auth_flow_login_stage_id="stage-source-authentication-login"
+auth_flow_sso_policy_id="policy-source-authentication-sso-only"
 # ...and its two gates. Asserting the BINDINGS EXIST is not enough: a binding
 # carrying a different (or always-true) policy would read as "gated" while
 # gating nothing, so both the bound policy IDS and the load-bearing terms of
@@ -97,7 +119,9 @@ fi
 # matches. Assertions run per entry in flush().
 awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     -v SSO_POLICY="${sso_policy_id}" -v WRITE_GUARD="${write_guard_policy_id}" \
-    -v WRITE_BINDING="${write_binding_id}" '
+    -v WRITE_BINDING="${write_binding_id}" -v AUTH_FLOW="${auth_flow_id}" \
+    -v AUTH_LOGIN_STAGE="${auth_flow_login_stage_id}" \
+    -v AUTH_SSO_POLICY="${auth_flow_sso_policy_id}" '
   function keyof(field, target,   pattern) {
     pattern = field "[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" target "([^A-Za-z0-9_-]|$)"
     return body ~ pattern
@@ -124,6 +148,19 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
         status = 1
       }
 
+      # (1b) authentication_flow must be EXACTLY `!KeyOf
+      # flow-source-authentication` (#594) — the flow this file owns, never an
+      # `!Find` at an upstream slug. `!Find` resolves to None SILENTLY when the
+      # blueprint that owns that slug has not applied yet (nothing orders the
+      # two), and `authentication_flow` is an OPTIONAL FK, so the entry still
+      # validates and the source ships with NO authentication flow — a hard
+      # failure two steps later ("Configured flow does not exist.") that no
+      # BlueprintInstance reports. Same boundary regex reasoning as (1).
+      if (body !~ ("(^|[^A-Za-z0-9_-])authentication_flow[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" AUTH_FLOW "([^A-Za-z0-9_-]|$)")) {
+        printf("✗ [federation-source] %s must set `authentication_flow: !KeyOf %s` — an `!Find` at authentik`s bundled `default-source-authentication` races its own default blueprints and resolves to NULL silently (#594), and an opaque flow reference could point at a flow that WRITES to the user\n", id, AUTH_FLOW) > "/dev/stderr"
+        status = 1
+      }
+
       # (2) matching must resolve through the UNIQUE username key, never the
       # raw upstream email (see the header). Anything but `username_link` fails.
       if (body !~ /user_matching_mode[[:space:]]*:[[:space:]]*username_link([^A-Za-z0-9_-]|$)/) {
@@ -141,8 +178,8 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
         status = 1
       }
       n = gsub(/!KeyOf/, "&", body)
-      if (n != 2) {
-        printf("✗ [federation-source] %s carries %d `!KeyOf` references — a source entry must carry exactly two (the #364 resolver and the #365 enrollment flow). A second property mapping merges AFTER the resolver (name order) and could re-set `username`; if this is a deliberate addition, teach this guard about it in the same change\n", id, n) > "/dev/stderr"
+      if (n != 3) {
+        printf("✗ [federation-source] %s carries %d `!KeyOf` references — a source entry must carry exactly three (the #364 resolver, the #365 enrollment flow and the #594 source-authentication flow). A second property mapping merges AFTER the resolver (name order) and could re-set `username`; if this is a deliberate addition, teach this guard about it in the same change\n", id, n) > "/dev/stderr"
         status = 1
       }
 
@@ -174,6 +211,49 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     # resolves against ids in THIS file).
     if (model ~ /^authentik_flows[.]flow$/ && id == ENROLL_FLOW) {
       enroll_flows++
+    }
+
+    # --- #594: the source-AUTHENTICATION flow, and its complete stage list ---
+    # The flow entry itself must exist exactly once (assertion (1b) references
+    # it by `!KeyOf`, which the importer resolves against ids in THIS file).
+    if (model ~ /^authentik_flows[.]flow$/ && id == AUTH_FLOW) {
+      auth_flows++
+    }
+    # Its login stage, likewise owned here: an `!Find` at authentik`s own
+    # `default-authentication-login` would put the very race (1b) removes right
+    # back into the flow.
+    if (model ~ /^authentik_stages_user_login[.]userloginstage$/ && id == AUTH_LOGIN_STAGE) {
+      auth_login_stages++
+    }
+    # EVERY stage binding on that flow must be the login stage. This is the
+    # write-safety property stated structurally: a `user_write` (or any other)
+    # stage bound here would let a RETURNING federated login overwrite the local
+    # `email`, `attributes.upn` or `attributes.email_verified` — the thing #363,
+    # #364 and #365 each rely on this flow NOT doing.
+    if (model ~ /^authentik_flows[.]flowstagebinding$/ && keyof("target", AUTH_FLOW)) {
+      if (keyof("stage", AUTH_LOGIN_STAGE)) {
+        auth_flow_login_bindings++
+      } else {
+        printf("✗ [federation-source] a flow-stage binding targets `%s` with a stage OTHER than `%s` — that flow must carry the login stage and NOTHING else; any additional stage (a `user_write` above all) would let a returning federated login overwrite the local email/upn/email_verified\n", AUTH_FLOW, AUTH_LOGIN_STAGE) > "/dev/stderr"
+        status = 1
+      }
+    }
+    # ...and it is SSO-gated, exactly like the enrollment flow: same
+    # fail-closed-on-the-opaque posture, an unrecognized policy is an error.
+    if (model ~ /^authentik_policies[.]policybinding$/ && keyof("target", AUTH_FLOW)) {
+      if (keyof("policy", AUTH_SSO_POLICY)) {
+        auth_flow_gates++
+      } else {
+        printf("✗ [federation-source] a policy binding targets `%s` with a policy OTHER than `%s` — that flow`s only gate is the SSO-only policy, and an unrecognized one cannot be reasoned about here\n", AUTH_FLOW, AUTH_SSO_POLICY) > "/dev/stderr"
+        status = 1
+      }
+    }
+    if (model ~ /^authentik_policies_expression[.]expressionpolicy$/ && id == AUTH_SSO_POLICY) {
+      auth_sso_policies++
+      if (body !~ /ak_is_sso_flow/) {
+        printf("✗ [federation-source] `%s` no longer tests `ak_is_sso_flow` — that test IS the gate keeping a browser out of the source-authentication flow (#594)\n", AUTH_SSO_POLICY) > "/dev/stderr"
+        status = 1
+      }
     }
 
     # GATE 1 — the flow itself is SSO-only, so a browser cannot enter it
@@ -300,12 +380,24 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
       printf("✗ [federation-source] no `%s` binding targets `%s` — an unguarded user_write would create an account from whatever the plan happened to carry (#365)\n", WRITE_GUARD, WRITE_BINDING) > "/dev/stderr"
       status = 1
     }
+    if (auth_flows != 1 || auth_login_stages != 1 || auth_sso_policies != 1) {
+      printf("✗ [federation-source] expected exactly ONE `%s` flow entry, ONE `%s` user-login-stage entry and ONE `%s` expression policy, found %d, %d and %d — they are the #594 source-authentication flow every source above references by `!KeyOf`, and owning all three is what keeps it from racing authentik`s bundled default blueprints\n", AUTH_FLOW, AUTH_LOGIN_STAGE, AUTH_SSO_POLICY, auth_flows, auth_login_stages, auth_sso_policies) > "/dev/stderr"
+      status = 1
+    }
+    if (auth_flow_login_bindings != 1) {
+      printf("✗ [federation-source] expected exactly ONE flow-stage binding of `%s` onto `%s`, found %d — without it the flow has no stage to sign the returning identity in with (#594)\n", AUTH_LOGIN_STAGE, AUTH_FLOW, auth_flow_login_bindings) > "/dev/stderr"
+      status = 1
+    }
+    if (auth_flow_gates == 0) {
+      printf("✗ [federation-source] no `%s` binding targets `%s` — the source-authentication flow must be SSO-gated or a browser could enter it directly, outside any federated sign-in (#594)\n", AUTH_SSO_POLICY, AUTH_FLOW) > "/dev/stderr"
+      status = 1
+    }
     if (sso_policies != 1 || write_guards != 1) {
       printf("✗ [federation-source] expected exactly one `%s` and one `%s` expression policy, found %d and %d — they are the enrollment flow`s two gates (#365)\n", SSO_POLICY, WRITE_GUARD, sso_policies, write_guards) > "/dev/stderr"
       status = 1
     }
     if (status == 0) {
-      printf("› [federation-source] ok: %d source(s) [%s ] are resolver-matched (%s), enrollment-open only via %s (SSO-gated + write-guarded), !Env-credentialed and conditions-gated\n", sources, seen_ids, MAPPING, ENROLL_FLOW)
+      printf("› [federation-source] ok: %d source(s) [%s ] are resolver-matched (%s), authenticated via %s (SSO-gated, login-stage-only), enrollment-open only via %s (SSO-gated + write-guarded), !Env-credentialed and conditions-gated\n", sources, seen_ids, MAPPING, AUTH_FLOW, ENROLL_FLOW)
     }
     exit status
   }
