@@ -541,6 +541,124 @@ class AppLocalizationsPt extends AppLocalizations {
       'Esta alteração foi rejeitada e precisa da sua atenção.';
 
   @override
+  String syncNeedsFixFieldProblem(String field, String problem) {
+    return '$field: $problem';
+  }
+
+  @override
+  String get syncNeedsFixRuleRequired => 'isto é obrigatório.';
+
+  @override
+  String get syncNeedsFixRuleInvalid => 'este valor não é válido.';
+
+  @override
+  String get syncNeedsFixRuleOutOfRange =>
+      'este valor está fora do intervalo permitido.';
+
+  @override
+  String get syncNeedsFixRuleTooLong => 'este texto é demasiado longo.';
+
+  @override
+  String get syncNeedsFixRuleNotFound => 'já não existe ou já não tem acesso.';
+
+  @override
+  String get syncNeedsFixRuleAttributeRequired =>
+      'falta preencher um dos campos aqui.';
+
+  @override
+  String get syncNeedsFixRuleAttributeInvalid =>
+      'um dos campos aqui não é válido.';
+
+  @override
+  String get syncNeedsFixRuleAttributeTooLong =>
+      'um dos campos aqui é demasiado longo.';
+
+  @override
+  String get syncNeedsFixRuleAttributeOutOfRange =>
+      'um dos campos aqui está fora do intervalo permitido.';
+
+  @override
+  String get syncNeedsFixRuleNonNegative => 'isto tem de ser 0 ou mais.';
+
+  @override
+  String get syncNeedsFixRuleLatitudeRange =>
+      'isto tem de estar entre -90 e 90.';
+
+  @override
+  String get syncNeedsFixRuleLongitudeRange =>
+      'isto tem de estar entre -180 e 180.';
+
+  @override
+  String get syncNeedsFixFieldName => 'Nome';
+
+  @override
+  String get syncNeedsFixFieldTitle => 'Título';
+
+  @override
+  String get syncNeedsFixFieldDescription => 'Descrição';
+
+  @override
+  String get syncNeedsFixFieldNotes => 'Notas';
+
+  @override
+  String get syncNeedsFixFieldPlace => 'Nome do local';
+
+  @override
+  String get syncNeedsFixFieldLocation => 'Localização';
+
+  @override
+  String get syncNeedsFixFieldLatitude => 'Latitude';
+
+  @override
+  String get syncNeedsFixFieldLongitude => 'Longitude';
+
+  @override
+  String get syncNeedsFixFieldHiveCount => 'Número de colmeias';
+
+  @override
+  String get syncNeedsFixFieldCount => 'Contagem';
+
+  @override
+  String get syncNeedsFixFieldCountType => 'Tipo de contagem';
+
+  @override
+  String get syncNeedsFixFieldApiary => 'Apiário';
+
+  @override
+  String get syncNeedsFixFieldJourney => 'Jornada';
+
+  @override
+  String get syncNeedsFixFieldAssignee => 'Responsável';
+
+  @override
+  String get syncNeedsFixFieldActivityType => 'Tipo de atividade';
+
+  @override
+  String get syncNeedsFixFieldMainActivityType => 'Atividade principal';
+
+  @override
+  String get syncNeedsFixFieldDate => 'Data';
+
+  @override
+  String get syncNeedsFixFieldDueDate => 'Prazo';
+
+  @override
+  String get syncNeedsFixFieldCompletedAt => 'Concluída em';
+
+  @override
+  String get syncNeedsFixFieldPriority => 'Prioridade';
+
+  @override
+  String get syncNeedsFixFieldStatus => 'Estado';
+
+  @override
+  String get syncNeedsFixFieldDetails => 'Detalhes';
+
+  @override
+  String get syncNeedsFixFieldActivityDefaults =>
+      'Predefinições para atividades';
+
+  @override
   String get syncNeedsFixFixAction => 'Corrigir';
 
   @override
