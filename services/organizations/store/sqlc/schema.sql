@@ -11,12 +11,16 @@
 CREATE SCHEMA IF NOT EXISTS organizations;
 
 CREATE TABLE organizations.organizations (
-    id         UUID PRIMARY KEY,
-    name       TEXT NOT NULL,
-    address    TEXT NOT NULL DEFAULT '',
-    created_by UUID,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                       UUID PRIMARY KEY,
+    name                     TEXT NOT NULL,
+    address                  TEXT NOT NULL DEFAULT '',
+    -- FR-AP-9 (#296, migration 00007): the DGAV beekeeper registration number,
+    -- one per beekeeper. This is the organization-wide DEFAULT; apiaries carry
+    -- an optional override (apiaries.apiaries.dgav_registration_number).
+    dgav_registration_number TEXT NOT NULL DEFAULT '',
+    created_by               UUID,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE organizations.memberships (

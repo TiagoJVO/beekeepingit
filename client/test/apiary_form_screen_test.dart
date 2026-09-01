@@ -81,6 +81,11 @@ class _FakeApiariesRepository extends ApiariesRepository {
 
   final List<Apiary> created = [];
   bool updateCalled = false;
+
+  /// The DGAV registration-number override the last update() carried
+  /// (FR-AP-9, #296) — null both when the form cleared it and when no update
+  /// has run, which the assertions disambiguate via [updateCalled].
+  String? updatedDgavRegistrationNumber;
   bool deleteCalled = false;
 
   @override
@@ -95,6 +100,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
     int? hiveCount,
     String? notes,
     String? placeLabel,
+    String? dgavRegistrationNumber,
     double? locationLon,
     double? locationLat,
   }) async {
@@ -108,6 +114,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
         hiveCount: hiveCount ?? 0,
         notes: notes,
         placeLabel: placeLabel,
+        dgavRegistrationNumber: dgavRegistrationNumber,
         locationLon: locationLon,
         locationLat: locationLat,
       ),
@@ -124,11 +131,14 @@ class _FakeApiariesRepository extends ApiariesRepository {
     bool notesProvided = false,
     String? placeLabel,
     bool placeLabelProvided = false,
+    String? dgavRegistrationNumber,
+    bool dgavRegistrationNumberProvided = false,
     double? locationLon,
     double? locationLat,
     bool locationProvided = false,
   }) async {
     updateCalled = true;
+    updatedDgavRegistrationNumber = dgavRegistrationNumber;
     if (throwOnUpdate) throw Exception('boom-update');
   }
 
@@ -253,6 +263,7 @@ Future<void> _setLocationViaCurrentLocation(WidgetTester tester) async {
 }
 
 void main() {
+  _dgavFormTests();
   group('the primary actions stay reachable with the map picker expanded '
       '(FR-UX-1, D-18, #341 regression)', () {
     // The defect this guards: #341 made location mandatory, so every apiary
@@ -1765,5 +1776,166 @@ void main() {
       expect(find.text('Cancelar'), findsOneWidget);
       expect(find.text('Eliminar'), findsOneWidget);
     });
+  });
+}
+
+/// FR-AP-9 (#296): the apiary form carries the per-apiary DGAV
+/// registration-number OVERRIDE. The organization-wide default it overrides is
+/// edited elsewhere (the DGAV section under Account) — this form only ever
+/// deals with the override, which is why the field is last and hinted as
+/// "only if different from the organization's".
+void _dgavFormTests() {
+  group('apiary form DGAV registration number (FR-AP-9, #296)', () {
+    testWidgets('the create form offers an optional DGAV number field', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_buildApp(apiaries: const []));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+
+      final field = find.byKey(const Key('apiary-dgav-number-field'));
+      // No scrollUntilVisible: the form is a SingleChildScrollView, so every
+      // field is built regardless of scroll offset, and enterText/controller
+      // reads do not need the widget on screen. (scrollUntilVisible would also
+      // fail here — the app shell has several Scrollables, so its default
+      // find.byType(Scrollable) matches more than one.)
+      expect(field, findsOneWidget);
+
+      await tester.enterText(field, 'PT-654321');
+      await tester.pump();
+      expect(find.text('PT-654321'), findsOneWidget);
+    });
+
+    testWidgets(
+      'edit mode pre-fills the existing override so a save that does not touch '
+      'it cannot silently clear it',
+      (tester) async {
+        // Tall viewport so Save is on-screen without scrolling, and the
+        // fixture carries a location — edit-mode save enforces the mandatory
+        // location (#341) before it ever reaches update().
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeApiariesRepository(
+          existing: const Apiary(
+            id: 'a1',
+            name: 'Monte Alto',
+            hiveCount: 4,
+            dgavRegistrationNumber: 'PT-654321',
+            locationLon: -8.6109,
+            locationLat: 41.1496,
+          ),
+        );
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(
+                id: 'a1',
+                name: 'Monte Alto',
+                hiveCount: 4,
+                dgavRegistrationNumber: 'PT-654321',
+                locationLon: -8.6109,
+                locationLat: 41.1496,
+              ),
+            ],
+            repositoryOverride: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        final field = find.byKey(const Key('apiary-dgav-number-field'));
+        expect(
+          tester
+              .widget<TextField>(
+                find.descendant(of: field, matching: find.byType(TextField)),
+              )
+              .controller
+              ?.text,
+          'PT-654321',
+        );
+
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.updateCalled, isTrue);
+        expect(repo.updatedDgavRegistrationNumber, 'PT-654321');
+      },
+    );
+
+    testWidgets(
+      'clearing the field clears the override, so the apiary falls back to the '
+      "organization's number",
+      (tester) async {
+        // Tall viewport so Save is on-screen without scrolling, and the
+        // fixture carries a location — edit-mode save enforces the mandatory
+        // location (#341) before it ever reaches update().
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final repo = _FakeApiariesRepository(
+          existing: const Apiary(
+            id: 'a1',
+            name: 'Monte Alto',
+            hiveCount: 4,
+            dgavRegistrationNumber: 'PT-654321',
+            locationLon: -8.6109,
+            locationLat: 41.1496,
+          ),
+        );
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(
+                id: 'a1',
+                name: 'Monte Alto',
+                hiveCount: 4,
+                dgavRegistrationNumber: 'PT-654321',
+                locationLon: -8.6109,
+                locationLat: 41.1496,
+              ),
+            ],
+            repositoryOverride: repo,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-a1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('apiary-detail-edit-button')));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        final field = find.byKey(const Key('apiary-dgav-number-field'));
+        await tester.enterText(field, '');
+        await tester.pump();
+
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.updateCalled, isTrue);
+        expect(repo.updatedDgavRegistrationNumber, isNull);
+      },
+    );
   });
 }

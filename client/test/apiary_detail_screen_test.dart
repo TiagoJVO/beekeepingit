@@ -27,11 +27,19 @@ class _CompleteProfileController extends ProfileController {
 }
 
 class _ExistingOrganizationController extends OrganizationController {
+  /// [dgavRegistrationNumber] is the organization-wide DGAV default
+  /// (FR-AP-9, #296) an apiary inherits when it carries no override of its
+  /// own. Empty by default, so every pre-existing test means "no number".
+  _ExistingOrganizationController({this.dgavRegistrationNumber = ''});
+
+  final String dgavRegistrationNumber;
+
   @override
   Future<Organization?> build() async => Organization(
     id: 'test-org',
     name: 'Test Apiary Co.',
     address: '',
+    dgavRegistrationNumber: dgavRegistrationNumber,
     createdBy: 'test-user',
     role: 'admin',
     createdAt: DateTime.utc(2026, 1, 1),
@@ -111,6 +119,7 @@ Widget _buildApp({
   required List<Apiary> apiaries,
   Map<String, List<ApiaryCounter>> counters = const {},
   ApiariesRepository? apiariesRepository,
+  String orgDgavRegistrationNumber = '',
 }) {
   return ProviderScope(
     overrides: [
@@ -168,13 +177,21 @@ Widget _buildApp({
       // memberNamesProvider, which would otherwise attempt a real fetch —
       // attribution falls back to short ids here, which these tests assert.
       memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
-      organizationProvider.overrideWith(_ExistingOrganizationController.new),
+      // FR-AP-9 (#296): the DGAV row resolves the EFFECTIVE number from the
+      // apiary override AND this organization-wide default, so the default is
+      // parameterized here rather than fixed.
+      organizationProvider.overrideWith(
+        () => _ExistingOrganizationController(
+          dgavRegistrationNumber: orgDgavRegistrationNumber,
+        ),
+      ),
     ],
     child: const BeekeepingitApp(),
   );
 }
 
 void main() {
+  _dgavTests();
   testWidgets('tapping an apiary in the list opens its detail screen (#32)', (
     tester,
   ) async {
@@ -1184,6 +1201,97 @@ void main() {
 
         expect(find.byKey(const Key('shell-back-button')), findsOneWidget);
         expect(find.text('Add activity'), findsWidgets);
+      },
+    );
+  });
+}
+
+/// Opens the detail screen for apiary `a1` — the same three taps every test
+/// above performs (land on Tasks per #427/D-29, switch to the Apiaries tab,
+/// tap the row).
+Future<void> _openApiaryDetail(WidgetTester tester) async {
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('apiary-a1')));
+  await tester.pumpAndSettle();
+}
+
+void _dgavTests() {
+  group('DGAV registration number (FR-AP-9, #296)', () {
+    testWidgets(
+      "shows the organization's number, marked as inherited, when the apiary "
+      'has no override of its own',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+            orgDgavRegistrationNumber: 'PT-123456',
+          ),
+        );
+        await _openApiaryDetail(tester);
+
+        expect(
+          find.byKey(const Key('apiary-detail-dgav-number')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'DGAV registration number: PT-123456 (From the organization)',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      "shows the apiary's own number, unmarked, when it overrides the "
+      "organization's — the multi-beekeeper case the override exists for",
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(
+                id: 'a1',
+                name: 'Serra Norte',
+                hiveCount: 3,
+                dgavRegistrationNumber: 'PT-654321',
+              ),
+            ],
+            orgDgavRegistrationNumber: 'PT-123456',
+          ),
+        );
+        await _openApiaryDetail(tester);
+
+        expect(
+          find.text('DGAV registration number: PT-654321'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('From the organization'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'shows no DGAV row at all when neither the apiary nor the organization '
+      'has a number — the field is advisory, so an empty one is not a gap to '
+      'nag about',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildApp(
+            apiaries: const [
+              Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
+            ],
+          ),
+        );
+        await _openApiaryDetail(tester);
+
+        expect(
+          find.byKey(const Key('apiary-detail-dgav-number')),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
       },
     );
   });

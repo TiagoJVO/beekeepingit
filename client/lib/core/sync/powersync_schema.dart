@@ -16,6 +16,22 @@ const apiaryEntityType = 'apiary';
 const apiaryCountersTable = 'apiary_counters';
 const apiaryCounterEntityType = 'apiary_counter';
 
+/// Local table + entity type for `apiaries.stock_declarations` (#298,
+/// FR-AP-10): the `Declaração de Existências` log — a point-in-time record of
+/// the hive stock a beekeeper declared to DGAV, DISTINCT from the live hive
+/// counter ([apiaryCountersTable], FR-AP-7/D-2/D-20). Scoped to a DGAV
+/// registration number (FR-AP-9), not to an apiary: the real declaration covers
+/// a beekeeper's whole holding.
+///
+/// Unlike apiary_counters, a declaration's local row `id` IS its stable server
+/// identity (it is an event record with its own lifecycle, like
+/// [activitiesTable]), so it needs no identity enrichment before upload and a
+/// local delete tombstones it — issued through `lww_delete.dart`'s
+/// `deleteWithLwwStamp` like every other synced delete (#276), which is why
+/// this table sets `trackMetadata` below.
+const stockDeclarationsTable = 'stock_declarations';
+const stockDeclarationEntityType = 'stock_declaration';
+
 /// Local table + entity type for `activities.activities` (#38/#39, FR-AC-1,
 /// FR-TEN-2). #39 wires the local WRITE path (features/activities/
 /// activities_repository.dart's create, queued through the connector like
@@ -154,6 +170,15 @@ const dedupKeyColumn = 'dedup_key';
 /// apiary's own `name` — nullable like `notes`, same plain-text column
 /// shape (no projection needed, unlike location).
 ///
+/// `dgav_registration_number` (FR-AP-9, #296) is the per-apiary OVERRIDE of
+/// the organization's DGAV beekeeper registration-number default. DGAV issues
+/// one number per BEEKEEPER, so the default lives on the organization (read
+/// over REST and cached locally by
+/// features/organization/organization_repository.dart, NOT streamed into this
+/// schema) and this column exists only for an organization covering several
+/// beekeepers. Null means "inherit the organization's value"; an apiary's
+/// EFFECTIVE number is this when set, otherwise the organization's.
+///
 /// `hive_count` is NOT a column on [apiariesTable] anymore (#256): it was
 /// retired server-side (apiaries migration 00005) in favor of the
 /// [apiaryCountersTable] 1-N child table below, and this local schema
@@ -177,8 +202,11 @@ const dedupKeyColumn = 'dedup_key';
 /// back off `CrudEntry.metadata` (`lwwTimestampFor`) — even after a restart.
 ///
 /// It is enabled on exactly the tables this client issues DELETEs against —
-/// [apiariesTable], [activitiesTable], [journeysTable],
-/// [journeyPlanItemsTable] and [todosTable]. Deliberately **not** on:
+/// [apiariesTable], [stockDeclarationsTable], [activitiesTable],
+/// [journeysTable], [journeyPlanItemsTable] and [todosTable]. **A new syncable
+/// table with a delete path must be added here and delete through
+/// `deleteWithLwwStamp`**, or its deletes silently go back to an upload-time
+/// comparator. Deliberately **not** on:
 /// - [apiaryCountersTable] — a counter has no lifecycle apart from its apiary
 ///   and is never deleted locally (the owning service rejects a counter delete
 ///   op; apiaries_repository.dart's `delete` doc), so a hidden column and an
@@ -192,6 +220,7 @@ const appSchema = Schema([
     Column.text('name'),
     Column.text('notes'),
     Column.text('place_label'),
+    Column.text('dgav_registration_number'),
     Column.text('created_at'),
     Column.text('updated_at'),
     Column.real('location_lon'),
@@ -213,6 +242,25 @@ const appSchema = Schema([
     Column.text('created_at'),
     Column.text('updated_at'),
   ]),
+  // stock_declarations (#298, FR-AP-10): the DGAV declaration log. `breakdown`
+  // is the per-apiary snapshot taken at record time, stored locally as
+  // JSON-encoded TEXT (PowerSync's local schema has no JSON column type) and
+  // decoded back to a JSON array on upload via the connector's
+  // jsonColumnsByTable seam — the same treatment activities `attributes` gets.
+  // `declared_on` is a plain ISO-8601 DATE string (YYYY-MM-DD), matching the
+  // server's DATE column: a declaration is filed ON a day, and a
+  // timezone-bearing instant would make "is this inside the September window"
+  // depend on the reader's zone.
+  Table(stockDeclarationsTable, [
+    Column.text('organization_id'),
+    Column.text('dgav_registration_number'),
+    Column.text('declared_on'),
+    Column.integer('total_hive_count'),
+    Column.text('breakdown'),
+    Column.text('notes'),
+    Column.text('created_at'),
+    Column.text('updated_at'),
+  ], trackMetadata: true),
   // activities (#38, FR-AC-1, FR-TEN-2): one row per activity, matching the
   // owning service's shape (services/activities/store/migrations/00001_
   // create_activities.sql). `type` is the extensible activity-type string

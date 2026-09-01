@@ -410,6 +410,7 @@ String lwwTimestampFor(
 @visibleForTesting
 String entityTypeForTable(String table) => switch (table) {
   apiaryCountersTable => apiaryCounterEntityType,
+  stockDeclarationsTable => stockDeclarationEntityType,
   activitiesTable => activityEntityType,
   journeysTable => journeyEntityType,
   journeyPlanItemsTable => journeyPlanItemEntityType,
@@ -430,6 +431,11 @@ String entityTypeForTable(String table) => switch (table) {
 ///   (services/journeys/api/types.go, which `json.Unmarshal`s into a
 ///   `map[string]any` and rejects a JSON string with "default_attributes must
 ///   be a JSON object").
+/// - [stockDeclarationsTable] `breakdown` — #298 (FR-AP-10): the per-apiary
+///   snapshot taken when a declaration is recorded. A JSON ARRAY rather than an
+///   object, which this seam handles unchanged (`jsonDecode` returns either),
+///   and which the owning service accepts as `json.RawMessage` after validating
+///   it is a bounded array of objects (services/apiaries/api/declarations.go).
 ///
 /// Listing every JSON column in one place is the single seam the connector
 /// decodes through, so a newly-added JSON column can't silently regress the
@@ -437,6 +443,7 @@ String entityTypeForTable(String table) => switch (table) {
 const jsonColumnsByTable = <String, List<String>>{
   activitiesTable: ['attributes'],
   journeysTable: ['default_attributes'],
+  stockDeclarationsTable: ['breakdown'],
 };
 
 /// Normalizes a syncable op's JSON columns back to nested JSON objects before

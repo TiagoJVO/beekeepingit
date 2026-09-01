@@ -75,6 +75,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
   final _nameController = TextEditingController();
   final _notesController = TextEditingController();
   final _placeLabelController = TextEditingController();
+  final _dgavNumberController = TextEditingController();
 
   /// Drives programmatic camera moves on the embedded [_LocationPicker]
   /// (#420) — its recenter control and "use current location" both call
@@ -117,6 +118,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     _nameController.dispose();
     _notesController.dispose();
     _placeLabelController.dispose();
+    _dgavNumberController.dispose();
     _pickerMapController.dispose();
     super.dispose();
   }
@@ -148,6 +150,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
         _nameController.text = existing.name;
         _notesController.text = existing.notes ?? '';
         _placeLabelController.text = existing.placeLabel ?? '';
+        _dgavNumberController.text = existing.dgavRegistrationNumber ?? '';
         if (existing.hasLocation) {
           _location = ll.LatLng(existing.locationLat!, existing.locationLon!);
           // Show the existing pin without an extra tap when editing a
@@ -287,6 +290,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
       final name = _nameController.text.trim();
       final notes = _notesController.text.trim();
       final placeLabel = _placeLabelController.text.trim();
+      final dgavNumber = _dgavNumberController.text.trim();
       // The form no longer sets any counter (#346, D-20): hive count and
       // every other counter type are managed on the detail screen, so create
       // omits hiveCount ("no counter set at creation") and edit never touches
@@ -299,6 +303,8 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
           notesProvided: true,
           placeLabel: placeLabel.isEmpty ? null : placeLabel,
           placeLabelProvided: true,
+          dgavRegistrationNumber: dgavNumber.isEmpty ? null : dgavNumber,
+          dgavRegistrationNumberProvided: true,
           locationLon: _location?.longitude,
           locationLat: _location?.latitude,
           locationProvided: true,
@@ -313,6 +319,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
           name: name,
           notes: notes.isEmpty ? null : notes,
           placeLabel: placeLabel.isEmpty ? null : placeLabel,
+          dgavRegistrationNumber: dgavNumber.isEmpty ? null : dgavNumber,
           locationLon: _location?.longitude,
           locationLat: _location?.latitude,
         );
@@ -563,6 +570,25 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   labelText: l10n.apiaryNotesLabel,
                                   hintText: l10n.apiaryNotesHint,
                                   alignLabelWithHint: true,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              // DGAV registration number (FR-AP-9, #296).
+                              // Last in the form and hinted as an override:
+                              // the number belongs to the BEEKEEPER, is
+                              // normally set once on the organization (the
+                              // DGAV section under Account), and only needs
+                              // filling in here when one organization covers
+                              // several beekeepers. Leaving it empty is the
+                              // ordinary case, not an omission.
+                              TextFormField(
+                                key: const Key('apiary-dgav-number-field'),
+                                controller: _dgavNumberController,
+                                textInputAction: TextInputAction.done,
+                                maxLength: 50,
+                                decoration: InputDecoration(
+                                  labelText: l10n.apiaryDgavNumberLabel,
+                                  hintText: l10n.apiaryDgavNumberHint,
                                 ),
                               ),
                             ],
