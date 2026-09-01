@@ -62,8 +62,8 @@ POST   /internal/sync/apply            → applyBatch         api/sync.go
 REST writes serve online-only/direct callers (Admin App, scripts); the PWA uses sync.
 
 `stock_declarations` (FR-AP-10, #298) has NO REST surface — sync only, like
-`apiary_counters`. The DGAV section is its only client (the app never files
-anything with DGAV itself).
+`apiary_counters`. The client's stock-declarations screen is its only consumer
+(the app never files anything with any authority).
 
 ### activities (main.go; authnMW→orgMW→RequireRole(admin,user))
 

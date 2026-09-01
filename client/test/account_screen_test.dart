@@ -281,20 +281,27 @@ void main() {
   );
 
   testWidgets(
-    'every member sees the DGAV action, admin or not (#296/#298, FR-AP-9/'
-    'FR-AP-10)',
+    'every member sees BOTH the organization-details and stock-declarations '
+    'actions, admin or not (#296/#298, FR-AP-9/FR-AP-10)',
     (tester) async {
       // Deliberately NOT gated behind isOrgAdminProvider, unlike manage-members
-      // above: a non-admin can read the registration number and record
-      // declarations. Only CHANGING the organization-wide number is admin-only,
-      // which the DGAV screen enforces on the field itself (and the server
-      // enforces regardless of either).
+      // above: a non-admin can READ their organization's details and record
+      // declarations. Only EDITING the organization's details is admin-only,
+      // which the organization-details screen enforces on the fields themselves
+      // (and the server enforces regardless of either).
       await tester.pumpWidget(
         _buildScreen(_FakeProfileController(_profile()), orgRole: 'user'),
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('account-dgav-button')), findsOneWidget);
+      expect(
+        find.byKey(const Key('account-organization-details-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('account-stock-declarations-button')),
+        findsOneWidget,
+      );
     },
   );
   testWidgets('shows a sign-out action (#197)', (tester) async {

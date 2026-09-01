@@ -19,7 +19,7 @@ class Organization {
     // Defaulted rather than required (FR-AP-9, #296): empty IS the unset value
     // server-side (a NOT NULL DEFAULT '' column), so every existing construction
     // site means exactly "no number" without restating it.
-    this.dgavRegistrationNumber = '',
+    this.registrationNumber = '',
     required this.createdBy,
     required this.role,
     required this.createdAt,
@@ -30,7 +30,7 @@ class Organization {
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
     address: json['address'] as String? ?? '',
-    dgavRegistrationNumber: json['dgav_registration_number'] as String? ?? '',
+    registrationNumber: json['registration_number'] as String? ?? '',
     createdBy: json['created_by'] as String? ?? '',
     role: json['role'] as String? ?? 'user',
     createdAt: DateTime.parse(json['created_at'] as String),
@@ -41,19 +41,20 @@ class Organization {
   final String name;
   final String address;
 
-  /// The organization-wide DEFAULT DGAV beekeeper registration number
-  /// (FR-AP-9, #296) — empty when unset. DGAV issues one number per
+  /// The organization-wide DEFAULT beekeeper registration number
+  /// (FR-AP-9, #296) — empty when unset. The authority issues one number per
   /// BEEKEEPER, so this is where it belongs; an apiary may override it
-  /// (`Apiary.dgavRegistrationNumber`) when one organization covers several
+  /// (`Apiary.registrationNumber`) when one organization covers several
   /// beekeepers. Resolve what an apiary actually displays through
-  /// `features/dgav/dgav_registration.dart`, never from either half alone.
+  /// `features/organization/registration_number.dart`, never from either half
+  /// alone.
   ///
   /// Read offline: [OrganizationRepository.fetchMine] caches the whole
-  /// organization JSON in local prefs, so the DGAV section still resolves
-  /// numbers with no connectivity. WRITING it needs connectivity (it is a
-  /// REST PATCH, not a synced entity) — acceptable for a reference number
-  /// entered once, and the reason FR-AP-9 says "read offline, edited online".
-  final String dgavRegistrationNumber;
+  /// organization JSON in local prefs, so every screen still resolves numbers
+  /// with no connectivity. WRITING it needs connectivity (it is a REST PATCH,
+  /// not a synced entity) — acceptable for a reference number entered once,
+  /// and the reason FR-AP-9 says "read offline, edited online".
+  final String registrationNumber;
   final String createdBy;
 
   /// The caller's own membership role in this org (admin/user) — not a
@@ -74,7 +75,7 @@ class Organization {
           id == other.id &&
           name == other.name &&
           address == other.address &&
-          dgavRegistrationNumber == other.dgavRegistrationNumber &&
+          registrationNumber == other.registrationNumber &&
           createdBy == other.createdBy &&
           role == other.role &&
           createdAt == other.createdAt &&
@@ -85,7 +86,7 @@ class Organization {
     id,
     name,
     address,
-    dgavRegistrationNumber,
+    registrationNumber,
     createdBy,
     role,
     createdAt,
@@ -140,23 +141,56 @@ class OrganizationRepository {
     return Organization.fromJson(json);
   }
 
-  /// Updates the organization-wide DGAV registration-number default
-  /// (FR-AP-9, #296) via `PATCH /v1/organizations/{id}`, and refreshes the
-  /// offline cache with the server's response so the DGAV section resolves
-  /// numbers correctly the next time the device is offline.
+  /// Updates the organization's editable details — name, address and the
+  /// registration-number default (FR-ONB-2/FR-AP-9, #296) — via
+  /// `PATCH /v1/organizations/{id}`, and refreshes the offline cache with the
+  /// server's response so every screen resolves them correctly the next time
+  /// the device is offline.
+  ///
+  /// One call rather than three: the organization-details screen edits the
+  /// three fields together behind a single save, and the contract's
+  /// `OrganizationUpdate` accepts them together.
+  ///
+  /// **Sends only what actually changed**, diffed against [current] — the
+  /// organization the calling screen was seeded from. A PATCH that always
+  /// carried all three keys would make a save a lost-update machine: this is
+  /// a REST edit with no `If-Match` (see FOLLOWUPS.md), so a field the user
+  /// never touched would silently overwrite whatever a concurrent admin had
+  /// changed meanwhile, AND the server's audit row (`FR-HIS-1`, "who changed
+  /// what") would name this caller as having changed a field they never
+  /// looked at. Omitting unchanged keys makes both impossible by
+  /// construction. Returns `null` when nothing changed — no request is sent
+  /// at all, since `OrganizationUpdate` has `minProperties: 1` and an empty
+  /// body would 422.
   ///
   /// Admin-only server-side (the same guard every other org edit carries);
   /// a non-admin caller gets a 403 [ApiException] the calling screen
-  /// surfaces. An empty [number] clears it — the contract's explicit-null
-  /// clear — so a mistyped number can be removed, not only overwritten.
-  Future<Organization> updateDgavRegistrationNumber(
-    String organizationId,
-    String number,
-  ) async {
-    final trimmed = number.trim();
-    final json = await _api.patchJson('/organizations/$organizationId', {
-      'dgav_registration_number': trimmed.isEmpty ? null : trimmed,
-    });
+  /// surfaces. A field the user BLANKED is sent as an explicit `null` — the
+  /// contract's clear — so a mistyped value can be removed, not only
+  /// overwritten; a field the user never touched is absent entirely. Those
+  /// two are different requests and must stay so.
+  Future<Organization?> updateDetails(
+    Organization current, {
+    required String name,
+    required String address,
+    required String registrationNumber,
+  }) async {
+    final body = <String, dynamic>{};
+    final trimmedName = name.trim();
+    if (trimmedName != current.name) body['name'] = trimmedName;
+    final trimmedAddress = address.trim();
+    if (trimmedAddress != current.address) {
+      body['address'] = trimmedAddress.isEmpty ? null : trimmedAddress;
+    }
+    final trimmedNumber = registrationNumber.trim();
+    if (trimmedNumber != current.registrationNumber) {
+      body['registration_number'] = trimmedNumber.isEmpty
+          ? null
+          : trimmedNumber;
+    }
+    if (body.isEmpty) return null;
+
+    final json = await _api.patchJson('/organizations/${current.id}', body);
     _prefs.write(kOrganizationCacheKey, jsonEncode(json));
     return Organization.fromJson(json);
   }
@@ -218,20 +252,35 @@ class OrganizationController extends AsyncNotifier<Organization?> {
     state = AsyncData(created);
   }
 
-  /// Saves the organization-wide DGAV registration-number default (FR-AP-9,
-  /// #296) and refreshes state with the server's response, so every apiary's
-  /// effective number re-resolves immediately.
+  /// Saves the organization's editable details — name, address and the
+  /// registration-number default (FR-ONB-2/FR-AP-9, #296) — and refreshes
+  /// state with the server's response, so every apiary's effective number
+  /// re-resolves immediately.
   ///
-  /// No-ops when there is no organization yet — the DGAV section is only
-  /// reachable once onboarded, so this is a defensive guard rather than a
-  /// reachable path. Rethrows on failure (403 for a non-admin, 422 for an
-  /// over-long value) so the calling screen can surface it.
-  Future<void> saveDgavRegistrationNumber(String number) async {
-    final current = state.value;
-    if (current == null) return;
+  /// [from] is the organization the calling screen's fields were SEEDED from,
+  /// not necessarily the current [state] — that is deliberate. A refresh can
+  /// land while the user is mid-edit (the details screen won't re-seed over
+  /// live typing), and diffing against anything but the seed would turn the
+  /// screen's now-stale untouched fields into overwrites of whatever arrived.
+  /// See [OrganizationRepository.updateDetails].
+  ///
+  /// Leaves state untouched when nothing changed (no request was sent).
+  /// Rethrows on failure (403 for a non-admin, 422 for an over-long value)
+  /// so the calling screen can surface it.
+  Future<void> saveDetails({
+    required Organization from,
+    required String name,
+    required String address,
+    required String registrationNumber,
+  }) async {
     final repo = ref.read(organizationRepositoryProvider);
-    final updated = await repo.updateDgavRegistrationNumber(current.id, number);
-    state = AsyncData(updated);
+    final updated = await repo.updateDetails(
+      from,
+      name: name,
+      address: address,
+      registrationNumber: registrationNumber,
+    );
+    if (updated != null) state = AsyncData(updated);
   }
 }
 

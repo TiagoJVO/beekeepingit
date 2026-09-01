@@ -1,24 +1,27 @@
 import 'package:beekeepingit_client/core/l10n/locale_formatting.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
-import 'package:beekeepingit_client/features/dgav/dgav_screen.dart';
-import 'package:beekeepingit_client/features/dgav/stock_declarations_repository.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
+import 'package:beekeepingit_client/features/stock_declarations/stock_declarations_repository.dart';
+import 'package:beekeepingit_client/features/stock_declarations/stock_declarations_screen.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// FR-AP-9 + FR-AP-10 (#296/#298): the DGAV screen.
+/// FR-AP-10 (#298): the stock-declaration log screen.
 ///
 /// The screen is mounted directly rather than through the app shell — it is a
 /// leaf screen reached from Account, with no routing behaviour of its own worth
 /// re-testing here, and mounting it directly keeps these tests hermetic (no
 /// PowerSync, no router, no auth chain).
 class _FakeOrganizationController extends OrganizationController {
-  _FakeOrganizationController({this.dgavNumber = '', this.role = 'admin'});
+  _FakeOrganizationController({
+    this.registrationNumber = '',
+    this.role = 'admin',
+  });
 
-  final String dgavNumber;
+  final String registrationNumber;
   final String role;
 
   @override
@@ -26,7 +29,7 @@ class _FakeOrganizationController extends OrganizationController {
     id: 'org-1',
     name: 'Apiários do Montargil',
     address: '',
-    dgavRegistrationNumber: dgavNumber,
+    registrationNumber: registrationNumber,
     createdBy: 'user-1',
     role: role,
     createdAt: DateTime.utc(2026, 1, 1),
@@ -35,7 +38,7 @@ class _FakeOrganizationController extends OrganizationController {
 }
 
 Widget _buildScreen({
-  String orgDgavNumber = '',
+  String orgRegistrationNumber = '',
   String role = 'admin',
   List<Apiary> apiaries = const [],
   List<StockDeclaration> declarations = const [],
@@ -43,8 +46,10 @@ Widget _buildScreen({
   return ProviderScope(
     overrides: [
       organizationProvider.overrideWith(
-        () =>
-            _FakeOrganizationController(dgavNumber: orgDgavNumber, role: role),
+        () => _FakeOrganizationController(
+          registrationNumber: orgRegistrationNumber,
+          role: role,
+        ),
       ),
       apiariesStreamProvider.overrideWith((ref) => Stream.value(apiaries)),
       stockDeclarationsStreamProvider.overrideWith(
@@ -59,13 +64,14 @@ Widget _buildScreen({
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: AppLocalizations.supportedLocales,
-      home: DgavScreen(),
+      home: StockDeclarationsScreen(),
     ),
   );
 }
 
 void main() {
   _recordFlowTests();
+
   testWidgets(
     "states up front that nothing is filed on the beekeeper's behalf — "
     'everything here is advisory (D-19 §7)',
@@ -81,36 +87,16 @@ void main() {
   );
 
   testWidgets(
-    'shows the organization registration number, editable by an admin',
+    'holds the declaration log ONLY — the organization registration number is '
+    'edited on its own screen, not here',
     (tester) async {
-      await tester.pumpWidget(_buildScreen(orgDgavNumber: 'PT-123456'));
+      await tester.pumpWidget(_buildScreen(orgRegistrationNumber: 'PT-123456'));
       await tester.pumpAndSettle();
 
-      final field = find.byKey(const Key('dgav-org-number-field'));
-      expect(field, findsOneWidget);
-      expect(tester.widget<TextField>(field).controller?.text, 'PT-123456');
-      expect(tester.widget<TextField>(field).enabled, isTrue);
-      expect(find.byKey(const Key('dgav-org-number-save')), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.byType(TextFormField), findsNothing);
     },
   );
-
-  testWidgets('a non-admin sees the number but cannot edit it (NFR-ROL-1)', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _buildScreen(orgDgavNumber: 'PT-123456', role: 'user'),
-    );
-    await tester.pumpAndSettle();
-
-    final field = find.byKey(const Key('dgav-org-number-field'));
-    expect(tester.widget<TextField>(field).controller?.text, 'PT-123456');
-    expect(tester.widget<TextField>(field).enabled, isFalse);
-    expect(find.byKey(const Key('dgav-org-number-save')), findsNothing);
-    expect(
-      find.text('Only an organization admin can change this.'),
-      findsOneWidget,
-    );
-  });
 
   testWidgets(
     'groups declarations per registration number, so an organization covering '
@@ -118,22 +104,28 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         _buildScreen(
-          orgDgavNumber: 'PT-111',
+          orgRegistrationNumber: 'PT-111',
           apiaries: const [
             Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 10),
             Apiary(
               id: 'a2',
               name: 'Monte Alto',
               hiveCount: 20,
-              dgavRegistrationNumber: 'PT-222',
+              registrationNumber: 'PT-222',
             ),
           ],
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('dgav-group-PT-111')), findsOneWidget);
-      expect(find.byKey(const Key('dgav-group-PT-222')), findsOneWidget);
+      expect(
+        find.byKey(const Key('stock-declarations-group-PT-111')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('stock-declarations-group-PT-222')),
+        findsOneWidget,
+      );
     },
   );
 
@@ -144,7 +136,7 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         _buildScreen(
-          orgDgavNumber: 'PT-111',
+          orgRegistrationNumber: 'PT-111',
           apiaries: const [
             Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 10),
             Apiary(id: 'a2', name: 'Monte Alto', hiveCount: 7),
@@ -158,74 +150,16 @@ void main() {
   );
 
   testWidgets(
-    'flags the interim trigger when the hive count has moved by more than 20% '
-    'AND at least 20 colonies since the last declaration',
-    (tester) async {
-      await tester.pumpWidget(
-        _buildScreen(
-          orgDgavNumber: 'PT-111',
-          apiaries: const [
-            Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 130),
-          ],
-          declarations: [
-            StockDeclaration(
-              id: 'd1',
-              dgavRegistrationNumber: 'PT-111',
-              declaredOn: DateTime(2026, 3, 1),
-              totalHiveCount: 100,
-            ),
-          ],
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('dgav-status-PT-111')), findsOneWidget);
-      expect(
-        find.textContaining('an interim declaration may be due'),
-        findsOneWidget,
-      );
-    },
-  );
-
-  testWidgets(
-    'does NOT flag the interim trigger for a small holding whose percentage '
-    'moved a lot but whose colony count barely did — the case the AND rule '
-    'exists for',
-    (tester) async {
-      await tester.pumpWidget(
-        _buildScreen(
-          orgDgavNumber: 'PT-111',
-          apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 4)],
-          declarations: [
-            StockDeclaration(
-              id: 'd1',
-              dgavRegistrationNumber: 'PT-111',
-              declaredOn: DateTime(2026, 3, 1),
-              totalHiveCount: 3,
-            ),
-          ],
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.textContaining('an interim declaration may be due'),
-        findsNothing,
-      );
-    },
-  );
-
-  testWidgets(
     'lists a recorded declaration with its date, declared total and apiary '
     'count',
     (tester) async {
       await tester.pumpWidget(
         _buildScreen(
-          orgDgavNumber: 'PT-111',
+          orgRegistrationNumber: 'PT-111',
           declarations: [
             StockDeclaration(
               id: 'd1',
-              dgavRegistrationNumber: 'PT-111',
+              registrationNumber: 'PT-111',
               declaredOn: DateTime(2026, 9, 12),
               totalHiveCount: 30,
               breakdown: const [
@@ -246,7 +180,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('dgav-declaration-d1')), findsOneWidget);
+      expect(find.byKey(const Key('stock-declaration-d1')), findsOneWidget);
       // Localized via LocaleFormatting (DateFormat.yMMMd), not the raw stored
       // YYYY-MM-DD — the regression this assertion exists to catch.
       expect(find.text('Sep 12, 2026 — 30 hives'), findsOneWidget);
@@ -254,18 +188,60 @@ void main() {
     },
   );
 
+  testWidgets('offers a per-row delete so a mis-entered declaration can be '
+      'removed', (tester) async {
+    await tester.pumpWidget(
+      _buildScreen(
+        orgRegistrationNumber: 'PT-111',
+        declarations: [
+          StockDeclaration(
+            id: 'd1',
+            registrationNumber: 'PT-111',
+            declaredOn: DateTime(2026, 9, 12),
+            totalHiveCount: 30,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('stock-declaration-delete-d1')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('shows the empty state when nothing has been declared yet', (
     tester,
   ) async {
     await tester.pumpWidget(
       _buildScreen(
-        orgDgavNumber: 'PT-111',
+        orgRegistrationNumber: 'PT-111',
         apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('No declarations recorded yet.'), findsOneWidget);
+  });
+
+  testWidgets('a non-admin can record declarations — only EDITING the '
+      "organization's number is admin-only, and that lives elsewhere", (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildScreen(
+        orgRegistrationNumber: 'PT-111',
+        role: 'user',
+        apiaries: const [Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3)],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('stock-declarations-record-PT-111')),
+      findsOneWidget,
+    );
   });
 }
 
@@ -278,7 +254,7 @@ void _recordFlowTests() {
         'unconfirmed tap', (tester) async {
       await tester.pumpWidget(
         _buildScreen(
-          orgDgavNumber: 'PT-111',
+          orgRegistrationNumber: 'PT-111',
           apiaries: const [
             Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
           ],
@@ -286,16 +262,18 @@ void _recordFlowTests() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('dgav-record-PT-111')));
+      await tester.tap(
+        find.byKey(const Key('stock-declarations-record-PT-111')),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('Record declaration'), findsWidgets);
       expect(
-        find.byKey(const Key('dgav-declaration-date-field')),
+        find.byKey(const Key('stock-declaration-date-field')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const Key('dgav-declaration-notes-field')),
+        find.byKey(const Key('stock-declaration-notes-field')),
         findsOneWidget,
       );
       // The declared total is shown, pre-filled from the live counters.
@@ -307,14 +285,16 @@ void _recordFlowTests() {
     ) async {
       await tester.pumpWidget(
         _buildScreen(
-          orgDgavNumber: 'PT-111',
+          orgRegistrationNumber: 'PT-111',
           apiaries: const [
             Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
           ],
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('dgav-record-PT-111')));
+      await tester.tap(
+        find.byKey(const Key('stock-declarations-record-PT-111')),
+      );
       await tester.pumpAndSettle();
 
       final today = DateTime.now();
@@ -325,17 +305,21 @@ void _recordFlowTests() {
     testWidgets('cancelling writes nothing', (tester) async {
       await tester.pumpWidget(
         _buildScreen(
-          orgDgavNumber: 'PT-111',
+          orgRegistrationNumber: 'PT-111',
           apiaries: const [
             Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
           ],
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('dgav-record-PT-111')));
+      await tester.tap(
+        find.byKey(const Key('stock-declarations-record-PT-111')),
+      );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('dgav-record-cancel')));
+      await tester.tap(
+        find.byKey(const Key('stock-declaration-record-cancel')),
+      );
       await tester.pumpAndSettle();
 
       // Still the empty state — the stream override never changes, so the only
@@ -347,7 +331,7 @@ void _recordFlowTests() {
         '(D-18)', (tester) async {
       await tester.pumpWidget(
         _buildScreen(
-          orgDgavNumber: 'PT-111',
+          orgRegistrationNumber: 'PT-111',
           apiaries: const [
             Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 12),
           ],
@@ -357,17 +341,19 @@ void _recordFlowTests() {
 
       // The group's own record action first.
       final record = tester.getSize(
-        find.byKey(const Key('dgav-record-PT-111')),
+        find.byKey(const Key('stock-declarations-record-PT-111')),
       );
       expect(record.height, greaterThanOrEqualTo(44));
 
-      await tester.tap(find.byKey(const Key('dgav-record-PT-111')));
+      await tester.tap(
+        find.byKey(const Key('stock-declarations-record-PT-111')),
+      );
       await tester.pumpAndSettle();
 
       for (final key in const [
-        Key('dgav-record-cancel'),
-        Key('dgav-record-confirm'),
-        Key('dgav-declaration-date-field'),
+        Key('stock-declaration-record-cancel'),
+        Key('stock-declaration-record-confirm'),
+        Key('stock-declaration-date-field'),
       ]) {
         final size = tester.getSize(find.byKey(key));
         expect(
@@ -376,18 +362,6 @@ void _recordFlowTests() {
           reason: '$key must clear the 44px minimum tap target (D-18)',
         );
       }
-    });
-
-    testWidgets('the organization number save action also meets the minimum', (
-      tester,
-    ) async {
-      await tester.pumpWidget(_buildScreen(orgDgavNumber: 'PT-111'));
-      await tester.pumpAndSettle();
-
-      final size = tester.getSize(
-        find.byKey(const Key('dgav-org-number-save')),
-      );
-      expect(size.height, greaterThanOrEqualTo(44));
     });
   });
 }

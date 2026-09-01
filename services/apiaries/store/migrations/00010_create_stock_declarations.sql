@@ -1,7 +1,7 @@
 -- +goose Up
--- FR-AP-10 (#298, triaged from D-19): stock declarations
--- ("Declaração de Existências") — a point-in-time record of the hive stock a
--- beekeeper declared to DGAV.
+-- FR-AP-10 (#298, triaged from D-19): stock declarations — a point-in-time
+-- record of the hive stock a beekeeper declared to their authority (Portugal's
+-- "Declaração de Existências" to DGAV is the motivating example).
 --
 -- DISTINCT FROM THE LIVE HIVE COUNTER, and that distinction is the whole point.
 -- apiary_counters (#256, D-20) holds CURRENT STATE — "how many hives are here
@@ -10,8 +10,8 @@
 -- history the regulation is about.
 --
 -- SCOPED TO A REGISTRATION NUMBER, NOT TO AN APIARY. The real declaration covers
--- a BEEKEEPER's whole holding, so it is keyed by the DGAV registration number
--- (FR-AP-9) rather than by apiary_id — an organization covering several
+-- a BEEKEEPER's whole holding, so it is keyed by the beekeeper registration
+-- number (FR-AP-9) rather than by apiary_id — an organization covering several
 -- beekeepers files one declaration per number. The number is stored as a plain
 -- text VALUE, deliberately not a foreign key: it is the number as it stood when
 -- the declaration was filed, and must not shift retroactively if the
@@ -32,7 +32,7 @@
 CREATE TABLE apiaries.stock_declarations (
     id uuid NOT NULL,
     organization_id uuid NOT NULL,
-    dgav_registration_number text NOT NULL DEFAULT '',
+    registration_number text NOT NULL DEFAULT '',
     declared_on date NOT NULL,
     total_hive_count integer NOT NULL,
     breakdown jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -43,17 +43,16 @@ CREATE TABLE apiaries.stock_declarations (
     deleted_at timestamp with time zone,
     CONSTRAINT stock_declarations_pkey PRIMARY KEY (id),
     CONSTRAINT stock_declarations_total_hive_count_check CHECK ((total_hive_count >= 0)),
-    CONSTRAINT stock_declarations_dgav_number_check CHECK ((char_length(dgav_registration_number) <= 50)),
+    CONSTRAINT stock_declarations_registration_number_check CHECK ((char_length(registration_number) <= 50)),
     CONSTRAINT stock_declarations_notes_check CHECK (((notes IS NULL) OR (char_length(notes) <= 2000))),
     CONSTRAINT stock_declarations_breakdown_is_array CHECK ((jsonb_typeof(breakdown) = 'array'))
 );
 
 -- The one read the app actually performs: a registration number's declarations,
--- newest first, tombstones excluded (the DGAV section's per-number log, and the
--- "last declaration" the interim-trigger check compares against).
+-- newest first, tombstones excluded — the declarations section's per-number log.
 CREATE INDEX idx_stock_declarations_org_number_date
     ON apiaries.stock_declarations
-    USING btree (organization_id, dgav_registration_number, declared_on DESC)
+    USING btree (organization_id, registration_number, declared_on DESC)
     WHERE (deleted_at IS NULL);
 
 -- +goose Down

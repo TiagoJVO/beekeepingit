@@ -239,11 +239,11 @@ void _navigateToFix(BuildContext context, RejectedOp op) {
         context.goNamed('journeyDetail', pathParameters: {'id': journeyId});
       }
     case stockDeclarationEntityType:
-      // A declaration has no per-record edit screen: the DGAV section IS
-      // its editor, so "Fix" lands there and the beekeeper re-records or
-      // deletes it. fixApiaryId is meaningless for this entity type (a
+      // A declaration has no per-record edit screen: the stock-declaration
+      // log IS its editor, so "Fix" lands there and the beekeeper re-records
+      // or deletes it. fixApiaryId is meaningless for this entity type (a
       // declaration is scoped to a registration number, not to an apiary).
-      context.go('/dgav');
+      context.go('/stock-declarations');
     case todoEntityType:
       // fixApiaryId doubles as the todo's own id for this entity type too.
       context.goNamed('todoEdit', pathParameters: {'id': op.fixApiaryId});

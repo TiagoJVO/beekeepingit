@@ -13,10 +13,14 @@ import 'package:http/testing.dart';
 // Built via a runtime function (not a `const` literal, and Organization has
 // no const constructor anyway since DateTime isn't a const-constructible
 // type) so two "equal" instances are genuinely distinct objects.
-Organization _org({String name = 'Serra Apiaries'}) => Organization(
+Organization _org({
+  String name = 'Serra Apiaries',
+  String registrationNumber = '',
+}) => Organization(
   id: 'org-1',
   name: name,
   address: '123 Serra Rd',
+  registrationNumber: registrationNumber,
   createdBy: 'user-1',
   role: 'admin',
   createdAt: DateTime.utc(2026, 1, 1),
@@ -161,6 +165,110 @@ void main() {
       final repo = _buildRepo(client: client, prefs: prefs);
 
       await expectLater(repo.fetchMine(), throwsA(isA<ApiException>()));
+    });
+  });
+
+  // The PATCH body is the whole contract of this method, so these assert the
+  // EMITTED REQUEST, not just the returned value. Two properties matter and
+  // are easy to conflate:
+  //   * a field the user BLANKED must be an explicit `null` (that is how the
+  //     server clears it),
+  //   * a field the user never TOUCHED must be ABSENT (a stale value sent
+  //     back would silently overwrite a concurrent admin's edit — there is no
+  //     If-Match on this call — and would name this caller in the audit row
+  //     for a field they never looked at, breaking FR-HIS-1's "who changed
+  //     what").
+  group('OrganizationRepository.updateDetails() — PATCH body', () {
+    late List<Map<String, dynamic>> bodies;
+
+    /// A repository whose PATCH responses echo a fixed organization, and
+    /// which records every request body it was given.
+    OrganizationRepository buildRecordingRepo() {
+      bodies = [];
+      final client = MockClient((req) async {
+        bodies.add(jsonDecode(req.body) as Map<String, dynamic>);
+        return http.Response(
+          jsonEncode(_orgJson()),
+          200,
+          headers: {'content-type': 'application/json'},
+          request: req,
+        );
+      });
+      return _buildRepo(client: client);
+    }
+
+    test('sends all three keys when all three changed', () async {
+      final repo = buildRecordingRepo();
+
+      await repo.updateDetails(
+        _org(),
+        name: 'Apiários do Norte',
+        address: 'Bragança',
+        registrationNumber: 'PT-654321',
+      );
+
+      expect(bodies, hasLength(1));
+      expect(bodies.single, {
+        'name': 'Apiários do Norte',
+        'address': 'Bragança',
+        'registration_number': 'PT-654321',
+      });
+    });
+
+    test('sends an explicit null for a field the user blanked, and a trimmed '
+        'string for one they typed', () async {
+      final repo = buildRecordingRepo();
+
+      await repo.updateDetails(
+        _org(registrationNumber: 'PT-123456'),
+        name: '  Apiários do Norte  ',
+        address: '   ',
+        registrationNumber: '',
+      );
+
+      expect(bodies.single, {
+        'name': 'Apiários do Norte',
+        'address': null,
+        'registration_number': null,
+      });
+      expect(
+        bodies.single.containsKey('address'),
+        isTrue,
+        reason: 'a cleared field is an explicit null, never an omission',
+      );
+    });
+
+    test('omits the keys the user never touched — an untouched field cannot '
+        'overwrite a concurrent edit', () async {
+      final repo = buildRecordingRepo();
+      final current = _org();
+
+      await repo.updateDetails(
+        current,
+        name: current.name,
+        address: current.address,
+        registrationNumber: 'PT-654321',
+      );
+
+      expect(bodies.single, {'registration_number': 'PT-654321'});
+      expect(bodies.single.containsKey('name'), isFalse);
+      expect(bodies.single.containsKey('address'), isFalse);
+    });
+
+    test('sends no request at all when nothing changed — an empty body would '
+        '422 against OrganizationUpdate.minProperties', () async {
+      final repo = buildRecordingRepo();
+      final current = _org();
+
+      final result = await repo.updateDetails(
+        current,
+        name: '  ${current.name}  ',
+        address: current.address,
+        registrationNumber: current.registrationNumber,
+      );
+
+      expect(bodies, isEmpty);
+      expect(result, isNull);
     });
   });
 

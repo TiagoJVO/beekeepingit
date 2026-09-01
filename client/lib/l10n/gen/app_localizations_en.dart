@@ -858,63 +858,60 @@ class AppLocalizationsEn extends AppLocalizations {
   String get apiaryPlaceLabelHint => 'e.g. Montargil';
 
   @override
-  String get apiaryDgavNumberLabel => 'DGAV registration number';
+  String get apiaryRegistrationNumberLabel => 'Registration number';
 
   @override
-  String get apiaryDgavNumberHint =>
+  String get apiaryRegistrationNumberHint =>
       'Only if different from the organization\'s';
 
   @override
-  String get apiaryDgavNumberInherited => 'From the organization';
+  String get apiaryRegistrationNumberInherited => 'From the organization';
 
   @override
-  String get dgavSectionTitle => 'DGAV';
+  String get organizationDetailsTitle => 'Organization details';
 
   @override
-  String get dgavSectionSubtitle =>
-      'Registration number and stock declarations';
+  String get organizationRegistrationNumberLabel => 'Registration number';
 
   @override
-  String get dgavIntro =>
-      'Optional record-keeping to help with DGAV obligations. The app never files anything for you.';
+  String get organizationRegistrationNumberHint =>
+      'The beekeeper number shown at your apiaries';
 
   @override
-  String get dgavOrgNumberLabel => 'Organization registration number';
+  String get organizationDetailsSaved => 'Organization details saved';
 
   @override
-  String get dgavOrgNumberHint => 'The beekeeper number shown at your apiaries';
+  String get organizationDetailsSaveFailed =>
+      'Could not save the organization details';
 
   @override
-  String get dgavOrgNumberSaved => 'Registration number saved';
+  String get organizationDetailsAdminOnly =>
+      'Only an organization admin can change these.';
 
   @override
-  String get dgavOrgNumberSaveFailed =>
-      'Could not save the registration number';
+  String get stockDeclarationsTitle => 'Stock declarations';
 
   @override
-  String get dgavOrgNumberAdminOnly =>
-      'Only an organization admin can change this.';
+  String get stockDeclarationsIntro =>
+      'Optional record-keeping to help with your stock-declaration obligations. The app never files anything for you.';
 
   @override
-  String get dgavDeclarationsTitle => 'Stock declarations';
+  String get stockDeclarationsEmpty => 'No declarations recorded yet.';
 
   @override
-  String get dgavDeclarationsEmpty => 'No declarations recorded yet.';
+  String get stockDeclarationsNoRegistrationNumber => 'No registration number';
 
   @override
-  String get dgavNoRegistrationNumber => 'No registration number';
+  String get stockDeclarationRecordAction => 'Record declaration';
 
   @override
-  String get dgavRecordDeclarationAction => 'Record declaration';
+  String get stockDeclarationSaved => 'Declaration recorded';
 
   @override
-  String get dgavDeclarationSaved => 'Declaration recorded';
+  String get stockDeclarationDeleteAction => 'Delete declaration';
 
   @override
-  String get dgavDeclarationDeleteAction => 'Delete declaration';
-
-  @override
-  String dgavDeclarationSummary(String date, int count) {
+  String stockDeclarationSummary(String date, int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
@@ -925,7 +922,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String dgavDeclarationApiaryCount(int count) {
+  String stockDeclarationApiaryCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
@@ -937,43 +934,31 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get dgavWindowOpen =>
-      'The annual declaration window is open until 30 September.';
-
-  @override
-  String get dgavWindowOpenDeclared =>
-      'Declared this year. The window is open until 30 September.';
-
-  @override
-  String dgavInterimTriggerMet(int change, int last, int current) {
-    return 'Hive count changed by $change since the last declaration ($last to $current) — an interim declaration may be due.';
-  }
-
-  @override
-  String dgavCurrentHiveCount(int count) {
+  String stockDeclarationsCurrentHiveCount(int count) {
     return 'Current hive count: $count';
   }
 
   @override
-  String get dgavRecordDialogTitle => 'Record declaration';
+  String get stockDeclarationRecordDialogTitle => 'Record declaration';
 
   @override
-  String get dgavDeclarationDateLabel => 'Declaration date';
+  String get stockDeclarationDateLabel => 'Declaration date';
 
   @override
-  String get dgavDeclarationNotesLabel => 'Note (optional)';
+  String get stockDeclarationNotesLabel => 'Note (optional)';
 
   @override
-  String get dgavDeclarationNotesHint => 'e.g. filed via the IFAP portal';
+  String get stockDeclarationNotesHint =>
+      'e.g. filed on the authority\'s portal';
 
   @override
-  String get dgavRecordDialogCancelAction => 'Cancel';
+  String get stockDeclarationRecordDialogCancelAction => 'Cancel';
 
   @override
-  String get dgavRecordDialogConfirmAction => 'Record';
+  String get stockDeclarationRecordDialogConfirmAction => 'Record';
 
   @override
-  String dgavDeclarationHiveTotal(int count) {
+  String stockDeclarationHiveTotal(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,

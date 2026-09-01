@@ -65,7 +65,7 @@ String historyActorText(
 ///
 /// The vocabulary is the union of what the owning services actually write
 /// into `changed_fields` (their `fields()` maps): apiaries writes
-/// name/hive_count/location/notes/place_label/dgav_registration_number;
+/// name/hive_count/location/notes/place_label/registration_number;
 /// activities writes
 /// apiary_id/type/occurred_at/attributes.
 String historyFieldLabel(AppLocalizations l10n, String column) =>
@@ -73,7 +73,7 @@ String historyFieldLabel(AppLocalizations l10n, String column) =>
       'name' => l10n.apiaryNameLabel,
       'notes' => l10n.apiaryNotesLabel,
       'place_label' => l10n.apiaryPlaceLabelLabel,
-      'dgav_registration_number' => l10n.apiaryDgavNumberLabel,
+      'registration_number' => l10n.apiaryRegistrationNumberLabel,
       'hive_count' => l10n.hiveCountLabel,
       'location' => l10n.historyFieldLocation,
       'occurred_at' => l10n.activityOccurredAtLabel,
