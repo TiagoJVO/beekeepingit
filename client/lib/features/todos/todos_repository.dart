@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/sync/local_store.dart';
+import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
@@ -217,13 +218,13 @@ class TodosRepository {
     );
   }
 
-  /// Deletes the todo row (FR-TD-1). A plain local DELETE — PowerSync's CRUD
+  /// Deletes the todo row (FR-TD-1). A local delete — PowerSync's CRUD
   /// queue observes it as a `delete` op regardless (mirrors
   /// [ActivitiesRepository.delete]'s own doc comment), routed to the todos
   /// service's sync-apply endpoint, where it is applied as a server-side
-  /// tombstone.
-  Future<void> delete(String id) =>
-      _store.execute('DELETE FROM $todosTable WHERE id = ?', [id]);
+  /// tombstone. Issued through [deleteWithLwwStamp] (#276) so the op's LWW
+  /// comparator is the delete moment, not the upload moment.
+  Future<void> delete(String id) => deleteWithLwwStamp(_store, todosTable, id);
 
   /// Every todo across the caller's org (#53, FR-TD-1), newest-created-first
   /// — the main Todos tab's data source. Tenancy (FR-TEN-2) is primarily

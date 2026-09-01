@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/sync/local_store.dart';
+import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
@@ -209,7 +210,7 @@ class ActivitiesRepository {
     );
   }
 
-  /// Deletes the activity row (#41, FR-AC-4). A plain local DELETE —
+  /// Deletes the activity row (#41, FR-AC-4). A local delete —
   /// PowerSync's CRUD queue observes it as a `delete` op regardless (the
   /// same mechanism [ApiariesRepository.delete]'s own doc comment
   /// describes), which the connector (powersync_connector.dart's
@@ -218,9 +219,10 @@ class ActivitiesRepository {
   /// (services/activities/api/sync.go's applyActivityOp) — the row is
   /// removed from THIS device immediately and propagates to every other
   /// device on their next sync via the PowerSync Sync Rules'
-  /// `deleted_at IS NULL` filter.
+  /// `deleted_at IS NULL` filter. Issued through [deleteWithLwwStamp] (#276)
+  /// so the op's LWW comparator is the delete moment, not the upload moment.
   Future<void> delete(String id) =>
-      _store.execute('DELETE FROM $activitiesTable WHERE id = ?', [id]);
+      deleteWithLwwStamp(_store, activitiesTable, id);
 
   /// One apiary's activities (#42, FR-AC-5), newest-first. No org filter is
   /// needed here — unlike [watchAll] below, an apiary belonging to another

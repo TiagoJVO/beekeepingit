@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/sync/local_store.dart';
+import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
@@ -142,15 +143,20 @@ class StockDeclarationsRepository {
     return id;
   }
 
-  /// Deletes a declaration — a plain local DELETE, which PowerSync queues as a
+  /// Deletes a declaration — a local delete, which PowerSync queues as a
   /// `delete` op the owning service turns into a tombstone.
   ///
   /// Unlike an apiary counter (which the server refuses to delete, having no
   /// lifecycle of its own), a declaration IS an independent record: a
   /// mis-entered one must be removable, and the tombstone must reach the
   /// beekeeper's other devices.
+  ///
+  /// Issued through [deleteWithLwwStamp] (#276) like every other synced delete,
+  /// so the op's LWW comparator is the moment the user deleted — captured here
+  /// and persisted with the queued op — rather than whenever it happens to
+  /// upload, which drifts later on every retry and every app restart.
   Future<void> delete(String id) =>
-      _store.execute('DELETE FROM $stockDeclarationsTable WHERE id = ?', [id]);
+      deleteWithLwwStamp(_store, stockDeclarationsTable, id);
 
   StockDeclaration _fromRow(Map<String, Object?> r) => StockDeclaration(
     id: r['id'] as String,
