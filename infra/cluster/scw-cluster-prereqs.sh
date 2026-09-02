@@ -17,10 +17,12 @@
 # PATH.
 
 install_cluster_prereqs() {
+  # OCI registry, not the classic `https://cloudnative-pg.github.io/charts` Helm
+  # repo — that URL 301s to a domain whose DNS delegation is currently dead, so
+  # `helm repo add` fails outright. See the longer note in up.sh; keep both call
+  # sites on the same source.
   echo "installing/upgrading the CloudNativePG operator"
-  helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null
-  helm repo update cnpg >/dev/null
-  helm upgrade --install cnpg-operator cnpg/cloudnative-pg \
+  helm upgrade --install cnpg-operator oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg \
     --namespace cnpg-system --create-namespace --wait
 
   echo "installing/upgrading Traefik (ingress controller — k3d bundles this, Kapsule doesn't)"
