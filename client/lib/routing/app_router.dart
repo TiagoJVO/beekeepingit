@@ -13,18 +13,19 @@ import '../features/apiaries/apiary_activities_screen.dart';
 import '../features/apiaries/apiary_detail_screen.dart';
 import '../features/apiaries/apiary_form_screen.dart';
 import '../features/auth/login_screen.dart';
-import '../features/dgav/dgav_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/journeys/journey_detail_screen.dart';
 import '../features/journeys/journey_form_screen.dart';
 import '../features/journeys/journey_stats_detail_screen.dart';
 import '../features/journeys/journeys_list_screen.dart';
 import '../features/members/members_screen.dart';
+import '../features/organization/organization_details_screen.dart';
 import '../features/organization/organization_repository.dart';
 import '../features/organization/organization_screen.dart';
 import '../features/organization/organization_waiting_screen.dart';
 import '../features/profile/profile_repository.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/stock_declarations/stock_declarations_screen.dart';
 import '../features/sync/sync_needs_fix_screen.dart';
 import '../features/todos/todo_detail_screen.dart';
 import '../features/todos/todo_form_screen.dart';
@@ -151,15 +152,26 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'account',
         builder: (context, state) => const AccountScreen(),
       ),
-      // The DGAV section (#296/#298, FR-AP-9/FR-AP-10): the beekeeper
-      // registration number and the stock-declaration log. A normal
-      // authenticated route reached only from the account screen — nothing
-      // else in the app links here, deliberately (everything DGAV is
-      // advisory, so it never interrupts the field flows).
+      // The organization's own details (#296, FR-ONB-2/FR-AP-9): name,
+      // address and the beekeeper registration-number default. A normal
+      // authenticated route reached from the account screen — deliberately
+      // NOT part of `_orgOnboardingLocations` above: that set gates a user
+      // who has no organization yet, and this screen edits one that already
+      // exists.
       GoRoute(
-        path: '/dgav',
-        name: 'dgav',
-        builder: (context, state) => const DgavScreen(),
+        path: '/organization/details',
+        name: 'organizationDetails',
+        builder: (context, state) => const OrganizationDetailsScreen(),
+      ),
+      // The stock-declaration log (#298, FR-AP-10). A normal authenticated
+      // route reached from the account screen and from the needs-fix list's
+      // "Fix" action — nothing else in the app links here, deliberately
+      // (declarations are advisory record-keeping, so they never interrupt
+      // the field flows).
+      GoRoute(
+        path: '/stock-declarations',
+        name: 'stockDeclarations',
+        builder: (context, state) => const StockDeclarationsScreen(),
       ),
       // The needs-fix list (EPIC-06 #7, D-12 notify-and-fix): offline writes
       // the server permanently rejected, retained in the local dead-letter so

@@ -157,15 +157,22 @@ SyncOutcome? _runCheck(
 ) {
   final value = data[field.name];
 
-  // jsonObject/maxBytes read the raw presence rather than the "absent" notion:
+  // jsonObject/maxBytes read the RAW presence rather than the "absent" notion:
   // the server unmarshals these into a json.RawMessage, where an explicit
-  // `null` is present-but-not-an-object (rejected), not absent.
-  if (check.kind == SyncCheckKind.jsonObject) {
+  // `null` is four present bytes, not a nil field. So a missing key skips them,
+  // and a present `null` does NOT — unless the field is marked
+  // [SyncFieldAbsence.jsonNull], the one absence rule whose server guard also
+  // skips that literal (journeys' `default_attributes`: the wire form of a
+  // cleared bag, which is what PowerSync uploads for a column set to SQL NULL).
+  if (check.kind == SyncCheckKind.jsonObject ||
+      check.kind == SyncCheckKind.maxBytes) {
     if (!data.containsKey(field.name)) return null;
-    return value is Map ? null : check.outcome;
-  }
-  if (check.kind == SyncCheckKind.maxBytes) {
-    if (!data.containsKey(field.name)) return null;
+    if (value == null && field.absence == SyncFieldAbsence.jsonNull) {
+      return null;
+    }
+    if (check.kind == SyncCheckKind.jsonObject) {
+      return value is Map ? null : check.outcome;
+    }
     final bytes = utf8.encode(jsonEncode(value)).length;
     return bytes > check.limit! ? check.outcome : null;
   }
@@ -221,7 +228,9 @@ bool _isAbsent(SyncFieldAbsence absence, Map<String, dynamic> data, String f) {
   final value = data[f];
   if (value == null) return true;
   return switch (absence) {
-    SyncFieldAbsence.nullOnly => false,
+    // jsonNull differs from nullOnly only for the raw-presence checks handled
+    // in [_runCheck]; a non-null value is present under both.
+    SyncFieldAbsence.nullOnly || SyncFieldAbsence.jsonNull => false,
     SyncFieldAbsence.empty => value is String && value.isEmpty,
     SyncFieldAbsence.blank => value is String && value.trim().isEmpty,
   };

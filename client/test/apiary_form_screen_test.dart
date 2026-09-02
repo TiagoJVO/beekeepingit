@@ -82,10 +82,10 @@ class _FakeApiariesRepository extends ApiariesRepository {
   final List<Apiary> created = [];
   bool updateCalled = false;
 
-  /// The DGAV registration-number override the last update() carried
+  /// The registration-number override the last update() carried
   /// (FR-AP-9, #296) — null both when the form cleared it and when no update
   /// has run, which the assertions disambiguate via [updateCalled].
-  String? updatedDgavRegistrationNumber;
+  String? updatedRegistrationNumber;
   bool deleteCalled = false;
 
   @override
@@ -100,7 +100,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
     int? hiveCount,
     String? notes,
     String? placeLabel,
-    String? dgavRegistrationNumber,
+    String? registrationNumber,
     double? locationLon,
     double? locationLat,
   }) async {
@@ -114,7 +114,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
         hiveCount: hiveCount ?? 0,
         notes: notes,
         placeLabel: placeLabel,
-        dgavRegistrationNumber: dgavRegistrationNumber,
+        registrationNumber: registrationNumber,
         locationLon: locationLon,
         locationLat: locationLat,
       ),
@@ -131,14 +131,14 @@ class _FakeApiariesRepository extends ApiariesRepository {
     bool notesProvided = false,
     String? placeLabel,
     bool placeLabelProvided = false,
-    String? dgavRegistrationNumber,
-    bool dgavRegistrationNumberProvided = false,
+    String? registrationNumber,
+    bool registrationNumberProvided = false,
     double? locationLon,
     double? locationLat,
     bool locationProvided = false,
   }) async {
     updateCalled = true;
-    updatedDgavRegistrationNumber = dgavRegistrationNumber;
+    updatedRegistrationNumber = registrationNumber;
     if (throwOnUpdate) throw Exception('boom-update');
   }
 
@@ -263,7 +263,7 @@ Future<void> _setLocationViaCurrentLocation(WidgetTester tester) async {
 }
 
 void main() {
-  _dgavFormTests();
+  _registrationNumberFormTests();
   group('the primary actions stay reachable with the map picker expanded '
       '(FR-UX-1, D-18, #341 regression)', () {
     // The defect this guards: #341 made location mandatory, so every apiary
@@ -1779,14 +1779,14 @@ void main() {
   });
 }
 
-/// FR-AP-9 (#296): the apiary form carries the per-apiary DGAV
+/// FR-AP-9 (#296): the apiary form carries the per-apiary
 /// registration-number OVERRIDE. The organization-wide default it overrides is
-/// edited elsewhere (the DGAV section under Account) — this form only ever
+/// edited elsewhere (the organization-details screen under Account) — this
 /// deals with the override, which is why the field is last and hinted as
 /// "only if different from the organization's".
-void _dgavFormTests() {
-  group('apiary form DGAV registration number (FR-AP-9, #296)', () {
-    testWidgets('the create form offers an optional DGAV number field', (
+void _registrationNumberFormTests() {
+  group('apiary form registration number (FR-AP-9, #296)', () {
+    testWidgets('the create form offers an optional registration number field', (
       tester,
     ) async {
       await tester.pumpWidget(_buildApp(apiaries: const []));
@@ -1798,7 +1798,7 @@ void _dgavFormTests() {
       await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
-      final field = find.byKey(const Key('apiary-dgav-number-field'));
+      final field = find.byKey(const Key('apiary-registration-number-field'));
       // No scrollUntilVisible: the form is a SingleChildScrollView, so every
       // field is built regardless of scroll offset, and enterText/controller
       // reads do not need the widget on screen. (scrollUntilVisible would also
@@ -1828,7 +1828,7 @@ void _dgavFormTests() {
             id: 'a1',
             name: 'Monte Alto',
             hiveCount: 4,
-            dgavRegistrationNumber: 'PT-654321',
+            registrationNumber: 'PT-654321',
             locationLon: -8.6109,
             locationLat: 41.1496,
           ),
@@ -1840,7 +1840,7 @@ void _dgavFormTests() {
                 id: 'a1',
                 name: 'Monte Alto',
                 hiveCount: 4,
-                dgavRegistrationNumber: 'PT-654321',
+                registrationNumber: 'PT-654321',
                 locationLon: -8.6109,
                 locationLat: 41.1496,
               ),
@@ -1859,7 +1859,7 @@ void _dgavFormTests() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        final field = find.byKey(const Key('apiary-dgav-number-field'));
+        final field = find.byKey(const Key('apiary-registration-number-field'));
         expect(
           tester
               .widget<TextField>(
@@ -1874,7 +1874,7 @@ void _dgavFormTests() {
         await tester.pumpAndSettle();
 
         expect(repo.updateCalled, isTrue);
-        expect(repo.updatedDgavRegistrationNumber, 'PT-654321');
+        expect(repo.updatedRegistrationNumber, 'PT-654321');
       },
     );
 
@@ -1895,7 +1895,7 @@ void _dgavFormTests() {
             id: 'a1',
             name: 'Monte Alto',
             hiveCount: 4,
-            dgavRegistrationNumber: 'PT-654321',
+            registrationNumber: 'PT-654321',
             locationLon: -8.6109,
             locationLat: 41.1496,
           ),
@@ -1907,7 +1907,7 @@ void _dgavFormTests() {
                 id: 'a1',
                 name: 'Monte Alto',
                 hiveCount: 4,
-                dgavRegistrationNumber: 'PT-654321',
+                registrationNumber: 'PT-654321',
                 locationLon: -8.6109,
                 locationLat: 41.1496,
               ),
@@ -1926,7 +1926,7 @@ void _dgavFormTests() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        final field = find.byKey(const Key('apiary-dgav-number-field'));
+        final field = find.byKey(const Key('apiary-registration-number-field'));
         await tester.enterText(field, '');
         await tester.pump();
 
@@ -1934,7 +1934,216 @@ void _dgavFormTests() {
         await tester.pumpAndSettle();
 
         expect(repo.updateCalled, isTrue);
-        expect(repo.updatedDgavRegistrationNumber, isNull);
+        expect(repo.updatedRegistrationNumber, isNull);
+      },
+    );
+  });
+
+  /// Save-time validation parity (#597, FR-OF-2, D-12, sync.md §9): the same
+  /// evaluator and the same shared description the pre-push check runs, moved
+  /// to the moment the beekeeper presses Save — so a rule the server would
+  /// break on is reported **in this form, with the apiary still open**,
+  /// instead of as a needs-fix card after the next push.
+  group('save-time validation parity (#597)', () {
+    /// A name that fits the field but not the server: 150 'ç' are 150
+    /// characters and 300 UTF-8 bytes, over `apiary.name`'s 200-**byte** cap.
+    /// Nothing in the form could catch this before — `maxLength` counts
+    /// characters, and the server counts Go's `len()` on a UTF-8 string.
+    final overlongName = 'ç' * 150;
+
+    Future<void> openNewApiaryForm(
+      WidgetTester tester,
+      _FakeApiariesRepository repo,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _buildApp(
+          apiaries: const [],
+          repositoryOverride: repo,
+          locationService: const _FakeDeviceLocationService(
+            DeviceLocationAvailable(lon: -8.6109, lat: 41.1496),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-tab-apiaries')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('actions-speed-dial-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'a name the server would reject is caught in the form, not at the next '
+      'push — the apiary is never created',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await openNewApiaryForm(tester, repo);
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          overlongName,
+        );
+        await _setLocationViaCurrentLocation(tester);
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pumpAndSettle();
+
+        // Never written: the beekeeper still has the record in front of them.
+        expect(repo.created, isEmpty);
+        // …and is told which field is wrong, in app-owned localized copy —
+        // #443's mapping reused, never the description's English `message`
+        // and never the `name` column.
+        expect(find.text('Name: this text is too long.'), findsOneWidget);
+      },
+    );
+
+    testWidgets('the failure is announced, not signalled by colour alone', (
+      tester,
+    ) async {
+      final repo = _FakeApiariesRepository();
+      await openNewApiaryForm(tester, repo);
+      await tester.enterText(
+        find.byKey(const Key('apiary-name-field')),
+        overlongName,
+      );
+      await _setLocationViaCurrentLocation(tester);
+      await tester.tap(find.byKey(const Key('apiary-save-button')));
+      await tester.pumpAndSettle();
+
+      // The message is real text in the semantics tree (WCAG 2.2 AA,
+      // 1.4.1 Use of Colour) — a screen reader reaches it, and it is not the
+      // error tint doing the work.
+      expect(
+        tester
+            .getSemantics(find.text('Name: this text is too long.'))
+            .label
+            .contains('too long'),
+        isTrue,
+      );
+    });
+
+    testWidgets('correcting the field lets the same save through', (
+      tester,
+    ) async {
+      final repo = _FakeApiariesRepository();
+      await openNewApiaryForm(tester, repo);
+      await tester.enterText(
+        find.byKey(const Key('apiary-name-field')),
+        overlongName,
+      );
+      await _setLocationViaCurrentLocation(tester);
+      await tester.tap(find.byKey(const Key('apiary-save-button')));
+      await tester.pumpAndSettle();
+      expect(repo.created, isEmpty);
+
+      await tester.enterText(
+        find.byKey(const Key('apiary-name-field')),
+        'Montargil',
+      );
+      await tester.tap(find.byKey(const Key('apiary-save-button')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(repo.created, hasLength(1));
+      expect(repo.created.single.name, 'Montargil');
+      expect(find.text('Name: this text is too long.'), findsNothing);
+    });
+
+    testWidgets(
+      'a blocked save moves focus to the offending field — Save is pinned '
+      'outside the scroll view, so an error below the fold would be invisible',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await openNewApiaryForm(tester, repo);
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          'Montargil',
+        );
+        // The DGAV number is the LAST field on the form, well below the fold.
+        await tester.enterText(
+          find.byKey(const Key('apiary-registration-number-field')),
+          'ç' * 30,
+        );
+        await _setLocationViaCurrentLocation(tester);
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.created, isEmpty);
+        // Focusing the offending field is what scrolls it into view and moves
+        // a screen reader to the message.
+        final editable = tester.widget<EditableText>(
+          find.descendant(
+            of: find.byKey(const Key('apiary-registration-number-field')),
+            matching: find.byType(EditableText),
+          ),
+        );
+        expect(editable.focusNode.hasFocus, isTrue);
+      },
+    );
+
+    testWidgets(
+      'editing a field clears the previous verdict, so a corrected value is '
+      'not left sitting under a stale message',
+      (tester) async {
+        final repo = _FakeApiariesRepository();
+        await openNewApiaryForm(tester, repo);
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          overlongName,
+        );
+        await _setLocationViaCurrentLocation(tester);
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pumpAndSettle();
+        expect(find.text('Name: this text is too long.'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          'Montargil',
+        );
+        await tester.pump();
+
+        // Gone as soon as it is wrong, not on the next Save — this form does
+        // not autovalidate, so the Form's onChanged has to re-run validate().
+        expect(find.text('Name: this text is too long.'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a label added to the #443 mapping reaches the save-time check for free '
+      '— this PR owns no copy of its own',
+      (tester) async {
+        // #595 added `registration_number` to `sync_rejection_messages.dart`'s
+        // label table for the needs-fix screen. Nothing here was changed to
+        // follow it: the save-time check reads that same table, so the field
+        // gets the specific line rather than the generic fallback purely
+        // because the shared mapping grew.
+        final repo = _FakeApiariesRepository();
+        await openNewApiaryForm(tester, repo);
+        await tester.enterText(
+          find.byKey(const Key('apiary-name-field')),
+          'Montargil',
+        );
+        // `registration_number` is capped at 50 bytes server-side; the
+        // field's own maxLength counts characters, so 30 two-byte characters
+        // pass it and fail the server's cap.
+        await tester.enterText(
+          find.byKey(const Key('apiary-registration-number-field')),
+          'ç' * 30,
+        );
+        await _setLocationViaCurrentLocation(tester);
+        await tester.tap(find.byKey(const Key('apiary-save-button')));
+        await tester.pumpAndSettle();
+
+        expect(repo.created, isEmpty);
+        expect(
+          find.text('Registration number: this text is too long.'),
+          findsOneWidget,
+        );
       },
     );
   });

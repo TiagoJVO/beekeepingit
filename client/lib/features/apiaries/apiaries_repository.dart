@@ -8,6 +8,7 @@ import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import '../../core/sync/sync_op_draft.dart';
 import 'counter_types.dart';
 
 /// A local apiary row (name + hive count + optional free-text notes,
@@ -36,7 +37,7 @@ class Apiary {
     this.locationLon,
     this.locationLat,
     this.placeLabel,
-    this.dgavRegistrationNumber,
+    this.registrationNumber,
     this.notes,
   });
 
@@ -47,12 +48,12 @@ class Apiary {
   final double? locationLat;
   final String? placeLabel;
 
-  /// The per-apiary OVERRIDE of the organization's DGAV beekeeper
+  /// The per-apiary OVERRIDE of the organization's beekeeper
   /// registration-number default (FR-AP-9, #296). Null means "no override",
   /// i.e. this apiary belongs to the beekeeper whose number the organization
   /// carries -- the normal case. Resolve the number actually displayed with
-  /// [effectiveDgavRegistrationNumber], never by reading this field alone.
-  final String? dgavRegistrationNumber;
+  /// [effectiveRegistrationNumber], never by reading this field alone.
+  final String? registrationNumber;
   final String? notes;
 
   bool get hasLocation => locationLon != null && locationLat != null;
@@ -108,7 +109,7 @@ class ApiariesRepository {
   Stream<List<Apiary>> watchAll() {
     return _store
         .watch(
-          'SELECT a.id, a.name, a.notes, a.place_label, a.dgav_registration_number, a.location_lon, a.location_lat, '
+          'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
           'FROM $apiariesTable a ORDER BY a.created_at DESC, a.name',
         )
@@ -117,7 +118,7 @@ class ApiariesRepository {
 
   Future<Apiary?> getById(String id) async {
     final row = await _store.getOptional(
-      'SELECT a.id, a.name, a.notes, a.place_label, a.dgav_registration_number, a.location_lon, a.location_lat, '
+      'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
       'COALESCE($_hiveCountSubquery, 0) AS hive_count '
       'FROM $apiariesTable a WHERE a.id = ?',
       [id],
@@ -137,7 +138,7 @@ class ApiariesRepository {
   Stream<Apiary?> watchById(String id) {
     return _store
         .watch(
-          'SELECT a.id, a.name, a.notes, a.place_label, a.dgav_registration_number, a.location_lon, a.location_lat, '
+          'SELECT a.id, a.name, a.notes, a.place_label, a.registration_number, a.location_lon, a.location_lat, '
           'COALESCE($_hiveCountSubquery, 0) AS hive_count '
           'FROM $apiariesTable a WHERE a.id = ?',
           [id],
@@ -162,6 +163,46 @@ class ApiariesRepository {
         .map(_countersFromRows);
   }
 
+  /// The wire op a [create] (when [id] is null) or an [update] would queue for
+  /// these values — the input to the **save-time** validation-parity check
+  /// (#597, FR-OF-2, D-12, sync.md §9).
+  ///
+  /// Lives here, next to the SQL, on purpose: the column names below are the
+  /// same ones [create]'s INSERT and [update]'s UPDATE write, so a column
+  /// renamed in one has to be renamed in the other, in the same file, in the
+  /// same edit. A form supplies values, never a column-to-value mapping of its
+  /// own; the one place it does name columns is its allow-list of the columns
+  /// it binds, which a test pins to the keys this builds.
+  ///
+  /// `hive_count` is absent because this write path never touches a counter
+  /// row (#346, D-20 — counters go through [setCounter]).
+  static SyncOpDraft draftForSave({
+    String? id,
+    required String name,
+    String? notes,
+    String? placeLabel,
+    String? registrationNumber,
+    double? locationLon,
+    double? locationLat,
+  }) => SyncOpDraft(
+    // An edit rewrites the whole row, so it queues a `patch` carrying every
+    // column below; a create queues a `put`. The distinction matters — the
+    // server's `required` rules apply to `put` only (#378), so validating an
+    // edit as a `put` would reject partial updates the server accepts.
+    op: id == null ? 'put' : 'patch',
+    entityType: apiaryEntityType,
+    id: id ?? draftPlaceholderId,
+    data: {
+      'name': name,
+      'notes': notes,
+      'place_label': placeLabel,
+      'registration_number': registrationNumber,
+      'location_lon': locationLon,
+      'location_lat': locationLat,
+    },
+    updatedAt: draftUpdatedAt(),
+  );
+
   /// Creates an apiary. [locationLon]/[locationLat] (#252) are both-or-
   /// neither — a location-less create passes both null (the pre-#252
   /// default), matching the server's REST/sync-apply "both valid or both
@@ -181,7 +222,7 @@ class ApiariesRepository {
     int? hiveCount,
     String? notes,
     String? placeLabel,
-    String? dgavRegistrationNumber,
+    String? registrationNumber,
     double? locationLon,
     double? locationLat,
   }) async {
@@ -193,7 +234,7 @@ class ApiariesRepository {
     // parent exists by the time the counter op applies.
     await _store.execute(
       'INSERT INTO $apiariesTable '
-      '(id, name, notes, place_label, dgav_registration_number, '
+      '(id, name, notes, place_label, registration_number, '
       'location_lon, location_lat, created_at, updated_at) '
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
@@ -201,7 +242,7 @@ class ApiariesRepository {
         name,
         notes,
         placeLabel,
-        dgavRegistrationNumber,
+        registrationNumber,
         locationLon,
         locationLat,
         now,
@@ -256,8 +297,8 @@ class ApiariesRepository {
     bool notesProvided = false,
     String? placeLabel,
     bool placeLabelProvided = false,
-    String? dgavRegistrationNumber,
-    bool dgavRegistrationNumberProvided = false,
+    String? registrationNumber,
+    bool registrationNumberProvided = false,
     double? locationLon,
     double? locationLat,
     bool locationProvided = false,
@@ -268,26 +309,26 @@ class ApiariesRepository {
     final newName = name ?? current.name;
     final newNotes = notesProvided ? notes : current.notes;
     final newPlaceLabel = placeLabelProvided ? placeLabel : current.placeLabel;
-    final newDgav = dgavRegistrationNumberProvided
-        ? dgavRegistrationNumber
-        : current.dgavRegistrationNumber;
+    final newRegistrationNumber = registrationNumberProvided
+        ? registrationNumber
+        : current.registrationNumber;
     final newLon = locationProvided ? locationLon : current.locationLon;
     final newLat = locationProvided ? locationLat : current.locationLat;
     if (newName != current.name ||
         newNotes != current.notes ||
         newPlaceLabel != current.placeLabel ||
-        newDgav != current.dgavRegistrationNumber ||
+        newRegistrationNumber != current.registrationNumber ||
         newLon != current.locationLon ||
         newLat != current.locationLat) {
       await _store.execute(
         'UPDATE $apiariesTable SET name = ?, notes = ?, place_label = ?, '
-        'dgav_registration_number = ?, '
+        'registration_number = ?, '
         'location_lon = ?, location_lat = ?, updated_at = ? WHERE id = ?',
         [
           newName,
           newNotes,
           newPlaceLabel,
-          newDgav,
+          newRegistrationNumber,
           newLon,
           newLat,
           _nowIso(),
@@ -370,7 +411,7 @@ class ApiariesRepository {
     locationLon: (r['location_lon'] as num?)?.toDouble(),
     locationLat: (r['location_lat'] as num?)?.toDouble(),
     placeLabel: r['place_label'] as String?,
-    dgavRegistrationNumber: r['dgav_registration_number'] as String?,
+    registrationNumber: r['registration_number'] as String?,
     notes: r['notes'] as String?,
   );
 

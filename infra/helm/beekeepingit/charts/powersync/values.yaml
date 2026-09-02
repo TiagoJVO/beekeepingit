@@ -97,8 +97,9 @@ auth:
 # column needs a matching addition here in the SAME change that adds it
 # server-side, not a follow-up.
 #
-# dgav_registration_number (#296, FR-AP-9, apiaries migration 00009): the
-# per-apiary OVERRIDE of the organization's DGAV registration-number default.
+# registration_number (#296, FR-AP-9, apiaries migration 00009): the
+# per-apiary OVERRIDE of the organization's beekeeper registration-number
+# default (the number the local authority issues — DGAV's in Portugal).
 # Another plain nullable text column, added to the explicit list under exactly
 # the rule stated immediately above. The organization-level DEFAULT it overrides
 # is NOT streamed through this bucket's organizations entry for the client to
@@ -111,15 +112,16 @@ syncConfig:
     by_organization:
       parameters: SELECT request.jwt() ->> 'organization_id' AS organization_id
       data:
-        - SELECT id, organization_id, name, notes, place_label, dgav_registration_number, created_at,
+        - SELECT id, organization_id, name, notes, place_label, registration_number, created_at,
           updated_at, ST_X(location) AS location_lon, ST_Y(location) AS location_lat
           FROM apiaries.apiaries WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
         - SELECT * FROM apiaries.apiary_counters WHERE organization_id = bucket.organization_id
         # apiaries.stock_declarations (#298, FR-AP-10, migration 00010): the
-        # DGAV "Declaração de Existências" log. `SELECT *` rather than an
-        # explicit column list — the additive-superset hazard documented above
-        # for apiaries.apiaries applies only to explicitly-listed entries, and
-        # this table has no PostGIS column needing projection. `deleted_at IS
+        # declared-stock log (Portugal's "Declaração de Existências" is the
+        # motivating case). `SELECT *` rather than an explicit column list —
+        # the additive-superset hazard documented above for apiaries.apiaries
+        # applies only to explicitly-listed entries, and this table has no
+        # PostGIS column needing projection. `deleted_at IS
         # NULL` drops tombstones so a delete propagates to devices, exactly like
         # the apiaries entry (and unlike apiary_counters, which has no tombstone
         # of its own).

@@ -17,9 +17,14 @@ redirect gate:  !auth → /login │ profile incomplete → /profile │ no org 
 /organization/members      MembersScreen          features/members   (admin, #27)
 /account                   AccountScreen          features/account   (FR-AU-1)
 /sync-needs-fix            SyncNeedsFixScreen      features/sync      (D-12 dead-letter)
-/dgav                      DgavScreen             features/dgav      (FR-AP-9/FR-AP-10, #296/#298 —
-                                                  DGAV registration number + stock-declaration log;
-                                                  reached only from Account, advisory only)
+/organization/details      OrganizationDetailsScreen features/organization (FR-AP-9, #296 — org
+                                                  details incl. the beekeeper registration
+                                                  number, the org-wide default; reached from
+                                                  Account, edited online over REST)
+/stock-declarations        StockDeclarationsScreen features/stock_declarations (FR-AP-10, #298 —
+                                                  the declaration log, keyed by registration
+                                                  number; reached from Account; a record only,
+                                                  no deadlines or thresholds derived — D-19)
 StatefulShellRoute (AppShell, 5-tab bottom nav — lib/shell/app_shell.dart; per-tab FAB config
   in `_fabConfigByTab`, generalized #52 to a primary + optional secondary tonal FAB, an
   `onPressed(context)` action rather than only a route — Apiaries tab: primary "Add apiary"
@@ -142,16 +147,23 @@ SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reco
 lww_delete.dart: every synced delete goes through deleteWithLwwStamp() — stamps the device
   delete time into the trackMetadata `_metadata` column so the op's LWW comparator survives
   retries AND app restarts; read back in _toOp via CrudEntry.metadata (#276, sync.md §4.5)
+validation parity (sync.md §9, D-12) — ONE evaluator, core/validation/sync_op_validator.dart,
+  over the shared description embedded in core/validation/gen/, run at TWO call sites:
+    pre-push  (#584) uploadData, on the ops _toOp built → dead-letter + needs-fix
+    save-time (#597) each form's _save, on <Repository>.draftForSave(...) → field error
+  both build the wire op through core/sync/sync_op_draft.dart's SyncOpDraft, so the two
+  verdicts see identical bytes; features/sync/save_time_validation.dart localizes a failure
+  through #443's mapping. Advisory only — the server stays authoritative.
 ```
 
 ## Client-side schema (core/sync/powersync_schema.dart)
 
-`apiaries` (name, notes, place_label, dgav_registration_number, location_lon/lat REAL,
-org_id, timestamps — dgav_registration_number is the per-apiary OVERRIDE of the org
+`apiaries` (name, notes, place_label, registration_number, location_lon/lat REAL,
+org_id, timestamps — registration_number is the per-apiary OVERRIDE of the org
 default, FR-AP-9/#296) ·
 `apiary_counters` (apiary_id, counter_type, value) ·
-`stock_declarations` (dgav_registration_number, declared_on, total_hive_count,
-breakdown TEXT(JSON-encoded array), notes, timestamps — FR-AP-10/#298, the DGAV
+`stock_declarations` (registration_number, declared_on, total_hive_count,
+breakdown TEXT(JSON-encoded array), notes, timestamps — FR-AP-10/#298, the stock
 declaration log; keyed by registration number, NOT the live hive counter) ·
 `journeys` (name, main_activity_type, status, org_id, timestamps) ·
 `journey_plan_items` (journey_id, apiary_id, org_id, created_at) — #45, two tables/entity
