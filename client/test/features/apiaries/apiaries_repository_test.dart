@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/features/apiaries/apiaries_repository.dart';
+import 'package:beekeepingit_client/features/apiaries/apiary_form_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// An in-memory [LocalStoreEngine] fake, purpose-built to interpret the exact
@@ -791,5 +792,78 @@ void main() {
         expect(store.cleared, isTrue);
       },
     );
+  });
+
+  /// The one way the save-time parity check (#597) could quietly stop
+  /// checking what is actually saved: `draftForSave`'s column map drifting
+  /// from the INSERT/UPDATE right next to it. This pins the two together by
+  /// running both and comparing, so a renamed column or a changed coercion
+  /// fails here rather than shipping a check that validates a shape nothing
+  /// writes.
+  group('draftForSave mirrors the write (#597)', () {
+    test(
+      'every drafted column is written by create(), with the same value',
+      () async {
+        await repo.create(
+          name: 'Montargil',
+          notes: 'junto ao eucaliptal',
+          placeLabel: 'Montargil',
+          registrationNumber: 'DGAV-1',
+          locationLon: -8.16,
+          locationLat: 39.09,
+        );
+
+        final draft = ApiariesRepository.draftForSave(
+          name: 'Montargil',
+          notes: 'junto ao eucaliptal',
+          placeLabel: 'Montargil',
+          registrationNumber: 'DGAV-1',
+          locationLon: -8.16,
+          locationLat: 39.09,
+        );
+
+        final row = store.rows.single;
+        expect(draft.op, 'put');
+        for (final entry in draft.data!.entries) {
+          expect(
+            row.containsKey(entry.key),
+            isTrue,
+            reason: 'drafted column ${entry.key} is not written by create()',
+          );
+          expect(
+            row[entry.key],
+            entry.value,
+            reason: 'drafted ${entry.key} differs from what create() writes',
+          );
+        }
+      },
+    );
+
+    test('the apiary form binds only real drafted columns (plus the synthetic '
+        'location path)', () {
+      // Without this, a column renamed in draftForSave but not in the form's
+      // allow-list would silently turn the check off for that field — a
+      // fail-open drift nothing else would catch.
+      final drafted = ApiariesRepository.draftForSave(
+        name: 'Montargil',
+      ).data!.keys.toSet();
+      expect(
+        apiaryFormSyncCheckedColumns.difference(drafted),
+        // `location` is the description's own entity-level path for the
+        // lon/lat pair rule, not a column — see the constant's doc.
+        {'location'},
+      );
+    });
+
+    test('an edit drafts a patch, matching the op an UPDATE queues', () {
+      final draft = ApiariesRepository.draftForSave(
+        id: 'a1',
+        name: 'Montargil',
+        locationLon: -8.16,
+        locationLat: 39.09,
+      );
+      expect(draft.op, 'patch');
+      expect(draft.id, 'a1');
+    });
   });
 }

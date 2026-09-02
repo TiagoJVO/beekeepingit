@@ -9,6 +9,7 @@ import '../../core/widgets/field_action_button.dart';
 import '../../core/widgets/tap_target.dart';
 import '../../core/widgets/unsaved_changes.dart';
 import '../../l10n/gen/app_localizations.dart';
+import '../sync/save_time_validation.dart';
 import 'apiaries_repository.dart';
 import 'apiary_location_picker_screen.dart';
 
@@ -25,6 +26,28 @@ const _pickerFocusedZoom = 13.0;
 /// place-into-context view, so after panning away the user lands right on
 /// top of the pin, at a zoom fine enough to nudge it precisely.
 const _pickerStreetZoom = 16.0;
+
+/// The columns [ApiaryFormScreen] binds to a field of its own, and can
+/// therefore put a save-time parity error against (#597). Anything the shared
+/// description checks that is NOT listed here stays the pre-push pass's and the
+/// server's business — `SyncOpDraft.validateColumns` drops it, which is part of
+/// what keeps a defect in the description from making this form unsaveable.
+///
+/// `location` is not a column: it is the synthetic path the description reports
+/// the apiary's lon/lat **pair** rule under, and this form has exactly one
+/// control for it. Everything else here must be a real column of
+/// [ApiariesRepository.draftForSave] — pinned by a test, because a column
+/// renamed there but not here would silently turn the check off for that field
+/// rather than fail anything.
+const apiaryFormSyncCheckedColumns = {
+  'name',
+  'place_label',
+  'notes',
+  'registration_number',
+  'location',
+  'location_lat',
+  'location_lon',
+};
 
 /// Create (when [apiaryId] is null) or edit an apiary. Writes go local-first
 /// through the repository; there is no direct REST write (walking-skeleton.md
@@ -92,12 +115,16 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
   ll.LatLng? _location;
   bool _locationPermissionDenied = false;
 
-  /// Set to the localized "location is required" message when the user tries
-  /// to save without a location (FR-AP-7, #341 — location is mandatory).
-  /// Cleared as soon as a location is set (map tap / use-current-location) so
-  /// the error never lingers past the fix. Manual rather than a
-  /// [TextFormField] validator because the location isn't a text field — it's
-  /// a map pin held in [_location] outside the [Form]'s field tree.
+  /// The location section's error line. Set to the localized "location is
+  /// required" message when the user tries to save without a location
+  /// (FR-AP-7, #341 — location is mandatory), and otherwise to whatever the
+  /// save-time parity check reports for the lon/lat pair (#597 — the
+  /// description's own `location`/`location_lat`/`location_lon` rules, which
+  /// this form's single map pin stands for). Cleared as soon as a location is
+  /// set (map tap / use-current-location) so the error never lingers past the
+  /// fix. Manual rather than a [TextFormField] validator because the location
+  /// isn't a text field — it's a map pin held in [_location] outside the
+  /// [Form]'s field tree.
   String? _locationError;
 
   /// Whether the inline map picker is expanded. Collapsed by default for
@@ -106,6 +133,42 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
   /// it via "Set on map", and it auto-expands when editing an apiary that
   /// already has a location so the existing pin is visible.
   bool _mapPickerExpanded = false;
+
+  /// Whatever the save-time validation-parity check found last time [_save]
+  /// ran (#597, FR-OF-2, D-12): the same evaluator and the same shared
+  /// description the pre-push pass uses, run here so a rule the server would
+  /// break on is reported **in this form, with the apiary still open** rather
+  /// than as a needs-fix card after the next push.
+  ///
+  /// Read by the field validators below, so a failure lands in the same place
+  /// as this form's own errors, announced by the framework the same way — no
+  /// separate error surface. Recomputed on every save attempt, exactly like a
+  /// `Form.validate()` pass, so a corrected value clears it.
+  SaveTimeFieldErrors _syncErrors = const SaveTimeFieldErrors.none();
+
+  /// One focus node per text field the save-time check can block on, in the
+  /// order they appear, so [_focusFirstSyncError] can move the user (and a
+  /// screen reader) to the offending one. This form's Save is pinned OUTSIDE
+  /// the scroll view (see the class doc), so a failure on `notes` or the
+  /// number — both far below the fold — would otherwise read as a Save button
+  /// that did nothing at all.
+  final _syncErrorFocusNodes = {
+    'name': FocusNode(),
+    'place_label': FocusNode(),
+    'notes': FocusNode(),
+    'registration_number': FocusNode(),
+  };
+
+  void _focusFirstSyncError() {
+    for (final entry in _syncErrorFocusNodes.entries) {
+      if (_syncErrors.contains(entry.key)) {
+        // Focusing an off-screen field scrolls it into view, which is the
+        // point: the message is useless where it can't be seen.
+        entry.value.requestFocus();
+        return;
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -120,6 +183,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     _placeLabelController.dispose();
     _registrationNumberController.dispose();
     _pickerMapController.dispose();
+    for (final node in _syncErrorFocusNodes.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
@@ -265,16 +331,45 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
 
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
-    final formOk = _formKey.currentState!.validate();
+    final name = _nameController.text.trim();
+    final notes = _notesController.text.trim();
+    final placeLabel = _placeLabelController.text.trim();
+    final registrationNumber = _registrationNumberController.text.trim();
     // Location is mandatory (FR-AP-7, #341): an apiary cannot be saved without
     // one. The map pin lives in [_location], outside the Form's field tree, so
     // it's validated here rather than via a TextFormField validator — surfaced
     // as [_locationError] next to the location section.
     final locationOk = _location != null;
-    setState(
-      () => _locationError = locationOk ? null : l10n.apiaryLocationRequired,
-    );
-    if (!formOk || !locationOk) return;
+    setState(() {
+      // Run the save-time parity check BEFORE Form.validate(), so the field
+      // validators below can read the result and report it inline (#597).
+      _syncErrors = SaveTimeFieldErrors.check(
+        ApiariesRepository.draftForSave(
+          id: widget.apiaryId,
+          name: name,
+          notes: notes.isEmpty ? null : notes,
+          placeLabel: placeLabel.isEmpty ? null : placeLabel,
+          registrationNumber: registrationNumber.isEmpty
+              ? null
+              : registrationNumber,
+          locationLon: _location?.longitude,
+          locationLat: _location?.latitude,
+        ),
+        columns: apiaryFormSyncCheckedColumns,
+      );
+      _locationError = locationOk
+          ? _syncErrors.messageForAny(l10n, const [
+              'location',
+              'location_lat',
+              'location_lon',
+            ])
+          : l10n.apiaryLocationRequired;
+    });
+    final formOk = _formKey.currentState!.validate();
+    if (!formOk || !locationOk || _locationError != null) {
+      _focusFirstSyncError();
+      return;
+    }
     // The shell's Scaffold (not this screen's, which navigates away right
     // after) owns the messenger the toast should surface on — grabbed via
     // the root navigator's context before the local-first write completes
@@ -287,10 +382,6 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     // with no error message and no way to retry.
     try {
       final repo = await ref.read(apiariesRepositoryProvider.future);
-      final name = _nameController.text.trim();
-      final notes = _notesController.text.trim();
-      final placeLabel = _placeLabelController.text.trim();
-      final registrationNumber = _registrationNumberController.text.trim();
       // The form no longer sets any counter (#346, D-20): hive count and
       // every other counter type are managed on the detail screen, so create
       // omits hiveCount ("no counter set at creation") and edit never touches
@@ -423,33 +514,62 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                           key: _formKey,
                           // Any field edit arms the unsaved-changes guard (#345);
                           // edits outside the field tree (the map pin) call
-                          // markUnsavedChanges directly.
-                          onChanged: markUnsavedChanges,
+                          // markUnsavedChanges directly. It also drops the last
+                          // save attempt's parity verdict (#597) so a message
+                          // can't sit under a value the user has already
+                          // corrected — this form doesn't autovalidate, so
+                          // without this the errorText would only be recomputed
+                          // on the next Save.
+                          onChanged: () {
+                            markUnsavedChanges();
+                            if (_syncErrors.isEmpty) return;
+                            setState(
+                              () => _syncErrors =
+                                  const SaveTimeFieldErrors.none(),
+                            );
+                            // A FormFieldState keeps its cached errorText until
+                            // validate() runs again, so clearing the verdict is
+                            // not enough on a form that doesn't autovalidate.
+                            // Only ever reached while a blocked save's errors
+                            // are already on screen, so it can't turn this into
+                            // a validate-as-you-type form.
+                            _formKey.currentState?.validate();
+                          },
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               TextFormField(
                                 key: const Key('apiary-name-field'),
                                 controller: _nameController,
+                                focusNode: _syncErrorFocusNodes['name'],
                                 autofocus: !widget.isEdit,
                                 decoration: InputDecoration(
                                   labelText: l10n.apiaryNameLabel,
                                 ),
+                                // The form's own "required" rule first, then
+                                // whatever the shared sync description says
+                                // about this column (#597) — e.g. a name that
+                                // is under the field's 200-character allowance
+                                // but over the server's 200-BYTE cap, which
+                                // only a save-time check can catch.
                                 validator: (v) =>
                                     (v == null || v.trim().isEmpty)
                                     ? l10n.apiaryNameRequired
-                                    : null,
+                                    : _syncErrors.messageFor(l10n, 'name'),
                               ),
                               const SizedBox(height: 16),
                               TextFormField(
                                 key: const Key('apiary-place-label-field'),
                                 controller: _placeLabelController,
+                                focusNode: _syncErrorFocusNodes['place_label'],
                                 textInputAction: TextInputAction.next,
                                 maxLength: 200,
                                 decoration: InputDecoration(
                                   labelText: l10n.apiaryPlaceLabelLabel,
                                   hintText: l10n.apiaryPlaceLabelHint,
                                 ),
+                                validator: (_) =>
+                                    _syncErrors.messageFor(l10n, 'place_label'),
                               ),
                               const SizedBox(height: 8),
                               Text(
@@ -566,6 +686,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                               TextFormField(
                                 key: const Key('apiary-notes-field'),
                                 controller: _notesController,
+                                focusNode: _syncErrorFocusNodes['notes'],
                                 minLines: 3,
                                 maxLines: 6,
                                 maxLength: 10000,
@@ -575,6 +696,8 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   hintText: l10n.apiaryNotesHint,
                                   alignLabelWithHint: true,
                                 ),
+                                validator: (_) =>
+                                    _syncErrors.messageFor(l10n, 'notes'),
                               ),
                               const SizedBox(height: 16),
                               // Registration number (FR-AP-9, #296).
@@ -591,11 +714,17 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                   'apiary-registration-number-field',
                                 ),
                                 controller: _registrationNumberController,
+                                focusNode:
+                                    _syncErrorFocusNodes['registration_number'],
                                 textInputAction: TextInputAction.done,
                                 maxLength: 50,
                                 decoration: InputDecoration(
                                   labelText: l10n.apiaryRegistrationNumberLabel,
                                   hintText: l10n.apiaryRegistrationNumberHint,
+                                ),
+                                validator: (_) => _syncErrors.messageFor(
+                                  l10n,
+                                  'registration_number',
                                 ),
                               ),
                             ],

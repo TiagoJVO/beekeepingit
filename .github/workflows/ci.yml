@@ -78,6 +78,13 @@ jobs:
               - 'services/apiaries/api/declarations.go'
               - 'client/lib/core/validation/**'
               - 'client/test/core/validation/**'
+              # The save-time call site (#597) evaluates the same description
+              # through the same evaluator, and its tests assert concrete
+              # `(column, code)` verdicts — so a description-only change can
+              # break them too, and they belong in this fan-out for the same
+              # reason the pre-push ones do.
+              - 'client/lib/core/sync/sync_op_draft.dart'
+              - 'client/test/core/sync/sync_op_draft_test.dart'
               - '.github/workflows/ci.yml'
 
       - name: Sync-validation parity — the four owning services
@@ -98,4 +105,4 @@ jobs:
         run: |
           cd client
           flutter pub get
-          flutter test test/core/validation
+          flutter test test/core/validation test/core/sync/sync_op_draft_test.dart

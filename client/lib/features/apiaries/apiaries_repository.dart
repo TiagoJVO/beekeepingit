@@ -8,6 +8,7 @@ import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import '../../core/sync/sync_op_draft.dart';
 import 'counter_types.dart';
 
 /// A local apiary row (name + hive count + optional free-text notes,
@@ -161,6 +162,46 @@ class ApiariesRepository {
         )
         .map(_countersFromRows);
   }
+
+  /// The wire op a [create] (when [id] is null) or an [update] would queue for
+  /// these values — the input to the **save-time** validation-parity check
+  /// (#597, FR-OF-2, D-12, sync.md §9).
+  ///
+  /// Lives here, next to the SQL, on purpose: the column names below are the
+  /// same ones [create]'s INSERT and [update]'s UPDATE write, so a column
+  /// renamed in one has to be renamed in the other, in the same file, in the
+  /// same edit. A form supplies values, never a column-to-value mapping of its
+  /// own; the one place it does name columns is its allow-list of the columns
+  /// it binds, which a test pins to the keys this builds.
+  ///
+  /// `hive_count` is absent because this write path never touches a counter
+  /// row (#346, D-20 — counters go through [setCounter]).
+  static SyncOpDraft draftForSave({
+    String? id,
+    required String name,
+    String? notes,
+    String? placeLabel,
+    String? registrationNumber,
+    double? locationLon,
+    double? locationLat,
+  }) => SyncOpDraft(
+    // An edit rewrites the whole row, so it queues a `patch` carrying every
+    // column below; a create queues a `put`. The distinction matters — the
+    // server's `required` rules apply to `put` only (#378), so validating an
+    // edit as a `put` would reject partial updates the server accepts.
+    op: id == null ? 'put' : 'patch',
+    entityType: apiaryEntityType,
+    id: id ?? draftPlaceholderId,
+    data: {
+      'name': name,
+      'notes': notes,
+      'place_label': placeLabel,
+      'registration_number': registrationNumber,
+      'location_lon': locationLon,
+      'location_lat': locationLat,
+    },
+    updatedAt: draftUpdatedAt(),
+  );
 
   /// Creates an apiary. [locationLon]/[locationLat] (#252) are both-or-
   /// neither — a location-less create passes both null (the pre-#252

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/features/todos/todo_form_screen.dart';
 import 'package:beekeepingit_client/features/todos/todos_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -529,6 +530,82 @@ void main() {
       await pumpEventQueue();
 
       expect(emissions.last, 1);
+    });
+  });
+
+  /// Pins `draftForSave`'s column map to the INSERT next to it, so the
+  /// save-time parity check (#597) cannot drift into validating a shape
+  /// nothing writes — including this repository's `?? ''` coercion of absent
+  /// optionals, which the shared description reads as "absent".
+  group('draftForSave mirrors the write (#597)', () {
+    test(
+      'every drafted column is written by create(), with the same value',
+      () async {
+        await repo.create(
+          title: 'Rever alças',
+          priority: 'medium',
+          description: 'Antes da colheita',
+          dueDate: '2026-09-30',
+          assigneeId: 'm1',
+          apiaryId: 'a1',
+        );
+
+        final draft = TodosRepository.draftForSave(
+          title: 'Rever alças',
+          priority: 'medium',
+          description: 'Antes da colheita',
+          dueDate: '2026-09-30',
+          assigneeId: 'm1',
+          apiaryId: 'a1',
+        );
+
+        final row = store.rows.single;
+        expect(draft.op, 'put');
+        for (final entry in draft.data!.entries) {
+          expect(
+            row.containsKey(entry.key),
+            isTrue,
+            reason: 'drafted column ${entry.key} is not written by create()',
+          );
+          expect(
+            row[entry.key],
+            entry.value,
+            reason: 'drafted ${entry.key} differs from what create() writes',
+          );
+        }
+      },
+    );
+
+    test('an edit drafts a patch, matching the op an UPDATE queues', () {
+      final draft = TodosRepository.draftForSave(
+        id: 't1',
+        title: 'Rever alças',
+        priority: 'medium',
+      );
+      expect(draft.op, 'patch');
+      expect(draft.id, 't1');
+    });
+
+    test('the todo form binds only real drafted columns', () {
+      // Without this, a column renamed in draftForSave but not in the form's
+      // allow-list would silently turn the check off for that field — a
+      // fail-open drift nothing else would catch.
+      final drafted = TodosRepository.draftForSave(
+        title: 'x',
+        priority: 'medium',
+      ).data!.keys.toSet();
+      expect(todoFormSyncCheckedColumns.difference(drafted), isEmpty);
+    });
+
+    test('an omitted optional is drafted the way it is written: empty, not '
+        'null', () {
+      final draft = TodosRepository.draftForSave(
+        title: 'Rever alças',
+        priority: 'medium',
+      );
+      expect(draft.data!['due_date'], '');
+      expect(draft.data!['assignee_id'], '');
+      expect(draft.data!['apiary_id'], '');
     });
   });
 }
