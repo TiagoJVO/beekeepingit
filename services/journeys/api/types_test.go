@@ -145,10 +145,30 @@ func TestValidateDefaultAttributes_ValidObjectIsValid(t *testing.T) {
 	}
 }
 
-func TestValidateDefaultAttributes_RejectsNull(t *testing.T) {
-	errs := validateDefaultAttributes([]byte(`null`))
-	if !hasFieldCode(errs, "default_attributes", "invalid") {
-		t.Fatalf("errs = %+v, want default_attributes/invalid", errs)
+// TestValidateDefaultAttributes_AcceptsExplicitNull pins the #385 wire fact
+// this validator used to get wrong: clearing a journey's defaults offline
+// queues a PowerSync `patch` whose opData carries `"default_attributes":
+// null` (the generated `ps_view_update_journeys` trigger's powersync_diff
+// emits a present null for a column that changed to null), so rejecting the
+// literal made "clear the defaults" an op the server could never accept.
+func TestValidateDefaultAttributes_AcceptsExplicitNull(t *testing.T) {
+	if errs := validateDefaultAttributes([]byte(`null`)); len(errs) != 0 {
+		t.Fatalf("validateDefaultAttributes(null) = %+v, want no errors (an explicit null clears the bag)", errs)
+	}
+}
+
+// TestNormalizeDefaultAttributes_ExplicitNullStoresSQLNull is the other half
+// of that contract: accepting the literal is only correct if the write paths
+// then store SQL NULL for it. Storing the four raw bytes `null` would put a
+// JSON-null literal in a column the whole feature reads as "NULL means no
+// defaults" (migration 00003).
+func TestNormalizeDefaultAttributes_ExplicitNullStoresSQLNull(t *testing.T) {
+	stored, decoded := normalizeDefaultAttributes([]byte(`null`))
+	if stored != nil {
+		t.Fatalf("stored = %q, want nil (SQL NULL)", stored)
+	}
+	if decoded != nil {
+		t.Fatalf("decoded = %+v, want nil", decoded)
 	}
 }
 

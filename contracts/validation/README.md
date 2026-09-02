@@ -96,7 +96,13 @@ server uses for _that_ field (this differs per field and is load-bearing):
 
 **Field checks:** `required` (with `on`: the op kinds it applies to), `maxLength` (UTF-8
 **bytes**, matching Go's `len()`), `maxBytes`, `min`, `range` (with `onlyWithAll`),
-`uuid`, `date` (`YYYY-MM-DD`), `dateTime` (RFC 3339), `jsonObject`.
+`uuid`, `date` (`YYYY-MM-DD`), `dateTime` (RFC 3339), `jsonObject` (with `allowNull`).
+
+`jsonObject` and `maxBytes` read a field's raw **presence** rather than its `absentWhen`
+rule, because the server sees these as a `json.RawMessage`, where an explicit `null` is
+present-but-not-an-object. `allowNull: true` on a `jsonObject` check says the owning
+service accepts that literal anyway — see the section below for the one field that carries
+it, and why it is described per field instead of per kind.
 
 **Entity checks:** `requiredGroup` (several fields required together, reported under one
 path), `requiredWhenPresent` (a paired field). The path a failure is reported against is
@@ -115,24 +121,32 @@ patch would reject perfectly valid edits. That is the client-side face of
 sides: `AssertRequiredOn` in each service's parity test, and an explicit
 `patch`-passes case per rule in `client/test/core/validation/sync_op_validator_test.dart`.
 
-## Known rough edge: `journey.default_attributes` and an explicit `null`
+## `journey.default_attributes` and an explicit `null` (`allowNull`)
 
-`validateDefaultAttributes` (`services/journeys/api/types.go`) treats an **absent**
-`default_attributes` as "don't touch" but a present JSON `null` as invalid — `len(raw) == 0`
-skips, whereas the four bytes `null` unmarshal to a nil map and report
-`default_attributes must be a JSON object`. The client's `jsonObject` check mirrors that
-faithfully, which is why it is described here.
+An explicit `null` is not a malformed bag — it is how **clearing** a journey's defaults
+reaches the wire, which is why this one field's `jsonObject` check carries
+`allowNull: true`.
 
-The rough edge is that `journeys_repository.dart` stores SQL **NULL** for an empty bag. If
-PowerSync includes null columns in a `put`'s `opData` (not verified either way), clearing a
-journey's defaults already produces an op this service rejects today — the parity check
-would then surface it before the push rather than after, but would not have caused it.
-Every other "absent means don't touch" field on that struct treats `null` as absent, so the
-fix, if it is real, belongs server-side in `validateDefaultAttributes`; the `jsonObject`
-check here would then need to skip an explicit null for that field. Tracked in
-`FOLLOWUPS.md`, and pinned by the corpus case
-`journey/patch/default-attributes-is-an-explicit-null` — both sides agree today, so if the
-server is ever relaxed here, that case is what says the description must be relaxed with it.
+`journeys_repository.dart` stores SQL **NULL** for an empty bag, and PowerSync's CRUD
+triggers turn that into a present null rather than an omitted key. The generated
+`ps_view_update_journeys` trigger diffs the row through `powersync_diff(OLD, NEW)`, which
+emits `"default_attributes": null` for a column whose value **changed** to null, and only
+drops nulls that were already null. So a `put` of a defaults-free journey omits the key
+(hence `CrudEntry.opData`'s "all non-null columns" for a put), but the `patch` that clears
+an existing bag carries the literal — and `decodeJsonColumns` leaves it alone, since it
+only rewrites Strings.
+
+`validateDefaultAttributes` used to reject that op (`len(raw) == 0` skipped, the four bytes
+`null` unmarshalled to a nil map and reported `default_attributes must be a JSON object`),
+so clearing a journey's defaults could never sync. It now accepts the literal, and the
+write paths fold it to SQL NULL (`normalizeDefaultAttributes`) rather than storing a
+JSON-null literal in the JSONB column; on a `patch` a present null therefore **clears** the
+bag, which is exactly the distinction the absent-keeps-current rule rests on.
+
+`allowNull` is per field, not per kind, on purpose: activities' `attributes` is never
+cleared this way and still rejects the literal. Both are pinned by the corpus —
+`journey/patch/default-attributes-is-an-explicit-null` (accepted by both sides) and
+`activity/patch/attributes-is-an-explicit-null` (rejected by both).
 
 ## The corpus
 

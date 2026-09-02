@@ -159,9 +159,12 @@ SyncOutcome? _runCheck(
 
   // jsonObject/maxBytes read the raw presence rather than the "absent" notion:
   // the server unmarshals these into a json.RawMessage, where an explicit
-  // `null` is present-but-not-an-object (rejected), not absent.
+  // `null` is present-but-not-an-object (rejected), not absent — unless the
+  // field is described `allowNull`, which is how a CLEARED column reaches the
+  // wire and which its owning service therefore accepts (SyncCheck.allowNull).
   if (check.kind == SyncCheckKind.jsonObject) {
     if (!data.containsKey(field.name)) return null;
+    if (check.allowNull && value == null) return null;
     return value is Map ? null : check.outcome;
   }
   if (check.kind == SyncCheckKind.maxBytes) {

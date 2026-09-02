@@ -563,6 +563,18 @@ void main() {
         isEmpty,
       );
     });
+
+    test('an explicit null default_attributes passes — CLEARING a journey\'s '
+        'defaults reaches the wire exactly this way (the local column goes to '
+        'SQL NULL and PowerSync\'s column diff emits a present null), so '
+        'rejecting it here would block the edit on the device (#385)', () {
+      expect(
+        _failures(
+          _op(journeyEntityType, 'patch', data: {'default_attributes': null}),
+        ),
+        isEmpty,
+      );
+    });
   });
 
   group('journey_plan_item', () {

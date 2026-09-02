@@ -1661,6 +1661,48 @@ func TestJourneysSync_Apply_Patch_AbsentDefaultAttributesKeepsStored(t *testing.
 	}
 }
 
+// TestJourneysSync_ClearingDefaultAttributes_ValidatesAndClears is the
+// end-to-end shape of the ONE way a journey's defaults are ever cleared
+// offline (#385, FR-OF-2, D-12): the client stores an empty bag as SQL NULL
+// (journeys_repository.dart), and PowerSync's column diff puts that on the
+// wire as a PRESENT `default_attributes: null` — not by omitting the key
+// (verified against the core extension's generated `ps_view_update_journeys`
+// trigger). This service used to reject that op outright ("default_attributes
+// must be a JSON object"), so a cleared bag could never sync. Both halves are
+// asserted here because accepting the literal is only right if it also stores
+// SQL NULL rather than a JSON-null literal in the JSONB column.
+func TestJourneysSync_ClearingDefaultAttributes_ValidatesAndClears(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	createOp := journeyPutOpWithDefaultAttributes(journeyID, "Journey", "treatment", map[string]any{"treatment_context": "general_preventive"})
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{createOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	clearOp := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"default_attributes": nil}, // the key IS present, carrying null
+	}
+	batch := map[string]any{"ops": []any{clearOp}}
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/validate", batch); rec.Code != http.StatusOK {
+		t.Fatalf("validate status = %d, want 200 (an explicit null clears the bag), body = %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", batch); rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetJourney(context.Background(), sqlcgen.GetJourneyParams{OrganizationID: devseedOrg(), ID: pgtype.UUID{Bytes: uuid.MustParse(journeyID), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetJourney: %v", err)
+	}
+	if len(row.DefaultAttributes) != 0 {
+		t.Fatalf("stored default_attributes = %s, want SQL NULL (the bag was cleared, not set to a JSON-null literal)", row.DefaultAttributes)
+	}
+}
+
 // TestJourneysSync_Apply_Conflict_WinningPayloadIncludesDefaultAttributes
 // proves a superseded (LWW-losing) op's conflict-log entry captures the
 // SERVER's winning default_attributes, like every other mutable column

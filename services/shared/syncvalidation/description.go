@@ -56,6 +56,16 @@ type Ops struct {
 }
 
 // Check is one field-level rule.
+//
+// AllowNull applies to the shape kinds that read raw PRESENCE rather than the
+// field's absence rule (today: jsonObject). Those kinds normally treat an
+// explicit JSON `null` as present-but-wrong-shape, because that is what the
+// server's `json.RawMessage` sees. AllowNull says the owning service accepts
+// the literal for this field — which it must whenever a CLEARED value reaches
+// the wire as a null, since PowerSync's column diff spells "this column is now
+// null" that way (journeys' default_attributes, #385). Describing that per
+// field rather than per kind is deliberate: activities' `attributes` is never
+// cleared this way and still rejects the literal, and the corpus pins both.
 type Check struct {
 	Kind        string   `json:"kind"`
 	On          []string `json:"on"`
@@ -63,6 +73,7 @@ type Check struct {
 	Min         *float64 `json:"min"`
 	Max         *float64 `json:"max"`
 	OnlyWithAll []string `json:"onlyWithAll"`
+	AllowNull   bool     `json:"allowNull"`
 	Outcome
 }
 

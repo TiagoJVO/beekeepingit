@@ -81,9 +81,12 @@ type Batch struct {
 // materializing a brand-new row (applyJourneyOp's "missing" branch, an
 // offline create arriving for the first time) does absent mean "no
 // defaults" (NULL), exactly like Status falls back to StatusOpen only in
-// that same branch. Present must be a JSON object
-// (validateJourneyOp/validateDefaultAttributes) and replaces wholesale —
-// there is no partial-key-merge semantics.
+// that same branch. Present must be a JSON object — or the literal `null`,
+// which is how PowerSync's column diff spells "this column was CLEARED"
+// (types.go's validateDefaultAttributes documents the trigger that produces
+// it): present-null clears the bag rather than preserving it, which is
+// exactly the distinction absent-keeps-current rests on. A present value
+// replaces wholesale — there is no partial-key-merge semantics.
 type journeyData struct {
 	Name              *string         `json:"name"`
 	MainActivityType  *string         `json:"main_activity_type"`
@@ -512,6 +515,10 @@ func mergeJourneyOp(current journeyRowState, op Op, data journeyData) journeyRow
 	if data.Status != nil {
 		want.status = *data.Status
 	}
+	// Presence, not content, is what decides here: an absent bag keeps the
+	// row's current defaults, while a PRESENT one replaces them — including
+	// the literal `null` a cleared bag arrives as, which normalizes to a nil
+	// map and so clears the row (journeyData's doc comment).
 	if len(data.DefaultAttributes) > 0 {
 		_, want.defaultAttributes = normalizeDefaultAttributes(data.DefaultAttributes)
 	}

@@ -9,20 +9,6 @@
 
 ## `#584`/`#585` — client↔server validation parity (PRs #591, #596)
 
-- **Confirm (or rule out) the `journey.default_attributes` null case, and open an Issue if
-  it's real.** `journeys_repository.dart` stores SQL NULL for an empty defaults bag, while
-  `validateDefaultAttributes` (`services/journeys/api/types.go`) rejects a present JSON `null`
-  — it skips only on `len(raw) == 0`. Whether that ever reaches the wire depends on whether
-  PowerSync includes null columns in a `put`'s `opData`, which this branch did **not** verify.
-  If it does, clearing a journey's defaults is already failing server-side today and #584 only
-  makes it visible one step earlier; the fix belongs in `validateDefaultAttributes` (treat the
-  `null` literal as absent, like every other optional field on that struct), after which the
-  description's `jsonObject` check must skip an explicit null for that field. Written up in
-  `contracts/validation/README.md`. Cheapest check: log one op's `opData` for a journey with no
-  defaults, or add a `journeys` integration case. #596 now **pins the current behaviour** from
-  both sides (corpus case `journey/patch/default-attributes-is-an-explicit-null`) — the two sides
-  agree today, so if the server is relaxed here the description must be relaxed with it, and that
-  case is what will say so.
 - **Give the `_fieldLabel` table entries for the stock-declaration fields — and needs an owner.**
   `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
   `total_hive_count` or `dgav_registration_number`, so a rejected DGAV stock declaration (#298)
@@ -69,3 +55,17 @@ _corpus. The `_fieldLabel` bullet also stays, flagged — its owning issue #443 
 _labels, so it needs its own Issue; left for a human rather than opened unprompted._
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that entry stands._
 _Prior sweep notes dropped with their entries, per this file's convention._
+
+---
+
+_Sweep note (2026-09-02): the `#584`/`#585` section's `journey.default_attributes` bullet is_
+_**resolved by this PR** and pruned. It asked for the null case to be confirmed or ruled out —_
+_it is **confirmed real and fixed here** (see the PR description and_
+_`contracts/validation/README.md`), so it does not become an Issue._
+
+_Its sibling `_fieldLabel` bullet stays: it belongs to the stock-declaration work on_
+_[#595](https://github.com/TiagoJVO/beekeepingit/pull/595) and is resolved there, not here._
+
+_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked while sweeping: still_
+_open — blocked on upstream `typescript-eslint` supporting TypeScript 7, so genuinely not ours_
+_to close._

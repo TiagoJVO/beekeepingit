@@ -412,6 +412,7 @@ const syncValidationRulesJson = r'''
             },
             {
               "kind": "jsonObject",
+              "allowNull": true,
               "code": "invalid",
               "message": "default_attributes must be a JSON object"
             }

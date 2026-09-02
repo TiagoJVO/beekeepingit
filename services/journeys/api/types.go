@@ -23,6 +23,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -117,17 +118,39 @@ const maxApiaryIDsPerJourney = 500
 // documents above.
 const maxDefaultAttributesBytes = 8192
 
+// isJSONNull reports whether a raw JSON value is the literal `null` — the
+// one shape that is PRESENT on the wire yet carries no content. Separated
+// out because both halves of the contract need the same answer: validation
+// must accept it (validateDefaultAttributes below) and the write paths must
+// store SQL NULL for it (write.go's normalizeDefaultAttributes), and those
+// two agreeing is what makes "clear the defaults" work end to end.
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
 // validateDefaultAttributes validates the SHAPE only of a journey's
 // default_attributes field (#385's design decision: journeys validates
 // shallow — JSON object, size-bounded — and does NOT deep-validate keys/
 // values against the per-type activity attribute schema, which lives in
 // services/activities and must not be imported here, this file's package
 // doc's hand-kept-mirror rule). Absent/empty is always valid (defaults are
-// entirely optional). A present value must decode to a JSON object; `null`
-// is treated the same as absent (mirrors activities' own attributes
-// validation, write.go's `err != nil || attrs == nil` check).
+// entirely optional), and so is an explicit JSON `null` — which is NOT the
+// same thing as absent, it is how "clear this journey's defaults" reaches
+// the wire (#385, FR-OF-2, D-12). The client stores an empty bag as SQL NULL
+// (journeys_repository.dart), and PowerSync's column diff puts a column that
+// CHANGED to null on the wire as a present `null` rather than by omitting it
+// (the core extension's generated `ps_view_update_journeys` trigger runs
+// `powersync_diff`, which emits `"col": null` for a value that changed to
+// null and only drops nulls that were already null — a `put`'s opData omits
+// them, a clearing `patch`'s does not). Rejecting that literal made clearing
+// a journey's defaults a permanently rejected op.
+//
+// `null` therefore means "no defaults" everywhere it is accepted: the write
+// paths store SQL NULL for it (normalizeDefaultAttributes), never the
+// four-byte JSON literal. Any OTHER present value must decode to a JSON
+// object.
 func validateDefaultAttributes(raw json.RawMessage) []problem.FieldError {
-	if len(raw) == 0 {
+	if len(raw) == 0 || isJSONNull(raw) {
 		return nil
 	}
 	if len(raw) > maxDefaultAttributesBytes {

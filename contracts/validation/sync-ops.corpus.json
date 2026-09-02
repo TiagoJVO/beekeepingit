@@ -1541,7 +1541,7 @@
     },
     {
       "name": "journey/patch/default-attributes-is-an-explicit-null",
-      "why": "The rough edge recorded in contracts/validation/README.md: validateDefaultAttributes skips only on an ABSENT bag, so a present `null` is rejected. Both sides agree today; if the server is ever relaxed here, this case is what says the description must be relaxed with it.",
+      "why": "An explicit null is how CLEARING a journey's defaults reaches the wire: the client stores an empty bag as SQL NULL, and PowerSync's column diff emits a present `\"default_attributes\": null` for a column that changed to null (only a `put` drops nulls). Both sides accept it — the description's jsonObject check carries `allowNull` for this field alone, and the server stores SQL NULL for it. Contrast activity/patch/attributes-is-an-explicit-null, whose column is never cleared this way and is still rejected.",
       "entityType": "journey",
       "op": {
         "op": "patch",
@@ -1550,13 +1550,7 @@
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "default_attributes": null }
       },
-      "expect": [
-        {
-          "field": "data.default_attributes",
-          "code": "invalid",
-          "message": "default_attributes must be a JSON object"
-        }
-      ]
+      "expect": []
     },
     {
       "name": "journey/patch/default-attributes-well-under-the-byte-cap",

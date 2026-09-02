@@ -88,10 +88,10 @@ type journeyCreateRequest struct {
 // object, including `{}`) REPLACES the stored defaults wholesale — there is
 // no partial-key-merge semantics here, matching apiary_ids'/attributes'
 // full-resubmit convention elsewhere in this codebase. A literal JSON
-// `null` is rejected by validateDefaultAttributes as an invalid shape
-// (never means "clear the defaults") — there is no client affordance for
-// clearing today; changing the journey's main_activity_type in the UI
-// already clears the section client-side before it's ever submitted.
+// `null` is PRESENT, not absent: it CLEARS the stored defaults (SQL NULL,
+// normalizeDefaultAttributes), the same thing it means on the sync path,
+// where it is how a cleared bag actually reaches the wire (types.go's
+// validateDefaultAttributes).
 type journeyUpdateRequest struct {
 	Name              string          `json:"name"`
 	MainActivityType  string          `json:"main_activity_type"`
@@ -545,12 +545,18 @@ func toJourneyDTO(row sqlcgen.JourneysJourney, apiaryIDs []string) journeyDTO {
 // normalizeDefaultAttributes converts a request's already-validated (via
 // validateDefaultAttributes) default_attributes raw JSON into the two shapes
 // callers need: the exact bytes to store in the JSONB column (nil ⇒ SQL
-// NULL when absent) and the decoded map for journeyRowState's audit-diff
-// projection. Absent (len 0) means "no defaults" — never call this with an
-// unvalidated raw payload that might be a literal `null` or non-object (both
-// rejected earlier by validateDefaultAttributes).
+// NULL) and the decoded map for journeyRowState's audit-diff projection.
+//
+// BOTH "no defaults" spellings collapse to SQL NULL here: an absent value
+// (len 0) and an explicit JSON `null` — the literal a cleared bag arrives as
+// over sync (types.go's validateDefaultAttributes documents why PowerSync
+// puts it on the wire that way). Storing the four raw bytes `null` for the
+// latter would put a JSON-null literal in a JSONB column that the whole
+// feature reads as "NULL means no defaults" (migration 00003's doc comment),
+// so it is folded here rather than at each call site. A non-object is still
+// never expected — validateDefaultAttributes rejects it earlier.
 func normalizeDefaultAttributes(raw json.RawMessage) (stored []byte, decoded map[string]any) {
-	if len(raw) == 0 {
+	if len(raw) == 0 || isJSONNull(raw) {
 		return nil, nil
 	}
 	_ = json.Unmarshal(raw, &decoded)

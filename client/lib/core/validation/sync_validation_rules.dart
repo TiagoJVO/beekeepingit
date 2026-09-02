@@ -197,6 +197,7 @@ class SyncCheck {
     this.min,
     this.max,
     this.onlyWithAll = const [],
+    this.allowNull = false,
   });
 
   /// Parses one check, rejecting a kind whose numeric parameters are missing.
@@ -236,6 +237,7 @@ class SyncCheck {
       min: min,
       max: max,
       onlyWithAll: _stringList(json['onlyWithAll'] ?? const [], 'onlyWithAll'),
+      allowNull: json['allowNull'] == true,
     );
   }
 
@@ -259,6 +261,20 @@ class SyncCheck {
   /// mirrors the server's `switch` that range-checks coordinates only once both
   /// halves of the pair are supplied.
   final List<String> onlyWithAll;
+
+  /// For the shape kinds that read raw PRESENCE rather than a field's absence
+  /// rule ([SyncCheckKind.jsonObject]): accept an explicit JSON `null` as well
+  /// as the described shape, because the owning service does.
+  ///
+  /// It is set for exactly one field today — journeys' `default_attributes`
+  /// (#385) — and for a wire reason, not a taste one: the client stores an
+  /// empty bag as SQL NULL, and PowerSync's column diff puts a column that
+  /// CHANGED to null on the wire as a present `null`, so rejecting the literal
+  /// here would block every "clear this journey's defaults" edit on the device.
+  /// Activities' `attributes` is never cleared that way and deliberately does
+  /// NOT carry this, which is why it is described per field rather than baked
+  /// into the kind.
+  final bool allowNull;
 }
 
 /// The entity-level (multi-field) check kinds.

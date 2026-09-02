@@ -33,6 +33,14 @@ func TestSharedValidationDescription_MatchesJourneyOp(t *testing.T) {
 	if !ok || f.Check("jsonObject") == nil {
 		t.Fatal("description must keep the default_attributes-must-be-an-object check (#385)")
 	}
+	// ...but NOT against an explicit `null`, which is how a CLEARED bag reaches
+	// the wire (validateDefaultAttributes' doc comment). Without allowNull the
+	// client would reject every "clear this journey's defaults" edit on the
+	// device, which is worse than the server rejection this description exists
+	// to pre-empt.
+	if !f.Check("jsonObject").AllowNull {
+		t.Fatal("description must mark default_attributes' jsonObject check allowNull: validateDefaultAttributes accepts an explicit null (#385)")
+	}
 
 	// The main-activity-type and status vocabularies stay server-owned: they
 	// are extensible in code, so a frozen client copy would permanently reject
