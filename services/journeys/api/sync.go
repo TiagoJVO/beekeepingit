@@ -81,9 +81,18 @@ type Batch struct {
 // materializing a brand-new row (applyJourneyOp's "missing" branch, an
 // offline create arriving for the first time) does absent mean "no
 // defaults" (NULL), exactly like Status falls back to StatusOpen only in
-// that same branch. Present must be a JSON object
+// that same branch. Present must be a JSON object OR the literal `null`
 // (validateJourneyOp/validateDefaultAttributes) and replaces wholesale —
 // there is no partial-key-merge semantics.
+//
+// Absent and `null` are NOT the same thing here, and that distinction is
+// PowerSync's, not this service's invention: a patch's upload diff carries a
+// column key only when the column actually changed, so an absent key means
+// "untouched" and an explicit `null` means "the user cleared it". Collapsing
+// `null` into absent would silently drop a clear; rejecting it (as this
+// service did before) dead-letters a perfectly ordinary edit. Verified
+// against powersync-sqlite-core itself — contracts/validation/README.md
+// §"journey.default_attributes and an explicit null".
 type journeyData struct {
 	Name              *string         `json:"name"`
 	MainActivityType  *string         `json:"main_activity_type"`
@@ -512,6 +521,10 @@ func mergeJourneyOp(current journeyRowState, op Op, data journeyData) journeyRow
 	if data.Status != nil {
 		want.status = *data.Status
 	}
+	// Presence is measured on the RAW bytes, so an explicit `null` (4 bytes)
+	// takes this branch and normalizes to a nil map — a patch that CLEARS the
+	// bag, which is exactly what PowerSync uploads for a column set to SQL
+	// NULL. Only a genuinely absent key (len 0) keeps current.
 	if len(data.DefaultAttributes) > 0 {
 		_, want.defaultAttributes = normalizeDefaultAttributes(data.DefaultAttributes)
 	}

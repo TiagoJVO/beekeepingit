@@ -88,11 +88,19 @@ client to run.
 **`absentWhen`** — how a field counts as "not supplied", mirroring the exact guard the
 server uses for _that_ field (this differs per field and is load-bearing):
 
-| Value       | Meaning                  | Server form                        |
-| ----------- | ------------------------ | ---------------------------------- |
-| _(omitted)_ | only `null`/missing      | `data.X == nil`                    |
-| `empty`     | `null` or `""`           | `data.X == nil \|\| *data.X == ""` |
-| `blank`     | `null` or all-whitespace | `strings.TrimSpace(*data.X) == ""` |
+| Value       | Meaning                             | Server form                          |
+| ----------- | ----------------------------------- | ------------------------------------ |
+| _(omitted)_ | only `null`/missing                 | `data.X == nil`                      |
+| `empty`     | `null` or `""`                      | `data.X == nil \|\| *data.X == ""`   |
+| `blank`     | `null` or all-whitespace            | `strings.TrimSpace(*data.X) == ""`   |
+| `jsonNull`  | missing, or an explicit JSON `null` | `len(raw) == 0 \|\| isJSONNull(raw)` |
+
+`jsonNull` is for a `json.RawMessage` field, where a present `null` is four wire bytes
+rather than a nil field. It is the **only** value that also makes the shape checks below
+(`jsonObject`, `maxBytes`) skip an explicit null — those read raw presence, not this absence
+notion. A RawMessage field left at the default keeps the stricter reading: a present `null`
+is present-and-not-an-object. Both readings are live, one per field — see
+[`journey.default_attributes` and an explicit `null`](#journeydefault_attributes-and-an-explicit-null).
 
 **Field checks:** `required` (with `on`: the op kinds it applies to), `maxLength` (UTF-8
 **bytes**, matching Go's `len()`), `maxBytes`, `min`, `range` (with `onlyWithAll`),
@@ -115,24 +123,65 @@ patch would reject perfectly valid edits. That is the client-side face of
 sides: `AssertRequiredOn` in each service's parity test, and an explicit
 `patch`-passes case per rule in `client/test/core/validation/sync_op_validator_test.dart`.
 
-## Known rough edge: `journey.default_attributes` and an explicit `null`
+## `journey.default_attributes` and an explicit `null`
 
-`validateDefaultAttributes` (`services/journeys/api/types.go`) treats an **absent**
-`default_attributes` as "don't touch" but a present JSON `null` as invalid — `len(raw) == 0`
-skips, whereas the four bytes `null` unmarshal to a nil map and report
-`default_attributes must be a JSON object`. The client's `jsonObject` check mirrors that
-faithfully, which is why it is described here.
+`journeys_repository.dart` stores SQL **NULL** for an empty defaults bag, while
+`validateDefaultAttributes` (`services/journeys/api/types.go`) used to reject a present
+JSON `null` — `len(raw) == 0` skipped, whereas the four bytes `null` unmarshal to a nil map
+and reported `default_attributes must be a JSON object`. Whether that ever reached the wire
+turned on one unanswered question: **does PowerSync include null columns in an upload op's
+`opData`?**
 
-The rough edge is that `journeys_repository.dart` stores SQL **NULL** for an empty bag. If
-PowerSync includes null columns in a `put`'s `opData` (not verified either way), clearing a
-journey's defaults already produces an op this service rejects today — the parity check
-would then surface it before the push rather than after, but would not have caused it.
-Every other "absent means don't touch" field on that struct treats `null` as absent, so the
-fix, if it is real, belongs server-side in `validateDefaultAttributes`; the `jsonObject`
-check here would then need to skip an explicit null for that field. Tracked in
-`FOLLOWUPS.md`, and pinned by the corpus case
-`journey/patch/default-attributes-is-an-explicit-null` — both sides agree today, so if the
-server is ever relaxed here, that case is what says the description must be relaxed with it.
+### The answer, and how it was measured
+
+It depends on the op kind, and the answer is not symmetric:
+
+| Op                                                      | Is the null column in `opData`?            |
+| ------------------------------------------------------- | ------------------------------------------ |
+| `put` (insert)                                          | **No** — null columns are dropped entirely |
+| `patch` where the column CHANGED to NULL                | **Yes** — as an explicit JSON `null`       |
+| `patch` where the column was already NULL and untouched | No                                         |
+
+Measured against the real `powersync-sqlite-core` extension (not the SDK docs): load the
+extension into a plain SQLite connection, `powersync_init()`, `powersync_replace_schema()`
+with the client's own `journeys` table, write through the generated view and read `ps_crud`
+back. The mechanism is visible in the triggers the extension generates, which is why the
+result is stable rather than a version accident:
+
+- `ps_view_insert_journeys` queues `powersync_diff('{}', json_object(<every column>))`.
+  Diffing against `{}` makes a null column equal to its (missing) old value, so it is
+  dropped — a `put` never carries one.
+- `ps_view_update_journeys` queues `powersync_diff(json_object(<OLD columns>),
+json_object(<NEW columns>))`. A column that went from a value to NULL **differs**, so the
+  key is emitted with a JSON `null` value.
+
+So **clearing a journey's defaults produced an op the service rejected**, and had done since
+`default_attributes` shipped (#385): `{"op":"patch", "data":{"main_activity_type":"harvest",
+"default_attributes":null, ...}}` came back 422 and went to the needs-fix dead letter.
+[#584](https://github.com/TiagoJVO/beekeepingit/issues/584)'s pre-push parity check only
+made it visible one step earlier; it did not cause it.
+
+The measurement also matches what another service already depends on:
+`journeyIDKeyPresent` (`services/activities/api/sync.go`, #387) exists precisely because a
+patch distinguishes "key absent" from "key present as `null`", and apiaries reads an
+explicit null as "the user cleared the location". Journeys' `default_attributes` was the
+one field that assumed the null could not arrive.
+
+### The fix
+
+`validateDefaultAttributes` now treats the `null` literal as a valid "no defaults" value,
+and `normalizeDefaultAttributes` collapses it to nil bytes so a cleared bag lands as SQL
+NULL rather than the JSONB literal `null`. Note that absent and `null` stay **distinct** on
+apply, because PowerSync makes them distinct: an absent key means "this column did not
+change" (keep the stored value), an explicit `null` means "the user cleared it".
+
+The description follows with `"absentWhen": "jsonNull"` on that field — the one absence rule
+that also skips an explicit null for the raw-presence checks (`jsonObject`, `maxBytes`).
+That relaxation is **per field, not per check kind**: activities' `attributes` keeps the
+strict reading, because `activities_repository.dart` always writes an encoded map and never
+SQL NULL, so no device can produce that shape there. The corpus pins both — the case
+`journey/patch/default-attributes-is-an-explicit-null` now expects acceptance, and
+`activity/patch/attributes-is-an-explicit-null` still expects rejection.
 
 ## The corpus
 

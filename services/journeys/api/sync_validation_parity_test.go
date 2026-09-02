@@ -23,7 +23,12 @@ func TestSharedValidationDescription_MatchesJourneyOp(t *testing.T) {
 	// check server-side, not an absent field).
 	paritytest.AssertAbsentWhen(t, e, "name", paritytest.AbsentEmpty)
 	paritytest.AssertAbsentWhen(t, e, "main_activity_type", paritytest.AbsentNull)
-	paritytest.AssertAbsentWhen(t, e, "default_attributes", paritytest.AbsentNull)
+	// default_attributes is a json.RawMessage, so validateDefaultAttributes'
+	// guard is `len(raw) == 0 || isJSONNull(raw)` — an explicit `null` is the
+	// wire form of a CLEARED bag (what PowerSync uploads for a column set to
+	// SQL NULL), not a bad shape. Describing it as AbsentNull would make the
+	// client reject every cleared defaults bag before it is ever pushed.
+	paritytest.AssertAbsentWhen(t, e, "default_attributes", paritytest.AbsentJSONNull)
 
 	// default_attributes' SHAPE is mirrored (object + byte cap,
 	// validateDefaultAttributes) — uploading it as a JSON string instead of an
