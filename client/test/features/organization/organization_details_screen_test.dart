@@ -1,3 +1,8 @@
+import 'dart:convert';
+
+import 'package:beekeepingit_client/core/api/api_client.dart';
+import 'package:beekeepingit_client/core/auth/auth_controller.dart';
+import 'package:beekeepingit_client/core/storage/local_prefs.dart';
 import 'package:beekeepingit_client/features/organization/organization_details_screen.dart';
 import 'package:beekeepingit_client/features/organization/organization_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -5,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 /// FR-ONB-2 + FR-AP-9 (#296): the organization-details screen — the
 /// re-enterable settings view of an organization that already exists (name,
@@ -55,7 +62,7 @@ class _FakeOrganizationController extends OrganizationController {
   Organization? savedFrom;
 
   @override
-  Future<void> saveDetails({
+  Future<bool> saveDetails({
     required Organization from,
     required String name,
     required String address,
@@ -68,7 +75,38 @@ class _FakeOrganizationController extends OrganizationController {
       address: address,
       registrationNumber: registrationNumber,
     );
+    // Mirrors the real controller: a PATCH goes out only when something
+    // actually differs from the baseline the screen was seeded from.
+    return name.trim() != from.name ||
+        address.trim() != from.address ||
+        registrationNumber.trim() != from.registrationNumber;
   }
+}
+
+/// A minimal [AuthController] stand-in returning a fixed token, so the real
+/// [ApiClient] can authorize its requests — mirrors
+/// organization_repository_test.dart's own fake of the same name.
+class _FakeAuthController extends AuthController {
+  @override
+  Future<AuthSession?> build() async => null;
+
+  @override
+  Future<String?> accessToken() async => 'tok';
+}
+
+/// In-memory [LocalPrefs] so the repository's offline-cache write needs no
+/// platform channel.
+class _FakeLocalPrefs implements LocalPrefs {
+  final Map<String, String> _store = {};
+
+  @override
+  String? read(String key) => _store[key];
+
+  @override
+  void write(String key, String value) => _store[key] = value;
+
+  @override
+  void remove(String key) => _store.remove(key);
 }
 
 Widget _buildScreen(_FakeOrganizationController controller) {
@@ -212,6 +250,71 @@ void main() {
     );
   });
 
+  testWidgets('a newer organization does NOT clobber an open edit the user '
+      'has typed back to its seeded value', (tester) async {
+    final controller = _FakeOrganizationController(
+      name: 'Apiários do Montargil',
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    // The user IS editing — they just happen to have arrived back at the
+    // seeded text (typed, then undone). Comparing values calls this "clean"
+    // and re-seeds; only tracking the edit itself gets it right.
+    await tester.enterText(find.byKey(_nameField), 'Half-typed name');
+    await tester.enterText(find.byKey(_nameField), 'Apiários do Montargil');
+    controller.emit(
+      Organization(
+        id: 'org-1',
+        name: 'Renamed By Another Admin',
+        address: 'Montargil, Ponte de Sor',
+        createdBy: 'user-1',
+        role: 'admin',
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 2, 2),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextFormField>(find.byKey(_nameField)).controller?.text,
+      'Apiários do Montargil',
+    );
+  });
+
+  testWidgets('re-seeds again once a save has reconciled the form with the '
+      'server', (tester) async {
+    final controller = _FakeOrganizationController(
+      name: 'Apiários do Montargil',
+    );
+    await tester.pumpWidget(_buildScreen(controller));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(_nameField), 'Apiários do Norte');
+    await tester.tap(find.byKey(_saveButton));
+    await tester.pumpAndSettle();
+
+    // The edit is settled, so the screen must follow the server again — the
+    // edited flag must not latch on forever.
+    controller.emit(
+      Organization(
+        id: 'org-1',
+        name: 'Renamed By Another Admin',
+        address: 'Montargil, Ponte de Sor',
+        createdBy: 'user-1',
+        role: 'admin',
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 2, 2),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextFormField>(find.byKey(_nameField)).controller?.text,
+      'Renamed By Another Admin',
+    );
+  });
+
   testWidgets('refuses to save an empty name — the contract requires one', (
     tester,
   ) async {
@@ -276,5 +379,119 @@ void main() {
       tester.getSize(find.byKey(_saveButton)).height,
       greaterThanOrEqualTo(44),
     );
+  });
+
+  // Regression (#298, found by a live Helm-E2E run whose network trace showed
+  // TWO `GET /v1/organizations/me` and ZERO PATCHes behind a "saved" snackbar):
+  // a refresh landing between typing and Save must never discard the edit, and
+  // Save must never claim success for a request it did not send. These drive
+  // the REAL controller and the REAL repository against a MockClient, so what
+  // they assert is the wire traffic, not a fake's bookkeeping.
+  group('a refresh landing mid-edit', () {
+    late List<Map<String, dynamic>> patchBodies;
+    late int getCount;
+    late Map<String, dynamic> serverOrg;
+
+    ProviderContainer buildContainer() {
+      patchBodies = [];
+      getCount = 0;
+      serverOrg = {
+        'id': 'org-1',
+        'name': 'Apiários do Montargil',
+        'address': 'Montargil, Ponte de Sor',
+        'registration_number': '',
+        'created_by': 'user-1',
+        'role': 'admin',
+        'created_at': '2026-01-01T00:00:00.000Z',
+        'updated_at': '2026-01-02T00:00:00.000Z',
+      };
+      final client = MockClient((req) async {
+        if (req.method == 'PATCH') {
+          final body = jsonDecode(req.body) as Map<String, dynamic>;
+          patchBodies.add(body);
+          serverOrg = {
+            ...serverOrg,
+            for (final e in body.entries) e.key: e.value ?? '',
+          };
+        } else {
+          getCount++;
+        }
+        return http.Response(
+          jsonEncode(serverOrg),
+          200,
+          headers: {'content-type': 'application/json'},
+          request: req,
+        );
+      });
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(_FakeAuthController.new),
+          isAuthenticatedProvider.overrideWith((ref) => true),
+          organizationRepositoryProvider.overrideWith(
+            (ref) => OrganizationRepository(
+              ApiClient(ref, httpClient: client),
+              prefs: _FakeLocalPrefs(),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    Widget wrap(ProviderContainer container) => UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(
+        localizationsDelegates: [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: OrganizationDetailsScreen(),
+      ),
+    );
+
+    testWidgets('still PATCHes the typed registration number when a refresh '
+        'lands between typing and Save', (tester) async {
+      final container = buildContainer();
+      await tester.pumpWidget(wrap(container));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(_numberField), 'PT-654321');
+      await tester.pump();
+
+      // A second `GET /organizations/me` lands — the refresh the trace showed.
+      // It has NOT seen the edit (the number is still empty server-side) and
+      // carries a newer `updated_at`, so it is a genuinely new value.
+      serverOrg = {...serverOrg, 'updated_at': '2026-02-02T00:00:00.000Z'};
+      await container.read(organizationProvider.notifier).refresh();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(_saveButton));
+      await tester.pumpAndSettle();
+
+      expect(getCount, 2, reason: 'the refresh really did land');
+      expect(
+        patchBodies.single['registration_number'],
+        'PT-654321',
+        reason: 'the typed value must reach the wire, not be silently dropped',
+      );
+    });
+
+    testWidgets('does not claim a save happened when nothing changed and no '
+        'request was sent', (tester) async {
+      final container = buildContainer();
+      await tester.pumpWidget(wrap(container));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(_saveButton));
+      await tester.pumpAndSettle();
+
+      expect(patchBodies, isEmpty);
+      expect(find.text('Organization details saved'), findsNothing);
+      expect(find.text('No changes to save'), findsOneWidget);
+    });
   });
 }

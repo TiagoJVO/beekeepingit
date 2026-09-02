@@ -885,6 +885,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get organizationDetailsSaved => 'Organization details saved';
 
   @override
+  String get organizationDetailsNoChanges => 'No changes to save';
+
+  @override
   String get organizationDetailsSaveFailed =>
       'Could not save the organization details';
 

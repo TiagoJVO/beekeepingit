@@ -113,6 +113,34 @@ const declarationRow = (page: Page) => page.getByText(/— \d+ hives?/);
 // fresh-client assertion guards against, one field over.
 const noNumberGroup = (page: Page) => page.getByText("No registration number");
 
+/**
+ * Flutter-web text entry: focus the field, then type real keystrokes.
+ *
+ * NOT `locator.fill()`. Flutter renders to canvas and only exposes a semantics
+ * `<input>` placeholder; the framework's TextEditingController is fed by the
+ * engine's text-editing strategy, which listens for key/composition events on
+ * whatever element it has made the active editing element. `fill()` sets
+ * `input.value` directly and dispatches a single synthetic `input` event before
+ * Flutter has finished routing the focus into the widget, so the value never
+ * reaches Dart — the field looks filled to Playwright and is empty to the app.
+ * That is exactly how this spec's registration-number step used to "pass" its
+ * fill, send no PATCH at all, and then fail further down on the
+ * "No registration number" group (#298).
+ *
+ * The Control+A / Delete / Backspace no-op is the same dropped-keystroke
+ * settle that slice.spec.ts and registration.spec.ts already use: typing
+ * immediately after focus has been observed dropping a variable-length prefix
+ * in CI.
+ */
+async function typeInto(page: Page, field: ReturnType<Page["getByRole"]>, value: string) {
+  await field.first().waitFor({ state: "visible", timeout: 30_000 });
+  await field.first().click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type(value, { delay: 50 });
+}
+
 async function login(page: Page) {
   await submitIdpCredentials(page, TEST_USER, TEST_PASS);
   // After login the app lands on the Tasks tab (D-29, #427), not the apiaries
@@ -238,7 +266,7 @@ test("registration number + declaration: recorded here, downloaded by a fresh cl
   await openOrganizationDetails(page);
   const numberField = page.getByRole("textbox", { name: /Registration number/ });
   await expect(numberField).toBeVisible({ timeout: 30_000 });
-  await numberField.fill(registrationNumber);
+  await typeInto(page, numberField, registrationNumber);
   // "Save" is MaterialLocalizations' own label, exact so it can't also match a
   // longer button that happens to contain the word.
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -275,7 +303,7 @@ test("registration number + declaration: recorded here, downloaded by a fresh cl
   await expect(page.getByText("Declaration date").first()).toBeVisible({ timeout: 30_000 });
   const noteField = page.getByRole("textbox", { name: /Note \(optional\)/ });
   await expect(noteField).toBeVisible({ timeout: 30_000 });
-  await noteField.fill("e2e: filed on the authority's portal");
+  await typeInto(page, noteField, "e2e: filed on the authority's portal");
   // Exact: the group's own action behind the modal is "Record declaration", and
   // this dialog's confirm is just "Record".
   await page.getByRole("button", { name: "Record", exact: true }).click();

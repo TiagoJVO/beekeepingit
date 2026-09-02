@@ -891,6 +891,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get organizationDetailsSaved => 'Dados da organização guardados';
 
   @override
+  String get organizationDetailsNoChanges => 'Sem alterações para guardar';
+
+  @override
   String get organizationDetailsSaveFailed =>
       'Não foi possível guardar os dados da organização';
 

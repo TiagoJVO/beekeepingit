@@ -46,6 +46,24 @@ class _OrganizationDetailsScreenState
   /// rather than sent stale (see [OrganizationController.saveDetails]).
   Organization? _seededFrom;
 
+  /// Whether the user has touched this form since the last seed — set from the
+  /// fields' `onChanged`, i.e. from the user's actual INTENT, not inferred by
+  /// comparing the controllers against the baseline.
+  ///
+  /// The comparison this replaces answered a subtly different question ("does
+  /// the form still hold exactly the seeded values?") and so said "not edited"
+  /// in two cases where the user very much is editing: while `_seededFrom` is
+  /// still null (nothing to compare against, so it defaulted to "clean"), and
+  /// after the user has typed their way back to a seeded value mid-edit. In
+  /// both, a provider emission landing at that moment would re-seed straight
+  /// over the open form. An explicit flag cannot drift from intent that way:
+  /// the screen stops re-seeding the moment the user starts editing and
+  /// resumes only once a save has reconciled the form with the server.
+  ///
+  /// Deliberately not a `setState` — it changes nothing that is rendered, only
+  /// whether the NEXT build is allowed to re-seed.
+  bool _userHasEdited = false;
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -60,12 +78,15 @@ class _OrganizationDetailsScreenState
     final organization = ref.watch(organizationProvider).value;
 
     // Seed the controllers from the loaded organization, and RE-seed whenever
-    // a newer one arrives — but never over live typing. Seeding only once per
-    // organization id (the previous rule) meant a later refresh could never
+    // a newer one arrives — but never over an open edit. Seeding only once per
+    // organization id (the original rule) meant a later refresh could never
     // re-seed, so the fields could stay stale indefinitely; seeding on every
     // rebuild would clobber what the user is halfway through typing. So:
-    // re-seed only while the form is still exactly what was seeded.
-    if (organization != null && organization != _seededFrom && !_isDirty) {
+    // re-seed only while the user has not touched the form (see
+    // [_userHasEdited]).
+    if (organization != null &&
+        organization != _seededFrom &&
+        !_userHasEdited) {
       _seededFrom = organization;
       _nameController.text = organization.name;
       _addressController.text = organization.address;
@@ -99,6 +120,7 @@ class _OrganizationDetailsScreenState
                     key: const Key('organization-details-name-field'),
                     controller: _nameController,
                     enabled: editable,
+                    onChanged: _markEdited,
                     decoration: InputDecoration(
                       labelText: l10n.organizationNameLabel,
                     ),
@@ -111,6 +133,7 @@ class _OrganizationDetailsScreenState
                     key: const Key('organization-details-address-field'),
                     controller: _addressController,
                     enabled: editable,
+                    onChanged: _markEdited,
                     decoration: InputDecoration(
                       labelText: l10n.organizationAddressLabel,
                     ),
@@ -122,6 +145,7 @@ class _OrganizationDetailsScreenState
                     ),
                     controller: _registrationNumberController,
                     enabled: editable,
+                    onChanged: _markEdited,
                     maxLength: 50,
                     decoration: InputDecoration(
                       labelText: l10n.organizationRegistrationNumberLabel,
@@ -146,15 +170,10 @@ class _OrganizationDetailsScreenState
     );
   }
 
-  /// Whether the user has edited anything since the last seed. `false` before
-  /// the first seed, so the first organization to arrive always seeds.
-  bool get _isDirty {
-    final seeded = _seededFrom;
-    if (seeded == null) return false;
-    return _nameController.text != seeded.name ||
-        _addressController.text != seeded.address ||
-        _registrationNumberController.text != seeded.registrationNumber;
-  }
+  /// Records that the user is editing this form. Takes (and ignores) the new
+  /// value so it can be passed straight as a field's `onChanged`: WHAT they
+  /// typed is irrelevant here, only THAT they typed.
+  void _markEdited(String _) => _userHasEdited = true;
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -164,7 +183,7 @@ class _OrganizationDetailsScreenState
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      await ref
+      final sent = await ref
           .read(organizationProvider.notifier)
           .saveDetails(
             from: seeded,
@@ -172,13 +191,29 @@ class _OrganizationDetailsScreenState
             address: _addressController.text,
             registrationNumber: _registrationNumberController.text,
           );
-      // Drop the baseline so the next build re-seeds from the server's
-      // response: the save is no longer "in flight" typing, and the response
-      // carries the canonical (trimmed, possibly concurrently-changed by
-      // another admin) values this screen should now show.
+      // Reconciled with the server either way — a PATCH went out and state
+      // now holds its response, or nothing differed from the baseline in the
+      // first place. So drop both the baseline and the edited flag and let the
+      // next build re-seed: the canonical (trimmed, possibly
+      // concurrently-changed by another admin) values are what this screen
+      // should now show.
       _seededFrom = null;
+      _userHasEdited = false;
+      // A distinct message when no request was sent, never the success one.
+      // Saying "saved" for a no-op is how the silent-failure this fixes stayed
+      // invisible: it makes "your edit was lost" indistinguishable from "your
+      // edit was stored", for the user AND for the e2e asserting on it. Not
+      // simply staying silent either — the user pressed a button and a button
+      // that answers nothing reads as broken, especially on the flaky
+      // connectivity this screen already warns about.
       messenger.showSnackBar(
-        SnackBar(content: Text(l10n.organizationDetailsSaved)),
+        SnackBar(
+          content: Text(
+            sent
+                ? l10n.organizationDetailsSaved
+                : l10n.organizationDetailsNoChanges,
+          ),
+        ),
       );
     } on Exception {
       // Offline, a 403 for a non-admin, or a 422 for an over-long value — all

@@ -1538,6 +1538,12 @@ abstract class AppLocalizations {
   /// **'Organization details saved'**
   String get organizationDetailsSaved;
 
+  /// Shown when Save is pressed on the organization-details screen but nothing differs from the loaded values, so no request is sent — deliberately distinct from the success message, which must never stand in for a save that never happened (#296, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'No changes to save'**
+  String get organizationDetailsNoChanges;
+
   /// Error shown when saving the organization details fails, e.g. offline or not an admin (#296)
   ///
   /// In en, this message translates to:

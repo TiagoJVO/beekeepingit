@@ -240,6 +240,7 @@
   "organizationRegistrationNumberLabel": "Número de registo",
   "organizationRegistrationNumberHint": "O número de apicultor afixado nos seus apiários",
   "organizationDetailsSaved": "Dados da organização guardados",
+  "organizationDetailsNoChanges": "Sem alterações para guardar",
   "organizationDetailsSaveFailed": "Não foi possível guardar os dados da organização",
   "organizationDetailsAdminOnly": "Apenas um administrador da organização pode alterar estes dados.",
   "stockDeclarationsTitle": "Declarações de existências",

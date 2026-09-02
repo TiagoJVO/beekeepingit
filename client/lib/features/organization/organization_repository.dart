@@ -267,7 +267,13 @@ class OrganizationController extends AsyncNotifier<Organization?> {
   /// Leaves state untouched when nothing changed (no request was sent).
   /// Rethrows on failure (403 for a non-admin, 422 for an over-long value)
   /// so the calling screen can surface it.
-  Future<void> saveDetails({
+  ///
+  /// Returns whether a PATCH was actually SENT — `false` means every field
+  /// still matched [from], so there was nothing to save. The caller needs
+  /// this to tell a real save apart from a no-op: reporting "saved" for a
+  /// request that never left the device is exactly how a silently-dropped
+  /// edit looks identical to a stored one.
+  Future<bool> saveDetails({
     required Organization from,
     required String name,
     required String address,
@@ -280,7 +286,9 @@ class OrganizationController extends AsyncNotifier<Organization?> {
       address: address,
       registrationNumber: registrationNumber,
     );
-    if (updated != null) state = AsyncData(updated);
+    if (updated == null) return false;
+    state = AsyncData(updated);
+    return true;
   }
 }
 
