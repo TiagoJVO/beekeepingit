@@ -616,6 +616,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncNeedsFixFieldHiveCount => 'Número de colmeias';
 
   @override
+  String get syncNeedsFixFieldTotalHiveCount => 'Número total de colmeias';
+
+  @override
+  String get syncNeedsFixFieldDeclarationDate => 'Data da declaração';
+
+  @override
+  String get syncNeedsFixFieldDgavNumber => 'Número de registo DGAV';
+
+  @override
   String get syncNeedsFixFieldCount => 'Contagem';
 
   @override

@@ -1016,7 +1016,7 @@ abstract class AppLocalizations {
   /// **'an entry here is outside the allowed range.'**
   String get syncNeedsFixRuleAttributeOutOfRange;
 
-  /// Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)
+  /// Needs-fix rule fragment replacing the generic out-of-range copy for the count fields whose only bound is >= 0 — an apiary's hive count, a counter's value, and a stock declaration's total (#443, #600)
   ///
   /// In en, this message translates to:
   /// **'this must be 0 or more.'**
@@ -1087,6 +1087,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Number of hives'**
   String get syncNeedsFixFieldHiveCount;
+
+  /// Needs-fix field label for a DGAV stock declaration's total_hive_count — distinct from syncNeedsFixFieldHiveCount, which is one apiary's count: a declaration states the whole holding's total (#600)
+  ///
+  /// In en, this message translates to:
+  /// **'Total number of hives'**
+  String get syncNeedsFixFieldTotalHiveCount;
+
+  /// Needs-fix field label for the date a DGAV stock declaration was filed for (#600)
+  ///
+  /// In en, this message translates to:
+  /// **'Declaration date'**
+  String get syncNeedsFixFieldDeclarationDate;
+
+  /// Needs-fix field label for an apiary's or a stock declaration's DGAV registration number — deliberately the same wording as apiaryDgavNumberLabel, the label on the form the Fix action opens (#600)
+  ///
+  /// In en, this message translates to:
+  /// **'DGAV registration number'**
+  String get syncNeedsFixFieldDgavNumber;
 
   /// Needs-fix field label for an apiary counter's value (#443)
   ///

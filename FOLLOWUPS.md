@@ -23,15 +23,6 @@
   both sides (corpus case `journey/patch/default-attributes-is-an-explicit-null`) — the two sides
   agree today, so if the server is relaxed here the description must be relaxed with it, and that
   case is what will say so.
-- **Give the `_fieldLabel` table entries for the stock-declaration fields — and needs an owner.**
-  `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
-  `total_hive_count` or `dgav_registration_number`, so a rejected DGAV stock declaration (#298)
-  degrades to the generic "needs your attention" line even though #584 now produces exact
-  `(field, code)` pairs for it. Graceful, not broken — but it throws away guidance that is
-  already there. Three labels plus their EN/PT strings. **Sweep note (#596): its owning issue
-  #443 has since CLOSED without them**, so this entry is stale by this file's own rule and needs
-  promoting to its own Issue (or folding into #597's scope, which references it) rather than
-  sitting here.
 
 ## `#296`/`#298` — DGAV registration + stock declarations (PR #593, merged)
 
@@ -65,7 +56,13 @@ _`#296`/`#298` section is kept. Its save-time-call-site bullet said to promote i
 _#585 did not (it built the boundary-contract corpus, not a call site), so it is now_
 _[#597](https://github.com/TiagoJVO/beekeepingit/issues/597), a sub-issue of EPIC-06 (#7), and the bullet_
 _is pruned. The `default_attributes` bullet stays: still unverified, but now pinned from both sides by the_
-_corpus. The `_fieldLabel` bullet also stays, flagged — its owning issue #443 has CLOSED without the_
-_labels, so it needs its own Issue; left for a human rather than opened unprompted._
+_corpus._
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that entry stands._
 _Prior sweep notes dropped with their entries, per this file's convention._
+
+_Sweep note (2026-09-02, during #600):_
+_The `_fieldLabel` bullet the previous sweep flagged for promotion became_
+_[#600](https://github.com/TiagoJVO/beekeepingit/issues/600), which this PR lands — so it is pruned here_
+_(along with the previous note's sentence about it). [#495](https://github.com/TiagoJVO/beekeepingit/issues/495)_
+_and [#597](https://github.com/TiagoJVO/beekeepingit/issues/597) re-checked and both still open; the_
+_`default_attributes` and `stock_declarations`-grant bullets are unchanged and still pending._

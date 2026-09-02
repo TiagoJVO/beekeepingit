@@ -34,10 +34,10 @@ class RejectedOp {
   /// own doc.
   final String id;
 
-  /// `apiary` | `apiary_counter` | `activity` | `journey` |
-  /// `journey_plan_item` | `todo` (powersync_schema.dart's entity-type
-  /// constants) — drives both the entity label and the "Fix" deep-link the
-  /// list row shows (#379).
+  /// `apiary` | `apiary_counter` | `stock_declaration` | `activity` |
+  /// `journey` | `journey_plan_item` | `todo` (powersync_schema.dart's
+  /// entity-type constants) — drives both the entity label and the "Fix"
+  /// deep-link the list row shows (#379).
   final String entityType;
 
   /// Despite its name (kept for backward compatibility with the dead-letter
@@ -194,6 +194,14 @@ class SyncRejectedRepository {
   /// through to null); `activity` is excluded too — it has only a wire type
   /// enum, which must be localized before it is shown and so travels as
   /// [RejectedOp.activityType] rather than as a display name (#443).
+  ///
+  /// `stock_declaration` is excluded for the same reason (#600): it carries no
+  /// already-human name either. Its `declared_on` is a raw ISO `YYYY-MM-DD`
+  /// wire string — a date format neither EN nor PT presents that way — and its
+  /// `dgav_registration_number` is an external registry identifier, so both
+  /// would be exactly the kind of raw value #443 stopped reaching the title.
+  /// The row therefore shows the plain "Stock declaration change" label; the
+  /// specific guidance comes from the field mapping instead.
   String? _displayNameFor(String entityType, Map<String, dynamic>? data) {
     if (data == null) return null;
     return _nonEmptyString(switch (entityType) {

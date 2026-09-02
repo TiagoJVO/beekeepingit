@@ -720,7 +720,7 @@
   },
   "syncNeedsFixRuleNonNegative": "this must be 0 or more.",
   "@syncNeedsFixRuleNonNegative": {
-    "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)"
+    "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the count fields whose only bound is >= 0 — an apiary's hive count, a counter's value, and a stock declaration's total (#443, #600)"
   },
   "syncNeedsFixRuleLatitudeRange": "this must be between -90 and 90.",
   "@syncNeedsFixRuleLatitudeRange": {
@@ -765,6 +765,18 @@
   "syncNeedsFixFieldHiveCount": "Number of hives",
   "@syncNeedsFixFieldHiveCount": {
     "description": "Needs-fix field label for an apiary's hive count — deliberately the same wording as hiveCountLabel, the label on the form the Fix action opens (#443)"
+  },
+  "syncNeedsFixFieldTotalHiveCount": "Total number of hives",
+  "@syncNeedsFixFieldTotalHiveCount": {
+    "description": "Needs-fix field label for a DGAV stock declaration's total_hive_count — distinct from syncNeedsFixFieldHiveCount, which is one apiary's count: a declaration states the whole holding's total (#600)"
+  },
+  "syncNeedsFixFieldDeclarationDate": "Declaration date",
+  "@syncNeedsFixFieldDeclarationDate": {
+    "description": "Needs-fix field label for the date a DGAV stock declaration was filed for (#600)"
+  },
+  "syncNeedsFixFieldDgavNumber": "DGAV registration number",
+  "@syncNeedsFixFieldDgavNumber": {
+    "description": "Needs-fix field label for an apiary's or a stock declaration's DGAV registration number — deliberately the same wording as apiaryDgavNumberLabel, the label on the form the Fix action opens (#600)"
   },
   "syncNeedsFixFieldCount": "Count",
   "@syncNeedsFixFieldCount": {

@@ -600,7 +600,15 @@ reads: `client/lib/features/sync/sync_rejection_messages.dart` maps each `(field
 onto **app-owned EN/PT copy** (a localized field label + the rule it broke). The mapping is an
 **allow-list**: a field or code the client has no copy for — and any pair whose generic copy
 would misdescribe the real constraint — degrades to the generic message, so a service adding a
-new validator can never leak by default. The same truthfulness rule shapes the copy itself: an
+new validator can never leak by default. That safety-by-default has a cost the DGAV entities
+(#298/#593) paid: added **after** the table was written, they degraded silently to the generic
+line — no leak, but none of the guidance either. So the table is now held against the **shared
+validation description** (§9): every `(field, code)`
+[`sync-ops.validation.json`](../../contracts/validation/sync-ops.validation.json) describes must
+have copy, minus a short list of reasoned exemptions, and the next entity added to the
+description fails the client's tests rather than a beekeeper's rejected write (#600).
+
+The same truthfulness rule shapes the copy itself: an
 activity's per-type attribute keys are internal schema names, so they collapse onto one
 "Details" label whose wording is phrased about the **entries inside** the bag, staying true
 whether one or several are wrong. The row's record name is held to it too — an activity has no

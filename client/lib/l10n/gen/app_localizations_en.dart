@@ -611,6 +611,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixFieldHiveCount => 'Number of hives';
 
   @override
+  String get syncNeedsFixFieldTotalHiveCount => 'Total number of hives';
+
+  @override
+  String get syncNeedsFixFieldDeclarationDate => 'Declaration date';
+
+  @override
+  String get syncNeedsFixFieldDgavNumber => 'DGAV registration number';
+
+  @override
   String get syncNeedsFixFieldCount => 'Count';
 
   @override

@@ -137,6 +137,20 @@ String _normalizeField(String field) {
 /// app does not have copy for — including the wire envelope's own fields
 /// (`op`, `entity_type`, `id`, `updated_at`, `data`, `ops`), which describe
 /// the sync protocol rather than anything the beekeeper typed.
+///
+/// **Keep this in step with the shared validation description**
+/// (`contracts/validation/sync-ops.validation.json`): every field it names is
+/// a field the server can reject, so an entry missing here silently costs the
+/// beekeeper the specific guidance and hands back the generic line instead —
+/// which is what happened to the DGAV entities (#298/#593), added after this
+/// table was written, and what #600 fixed. `sync_rejection_messages_test.dart`
+/// derives that expectation from the description itself, so a newly described
+/// field fails there rather than degrading in the field.
+///
+/// A field is deliberately absent only when no truthful, actionable copy
+/// exists for it: a `stock_declaration`'s `breakdown` is the per-apiary
+/// snapshot the CLIENT builds, never something the beekeeper typed, so naming
+/// it would point at nothing they could correct.
 String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'name' => l10n.syncNeedsFixFieldName,
   'title' => l10n.syncNeedsFixFieldTitle,
@@ -147,6 +161,13 @@ String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'location_lat' => l10n.syncNeedsFixFieldLatitude,
   'location_lon' => l10n.syncNeedsFixFieldLongitude,
   'hive_count' => l10n.syncNeedsFixFieldHiveCount,
+  // DGAV (#298/#593, labelled by #600): a stock declaration's own fields, and
+  // the registration number both it and an apiary carry. `total_hive_count` is
+  // the whole holding's total, so it gets its own label rather than reusing
+  // one apiary's "Number of hives".
+  'total_hive_count' => l10n.syncNeedsFixFieldTotalHiveCount,
+  'declared_on' => l10n.syncNeedsFixFieldDeclarationDate,
+  'dgav_registration_number' => l10n.syncNeedsFixFieldDgavNumber,
   'value' => l10n.syncNeedsFixFieldCount,
   'counter_type' => l10n.syncNeedsFixFieldCountType,
   'apiary_id' => l10n.syncNeedsFixFieldApiary,
@@ -189,7 +210,13 @@ String? _ruleMessage(AppLocalizations l10n, String field, String code) {
   }
   if (code == 'out_of_range') {
     return switch (field) {
-      'hive_count' || 'value' => l10n.syncNeedsFixRuleNonNegative,
+      // The three count fields whose only bound is >= 0 (apiary hive_count,
+      // counter value, declaration total_hive_count) — "outside the allowed
+      // range" is true but says nothing; the exact bound is part of the API
+      // contract, so restating it can't drift into a leak.
+      'hive_count' ||
+      'value' ||
+      'total_hive_count' => l10n.syncNeedsFixRuleNonNegative,
       'location_lat' => l10n.syncNeedsFixRuleLatitudeRange,
       'location_lon' => l10n.syncNeedsFixRuleLongitudeRange,
       _ => l10n.syncNeedsFixRuleOutOfRange,
