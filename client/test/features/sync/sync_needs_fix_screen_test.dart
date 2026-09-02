@@ -531,6 +531,11 @@ void main() {
             payload:
                 '{"data":{"declared_on":"2026-09-14","total_hive_count":12,'
                 '"dgav_registration_number":"PT-12345","notes":"annual"}}',
+            // The helper's default detail is an apiary_counter's field, which
+            // validateDeclarationOp could never emit — use a real declaration
+            // rejection so the whole fixture is one the server could produce.
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.declared_on","code":"invalid","message":"declared_on must be a date in YYYY-MM-DD form"}]}',
           ),
         ]);
         await tester.pumpWidget(_harness(store));

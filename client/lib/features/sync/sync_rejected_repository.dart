@@ -48,7 +48,9 @@ class RejectedOp {
   /// `_fixApiaryIdFor` returns the op's own id for anything but a counter) —
   /// i.e. the journey id for a `journey` rejection, the todo id for a `todo`
   /// one. NOT useful for `journey_plan_item` (whose own id is the plan-item
-  /// row, not the journey) — see [journeyId] for that case instead.
+  /// row, not the journey) — see [journeyId] for that case instead — nor for
+  /// `stock_declaration`, which has no per-record editor and routes to the
+  /// DGAV section instead (`sync_needs_fix_screen.dart`'s `_navigateToFix`).
   final String fixApiaryId;
 
   /// `put` | `patch` | `delete`.

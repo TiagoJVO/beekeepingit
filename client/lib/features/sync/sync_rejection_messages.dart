@@ -145,12 +145,18 @@ String _normalizeField(String field) {
 /// which is what happened to the DGAV entities (#298/#593), added after this
 /// table was written, and what #600 fixed. `sync_rejection_messages_test.dart`
 /// derives that expectation from the description itself, so a newly described
-/// field fails there rather than degrading in the field.
+/// field fails there rather than degrading in the field. That guard reaches
+/// exactly as far as the description does: a service that adds a field to its
+/// `validate*Op` and classes it `serverOnly` is still invisible to it, so a
+/// new server-only field check still needs a deliberate look here.
 ///
-/// A field is deliberately absent only when no truthful, actionable copy
-/// exists for it: a `stock_declaration`'s `breakdown` is the per-apiary
-/// snapshot the CLIENT builds, never something the beekeeper typed, so naming
-/// it would point at nothing they could correct.
+/// A field is deliberately absent only when no `<label>: <rule>` pairing can
+/// describe its constraint truthfully — not merely because the beekeeper
+/// didn't type it (they type none of a declaration's fields today, and those
+/// are labelled). A `stock_declaration`'s `breakdown` qualifies: its only
+/// checks are container-shape rules on the snapshot itself (is a JSON array,
+/// holds objects, is not over the entry cap), which no field-and-rule line can
+/// state without misdescribing them.
 String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'name' => l10n.syncNeedsFixFieldName,
   'title' => l10n.syncNeedsFixFieldTitle,

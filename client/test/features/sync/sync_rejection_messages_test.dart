@@ -292,22 +292,19 @@ void main() {
       expect(messages.single, isNot(contains(en.syncNeedsFixRuleRequired)));
     });
 
-    test(
-      "a declaration's breakdown snapshot stays unmapped — the client BUILDS "
-      'it, so no wording could tell the beekeeper what to correct',
-      () {
-        for (final code in const ['invalid', 'too_many']) {
-          expect(
-            localizedRejectionMessages(en, [
-              RejectedFieldIssue(field: 'data.breakdown', code: code),
-            ]),
-            [en.syncNeedsFixGenericProblem],
-            reason:
-                '(data.breakdown, $code) must degrade to the generic message',
-          );
-        }
-      },
-    );
+    test("a declaration's breakdown snapshot stays unmapped — its checks are "
+        'container-shape rules (is an array, holds objects, entry cap) that no '
+        'field-and-rule line could state without misdescribing them', () {
+      for (final code in const ['invalid', 'too_many']) {
+        expect(
+          localizedRejectionMessages(en, [
+            RejectedFieldIssue(field: 'data.breakdown', code: code),
+          ]),
+          [en.syncNeedsFixGenericProblem],
+          reason: '(data.breakdown, $code) must degrade to the generic message',
+        );
+      }
+    });
 
     test('an activity type and a journey main activity type get the label of '
         'the form each Fix action opens', () {
@@ -376,8 +373,8 @@ void main() {
             // deliberate non-mappings: a journey's default_attributes byte
             // cap, not_found on the attribute bag (which the bag's own
             // wording has no truthful phrasing for), and a declaration's
-            // breakdown snapshot (built by the client, not typed by the user —
-            // there is nothing for the beekeeper to correct in it).
+            // breakdown snapshot (container-shape checks — is an array, holds
+            // objects, entry cap — that no field-and-rule line can state).
             final unmappedOnPurpose =
                 (field == 'data.default_attributes' && code == 'too_long') ||
                 (field.startsWith('data.attributes') && code == 'not_found') ||
