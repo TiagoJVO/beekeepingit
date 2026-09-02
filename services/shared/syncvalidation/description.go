@@ -31,14 +31,14 @@ import (
 // root. This package never takes a path from its caller — see [Load].
 const RepoRelativePath = "contracts/validation/sync-ops.validation.json"
 
-// pathFrom builds the description's path from a package directory that sits
-// depth levels below the repository root — e.g. services/apiaries/api is 3.
-func pathFrom(depth int) string {
+// pathFrom builds a repo-relative artifact's path from a package directory that
+// sits depth levels below the repository root — e.g. services/apiaries/api is 3.
+func pathFrom(depth int, repoRelative string) string {
 	parts := make([]string, 0, depth+1)
 	for range depth {
 		parts = append(parts, "..")
 	}
-	parts = append(parts, filepath.FromSlash(RepoRelativePath))
+	parts = append(parts, filepath.FromSlash(repoRelative))
 	return filepath.Join(parts...)
 }
 
@@ -92,6 +92,27 @@ type EntityCheck struct {
 	WhenPresent string   `json:"whenPresent"`
 	Require     string   `json:"require"`
 	Outcome
+}
+
+// ReportPath is the op-relative field path a failing entity check is reported
+// against: an explicit reportAs, else — for requiredWhenPresent, which always
+// reports against the half that is MISSING rather than the half that triggered
+// the rule — the field it requires, else `data` itself.
+//
+// That fallback is not this package's invention: the client's parser applies
+// exactly the same one (client/lib/core/validation/sync_validation_rules.dart),
+// which is precisely why it is restated here rather than left implicit — two
+// independent readers deriving one path by convention is how a field path drifts
+// (#585). The corpus is what keeps the two derivations equal in practice.
+func (e EntityCheck) ReportPath() string {
+	switch {
+	case e.ReportAs != "":
+		return "data." + e.ReportAs
+	case e.Require != "":
+		return "data." + e.Require
+	default:
+		return "data"
+	}
 }
 
 // Entity is the described rule set for one wire entity_type.
@@ -234,7 +255,7 @@ func (d Description) Entity(entityType string) (Entity, error) {
 // that structural means no future caller can hand it a request-derived path and
 // inherit the file-read suppression below.
 func Load(depth int) (*Description, error) {
-	raw, err := os.ReadFile(pathFrom(depth)) //nolint:gosec // fixed repo-relative path, see doc
+	raw, err := os.ReadFile(pathFrom(depth, RepoRelativePath)) //nolint:gosec // fixed repo-relative path, see doc
 	if err != nil {
 		return nil, fmt.Errorf("read validation description: %w", err)
 	}
