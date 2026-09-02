@@ -24,7 +24,7 @@ Actor · action · target: **orch · fix · defect**. Thin wrapper over the shar
 ## Operation settings
 
 - **Default size floor:** small (often trivial).
-- **Phase mask:** 0 → 1 → (light 2 only if the root cause is non-obvious or the tier is standard+)
+- **Phase mask:** 0 → 1 → 2 (light unless the tier is standard+, or the root cause is non-obvious)
   → 4 → 5 → 6 → 7.
 - **First move (phase 4):** reproduce the bug as a **new failing** regression test, then fix until
   it goes green. Proving the bug exists first is what separates a fix from a tweak.
@@ -42,7 +42,7 @@ Actor · action · target: **orch · fix · defect**. Thin wrapper over the shar
    the rare case the fix needs new tech or a new dependency.
 4. **Stop and ask** if the fix as scoped would contradict a `D-*`, or if an open `Q-*` means the
    correct behavior is not yet decided. That is a stop condition, not a gate.
-5. Stop at **Gate 1** (only if a plan was produced), **Gate 2** (pre-commit) and **Gate 3** (PR
+5. Stop at **Gate 1** (plan — light plans too), **Gate 2** (pre-commit) and **Gate 3** (PR
    body, before push).
 6. Review with `code-reviewer` plus the reviewers the diff paths select (`services/**` →
    `go-reviewer`, `client/**` → `flutter-reviewer`, `admin/**` → `react-reviewer`, migrations/SQL →

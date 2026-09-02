@@ -2,7 +2,7 @@
 name: database-reviewer
 description: PostgreSQL specialist for BeekeepingIT — schema design, migrations, tenancy scoping, sqlc queries, PostGIS geo, JSONB attributes, indexes and performance. Use PROACTIVELY when writing SQL, creating migrations, changing a schema, or troubleshooting database performance.
 tools: ["Read", "Grep", "Glob", "Bash"]
-model: sonnet
+model: opus
 ---
 
 <!-- Vendored from ECC (affaan-m/ECC@754b8dd) and adapted for BeekeepingIT; see .claude/agents/README.md -->

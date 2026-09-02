@@ -25,7 +25,7 @@ Actor · action · target: **orch · change · feature**. Thin wrapper over the 
 ## Operation settings
 
 - **Default size floor:** small — most tweaks are a function or two.
-- **Phase mask:** 0 → 1 → (light 2) → 4 → 5 → 6 → 7.
+- **Phase mask:** 0 → 1 → 2 (light unless the tier is standard+) → 4 → 5 → 6 → 7.
 - **First move (phase 4):** update the _existing_ tests to express the new desired behavior, then
   change the implementation until they pass. Changing the tests first is what separates a tweak
   from a fix.
@@ -33,7 +33,7 @@ Actor · action · target: **orch · change · feature**. Thin wrapper over the 
 ## How It Works
 
 1. Run the `orch-pipeline` engine with the settings above.
-2. Keep the plan light — only `standard`+ size warrants a full `planner` pass. Scope the existing
+2. The plan always runs on `planner`; it is light unless the tier is `standard`+. Scope the existing
    behavior with `code-explorer` when the current implementation is unfamiliar.
 3. **Phase 1 still runs, even for a small tweak.** A behavior change is exactly the kind of thing
    a `D-*` decision or an `FR-*` pins down: read `requirements/` for the requirement the current

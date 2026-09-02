@@ -36,8 +36,8 @@ in `.claude/skills/`) will:
    **Stop and ask** if the fix would contradict a `D-*` or an open `Q-*` means the correct behavior
    is not yet decided.
 3. **Write a new failing regression test** reproducing the bug, then fix until it goes green.
-   (Proving the bug first is what makes this a fix, not a tweak.) → **GATE 1** applies only if a
-   plan was produced.
+   (Proving the bug first is what makes this a fix, not a tweak.) → **GATE 1** on the plan (a
+   light one for trivial/small tiers).
 4. `code-reviewer` plus the reviewers the diff paths select, plus `security-reviewer` if the defect
    sits in a sensitive path (auth, `services/identity/`, authentik blueprints, sync validation
    rules, tenancy scoping).

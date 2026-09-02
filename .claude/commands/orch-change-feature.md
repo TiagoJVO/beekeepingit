@@ -33,7 +33,7 @@ in `.claude/skills/`) will:
    it, and read the issue with `gh issue view <n>`. **Stop and ask** if the requested behavior
    contradicts a `D-*` or a requirement, or if an open `Q-*` blocks it — a change request is the
    most common way that happens; on confirmation the decision is updated in the same change.
-3. Light plan only if the new behavior needs one. → **GATE 1** (approve the changed-test plan).
+3. Plan with `planner` — light unless the tier is standard+. → **GATE 1** (approve the changed-test plan).
 4. **Update the existing tests** to express the new behavior, then change the implementation until
    they pass. (Changing the tests first is what makes this a tweak, not a fix.)
 5. `code-reviewer` plus the reviewers the diff paths select, plus `security-reviewer` on a security

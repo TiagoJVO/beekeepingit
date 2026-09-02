@@ -45,13 +45,15 @@ signal reaches, and state the result in one line so the user can override:
 
 | Tier     | Files touched        | New dependency / contract                            | Design ambiguity             | Phases that run               |
 | -------- | -------------------- | ---------------------------------------------------- | ---------------------------- | ----------------------------- |
-| trivial  | 1, a few lines       | none                                                 | none — the change is obvious | 1 → 4 → 5 → 6 → 7             |
-| small    | 1 file / 1 unit      | none                                                 | clear once you read the code | 1 → (2 light) → 4 → 5 → 6 → 7 |
+| trivial  | 1, a few lines       | none                                                 | none — the change is obvious | 1 → 2 (light) → 4 → 5 → 6 → 7 |
+| small    | 1 file / 1 unit      | none                                                 | clear once you read the code | 1 → 2 (light) → 4 → 5 → 6 → 7 |
 | standard | 2–5 files            | maybe a new internal module                          | one real choice to make      | 1 → 2 → 4 → 5 → 6 → 7         |
 | large    | many / cross-cutting | new external dep, public API/contract, or a spec doc | multiple open questions      | 1 → 2 → (3) → 4 → 5 → 6 → 7   |
 
-Phase 0 (Intake) always runs and is omitted from the mask column above. Phase 1 also always runs —
-even a trivial change needs its requirement / decision / issue context (below). The tie-breaker:
+Phase 0 (Intake) always runs and is omitted from the mask column above. Phases 1 and 2 also always run —
+even a trivial change needs its requirement / decision / issue context (below) and a plan, because the
+code is always written by `tdd-guide` from a `planner` task list, never by the session itself. What
+scales with the tier is the plan's weight (light vs full, Phase 2), not whether it exists. The tie-breaker:
 anything touching a security trigger (below), a published contract under `contracts/`, a DB
 migration, or tenancy scoping is **at least** standard, regardless of file count.
 
@@ -90,9 +92,16 @@ the same change.
 
 ### 2. Plan
 
-Delegate to the `planner` agent (or `code-architect` for structural decisions). Output an ordered
-task list of thin vertical slices, each carrying its `FR-*`/`NFR-*`/`D-*` and issue reference.
-→ **GATE 1.**
+Always runs, always on the `planner` agent (or `code-architect` for structural decisions) — it is
+the only place a model decision is made explicitly, and `tdd-guide` codes only from its output.
+
+- **Light plan** (trivial and small tiers): one to three tasks, each naming the file(s), the test to
+  write first, and the `FR-*`/`NFR-*`/`D-*` + issue reference. No alternatives, no risk section.
+- **Full plan** (standard and large): an ordered task list of thin vertical slices with the same
+  per-task fields, plus dependencies, risks, and the choice(s) the tier flagged as open.
+
+→ **GATE 1** — in every tier. A light plan is presented in a few lines; the user approves or
+redirects before any code is written.
 
 ### 3. Scaffold
 
@@ -100,7 +109,9 @@ Large only: stand up the first end-to-end slice before fanning out.
 
 ### 4. Implement (TDD)
 
-Drive each task through the `tdd-guide` agent: red → green → refactor. Honor the operation's
+Drive each task through the `tdd-guide` agent: red → green → refactor. The session never writes
+production code itself, in any tier — `tdd-guide` implements exactly the planner's tasks, so the
+model that codes is always the one declared in its frontmatter. Honor the operation's
 first-move rule. Escalate a broken build to the matching build resolver (agent map below). Keep
 offline/sync paths, EN/PT i18n externalization, accessibility, and `organization_id` tenancy in
 scope as you go — they are Definition-of-Done items, not afterthoughts.
