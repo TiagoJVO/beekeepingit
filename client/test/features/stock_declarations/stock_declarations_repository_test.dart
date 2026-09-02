@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
-import 'package:beekeepingit_client/features/dgav/stock_declarations_repository.dart';
+import 'package:beekeepingit_client/features/stock_declarations/stock_declarations_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// An in-memory [LocalStoreEngine] fake that interprets the exact SQL shapes
@@ -60,11 +60,11 @@ class FakeLocalStore implements LocalStoreEngine {
       return;
     }
     if (normalized.startsWith('INSERT INTO STOCK_DECLARATIONS')) {
-      // (id, dgav_registration_number, declared_on, total_hive_count,
+      // (id, registration_number, declared_on, total_hive_count,
       //  breakdown, notes, created_at, updated_at)
       rows.add({
         'id': args[0],
-        'dgav_registration_number': args[1],
+        'registration_number': args[1],
         'declared_on': args[2],
         'total_hive_count': args[3],
         'breakdown': args[4],
@@ -117,23 +117,23 @@ void main() {
       'create() records the declared date, total and registration number',
       () async {
         await repo.create(
-          dgavRegistrationNumber: 'PT-123456',
+          registrationNumber: 'PT-123456',
           declaredOn: DateTime(2026, 9, 12),
           totalHiveCount: 42,
         );
 
         final declaration = (await repo.watchAll().first).single;
-        expect(declaration.dgavRegistrationNumber, 'PT-123456');
+        expect(declaration.registrationNumber, 'PT-123456');
         expect(declaration.declaredOn, DateTime(2026, 9, 12));
         expect(declaration.totalHiveCount, 42);
       },
     );
 
     test('create() stores declared_on as a plain YYYY-MM-DD calendar date, not '
-        'a timezone-bearing instant — the September window must not depend on '
-        "the reader's zone", () async {
+        'a timezone-bearing instant — which day it was filed on must not '
+        "depend on the reader's zone", () async {
       await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2026, 9, 12, 23, 45),
         totalHiveCount: 42,
       );
@@ -142,7 +142,7 @@ void main() {
 
     test('create() round-trips the per-apiary breakdown snapshot', () async {
       await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2026, 9, 12),
         totalHiveCount: 30,
         breakdown: const [
@@ -171,7 +171,7 @@ void main() {
       'JSON column type, and the connector decodes it back on upload',
       () async {
         await repo.create(
-          dgavRegistrationNumber: 'PT-123456',
+          registrationNumber: 'PT-123456',
           declaredOn: DateTime(2026, 9, 12),
           totalHiveCount: 18,
           breakdown: const [
@@ -190,7 +190,7 @@ void main() {
 
     test('create() defaults to an empty breakdown', () async {
       await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2026, 9, 12),
         totalHiveCount: 0,
       );
@@ -201,7 +201,7 @@ void main() {
         'whole declaration unreadable — the declared date and total are the '
         'record, the breakdown is supporting detail', () async {
       await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2026, 9, 12),
         totalHiveCount: 42,
       );
@@ -214,17 +214,17 @@ void main() {
 
     test('watchAll() returns newest declaration date first', () async {
       await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2024, 9, 10),
         totalHiveCount: 10,
       );
       await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2026, 9, 10),
         totalHiveCount: 30,
       );
       await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2025, 9, 10),
         totalHiveCount: 20,
       );
@@ -238,18 +238,18 @@ void main() {
     test('watchAll() spans every registration number, so an organization '
         'covering several beekeepers can group them', () async {
       await repo.create(
-        dgavRegistrationNumber: 'PT-111',
+        registrationNumber: 'PT-111',
         declaredOn: DateTime(2026, 9, 10),
         totalHiveCount: 10,
       );
       await repo.create(
-        dgavRegistrationNumber: 'PT-222',
+        registrationNumber: 'PT-222',
         declaredOn: DateTime(2026, 9, 11),
         totalHiveCount: 20,
       );
 
       final numbers = (await repo.watchAll().first)
-          .map((d) => d.dgavRegistrationNumber)
+          .map((d) => d.registrationNumber)
           .toSet();
       expect(numbers, {'PT-111', 'PT-222'});
     });
@@ -257,7 +257,7 @@ void main() {
     test('delete() removes a mis-entered declaration — unlike a counter, a '
         'declaration has its own lifecycle', () async {
       final id = await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2026, 9, 12),
         totalHiveCount: 42,
       );
@@ -268,7 +268,7 @@ void main() {
     test('delete() captures the delete-time LWW stamp on the queued op '
         '(#276, FR-OF-1)', () async {
       final id = await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2026, 9, 12),
         totalHiveCount: 42,
       );
@@ -280,7 +280,7 @@ void main() {
 
     test('notes are optional and round-trip when set', () async {
       await repo.create(
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
         declaredOn: DateTime(2026, 9, 12),
         totalHiveCount: 42,
         notes: 'Submetida via portal do IFAP.',

@@ -384,14 +384,15 @@ func TestUpdateOrganization_Unauthenticated_Returns401(t *testing.T) {
 	}
 }
 
-// TestUpdateOrganization_DgavRegistrationNumber covers FR-AP-9's
-// organization-level DEFAULT (#296): the DGAV beekeeper registration number
-// (`número de registo do apicultor`) is one value per beekeeper, so it lives
-// here on the org — an apiary only ever carries an OVERRIDE
-// (apiaries.apiaries.dgav_registration_number), for the case of an
+// TestUpdateOrganization_RegistrationNumber covers FR-AP-9's
+// organization-level DEFAULT (#296): the beekeeper registration number the
+// local authority issues (in Portugal, DGAV's `número de registo do
+// apicultor`) is one value per beekeeper, so it lives here on the org — an
+// apiary only ever carries an OVERRIDE
+// (apiaries.apiaries.registration_number), for the case of an
 // organization covering several beekeepers. Set, read back, and confirm the
 // change is audited like any other org field edit (FR-HIS-1).
-func TestUpdateOrganization_DgavRegistrationNumber(t *testing.T) {
+func TestUpdateOrganization_RegistrationNumber(t *testing.T) {
 	adminSub := "a9111111-1111-4111-8111-111111111111"
 	adminUserID := "a0000000-0000-7000-8000-0000000000d1"
 	f := newOrgFixture(t, map[string]string{adminSub: adminUserID})
@@ -402,7 +403,7 @@ func TestUpdateOrganization_DgavRegistrationNumber(t *testing.T) {
 
 	rec := f.doWithHeaders(t, http.MethodPatch, "/v1/organizations/"+orgID, adminBearer,
 		map[string]string{"If-Match": etag},
-		map[string]string{"dgav_registration_number": "  PT-123456  "})
+		map[string]string{"registration_number": "  PT-123456  "})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PATCH status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
@@ -412,8 +413,8 @@ func TestUpdateOrganization_DgavRegistrationNumber(t *testing.T) {
 	}
 	// Trimmed like name/address — the field is copied off a paper registration
 	// and pasted stray whitespace must not become part of the identifier.
-	if org.DgavRegistrationNumber != "PT-123456" {
-		t.Errorf("dgav_registration_number = %q, want PT-123456 (trimmed)", org.DgavRegistrationNumber)
+	if org.RegistrationNumber != "PT-123456" {
+		t.Errorf("registration_number = %q, want PT-123456 (trimmed)", org.RegistrationNumber)
 	}
 
 	// A later GET sees the stored value (it is not a write-only echo).
@@ -425,22 +426,22 @@ func TestUpdateOrganization_DgavRegistrationNumber(t *testing.T) {
 	if err := json.Unmarshal(got.Body.Bytes(), &reread); err != nil {
 		t.Fatalf("decode GET: %v", err)
 	}
-	if reread.DgavRegistrationNumber != "PT-123456" {
-		t.Errorf("re-read dgav_registration_number = %q, want PT-123456", reread.DgavRegistrationNumber)
+	if reread.RegistrationNumber != "PT-123456" {
+		t.Errorf("re-read registration_number = %q, want PT-123456", reread.RegistrationNumber)
 	}
 
 	entries := f.auditLogFor(t, "organization", orgID)
 	if len(entries) == 0 {
-		t.Fatal("no audit log entry for the dgav_registration_number update (FR-HIS-1)")
+		t.Fatal("no audit log entry for the registration_number update (FR-HIS-1)")
 	}
 }
 
-// TestUpdateOrganization_DgavRegistrationNumberNullClears mirrors
+// TestUpdateOrganization_RegistrationNumberNullClears mirrors
 // TestUpdateOrganization_AddressNullClears: the field is nullable in the
 // contract, an explicit JSON null clears it, and omitting the key leaves it
 // alone. Clearing matters — a beekeeper who mistypes the number must be able
 // to remove it, not just overwrite it.
-func TestUpdateOrganization_DgavRegistrationNumberNullClears(t *testing.T) {
+func TestUpdateOrganization_RegistrationNumberNullClears(t *testing.T) {
 	adminSub := "a9222222-2222-4222-8222-222222222222"
 	f := newOrgFixture(t, map[string]string{adminSub: "a0000000-0000-7000-8000-0000000000d2"})
 	adminBearer := f.token(t, adminSub)
@@ -450,7 +451,7 @@ func TestUpdateOrganization_DgavRegistrationNumberNullClears(t *testing.T) {
 
 	set := f.doWithHeaders(t, http.MethodPatch, "/v1/organizations/"+orgID, adminBearer,
 		map[string]string{"If-Match": etag},
-		map[string]string{"dgav_registration_number": "PT-999"})
+		map[string]string{"registration_number": "PT-999"})
 	if set.Code != http.StatusOK {
 		t.Fatalf("set status = %d, want 200, body = %s", set.Code, set.Body.String())
 	}
@@ -465,12 +466,12 @@ func TestUpdateOrganization_DgavRegistrationNumberNullClears(t *testing.T) {
 	if err := json.Unmarshal(keep.Body.Bytes(), &kept); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if kept.DgavRegistrationNumber != "PT-999" {
-		t.Errorf("dgav_registration_number = %q after a name-only PATCH, want PT-999 (untouched)", kept.DgavRegistrationNumber)
+	if kept.RegistrationNumber != "PT-999" {
+		t.Errorf("registration_number = %q after a name-only PATCH, want PT-999 (untouched)", kept.RegistrationNumber)
 	}
 
 	cleared := f.do(t, http.MethodPatch, "/v1/organizations/"+orgID, adminBearer,
-		map[string]any{"dgav_registration_number": nil})
+		map[string]any{"registration_number": nil})
 	if cleared.Code != http.StatusOK {
 		t.Fatalf("clear status = %d, want 200, body = %s", cleared.Code, cleared.Body.String())
 	}
@@ -478,15 +479,15 @@ func TestUpdateOrganization_DgavRegistrationNumberNullClears(t *testing.T) {
 	if err := json.Unmarshal(cleared.Body.Bytes(), &org); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if org.DgavRegistrationNumber != "" {
-		t.Errorf("dgav_registration_number = %q, want empty (explicit null clears it)", org.DgavRegistrationNumber)
+	if org.RegistrationNumber != "" {
+		t.Errorf("registration_number = %q, want empty (explicit null clears it)", org.RegistrationNumber)
 	}
 }
 
-// TestUpdateOrganization_DgavRegistrationNumberTooLong_Returns422 covers
+// TestUpdateOrganization_RegistrationNumberTooLong_Returns422 covers
 // NFR-SEC-1 input validation: the field is bounded server-side like every
 // other free-text org field, and an over-long value changes nothing.
-func TestUpdateOrganization_DgavRegistrationNumberTooLong_Returns422(t *testing.T) {
+func TestUpdateOrganization_RegistrationNumberTooLong_Returns422(t *testing.T) {
 	adminSub := "a9333333-3333-4333-8333-333333333333"
 	f := newOrgFixture(t, map[string]string{adminSub: "a0000000-0000-7000-8000-0000000000d3"})
 	adminBearer := f.token(t, adminSub)
@@ -495,7 +496,7 @@ func TestUpdateOrganization_DgavRegistrationNumberTooLong_Returns422(t *testing.
 	newAdminOrg(t, f, adminBearer, orgID, "Org", "Addr")
 
 	rec := f.do(t, http.MethodPatch, "/v1/organizations/"+orgID, adminBearer,
-		map[string]string{"dgav_registration_number": strings.Repeat("9", 51)})
+		map[string]string{"registration_number": strings.Repeat("9", 51)})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("PATCH status = %d, want 422, body = %s", rec.Code, rec.Body.String())
 	}
@@ -505,7 +506,7 @@ func TestUpdateOrganization_DgavRegistrationNumberTooLong_Returns422(t *testing.
 	if err := json.Unmarshal(got.Body.Bytes(), &org); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if org.DgavRegistrationNumber != "" {
-		t.Errorf("dgav_registration_number = %q after a rejected PATCH, want empty (no partial write)", org.DgavRegistrationNumber)
+	if org.RegistrationNumber != "" {
+		t.Errorf("registration_number = %q after a rejected PATCH, want empty (no partial write)", org.RegistrationNumber)
 	}
 }

@@ -7,16 +7,6 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `#296`/`#298` — DGAV registration + stock declarations (PR #593, merged)
-
-- **`stock_declarations` runtime grants are still unexercised on a real environment.** Helm-E2E
-  proved the table is CREATEd and that `charts/postgres`'s blanket
-  `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES` (hook weight 3) applies without error —
-  but **nothing in E2E writes a declaration**, so the grant is not exercised end-to-end. The
-  reasoning holds (the table is new and NOT a `*_log`, and the publication is schema-scoped so
-  PowerSync captures it automatically); confirm on the first environment where a beekeeper
-  actually records one. Promote to an Issue if it isn't confirmed at the next deploy.
-
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -33,14 +23,20 @@
 ---
 
 _Sweep note (2026-09-02, on `fix/journey-default-attributes-explicit-null`):_
-_The whole `#584`/`#585` section is gone. Its `journey.default_attributes` bullet was the open_
-_question "does PowerSync put null columns on the wire?" — measured against the real_
-_`powersync-sqlite-core` extension (a `patch` clearing a column DOES emit an explicit JSON `null`;_
-_a `put` drops null columns), so it was a live bug, fixed by that branch rather than promoted; the_
-_evidence lives in `contracts/validation/README.md`. Its `_fieldLabel` bullet belongs to_
-_[#600](https://github.com/TiagoJVO/beekeepingit/issues/600), landed by PR_
-_[#602](https://github.com/TiagoJVO/beekeepingit/pull/602), which prunes it too — whichever of the_
-_two merges second, the section ends up gone either way._
+_The `#584`/`#585` section is gone. Its `journey.default_attributes` bullet was the open question_
+_"does PowerSync put null columns on the wire?" — measured against the real `powersync-sqlite-core`_
+_extension (a `patch` clearing a column DOES emit an explicit JSON `null`; a `put` drops null_
+_columns), so it was a live bug, fixed by this branch rather than promoted. The evidence lives in_
+_`contracts/validation/README.md`._
+
+_Its `_fieldLabel` sibling was already pruned by_
+_[#595](https://github.com/TiagoJVO/beekeepingit/pull/595), which implemented labels for the three_
+_fields it introduced. The wider localization of the needs-fix screen is still open as_
+_[#600](https://github.com/TiagoJVO/beekeepingit/issues/600) (PR_
+_[#602](https://github.com/TiagoJVO/beekeepingit/pull/602)) — tracked in Issues, not here._
+
+_The `#296`/`#298` section went with #595, whose e2e now records a declaration end to end._
+
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that entry stands._
 _[#597](https://github.com/TiagoJVO/beekeepingit/issues/597) is open and tracked in Issues, not here._
 _Prior sweep notes dropped with their entries, per this file's convention._
