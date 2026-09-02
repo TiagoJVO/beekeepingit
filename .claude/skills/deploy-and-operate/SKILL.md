@@ -17,9 +17,9 @@ description: >-
 
 # Deploying & operating BeekeepingIT
 
-Mechanics are documented in [`infra/README.md`](../../infra/README.md) (bring-up, runbooks, the
-Google-federation checklist) and [`docs/architecture/platform.md`](../../docs/architecture/platform.md);
-D-27/[ADR-0018](../../docs/adr/0018-release-triggered-deploy-pipeline.md) owns the release design.
+Mechanics are documented in [`infra/README.md`](../../../infra/README.md) (bring-up, runbooks, the
+Google-federation checklist) and [`docs/architecture/platform.md`](../../../docs/architecture/platform.md);
+D-27/[ADR-0018](../../../docs/adr/0018-release-triggered-deploy-pipeline.md) owns the release design.
 This skill is the map and the traps, not a restatement.
 
 ## Two repos — and the one that is the truth
@@ -149,7 +149,7 @@ not yet exist, so after creating one you must force a **second** render
 (`flux reconcile helmrelease beekeepingit -n flux-system --force`).
 
 Adding a new external credential is **four coordinated edits** and
-[`infra/README.md`](../../infra/README.md) documents them because **three fail silently**: the
+[`infra/README.md`](../../../infra/README.md) documents them because **three fail silently**: the
 `scaleway-up.sh` block, the `cluster-ops.yml` `env:`, `.env.example`, and the docs table.
 
 ## Clusters: which script destroys data
@@ -161,7 +161,7 @@ Adding a new external credential is **four coordinated edits** and
 | `scaleway-scale-up.sh`   | recreate the pool; never creates a cluster    | **kept** |
 | `scaleway-down.sh`       | **destroys** cluster, volumes, load balancers | **LOST** |
 
-Pause/resume is `scale-down`/`scale-up` ([ADR-0022](../../docs/adr/0022-cluster-pause-resume.md)) —
+Pause/resume is `scale-down`/`scale-up` ([ADR-0022](../../../docs/adr/0022-durable-storage-pause-resume-not-volume-reattach.md)) —
 `down` is not "stop for the day". Data survives scale-down because nothing detaches from the
 cluster's object model, only from compute; CNPG's `bootstrap.initdb` would **re-initialize an
 empty PGDATA** rather than adopt an existing one, so a destroyed cluster cannot simply be
@@ -177,7 +177,7 @@ keyed by cluster name, so every worktree shares it.
   bootstrapped against `clusters/prod/`; the instant one is, Flux deploys whatever those manifests
   say — today `v0.0.0` placeholder image tags and `.example` hostnames, with
   `networkpolicy.gatewayNamespace` left at the `kube-system` default that
-  [ADR-0017](../../docs/adr/0017-staging-on-scaleway-kapsule.md) records as silently blocking every
+  [ADR-0017](../../../docs/adr/0017-scaleway-cloud-hosting.md) records as silently blocking every
   gateway→backend edge on Kapsule.
 - **`flux get sources git -A` is the check that an environment is actually pinned.** Anything
   still showing `branch: main` for the `beekeepingit` source predates the 2026-08-31 fix and is

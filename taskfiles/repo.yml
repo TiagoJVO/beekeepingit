@@ -6,7 +6,7 @@ silent: true
 
 tasks:
   lint:
-    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings"
+    desc: "Repo hygiene: format + Markdown + Actions + shell + secrets + deploy URLs + scope mappings + repo map"
     cmds:
       - task: format-check
       - task: markdown
@@ -17,6 +17,7 @@ tasks:
       - task: admin-audience-mapping
       - task: platform-operator-mapping
       - task: federation-source-posture
+      - task: repo-map
 
   format:
     desc: "Format Markdown / YAML / JSON with Prettier (writes changes)"
@@ -79,3 +80,8 @@ tasks:
     desc: "Verify federation sources stay subject-matched + !Env-credentialed, enrollment-open only via the guarded flow (#363/#365, NFR-SEC-1)"
     cmds:
       - ./scripts/check-federation-source-posture.sh
+
+  repo-map:
+    desc: "Verify every top-level directory has its CLAUDE.md map row + README.md tree line (definition-of-done)"
+    cmds:
+      - ./scripts/check-repo-map.sh

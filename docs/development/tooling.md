@@ -50,8 +50,9 @@ day one.
 
 - **Go service** → add `services/<name>/go.mod`. It's picked up automatically and inherits
   [`.golangci.yml`](../../.golangci.yml).
-- **Web app** → add `apps/<name>/package.json` exposing `lint` / `format` / `test` / `build`
-  scripts; the root fans out to them. Keep the package's own eslint/prettier config local.
+- **Web app** → add the package's `package.json` exposing `lint` / `format` / `test` / `build`
+  scripts (the admin app is `admin/package.json`); `task web:*` discovers every `package.json` in
+  the repo and fans out to them. Keep the package's own eslint/prettier config local.
 - **Flutter client** → add the package's `pubspec.yaml`, add `flutter`/`dart` to
   [`mise.toml`](../../mise.toml), and `include:` the shared
   [`analysis_options.yaml`](../../analysis_options.yaml) plus `flutter_lints` in the package.
@@ -66,7 +67,8 @@ Installed by bootstrap (or `task setup`). On commit:
 - **commit-msg** — enforces [Conventional Commits](../../CONTRIBUTING.md#commits--conventional-commits)
   via [`scripts/check-commit-msg.sh`](../../scripts/check-commit-msg.sh).
 
-Bypass in an emergency with `git commit --no-verify` (CI still enforces the same checks).
+Humans may bypass in an emergency with `git commit --no-verify` (CI still enforces the same
+checks); Claude cannot — `.claude/settings.json` denies it.
 
 ## Linter/formatter configs
 

@@ -116,17 +116,17 @@ unauthenticated.
 
 ```bash
 # list an issue's sub-issues
-gh api repos/OWNER/REPO/issues/<n>/sub_issues
+gh api repos/TiagoJVO/beekeepingit/issues/<n>/sub_issues
 
 # wire a child under a parent — needs the child's REST *id*, not its number
-id=$(gh api repos/OWNER/REPO/issues/<child#> --jq .id)
-gh api --method POST repos/OWNER/REPO/issues/<parent#>/sub_issues -F sub_issue_id=$id
+id=$(gh api repos/TiagoJVO/beekeepingit/issues/<child#> --jq .id)
+gh api --method POST repos/TiagoJVO/beekeepingit/issues/<parent#>/sub_issues -F sub_issue_id=$id
 
 # dependencies: "<n> depends on <dep>" == <n> is blocked_by <dep> (also needs the dep's *id*)
-id=$(gh api repos/OWNER/REPO/issues/<dep#> --jq .id)
-gh api --method POST   repos/OWNER/REPO/issues/<n>/dependencies/blocked_by -F issue_id=$id
-gh api                 repos/OWNER/REPO/issues/<n>/dependencies/blocked_by          # list
-gh api --method DELETE repos/OWNER/REPO/issues/<n>/dependencies/blocked_by/$id      # remove
+id=$(gh api repos/TiagoJVO/beekeepingit/issues/<dep#> --jq .id)
+gh api --method POST   repos/TiagoJVO/beekeepingit/issues/<n>/dependencies/blocked_by -F issue_id=$id
+gh api                 repos/TiagoJVO/beekeepingit/issues/<n>/dependencies/blocked_by          # list
+gh api --method DELETE repos/TiagoJVO/beekeepingit/issues/<n>/dependencies/blocked_by/$id      # remove
 
 # edit a title/body safely — write the body to a file to avoid shell-quoting pain
 gh issue edit <n> --title "…" --body-file new-body.md
