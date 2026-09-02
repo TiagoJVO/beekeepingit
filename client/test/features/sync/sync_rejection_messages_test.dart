@@ -205,6 +205,56 @@ void main() {
       },
     );
 
+    // #298: a rejected stock declaration used to fall through to the generic
+    // line even though the declaration validator
+    // (`services/apiaries/api/declarations.go`) reports exact (field, code)
+    // pairs for it.
+    test("maps a stock declaration's own fields to specific guidance", () {
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.declared_on', code: 'required'),
+        ]),
+        ['Declaration date: this is required.'],
+      );
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(field: 'data.declared_on', code: 'invalid'),
+        ]),
+        ["Declaration date: this value isn't valid."],
+      );
+      // The declaration's total is capped at >= 0, like an apiary's own hive
+      // count — so it gets the same sharper fragment, not "out of range".
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(
+            field: 'data.total_hive_count',
+            code: 'out_of_range',
+          ),
+        ]),
+        ['Total hives: this must be 0 or more.'],
+      );
+      expect(
+        localizedRejectionMessages(en, const [
+          RejectedFieldIssue(
+            field: 'data.registration_number',
+            code: 'too_long',
+          ),
+        ]),
+        ['Registration number: this text is too long.'],
+      );
+    });
+
+    test('the registration_number label serves the APIARY op too — the table '
+        'is keyed by field name, and it is the same column', () {
+      // `services/apiaries/api/sync.go` validates the same column on an
+      // apiary put; one entry must cover both ops.
+      final messages = localizedRejectionMessages(pt, const [
+        RejectedFieldIssue(field: 'data.registration_number', code: 'too_long'),
+      ]);
+      expect(messages, ['Número de registo: este texto é demasiado longo.']);
+      expect(messages.single, isNot(contains('registration_number')));
+    });
+
     test('an activity type and a journey main activity type get the label of '
         'the form each Fix action opens', () {
       expect(
@@ -223,8 +273,9 @@ void main() {
   });
 
   group('no raw server vocabulary ever reaches the copy', () {
-    // Every (field, code) pair the four sync validators can emit
-    // (services/{apiaries,activities,journeys,todos}/api/sync.go), asserted
+    // Every (field, code) pair the sync validators can emit
+    // (services/{apiaries,activities,journeys,todos}/api/sync.go, plus
+    // apiaries' declarations.go for stock declarations), asserted
     // as a set: whatever comes back must be localized and must never contain
     // the snake_case field name (#426's leak) — mapped or not.
     const everyServerField = [
@@ -243,6 +294,9 @@ void main() {
       // todo
       'data.title', 'data.description', 'data.due_date', 'data.priority',
       'data.completed_at', 'data.assignee_id',
+      // stock declaration (services/apiaries/api/declarations.go) —
+      // registration_number is also validated on an apiary put
+      'data.declared_on', 'data.total_hive_count', 'data.registration_number',
     ];
     const everyServerCode = [
       'required',

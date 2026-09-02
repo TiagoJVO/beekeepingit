@@ -114,12 +114,12 @@ func organizationFields(o sqlcgen.OrganizationsOrganization) map[string]any {
 	return map[string]any{
 		"name":    o.Name,
 		"address": o.Address,
-		// FR-AP-9 (#296): the org-wide DGAV registration-number default. A
-		// plain business identifier the beekeeper is required to display at
-		// their apiaries in any case — not personal data, so it belongs in
-		// the diffed field map like name/address (§7.3).
-		"dgav_registration_number": o.DgavRegistrationNumber,
-		"created_by":               uuidString(o.CreatedBy),
+		// FR-AP-9 (#296): the org-wide beekeeper registration-number
+		// default. A plain business identifier the beekeeper is required
+		// to display at their apiaries in any case — not personal data, so
+		// it belongs in the diffed field map like name/address (§7.3).
+		"registration_number": o.RegistrationNumber,
+		"created_by":          uuidString(o.CreatedBy),
 	}
 }
 

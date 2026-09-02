@@ -82,10 +82,10 @@ class _FakeApiariesRepository extends ApiariesRepository {
   final List<Apiary> created = [];
   bool updateCalled = false;
 
-  /// The DGAV registration-number override the last update() carried
+  /// The registration-number override the last update() carried
   /// (FR-AP-9, #296) — null both when the form cleared it and when no update
   /// has run, which the assertions disambiguate via [updateCalled].
-  String? updatedDgavRegistrationNumber;
+  String? updatedRegistrationNumber;
   bool deleteCalled = false;
 
   @override
@@ -100,7 +100,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
     int? hiveCount,
     String? notes,
     String? placeLabel,
-    String? dgavRegistrationNumber,
+    String? registrationNumber,
     double? locationLon,
     double? locationLat,
   }) async {
@@ -114,7 +114,7 @@ class _FakeApiariesRepository extends ApiariesRepository {
         hiveCount: hiveCount ?? 0,
         notes: notes,
         placeLabel: placeLabel,
-        dgavRegistrationNumber: dgavRegistrationNumber,
+        registrationNumber: registrationNumber,
         locationLon: locationLon,
         locationLat: locationLat,
       ),
@@ -131,14 +131,14 @@ class _FakeApiariesRepository extends ApiariesRepository {
     bool notesProvided = false,
     String? placeLabel,
     bool placeLabelProvided = false,
-    String? dgavRegistrationNumber,
-    bool dgavRegistrationNumberProvided = false,
+    String? registrationNumber,
+    bool registrationNumberProvided = false,
     double? locationLon,
     double? locationLat,
     bool locationProvided = false,
   }) async {
     updateCalled = true;
-    updatedDgavRegistrationNumber = dgavRegistrationNumber;
+    updatedRegistrationNumber = registrationNumber;
     if (throwOnUpdate) throw Exception('boom-update');
   }
 
@@ -263,7 +263,7 @@ Future<void> _setLocationViaCurrentLocation(WidgetTester tester) async {
 }
 
 void main() {
-  _dgavFormTests();
+  _registrationNumberFormTests();
   group('the primary actions stay reachable with the map picker expanded '
       '(FR-UX-1, D-18, #341 regression)', () {
     // The defect this guards: #341 made location mandatory, so every apiary
@@ -1779,14 +1779,14 @@ void main() {
   });
 }
 
-/// FR-AP-9 (#296): the apiary form carries the per-apiary DGAV
+/// FR-AP-9 (#296): the apiary form carries the per-apiary
 /// registration-number OVERRIDE. The organization-wide default it overrides is
-/// edited elsewhere (the DGAV section under Account) — this form only ever
+/// edited elsewhere (the organization-details screen under Account) — this
 /// deals with the override, which is why the field is last and hinted as
 /// "only if different from the organization's".
-void _dgavFormTests() {
-  group('apiary form DGAV registration number (FR-AP-9, #296)', () {
-    testWidgets('the create form offers an optional DGAV number field', (
+void _registrationNumberFormTests() {
+  group('apiary form registration number (FR-AP-9, #296)', () {
+    testWidgets('the create form offers an optional registration number field', (
       tester,
     ) async {
       await tester.pumpWidget(_buildApp(apiaries: const []));
@@ -1798,7 +1798,7 @@ void _dgavFormTests() {
       await tester.tap(find.byKey(const Key('shell-fab-new-apiary')));
       await tester.pumpAndSettle();
 
-      final field = find.byKey(const Key('apiary-dgav-number-field'));
+      final field = find.byKey(const Key('apiary-registration-number-field'));
       // No scrollUntilVisible: the form is a SingleChildScrollView, so every
       // field is built regardless of scroll offset, and enterText/controller
       // reads do not need the widget on screen. (scrollUntilVisible would also
@@ -1828,7 +1828,7 @@ void _dgavFormTests() {
             id: 'a1',
             name: 'Monte Alto',
             hiveCount: 4,
-            dgavRegistrationNumber: 'PT-654321',
+            registrationNumber: 'PT-654321',
             locationLon: -8.6109,
             locationLat: 41.1496,
           ),
@@ -1840,7 +1840,7 @@ void _dgavFormTests() {
                 id: 'a1',
                 name: 'Monte Alto',
                 hiveCount: 4,
-                dgavRegistrationNumber: 'PT-654321',
+                registrationNumber: 'PT-654321',
                 locationLon: -8.6109,
                 locationLat: 41.1496,
               ),
@@ -1859,7 +1859,7 @@ void _dgavFormTests() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        final field = find.byKey(const Key('apiary-dgav-number-field'));
+        final field = find.byKey(const Key('apiary-registration-number-field'));
         expect(
           tester
               .widget<TextField>(
@@ -1874,7 +1874,7 @@ void _dgavFormTests() {
         await tester.pumpAndSettle();
 
         expect(repo.updateCalled, isTrue);
-        expect(repo.updatedDgavRegistrationNumber, 'PT-654321');
+        expect(repo.updatedRegistrationNumber, 'PT-654321');
       },
     );
 
@@ -1895,7 +1895,7 @@ void _dgavFormTests() {
             id: 'a1',
             name: 'Monte Alto',
             hiveCount: 4,
-            dgavRegistrationNumber: 'PT-654321',
+            registrationNumber: 'PT-654321',
             locationLon: -8.6109,
             locationLat: 41.1496,
           ),
@@ -1907,7 +1907,7 @@ void _dgavFormTests() {
                 id: 'a1',
                 name: 'Monte Alto',
                 hiveCount: 4,
-                dgavRegistrationNumber: 'PT-654321',
+                registrationNumber: 'PT-654321',
                 locationLon: -8.6109,
                 locationLat: 41.1496,
               ),
@@ -1926,7 +1926,7 @@ void _dgavFormTests() {
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pumpAndSettle();
 
-        final field = find.byKey(const Key('apiary-dgav-number-field'));
+        final field = find.byKey(const Key('apiary-registration-number-field'));
         await tester.enterText(field, '');
         await tester.pump();
 
@@ -1934,7 +1934,7 @@ void _dgavFormTests() {
         await tester.pumpAndSettle();
 
         expect(repo.updateCalled, isTrue);
-        expect(repo.updatedDgavRegistrationNumber, isNull);
+        expect(repo.updatedRegistrationNumber, isNull);
       },
     );
   });
@@ -2066,7 +2066,7 @@ void _dgavFormTests() {
         );
         // The DGAV number is the LAST field on the form, well below the fold.
         await tester.enterText(
-          find.byKey(const Key('apiary-dgav-number-field')),
+          find.byKey(const Key('apiary-registration-number-field')),
           'ç' * 30,
         );
         await _setLocationViaCurrentLocation(tester);
@@ -2078,7 +2078,7 @@ void _dgavFormTests() {
         // a screen reader to the message.
         final editable = tester.widget<EditableText>(
           find.descendant(
-            of: find.byKey(const Key('apiary-dgav-number-field')),
+            of: find.byKey(const Key('apiary-registration-number-field')),
             matching: find.byType(EditableText),
           ),
         );
@@ -2114,20 +2114,25 @@ void _dgavFormTests() {
     );
 
     testWidgets(
-      'a field #443 has no label for still gets truthful localized copy, '
-      'never the column name (#600 will sharpen it)',
+      'a label added to the #443 mapping reaches the save-time check for free '
+      '— this PR owns no copy of its own',
       (tester) async {
+        // #595 added `registration_number` to `sync_rejection_messages.dart`'s
+        // label table for the needs-fix screen. Nothing here was changed to
+        // follow it: the save-time check reads that same table, so the field
+        // gets the specific line rather than the generic fallback purely
+        // because the shared mapping grew.
         final repo = _FakeApiariesRepository();
         await openNewApiaryForm(tester, repo);
         await tester.enterText(
           find.byKey(const Key('apiary-name-field')),
           'Montargil',
         );
-        // `dgav_registration_number` is capped at 50 bytes server-side; the
+        // `registration_number` is capped at 50 bytes server-side; the
         // field's own maxLength counts characters, so 30 two-byte characters
         // pass it and fail the server's cap.
         await tester.enterText(
-          find.byKey(const Key('apiary-dgav-number-field')),
+          find.byKey(const Key('apiary-registration-number-field')),
           'ç' * 30,
         );
         await _setLocationViaCurrentLocation(tester);
@@ -2136,7 +2141,7 @@ void _dgavFormTests() {
 
         expect(repo.created, isEmpty);
         expect(
-          find.text("This can't be saved as it is — please check this value."),
+          find.text('Registration number: this text is too long.'),
           findsOneWidget,
         );
       },

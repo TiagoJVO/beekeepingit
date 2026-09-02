@@ -75,24 +75,34 @@ void main() {
     expect(message, isNot(contains('name')));
   });
 
-  test('never renders a column name for a field #443 has no label for', () {
-    // `dgav_registration_number` is one of the labels #443 closed without
-    // (#600 adds them). Until it lands, the field still gets a truthful,
-    // localized, non-technical line rather than a leaked column name.
+  test('a pair #443 deliberately has no copy for falls back, never leaks', () {
+    // Every field the description names is labelled today (#595 added the last
+    // three), but #443 also withholds copy per `(field, code)` PAIR where the
+    // generic fragment would misdescribe the constraint — a journey's
+    // `default_attributes` is capped in BYTES of encoded JSON, so "this text is
+    // too long" would be both untrue and unactionable. That pair still has to
+    // produce something truthful and localized rather than silence or a column
+    // name, and it is the path a rule added to the description later would take
+    // before anyone writes copy for it.
     final errors = SaveTimeFieldErrors.check(
-      apiaryPut({
-        'name': 'Montargil',
-        'dgav_registration_number': 'x' * 51,
-        'location_lon': -8.16,
-        'location_lat': 39.09,
-      }),
-      columns: const {'dgav_registration_number'},
+      SyncOpDraft(
+        op: 'put',
+        entityType: journeyEntityType,
+        id: _uuid,
+        data: {
+          'name': 'Colheita',
+          'main_activity_type': 'harvest',
+          'default_attributes': {'notes': 'x' * 9000},
+        },
+        updatedAt: _now,
+      ),
+      columns: const {'default_attributes'},
     );
 
-    final message = errors.messageFor(en, 'dgav_registration_number')!;
-    expect(message, isNot(contains('dgav')));
+    final message = errors.messageFor(en, 'default_attributes')!;
+    expect(message, isNot(contains('default_attributes')));
     expect(message, isNot(contains('_')));
-    expect(errors.messageFor(pt, 'dgav_registration_number'), isNot(message));
+    expect(errors.messageFor(pt, 'default_attributes'), isNot(message));
   });
 
   test('messageForAny takes the first bound column that failed', () {

@@ -1,16 +1,16 @@
-import 'package:beekeepingit_client/features/dgav/dgav_registration.dart';
+import 'package:beekeepingit_client/features/organization/registration_number.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// FR-AP-9 (#296): the DGAV registration number is the BEEKEEPER's, held as an
+/// FR-AP-9 (#296): the registration number is the BEEKEEPER's, held as an
 /// organization-level default with an optional per-apiary override. These are
 /// the pure resolution rules every screen reads through, so the "which number
 /// does this apiary actually display" question is answered in exactly one
 /// place.
 void main() {
-  group('effectiveDgavRegistrationNumber', () {
+  group('effectiveRegistrationNumber', () {
     test('uses the apiary override when it is set', () {
       expect(
-        effectiveDgavRegistrationNumber(
+        effectiveRegistrationNumber(
           apiaryOverride: 'PT-654321',
           organizationDefault: 'PT-123456',
         ),
@@ -22,7 +22,7 @@ void main() {
       "falls back to the organization's default when there is no override",
       () {
         expect(
-          effectiveDgavRegistrationNumber(
+          effectiveRegistrationNumber(
             apiaryOverride: null,
             organizationDefault: 'PT-123456',
           ),
@@ -34,7 +34,7 @@ void main() {
     test('is null when neither is set — nothing to display, and nothing is '
         'required (the field is advisory)', () {
       expect(
-        effectiveDgavRegistrationNumber(
+        effectiveRegistrationNumber(
           apiaryOverride: null,
           organizationDefault: null,
         ),
@@ -46,14 +46,14 @@ void main() {
         'the server stores the org default as "" for unset, and a form entry '
         'trimmed to nothing means "no number"', () {
       expect(
-        effectiveDgavRegistrationNumber(
+        effectiveRegistrationNumber(
           apiaryOverride: '   ',
           organizationDefault: 'PT-123456',
         ),
         'PT-123456',
       );
       expect(
-        effectiveDgavRegistrationNumber(
+        effectiveRegistrationNumber(
           apiaryOverride: null,
           organizationDefault: '',
         ),
@@ -63,7 +63,7 @@ void main() {
 
     test('trims surrounding whitespace off the resolved value', () {
       expect(
-        effectiveDgavRegistrationNumber(
+        effectiveRegistrationNumber(
           apiaryOverride: '  PT-654321 ',
           organizationDefault: null,
         ),
@@ -72,10 +72,10 @@ void main() {
     });
   });
 
-  group('isDgavRegistrationNumberInherited', () {
+  group('isRegistrationNumberInherited', () {
     test('is true when the number comes from the organization', () {
       expect(
-        isDgavRegistrationNumberInherited(
+        isRegistrationNumberInherited(
           apiaryOverride: null,
           organizationDefault: 'PT-123456',
         ),
@@ -85,7 +85,7 @@ void main() {
 
     test('is false when the apiary carries its own number', () {
       expect(
-        isDgavRegistrationNumberInherited(
+        isRegistrationNumberInherited(
           apiaryOverride: 'PT-654321',
           organizationDefault: 'PT-123456',
         ),
@@ -96,7 +96,7 @@ void main() {
     test('is false when there is no number at all — nothing is displayed, so '
         'there is nothing to mark as inherited', () {
       expect(
-        isDgavRegistrationNumberInherited(
+        isRegistrationNumberInherited(
           apiaryOverride: null,
           organizationDefault: null,
         ),

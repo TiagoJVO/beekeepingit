@@ -247,15 +247,15 @@ flowchart LR
     journeys -. "journey_id" .-> activities
 ```
 
-| Schema          | Service       | Tables                                              | Notes                                                                                                                                                                                                                                            |
-| --------------- | ------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `identity`      | identity      | `users` (+ `audit_log`)                             | **`users` is global** (not org-owned → no `organization_id`, so `identity.audit_log.organization_id` is nullable). `user_settings` and the D-4 `entitlements` feature-toggle stub are **designed but not built**                                 |
-| `organizations` | organizations | `organizations`, `memberships`, `invitations`       | `organizations` is the **tenant root** (its `id` is the tenant key); membership carries the role (NFR-ROL-1)                                                                                                                                     |
-| `apiaries`      | apiaries      | `apiaries`, `apiary_counters`, `stock_declarations` | PostGIS `location`; typed 1-N counters (`apiary_counters`, D-20 — hive count is a counter row, not an `apiaries` column); DGAV `stock_declarations` (FR-AP-10 — a point-in-time record keyed by registration number, NOT the live counter) — §7  |
-| `activities`    | activities    | `activities`                                        | JSONB `attributes` + promoted `hives_involved`/`honey_kg`                                                                                                                                                                                        |
-| `journeys`      | journeys      | `journeys`, `journey_plan_items`                    | planned-vs-actual; attribution is the **direct, nullable `activities.journey_id`** column (owned by the `activities` schema, not a `journeys`-owned link table) — resolved by **D-21**                                                           |
-| `todos`         | todos         | `todos`                                             | lifecycle/assignment resolved by **D-23**; apiary association (nullable `apiary_id`, no separate "area" entity — FR-TD-1) resolved by **#51**                                                                                                    |
-| `ai`            | ai            | `ai_consents`, `ai_query_log`, `ai_action_log`      | **no domain data, no direct writes** (D-11 / NFR-AI-4): consent (Q-AICLOUD) + audit of NL→query (D-8) **and** NL→**proposed actions** (FR-AI-2). A confirmed action executes via the **owning** service's API — `ai` never writes another schema |
+| Schema          | Service       | Tables                                              | Notes                                                                                                                                                                                                                                                |
+| --------------- | ------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`      | identity      | `users` (+ `audit_log`)                             | **`users` is global** (not org-owned → no `organization_id`, so `identity.audit_log.organization_id` is nullable). `user_settings` and the D-4 `entitlements` feature-toggle stub are **designed but not built**                                     |
+| `organizations` | organizations | `organizations`, `memberships`, `invitations`       | `organizations` is the **tenant root** (its `id` is the tenant key); membership carries the role (NFR-ROL-1)                                                                                                                                         |
+| `apiaries`      | apiaries      | `apiaries`, `apiary_counters`, `stock_declarations` | PostGIS `location`; typed 1-N counters (`apiary_counters`, D-20 — hive count is a counter row, not an `apiaries` column); `stock_declarations` (FR-AP-10 — a point-in-time record keyed by beekeeper registration number, NOT the live counter) — §7 |
+| `activities`    | activities    | `activities`                                        | JSONB `attributes` + promoted `hives_involved`/`honey_kg`                                                                                                                                                                                            |
+| `journeys`      | journeys      | `journeys`, `journey_plan_items`                    | planned-vs-actual; attribution is the **direct, nullable `activities.journey_id`** column (owned by the `activities` schema, not a `journeys`-owned link table) — resolved by **D-21**                                                               |
+| `todos`         | todos         | `todos`                                             | lifecycle/assignment resolved by **D-23**; apiary association (nullable `apiary_id`, no separate "area" entity — FR-TD-1) resolved by **#51**                                                                                                        |
+| `ai`            | ai            | `ai_consents`, `ai_query_log`, `ai_action_log`      | **no domain data, no direct writes** (D-11 / NFR-AI-4): consent (Q-AICLOUD) + audit of NL→query (D-8) **and** NL→**proposed actions** (FR-AI-2). A confirmed action executes via the **owning** service's API — `ai` never writes another schema     |
 
 **History is per-service, not a schema of its own.** Each owning service carries its **own**
 append-only `audit_log` (and the conflict sibling `sync_conflict_log`) **inside its own schema**,
@@ -357,33 +357,34 @@ counter_type text, value int CHECK ≥ 0)` with **`UNIQUE (organization_id, apia
   under `entity_type = 'apiary_counter'` like any other change (FR-HIS). The client's REST/sync
   reads still expose a top-level `hive_count` field (resolved from the counter, 0 when absent) so
   the decoupling is invisible to API consumers.
-- **DGAV registration number — an organization default with a per-apiary override**
-  (FR-AP-9, #296, triaged from D-19): DGAV issues **one `número de registo do apicultor` per
-  BEEKEEPER** and requires it displayed at each of that beekeeper's apiaries; the apiaries
-  themselves are identified to DGAV by their **coordinates**, not by a number of their own. So the
-  value's home is `organizations.organizations.dgav_registration_number` (migration `00007`,
-  `NOT NULL DEFAULT ''` like `address`), and `apiaries.apiaries.dgav_registration_number`
-  (migration `00009`, **nullable**) exists only as an **override**, for the one case D-19's triage
-  called out: a single organization covering **several beekeepers**, whose apiaries carry different
-  numbers. The two columns' nullability differs deliberately — on the apiary, `NULL` means
-  "inherit the organization's value", a distinction the organization column has nothing to draw.
-  An apiary's **effective** number is its own when set, otherwise the organization's; that
-  resolution lives in exactly one place client-side
-  (`client/lib/features/dgav/dgav_registration.dart`). The apiary override syncs offline and is
-  history-tracked like any apiary edit; the organization default is **read** offline (the org row
-  is already cached locally by `organization_repository.dart`) but **edited online**, via the
-  existing admin-only `PATCH /v1/organizations/{id}` — an accepted trade-off for a reference number
-  entered once.
+- **Beekeeper registration number — an organization default with a per-apiary override**
+  (FR-AP-9, #296, triaged from D-19): a registering authority issues **one number per BEEKEEPER**
+  and expects it displayed at each of that beekeeper's apiaries; the apiaries themselves are
+  identified by their **coordinates**, not by a number of their own. (Portugal's DGAV `número de
+registo do apicultor` is the example this was modelled on — the column is authority-neutral and
+  holds a plain, unvalidated reference.) So the value's home is
+  `organizations.organizations.registration_number` (migration `00007`, `NOT NULL DEFAULT ''` like
+  `address`), and `apiaries.apiaries.registration_number` (migration `00009`, **nullable**) exists
+  only as an **override**, for the one case D-19's triage called out: a single organization
+  covering **several beekeepers**, whose apiaries carry different numbers. The two columns'
+  nullability differs deliberately — on the apiary, `NULL` means "inherit the organization's
+  value", a distinction the organization column has nothing to draw. An apiary's **effective**
+  number is its own when set, otherwise the organization's; that resolution lives in exactly one
+  place client-side. The apiary override syncs offline and is history-tracked like any apiary edit;
+  the organization default is **read** offline (the org row is already cached locally by
+  `organization_repository.dart`) but **edited online**, via the existing admin-only
+  `PATCH /v1/organizations/{id}` — an accepted trade-off for a reference number entered once, and
+  the reason it is presented as an **organization detail** rather than as synced apiary data.
 - **Stock declarations — a point-in-time record, keyed by registration number, NOT a counter**
   (FR-AP-10, #298, triaged from D-19): **`apiaries.stock_declarations`** — `(id, organization_id,
-dgav_registration_number text, declared_on date, total_hive_count int CHECK ≥ 0, breakdown jsonb,
+registration_number text, declared_on date, total_hive_count int CHECK ≥ 0, breakdown jsonb,
 notes, created_at, updated_at, recorded_at, deleted_at)`, migration `00010`. Three modelling
   choices carry the weight here:
   - **It is not the live hive counter.** `apiary_counters` (above) is current state and moves with
     reality; a declaration is **what was declared on a date** and must stay that way afterwards.
     Storing one as the other would destroy the only thing the record exists for.
-  - **It is scoped to a DGAV registration number, not to an apiary.** The real `Declaração de
-Existências` covers a beekeeper's whole holding, so an organization covering several beekeepers
+  - **It is scoped to a registration number, not to an apiary.** A stock declaration covers a
+    beekeeper's whole holding, so an organization covering several beekeepers
     files one declaration per number. The number is a plain text **value**, deliberately not a
     foreign key: it is what the declaration was filed under, and must not shift retroactively when
     the organization's default or an apiary's override is later corrected. `''` is legitimate — a
@@ -398,11 +399,12 @@ Existências` covers a beekeeper's whole holding, so an organization covering se
   `breakdown` is the **per-apiary snapshot taken at record time**
   (`[{apiary_id, name, hive_count}, …]`), so a declaration still shows what it covered after the
   apiaries are renamed, re-counted or deleted — no FK into `apiaries`, for the same
-  snapshot-not-live-join reason. The September window and the interim-declaration threshold
-  (**> 20% AND ≥ 20 colonies** — DGAV's own comparators, see
-  `docs/research/regulatory-pt-eu-beekeeping.md` §B.3) are computed **client-side** for display
-  only (`client/lib/features/dgav/dgav_rules.dart`); the service stores and syncs, and the app
-  files nothing with DGAV/SICOA (out of scope, D-19 §7).
+  snapshot-not-live-join reason. Nothing is **derived** from the stored declarations: as first
+  built, the client computed an annual-window flag and an interim-declaration threshold from them,
+  and that advisory logic was **removed** because the rules are Portugal-specific (D-19's
+  narrowing note; they remain on record as research in
+  `docs/research/regulatory-pt-eu-beekeeping.md` §B.3). The table is a log — the service stores
+  and syncs it, and the app files nothing with any authority (out of scope, D-19 §7).
 
 - **Activity attributes — all-JSONB as built:** the open per-type bag lives entirely in
   `activities.attributes` (`JSONB`, FR-AC-1 extensibility). The two values journeys aggregate —

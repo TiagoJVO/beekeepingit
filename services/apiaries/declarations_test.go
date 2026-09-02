@@ -7,8 +7,8 @@ package main
 //
 // The property under test throughout is the one that makes a declaration a
 // declaration rather than a counter: it is a POINT-IN-TIME record, keyed by its
-// own id, scoped to a DGAV registration number rather than to an apiary, and it
-// survives unchanged when the live hive count moves on.
+// own id, scoped to a beekeeper registration number rather than to an apiary,
+// and it survives unchanged when the live hive count moves on.
 
 import (
 	"context"
@@ -28,12 +28,12 @@ import (
 // which has no REST surface either), so there is no HTTP read path to assert
 // against.
 type declarationView struct {
-	dgavNumber string
-	declaredOn time.Time
-	total      int32
-	breakdown  string
-	notes      *string
-	deleted    bool
+	registrationNumber string
+	declaredOn         time.Time
+	total              int32
+	breakdown          string
+	notes              *string
+	deleted            bool
 }
 
 func (f *apiariesFixture) declaration(t *testing.T, id string) (declarationView, bool) {
@@ -41,10 +41,10 @@ func (f *apiariesFixture) declaration(t *testing.T, id string) (declarationView,
 	var v declarationView
 	var deletedAt *time.Time
 	err := f.pool.QueryRow(context.Background(),
-		`SELECT dgav_registration_number, declared_on, total_hive_count,
+		`SELECT registration_number, declared_on, total_hive_count,
 		        breakdown::text, notes, deleted_at
 		 FROM apiaries.stock_declarations WHERE id = $1`, id).
-		Scan(&v.dgavNumber, &v.declaredOn, &v.total, &v.breakdown, &v.notes, &deletedAt)
+		Scan(&v.registrationNumber, &v.declaredOn, &v.total, &v.breakdown, &v.notes, &deletedAt)
 	if err != nil {
 		if strings.Contains(err.Error(), "no rows") {
 			return declarationView{}, false
@@ -69,9 +69,9 @@ func (f *apiariesFixture) declarationAuditCount(t *testing.T, id string) int {
 // putDeclaration builds a full stock_declaration put op.
 func putDeclaration(id, number, declaredOn string, total int32, ts time.Time) api.Op {
 	data, _ := json.Marshal(map[string]any{
-		"dgav_registration_number": number,
-		"declared_on":              declaredOn,
-		"total_hive_count":         total,
+		"registration_number": number,
+		"declared_on":         declaredOn,
+		"total_hive_count":    total,
 	})
 	return api.Op{Op: "put", EntityType: "stock_declaration", ID: id, Data: data, UpdatedAt: ts}
 }
@@ -101,11 +101,11 @@ func TestDeclarations_SyncApplyRoundTrip(t *testing.T) {
 		{"apiary_id": uuid.NewString(), "name": "Monte Alto", "hive_count": 12},
 	}
 	data, _ := json.Marshal(map[string]any{
-		"dgav_registration_number": "PT-123456",
-		"declared_on":              "2026-09-12",
-		"total_hive_count":         30,
-		"breakdown":                breakdown,
-		"notes":                    "Submetida via portal do IFAP.",
+		"registration_number": "PT-123456",
+		"declared_on":         "2026-09-12",
+		"total_hive_count":    30,
+		"breakdown":           breakdown,
+		"notes":               "Submetida via portal do IFAP.",
 	})
 	op := api.Op{Op: "put", EntityType: "stock_declaration", ID: id, Data: data, UpdatedAt: t0}
 
@@ -117,8 +117,8 @@ func TestDeclarations_SyncApplyRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatal("declaration was not stored")
 	}
-	if stored.dgavNumber != "PT-123456" {
-		t.Errorf("dgav_registration_number = %q, want PT-123456", stored.dgavNumber)
+	if stored.registrationNumber != "PT-123456" {
+		t.Errorf("registration_number = %q, want PT-123456", stored.registrationNumber)
 	}
 	if got := stored.declaredOn.Format("2006-01-02"); got != "2026-09-12" {
 		t.Errorf("declared_on = %q, want 2026-09-12", got)
@@ -404,8 +404,8 @@ func TestDeclarations_CrossOrgIsolation(t *testing.T) {
 	if stored.deleted {
 		t.Error("org A's declaration was tombstoned by org B — cross-org isolation is broken")
 	}
-	if stored.total != 30 || stored.dgavNumber != "PT-AAA" {
-		t.Errorf("org A's declaration = (%q, %d), want (PT-AAA, 30) — untouched by org B", stored.dgavNumber, stored.total)
+	if stored.total != 30 || stored.registrationNumber != "PT-AAA" {
+		t.Errorf("org A's declaration = (%q, %d), want (PT-AAA, 30) — untouched by org B", stored.registrationNumber, stored.total)
 	}
 
 	// And org B cannot see it either: its own scoped read finds nothing, so a

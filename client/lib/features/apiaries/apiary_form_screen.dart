@@ -43,7 +43,7 @@ const apiaryFormSyncCheckedColumns = {
   'name',
   'place_label',
   'notes',
-  'dgav_registration_number',
+  'registration_number',
   'location',
   'location_lat',
   'location_lon',
@@ -98,7 +98,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
   final _nameController = TextEditingController();
   final _notesController = TextEditingController();
   final _placeLabelController = TextEditingController();
-  final _dgavNumberController = TextEditingController();
+  final _registrationNumberController = TextEditingController();
 
   /// Drives programmatic camera moves on the embedded [_LocationPicker]
   /// (#420) — its recenter control and "use current location" both call
@@ -149,14 +149,14 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
   /// One focus node per text field the save-time check can block on, in the
   /// order they appear, so [_focusFirstSyncError] can move the user (and a
   /// screen reader) to the offending one. This form's Save is pinned OUTSIDE
-  /// the scroll view (see the class doc), so a failure on `notes` or the DGAV
+  /// the scroll view (see the class doc), so a failure on `notes` or the
   /// number — both far below the fold — would otherwise read as a Save button
   /// that did nothing at all.
   final _syncErrorFocusNodes = {
     'name': FocusNode(),
     'place_label': FocusNode(),
     'notes': FocusNode(),
-    'dgav_registration_number': FocusNode(),
+    'registration_number': FocusNode(),
   };
 
   void _focusFirstSyncError() {
@@ -181,7 +181,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     _nameController.dispose();
     _notesController.dispose();
     _placeLabelController.dispose();
-    _dgavNumberController.dispose();
+    _registrationNumberController.dispose();
     _pickerMapController.dispose();
     for (final node in _syncErrorFocusNodes.values) {
       node.dispose();
@@ -216,7 +216,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
         _nameController.text = existing.name;
         _notesController.text = existing.notes ?? '';
         _placeLabelController.text = existing.placeLabel ?? '';
-        _dgavNumberController.text = existing.dgavRegistrationNumber ?? '';
+        _registrationNumberController.text = existing.registrationNumber ?? '';
         if (existing.hasLocation) {
           _location = ll.LatLng(existing.locationLat!, existing.locationLon!);
           // Show the existing pin without an extra tap when editing a
@@ -334,7 +334,7 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
     final name = _nameController.text.trim();
     final notes = _notesController.text.trim();
     final placeLabel = _placeLabelController.text.trim();
-    final dgavNumber = _dgavNumberController.text.trim();
+    final registrationNumber = _registrationNumberController.text.trim();
     // Location is mandatory (FR-AP-7, #341): an apiary cannot be saved without
     // one. The map pin lives in [_location], outside the Form's field tree, so
     // it's validated here rather than via a TextFormField validator — surfaced
@@ -349,7 +349,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
           name: name,
           notes: notes.isEmpty ? null : notes,
           placeLabel: placeLabel.isEmpty ? null : placeLabel,
-          dgavRegistrationNumber: dgavNumber.isEmpty ? null : dgavNumber,
+          registrationNumber: registrationNumber.isEmpty
+              ? null
+              : registrationNumber,
           locationLon: _location?.longitude,
           locationLat: _location?.latitude,
         ),
@@ -392,8 +394,10 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
           notesProvided: true,
           placeLabel: placeLabel.isEmpty ? null : placeLabel,
           placeLabelProvided: true,
-          dgavRegistrationNumber: dgavNumber.isEmpty ? null : dgavNumber,
-          dgavRegistrationNumberProvided: true,
+          registrationNumber: registrationNumber.isEmpty
+              ? null
+              : registrationNumber,
+          registrationNumberProvided: true,
           locationLon: _location?.longitude,
           locationLat: _location?.latitude,
           locationProvided: true,
@@ -408,7 +412,9 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
           name: name,
           notes: notes.isEmpty ? null : notes,
           placeLabel: placeLabel.isEmpty ? null : placeLabel,
-          dgavRegistrationNumber: dgavNumber.isEmpty ? null : dgavNumber,
+          registrationNumber: registrationNumber.isEmpty
+              ? null
+              : registrationNumber,
           locationLon: _location?.longitude,
           locationLat: _location?.latitude,
         );
@@ -694,28 +700,31 @@ class _ApiaryFormScreenState extends ConsumerState<ApiaryFormScreen>
                                     _syncErrors.messageFor(l10n, 'notes'),
                               ),
                               const SizedBox(height: 16),
-                              // DGAV registration number (FR-AP-9, #296).
+                              // Registration number (FR-AP-9, #296).
                               // Last in the form and hinted as an override:
                               // the number belongs to the BEEKEEPER, is
                               // normally set once on the organization (the
-                              // DGAV section under Account), and only needs
-                              // filling in here when one organization covers
-                              // several beekeepers. Leaving it empty is the
-                              // ordinary case, not an omission.
+                              // organization-details screen under Account),
+                              // and only needs filling in here when one
+                              // organization covers several beekeepers.
+                              // Leaving it empty is the ordinary case, not
+                              // an omission.
                               TextFormField(
-                                key: const Key('apiary-dgav-number-field'),
-                                controller: _dgavNumberController,
+                                key: const Key(
+                                  'apiary-registration-number-field',
+                                ),
+                                controller: _registrationNumberController,
                                 focusNode:
-                                    _syncErrorFocusNodes['dgav_registration_number'],
+                                    _syncErrorFocusNodes['registration_number'],
                                 textInputAction: TextInputAction.done,
                                 maxLength: 50,
                                 decoration: InputDecoration(
-                                  labelText: l10n.apiaryDgavNumberLabel,
-                                  hintText: l10n.apiaryDgavNumberHint,
+                                  labelText: l10n.apiaryRegistrationNumberLabel,
+                                  hintText: l10n.apiaryRegistrationNumberHint,
                                 ),
                                 validator: (_) => _syncErrors.messageFor(
                                   l10n,
-                                  'dgav_registration_number',
+                                  'registration_number',
                                 ),
                               ),
                             ],

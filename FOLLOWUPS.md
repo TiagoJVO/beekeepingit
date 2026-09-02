@@ -23,9 +23,9 @@
   both sides (corpus case `journey/patch/default-attributes-is-an-explicit-null`) — the two sides
   agree today, so if the server is relaxed here the description must be relaxed with it, and that
   case is what will say so. **Sweep note (#597):** the save-time draft
-  (`JourneysRepository.draftForSave`) sidesteps the question by omitting the key entirely when
-  there are no defaults, so the new call site cannot reject a valid save either way — the
-  unanswered part is still what `_toOp` puts on the wire for a NULL column.
+  (`JourneysRepository.draftForSave`) omits the key entirely when there are no defaults, so the
+  new call site cannot reject a valid save whichever way [#603](https://github.com/TiagoJVO/beekeepingit/pull/603)
+  lands — absent is valid on both sides today and stays valid after it.
 
 ## `#597` — save-time (in-form) validation parity (this branch)
 
@@ -33,22 +33,12 @@
   The seam (`SyncOpDraft` + each repository's `draftForSave` + `save_time_validation.dart`) is
   entity-agnostic and the apiary / todo / journey forms use it, but: the **activity** form's
   controls cannot produce a value any described rule rejects (its per-type attribute mirror
-  already validates in-form); the **DGAV stock declaration** has no form at all — the payload is
-  derived from the org number and the current hive counts — and #443 has no labels for its fields
-  until **#600** lands; and the **apiary counters** editor is digits-only and clamped to ≥ 0.
-  Recorded in `docs/architecture/sync.md` §9/§10. Promote to an Issue only if one of those write
-  paths grows a control that can actually break a mirrored rule — left for a human rather than
-  opened unprompted.
-
-## `#296`/`#298` — DGAV registration + stock declarations (PR #593, merged)
-
-- **`stock_declarations` runtime grants are still unexercised on a real environment.** Helm-E2E
-  proved the table is CREATEd and that `charts/postgres`'s blanket
-  `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES` (hook weight 3) applies without error —
-  but **nothing in E2E writes a declaration**, so the grant is not exercised end-to-end. The
-  reasoning holds (the table is new and NOT a `*_log`, and the publication is schema-scoped so
-  PowerSync captures it automatically); confirm on the first environment where a beekeeper
-  actually records one. Promote to an Issue if it isn't confirmed at the next deploy.
+  already validates in-form); the **stock declaration** has no form at all — the payload is
+  derived from the organization's registration number and the current hive counts, so there is no
+  field to put an error against; and the **apiary counters** editor is digits-only and clamped to
+  ≥ 0. Recorded in `docs/architecture/sync.md` §9/§10. Promote to an Issue only if one of those
+  write paths grows a control that can actually break a mirrored rule — left for a human rather
+  than opened unprompted.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -65,21 +55,45 @@
 
 ---
 
-_Sweep note (2026-09-02, during #585 / PR [#596](https://github.com/TiagoJVO/beekeepingit/pull/596)):_
-_PR [#591](https://github.com/TiagoJVO/beekeepingit/pull/591) merged, so the `feat/client-validation-parity`_
-_branch section was stale by definition; retitled to the issues it belongs to, matching how the merged_
-_`#296`/`#298` section is kept. Its save-time-call-site bullet said to promote if #585 didn't pick it up —_
-_#585 did not (it built the boundary-contract corpus, not a call site), so it is now_
-_[#597](https://github.com/TiagoJVO/beekeepingit/issues/597), a sub-issue of EPIC-06 (#7), and the bullet_
-_is pruned. The `default_attributes` bullet stays: still unverified, but now pinned from both sides by the_
-_corpus. The `_fieldLabel` bullet also stays, flagged — its owning issue #443 has CLOSED without the_
-_labels, so it needs its own Issue; left for a human rather than opened unprompted._
-_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that entry stands._
+_Sweep note (2026-09-02, closing out PR [#595](https://github.com/TiagoJVO/beekeepingit/pull/595)):_
+_everything that branch was carrying is **resolved rather than deferred**, so its section is gone._
+
+- _Its Helm-E2E precondition is met_
+  _([run 33578751459](https://github.com/TiagoJVO/beekeepingit/actions/runs/33578751459), green on_
+  _the renamed shape). Its in-place-migration precondition still holds — `v0.0.1-rc13`_
+  _(2026-09-01 10:20Z) is still the newest release and predates those migrations, so no deployed_
+  _database holds the old column name. And its `stock_declarations` runtime-grants bullet is now_
+  _exercised end to end: the rewritten `stock-declarations.spec.ts` records a declaration and_
+  _asserts a **fresh** client downloads it, which only works if the server INSERTed the row._
+- _`If-Match` on the organization-details save was opened as_
+  _[#601](https://github.com/TiagoJVO/beekeepingit/issues/601) and then \**implemented on the same_
+  _branch\**, so it closes with that PR rather than outliving it._
+- _The `#584`/`#585` section's `_fieldLabel` bullet is **implemented, not promoted**: it asked for_
+  _labels for `declared_on`, `total_hive_count` and `registration_number` — fields #595 introduced —_
+  _and was marked "needs an owner" only because its original issue (#443) had closed._
+
+_Its sibling `journey.default_attributes` bullet **stays here deliberately**. It was verified true_
+_(PowerSync's `powersync_diff` omits nulls from a `put` but emits an explicit `null` from a patch_
+_that clears a column, so clearing a journey's defaults has never been able to sync) and is fixed —_
+_but in its **own PR**, since it is journeys and the shared validation description rather than_
+_apiaries. Prune this bullet when that PR merges._
+
+_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked: still open — blocked on_
+_upstream `typescript-eslint` supporting TypeScript 7, so it is genuinely not ours to close._
 _Prior sweep notes dropped with their entries, per this file's convention._
 
-_Sweep note (2026-09-02, during #597):_
-_The `_fieldLabel` stock-declaration bullet is **pruned**: it now has the owner it was waiting for —_
-_[#600](https://github.com/TiagoJVO/beekeepingit/issues/600), open and being implemented — so keeping it_
-_here would be the second backlog this file forbids. #597's save-time check reaches those same fields, and_
-_degrades them to a truthful generic line until #600 sharpens it; no code here duplicates the label table._
+_Sweep note (2026-09-02, during #597, after merging `main`):_
+_Two claims this branch was carrying were **stale on arrival** and are corrected rather than left:_
+
+- _The `_fieldLabel` bullet — this branch had said it needed promoting to_
+  _[#600](https://github.com/TiagoJVO/beekeepingit/issues/600). It did not: [#595](https://github.com/TiagoJVO/beekeepingit/pull/595)_
+  _**implemented** it (`declared_on`, `total_hive_count`, `registration_number` all have labels in_
+  _`sync_rejection_messages.dart` now), and #595's own sweep note above already records that. So the_
+  _save-time check inherits specific copy for those fields instead of the generic line, and #597 adds_
+  _no label table of its own. #600 is still open but reads as superseded by #595 — for a human to close._
+- _The `journey.default_attributes` bullet — this branch had said the wire behaviour was unverified._
+  _It is verified (see #595's sweep note above) and fixed in_
+  _[#603](https://github.com/TiagoJVO/beekeepingit/pull/603), still **open**, so the bullet stays until_
+  _that PR merges. #597 neither depends on it nor blocks it._
+
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked, still open and still blocked upstream._
