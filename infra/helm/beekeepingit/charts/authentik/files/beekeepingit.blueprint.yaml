@@ -372,12 +372,40 @@ entries:
         provider: !KeyOf provider-beekeepingit-admin,
       }
 
+  # Flow header text: "Welcome to authentik!" -> "Sign in".
+  # Carries an `id` (and sits ABOVE the brand entry) purely so the brand below can
+  # reference this flow by `!KeyOf` — see that entry's `flow_authentication` comment.
+  # This entry cannot silently create a stub flow in upstream's place: `FlowSerializer`
+  # requires `name`/`title`/`slug`/`designation`, so with no existing row the partial
+  # update here fails validation, and `Importer.apply` is atomic — the whole file rolls
+  # back and the BlueprintInstance is marked ERROR.
+  - model: authentik_flows.flow
+    id: flow-default-authentication
+    identifiers: { slug: default-authentication-flow }
+    attrs: { title: "Sign in" }
+
   # --- White-label the login as BeekeepingIT (not authentik) so end users never see the
   # IdP's branding. Applied live via the API during #193 login re-validation; recorded here
   # so a fresh deploy matches. ---
   - model: authentik_brands.brand
     identifiers: { domain: authentik-default }
     attrs:
+      # PIN the brand's default authentication flow (#594, review finding). This is not
+      # cosmetic. `ToDefaultFlow.get_flow` (flows/views/executor.py) — what
+      # /flows/-/default/authentication/ resolves, i.e. where the OIDC authorize endpoint
+      # sends every unauthenticated sign-in — returns `brand.flow_authentication` when it
+      # is set, and ONLY falls back to `flow_by_policy`, which scans every
+      # `designation: authentication` flow **ordered by slug** and takes the first whose
+      # policies pass, when it is null. Upstream's own `default-brand.yaml` sets this
+      # field with `!Find [flow, default-authentication-flow]` under `state: created`, so
+      # on a cluster where that lookup lost its own race the field is null and the
+      # slug-ordered fallback is live — and `beekeepingit-source-authentication` sorts
+      # BEFORE `default-authentication-flow`. The SSO gate on that flow denies a plain
+      # browser, so the fallback still lands on the right flow, but that would make the
+      # gate load-bearing for the entire login page. Pinning the field here removes the
+      # dependency outright. `!KeyOf` (not `!Find`) so a missing flow raises instead of
+      # writing a null — the whole point of #594.
+      flow_authentication: !KeyOf flow-default-authentication
       branding_title: BeekeepingIT
       # branding_logo only accepts a file path (not a data URI), so the authentik wordmark is
       # hidden and replaced by a text header in CSS; the "Powered by authentik" footer is
@@ -390,11 +418,6 @@ entries:
         .pf-c-background-image,.pf-c-background-image::before{background:#1a120b!important;background-image:none!important}
         .ak-static-page,body{background:#1a120b!important}
         .pf-c-button.pf-m-primary{background:#E8B979!important;border-color:#E8B979!important;color:#1a120b!important}
-  # Flow header text: "Welcome to authentik!" -> "Sign in".
-  - model: authentik_flows.flow
-    identifiers: { slug: default-authentication-flow }
-    attrs: { title: "Sign in" }
-
   # --- Email verification at login (#361, NFR-SEC-1, NFR-I18N-1) ---
   # Built when accounts were exclusively invite/admin-provisioned (registration
   # disabled), so verification couldn't ride an enrollment flow — it's injected

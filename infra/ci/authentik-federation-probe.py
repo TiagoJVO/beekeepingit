@@ -115,9 +115,11 @@ def _run():
     from django.contrib.auth.models import AnonymousUser
 
     from authentik.core.models import Group, User, UserSourceConnection
+    from authentik.brands.models import Brand
     from authentik.core.sources.flow_manager import Action
-    from authentik.flows.models import FlowStageBinding, Stage
+    from authentik.flows.models import FlowStageBinding
     from authentik.policies.expression.models import ExpressionPolicy
+    from authentik.stages.user_login.models import UserLoginStage
     from authentik.policies.types import PolicyRequest
     from authentik.sources.oauth.models import OAuthSource, UserOAuthSourceConnection
     from authentik.sources.oauth.views.callback import OAuthSourceFlowManager
@@ -348,22 +350,47 @@ def _run():
         # `email`/`attributes.upn`/`attributes.email_verified`" guarantee on this
         # flow having no `user_write` stage, and called out that the probe did
         # not enforce it. Now it does — live, on the deployed flow.
+        # Plain Django on purpose: a `select_subclasses()` spelling would depend
+        # on `Stage.objects` being a django-model-utils InheritanceManager, and
+        # an AttributeError here kills the WHOLE step with a traceback and zero
+        # OK:/FAIL: lines — a harder red than the flake #594 fixes. `order == 0`
+        # is asserted too: the blueprint and auth.md §8.16 both lean on it.
         if authentication_flow is not None:
-            bound_stages = sorted(
-                (binding.order, type(stage).__name__, stage.name)
-                for binding, stage in (
-                    (b, Stage.objects.filter(pk=b.stage_id).select_subclasses().first())
-                    for b in FlowStageBinding.objects.filter(target=authentication_flow)
-                )
+            bindings = list(FlowStageBinding.objects.filter(target=authentication_flow))
+            login_stage_ids = set(
+                UserLoginStage.objects.filter(
+                    pk__in=[b.stage_id for b in bindings]
+                ).values_list("pk", flat=True)
             )
             check(
-                "the source-authentication flow's ONLY stage is a user_login — no "
-                "user_write, so a returning federated login cannot overwrite "
+                "the source-authentication flow's ONLY stage is a user_login at order 0 — "
+                "no user_write, so a returning federated login cannot overwrite "
                 "email/upn/email_verified",
-                [name for _order, name, _stage_name in bound_stages] == ["UserLoginStage"],
-                "got {!r}".format(bound_stages),
+                len(bindings) == 1
+                and bindings[0].order == 0
+                and bindings[0].stage_id in login_stage_ids,
+                "got {!r}".format(
+                    [(b.order, str(b.stage_id), b.stage_id in login_stage_ids) for b in bindings]
+                ),
             )
         check("source is enabled", source.enabled is True)
+
+        # #594, second order: owning a `designation: authentication` flow put the
+        # DEFAULT one in play. `ToDefaultFlow.get_flow` returns
+        # `brand.flow_authentication` when set, and otherwise scans authentication
+        # flows ORDERED BY SLUG for the first whose policies pass — and
+        # `beekeepingit-source-authentication` sorts ahead of
+        # `default-authentication-flow`. The blueprint pins the brand field so the
+        # fallback never runs; assert the pin took, on the deployed brand, because
+        # the failure it prevents is "every sign-in lands somewhere else".
+        brand = Brand.objects.filter(default=True).first() or Brand.objects.first()
+        check(
+            "the brand pins flow_authentication to the password flow (#594) — so "
+            "/flows/-/default/authentication/ never falls back to a slug-ordered scan",
+            brand is not None
+            and getattr(brand.flow_authentication, "slug", None) == "default-authentication-flow",
+            "got {!r}".format(getattr(getattr(brand, "flow_authentication", None), "slug", None)),
+        )
 
         # ---------- fixtures ----------
         users_before = User.objects.count()
@@ -788,6 +815,14 @@ def _run():
             "a COMPLETED federated login leaves the local email untouched",
             persist_user.email == prefix + "persist@example.invalid",
             "got {!r}".format(persist_user.email),
+        )
+        # The third field §8.13/§8.14 name as protected, and the one the upstream
+        # actually asserts in its payload — so the one an accidental `user_write`
+        # on the source-authentication flow would be likeliest to clobber (#594).
+        check(
+            "a COMPLETED federated login leaves attributes.email_verified untouched",
+            (persist_user.attributes or {}).get("email_verified") is True,
+            "got {!r}".format((persist_user.attributes or {}).get("email_verified")),
         )
 
         # ---------- #365: enrollment is actually EXECUTED, and well-formed ----
