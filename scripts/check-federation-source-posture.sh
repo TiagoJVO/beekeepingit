@@ -202,12 +202,17 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     return body ~ /(^|[^A-Za-z0-9_-])attrs[[:space:]]*:/
   }
 
-  function pin_ok(pin_id, key, value,   ok) {
+  function pin_ok(pin_id, key, value, quoted,   ok, pattern) {
     ok = 1
     # Anchored INSIDE the flow-style `identifiers: { … }` block, not merely
     # somewhere in the entry: an entry could otherwise identify a different
     # object and carry the expected slug under an unrelated key.
-    if (body !~ ("identifiers[[:space:]]*:[[:space:]]*[{][^}]*(^|[^A-Za-z0-9_-])" key "[[:space:]]*:[[:space:]]*[\"]?" value "([^A-Za-z0-9_.-]|$)")) {
+    pattern = "identifiers[[:space:]]*:[[:space:]]*[{][^}]*(^|[^A-Za-z0-9_-])" key "[[:space:]]*:[[:space:]]*"
+    # A QUOTED identifier must end at its closing quote. The certificate is
+    # identified by `name`, not a slug, and the plain boundary accepts a space —
+    # so `authentik Self-signed Certificate 2` would satisfy it (review finding).
+    pattern = pattern (quoted ? "[\"]" value "[\"]" : "[\"]?" value "([^A-Za-z0-9_.-]|$)")
+    if (body !~ pattern) {
       printf("✗ [federation-source] pin entry `%s` must identify its target with `identifiers: { %s: %s }` — that is the object authentik itself creates and the providers resolve through it (#599)\n", pin_id, key, value) > "/dev/stderr"
       ok = 0
     }
@@ -334,17 +339,17 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     if (model ~ /^authentik_flows[.]flow$/ && id == AUTHZ_PIN) {
       authz_pins++
       last_pin_line = (entry_line > last_pin_line ? entry_line : last_pin_line)
-      if (!pin_ok(AUTHZ_PIN, "slug", AUTHZ_SLUG)) status = 1
+      if (!pin_ok(AUTHZ_PIN, "slug", AUTHZ_SLUG, 0)) status = 1
     }
     if (model ~ /^authentik_flows[.]flow$/ && id == INVAL_PIN) {
       inval_pins++
       last_pin_line = (entry_line > last_pin_line ? entry_line : last_pin_line)
-      if (!pin_ok(INVAL_PIN, "slug", INVAL_SLUG)) status = 1
+      if (!pin_ok(INVAL_PIN, "slug", INVAL_SLUG, 0)) status = 1
     }
     if (model ~ /^authentik_crypto[.]certificatekeypair$/ && id == KEY_PIN) {
       key_pins++
       last_pin_line = (entry_line > last_pin_line ? entry_line : last_pin_line)
-      if (!pin_ok(KEY_PIN, "name", KEY_NAME)) status = 1
+      if (!pin_ok(KEY_PIN, "name", KEY_NAME, 1)) status = 1
     }
 
     # #599: fail closed on any `!Find` that reaches one of the three PINNED
@@ -355,7 +360,7 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     # `!Find [` calls across several lines and a line-scoped rule reads none of
     # them (review finding). `[^]]*` keeps the match inside the tag`s own
     # argument list.
-    if (body ~ /!Find[^]]*(certificatekeypair|default-provider-authorization|default-provider-invalidation)/) {
+    if (tolower(body) ~ /!find[^]]*(certificatekeypair|default-provider-authorization|default-provider-invalidation)/) {
       printf("✗ [federation-source] entry `%s` (model %s) reaches a PINNED object (the self-signed certificate or a provider flow) with `!Find` — `Find.resolve` returns None silently when the target has not been created yet, and for `signing_key` the serializer ACCEPTS that null: HS256 and an empty JWKS, permanently. Use `!KeyOf` at the pin entry (#599)\n", (id == "" ? "<no id>" : id), model) > "/dev/stderr"
       status = 1
     }
@@ -367,7 +372,7 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     # passed the "login-stage-only" assertion. It is also always a bug on its own
     # terms: the entry is right here, so `!KeyOf` is available, deterministic and
     # loud, while `!Find` is order-dependent and silently null.
-    if (body ~ /!Find[^]]*beekeepingit-source-/) {
+    if (tolower(body) ~ /!find[^]]*beekeepingit-source-/) {
       printf("✗ [federation-source] entry `%s` (model %s) reaches an object this blueprint DEFINES (`beekeepingit-source-*`) with `!Find` — use `!KeyOf <entry id>`: it resolves in-file, raises instead of yielding a silent null (#594), and is the only spelling the assertions in this guard can reason about\n", (id == "" ? "<no id>" : id), model) > "/dev/stderr"
       status = 1
     }
@@ -578,7 +583,33 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     status = 1
   }
 
-  /^  - model:/ { flush(); model = $3; id = ""; body = ""; entry_line = FNR; next }
+  # Fail closed on an entry this guard cannot SPLIT on. Every assertion above
+  # keys off `^  - model:`, so an entry whose first key is anything else — YAML
+  # mapping keys are unordered, so `- id: x` / `model: y` is a perfectly valid
+  # entry that authentik applies normally — is folded into the PREVIOUS entry`s
+  # body and is invisible to every assertion here (review finding: it hid a
+  # provider with a null `signing_key`, and a source with `email_link` plus a
+  # literal `consumer_secret`). Same fail-closed-on-the-opaque posture as the
+  # anchor/alias ban below.
+  /^  - / {
+    if ($0 !~ /^  - model:/) {
+      printf("✗ [federation-source] line %d starts a blueprint entry whose first key is not `model:` — this guard splits entries on `^  - model:`, so such an entry is invisible to EVERY assertion here; keep `model:` first\n", FNR) > "/dev/stderr"
+      status = 1
+    }
+  }
+  # ...and on a mixed-case model name. Django`s `apps.get_model()` lowercases the
+  # model, so `authentik_providers_oauth2.OAuth2Provider` APPLIES normally while
+  # evading every `model ~ /^authentik_…$/` test above (review finding). `model`
+  # is lowercased for those tests either way, so the spelling can only be a
+  # style drift, never a silent bypass.
+  /^  - model:/ {
+    flush(); model = tolower($3); id = ""; body = ""; entry_line = FNR
+    if ($3 != model) {
+      printf("✗ [federation-source] line %d spells the model `%s` — `apps.get_model()` lowercases the model name, so a mixed-case spelling applies normally while evading this guard`s model tests; use the all-lowercase spelling\n", FNR, $3) > "/dev/stderr"
+      status = 1
+    }
+    next
+  }
   { body = body " " $0 }
   /^    id:/ { if (id == "") id = $2 }
 

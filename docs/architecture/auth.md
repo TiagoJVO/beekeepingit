@@ -1720,14 +1720,24 @@ and its two guards changed — no Go service, no client, no token, no requiremen
   and fails on any `certificate_data`/`key_data` literal. The two `!Find` bans and the literal ban
   were widened after review: the former now match the **joined entry body** (this file already wraps
   long `!Find [` calls across lines, which a line-scoped rule read as clean) and the latter tolerates
-  a quoted or flow-mapping key. **40 drifts, 40 caught** — #599's 28 (each field reverted to `!Find`
-  on either provider; each pin deleted, duplicated, repointed or given attrs, including a
-  private-key literal; `signing_key` dropped, mistyped, pointed at the wrong pin, and shadowed by a
-  longer key — `jwt_signing_key:`, which is what the `keyof()` helper's new **left** boundary
-  rejects; a stray `!Find` at the certificate elsewhere in the file, in both the one-line and wrapped
-  spellings; a duplicate `signing_key: null`; `state: absent` on a pin; the pins moved below the
-  providers) **plus #594's original 12 re-run**, because `keyof()` changed and that had to be shown
-  not to weaken any assertion it already carried.
+  a quoted or flow-mapping key. A second security pass added two STRUCTURAL bans, both of which
+  had let an entry evade the guard entirely rather than fail one assertion: an entry whose first key
+  is not `model:` (YAML mapping keys are unordered, so `- id: … / model: …` is a valid entry
+  authentik applies normally, and this guard — which splits on `^  - model:` — folded it into the
+  previous entry and skipped it), and a mixed-case model name (`apps.get_model()` lowercases it, so
+  `authentik_providers_oauth2.OAuth2Provider` applies normally while matching none of the
+  `model ~ /^authentik_…$/` tests). Both `!Find` bans are now case-insensitive for the same reason,
+  and the certificate pin — identified by a `name`, not a slug — must match up to its closing quote,
+  since a bare boundary accepted `authentik Self-signed Certificate 2`. **45 drifts, 45 caught** —
+  #599's 33 (each field reverted to `!Find` on either provider, in both the one-line and wrapped
+  spellings; each pin deleted, duplicated, repointed or given attrs, including a private-key literal
+  and a quoted one; `signing_key` dropped, mistyped, pointed at the wrong pin, shadowed by the longer
+  key `jwt_signing_key:` — what `keyof()`'s new **left** boundary rejects — and overridden by a
+  duplicate `signing_key: null`; `state: absent` on a pin; the pins moved below the providers; a
+  provider and a source hidden behind an `id:`-first entry; a Django-cased model with a Django-cased
+  `!Find`; the certificate pin repointed at a longer name) **plus #594's original 12 re-run**,
+  because `keyof()` and the entry split both changed here and had to be shown not to weaken any
+  assertion they already carried.
   [`infra/ci/authentik-federation-probe.py`](../../infra/ci/authentik-federation-probe.py) asserts
   the same properties **live** on both deployed providers — the certificate's identity, `RS256`
   (not the HS256 fallback), both flow slugs, exactly one RS256 `sig` key per JWKS, and the shared
