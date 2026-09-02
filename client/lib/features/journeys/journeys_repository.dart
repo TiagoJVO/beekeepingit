@@ -121,13 +121,15 @@ class JourneysRepository {
       'main_activity_type': mainActivityType,
       'status': status,
     };
-    // Present only when there ARE defaults. "No defaults" is stored as SQL
-    // NULL ([_encodeDefaultAttributes]) and must reach validation as an
-    // ABSENT field, not as an explicit JSON `null`: the server's
-    // `validateDefaultAttributes` rejects a present `null` as "not a JSON
-    // object" (contracts/validation/sync-ops.corpus.json pins that case),
-    // while absent is always valid — and the one direction this check must
-    // never take is rejecting a save the server would have accepted.
+    // Present only when there ARE defaults, mirroring what PowerSync actually
+    // uploads: "no defaults" is stored as SQL NULL
+    // ([_encodeDefaultAttributes]), and `powersync_diff` DROPS null columns
+    // from a `put` (it emits an explicit JSON `null` only from a `patch` that
+    // clears a column — measured in #603). Omitting the key is therefore the
+    // faithful shape here, and the safe one: absent has always been valid on
+    // both sides, and since #603 the explicit `null` is accepted too
+    // (`absentWhen: "jsonNull"` in the shared description), so neither form
+    // can cost a beekeeper a valid save.
     if (defaultAttributes.isNotEmpty) {
       data['default_attributes'] = defaultAttributes;
     }

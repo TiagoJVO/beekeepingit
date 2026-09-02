@@ -1380,9 +1380,13 @@ void main() {
       expect(journeyFormSyncCheckedColumns.difference(drafted), isEmpty);
     });
 
-    test('no defaults are drafted as ABSENT, never as an explicit null', () {
-      // A present `null` is what the server rejects as "not a JSON object"
-      // (contracts/validation/sync-ops.corpus.json); absent is always valid.
+    test('no defaults are drafted as ABSENT, mirroring what a put uploads', () {
+      // `powersync_diff` drops null columns from a `put` (#603), so an empty
+      // bag reaches the wire as an absent field, not as an explicit `null` —
+      // and the draft has to look like the op, not like the local row.
+      // Either form validates today (#603 made the null literal acceptable
+      // too, via `absentWhen: "jsonNull"`), so this pins fidelity to the wire
+      // rather than guarding against a rejection.
       final draft = JourneysRepository.draftForSave(
         name: 'Colheita',
         mainActivityType: 'harvest',

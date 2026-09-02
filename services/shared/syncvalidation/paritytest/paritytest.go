@@ -85,14 +85,23 @@ func AssertRequiredOn(t testing.TB, e syncvalidation.Entity, field string, want 
 	}
 }
 
-// AbsentNull / AbsentEmpty / AbsentBlank are the values [AssertAbsentWhen]
-// takes, mirroring the three shapes a service's "field not supplied" guard
-// takes: `data.X == nil`, `data.X == nil || *data.X == ""`, and
-// `strings.TrimSpace(*data.X) == ""`.
+// AbsentNull / AbsentEmpty / AbsentBlank / AbsentJSONNull are the values
+// [AssertAbsentWhen] takes, mirroring the shapes a service's "field not
+// supplied" guard takes: `data.X == nil`, `data.X == nil || *data.X == ""`,
+// `strings.TrimSpace(*data.X) == ""`, and — for a json.RawMessage field, where
+// a present `null` is 4 bytes rather than a nil field — `len(raw) == 0 ||
+// isJSONNull(raw)`.
+//
+// AbsentJSONNull is the ONLY value that also makes the client skip a field's
+// shape checks (jsonObject/maxBytes) on an explicit `null`. A RawMessage field
+// left at AbsentNull keeps the stricter reading — a present `null` is
+// present-and-not-an-object — which is what activities' `attributes` still
+// enforces.
 const (
-	AbsentNull  = ""
-	AbsentEmpty = "empty"
-	AbsentBlank = "blank"
+	AbsentNull     = ""
+	AbsentEmpty    = "empty"
+	AbsentBlank    = "blank"
+	AbsentJSONNull = "jsonNull"
 )
 
 // AssertAbsentWhen pins the described "not supplied" rule for one field against

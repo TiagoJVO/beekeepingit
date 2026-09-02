@@ -403,6 +403,7 @@ const syncValidationRulesJson = r'''
         },
         {
           "name": "default_attributes",
+          "absentWhen": "jsonNull",
           "checks": [
             {
               "kind": "maxBytes",
