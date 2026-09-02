@@ -144,7 +144,9 @@ line safe, and are worth keeping in mind before editing either file:
 - **Only the chart source uses `ref.tag`.** The sibling `beekeepingit-gitops` source keeps
   `ref.branch` — it must stay on `main` or the GitOps repo could no longer update itself — so the
   `tag:` expression cannot match it. A guard asserts exactly one `tag:` in the cluster file and
-  fails the release otherwise, rather than shipping a cluster still tracking a branch.
+  fails the release otherwise, rather than shipping a cluster still tracking a branch. Since `#611`
+  the gitops repo enforces the same pin on every PR (`scripts/check-chart-pin.sh`, the `chart-pin`
+  CI job), so a regression to `branch:` fails long before a release could trip this guard.
 - **The `branch:` → `tag:` conversion is one manual PR per environment**, deliberately not
   automated: it is a one-time posture change that deserves a human, and the guard above makes
   forgetting it loud rather than silent.

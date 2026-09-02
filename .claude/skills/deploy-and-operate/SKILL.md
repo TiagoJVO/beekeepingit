@@ -181,7 +181,9 @@ keyed by cluster name, so every worktree shares it.
   gateway→backend edge on Kapsule.
 - **`flux get sources git -A` is the check that an environment is actually pinned.** Anything
   still showing `branch: main` for the `beekeepingit` source predates the 2026-08-31 fix and is
-  taking its chart from `main`.
+  taking its chart from `main`. That is the live-side check; on the Git side the gitops repo's
+  `chart-pin` CI job (`scripts/check-chart-pin.sh`, #611) fails any PR that un-pins staging/prod or
+  repoints the umbrella HelmRelease at an unpinned source.
 - **Flux reports "reconciled" without health.** Every umbrella HelmRelease sets
   `disableWait: true` (a real fix — Helm's wait deadlocks against the `schema-grants` post-install
   hook) and no Kustomization has `healthChecks`, so `dependsOn` orders _application_, not
