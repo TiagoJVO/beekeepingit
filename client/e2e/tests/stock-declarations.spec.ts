@@ -105,13 +105,30 @@ const declarationRow = (page: Page) => page.getByText(/— \d+ hives?/);
 
 // The group heading shown when apiaries resolve to no registration number at
 // all. Asserted ABSENT throughout: this spec's own apiary carries no per-apiary
-// override, so it inherits the organization's default — and the default only
-// reaches a client through the organization REST read + its local cache
-// (`organization_repository.dart`; the org row is not what the declarations
-// screen groups on). A "No registration number" group therefore means that
-// default did not arrive, which is the same silent-NULL failure the
-// fresh-client assertion guards against, one field over.
-const noNumberGroup = (page: Page) => page.getByText("No registration number");
+// A declaration group, located by its ACCESSIBLE NAME rather than by text.
+//
+// Flutter merges a card into one semantics node, and how it publishes that
+// node's label depends on whether the node has children: a LEAF gets the label
+// as DOM text, a node WITH children gets it as `aria-label`. A group here always
+// contains at least the "Record declaration" button, so its label — which
+// carries the registration number — is an attribute, invisible to `getByText`.
+// A CI run proved it: the failure snapshot showed
+// `group "PT-E2E-… Current hive count: 0 …"` present and correct while
+// `getByText("PT-E2E-…")` found nothing. `getByRole` matches on the accessible
+// name, so it sees both forms.
+const numberGroup = (page: Page, number: string) =>
+  // `registrationNumber` is generated as PT-E2E-<digits> (see its declaration),
+  // so it holds no regex metacharacters and needs no escaping.
+  page.getByRole("group", { name: new RegExp(number) });
+
+// The group a declaration falls into when no registration number is known. The
+// apiary this spec creates carries no per-apiary override, so it inherits the
+// organization's default — and that default only reaches a client through the
+// organization REST read plus its local cache (`organization_repository.dart`;
+// the org row is not what the declarations screen groups on). A "No registration
+// number" group therefore means that default did not arrive, which is the same
+// silent-NULL failure the fresh-client assertion guards against, one field over.
+const noNumberGroup = (page: Page) => page.getByRole("group", { name: /No registration number/ });
 
 /**
  * Flutter-web text entry: focus the field, then type real keystrokes.
@@ -281,7 +298,7 @@ test("registration number + declaration: recorded here, downloaded by a fresh cl
   // that row has arrived locally — so the record action below is never clicked
   // against a half-populated screen. 60s for the same reason the fresh-client
   // waits are 60s (see below).
-  await expect(page.getByText(registrationNumber).first()).toBeVisible({ timeout: 60_000 });
+  await expect(numberGroup(page, registrationNumber)).toBeVisible({ timeout: 60_000 });
   await expect(noNumberGroup(page)).toHaveCount(0);
 
   // One group means one record action, so `.first()` is unambiguous — but
@@ -370,7 +387,7 @@ test("registration number + declaration: recorded here, downloaded by a fresh cl
     // client has downloaded the apiary, a default that failed to arrive would
     // put that apiary in its own "No registration number" group next to this
     // one.
-    await expect(p2.getByText(registrationNumber).first()).toBeVisible({ timeout: 60_000 });
+    await expect(numberGroup(p2, registrationNumber)).toBeVisible({ timeout: 60_000 });
     await expect(noNumberGroup(p2)).toHaveCount(0);
 
     // The declaration itself replicated (FR-AP-10) — this is the assertion the
