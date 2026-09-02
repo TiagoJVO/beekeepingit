@@ -148,7 +148,7 @@ OpenAPI-generated elsewhere, and a middleware type that doesn't compose as direc
   `journeys`, `todos`, `ai`, `history` — [service-decomposition.md](../architecture/service-decomposition.md)
   §3) imports `services/servicetemplate` directly (its own module + `go.work` entry), copying
   `example/main.go`'s wiring rather than re-deriving it.
-- **#87's telemetry follow-up** (`FOLLOWUPS.md`) — once a real domain service (`#23`, the
-  walking-skeleton) wires this template, re-run
-  [`infra/observability-smoke-test.sh`](../../infra/observability-smoke-test.sh)'s checks against
-  its real traffic instead of `telemetrygen`, per ADR-0013.
+- **#87's telemetry follow-up** (`#610`) — the walking-skeleton services (`#23`) now wire this
+  template, so
+  [`infra/observability-smoke-test.sh`](../../infra/observability-smoke-test.sh)'s checks can be
+  re-run against their real traffic instead of `telemetrygen`, per ADR-0013.

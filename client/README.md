@@ -174,10 +174,10 @@ client change, plus a manual verification procedure (with a first pass already f
 what a static-build audit can't check (real install prompt, offline shell serving) — see
 [`docs/client/pwa-installability.md`](../docs/client/pwa-installability.md).
 
-## Not in scope here (see `FOLLOWUPS.md`)
+## Not in scope here
 
 The PowerSync **web assets** (wasm SQLite + workers) and a few **deploy-time** wirings
-(OIDC issuer/host resolution, the `/sync-stream` gateway route) are validated against the
-live cluster — see `FOLLOWUPS.md`. The full-slice **Playwright e2e** lives in
+(OIDC issuer/host resolution, the `/sync-stream` gateway route) were validated against the
+live cluster in `#23` (#160). The full-slice **Playwright e2e** lives in
 [`e2e/`](e2e/). App icons (`web/icons/`, `web/favicon.png`) are Flutter's default placeholders —
-real branded artwork is still needed (`#93`'s "real project app icons" AC).
+real branded artwork is still needed (`#93`'s "real project app icons" AC, tracked in #233).

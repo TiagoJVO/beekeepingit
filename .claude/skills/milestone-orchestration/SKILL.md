@@ -9,10 +9,10 @@ description: >-
   + blocked-by), never inferred from prose or re-declared in a body; cross-milestone parallelism is
   already decided in D-14's phase plan and tagged in each milestone's description; the shared local
   cluster is coordinated via infra/cluster/with-lock.sh, not a bespoke "one owner" scheme; and
-  claiming/coordination must stay on native GitHub fields (assignee) — do NOT invoke ECC's
-  /epic-claim, /epic-sync, or the orch-add-feature/orch-change-feature aliases that trigger them,
-  since they write a custom coordination block + coordination:* labels into the issue body, which is
-  exactly the prose-duplication backlog-management forbids.
+  claiming/coordination must stay on native GitHub fields (assignee) — drive execution through this
+  repo's own /orch-* commands and agents, never ECC's /epic-* commands or /projects, which write a
+  custom coordination block + coordination:* labels into the issue body, exactly the prose
+  duplication backlog-management forbids.
 ---
 
 # Autonomous milestone execution (multi-agent team)
@@ -39,13 +39,18 @@ milestone's GitHub description carries a short phase tag for the same reason."_
   automatically. There is no need to invent a single "infra owner" agent — every implementer just
   wraps mutating commands with it. See
   [`infra/README.md`](../../../infra/README.md#sharing-the-local-cluster-across-concurrent-sessions).
-- **Do not use ECC's `/epic-claim` / `/epic-sync`** (or `/orch-add-feature` / `/orch-change-feature`,
-  which alias to them). Those scripts write a custom coordination block into the issue body and
-  `coordination:*` labels — this repo already rejected exactly that shape of duplication (see
-  **backlog-management**'s "don't duplicate a native field" rule). "Claiming" an issue here means
-  setting the native **assignee** field; drive implementation via the underlying agents
-  (`planner`/`architect`, `tdd-guide`, `code-reviewer`, `security-reviewer`) directly, not through
-  the `orch-*` wrapper commands.
+- **Drive implementation with this repo's own `/orch-*` commands** (`/orch-add-feature`,
+  `/orch-change-feature`, `/orch-fix-defect`, `/orch-refine-code`, `/orch-review`), which delegate
+  each phase to the project agents: `planner` and `code-architect` to plan, `tdd-guide` to
+  implement test-first, `code-reviewer` on every diff, `security-reviewer` when it touches
+  auth/input/DB/crypto/secrets, and the specialist reviewer for the paths changed —
+  `go-reviewer` (`services/**`), `flutter-reviewer` (`client/**`), `react-reviewer` (`admin/**`),
+  `contracts-reviewer` (`contracts/**`), `infra-reviewer` (`infra/**`, `.github/workflows/**`),
+  `database-reviewer` (migrations and schema). See
+  [`.claude/agents/README.md`](../../agents/README.md) for the full roster.
+- **Never invoke ECC's `/epic-*` commands or `/projects`.** They write a custom coordination block
+  and `coordination:*` labels into the issue body — exactly the duplication of native fields
+  **backlog-management** forbids. "Claiming" an issue here is the native **assignee** field.
 
 ## Input
 
@@ -55,8 +60,8 @@ One milestone URL (or `owner/repo` + milestone number). Nothing else — everyth
 
 ```bash
 # resolve milestone number from the URL, then pull it + every issue in it
-gh api repos/OWNER/REPO/milestones/<n> --jq '{number, title, description}'
-gh api "repos/OWNER/REPO/issues?milestone=<n>&state=all" --jq '.[] | {number,title,state,body}'
+gh api repos/TiagoJVO/beekeepingit/milestones/<n> --jq '{number, title, description}'
+gh api "repos/TiagoJVO/beekeepingit/issues?milestone=<n>&state=all" --jq '.[] | {number,title,state,body}'
 ```
 
 Read, in this order: `CLAUDE.md`, the **requirements-folder** skill's targets (`decisions.md`,
@@ -68,36 +73,25 @@ stories/tasks — an epic's own body has no "Stories" checklist; its children ar
 
 ```bash
 # epic -> children
-gh api repos/OWNER/REPO/issues/<epic#>/sub_issues --jq '.[] | {number,title,state}'
+gh api repos/TiagoJVO/beekeepingit/issues/<epic#>/sub_issues --jq '.[] | {number,title,state}'
 # story-level blockers
-gh api repos/OWNER/REPO/issues/<n>/dependencies/blocked_by --jq '.[] | {number,title,state}'
+gh api repos/TiagoJVO/beekeepingit/issues/<n>/dependencies/blocked_by --jq '.[] | {number,title,state}'
 ```
 
-Then check every **open** milestone's `description` for its phase tag — D-14's plan (revised
-2026-07-16) already sequenced the whole roadmap. Snapshot at time of writing:
+Then check every **open** milestone's `description` for its phase tag — D-14's plan already
+sequenced the whole roadmap:
 
-| Milestone                     | #   | Phase       | Unblocked by                     |
-| ----------------------------- | --- | ----------- | -------------------------------- |
-| M3 · Activities               | 10  | 1           | — (build `#38` first internally) |
-| M5 · Todos                    | 12  | 1           | —                                |
-| M7 · Admin App                | 14  | 1           | —                                |
-| M8 groundwork (`#297`, `#90`) | 15  | 1 (partial) | —                                |
-| M4 · Journeys                 | 11  | 2           | M3's `#38`/`#39`                 |
-| M6 · Export                   | 13  | 2           | M3's `#38` + M4's `#45`          |
-| M9 · Settings & Notifications | 16  | 3           | M5's `#50`                       |
-| M8 · AI Assistant (core)      | 15  | 4           | M3 + M4 + M5 far enough along    |
-| M10 · Android                 | 17  | 5           | — (deliberately last, D-10)      |
-| M11 · iOS & on-device AI      | 18  | 5           | M10                              |
-| M12 · Import (Apiaries)       | 19  | 6           | deferred to the very end (D-25)  |
+```bash
+gh api repos/TiagoJVO/beekeepingit/milestones --jq '.[] | {number,title,description}'
+```
 
-Treat the live milestone `description` as the source of truth, not this table — it will drift.
-Combine both graphs (native blocked-by within a milestone, phase tag across milestones) into one
-topological ordering of waves.
+The live milestone `description` is the source of truth for phase and sequencing — read it, don't
+work from a copy. Combine both graphs (native blocked-by within a milestone, phase tag across
+milestones) into one topological ordering of waves.
 
 **Scope discipline:** default to executing only the milestone you were given. If its phase has
-runnable siblings per the table above, say so once in your Step-2 plan log as an offer, but don't
-silently expand scope to other milestones without the user asking — that's a scope decision, not an
-implementation detail.
+runnable siblings, say so once in your Step-2 plan log as an offer, but don't silently expand scope
+to other milestones without the user asking — that's a scope decision, not an implementation detail.
 
 ## 2. Stage waves and execute
 

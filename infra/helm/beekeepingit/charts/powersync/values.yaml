@@ -73,8 +73,8 @@ auth:
 # volume). So v1 replicates the full per-org history down, same as every
 # other bucket row; a time-bounded WHERE (e.g. `recorded_at > now() -
 # interval`) would need re-evaluation server-side to keep rolling forward,
-# which Sync Rules also doesn't do — that refinement is deferred (tracked in
-# FOLLOWUPS.md) rather than approximated here.
+# which Sync Rules also doesn't do — that refinement is deferred as an accepted
+# trade-off (history.md §3) rather than approximated here.
 #
 # apiaries.apiary_counters (#256, FR-AP-7): typed 1-N counters decoupled from
 # the apiaries table — hive_count is no longer a column on apiaries.apiaries

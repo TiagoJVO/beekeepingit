@@ -78,8 +78,8 @@ with the release version. This gives one consistent mental model: CI validates e
 - A deploy is now a reviewed PR + merge, not a machine auto-commit — slightly more ceremony, in
   exchange for zero standing write-secrets and a human eye on every tag bump.
 - The cross-repo PR step needs a scoped credential (token/GitHub App) — narrower than the rejected
-  Flux deploy key (it can only open a PR, not push to `main`), but still a secret to manage; tracked
-  in `FOLLOWUPS.md`.
+  Flux deploy key (it can only open a PR, not push to `main`), but still a secret to manage — it is
+  the fine-grained `GITOPS_PR_TOKEN` PAT, scoped to `beekeepingit-gitops`.
 - Rollback stays a Git operation (`git revert` the tag-bump PR in the GitOps repo), same as before.
 
 ## Alternatives considered

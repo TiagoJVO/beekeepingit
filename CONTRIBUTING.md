@@ -62,14 +62,15 @@ docs(requirements): clarify journey stats (FR-JO-1)
 
 ## Pull requests
 
-- Fill in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md); use
-  `Closes #<issue>`.
-- One logical change per PR. Link the requirement IDs and epic/issue it implements.
-- Include tests for the change; update docs when behavior or scope changes.
+- One logical change per PR; use `Closes #<issue>`.
+- Fill in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) — its
+  **Definition of Done** section is the single checklist (the
+  [`definition-of-done` rule](.claude/rules/definition-of-done.md) just points at it), and its
+  **Before merge** section is where anything the PR still owes goes: done before merge, or
+  opened as a GitHub Issue from the PR and linked there.
 - If the change adds/removes a route, table, or top-level dependency, re-run
-  `/ecc:update-codemaps` and include the updated [docs/CODEMAPS/](docs/CODEMAPS/) files in
+  `/update-codemaps` and include the updated [docs/CODEMAPS/](docs/CODEMAPS/) files in
   the same PR — otherwise the maps silently drift from the as-built system.
-- Meet the [Definition of Done](.claude/rules/definition-of-done.md).
 
 ## Tests
 

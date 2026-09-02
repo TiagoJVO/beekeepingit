@@ -19,9 +19,17 @@
       "Bash(gh pr view*)",
       "Bash(gh pr list*)",
       "Bash(gh issue view*)",
-      "Bash(gh issue list*)"
+      "Bash(gh issue list*)",
+      "Bash(gh issue create*)",
+      "Bash(gh issue comment*)"
     ],
-    "deny": ["Bash(git push --force*)", "Bash(git push -f*)", "Bash(git reset --hard*)"],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git commit*--no-verify*)",
+      "Bash(git commit*-n *)"
+    ],
     "ask": ["Edit(.github/workflows)", "Write(.github/workflows)"]
   },
   "hooks": {
@@ -30,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"[BeekeepingIT] Nothing is built yet; source of truth (intent) is requirements/. When PLANNING a task, READ: requirements/ (context, FRs, NFRs, decisions, open-questions, tech-stack) — at planning, not implementation. Intent lives in requirements/; docs/ documents what gets built. As you implement, document the real architecture in docs/ (+ ADRs in docs/adr/). Decisions/requirements are revisitable: if contradicting one makes sense, get user confirmation, then update requirements/. Respect rollout order (D-10) and deferred scope (D-4). Full rules: CLAUDE.md + .claude/rules/.\"}}'",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"[BeekeepingIT] Source of truth (intent) is requirements/; docs/ documents what is actually built (M0-M2 platform, services, PWA client and the admin app have landed — current status in README.md). When PLANNING a task, READ requirements/ (context, FRs, NFRs, decisions, open-questions, tech-stack) — at planning, not implementation. As you implement, document the real architecture in docs/ (+ ADRs in docs/adr/). Decisions/requirements are revisitable: if contradicting one makes sense, get user confirmation, then update requirements/. Respect rollout order (D-10) and deferred scope (D-4). FINISHING WORK — when you find out-of-scope work (a bug, a gap, a missing test): do it now if it is small (under ~30 min) and adjacent to the task; otherwise open a GitHub Issue in THIS session (gh issue create, shaped per the backlog-management skill) and link it from the PR; ask the user only when it changes scope or touches a D-*. Never park it in a note for later — a PR is finished when it owes nothing, or every remaining item is an Issue. Full rules: CLAUDE.md + .claude/rules/.\"}}'",
             "statusMessage": "Loading BeekeepingIT workflow rules"
           }
         ]

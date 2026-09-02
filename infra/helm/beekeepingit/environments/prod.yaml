@@ -68,7 +68,7 @@ services:
 
 pwa:
   image:
-    tag: latest # TODO: a real per-environment CI-built image — see FOLLOWUPS.md
+    tag: latest # Placeholder until a release's tag-bump PR sets a real version (#367)
 
 admin:
   image:
