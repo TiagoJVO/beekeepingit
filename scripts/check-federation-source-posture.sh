@@ -77,10 +77,21 @@
 #      without it, (1b)'s SSO gate is all that keeps the login page on the
 #      password flow.
 #
-# NOT in scope, stated so it is not mistaken for covered: the OAuth2 providers'
-# `signing_key` / `invalidation_flow` / `authorization_flow` are also optional
-# FKs resolved with `!Find`, i.e. the same silent-null class as #594. They are
-# untouched and unguarded here — see docs/architecture/auth.md §8.16.
+#   8. The OAuth2 providers reach `signing_key`, `authorization_flow` and
+#      `invalidation_flow` by `!KeyOf` at the three IDENTIFIERS-ONLY pin entries,
+#      never by `!Find` (#599). `signing_key` is the one field of the three a
+#      null actually SURVIVES — `OAuth2ProviderSerializer` has it
+#      `required=False, allow_null=True` at 2026.5.4, where the two flows are
+#      `required=True, allow_null=False` — so an `!Find` that lost its race left
+#      the provider with NO RS256 key: `jwt_key` falls back to
+#      `(client_secret, HS256)` and the JWKS serves `{}`, breaking every relying
+#      party that verifies signatures. The pins make a missing target raise
+#      instead: with no `attrs` a CREATE can never validate (`FlowSerializer`
+#      requires name/title/designation, `CertificateKeyPairSerializer` requires
+#      `certificate_data`), so the file is recorded ERROR, stores no
+#      `last_applied_hash`, and is retried. The absence of `attrs` is therefore
+#      load-bearing and is asserted; on the certificate it is ALSO what keeps a
+#      private key out of the ConfigMap, which is asserted file-wide.
 #
 # Deterministic and offline: asserts over the blueprint SOURCE, with no cluster
 # and no YAML parser (the file carries custom `!KeyOf`/`!Find`/`!Env` tags a
@@ -126,6 +137,17 @@ default_flow_id="flow-default-authentication"
 sso_policy_id="policy-source-enrollment-sso-only"
 write_guard_policy_id="policy-source-enrollment-write-guard"
 write_binding_id="binding-source-enrollment-user-write"
+# #599: the three IDENTIFIERS-ONLY pin entries the OAuth2 providers reference, and
+# the objects they name. They declare nothing — authentik creates all three
+# itself (the two flows from its bundled blueprint files, the certificate from
+# `authentik/crypto/apps.py` at BOOT) — so their only job is to turn a missing
+# target into a recorded, retried error instead of a silent null.
+authz_flow_pin_id="flow-default-provider-authorization"
+authz_flow_slug="default-provider-authorization-implicit-consent"
+inval_flow_pin_id="flow-default-provider-invalidation"
+inval_flow_slug="default-provider-invalidation-flow"
+signing_key_pin_id="cert-authentik-self-signed"
+signing_key_name="authentik Self-signed Certificate"
 
 if [ ! -f "${blueprint}" ]; then
   printf '✗ [federation-source] blueprint not found: %s\n' "${blueprint}" >&2
@@ -141,7 +163,10 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     -v WRITE_BINDING="${write_binding_id}" -v AUTH_FLOW="${auth_flow_id}" \
     -v AUTH_LOGIN_STAGE="${auth_flow_login_stage_id}" \
     -v AUTH_SSO_POLICY="${auth_flow_sso_policy_id}" \
-    -v DEFAULT_FLOW="${default_flow_id}" '
+    -v DEFAULT_FLOW="${default_flow_id}" \
+    -v AUTHZ_PIN="${authz_flow_pin_id}" -v AUTHZ_SLUG="${authz_flow_slug}" \
+    -v INVAL_PIN="${inval_flow_pin_id}" -v INVAL_SLUG="${inval_flow_slug}" \
+    -v KEY_PIN="${signing_key_pin_id}" -v KEY_NAME="${signing_key_name}" '
   # An SSO gate is only a gate while its expression is EXACTLY `return
   # ak_is_sso_flow`. Comments are already stripped, and `expression: |` is the
   # last key of both policy entries, so the whole block is the tail of `body` —
@@ -151,9 +176,53 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     return body ~ /expression[[:space:]]*:[[:space:]]*[|][[:space:]]*return[[:space:]]+ak_is_sso_flow[[:space:]]*$/
   }
 
+  # Both boundaries matter. The right one stops `!KeyOf x` matching a longer id
+  # `x-typo`; the left one stops a longer KEY ENDING IN this one from satisfying
+  # it — `jwt_signing_key: !KeyOf …` must not read as `signing_key` set — while a
+  # flow-style `{..., a: b,signing_key: !KeyOf c}` must still be seen (same
+  # reasoning as assertion (1) below, which spells its own boundary out).
   function keyof(field, target,   pattern) {
-    pattern = field "[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" target "([^A-Za-z0-9_-]|$)"
+    pattern = "(^|[^A-Za-z0-9_-])" field "[[:space:]]*:[[:space:]]*!KeyOf[[:space:]]+" target "([^A-Za-z0-9_-]|$)"
     return body ~ pattern
+  }
+
+  # How many times this entry DECLARES a key. Presence is not enough on its own:
+  # PyYAML (authentik`s `BlueprintLoader`) takes LAST-WINS on a duplicate mapping
+  # key and raises nothing, so `signing_key: !KeyOf …` followed by
+  # `signing_key: null` would satisfy keyof() while shipping the very null this
+  # guard exists to prevent (review finding, both reviewers).
+  function key_count(field) {
+    return gsub("(^|[^A-Za-z0-9_-])" field "[[:space:]]*:", "&", body)
+  }
+
+  # An entry that declares NOTHING but its identifiers. That is what makes a pin
+  # loud: with no attrs, a CREATE of the named object can never validate, so a
+  # missing target raises instead of being invented. See assertion (8).
+  function has_attrs() {
+    return body ~ /(^|[^A-Za-z0-9_-])attrs[[:space:]]*:/
+  }
+
+  function pin_ok(pin_id, key, value,   ok) {
+    ok = 1
+    # Anchored INSIDE the flow-style `identifiers: { … }` block, not merely
+    # somewhere in the entry: an entry could otherwise identify a different
+    # object and carry the expected slug under an unrelated key.
+    if (body !~ ("identifiers[[:space:]]*:[[:space:]]*[{][^}]*(^|[^A-Za-z0-9_-])" key "[[:space:]]*:[[:space:]]*[\"]?" value "([^A-Za-z0-9_.-]|$)")) {
+      printf("✗ [federation-source] pin entry `%s` must identify its target with `identifiers: { %s: %s }` — that is the object authentik itself creates and the providers resolve through it (#599)\n", pin_id, key, value) > "/dev/stderr"
+      ok = 0
+    }
+    if (has_attrs()) {
+      printf("✗ [federation-source] pin entry `%s` must carry NO `attrs:` — the absence of attrs is what makes a missing target LOUD (with attrs, a create could validate and invent a stub object instead of raising), and on the certificate it is also what keeps a private key out of the ConfigMap (#599)\n", pin_id) > "/dev/stderr"
+      ok = 0
+    }
+    # `model`, `id`, `identifiers` and nothing else. `state:` above all: `absent`
+    # would DELETE authentik`s boot-created certificate, and
+    # `OAuth2Provider.signing_key` is `on_delete=SET_NULL` (review finding).
+    if (body ~ /(^|[^A-Za-z0-9_-])state[[:space:]]*:/) {
+      printf("✗ [federation-source] pin entry `%s` must carry no `state:` — a pin exists only to RESOLVE an object authentik owns; `absent` would DELETE it (and `signing_key` is `on_delete=SET_NULL`), and any other state changes what an identifiers-only entry means (#599)\n", pin_id) > "/dev/stderr"
+      ok = 0
+    }
+    return ok
   }
 
   function flush() {
@@ -226,6 +295,81 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
         printf("✗ [federation-source] %s has no `conditions:` gate — an environment without its credentials would fail serializer validation and invalidate the ENTIRE blueprint (PR #414)\n", id) > "/dev/stderr"
         status = 1
       }
+    }
+
+    # --- (8) #599: the OAuth2 providers` three cross-file references ---------
+    # Every provider must reach all three through the pin entries, by `!KeyOf`.
+    # `!Find` is rejected outright (see the file-wide rule near the bottom): for
+    # `signing_key` it resolved to a SILENT null — `OAuth2ProviderSerializer` has
+    # that field `required=False, allow_null=True` at 2026.5.4 — leaving the
+    # provider with no RS256 key, an HS256 fallback and an EMPTY JWKS. The two
+    # flows are `required=True` there, so their null was already rejected; they
+    # are pinned too because that loudness is upstream`s serializer choice, not a
+    # property of this file, and a future relaxation would turn them silent with
+    # nothing here noticing.
+    if (model ~ /^authentik_providers_oauth2[.]oauth2provider$/) {
+      providers++
+      if (first_provider_line == 0) first_provider_line = entry_line
+      # Each field EXACTLY once — see key_count(): a duplicate key is last-wins
+      # in PyYAML and would silently override the pin with a null.
+      if (key_count("signing_key") != 1 || key_count("authorization_flow") != 1 || key_count("invalidation_flow") != 1) {
+        printf("✗ [federation-source] provider `%s` must declare `signing_key`, `authorization_flow` and `invalidation_flow` EXACTLY once each (found %d, %d, %d) — YAML takes the LAST of a duplicate key with no error, so a second declaration silently overrides the pin (#599)\n", id, key_count("signing_key"), key_count("authorization_flow"), key_count("invalidation_flow")) > "/dev/stderr"
+        status = 1
+      }
+      if (!keyof("signing_key", KEY_PIN)) {
+        printf("✗ [federation-source] provider `%s` must set `signing_key: !KeyOf %s` — an `!Find` at the certificate races authentik`s BOOT-time `crypto/apps.py` reconcile and resolves to a SILENT null (the field is nullable at the serializer), which drops the provider to HS256 and serves an empty JWKS, breaking every relying party that verifies signatures (#599)\n", id, KEY_PIN) > "/dev/stderr"
+        status = 1
+      }
+      if (!keyof("authorization_flow", AUTHZ_PIN)) {
+        printf("✗ [federation-source] provider `%s` must set `authorization_flow: !KeyOf %s` — the pin entry names the flow authentik`s own bundled blueprint creates, and nothing orders that file against this one (#599)\n", id, AUTHZ_PIN) > "/dev/stderr"
+        status = 1
+      }
+      if (!keyof("invalidation_flow", INVAL_PIN)) {
+        printf("✗ [federation-source] provider `%s` must set `invalidation_flow: !KeyOf %s` — same cross-file race, same spelling (#599)\n", id, INVAL_PIN) > "/dev/stderr"
+        status = 1
+      }
+    }
+    # ...and the three pin entries themselves: right model, right identifier, and
+    # NO attrs (see pin_ok — the absence of attrs is the loudness mechanism).
+    if (model ~ /^authentik_flows[.]flow$/ && id == AUTHZ_PIN) {
+      authz_pins++
+      last_pin_line = (entry_line > last_pin_line ? entry_line : last_pin_line)
+      if (!pin_ok(AUTHZ_PIN, "slug", AUTHZ_SLUG)) status = 1
+    }
+    if (model ~ /^authentik_flows[.]flow$/ && id == INVAL_PIN) {
+      inval_pins++
+      last_pin_line = (entry_line > last_pin_line ? entry_line : last_pin_line)
+      if (!pin_ok(INVAL_PIN, "slug", INVAL_SLUG)) status = 1
+    }
+    if (model ~ /^authentik_crypto[.]certificatekeypair$/ && id == KEY_PIN) {
+      key_pins++
+      last_pin_line = (entry_line > last_pin_line ? entry_line : last_pin_line)
+      if (!pin_ok(KEY_PIN, "name", KEY_NAME)) status = 1
+    }
+
+    # #599: fail closed on any `!Find` that reaches one of the three PINNED
+    # objects — the "revert to `!Find`" mutation in one line, and it must fail
+    # even on a field that is not one of the three (a stray `!Find` at the
+    # certificate anywhere is the same silent-null risk). Evaluated against the
+    # JOINED entry body rather than per line, because the file already wraps long
+    # `!Find [` calls across several lines and a line-scoped rule reads none of
+    # them (review finding). `[^]]*` keeps the match inside the tag`s own
+    # argument list.
+    if (body ~ /!Find[^]]*(certificatekeypair|default-provider-authorization|default-provider-invalidation)/) {
+      printf("✗ [federation-source] entry `%s` (model %s) reaches a PINNED object (the self-signed certificate or a provider flow) with `!Find` — `Find.resolve` returns None silently when the target has not been created yet, and for `signing_key` the serializer ACCEPTS that null: HS256 and an empty JWKS, permanently. Use `!KeyOf` at the pin entry (#599)\n", (id == "" ? "<no id>" : id), model) > "/dev/stderr"
+      status = 1
+    }
+    # ...and the same for any object THIS FILE defines (#594). Every per-entry
+    # assertion above reasons about `!KeyOf` spellings, so an entry reaching one
+    # of our own flows/stages/policies by `!Find` is invisible to them — a real
+    # bypass: a `user_write` stage bound with
+    # `target: !Find [authentik_flows.flow, [slug, beekeepingit-source-authentication]]`
+    # passed the "login-stage-only" assertion. It is also always a bug on its own
+    # terms: the entry is right here, so `!KeyOf` is available, deterministic and
+    # loud, while `!Find` is order-dependent and silently null.
+    if (body ~ /!Find[^]]*beekeepingit-source-/) {
+      printf("✗ [federation-source] entry `%s` (model %s) reaches an object this blueprint DEFINES (`beekeepingit-source-*`) with `!Find` — use `!KeyOf <entry id>`: it resolves in-file, raises instead of yielding a silent null (#594), and is the only spelling the assertions in this guard can reason about\n", (id == "" ? "<no id>" : id), model) > "/dev/stderr"
+      status = 1
     }
 
     # The #364 resolver entry itself must exist, exactly once, and be an OAuth
@@ -404,17 +548,21 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     }
   }
 
-  # Fail closed on any `!Find` that names an object THIS FILE DEFINES. Every
-  # per-entry assertion above reasons about `!KeyOf` spellings, so an entry that
-  # reaches one of our own flows/stages/policies by `!Find` is invisible to them
-  # — and that was a real bypass: a `user_write` stage bound with
-  # `target: !Find [authentik_flows.flow, [slug, beekeepingit-source-authentication]]`
-  # passed the "login-stage-only" assertion (review finding, both reviewers).
-  # It is also always a bug on its own terms: the entry is right here, so
-  # `!KeyOf` is available, deterministic and loud, while `!Find` is
-  # order-dependent and silently null — which is #594 in one line.
-  /!Find[^\n]*beekeepingit-source-/ {
-    printf("✗ [federation-source] line %d reaches an object this blueprint DEFINES (`beekeepingit-source-*`) with `!Find` — use `!KeyOf <entry id>`: it resolves in-file, raises instead of yielding a silent null (#594), and is the only spelling the assertions in this guard can reason about\n", FNR) > "/dev/stderr"
+  # (The two `!Find` bans — at objects THIS FILE defines, and at the three PINNED
+  # objects — live in flush(), asserted against the JOINED entry body: this file
+  # already wraps long `!Find [` calls across several lines, and a line-scoped
+  # rule reads none of them. #599 review finding.)
+  #
+  # #599 / NFR-SEC-1: a certificate or private key literal must never appear in
+  # this file. It renders into a ConfigMap readable by anything in the namespace
+  # — the same reason the source credentials arrive via `!Env` — and it is also
+  # what would let the certificate pin CREATE a stub keypair instead of raising.
+  # The boundary is a negated identifier class plus an optional punctuation
+  # character, rather than "start or whitespace", so a QUOTED key
+  # (`"key_data":`) or a flow-mapping one (`{key_data: …}`) cannot slip past it
+  # (review finding).
+  /(^|[^A-Za-z0-9_-])[[:punct:]]?(certificate_data|key_data)[[:punct:]]?[[:space:]]*:/ {
+    printf("✗ [federation-source] line %d sets `certificate_data`/`key_data` — this blueprint renders into a ConfigMap, so a certificate or PRIVATE KEY literal here is readable namespace-wide (NFR-SEC-1); the signing certificate is authentik`s own boot-created one, referenced by the `%s` pin (#599)\n", FNR, KEY_PIN) > "/dev/stderr"
     status = 1
   }
 
@@ -430,7 +578,7 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
     status = 1
   }
 
-  /^  - model:/ { flush(); model = $3; id = ""; body = ""; next }
+  /^  - model:/ { flush(); model = $3; id = ""; body = ""; entry_line = FNR; next }
   { body = body " " $0 }
   /^    id:/ { if (id == "") id = $2 }
 
@@ -476,12 +624,29 @@ awk -v MAPPING="${link_mapping_id}" -v ENROLL_FLOW="${enroll_flow_id}" \
       printf("✗ [federation-source] expected exactly ONE `%s` binding targeting `%s`, found %d — the source-authentication flow must be SSO-gated or a browser could enter it directly, outside any federated sign-in (#594)\n", AUTH_SSO_POLICY, AUTH_FLOW, auth_flow_gates) > "/dev/stderr"
       status = 1
     }
+    if (providers == 0) {
+      printf("✗ [federation-source] no `authentik_providers_oauth2.oauth2provider` entry found — the pins below exist to serve them; if the providers moved elsewhere, move assertion (8) with them in the same change (#599)\n") > "/dev/stderr"
+      status = 1
+    }
+    # `!KeyOf` resolves BACKWARDS ONLY: `KeyOf.resolve` scans this file`s entries
+    # for one with that id that ALREADY has a model instance, so a pin below its
+    # referrer raises and the WHOLE blueprint stays ERROR until someone edits the
+    # file. Loud, but only discoverable through a ~23-minute bring-up — assert it
+    # here in milliseconds instead (review finding).
+    if (last_pin_line > first_provider_line && first_provider_line > 0) {
+      printf("✗ [federation-source] a pin entry is declared at line %d, BELOW the first OAuth2 provider at line %d — `!KeyOf` only resolves against entries applied EARLIER in the file, so every reference would raise and the whole blueprint would stay ERROR; keep the pins above the providers (#599)\n", last_pin_line, first_provider_line) > "/dev/stderr"
+      status = 1
+    }
+    if (authz_pins != 1 || inval_pins != 1 || key_pins != 1) {
+      printf("✗ [federation-source] expected exactly ONE pin entry each for `%s`, `%s` and `%s`, found %d, %d and %d — they are what every provider above resolves through by `!KeyOf`, and a missing one turns that reference into a hard EntryInvalidError rather than the silent null it replaced (#599)\n", AUTHZ_PIN, INVAL_PIN, KEY_PIN, authz_pins, inval_pins, key_pins) > "/dev/stderr"
+      status = 1
+    }
     if (sso_policies != 1 || write_guards != 1) {
       printf("✗ [federation-source] expected exactly one `%s` and one `%s` expression policy, found %d and %d — they are the enrollment flow`s two gates (#365)\n", SSO_POLICY, WRITE_GUARD, sso_policies, write_guards) > "/dev/stderr"
       status = 1
     }
     if (status == 0) {
-      printf("› [federation-source] ok: %d source(s) [%s ] are resolver-matched (%s), authenticated via %s (SSO-gated, login-stage-only), enrollment-open only via %s (SSO-gated + write-guarded), !Env-credentialed and conditions-gated\n", sources, seen_ids, MAPPING, AUTH_FLOW, ENROLL_FLOW)
+      printf("› [federation-source] ok: %d source(s) [%s ] are resolver-matched (%s), authenticated via %s (SSO-gated, login-stage-only), enrollment-open only via %s (SSO-gated + write-guarded), !Env-credentialed and conditions-gated; %d OAuth2 provider(s) reach signing_key/authorization_flow/invalidation_flow by !KeyOf at the three identifiers-only pins\n", sources, seen_ids, MAPPING, AUTH_FLOW, ENROLL_FLOW, providers)
     }
     exit status
   }

@@ -96,6 +96,95 @@ entries:
             "email": request.user.email,
             "email_verified": request.user.attributes.get("email_verified", False) is True,
         }
+  # --- #599: PIN the three objects both OAuth2 providers reference, so a missing
+  # one is LOUD instead of a silent null (NFR-SEC-1, NFR-TST-1, D-7) -------------
+  #
+  # These three entries declare nothing. Each is IDENTIFIERS-ONLY and names an
+  # object authentik itself creates. Their whole job is to turn a silent null
+  # into a reported, retried error.
+  #
+  # THE DEFECT THEY CLOSE. Until #599 the providers below reached
+  # `authorization_flow`, `invalidation_flow` and `signing_key` with `!Find`.
+  # `Find.resolve` (blueprints/v1/common.py) returns None with NO exception and
+  # NO log line when the target does not exist yet — and nothing orders the apply
+  # of authentik's own bundled blueprint files against ours
+  # (`blueprints_discovery` -> `check_blueprint_v1_file` ->
+  # `apply_blueprint.send_with_options`, i.e. independent async actors).
+  #
+  # Whether that null is SILENT is decided by the SERIALIZER, not the model. All
+  # three FKs are `null=True` on the model (core/models.py 645/654,
+  # providers/oauth2/models.py 308) — the check #594 made — but the importer
+  # validates through `OAuth2ProviderSerializer`, and there, at 2026.5.4, only
+  # `signing_key` is `required=False, allow_null=True`. The two flows are
+  # `required=True, allow_null=False`, so their null was already REJECTED. So:
+  #   * `signing_key` — the real silent instance. The entry still validated, the
+  #     file was recorded APPLIED, and authentik never re-applies a file whose
+  #     hash is unchanged, so the null was PERMANENT and nothing reported it.
+  #     `OAuth2Provider.jwt_key` then falls back to `(client_secret, HS256)` and
+  #     `JWKSView` yields nothing, so the endpoint serves `{}` — every relying
+  #     party verifying signatures against the JWKS (our Go middleware,
+  #     PowerSync, the admin app) breaks, with a valid-looking provider in the UI.
+  #   * the two flows — loud already, but by UPSTREAM's serializer choice rather
+  #     than by anything in this file. Pinned anyway: `signing_key` proves
+  #     upstream is willing to leave such a field nullable, and a future
+  #     relaxation would turn the `!Find` spelling silent with nothing noticing.
+  # The full nullability table is in auth.md §8.17.
+  #
+  # WHY PINNED, NOT OWNED (#594 OWNED its flow — these cannot be owned):
+  #   * The certificate is created by `authentik/crypto/apps.py` at BOOT
+  #     (`self_signed`, a `reconcile_tenant` hook), never by a blueprint. Owning
+  #     it would mean committing a PRIVATE KEY into this file — which renders
+  #     into a ConfigMap readable namespace-wide (NFR-SEC-1 forbids it, the same
+  #     reason the source credentials arrive via `!Env`) — and generating one per
+  #     render would rotate the JWKS on every `helm upgrade`, invalidating every
+  #     live token.
+  #   * A second `designation: invalidation` flow would RE-ARM the exact
+  #     second-order trap #594 had to close: `ToDefaultFlow.get_flow` falls back
+  #     to scanning flows of that designation ORDERED BY SLUG when the brand
+  #     field is null, upstream's `default-brand.yaml` sets `flow_invalidation`
+  #     with its own racy `!Find` under `state: created`, and any
+  #     `beekeepingit-*` slug sorts ahead of `default-invalidation-flow`. Pinning
+  #     adds no flow, so no designation ordering changes and no new brand pin is
+  #     needed.
+  #   * Copying the authorization flow would fork upstream's consent behaviour
+  #     for no gain.
+  #
+  # WHY AN IDENTIFIERS-ONLY ENTRY IS LOUD. `Importer._validate_single` attaches
+  # the serializer to an EXISTING row with `partial=True` — with no attrs that is
+  # a no-op update — and otherwise validates a CREATE in full. With no attrs a
+  # create can never validate: `FlowSerializer` requires name/title/designation,
+  # `CertificateKeyPairSerializer` requires `certificate_data`. So a genuinely
+  # missing target raises `EntryInvalidError`, `apply_blueprint` records
+  # `BlueprintInstanceStatus.ERROR`, `last_applied_hash` is NOT written, and the
+  # next discovery pass retries — instead of shipping a null forever.
+  # `Importer.apply()` is atomic, so nothing half-wired is committed meanwhile.
+  # `!KeyOf` then resolves against ids in THIS file and RAISES where `!Find`
+  # yielded None. Same shape as `flow-default-authentication` further down, which
+  # #594 introduced for the brand pin.
+  #
+  # DO NOT give these entries `attrs`, a `state:`, or anything but `identifiers`.
+  # The ABSENCE of attrs is what makes a create impossible and therefore the
+  # failure loud; on the certificate it is also what keeps a private key out of
+  # the ConfigMap; and `state: absent` would DELETE authentik's own boot-created
+  # certificate (`signing_key` is `on_delete=SET_NULL`). The guard asserts all
+  # three. They must also stay ABOVE the providers: `!KeyOf` only resolves
+  # against entries already applied earlier in this file.
+  #
+  # Verified by: scripts/check-federation-source-posture.sh (offline — the
+  # `!KeyOf` spellings, these entries' shape, and that nothing reaches these
+  # objects by `!Find` again) and infra/ci/authentik-federation-probe.py (live —
+  # on the deployed providers, incl. that the JWKS is non-empty and RS256).
+  # Written up in docs/architecture/auth.md §8.17.
+  - model: authentik_flows.flow
+    id: flow-default-provider-authorization
+    identifiers: { slug: default-provider-authorization-implicit-consent }
+  - model: authentik_flows.flow
+    id: flow-default-provider-invalidation
+    identifiers: { slug: default-provider-invalidation-flow }
+  - model: authentik_crypto.certificatekeypair
+    id: cert-authentik-self-signed
+    identifiers: { name: "authentik Self-signed Certificate" }
+
   - model: authentik_providers_oauth2.oauth2provider
     id: provider-beekeepingit
     identifiers: { name: beekeepingit-pwa }
@@ -103,11 +192,11 @@ entries:
       name: beekeepingit-pwa
       client_type: public
       client_id: beekeepingit-pwa
-      authorization_flow:
-        !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      signing_key:
-        !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # #599: `!KeyOf` at the pins above, never `!Find` — a missing target must
+      # raise, not write a null (see the block above; auth.md §8.17).
+      authorization_flow: !KeyOf flow-default-provider-authorization
+      invalidation_flow: !KeyOf flow-default-provider-invalidation
+      signing_key: !KeyOf cert-authentik-self-signed
       sub_mode: user_upn
       issuer_mode: per_provider
       include_claims_in_id_token: true
@@ -299,16 +388,16 @@ entries:
       name: beekeepingit-admin
       client_type: public
       client_id: beekeepingit-admin
-      authorization_flow:
-        !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # #599: `!KeyOf` at the pins above the PWA provider, never `!Find`.
+      authorization_flow: !KeyOf flow-default-provider-authorization
+      invalidation_flow: !KeyOf flow-default-provider-invalidation
       # Same shared signing key as the PWA — LOAD-BEARING, not just convenience: the iss
       # override makes admin tokens claim the beekeepingit issuer, and they only verify because
       # this provider signs with the key the beekeepingit discovery/JWKS advertises. Giving the
       # admin provider its own cert would silently break admin login (401) — keep them shared
-      # (oidc-integration.md §8 watch-list).
-      signing_key:
-        !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      # (oidc-integration.md §8 watch-list). Referencing the SAME pin entry as the PWA is what
+      # makes "shared" structural rather than a coincidence of two lookups agreeing (#599).
+      signing_key: !KeyOf cert-authentik-self-signed
       sub_mode: user_upn
       issuer_mode: per_provider
       # MUST stay true: the access token the services read is built from the id_token's
