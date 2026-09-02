@@ -17,9 +17,9 @@ const apiaryCountersTable = 'apiary_counters';
 const apiaryCounterEntityType = 'apiary_counter';
 
 /// Local table + entity type for `apiaries.stock_declarations` (#298,
-/// FR-AP-10): the `Declaração de Existências` log — a point-in-time record of
-/// the hive stock a beekeeper declared to DGAV, DISTINCT from the live hive
-/// counter ([apiaryCountersTable], FR-AP-7/D-2/D-20). Scoped to a DGAV
+/// FR-AP-10): the stock-declaration log — a point-in-time record of the hive
+/// stock a beekeeper declared to their authority, DISTINCT from the live hive
+/// counter ([apiaryCountersTable], FR-AP-7/D-2/D-20). Scoped to a
 /// registration number (FR-AP-9), not to an apiary: the real declaration covers
 /// a beekeeper's whole holding.
 ///
@@ -170,10 +170,10 @@ const dedupKeyColumn = 'dedup_key';
 /// apiary's own `name` — nullable like `notes`, same plain-text column
 /// shape (no projection needed, unlike location).
 ///
-/// `dgav_registration_number` (FR-AP-9, #296) is the per-apiary OVERRIDE of
-/// the organization's DGAV beekeeper registration-number default. DGAV issues
-/// one number per BEEKEEPER, so the default lives on the organization (read
-/// over REST and cached locally by
+/// `registration_number` (FR-AP-9, #296) is the per-apiary OVERRIDE of
+/// the organization's beekeeper registration-number default. The authority
+/// issues one number per BEEKEEPER, so the default lives on the organization
+/// (read over REST and cached locally by
 /// features/organization/organization_repository.dart, NOT streamed into this
 /// schema) and this column exists only for an organization covering several
 /// beekeepers. Null means "inherit the organization's value"; an apiary's
@@ -220,7 +220,7 @@ const appSchema = Schema([
     Column.text('name'),
     Column.text('notes'),
     Column.text('place_label'),
-    Column.text('dgav_registration_number'),
+    Column.text('registration_number'),
     Column.text('created_at'),
     Column.text('updated_at'),
     Column.real('location_lon'),
@@ -242,18 +242,18 @@ const appSchema = Schema([
     Column.text('created_at'),
     Column.text('updated_at'),
   ]),
-  // stock_declarations (#298, FR-AP-10): the DGAV declaration log. `breakdown`
+  // stock_declarations (#298, FR-AP-10): the declaration log. `breakdown`
   // is the per-apiary snapshot taken at record time, stored locally as
   // JSON-encoded TEXT (PowerSync's local schema has no JSON column type) and
   // decoded back to a JSON array on upload via the connector's
   // jsonColumnsByTable seam — the same treatment activities `attributes` gets.
   // `declared_on` is a plain ISO-8601 DATE string (YYYY-MM-DD), matching the
   // server's DATE column: a declaration is filed ON a day, and a
-  // timezone-bearing instant would make "is this inside the September window"
+  // timezone-bearing instant would make "which day was this filed on"
   // depend on the reader's zone.
   Table(stockDeclarationsTable, [
     Column.text('organization_id'),
-    Column.text('dgav_registration_number'),
+    Column.text('registration_number'),
     Column.text('declared_on'),
     Column.integer('total_hive_count'),
     Column.text('breakdown'),

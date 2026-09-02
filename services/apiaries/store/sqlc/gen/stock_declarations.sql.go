@@ -12,7 +12,7 @@ import (
 )
 
 const getStockDeclarationForUpdate = `-- name: GetStockDeclarationForUpdate :one
-SELECT id, organization_id, dgav_registration_number, declared_on,
+SELECT id, organization_id, registration_number, declared_on,
        total_hive_count, breakdown, notes, created_at, updated_at, deleted_at
 FROM apiaries.stock_declarations
 WHERE organization_id = $1 AND id = $2
@@ -25,16 +25,16 @@ type GetStockDeclarationForUpdateParams struct {
 }
 
 type GetStockDeclarationForUpdateRow struct {
-	ID                     pgtype.UUID        `json:"id"`
-	OrganizationID         pgtype.UUID        `json:"organization_id"`
-	DgavRegistrationNumber string             `json:"dgav_registration_number"`
-	DeclaredOn             pgtype.Date        `json:"declared_on"`
-	TotalHiveCount         int32              `json:"total_hive_count"`
-	Breakdown              []byte             `json:"breakdown"`
-	Notes                  pgtype.Text        `json:"notes"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	OrganizationID     pgtype.UUID        `json:"organization_id"`
+	RegistrationNumber string             `json:"registration_number"`
+	DeclaredOn         pgtype.Date        `json:"declared_on"`
+	TotalHiveCount     int32              `json:"total_hive_count"`
+	Breakdown          []byte             `json:"breakdown"`
+	Notes              pgtype.Text        `json:"notes"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // Row-locking read for the sync-apply path (#298, FR-AP-10): SELECT ... FOR
@@ -49,7 +49,7 @@ func (q *Queries) GetStockDeclarationForUpdate(ctx context.Context, arg GetStock
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.DgavRegistrationNumber,
+		&i.RegistrationNumber,
 		&i.DeclaredOn,
 		&i.TotalHiveCount,
 		&i.Breakdown,
@@ -63,22 +63,22 @@ func (q *Queries) GetStockDeclarationForUpdate(ctx context.Context, arg GetStock
 
 const insertStockDeclaration = `-- name: InsertStockDeclaration :exec
 INSERT INTO apiaries.stock_declarations (
-    id, organization_id, dgav_registration_number, declared_on,
+    id, organization_id, registration_number, declared_on,
     total_hive_count, breakdown, notes, updated_at, deleted_at
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type InsertStockDeclarationParams struct {
-	ID                     pgtype.UUID        `json:"id"`
-	OrganizationID         pgtype.UUID        `json:"organization_id"`
-	DgavRegistrationNumber string             `json:"dgav_registration_number"`
-	DeclaredOn             pgtype.Date        `json:"declared_on"`
-	TotalHiveCount         int32              `json:"total_hive_count"`
-	Breakdown              []byte             `json:"breakdown"`
-	Notes                  pgtype.Text        `json:"notes"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	OrganizationID     pgtype.UUID        `json:"organization_id"`
+	RegistrationNumber string             `json:"registration_number"`
+	DeclaredOn         pgtype.Date        `json:"declared_on"`
+	TotalHiveCount     int32              `json:"total_hive_count"`
+	Breakdown          []byte             `json:"breakdown"`
+	Notes              pgtype.Text        `json:"notes"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // Sync-apply create (#298). Every column set explicitly, including deleted_at,
@@ -88,7 +88,7 @@ func (q *Queries) InsertStockDeclaration(ctx context.Context, arg InsertStockDec
 	_, err := q.db.Exec(ctx, insertStockDeclaration,
 		arg.ID,
 		arg.OrganizationID,
-		arg.DgavRegistrationNumber,
+		arg.RegistrationNumber,
 		arg.DeclaredOn,
 		arg.TotalHiveCount,
 		arg.Breakdown,
@@ -101,7 +101,7 @@ func (q *Queries) InsertStockDeclaration(ctx context.Context, arg InsertStockDec
 
 const updateStockDeclaration = `-- name: UpdateStockDeclaration :exec
 UPDATE apiaries.stock_declarations
-SET dgav_registration_number = $3,
+SET registration_number = $3,
     declared_on = $4,
     total_hive_count = $5,
     breakdown = $6,
@@ -113,15 +113,15 @@ WHERE organization_id = $1 AND id = $2
 `
 
 type UpdateStockDeclarationParams struct {
-	OrganizationID         pgtype.UUID        `json:"organization_id"`
-	ID                     pgtype.UUID        `json:"id"`
-	DgavRegistrationNumber string             `json:"dgav_registration_number"`
-	DeclaredOn             pgtype.Date        `json:"declared_on"`
-	TotalHiveCount         int32              `json:"total_hive_count"`
-	Breakdown              []byte             `json:"breakdown"`
-	Notes                  pgtype.Text        `json:"notes"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
-	DeletedAt              pgtype.Timestamptz `json:"deleted_at"`
+	OrganizationID     pgtype.UUID        `json:"organization_id"`
+	ID                 pgtype.UUID        `json:"id"`
+	RegistrationNumber string             `json:"registration_number"`
+	DeclaredOn         pgtype.Date        `json:"declared_on"`
+	TotalHiveCount     int32              `json:"total_hive_count"`
+	Breakdown          []byte             `json:"breakdown"`
+	Notes              pgtype.Text        `json:"notes"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // Sync-apply update (#298): the caller computes the full desired row first
@@ -132,7 +132,7 @@ func (q *Queries) UpdateStockDeclaration(ctx context.Context, arg UpdateStockDec
 	_, err := q.db.Exec(ctx, updateStockDeclaration,
 		arg.OrganizationID,
 		arg.ID,
-		arg.DgavRegistrationNumber,
+		arg.RegistrationNumber,
 		arg.DeclaredOn,
 		arg.TotalHiveCount,
 		arg.Breakdown,

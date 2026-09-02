@@ -27,19 +27,19 @@ class _CompleteProfileController extends ProfileController {
 }
 
 class _ExistingOrganizationController extends OrganizationController {
-  /// [dgavRegistrationNumber] is the organization-wide DGAV default
+  /// [registrationNumber] is the organization-wide default
   /// (FR-AP-9, #296) an apiary inherits when it carries no override of its
   /// own. Empty by default, so every pre-existing test means "no number".
-  _ExistingOrganizationController({this.dgavRegistrationNumber = ''});
+  _ExistingOrganizationController({this.registrationNumber = ''});
 
-  final String dgavRegistrationNumber;
+  final String registrationNumber;
 
   @override
   Future<Organization?> build() async => Organization(
     id: 'test-org',
     name: 'Test Apiary Co.',
     address: '',
-    dgavRegistrationNumber: dgavRegistrationNumber,
+    registrationNumber: registrationNumber,
     createdBy: 'test-user',
     role: 'admin',
     createdAt: DateTime.utc(2026, 1, 1),
@@ -119,7 +119,7 @@ Widget _buildApp({
   required List<Apiary> apiaries,
   Map<String, List<ApiaryCounter>> counters = const {},
   ApiariesRepository? apiariesRepository,
-  String orgDgavRegistrationNumber = '',
+  String orgRegistrationNumber = '',
 }) {
   return ProviderScope(
     overrides: [
@@ -177,12 +177,12 @@ Widget _buildApp({
       // memberNamesProvider, which would otherwise attempt a real fetch —
       // attribution falls back to short ids here, which these tests assert.
       memberNamesProvider.overrideWith((ref) async => const <String, String>{}),
-      // FR-AP-9 (#296): the DGAV row resolves the EFFECTIVE number from the
+      // FR-AP-9 (#296): the registration-number row resolves the EFFECTIVE
       // apiary override AND this organization-wide default, so the default is
       // parameterized here rather than fixed.
       organizationProvider.overrideWith(
         () => _ExistingOrganizationController(
-          dgavRegistrationNumber: orgDgavRegistrationNumber,
+          registrationNumber: orgRegistrationNumber,
         ),
       ),
     ],
@@ -191,7 +191,7 @@ Widget _buildApp({
 }
 
 void main() {
-  _dgavTests();
+  _registrationNumberTests();
   testWidgets('tapping an apiary in the list opens its detail screen (#32)', (
     tester,
   ) async {
@@ -1217,8 +1217,8 @@ Future<void> _openApiaryDetail(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-void _dgavTests() {
-  group('DGAV registration number (FR-AP-9, #296)', () {
+void _registrationNumberTests() {
+  group('Registration number (FR-AP-9, #296)', () {
     testWidgets(
       "shows the organization's number, marked as inherited, when the apiary "
       'has no override of its own',
@@ -1228,19 +1228,17 @@ void _dgavTests() {
             apiaries: const [
               Apiary(id: 'a1', name: 'Serra Norte', hiveCount: 3),
             ],
-            orgDgavRegistrationNumber: 'PT-123456',
+            orgRegistrationNumber: 'PT-123456',
           ),
         );
         await _openApiaryDetail(tester);
 
         expect(
-          find.byKey(const Key('apiary-detail-dgav-number')),
+          find.byKey(const Key('apiary-detail-registration-number')),
           findsOneWidget,
         );
         expect(
-          find.text(
-            'DGAV registration number: PT-123456 (From the organization)',
-          ),
+          find.text('Registration number: PT-123456 (From the organization)'),
           findsOneWidget,
         );
       },
@@ -1257,26 +1255,23 @@ void _dgavTests() {
                 id: 'a1',
                 name: 'Serra Norte',
                 hiveCount: 3,
-                dgavRegistrationNumber: 'PT-654321',
+                registrationNumber: 'PT-654321',
               ),
             ],
-            orgDgavRegistrationNumber: 'PT-123456',
+            orgRegistrationNumber: 'PT-123456',
           ),
         );
         await _openApiaryDetail(tester);
 
-        expect(
-          find.text('DGAV registration number: PT-654321'),
-          findsOneWidget,
-        );
+        expect(find.text('Registration number: PT-654321'), findsOneWidget);
         expect(find.textContaining('From the organization'), findsNothing);
       },
     );
 
     testWidgets(
-      'shows no DGAV row at all when neither the apiary nor the organization '
-      'has a number — the field is advisory, so an empty one is not a gap to '
-      'nag about',
+      'shows no registration-number row at all when neither the apiary nor the '
+      'organization has a number — the field is advisory, so an empty one is '
+      'not a gap to nag about',
       (tester) async {
         await tester.pumpWidget(
           _buildApp(
@@ -1288,7 +1283,7 @@ void _dgavTests() {
         await _openApiaryDetail(tester);
 
         expect(
-          find.byKey(const Key('apiary-detail-dgav-number')),
+          find.byKey(const Key('apiary-detail-registration-number')),
           findsNothing,
         );
         expect(tester.takeException(), isNull);
