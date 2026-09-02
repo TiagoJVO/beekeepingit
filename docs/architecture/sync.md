@@ -702,8 +702,10 @@ reasoning.
   none of them run. `ci.yml`'s `parity` steps run the four service suites and the client's
   validation tests whenever the description, the corpus, `services/shared/syncvalidation/`, any
   service's sync validators or the client's validation layer change.
-- **Still open:** running the same evaluator at **save time**, so the beekeeper is told in the form
-  rather than at the next push, is a natural follow-up the pure evaluator already supports.
+- **Still open (#597):** running the same evaluator at **save time**, so the beekeeper is told in the
+  form — with the record still open — rather than at the next push. The pure evaluator already
+  supports it and it needs no new source of truth; it touches every entity's form screen, which is
+  why it is its own slice.
 
 ---
 

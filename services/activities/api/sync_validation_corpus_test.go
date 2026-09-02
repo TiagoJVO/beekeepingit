@@ -20,8 +20,8 @@ func TestSyncValidationCorpus(t *testing.T) {
 // notably `ids.unowned` — is a cross-organization reference, which is what the
 // serverOnly `not_found` cases exercise.
 var (
-	corpusOwnedApiaries = map[string]bool{"1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d": true}
-	corpusOwnedJourneys = map[string]bool{"2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e": true}
+	corpusOwnedApiaries = map[string]bool{"11111111-1111-1111-1111-111111111111": true}
+	corpusOwnedJourneys = map[string]bool{"22222222-2222-2222-2222-222222222222": true}
 )
 
 func validateCorpusOp(t testing.TB, index int, raw json.RawMessage) []paritytest.FieldError {

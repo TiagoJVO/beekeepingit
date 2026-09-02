@@ -20,7 +20,7 @@ func TestSyncValidationCorpus(t *testing.T) {
 // under `ids`: everything else — notably `ids.unowned` — is a cross-organization
 // reference, which is exactly what the serverOnly `not_found` cases exercise.
 var corpusOwnedApiaries = map[string]bool{
-	"1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d": true,
+	"11111111-1111-1111-1111-111111111111": true,
 }
 
 // validateCorpusOp mirrors validateJourneyBatch's own entity_type branch, so a

@@ -10,12 +10,13 @@
     "entityType": "Routes the case to the owning service's validator. It is NOT read from op.entity_type, so a case can deliberately carry a wrong entity_type and still reach the right validator."
   },
   "ids": {
-    "op": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
-    "apiary": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
-    "journey": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
-    "assignee": "3d9f6e4c-5a7b-4c8d-ae1f-2a3b4c5d6e7f",
-    "unowned": "4ea07f5d-6b8c-4d9e-bf20-3b4c5d6e7f80",
-    "note": "The Go harness pre-resolves ownership for the apiary/journey/assignee ids above and for nothing else, so `unowned` is what a cross-organization reference looks like. Ownership is server-only by design (the device cannot decide it offline)."
+    "op": "55555555-5555-5555-5555-555555555555",
+    "apiary": "11111111-1111-1111-1111-111111111111",
+    "journey": "22222222-2222-2222-2222-222222222222",
+    "assignee": "33333333-3333-3333-3333-333333333333",
+    "unowned": "44444444-4444-4444-4444-444444444444",
+    "note": "The Go harness pre-resolves ownership for the apiary/journey/assignee ids above and for nothing else, so `unowned` is what a cross-organization reference looks like. Ownership is server-only by design (the device cannot decide it offline).",
+    "whyRepeatedDigits": "Each id is a single repeated digit ON PURPOSE and must stay that way. gitleaks' generic-api-key rule fires on a high-entropy value next to a keyword, and `api` is one of its keywords — so a realistic-looking UUID under `apiary_id` reads as a credential and fails `task repo:secrets` on every such line. These are opaque wire values that the cases only need to be well-formed and distinct, so low entropy costs the corpus nothing, and keeping it means the secret scanner stays unweakened for this file instead of being allowlisted past it."
   },
   "cases": [
     {
@@ -24,7 +25,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
           "name": "Melgar Norte",
@@ -45,7 +46,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "hive_count": 13 }
       },
@@ -58,7 +59,7 @@
       "op": {
         "op": "delete",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z"
       },
       "expect": []
@@ -70,7 +71,7 @@
       "op": {
         "op": "delete",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "@repeat:201:a", "hive_count": -5 }
       },
@@ -82,7 +83,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "location_lon": -8.5, "location_lat": 41.2 }
       },
@@ -95,7 +96,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "", "location_lon": -8.5, "location_lat": 41.2 }
       },
@@ -108,7 +109,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "   ", "location_lon": -8.5, "location_lat": 41.2 }
       },
@@ -120,7 +121,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "" }
       },
@@ -132,7 +133,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "@repeat:200:a", "location_lon": -8.5, "location_lat": 41.2 }
       },
@@ -144,7 +145,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "@repeat:201:a", "location_lon": -8.5, "location_lat": 41.2 }
       },
@@ -163,7 +164,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "@repeat:101:é", "location_lon": -8.5, "location_lat": 41.2 }
       },
@@ -182,7 +183,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "@repeat:201:a" }
       },
@@ -200,7 +201,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "hive_count": -1 }
       },
@@ -218,7 +219,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "hive_count": 0 }
       },
@@ -230,7 +231,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "notes": "@repeat:10001:n" }
       },
@@ -248,7 +249,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "place_label": "@repeat:201:p" }
       },
@@ -266,7 +267,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "dgav_registration_number": "@repeat:51:9" }
       },
@@ -285,7 +286,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Melgar Norte" }
       },
@@ -300,7 +301,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "location_lon": -8.5 }
       },
@@ -318,7 +319,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "location_lat": 41.2 }
       },
@@ -336,7 +337,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Melgar Norte", "location_lon": 180.5, "location_lat": 41.2 }
       },
@@ -354,7 +355,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": -90.5 }
       },
@@ -372,7 +373,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Melgar Norte", "location_lon": -180, "location_lat": 90 }
       },
@@ -385,7 +386,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "hive_count": -3, "notes": "@repeat:10001:n" }
       },
@@ -410,7 +411,7 @@
       "op": {
         "op": "upsert",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": 41.2 }
       },
@@ -434,7 +435,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": 41.2 }
       },
       "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
@@ -446,7 +447,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary_ledger",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Melgar Norte", "location_lon": -8.5, "location_lat": 41.2 }
       },
@@ -466,7 +467,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {}
       },
@@ -487,10 +488,10 @@
       "op": {
         "op": "put",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "counter_type": "hive",
           "value": 12
         }
@@ -504,10 +505,10 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "counter_type": "hive"
         }
       },
@@ -519,7 +520,7 @@
       "op": {
         "op": "put",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "counter_type": "hive", "value": 12 }
       },
@@ -534,7 +535,7 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "counter_type": "hive", "value": 12 }
       },
@@ -548,9 +549,9 @@
       "op": {
         "op": "put",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
-        "data": { "apiary_id": "1b7d4c2a", "counter_type": "hive", "value": 12 }
+        "data": { "apiary_id": "apiary-1", "counter_type": "hive", "value": 12 }
       },
       "expect": [
         {
@@ -566,9 +567,9 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
-        "data": { "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d", "value": 12 }
+        "data": { "apiary_id": "11111111-1111-1111-1111-111111111111", "value": 12 }
       },
       "expect": [
         {
@@ -584,10 +585,10 @@
       "op": {
         "op": "put",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "counter_type": "nucleus",
           "value": 12
         }
@@ -607,10 +608,10 @@
       "op": {
         "op": "put",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "counter_type": "hive"
         }
       },
@@ -622,10 +623,10 @@
       "op": {
         "op": "patch",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "counter_type": "hive",
           "value": -1
         }
@@ -644,10 +645,10 @@
       "op": {
         "op": "delete",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "counter_type": "hive",
           "value": 12
         }
@@ -667,7 +668,7 @@
       "op": {
         "op": "delete",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z"
       },
       "expect": [
@@ -701,7 +702,7 @@
         "id": "",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "counter_type": "hive",
           "value": 12
         }
@@ -714,9 +715,9 @@
       "op": {
         "op": "put",
         "entity_type": "apiary_counter",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "counter_type": "hive",
           "value": 12
         }
@@ -730,14 +731,14 @@
       "op": {
         "op": "put",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
           "declared_on": "2026-03-01",
           "total_hive_count": 40,
           "dgav_registration_number": "PT-1234",
           "notes": "Declaração anual.",
-          "breakdown": [{ "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d", "hive_count": 40 }]
+          "breakdown": [{ "apiary_id": "11111111-1111-1111-1111-111111111111", "hive_count": 40 }]
         }
       },
       "expect": []
@@ -748,7 +749,7 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "notes": "Corrigido." }
       },
@@ -761,7 +762,7 @@
       "op": {
         "op": "delete",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z"
       },
       "expect": []
@@ -772,7 +773,7 @@
       "op": {
         "op": "put",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "total_hive_count": 40 }
       },
@@ -790,7 +791,7 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "declared_on": "01-03-2026" }
       },
@@ -809,7 +810,7 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "declared_on": "2026-02-30" }
       },
@@ -827,7 +828,7 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "declared_on": "2028-02-29" }
       },
@@ -839,7 +840,7 @@
       "op": {
         "op": "put",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "declared_on": "2026-03-01" }
       },
@@ -857,7 +858,7 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "total_hive_count": -1 }
       },
@@ -875,7 +876,7 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "dgav_registration_number": "@repeat:51:9" }
       },
@@ -894,7 +895,7 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "notes": "@repeat:2001:n" }
       },
@@ -913,9 +914,9 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
-        "data": { "breakdown": { "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d" } }
+        "data": { "breakdown": { "apiary_id": "11111111-1111-1111-1111-111111111111" } }
       },
       "expect": [],
       "serverOnly": [
@@ -933,10 +934,10 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "breakdown": [{ "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d", "hive_count": 7 }]
+          "breakdown": [{ "apiary_id": "11111111-1111-1111-1111-111111111111", "hive_count": 7 }]
         }
       },
       "expect": []
@@ -947,7 +948,7 @@
       "op": {
         "op": "patch",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {}
       },
@@ -967,7 +968,7 @@
       "op": {
         "op": "merge",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "declared_on": "2026-03-01", "total_hive_count": 40 }
       },
@@ -979,7 +980,7 @@
       "op": {
         "op": "put",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e",
+        "id": "55555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "declared_on": "2026-03-01", "total_hive_count": 40 }
       },
@@ -991,7 +992,7 @@
       "op": {
         "op": "put",
         "entity_type": "stock_declaration",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "data": { "declared_on": "2026-03-01", "total_hive_count": 40 }
       },
       "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
@@ -1003,14 +1004,14 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "type": "generic",
           "occurred_at": "2026-03-01",
           "attributes": { "notes": "Visita de rotina." },
-          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e"
+          "journey_id": "22222222-2222-2222-2222-222222222222"
         }
       },
       "expect": []
@@ -1022,7 +1023,7 @@
       "op": {
         "op": "patch",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "attributes": { "notes": "Corrigido." } }
       },
@@ -1034,7 +1035,7 @@
       "op": {
         "op": "delete",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z"
       },
       "expect": []
@@ -1045,7 +1046,7 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "type": "generic", "occurred_at": "2026-03-01" }
       },
@@ -1059,7 +1060,7 @@
       "op": {
         "op": "patch",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "apiary_id": "apiary-1" }
       },
@@ -1077,10 +1078,10 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "4ea07f5d-6b8c-4d9e-bf20-3b4c5d6e7f80",
+          "apiary_id": "44444444-4444-4444-4444-444444444444",
           "type": "generic",
           "occurred_at": "2026-03-01"
         }
@@ -1100,10 +1101,10 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "type": "generic"
         }
       },
@@ -1121,10 +1122,10 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "type": "generic",
           "occurred_at": ""
         }
@@ -1143,7 +1144,7 @@
       "op": {
         "op": "patch",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "occurred_at": "" }
       },
@@ -1155,7 +1156,7 @@
       "op": {
         "op": "patch",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "occurred_at": "2026/03/01" }
       },
@@ -1173,10 +1174,10 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "occurred_at": "2026-03-01"
         }
       },
@@ -1188,10 +1189,10 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "occurred_at": "2026-03-01",
           "type": ""
         }
@@ -1204,7 +1205,7 @@
       "op": {
         "op": "patch",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "attributes": [1, 2] }
       },
@@ -1223,7 +1224,7 @@
       "op": {
         "op": "patch",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "attributes": null }
       },
@@ -1241,7 +1242,7 @@
       "op": {
         "op": "patch",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "occurred_at": "2026-03-01" }
       },
@@ -1253,7 +1254,7 @@
       "op": {
         "op": "patch",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "journey_id": "journey-1" }
       },
@@ -1271,10 +1272,10 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "type": "requeening",
           "occurred_at": "2026-03-01",
           "attributes": {}
@@ -1295,10 +1296,10 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "type": "harvest",
           "occurred_at": "2026-03-01",
           "attributes": {}
@@ -1319,9 +1320,9 @@
       "op": {
         "op": "upsert",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
-        "data": { "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d" }
+        "data": { "apiary_id": "11111111-1111-1111-1111-111111111111" }
       },
       "expect": [{ "field": "op", "code": "invalid", "message": "op must be put, patch or delete" }]
     },
@@ -1331,10 +1332,10 @@
       "op": {
         "op": "put",
         "entity_type": "inspection",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "type": "generic",
           "occurred_at": "2026-03-01"
         }
@@ -1355,10 +1356,10 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d",
+        "id": "55555555-5555-5555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "type": "generic",
           "occurred_at": "2026-03-01"
         }
@@ -1371,9 +1372,9 @@
       "op": {
         "op": "put",
         "entity_type": "activity",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "data": {
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d",
+          "apiary_id": "11111111-1111-1111-1111-111111111111",
           "type": "generic",
           "occurred_at": "2026-03-01"
         }
@@ -1387,7 +1388,7 @@
       "op": {
         "op": "put",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
           "name": "Rota Norte",
@@ -1405,7 +1406,7 @@
       "op": {
         "op": "patch",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "status": "closed" }
       },
@@ -1417,7 +1418,7 @@
       "op": {
         "op": "delete",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z"
       },
       "expect": []
@@ -1428,7 +1429,7 @@
       "op": {
         "op": "put",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "main_activity_type": "harvest" }
       },
@@ -1440,7 +1441,7 @@
       "op": {
         "op": "put",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "", "main_activity_type": "harvest" }
       },
@@ -1452,7 +1453,7 @@
       "op": {
         "op": "patch",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "@repeat:201:r" }
       },
@@ -1470,7 +1471,7 @@
       "op": {
         "op": "put",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Rota Norte" }
       },
@@ -1488,7 +1489,7 @@
       "op": {
         "op": "patch",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "main_activity_type": "requeening" }
       },
@@ -1507,7 +1508,7 @@
       "op": {
         "op": "patch",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "status": "archived" }
       },
@@ -1526,7 +1527,7 @@
       "op": {
         "op": "patch",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "default_attributes": [1] }
       },
@@ -1545,7 +1546,7 @@
       "op": {
         "op": "patch",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "default_attributes": null }
       },
@@ -1563,7 +1564,7 @@
       "op": {
         "op": "patch",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "default_attributes": { "notes": "@repeat:8000:x" } }
       },
@@ -1576,7 +1577,7 @@
       "op": {
         "op": "patch",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "default_attributes": { "notes": "@repeat:9000:x" } }
       },
@@ -1594,7 +1595,7 @@
       "op": {
         "op": "replace",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Rota Norte", "main_activity_type": "harvest" }
       },
@@ -1606,7 +1607,7 @@
       "op": {
         "op": "put",
         "entity_type": "route",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "name": "Rota Norte", "main_activity_type": "harvest" }
       },
@@ -1638,7 +1639,7 @@
       "op": {
         "op": "put",
         "entity_type": "journey",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "data": { "name": "Rota Norte", "main_activity_type": "harvest" }
       },
       "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
@@ -1650,11 +1651,11 @@
       "op": {
         "op": "put",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+          "journey_id": "22222222-2222-2222-2222-222222222222",
+          "apiary_id": "11111111-1111-1111-1111-111111111111"
         }
       },
       "expect": []
@@ -1665,7 +1666,7 @@
       "op": {
         "op": "delete",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z"
       },
       "expect": []
@@ -1677,11 +1678,11 @@
       "op": {
         "op": "patch",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+          "journey_id": "22222222-2222-2222-2222-222222222222",
+          "apiary_id": "11111111-1111-1111-1111-111111111111"
         }
       },
       "expect": [
@@ -1698,9 +1699,9 @@
       "op": {
         "op": "put",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
-        "data": { "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d" }
+        "data": { "apiary_id": "11111111-1111-1111-1111-111111111111" }
       },
       "expect": [
         {
@@ -1716,11 +1717,11 @@
       "op": {
         "op": "put",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
           "journey_id": "rota-norte",
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+          "apiary_id": "11111111-1111-1111-1111-111111111111"
         }
       },
       "expect": [
@@ -1737,9 +1738,9 @@
       "op": {
         "op": "put",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
-        "data": { "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e" }
+        "data": { "journey_id": "22222222-2222-2222-2222-222222222222" }
       },
       "expect": [
         { "field": "data.apiary_id", "code": "required", "message": "apiary_id is required" }
@@ -1751,7 +1752,7 @@
       "op": {
         "op": "put",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {}
       },
@@ -1770,9 +1771,9 @@
       "op": {
         "op": "put",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
-        "data": { "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e", "apiary_id": "a1" }
+        "data": { "journey_id": "22222222-2222-2222-2222-222222222222", "apiary_id": "a1" }
       },
       "expect": [
         {
@@ -1788,11 +1789,11 @@
       "op": {
         "op": "put",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
-          "apiary_id": "4ea07f5d-6b8c-4d9e-bf20-3b4c5d6e7f80"
+          "journey_id": "22222222-2222-2222-2222-222222222222",
+          "apiary_id": "44444444-4444-4444-4444-444444444444"
         }
       },
       "expect": [],
@@ -1813,8 +1814,8 @@
         "id": "item-1",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
-          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+          "journey_id": "22222222-2222-2222-2222-222222222222",
+          "apiary_id": "11111111-1111-1111-1111-111111111111"
         }
       },
       "expect": [{ "field": "id", "code": "invalid", "message": "id must be a UUID" }]
@@ -1825,10 +1826,10 @@
       "op": {
         "op": "put",
         "entity_type": "journey_plan_item",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "data": {
-          "journey_id": "2c8e5d3b-4f6a-4b7c-9d0e-1f2a3b4c5d6e",
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+          "journey_id": "22222222-2222-2222-2222-222222222222",
+          "apiary_id": "11111111-1111-1111-1111-111111111111"
         }
       },
       "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
@@ -1840,7 +1841,7 @@
       "op": {
         "op": "put",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": {
           "title": "Rever colmeias",
@@ -1848,8 +1849,8 @@
           "due_date": "2026-03-01",
           "priority": "high",
           "status": "open",
-          "assignee_id": "3d9f6e4c-5a7b-4c8d-ae1f-2a3b4c5d6e7f",
-          "apiary_id": "1b7d4c2a-3e5f-4a6b-8c9d-0e1f2a3b4c5d"
+          "assignee_id": "33333333-3333-3333-3333-333333333333",
+          "apiary_id": "11111111-1111-1111-1111-111111111111"
         }
       },
       "expect": []
@@ -1861,7 +1862,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "status": "done", "completed_at": "2026-03-02T09:30:00Z" }
       },
@@ -1873,7 +1874,7 @@
       "op": {
         "op": "delete",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z"
       },
       "expect": []
@@ -1884,7 +1885,7 @@
       "op": {
         "op": "put",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "priority": "low" }
       },
@@ -1897,7 +1898,7 @@
       "op": {
         "op": "put",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "title": "   ", "priority": "low" }
       },
@@ -1909,7 +1910,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "title": "   " }
       },
@@ -1921,7 +1922,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "title": "@repeat:501:t" }
       },
@@ -1939,7 +1940,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "description": "@repeat:10001:d" }
       },
@@ -1957,7 +1958,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "due_date": "amanhã" }
       },
@@ -1976,7 +1977,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "due_date": "" }
       },
@@ -1988,7 +1989,7 @@
       "op": {
         "op": "put",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "title": "Rever colmeias" }
       },
@@ -2002,7 +2003,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "priority": "urgent" }
       },
@@ -2021,7 +2022,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "status": "blocked" }
       },
@@ -2040,7 +2041,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "completed_at": "2026-03-02 09:30:00" }
       },
@@ -2059,7 +2060,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "completed_at": "2026-03-02T09:30:00" }
       },
@@ -2077,7 +2078,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "completed_at": "2026-03-02T09:30:00.123+01:00" }
       },
@@ -2089,7 +2090,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "completed_at": "" }
       },
@@ -2101,7 +2102,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "assignee_id": "member-1" }
       },
@@ -2119,7 +2120,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "assignee_id": "" }
       },
@@ -2131,9 +2132,9 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
-        "data": { "assignee_id": "4ea07f5d-6b8c-4d9e-bf20-3b4c5d6e7f80" }
+        "data": { "assignee_id": "44444444-4444-4444-4444-444444444444" }
       },
       "expect": [],
       "serverOnly": [
@@ -2150,7 +2151,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "apiary_id": "a1" }
       },
@@ -2168,7 +2169,7 @@
       "op": {
         "op": "patch",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "apiary_id": "" }
       },
@@ -2180,7 +2181,7 @@
       "op": {
         "op": "complete",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "title": "Rever colmeias", "priority": "low" }
       },
@@ -2192,7 +2193,7 @@
       "op": {
         "op": "put",
         "entity_type": "task",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "title": "Rever colmeias", "priority": "low" }
       },
@@ -2224,7 +2225,7 @@
       "op": {
         "op": "put",
         "entity_type": "todo",
-        "id": "0f3a1d1e-5b2c-4a6d-9e8f-1a2b3c4d5e6f",
+        "id": "55555555-5555-5555-5555-555555555555",
         "data": { "title": "Rever colmeias", "priority": "low" }
       },
       "expect": [{ "field": "updated_at", "code": "required", "message": "updated_at is required" }]
