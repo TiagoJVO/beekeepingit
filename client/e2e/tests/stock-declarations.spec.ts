@@ -93,15 +93,27 @@ const snackbar = (page: Page, text: string) =>
 // One recorded declaration in the log, matched on the em dash plus hive count
 // and deliberately NOT anchored to the end of the text.
 //
-// Flutter merges a declaration card into a single semantics node, so its
-// accessible name is the whole group's concatenated contents ("PT-… Current
-// hive count: 0 … Sep 1, 2026 — 0 hives 1 apiary") and nothing's text *ends*
-// with "0 hives" — an anchored /\d+ hives$/ never matches (a CI failure this
-// replaced). The em dash is what makes this specific to a declaration row:
-// it comes from `stockDeclarationSummary` ("{date} — {n} hives"), and the
-// "Current hive count: N" line in the same node has no dash. The date itself is
-// deliberately not pinned — it is locale-formatted (LocaleFormatting → intl).
-const declarationRow = (page: Page) => page.getByText(/— \d+ hives?/);
+// A recorded declaration, located by the GROUP's accessible name.
+//
+// Two Flutter-web facts stack here, and getting either wrong looks identical
+// from the source:
+//  1. A declaration card is merged into ONE semantics node, so its accessible
+//     name is the whole group's concatenated contents ("PT-… Current hive
+//     count: 0 … Sep 2, 2026 — 0 hives 1 apiary"). Nothing's text *ends* with
+//     "0 hives", so an anchored /\d+ hives$/ never matches.
+//  2. That node has children (the Record/Delete buttons), and Flutter publishes
+//     a WITH-CHILDREN node's label as `aria-label`, not DOM text — so
+//     `getByText` cannot see it either, however the regex is written. Only a
+//     leaf node gets its label as text.
+// Both were separate CI failures. `getByRole` matches the accessible name in
+// either form, which is why every card-content assertion in this file goes
+// through it.
+//
+// The em dash is what makes the pattern specific to a declaration row: it comes
+// from `stockDeclarationSummary` ("{date} — {n} hives"), and the "Current hive
+// count: N" line in the same node has no dash. The date is deliberately not
+// pinned — it is locale-formatted (LocaleFormatting → intl).
+const declarationRow = (page: Page) => page.getByRole("group", { name: /— \d+ hives?/ });
 
 // The group heading shown when apiaries resolve to no registration number at
 // all. Asserted ABSENT throughout: this spec's own apiary carries no per-apiary
