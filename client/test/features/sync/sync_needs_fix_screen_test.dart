@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
+import 'package:beekeepingit_client/core/validation/sync_op_validator.dart';
 import 'package:beekeepingit_client/features/sync/sync_needs_fix_screen.dart';
 import 'package:beekeepingit_client/features/sync/sync_rejected_repository.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations.dart';
@@ -191,6 +192,83 @@ void main() {
       );
     },
   );
+
+  group('client-predicted rejections (#584, FR-OF-2/D-12)', () {
+    testWidgets(
+      'get the SAME per-field guidance a server rejection gets — the connector '
+      'synthesizes the identical (field, code) pairs, so #443\'s mapping '
+      'applies with no special case',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'todo',
+            errorCode: localValidationFailedCode,
+            errorDetail:
+                '{"detail":"client-side validation parity check rejected this push",'
+                '"errors":[{"field":"data.title","code":"required","message":"title is required"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Title: this is required.'), findsOneWidget);
+        // Still no raw validation text (#426 holds for both origins).
+        expect(find.textContaining('title is required'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'fall back to "wasn\'t sent yet", NOT "was rejected", when nothing maps — '
+      'the server never saw the change, so refusing wording would be wrong',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            errorCode: localValidationFailedCode,
+            errorDetail:
+                '{"detail":"client-side validation parity check rejected this push","errors":[]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('needs-fix-r1')), findsOneWidget);
+        expect(
+          find.text("This change wasn't sent yet — please correct it."),
+          findsOneWidget,
+        );
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'a SERVER rejection with nothing mapped keeps the original wording — the '
+      '#584 fallback must not swallow the case it sits beside',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            errorDetail: '{"detail":"one or more ops are invalid","errors":[]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsOneWidget,
+        );
+        expect(
+          find.text("This change wasn't sent yet — please correct it."),
+          findsNothing,
+        );
+      },
+    );
+  });
 
   testWidgets(
     'a code the app has no copy for still degrades to the localized generic '
@@ -553,13 +631,14 @@ Map<String, Object?> _row({
   String fixApiaryId = 'apiary-1',
   String? payload,
   String? errorDetail,
+  String errorCode = 'validation.failed',
 }) => {
   'id': id,
   'entity_type': entityType,
   'fix_apiary_id': fixApiaryId,
   'op': 'patch',
   'payload': payload ?? '{}',
-  'error_code': 'validation.failed',
+  'error_code': errorCode,
   'error_detail':
       errorDetail ??
       '{"detail":"one or more ops are invalid","errors":[{"field":"data.value","code":"out_of_range","message":"value must be >= 0"}]}',

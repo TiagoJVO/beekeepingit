@@ -7,6 +7,33 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
+## `feat/client-validation-parity` (#584 — revalidate queued edits before pushing)
+
+- **Confirm (or rule out) the `journey.default_attributes` null case, and open an Issue if
+  it's real.** `journeys_repository.dart` stores SQL NULL for an empty defaults bag, while
+  `validateDefaultAttributes` (`services/journeys/api/types.go`) rejects a present JSON `null`
+  — it skips only on `len(raw) == 0`. Whether that ever reaches the wire depends on whether
+  PowerSync includes null columns in a `put`'s `opData`, which this branch did **not** verify.
+  If it does, clearing a journey's defaults is already failing server-side today and #584 only
+  makes it visible one step earlier; the fix belongs in `validateDefaultAttributes` (treat the
+  `null` literal as absent, like every other optional field on that struct), after which the
+  description's `jsonObject` check must skip an explicit null for that field. Written up in
+  `contracts/validation/README.md`. Cheapest check: log one op's `opData` for a journey with no
+  defaults, or add a `journeys` integration case.
+- **Give #443's `_fieldLabel` table entries for the stock-declaration fields.**
+  `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
+  `total_hive_count` or `registration_number`, so a rejected stock declaration (#298)
+  degrades to the generic "needs your attention" line even though #584 now produces exact
+  `(field, code)` pairs for it. Graceful, not broken — but it throws away guidance that is
+  already there. Three labels plus their EN/PT strings; belongs to #443's table rather than to
+  the parity description, so it was left out of #584's PR deliberately.
+- **The same evaluator wants a save-time call site.** `validateSyncOps`
+  (`client/lib/core/validation/sync_op_validator.dart`) is a pure function of the wire op, so the
+  form/repository write path can run it and tell the beekeeper _in the form_, with the record
+  open, instead of at the next push. That is a genuine FR-OF-2 improvement and needs no new source
+  of truth — but it touches every entity's form screen, so it is out of this PR's scope. Promote
+  to an Issue under EPIC-06 (#7) if it isn't picked up with #585.
+
 ## `fix/dgav-declaration-date-and-note` (PR #595 — FR-AP-9/FR-AP-10 follow-ups on top of #593)
 
 > This branch started as the declaration date + note fix and now also carries the
@@ -65,13 +92,12 @@
 
 ---
 
-_Sweep note (2026-09-01, during the FR-AP-9/FR-AP-10 authority-neutral rework):_
+_Sweep note (2026-09-02, merging `main` into the FR-AP-9/FR-AP-10 authority-neutral rework):_
 _[#593](https://github.com/TiagoJVO/beekeepingit/pull/593) **merged** and #296/#298 both closed, so_
 _the `claude/orch-add-feature-8816f4` section was stale by definition and is pruned — its Helm-E2E_
-_precondition was met at merge (git history keeps that record), and its "two of D-19's five data_
-_points remain untriaged" bullet said to prune itself with the section; D-19 and_
-_`docs/research/regulatory-pt-eu-beekeeping.md` §6 already carry that fact. Its one genuinely_
-_pending item — the `stock_declarations` runtime grants — moved to the in-flight branch that now_
-_owns this feature, with an explicit "promote to an Issue if it outlives the PR" trigger._
+_precondition was met at merge (git history keeps that record). Its one genuinely pending item, the_
+_`stock_declarations` runtime grants, moved into the in-flight branch section that now owns this_
+_feature, which is why `main`'s short-lived `#296`/`#298` section is folded away here rather than_
+_kept alongside it._
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked: still open, entry stands._
 _Prior sweep notes dropped with their entries, per this file's convention._

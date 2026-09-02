@@ -822,6 +822,10 @@
   "@syncNeedsFixFieldActivityDefaults": {
     "description": "Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)"
   },
+  "syncNeedsFixLocalProblem": "This change wasn't sent yet — please correct it.",
+  "@syncNeedsFixLocalProblem": {
+    "description": "Needs-fix list row message for a change the app itself found a problem with before sending it (validation parity, FR-OF-2/D-12, #584) — as opposed to one the server rejected"
+  },
   "syncNeedsFixFixAction": "Fix",
   "@syncNeedsFixFixAction": {
     "description": "Needs-fix action (and rejection toast action) that opens the offending record's edit screen to correct and re-save it"

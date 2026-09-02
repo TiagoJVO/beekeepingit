@@ -653,6 +653,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixFieldActivityDefaults => 'Defaults for activities';
 
   @override
+  String get syncNeedsFixLocalProblem =>
+      'This change wasn\'t sent yet — please correct it.';
+
+  @override
   String get syncNeedsFixFixAction => 'Fix';
 
   @override

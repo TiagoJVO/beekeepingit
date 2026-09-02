@@ -659,6 +659,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Predefinições para atividades';
 
   @override
+  String get syncNeedsFixLocalProblem =>
+      'Esta alteração ainda não foi enviada — corrija-a, por favor.';
+
+  @override
   String get syncNeedsFixFixAction => 'Corrigir';
 
   @override
