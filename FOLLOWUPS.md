@@ -22,16 +22,23 @@
   defaults, or add a `journeys` integration case. #596 now **pins the current behaviour** from
   both sides (corpus case `journey/patch/default-attributes-is-an-explicit-null`) — the two sides
   agree today, so if the server is relaxed here the description must be relaxed with it, and that
-  case is what will say so.
-- **Give the `_fieldLabel` table entries for the stock-declaration fields — and needs an owner.**
-  `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
-  `total_hive_count` or `dgav_registration_number`, so a rejected DGAV stock declaration (#298)
-  degrades to the generic "needs your attention" line even though #584 now produces exact
-  `(field, code)` pairs for it. Graceful, not broken — but it throws away guidance that is
-  already there. Three labels plus their EN/PT strings. **Sweep note (#596): its owning issue
-  #443 has since CLOSED without them**, so this entry is stale by this file's own rule and needs
-  promoting to its own Issue (or folding into #597's scope, which references it) rather than
-  sitting here.
+  case is what will say so. **Sweep note (#597):** the save-time draft
+  (`JourneysRepository.draftForSave`) sidesteps the question by omitting the key entirely when
+  there are no defaults, so the new call site cannot reject a valid save either way — the
+  unanswered part is still what `_toOp` puts on the wire for a NULL column.
+
+## `#597` — save-time (in-form) validation parity (this branch)
+
+- **Three write paths are deliberately not covered, and need an Issue if they ever should be.**
+  The seam (`SyncOpDraft` + each repository's `draftForSave` + `save_time_validation.dart`) is
+  entity-agnostic and the apiary / todo / journey forms use it, but: the **activity** form's
+  controls cannot produce a value any described rule rejects (its per-type attribute mirror
+  already validates in-form); the **DGAV stock declaration** has no form at all — the payload is
+  derived from the org number and the current hive counts — and #443 has no labels for its fields
+  until **#600** lands; and the **apiary counters** editor is digits-only and clamped to ≥ 0.
+  Recorded in `docs/architecture/sync.md` §9/§10. Promote to an Issue only if one of those write
+  paths grows a control that can actually break a mirrored rule — left for a human rather than
+  opened unprompted.
 
 ## `#296`/`#298` — DGAV registration + stock declarations (PR #593, merged)
 
@@ -69,3 +76,10 @@ _corpus. The `_fieldLabel` bullet also stays, flagged — its owning issue #443 
 _labels, so it needs its own Issue; left for a human rather than opened unprompted._
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that entry stands._
 _Prior sweep notes dropped with their entries, per this file's convention._
+
+_Sweep note (2026-09-02, during #597):_
+_The `_fieldLabel` stock-declaration bullet is **pruned**: it now has the owner it was waiting for —_
+_[#600](https://github.com/TiagoJVO/beekeepingit/issues/600), open and being implemented — so keeping it_
+_here would be the second backlog this file forbids. #597's save-time check reaches those same fields, and_
+_degrades them to a truthful generic line until #600 sharpens it; no code here duplicates the label table._
+_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked, still open and still blocked upstream._

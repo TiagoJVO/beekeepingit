@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:beekeepingit_client/core/sync/local_store.dart';
 import 'package:beekeepingit_client/core/sync/powersync_schema.dart';
+import 'package:beekeepingit_client/features/journeys/journey_form_screen.dart';
 import 'package:beekeepingit_client/features/journeys/journey_status.dart';
 import 'package:beekeepingit_client/features/journeys/journeys_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1313,6 +1314,81 @@ void main() {
       await pumpEventQueue();
 
       expect(emissions.last, 2);
+    });
+  });
+
+  /// Pins `draftForSave`'s column map to the INSERT next to it, so the
+  /// save-time parity check (#597) cannot drift into validating a shape
+  /// nothing writes.
+  group('draftForSave mirrors the write (#597)', () {
+    test('every drafted column is written by create()', () async {
+      await repo.create(
+        name: 'Colheita de Primavera',
+        mainActivityType: 'harvest',
+        apiaryIds: const [],
+        defaultAttributes: const {'lot_batch': 'L-2026-01'},
+      );
+
+      final draft = JourneysRepository.draftForSave(
+        name: 'Colheita de Primavera',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+        defaultAttributes: const {'lot_batch': 'L-2026-01'},
+      );
+
+      final row = store.rows.single;
+      expect(draft.op, 'put');
+      for (final column in draft.data!.keys) {
+        expect(
+          row.containsKey(column),
+          isTrue,
+          reason: 'drafted column $column is not written by create()',
+        );
+      }
+      expect(row['name'], draft.data!['name']);
+      expect(row['main_activity_type'], draft.data!['main_activity_type']);
+      expect(row['status'], draft.data!['status']);
+      // `default_attributes` is deliberately the one column whose VALUE
+      // differs: the row stores JSON-encoded TEXT, while the draft (like the
+      // wire op) carries the decoded object.
+      expect(row['default_attributes'], '{"lot_batch":"L-2026-01"}');
+      expect(draft.data!['default_attributes'], const {
+        'lot_batch': 'L-2026-01',
+      });
+    });
+
+    test('an edit drafts a patch, matching the op an UPDATE queues', () {
+      final draft = JourneysRepository.draftForSave(
+        id: 'j1',
+        name: 'Colheita',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+      );
+      expect(draft.op, 'patch');
+      expect(draft.id, 'j1');
+    });
+
+    test('the journey form binds only real drafted columns', () {
+      // Without this, a column renamed in draftForSave but not in the form's
+      // allow-list would silently turn the check off for that field — a
+      // fail-open drift nothing else would catch.
+      final drafted = JourneysRepository.draftForSave(
+        name: 'x',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+      ).data!.keys.toSet();
+      expect(journeyFormSyncCheckedColumns.difference(drafted), isEmpty);
+    });
+
+    test('no defaults are drafted as ABSENT, never as an explicit null', () {
+      // A present `null` is what the server rejects as "not a JSON object"
+      // (contracts/validation/sync-ops.corpus.json); absent is always valid.
+      final draft = JourneysRepository.draftForSave(
+        name: 'Colheita',
+        mainActivityType: 'harvest',
+        status: journeyStatusOpen,
+      );
+      expect(draft.data!.containsKey('default_attributes'), isFalse);
     });
   });
 }

@@ -144,6 +144,7 @@
   "syncNeedsFixTitleWithName": "{label} · {name}",
   "syncNeedsFixGenericProblem": "Esta alteração foi rejeitada e precisa da sua atenção.",
   "syncNeedsFixLocalProblem": "Esta alteração ainda não foi enviada — corrija-a, por favor.",
+  "syncSaveCheckGenericProblem": "Não é possível guardar assim — verifique este valor.",
   "syncNeedsFixFieldProblem": "{field}: {problem}",
   "syncNeedsFixRuleRequired": "isto é obrigatório.",
   "syncNeedsFixRuleInvalid": "este valor não é válido.",

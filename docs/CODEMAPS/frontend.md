@@ -142,6 +142,13 @@ SyncGate (sync_gate.dart): HttpConnectivityProbe must pass before connect()/reco
 lww_delete.dart: every synced delete goes through deleteWithLwwStamp() — stamps the device
   delete time into the trackMetadata `_metadata` column so the op's LWW comparator survives
   retries AND app restarts; read back in _toOp via CrudEntry.metadata (#276, sync.md §4.5)
+validation parity (sync.md §9, D-12) — ONE evaluator, core/validation/sync_op_validator.dart,
+  over the shared description embedded in core/validation/gen/, run at TWO call sites:
+    pre-push  (#584) uploadData, on the ops _toOp built → dead-letter + needs-fix
+    save-time (#597) each form's _save, on <Repository>.draftForSave(...) → field error
+  both build the wire op through core/sync/sync_op_draft.dart's SyncOpDraft, so the two
+  verdicts see identical bytes; features/sync/save_time_validation.dart localizes a failure
+  through #443's mapping. Advisory only — the server stays authoritative.
 ```
 
 ## Client-side schema (core/sync/powersync_schema.dart)

@@ -6,6 +6,7 @@ import '../../core/sync/lww_delete.dart';
 import '../../core/sync/powersync_local_store.dart';
 import '../../core/sync/powersync_schema.dart';
 import '../../core/sync/powersync_service.dart';
+import '../../core/sync/sync_op_draft.dart';
 import '../organization/organization_repository.dart';
 
 /// A local todo row (#50, FR-TD-1, FR-TEN-2, D-20, D-23): the client mirror
@@ -98,6 +99,48 @@ class TodosRepository {
 
   final LocalStoreEngine _store;
   static const _uuid = Uuid();
+
+  /// The wire op a [create] (when [id] is null) or an [update] would queue for
+  /// these values — the input to the **save-time** validation-parity check
+  /// (#597, FR-OF-2, D-12, sync.md §9).
+  ///
+  /// Lives here, next to the SQL, on purpose: the column names below are the
+  /// ones [create]'s INSERT and [update]'s UPDATE write, including their
+  /// `?? ''` coercion (the class doc explains why an absent optional is
+  /// written as an empty string rather than SQL NULL; the shared description
+  /// treats the two the same for exactly those fields, which it marks
+  /// `absentWhen: "empty"`). A form calls this and never builds a
+  /// column-to-value mapping of its own; the one place it does name columns is
+  /// its allow-list of the columns it binds, which a test pins to the keys this
+  /// builds.
+  ///
+  /// `status`/`completed_at` are absent because neither write path sets them —
+  /// completion goes through [complete]/[reopen], never through a form save.
+  static SyncOpDraft draftForSave({
+    String? id,
+    required String title,
+    required String priority,
+    String? description,
+    String? dueDate,
+    String? assigneeId,
+    String? apiaryId,
+  }) => SyncOpDraft(
+    // An edit resubmits all six fields, so it queues a `patch` carrying every
+    // column below; a create queues a `put`. Validating an edit as a `put`
+    // would apply `required` rules the server applies to a `put` only (#378).
+    op: id == null ? 'put' : 'patch',
+    entityType: todoEntityType,
+    id: id ?? draftPlaceholderId,
+    data: {
+      'title': title,
+      'description': description ?? '',
+      'due_date': dueDate ?? '',
+      'priority': priority,
+      'assignee_id': assigneeId ?? '',
+      'apiary_id': apiaryId ?? '',
+    },
+    updatedAt: draftUpdatedAt(),
+  );
 
   /// Creates a todo. [priority] must already be one of the known values
   /// (`low`/`medium`/`high`, mirroring services/todos/api/types.go's own

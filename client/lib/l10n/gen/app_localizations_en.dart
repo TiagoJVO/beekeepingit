@@ -657,6 +657,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This change wasn\'t sent yet — please correct it.';
 
   @override
+  String get syncSaveCheckGenericProblem =>
+      'This can\'t be saved as it is — please check this value.';
+
+  @override
   String get syncNeedsFixFixAction => 'Fix';
 
   @override
