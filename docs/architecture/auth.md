@@ -1720,7 +1720,7 @@ and its two guards changed — no Go service, no client, no token, no requiremen
   and fails on any `certificate_data`/`key_data` literal. The two `!Find` bans and the literal ban
   were widened after review: the former now match the **joined entry body** (this file already wraps
   long `!Find [` calls across lines, which a line-scoped rule read as clean) and the latter tolerates
-  a quoted or flow-mapping key. **31 drifts, 31 caught** — #599's 19 (each field reverted to `!Find`
+  a quoted or flow-mapping key. **40 drifts, 40 caught** — #599's 28 (each field reverted to `!Find`
   on either provider; each pin deleted, duplicated, repointed or given attrs, including a
   private-key literal; `signing_key` dropped, mistyped, pointed at the wrong pin, and shadowed by a
   longer key — `jwt_signing_key:`, which is what the `keyof()` helper's new **left** boundary
