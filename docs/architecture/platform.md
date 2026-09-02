@@ -32,9 +32,13 @@ than standing up their own release.
 One thing doesn't: the **CloudNativePG operator** (below) is cluster-scoped, so — like Traefik —
 it's installed once by `up.sh` itself rather than through the umbrella chart.
 
-- **CloudNativePG operator**: `up.sh` also does `helm repo add cnpg
-https://cloudnative-pg.github.io/charts` + `helm upgrade --install cnpg-operator
-cnpg/cloudnative-pg -n cnpg-system --create-namespace`, right after cluster bring-up. It's a
+- **CloudNativePG operator**: `up.sh` also does
+  `helm upgrade --install cnpg-operator oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg -n cnpg-system --create-namespace`,
+  right after cluster bring-up. The chart is pulled from CNPG's **OCI registry**, not the classic
+  `https://cloudnative-pg.github.io/charts` Helm repo: that URL now redirects to
+  `cloudnative-pg.io`, whose DNS delegation is broken, so `helm repo add` fails outright — while
+  the same releases are pushed to `ghcr.io/cloudnative-pg/charts` by upstream's own release
+  workflow (`infra/cluster/scw-cluster-prereqs.sh` uses the same source for Kapsule). It's a
   prerequisite for the umbrella chart's `postgres` subchart (its `Cluster` custom resource), not a
   subchart itself — installing/upgrading it on every per-environment `helm upgrade beekeepingit`
   would be wrong for something meant to serve every environment on the cluster (see
