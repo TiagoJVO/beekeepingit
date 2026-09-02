@@ -472,7 +472,7 @@ unit tests, docs, backlog) needs **no** token.
 | **B — Backend**      | `services/**`                                           | ❌                 |
 | **C — Client**       | `client/**`                                             | e2e ✅ (semaphore) |
 | **D — Docs**         | `docs/**`, `README.md`, `CLAUDE.md`, requirements sweep | ❌                 |
-| **E — Backlog**      | GitHub Issues, `FOLLOWUPS.md` (coordinator-run)         | ❌                 |
+| **E — Backlog**      | GitHub Issues + the session ledger (coordinator-run)    | ❌                 |
 
 Shared files are single-owner to avoid conflicts: `README.md`/`CLAUDE.md`/all `docs/**` → **WS-D**;
-`FOLLOWUPS.md` + GitHub → **WS-E/coordinator**. **Final gate:** `grep -ri keycloak` == 0.
+the session ledger + GitHub → **WS-E/coordinator**. **Final gate:** `grep -ri keycloak` == 0.

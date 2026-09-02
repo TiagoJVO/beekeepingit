@@ -748,8 +748,8 @@ apiaries ON DELETE CASCADE, counter_type text, value int CHECK ≥ 0)` — with 
   chart (`infra/helm/beekeepingit/`) stays in this repo. Now that the mechanism is PR-based (not
   direct-push) this is pure structural hygiene, not a security trade-off — Flux sources the chart
   from this repo and the release-manifests from the new one (a supported split). `release-deploy.yml`
-  opens its tag-bump PR against the new repo, which needs a scoped token or a small GitHub App
-  (tracked in `FOLLOWUPS.md`).
+  opens its tag-bump PR against the new repo, which needs a scoped token or a small GitHub App —
+  the fine-grained `GITOPS_PR_TOKEN` PAT.
 - **Supersedes:** [ADR-0014](../docs/adr/0014-cicd-pipeline.md)'s decision #4 (deploy via Flux
   image-automation). The image-reflector/image-automation controllers, the `ImageRepository`/
   `ImagePolicy`/`ImageUpdateAutomation` objects, and every `$imagepolicy` setter marker are removed;

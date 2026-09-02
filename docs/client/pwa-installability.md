@@ -58,8 +58,8 @@ whether the icon's actual artwork is project-branded. `client/web/icons/*` and `
 are still **Flutter's default template logo**, not a BeekeepingIT icon (visually confirmed by
 opening `Icon-512.png` — it's the blue Flutter chevron). This is issue #93's "real project app
 icons replace Flutter's default template icons" AC, and it remains **unmet**; producing real
-brand artwork is a design task, not something this change (an audit + docs pass) can do. See
-`FOLLOWUPS.md`.
+brand artwork is a design task, not something this change (an audit + docs pass) can do. Tracked
+in #233.
 
 ## 2. Manual pass — install + offline-shell-serving
 

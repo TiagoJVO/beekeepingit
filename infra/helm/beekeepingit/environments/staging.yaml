@@ -57,7 +57,8 @@ pwa:
     # One-off manual build, not CI (compiled with the melargil.pt URLs above via
     # --dart-define — AppConfig reads these at Dart *compile* time, so `latest`
     # would have dev's *.beekeepingit.local:8443 baked in and fail to log in).
-    # See FOLLOWUPS.md for the real per-environment-build fix.
+    # release-deploy.yml's publish-client now builds the real per-environment image;
+    # this pin switches when a release's tag-bump PR sets it (#367).
     tag: staging-manual
 
 admin:

@@ -1305,8 +1305,8 @@ issuance. Everything is config-as-code in the blueprint
     so there is no detection signal — the one cheap control that would let a real owner notice a
     takeover in progress. Authentik already raises a `SOURCE_LINKED` **Event** when
     `PostSourceStage` persists a new connection, so the work is binding a notification rule and
-    transport to it; §8.10's SMTP path already exists. Carried in
-    [`FOLLOWUPS.md`](../../FOLLOWUPS.md). It should land **before** federation is enabled on an
+    transport to it; §8.10's SMTP path already exists. Tracked in
+    [#563](https://github.com/TiagoJVO/beekeepingit/issues/563). It should land **before** federation is enabled on an
     environment holding real user data — which today none does (D-26; and Google federation is
     inert until its credentials Secret exists at all, [#510](https://github.com/TiagoJVO/beekeepingit/issues/510)).
 - **The guard evolved rather than weakened.**

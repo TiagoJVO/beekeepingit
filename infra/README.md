@@ -44,7 +44,7 @@ flux install
 #    re-run after cloning, after changing a dependency version, AND after editing any
 #    local subchart's templates/values (helm installs the packaged charts/*.tgz
 #    snapshot under this dir, not the live source — a stale snapshot silently
-#    installs old content otherwise, see FOLLOWUPS.md).
+#    installs old content otherwise).
 helm dependency build infra/helm/beekeepingit
 
 # 4. Install (or upgrade) the platform. Deliberately no `--wait`: PowerSync can't
@@ -152,8 +152,7 @@ kubectl -n beekeepingit-dev logs -l app.kubernetes.io/name=powersync --tail=50
 ```
 
 PowerSync's real org-scoped Sync Rules + the `sync`-service JWKS connector landed with
-`#23`/`#106` (the `#22` placeholder sync-config + OIDC-JWKS stopgap are gone) — see
-`FOLLOWUPS.md` for any remaining wiring.
+`#23`/`#106` (the `#22` placeholder sync-config + OIDC-JWKS stopgap are gone).
 
 ## Database roles
 
