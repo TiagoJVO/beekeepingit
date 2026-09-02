@@ -1196,6 +1196,12 @@ abstract class AppLocalizations {
   /// **'This change wasn\'t sent yet — please correct it.'**
   String get syncNeedsFixLocalProblem;
 
+  /// Save-time validation-parity fallback shown against the offending form field (#597) when the (field, code) pair has no specific localized copy in the #443 mapping — never the server's English message, never the column name
+  ///
+  /// In en, this message translates to:
+  /// **'This can\'t be saved as it is — please check this value.'**
+  String get syncSaveCheckGenericProblem;
+
   /// Needs-fix action (and rejection toast action) that opens the offending record's edit screen to correct and re-save it
   ///
   /// In en, this message translates to:

@@ -14,6 +14,7 @@ import 'lww_delete.dart';
 import 'powersync_local_store.dart';
 import 'powersync_schema.dart';
 import 'sync_events.dart';
+import 'sync_op_draft.dart';
 
 /// Bridges PowerSync to the BeekeepingIT backend (walking-skeleton.md §4.4):
 ///   - fetchCredentials → GET /v1/sync/token (the short-TTL sync token).
@@ -344,13 +345,19 @@ class BeekeepingitConnector extends PowerSyncBackendConnector {
       _deleteTimestamps,
       metadata: e.metadata,
     );
-    return {
-      'op': _opName(e.op),
-      'entity_type': entityTypeForTable(e.table),
-      'id': e.id,
-      'data': data,
-      'updated_at': updatedAt,
-    };
+    // The envelope is shaped by [SyncOpDraft], not spelled out here, so the
+    // save-time check a form runs (#597) is looking at the same op shape this
+    // push sends. The payloads can still differ on an edit — this one is
+    // PowerSync's column diff, the form's is the whole row it is about to
+    // write — but only ever in the safe direction; [SyncOpDraft]'s own doc
+    // explains why.
+    return SyncOpDraft(
+      op: _opName(e.op),
+      entityType: entityTypeForTable(e.table),
+      id: e.id,
+      data: data,
+      updatedAt: updatedAt,
+    ).toWireOp();
   }
 
   String _opName(UpdateType op) => switch (op) {

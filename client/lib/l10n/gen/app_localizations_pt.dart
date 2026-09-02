@@ -672,6 +672,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Esta alteração ainda não foi enviada — corrija-a, por favor.';
 
   @override
+  String get syncSaveCheckGenericProblem =>
+      'Não é possível guardar assim — verifique este valor.';
+
+  @override
   String get syncNeedsFixFixAction => 'Corrigir';
 
   @override

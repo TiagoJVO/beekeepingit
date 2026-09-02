@@ -47,3 +47,21 @@ _labels first, so #600's remaining half is the test guard that keeps them from s
 _missing again, which owes this file nothing. Sections re-checked and left as #595 wrote them:_
 _the `journey.default_attributes` bullet is still pending its own journeys PR, and_
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) is still open upstream._
+
+_Sweep note (2026-09-02, during [#597](https://github.com/TiagoJVO/beekeepingit/issues/597) / PR_
+_[#605](https://github.com/TiagoJVO/beekeepingit/pull/605), after merging `main`):_
+_This branch adds **no** entry, agreeing with the note above. Its one candidate — the three write_
+_paths the save-time check deliberately does not cover (the activity form, the stock declaration,_
+_the apiary counters) — is recorded where it belongs: `docs/architecture/sync.md` §9/§10, as part of_
+_the as-built design, with the reason each is out of scope. Repeating it here would outlive its own_
+_PR and turn this file into the second backlog it forbids._
+
+_Two claims an earlier revision of this branch carried are dropped rather than corrected in place,_
+_because `main` has since settled both: [#595](https://github.com/TiagoJVO/beekeepingit/pull/595)_
+_implemented the `_fieldLabel` entries, and [#603](https://github.com/TiagoJVO/beekeepingit/pull/603)_
+_landed the `journey.default_attributes` fix, taking the `#584`/`#585` section with it. The sweep_
+_notes above already record both accurately. #597 neither depended on #603 nor blocked it:_
+_`JourneysRepository.draftForSave` omits the key entirely when there are no defaults, and **absent**_
+_was valid on both sides before #603 and stays valid after it. (This supersedes the #602 note above_
+_on one point only: that note was written before #603 merged, so its "still pending its own journeys_
+_PR" line is no longer true — #603 landed and took the whole `#584`/`#585` section with it.)_
