@@ -1172,6 +1172,24 @@ abstract class AppLocalizations {
   /// **'Defaults for activities'**
   String get syncNeedsFixFieldActivityDefaults;
 
+  /// Needs-fix field label for a stock declaration's date — deliberately the same wording as stockDeclarationDateLabel (#443, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Declaration date'**
+  String get syncNeedsFixFieldDeclarationDate;
+
+  /// Needs-fix field label for the hive total a stock declaration records across the whole organization — distinct from syncNeedsFixFieldHiveCount, which is one apiary's count (#443, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Total hives'**
+  String get syncNeedsFixFieldTotalHiveCount;
+
+  /// Needs-fix field label for a beekeeper registration number — the same column, and the same wording, on a stock declaration and on an apiary (apiaryRegistrationNumberLabel) (#443, #296, #298)
+  ///
+  /// In en, this message translates to:
+  /// **'Registration number'**
+  String get syncNeedsFixFieldRegistrationNumber;
+
   /// Needs-fix list row message for a change the app itself found a problem with before sending it (validation parity, FR-OF-2/D-12, #584) — as opposed to one the server rejected
   ///
   /// In en, this message translates to:
@@ -1549,6 +1567,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not save the organization details'**
   String get organizationDetailsSaveFailed;
+
+  /// Error shown when the organization-details save is answered 409 because another admin changed the organization since this screen read it — the If-Match/ETag optimistic-concurrency check (#601, FR-TEN-2/FR-HIS-1). Deliberately distinct from organizationDetailsSaveFailed: retrying unchanged is exactly the wrong advice here
+  ///
+  /// In en, this message translates to:
+  /// **'Someone else changed these details. Reopen this screen to see the latest, then make your change again.'**
+  String get organizationDetailsSaveConflict;
 
   /// Note shown to non-admin members, who can read but not edit the organization's details (#296, NFR-ROL-1)
   ///

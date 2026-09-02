@@ -494,4 +494,97 @@ void main() {
       expect(find.text('No changes to save'), findsOneWidget);
     });
   });
+
+  // #601: with `If-Match` now on the save, the server can answer 409 for the
+  // one race the body diff cannot close — two admins editing the SAME field.
+  // "Could not save" would send the user to retry a save that is guaranteed to
+  // fail the same way (or to win by overwriting an edit they never saw), so
+  // this failure gets its own copy. Drives the REAL controller and repository
+  // against a MockClient, so it asserts the wire behavior.
+  group('a stale save (409)', () {
+    testWidgets('surfaces the conflict distinctly, not the generic '
+        'save-failed message, and keeps the typed value on screen', (
+      tester,
+    ) async {
+      final client = MockClient((req) async {
+        if (req.method == 'PATCH') {
+          return http.Response(
+            jsonEncode({
+              'code': 'conflict',
+              'detail': 'If-Match does not match the current version',
+            }),
+            409,
+            headers: {'content-type': 'application/json'},
+            request: req,
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'id': 'org-1',
+            'name': 'Apiários do Montargil',
+            'address': 'Montargil, Ponte de Sor',
+            'registration_number': '',
+            'created_by': 'user-1',
+            'role': 'admin',
+            'created_at': '2026-01-01T00:00:00.000Z',
+            'updated_at': '2026-01-02T00:00:00.000Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json', 'etag': '"v1"'},
+          request: req,
+        );
+      });
+      final container = ProviderContainer(
+        overrides: [
+          authControllerProvider.overrideWith(_FakeAuthController.new),
+          isAuthenticatedProvider.overrideWith((ref) => true),
+          organizationRepositoryProvider.overrideWith(
+            (ref) => OrganizationRepository(
+              ApiClient(ref, httpClient: client),
+              prefs: _FakeLocalPrefs(),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            localizationsDelegates: [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: OrganizationDetailsScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(_numberField), 'PT-654321');
+      await tester.tap(find.byKey(_saveButton));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Someone else changed these details. Reopen this screen to see the '
+          'latest, then make your change again.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Could not save the organization details'),
+        findsNothing,
+      );
+      expect(
+        tester.widget<TextFormField>(find.byKey(_numberField)).controller?.text,
+        'PT-654321',
+        reason: 'a rejected save must not discard what the user typed',
+      );
+    });
+  });
 }

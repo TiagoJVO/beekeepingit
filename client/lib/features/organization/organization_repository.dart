@@ -24,18 +24,25 @@ class Organization {
     required this.role,
     required this.createdAt,
     required this.updatedAt,
+    this.etag,
   });
 
-  factory Organization.fromJson(Map<String, dynamic> json) => Organization(
-    id: json['id'] as String,
-    name: json['name'] as String? ?? '',
-    address: json['address'] as String? ?? '',
-    registrationNumber: json['registration_number'] as String? ?? '',
-    createdBy: json['created_by'] as String? ?? '',
-    role: json['role'] as String? ?? 'user',
-    createdAt: DateTime.parse(json['created_at'] as String),
-    updatedAt: DateTime.parse(json['updated_at'] as String),
-  );
+  /// [etag] is the `ETag` header of the response [json] came from — NOT a
+  /// field of the JSON body, which is why it is a separate argument. It
+  /// travels with the organization so a later write can round it back as
+  /// `If-Match` (see [etag]).
+  factory Organization.fromJson(Map<String, dynamic> json, {String? etag}) =>
+      Organization(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '',
+        address: json['address'] as String? ?? '',
+        registrationNumber: json['registration_number'] as String? ?? '',
+        createdBy: json['created_by'] as String? ?? '',
+        role: json['role'] as String? ?? 'user',
+        createdAt: DateTime.parse(json['created_at'] as String),
+        updatedAt: DateTime.parse(json['updated_at'] as String),
+        etag: etag,
+      );
 
   final String id;
   final String name;
@@ -63,6 +70,28 @@ class Organization {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// The opaque version stamp of the READ this instance came from — the
+  /// server's `ETag` header (`etagFor`, derived from `updated_at`;
+  /// services/organizations/api/organizations.go). Sent back as `If-Match` on
+  /// the details PATCH so a save built on a version another admin has since
+  /// replaced is answered 409 rather than silently winning (#601,
+  /// FR-TEN-2/FR-HIS-1).
+  ///
+  /// It must stay glued to the organization it was read WITH — the details
+  /// screen diffs against the organization it seeded from, and validating a
+  /// save against any later version would check nothing. Carrying it on the
+  /// value, rather than in a repository-side "last ETag" slot, is what makes
+  /// that true by construction.
+  ///
+  /// Null when this organization did not come from a live read: the offline
+  /// cache stores the response BODY only, so a cached organization has no
+  /// version stamp and its save falls back to today's unconditional PATCH
+  /// (the server treats an absent `If-Match` as "proceed"). Acceptable — the
+  /// cache exists so the onboarding gate stays passable offline, and editing
+  /// these details needs connectivity anyway; the first online read re-arms
+  /// the check.
+  final String? etag;
+
   // Value equality (MEDIUM-2): organizationProvider is watched by the
   // router's redirect logic (app_router.dart) — without this, a re-fetch
   // that returns the same organization compares unequal (default identity
@@ -79,7 +108,13 @@ class Organization {
           createdBy == other.createdBy &&
           role == other.role &&
           createdAt == other.createdAt &&
-          updatedAt == other.updatedAt);
+          updatedAt == other.updatedAt &&
+          // Part of the value, not incidental: two instances holding
+          // different version stamps are NOT interchangeable as the baseline
+          // of a save. In practice the stamp is a function of updatedAt, so
+          // this only ever separates a live read from a cached one (whose
+          // stamp is null).
+          etag == other.etag);
 
   @override
   int get hashCode => Object.hash(
@@ -91,6 +126,7 @@ class Organization {
     role,
     createdAt,
     updatedAt,
+    etag,
   );
 }
 
@@ -118,9 +154,11 @@ class OrganizationRepository {
   /// if they have none yet — the signal the org-completion gate probes for.
   Future<Organization> fetchMine() async {
     try {
-      final json = await _api.getJson('/organizations/me');
-      _prefs.write(kOrganizationCacheKey, jsonEncode(json));
-      return Organization.fromJson(json);
+      final resp = await _api.get('/organizations/me');
+      _prefs.write(kOrganizationCacheKey, jsonEncode(resp.body));
+      // The version stamp of THIS read travels with the organization it
+      // describes (see [Organization.etag]) — the cache keeps the body only.
+      return Organization.fromJson(resp.body, etag: resp.headers['etag']);
     } on ApiNetworkException {
       final cached = _prefs.read(kOrganizationCacheKey);
       if (cached == null) rethrow;
@@ -153,15 +191,22 @@ class OrganizationRepository {
   ///
   /// **Sends only what actually changed**, diffed against [current] — the
   /// organization the calling screen was seeded from. A PATCH that always
-  /// carried all three keys would make a save a lost-update machine: this is
-  /// a REST edit with no `If-Match` (see FOLLOWUPS.md), so a field the user
-  /// never touched would silently overwrite whatever a concurrent admin had
-  /// changed meanwhile, AND the server's audit row (`FR-HIS-1`, "who changed
-  /// what") would name this caller as having changed a field they never
-  /// looked at. Omitting unchanged keys makes both impossible by
+  /// carried all three keys would make a save a lost-update machine: a field
+  /// the user never touched would silently overwrite whatever a concurrent
+  /// admin had changed meanwhile, AND the server's audit row (`FR-HIS-1`,
+  /// "who changed what") would name this caller as having changed a field
+  /// they never looked at. Omitting unchanged keys makes both impossible by
   /// construction. Returns `null` when nothing changed — no request is sent
   /// at all, since `OrganizationUpdate` has `minProperties: 1` and an empty
   /// body would 422.
+  ///
+  /// **Conditional on [current]'s version stamp** (#601): the PATCH carries
+  /// `If-Match: <etag of the read [current] came from>`, so the remaining
+  /// race — two admins editing the SAME field — ends in a 409 the caller
+  /// surfaces, not in a silent last-write-wins. The stamp must be [current]'s
+  /// own; anything newer would validate the save against a version the user
+  /// never saw. Omitted when [current] has none (a cached, offline read), in
+  /// which case the server proceeds as it does today.
   ///
   /// Admin-only server-side (the same guard every other org edit carries);
   /// a non-admin caller gets a 403 [ApiException] the calling screen
@@ -190,9 +235,16 @@ class OrganizationRepository {
     }
     if (body.isEmpty) return null;
 
-    final json = await _api.patchJson('/organizations/${current.id}', body);
-    _prefs.write(kOrganizationCacheKey, jsonEncode(json));
-    return Organization.fromJson(json);
+    final resp = await _api.patch(
+      '/organizations/${current.id}',
+      body,
+      // Absent, not empty, when the baseline carries no stamp.
+      headers: {'If-Match': ?current.etag},
+    );
+    _prefs.write(kOrganizationCacheKey, jsonEncode(resp.body));
+    // The PATCH answers with the row's NEW stamp; carrying it forward is what
+    // lets a second save from the same screen be conditional too.
+    return Organization.fromJson(resp.body, etag: resp.headers['etag']);
   }
 }
 
@@ -265,8 +317,10 @@ class OrganizationController extends AsyncNotifier<Organization?> {
   /// See [OrganizationRepository.updateDetails].
   ///
   /// Leaves state untouched when nothing changed (no request was sent).
-  /// Rethrows on failure (403 for a non-admin, 422 for an over-long value)
-  /// so the calling screen can surface it.
+  /// Rethrows on failure (403 for a non-admin, 422 for an over-long value,
+  /// **409 when another admin changed the organization since [from] was
+  /// read**) so the calling screen can surface it — the 409 needs its own
+  /// copy, since "try again" is the wrong advice for it (#601).
   ///
   /// Returns whether a PATCH was actually SENT — `false` means every field
   /// still matched [from], so there was nothing to save. The caller needs

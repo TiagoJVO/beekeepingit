@@ -161,6 +161,14 @@ String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'status' => l10n.syncNeedsFixFieldStatus,
   'attributes' => l10n.syncNeedsFixFieldDetails,
   'default_attributes' => l10n.syncNeedsFixFieldActivityDefaults,
+  // Stock declarations (FR-AP-10, #298). `registration_number` is deliberately
+  // one entry, not two: this table is keyed by field NAME alone, and the same
+  // column — with the same cap and the same user-facing wording — is validated
+  // on an APIARY op too (`services/apiaries/api/sync.go`), so one label covers
+  // both ops correctly.
+  'declared_on' => l10n.syncNeedsFixFieldDeclarationDate,
+  'total_hive_count' => l10n.syncNeedsFixFieldTotalHiveCount,
+  'registration_number' => l10n.syncNeedsFixFieldRegistrationNumber,
   _ => null,
 };
 
@@ -189,7 +197,9 @@ String? _ruleMessage(AppLocalizations l10n, String field, String code) {
   }
   if (code == 'out_of_range') {
     return switch (field) {
-      'hive_count' || 'value' => l10n.syncNeedsFixRuleNonNegative,
+      'hive_count' ||
+      'value' ||
+      'total_hive_count' => l10n.syncNeedsFixRuleNonNegative,
       'location_lat' => l10n.syncNeedsFixRuleLatitudeRange,
       'location_lon' => l10n.syncNeedsFixRuleLongitudeRange,
       _ => l10n.syncNeedsFixRuleOutOfRange,

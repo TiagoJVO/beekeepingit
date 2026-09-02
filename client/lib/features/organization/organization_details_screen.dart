@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/api/api_client.dart';
 import '../../core/widgets/field_action_button.dart';
 import '../../l10n/gen/app_localizations.dart';
 import '../../theming/brand_widgets.dart';
@@ -212,6 +213,23 @@ class _OrganizationDetailsScreenState
             sent
                 ? l10n.organizationDetailsSaved
                 : l10n.organizationDetailsNoChanges,
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      // A 409 means the `If-Match` this save carried is stale: another admin
+      // changed the organization since this screen read it (#601). That is
+      // the one failure with different advice — "try again" would either lose
+      // their change or fail identically — so it gets its own copy, and the
+      // form is deliberately left as the user typed it (the baseline and the
+      // edited flag are NOT reset here, so the next build cannot re-seed over
+      // what they still have on screen).
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            e.statusCode == 409
+                ? l10n.organizationDetailsSaveConflict
+                : l10n.organizationDetailsSaveFailed,
           ),
         ),
       );

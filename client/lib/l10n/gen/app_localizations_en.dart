@@ -653,6 +653,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncNeedsFixFieldActivityDefaults => 'Defaults for activities';
 
   @override
+  String get syncNeedsFixFieldDeclarationDate => 'Declaration date';
+
+  @override
+  String get syncNeedsFixFieldTotalHiveCount => 'Total hives';
+
+  @override
+  String get syncNeedsFixFieldRegistrationNumber => 'Registration number';
+
+  @override
   String get syncNeedsFixLocalProblem =>
       'This change wasn\'t sent yet — please correct it.';
 
@@ -890,6 +899,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get organizationDetailsSaveFailed =>
       'Could not save the organization details';
+
+  @override
+  String get organizationDetailsSaveConflict =>
+      'Someone else changed these details. Reopen this screen to see the latest, then make your change again.';
 
   @override
   String get organizationDetailsAdminOnly =>

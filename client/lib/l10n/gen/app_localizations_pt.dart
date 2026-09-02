@@ -659,6 +659,15 @@ class AppLocalizationsPt extends AppLocalizations {
       'Predefinições para atividades';
 
   @override
+  String get syncNeedsFixFieldDeclarationDate => 'Data da declaração';
+
+  @override
+  String get syncNeedsFixFieldTotalHiveCount => 'Total de colmeias';
+
+  @override
+  String get syncNeedsFixFieldRegistrationNumber => 'Número de registo';
+
+  @override
   String get syncNeedsFixLocalProblem =>
       'Esta alteração ainda não foi enviada — corrija-a, por favor.';
 
@@ -896,6 +905,10 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get organizationDetailsSaveFailed =>
       'Não foi possível guardar os dados da organização';
+
+  @override
+  String get organizationDetailsSaveConflict =>
+      'Outra pessoa alterou estes dados. Volte a abrir este ecrã para ver a versão mais recente e faça a sua alteração de novo.';
 
   @override
   String get organizationDetailsAdminOnly =>

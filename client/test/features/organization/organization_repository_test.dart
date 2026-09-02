@@ -255,6 +255,71 @@ void main() {
       expect(bodies.single.containsKey('address'), isFalse);
     });
 
+    // #601: the same-field race the body diff above cannot close — two admins
+    // editing the SAME field — is closed by rounding the read's ETag back as
+    // `If-Match`, which the server (`ifMatchOK`) answers 409 on when stale.
+    // An ABSENT header is treated as "proceed" server-side, so this assertion
+    // is the whole guarantee.
+    test('sends If-Match with the ETag of the read the baseline came from — '
+        'not a later one, which would validate nothing', () async {
+      final requests = <http.BaseRequest>[];
+      final client = MockClient((req) async {
+        requests.add(req);
+        final isRead = req.method == 'GET';
+        return http.Response(
+          jsonEncode(_orgJson()),
+          200,
+          headers: {
+            'content-type': 'application/json',
+            // The read the save is based on, then a NEWER stamp on the write's
+            // own response (the row moved on).
+            'etag': isRead ? '"v1"' : '"v2"',
+          },
+          request: req,
+        );
+      });
+      final repo = _buildRepo(client: client);
+
+      final read = await repo.fetchMine();
+      final saved = await repo.updateDetails(
+        read,
+        name: read.name,
+        address: read.address,
+        registrationNumber: 'PT-654321',
+      );
+
+      final patch = requests.last;
+      expect(patch.method, 'PATCH');
+      expect(patch.headers['If-Match'], '"v1"');
+      // The PATCH's own response stamp is carried forward, so a SECOND save
+      // from the same screen is conditional too rather than unguarded.
+      expect(saved?.etag, '"v2"');
+    });
+
+    test('omits If-Match when the baseline has no version stamp (a cached, '
+        'offline read) — the server then proceeds as before', () async {
+      final requests = <http.BaseRequest>[];
+      final client = MockClient((req) async {
+        requests.add(req);
+        return http.Response(
+          jsonEncode(_orgJson()),
+          200,
+          headers: {'content-type': 'application/json'},
+          request: req,
+        );
+      });
+      final repo = _buildRepo(client: client);
+
+      await repo.updateDetails(
+        _org(),
+        name: 'Apiários do Norte',
+        address: '123 Serra Rd',
+        registrationNumber: '',
+      );
+
+      expect(requests.single.headers.containsKey('If-Match'), isFalse);
+    });
+
     test('sends no request at all when nothing changed — an empty body would '
         '422 against OrganizationUpdate.minProperties', () async {
       final repo = buildRecordingRepo();

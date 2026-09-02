@@ -822,6 +822,18 @@
   "@syncNeedsFixFieldActivityDefaults": {
     "description": "Needs-fix field label for a journey's default activity attributes — deliberately the same wording as journeyDefaultAttributesSectionLabel (#443)"
   },
+  "syncNeedsFixFieldDeclarationDate": "Declaration date",
+  "@syncNeedsFixFieldDeclarationDate": {
+    "description": "Needs-fix field label for a stock declaration's date — deliberately the same wording as stockDeclarationDateLabel (#443, #298)"
+  },
+  "syncNeedsFixFieldTotalHiveCount": "Total hives",
+  "@syncNeedsFixFieldTotalHiveCount": {
+    "description": "Needs-fix field label for the hive total a stock declaration records across the whole organization — distinct from syncNeedsFixFieldHiveCount, which is one apiary's count (#443, #298)"
+  },
+  "syncNeedsFixFieldRegistrationNumber": "Registration number",
+  "@syncNeedsFixFieldRegistrationNumber": {
+    "description": "Needs-fix field label for a beekeeper registration number — the same column, and the same wording, on a stock declaration and on an apiary (apiaryRegistrationNumberLabel) (#443, #296, #298)"
+  },
   "syncNeedsFixLocalProblem": "This change wasn't sent yet — please correct it.",
   "@syncNeedsFixLocalProblem": {
     "description": "Needs-fix list row message for a change the app itself found a problem with before sending it (validation parity, FR-OF-2/D-12, #584) — as opposed to one the server rejected"
@@ -1122,6 +1134,10 @@
   "organizationDetailsSaveFailed": "Could not save the organization details",
   "@organizationDetailsSaveFailed": {
     "description": "Error shown when saving the organization details fails, e.g. offline or not an admin (#296)"
+  },
+  "organizationDetailsSaveConflict": "Someone else changed these details. Reopen this screen to see the latest, then make your change again.",
+  "@organizationDetailsSaveConflict": {
+    "description": "Error shown when the organization-details save is answered 409 because another admin changed the organization since this screen read it — the If-Match/ETag optimistic-concurrency check (#601, FR-TEN-2/FR-HIS-1). Deliberately distinct from organizationDetailsSaveFailed: retrying unchanged is exactly the wrong advice here"
   },
   "organizationDetailsAdminOnly": "Only an organization admin can change these.",
   "@organizationDetailsAdminOnly": {

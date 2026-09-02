@@ -23,15 +23,6 @@
   both sides (corpus case `journey/patch/default-attributes-is-an-explicit-null`) — the two sides
   agree today, so if the server is relaxed here the description must be relaxed with it, and that
   case is what will say so.
-- **Give the `_fieldLabel` table entries for the stock-declaration fields — and needs an owner.**
-  `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
-  `total_hive_count` or `registration_number`, so a rejected stock declaration (#298)
-  degrades to the generic "needs your attention" line even though #584 now produces exact
-  `(field, code)` pairs for it. Graceful, not broken — but it throws away guidance that is
-  already there. Three labels plus their EN/PT strings. **Sweep note (#596): its owning issue
-  #443 has since CLOSED without them**, so this entry is stale by this file's own rule and needs
-  promoting to its own Issue (or folding into #597's scope, which references it) rather than
-  sitting here.
 
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
@@ -49,17 +40,28 @@
 ---
 
 _Sweep note (2026-09-02, closing out PR [#595](https://github.com/TiagoJVO/beekeepingit/pull/595)):_
-_that branch's whole section is **pruned — three of its four bullets turned out to be satisfied,**_
-_not deferred. Its Helm-E2E precondition is met_
-_([run 33578751459](https://github.com/TiagoJVO/beekeepingit/actions/runs/33578751459), green on the_
-_renamed shape). Its in-place-migration precondition still holds: `gh release list` shows_
-_`v0.0.1-rc13` (2026-09-01 10:20Z) as the newest release, still older than the commit that added_
-_those migrations, so no deployed database holds the old column. And its `stock_declarations`_
-_runtime-grants bullet — written when "nothing in E2E writes a declaration" — is now exercised_
-_end to end: the rewritten `stock-declarations.spec.ts` records a declaration and asserts a **fresh**_
-_client downloads it, which it can only do if the server INSERTed the row._
-_The one genuinely deferred item, `If-Match` on the organization-details save, is promoted to_
-_[#601](https://github.com/TiagoJVO/beekeepingit/issues/601) and pruned from here, per this file's_
-_own "promote durable work to an Issue" rule._
-_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked: still open, entry stands._
+_everything that branch was carrying is **resolved rather than deferred**, so its section is gone._
+
+- _Its Helm-E2E precondition is met_
+  _([run 33578751459](https://github.com/TiagoJVO/beekeepingit/actions/runs/33578751459), green on_
+  _the renamed shape). Its in-place-migration precondition still holds — `v0.0.1-rc13`_
+  _(2026-09-01 10:20Z) is still the newest release and predates those migrations, so no deployed_
+  _database holds the old column name. And its `stock_declarations` runtime-grants bullet is now_
+  _exercised end to end: the rewritten `stock-declarations.spec.ts` records a declaration and_
+  _asserts a **fresh** client downloads it, which only works if the server INSERTed the row._
+- _`If-Match` on the organization-details save was opened as_
+  _[#601](https://github.com/TiagoJVO/beekeepingit/issues/601) and then \**implemented on the same_
+  _branch\**, so it closes with that PR rather than outliving it._
+- _The `#584`/`#585` section's `_fieldLabel` bullet is **implemented, not promoted**: it asked for_
+  _labels for `declared_on`, `total_hive_count` and `registration_number` — fields #595 introduced —_
+  _and was marked "needs an owner" only because its original issue (#443) had closed._
+
+_Its sibling `journey.default_attributes` bullet **stays here deliberately**. It was verified true_
+_(PowerSync's `powersync_diff` omits nulls from a `put` but emits an explicit `null` from a patch_
+_that clears a column, so clearing a journey's defaults has never been able to sync) and is fixed —_
+_but in its **own PR**, since it is journeys and the shared validation description rather than_
+_apiaries. Prune this bullet when that PR merges._
+
+_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked: still open — blocked on_
+_upstream `typescript-eslint` supporting TypeScript 7, so it is genuinely not ours to close._
 _Prior sweep notes dropped with their entries, per this file's convention._
