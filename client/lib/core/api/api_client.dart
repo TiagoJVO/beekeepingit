@@ -70,6 +70,28 @@ class ApiNetworkException implements Exception {
   String toString() => 'ApiNetworkException($cause)';
 }
 
+/// A decoded 2xx response together with the response's own headers — for the
+/// few callers that need something the JSON body does not carry.
+///
+/// Today that is exactly one thing: the `ETag` version stamp
+/// `GET /v1/organizations/me` and `PATCH /v1/organizations/{id}` return
+/// (`etagFor`, services/organizations/api/organizations.go), which the
+/// organization-details save rounds back as `If-Match` so a concurrent
+/// same-field edit is answered with a 409 instead of being silently
+/// overwritten (#601, FR-TEN-2/FR-HIS-1). Kept as a general body+headers pair
+/// rather than an ETag-shaped accessor so no HTTP semantics leak into
+/// [ApiClient]'s surface, and deliberately NOT the default return type: the
+/// `*Json` methods below stay body-only, so no existing caller changes.
+class ApiResponse {
+  const ApiResponse({required this.body, required this.headers});
+
+  final Map<String, dynamic> body;
+
+  /// The response headers, lower-cased (`package:http` normalizes them), so a
+  /// lookup is `headers['etag']`, never `headers['ETag']`.
+  final Map<String, String> headers;
+}
+
 /// Generic, profile-agnostic REST client wrapping `package:http`: injects the
 /// bearer token from the auth feature's public surface, encodes/decodes JSON,
 /// and maps non-2xx responses to [ApiException]. Feature repositories (e.g.
@@ -83,7 +105,10 @@ class ApiClient {
 
   Uri _uri(String path) => Uri.parse('${AppConfig.gatewayBaseUrl}/v1$path');
 
-  Future<Map<String, String>> _headers() async {
+  /// The headers every request carries, plus any per-request [extra] — which
+  /// wins on a collision, so a caller can override a default deliberately
+  /// (nothing does today) but cannot drop the bearer token by accident.
+  Future<Map<String, String>> _headers([Map<String, String>? extra]) async {
     final token = await _ref
         .read(authControllerProvider.notifier)
         .accessToken();
@@ -91,24 +116,45 @@ class ApiClient {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
+      ...?extra,
     };
   }
 
-  Future<Map<String, dynamic>> getJson(String path) async {
+  Future<Map<String, dynamic>> getJson(String path) async =>
+      (await get(path)).body;
+
+  /// As [getJson], but also hands back the response headers (see
+  /// [ApiResponse]) — for a caller that needs the `ETag` of the exact read it
+  /// is about to base a write on (#601).
+  Future<ApiResponse> get(String path) async {
     final headers = await _headers();
     final resp = await _send(() => _http.get(_uri(path), headers: headers));
-    return _decode(resp);
+    return _response(resp);
   }
 
+  /// [headers] are merged into the standard set for this one request — the
+  /// seam `If-Match` goes through (#601). Optional, so every existing call
+  /// site is unchanged.
   Future<Map<String, dynamic>> patchJson(
     String path,
-    Map<String, dynamic> body,
-  ) async {
-    final headers = await _headers();
+    Map<String, dynamic> body, {
+    Map<String, String>? headers,
+  }) async => (await patch(path, body, headers: headers)).body;
+
+  /// As [patchJson], but also hands back the response headers (see
+  /// [ApiResponse]) — a `PATCH` answers with the row's NEW `ETag`, which the
+  /// next write must send, so dropping it would make optimistic concurrency
+  /// work exactly once per read (#601).
+  Future<ApiResponse> patch(
+    String path,
+    Map<String, dynamic> body, {
+    Map<String, String>? headers,
+  }) async {
+    final merged = await _headers(headers);
     final resp = await _send(
-      () => _http.patch(_uri(path), headers: headers, body: jsonEncode(body)),
+      () => _http.patch(_uri(path), headers: merged, body: jsonEncode(body)),
     );
-    return _decode(resp);
+    return _response(resp);
   }
 
   Future<Map<String, dynamic>> postJson(
@@ -150,6 +196,11 @@ class ApiClient {
   /// `http.Client` keeps its connections/isolate resources alive for the
   /// life of the process.
   void close() => _http.close();
+
+  /// [_decode]'s body paired with [resp]'s headers — the same non-2xx →
+  /// [ApiException] mapping, since it is [_decode] that throws.
+  ApiResponse _response(http.Response resp) =>
+      ApiResponse(body: _decode(resp), headers: resp.headers);
 
   Map<String, dynamic> _decode(http.Response resp) {
     // A non-JSON body (e.g. a gateway's plain-text/HTML 502/503 page rather

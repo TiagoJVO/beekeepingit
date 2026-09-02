@@ -42,21 +42,21 @@ class StockDeclarationApiary {
   };
 }
 
-/// A stock declaration — the `Declaração de Existências` record (FR-AP-10,
-/// #298).
+/// A stock declaration — a point-in-time record of a beekeeper's declared
+/// hive stock (FR-AP-10, #298).
 ///
 /// **Not the live hive counter.** `Apiary.hiveCount` (FR-AP-7, D-2, D-20) is
-/// current state and moves with reality; this is what was declared to DGAV on
+/// current state and moves with reality; this is what was declared on
 /// [declaredOn] and must stay that way afterwards.
 ///
-/// Scoped to a [dgavRegistrationNumber] rather than to an apiary, because the
-/// real declaration covers a beekeeper's whole holding and DGAV issues one
-/// number per beekeeper (FR-AP-9). An organization covering several beekeepers
-/// therefore keeps one declaration log per number.
+/// Scoped to a [registrationNumber] rather than to an apiary, because the
+/// real declaration covers a beekeeper's whole holding and the authority
+/// issues one number per beekeeper (FR-AP-9). An organization covering
+/// several beekeepers therefore keeps one declaration log per number.
 class StockDeclaration {
   const StockDeclaration({
     required this.id,
-    required this.dgavRegistrationNumber,
+    required this.registrationNumber,
     required this.declaredOn,
     required this.totalHiveCount,
     this.breakdown = const [],
@@ -64,7 +64,7 @@ class StockDeclaration {
   });
 
   final String id;
-  final String dgavRegistrationNumber;
+  final String registrationNumber;
   final DateTime declaredOn;
   final int totalHiveCount;
   final List<StockDeclarationApiary> breakdown;
@@ -91,7 +91,7 @@ class StockDeclarationsRepository {
   static const _uuid = Uuid();
 
   static const _selectColumns =
-      'id, dgav_registration_number, declared_on, total_hive_count, '
+      'id, registration_number, declared_on, total_hive_count, '
       'breakdown, notes';
 
   /// Every declaration in the organization, newest declaration date first (and
@@ -101,7 +101,7 @@ class StockDeclarationsRepository {
   /// Returned across ALL registration numbers rather than filtered here: an
   /// organization covering several beekeepers needs them grouped, not
   /// re-queried per number, and grouping in Dart keeps this a single watch that
-  /// the DGAV section rebuilds from.
+  /// the stock-declarations screen rebuilds from.
   Stream<List<StockDeclaration>> watchAll() {
     return _store
         .watch(
@@ -113,10 +113,10 @@ class StockDeclarationsRepository {
 
   /// Records a declaration. [declaredOn] is stored as a plain `YYYY-MM-DD`
   /// calendar date, matching the server's DATE column — a declaration is filed
-  /// ON a day, and a timezone-bearing instant would make "is this inside the
-  /// September window" depend on the reader's zone.
+  /// ON a day, and a timezone-bearing instant would make "which day was this
+  /// filed on" depend on the reader's zone.
   Future<String> create({
-    required String dgavRegistrationNumber,
+    required String registrationNumber,
     required DateTime declaredOn,
     required int totalHiveCount,
     List<StockDeclarationApiary> breakdown = const [],
@@ -126,12 +126,12 @@ class StockDeclarationsRepository {
     final now = _nowIso();
     await _store.execute(
       'INSERT INTO $stockDeclarationsTable '
-      '(id, dgav_registration_number, declared_on, total_hive_count, '
+      '(id, registration_number, declared_on, total_hive_count, '
       'breakdown, notes, created_at, updated_at) '
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [
         id,
-        dgavRegistrationNumber,
+        registrationNumber,
         formatDeclaredOn(declaredOn),
         totalHiveCount,
         jsonEncode([for (final entry in breakdown) entry.toJson()]),
@@ -160,7 +160,7 @@ class StockDeclarationsRepository {
 
   StockDeclaration _fromRow(Map<String, Object?> r) => StockDeclaration(
     id: r['id'] as String,
-    dgavRegistrationNumber: r['dgav_registration_number'] as String? ?? '',
+    registrationNumber: r['registration_number'] as String? ?? '',
     declaredOn: parseDeclaredOn(r['declared_on'] as String?),
     totalHiveCount: (r['total_hive_count'] as num?)?.toInt() ?? 0,
     breakdown: _decodeBreakdown(r['breakdown'] as String?),
@@ -173,7 +173,7 @@ class StockDeclarationsRepository {
   /// Deliberately forgiving rather than throwing: the breakdown is supporting
   /// detail, while the declared date and total are the record itself. A row
   /// written by a newer client (or corrupted) must not make the whole
-  /// declaration — and with it the whole DGAV section — unreadable.
+  /// declaration — and with it the whole log — unreadable.
   static List<StockDeclarationApiary> _decodeBreakdown(String? raw) {
     if (raw == null || raw.isEmpty) return const [];
     final Object? decoded;
@@ -212,8 +212,8 @@ DateTime parseDeclaredOn(String? value) {
   return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
 }
 
-/// The org's stock declarations, newest first (FR-AP-10, #298) — the DGAV
-/// section's single source of data.
+/// The org's stock declarations, newest first (FR-AP-10, #298) — the
+/// stock-declarations screen's single source of data.
 final stockDeclarationsRepositoryProvider =
     FutureProvider<StockDeclarationsRepository>((ref) async {
       final session = await ref.watch(powerSyncProvider.future);

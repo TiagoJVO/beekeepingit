@@ -50,7 +50,7 @@ class RejectedOp {
   /// one. NOT useful for `journey_plan_item` (whose own id is the plan-item
   /// row, not the journey) — see [journeyId] for that case instead — nor for
   /// `stock_declaration`, which has no per-record editor and routes to the
-  /// DGAV section instead (`sync_needs_fix_screen.dart`'s `_navigateToFix`).
+  /// stock-declaration log instead (`sync_needs_fix_screen.dart`'s `_navigateToFix`).
   final String fixApiaryId;
 
   /// `put` | `patch` | `delete`.
@@ -200,7 +200,7 @@ class SyncRejectedRepository {
   /// `stock_declaration` is excluded for the same reason (#600): it carries no
   /// already-human name either. Its `declared_on` is a raw ISO `YYYY-MM-DD`
   /// wire string — a date format neither EN nor PT presents that way — and its
-  /// `dgav_registration_number` is an external registry identifier, so both
+  /// `registration_number` is an external registry identifier, so both
   /// would be exactly the kind of raw value #443 stopped reaching the title.
   /// The row therefore shows the plain "Stock declaration change" label; the
   /// specific guidance comes from the field mapping instead.

@@ -94,8 +94,8 @@ void main() {
     });
 
     testWidgets(
-      'a rejected stock declaration names the DGAV field at fault instead of '
-      'the generic line (#600)',
+      'a rejected stock declaration names the field at fault instead of the '
+      'generic line (#600)',
       (tester) async {
         final store = _FakeRejectedStore([
           _row(
@@ -116,7 +116,7 @@ void main() {
           findsOneWidget,
         );
         expect(
-          find.text('Total number of hives: this must be 0 or more.'),
+          find.text('Total hives: this must be 0 or more.'),
           findsOneWidget,
         );
         expect(find.textContaining('declared_on'), findsNothing);
@@ -129,25 +129,25 @@ void main() {
     );
 
     testWidgets(
-      "an apiary's DGAV registration number gets the same label the apiary "
-      'form uses (#600)',
+      "an apiary's registration number reaches the screen localized too — the "
+      'same column, validated on an apiary op (#600)',
       (tester) async {
         final store = _FakeRejectedStore([
           _row(
             id: 'r1',
             entityType: 'apiary',
             errorDetail:
-                '{"detail":"one or more ops are invalid","errors":[{"field":"data.dgav_registration_number","code":"too_long","message":"dgav_registration_number must be at most 50 characters"}]}',
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.registration_number","code":"too_long","message":"registration_number must be at most 50 characters"}]}',
           ),
         ]);
         await tester.pumpWidget(_harness(store));
         await tester.pumpAndSettle();
 
         expect(
-          find.text('DGAV registration number: this text is too long.'),
+          find.text('Registration number: this text is too long.'),
           findsOneWidget,
         );
-        expect(find.textContaining('dgav_registration_number'), findsNothing);
+        expect(find.textContaining('registration_number'), findsNothing);
       },
     );
 
@@ -522,7 +522,7 @@ void main() {
     testWidgets(
       'a stock declaration keeps the plain entity label — none of its payload '
       'fields is an already-human name, so none may reach the title (#600, '
-      "the DGAV counterpart of #443's raw-activity-type leak)",
+      "the stock-declaration counterpart of #443's raw-activity-type leak)",
       (tester) async {
         final store = _FakeRejectedStore([
           _row(
@@ -530,7 +530,7 @@ void main() {
             entityType: 'stock_declaration',
             payload:
                 '{"data":{"declared_on":"2026-09-14","total_hive_count":12,'
-                '"dgav_registration_number":"PT-12345","notes":"annual"}}',
+                '"registration_number":"PT-12345","notes":"annual"}}',
             // The helper's default detail is an apiary_counter's field, which
             // validateDeclarationOp could never emit — use a real declaration
             // rejection so the whole fixture is one the server could produce.

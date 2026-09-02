@@ -518,8 +518,9 @@ Core technology decisions (2026-06-27). Detail and rationale in
   does not commit to schema changes.
 - **Triaged (2026-09-01, user-confirmed) — the first two data points are now real requirements.**
   EPIC-02's closing stories (#296, #298) carried out exactly the triage this decision defers
-  above, so the DGAV **registration number** and the **annual stock-declaration record** are no
-  longer "flagged, not committed": they are minted as **FR-AP-9** and **FR-AP-10**. Three
+  above, so the **beekeeper registration number** and the **stock-declaration record** (both
+  framed as DGAV's at the time) are no longer "flagged, not committed": they are minted as
+  **FR-AP-9** and **FR-AP-10**. Three
   substantive points were settled in that triage, none of them derivable from the text here:
   - **The registration number is the _beekeeper's_, not the apiary's** — DGAV issues one
     `número de registo do apicultor` per beekeeper and requires it displayed at each of that
@@ -529,17 +530,42 @@ Core technology decisions (2026-06-27). Detail and rationale in
     research note's §6.1 listed as one of its two candidates.
   - **The interim trigger is `AND`, with mixed comparators** — `> 20%` of the hive count **and**
     `>= 20` colonies (DGAV's own wording; the research note said `>= 20%`, corrected in the same
-    change). The bullet above's shorthand "20%/20-colony" is that rule, not an `OR`.
+    change). The bullet above's shorthand "20%/20-colony" is that rule, not an `OR`. This now
+    stands as a **research correction only** — the app no longer encodes the rule (see the
+    narrowing below); the accurate wording still matters to anyone reading the obligation.
   - **A declaration is scoped to a registration number, not to an apiary** — it covers a
     beekeeper's whole holding, so FR-AP-10 records one declaration per number, carrying a
     per-apiary breakdown snapshot.
-    Both are **advisory**: the app surfaces the September window and the interim threshold in its
-    own DGAV section and never blocks anything, and it still submits nothing to DGAV/SICOA (the
-    research note's §7 out-of-scope line stands). Of the remaining data points, the
-    **treatment-retention policy note** was triaged separately by **#295** (its policy language
-    now lives in `docs/architecture/history.md` §7.4), leaving **two** flagged-not-committed —
-    the structured disease/condition field on Treatment activities, and the honey lot/batch
-    identifier — each awaiting its own owning epic.
+- **Narrowed (2026-09-01, product decision) — the advisory logic is dropped, and the naming is
+  authority-neutral.** As first built (#593), the feature was "the DGAV feature": the column was
+  `dgav_registration_number`, the client had a `/dgav` screen, and the app computed **two
+  advisory signals** per registration number — whether the **1–30 September** annual window was
+  open, and whether the **interim trigger** above had been crossed since the last declaration
+  (with its 10-day filing deadline). All of that is **removed**, not abstracted behind a
+  jurisdiction setting and not left stubbed. This is an honest **narrowing of what was already
+  implemented**, recorded here rather than quietly reverted, because:
+  - **The signals are Portugal's, and the app is not Portugal-only.** A window and a threshold
+    that only hold under DGAV, shown unconditionally to every beekeeper, are wrong for everyone
+    else and there is no second jurisdiction's rules to generalize from yet. YAGNI cuts toward
+    deleting them, not toward a rules engine with one implementation.
+  - **Advisory-but-wrong is worse than absent.** A compliance hint a beekeeper cannot rely on
+    (the app never files anything and cannot know their real obligations) invites exactly the
+    trust it does not earn.
+  - **The record-keeping was the durable half.** What survives is the data both stories were
+    really about: an optional **registration number** (organization default + per-apiary
+    override) and an optional **declaration log** (date, total declared hive count, per-apiary
+    breakdown snapshot, optional note). Generic concepts, so they carry generic names —
+    `registration_number`, `stock_declarations` — and generic surfaces: the number is an
+    **organization detail**, the log is its **own screen**, replacing the single `/dgav` screen.
+  - The two data points above **remain triaged and implemented**; FR-AP-9/FR-AP-10 keep their
+    IDs and were rewritten to match this scope. Portugal's window, threshold and deadline stay
+    documented as **research** in `docs/research/regulatory-pt-eu-beekeeping.md` §B.3 — a record
+    of the obligation, not of app behavior. The app still submits nothing to DGAV/SICOA (the
+    research note's §7 out-of-scope line stands).
+- Of the remaining data points, the **treatment-retention policy note** was triaged separately
+  by **#295** (its policy language now lives in `docs/architecture/history.md` §7.4), leaving
+  **two** flagged-not-committed — the structured disease/condition field on Treatment
+  activities, and the honey lot/batch identifier — each awaiting its own owning epic.
 
 ## D-20 — Apiary counters: typed 1-N child table, decoupled from the apiaries row
 

@@ -79,16 +79,16 @@ class FakeLocalStore implements LocalStoreEngine {
         'updated_at': args[5],
       });
     } else if (normalized.startsWith('INSERT INTO APIARIES')) {
-      // (id, name, notes, place_label, dgav_registration_number,
+      // (id, name, notes, place_label, registration_number,
       // location_lon, location_lat, created_at, updated_at) — hive_count is no
       // longer an apiaries column (#256); place_label/location_lon/location_lat
-      // are #252's, dgav_registration_number is #296's (FR-AP-9).
+      // are #252's, registration_number is #296's (FR-AP-9).
       rows.add({
         'id': args[0],
         'name': args[1],
         'notes': args[2],
         'place_label': args[3],
-        'dgav_registration_number': args[4],
+        'registration_number': args[4],
         'location_lon': args[5],
         'location_lat': args[6],
         'created_at': args[7],
@@ -101,15 +101,15 @@ class FakeLocalStore implements LocalStoreEngine {
       row['value'] = args[0];
       row['updated_at'] = args[1];
     } else if (normalized.startsWith('UPDATE APIARIES')) {
-      // SET name = ?, notes = ?, place_label = ?, dgav_registration_number = ?,
+      // SET name = ?, notes = ?, place_label = ?, registration_number = ?,
       // location_lon = ?, location_lat = ?, updated_at = ? WHERE id = ? (#252
-      // added place_label/location; #296 adds dgav_registration_number).
+      // added place_label/location; #296 adds registration_number).
       final id = args[7];
       final row = rows.firstWhere((r) => r['id'] == id);
       row['name'] = args[0];
       row['notes'] = args[1];
       row['place_label'] = args[2];
-      row['dgav_registration_number'] = args[3];
+      row['registration_number'] = args[3];
       row['location_lon'] = args[4];
       row['location_lat'] = args[5];
       row['updated_at'] = args[6];
@@ -478,20 +478,20 @@ void main() {
     );
   });
 
-  group('ApiariesRepository DGAV registration number (FR-AP-9, #296)', () {
+  group('ApiariesRepository registration number (FR-AP-9, #296)', () {
     test('create() stores no override by default, so the apiary inherits the '
         "organization's number", () async {
       await repo.create(name: 'Encosta Nova');
       final apiary = (await repo.watchAll().first).single;
-      expect(apiary.dgavRegistrationNumber, isNull);
+      expect(apiary.registrationNumber, isNull);
     });
 
     test('create() persists an explicit override', () async {
       final id = await repo.create(
         name: 'Monte Alto',
-        dgavRegistrationNumber: 'PT-654321',
+        registrationNumber: 'PT-654321',
       );
-      expect((await repo.getById(id))!.dgavRegistrationNumber, 'PT-654321');
+      expect((await repo.getById(id))!.registrationNumber, 'PT-654321');
     });
 
     test(
@@ -504,11 +504,11 @@ void main() {
         );
         await repo.update(
           id,
-          dgavRegistrationNumber: 'PT-123456',
-          dgavRegistrationNumberProvided: true,
+          registrationNumber: 'PT-123456',
+          registrationNumberProvided: true,
         );
         final apiary = (await repo.getById(id))!;
-        expect(apiary.dgavRegistrationNumber, 'PT-123456');
+        expect(apiary.registrationNumber, 'PT-123456');
         expect(apiary.name, 'Encosta Nova');
         expect(apiary.notes, 'shaded');
         expect(apiary.placeLabel, 'Montargil');
@@ -520,11 +520,11 @@ void main() {
       () async {
         final id = await repo.create(
           name: 'Encosta Nova',
-          dgavRegistrationNumber: 'PT-123456',
+          registrationNumber: 'PT-123456',
         );
         await repo.update(id, name: 'Renamed');
         final apiary = (await repo.getById(id))!;
-        expect(apiary.dgavRegistrationNumber, 'PT-123456');
+        expect(apiary.registrationNumber, 'PT-123456');
         expect(apiary.name, 'Renamed');
       },
     );
@@ -533,27 +533,27 @@ void main() {
         "apiary falls back to the organization's number", () async {
       final id = await repo.create(
         name: 'Encosta Nova',
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
       );
       await repo.update(
         id,
-        dgavRegistrationNumber: null,
-        dgavRegistrationNumberProvided: true,
+        registrationNumber: null,
+        registrationNumberProvided: true,
       );
-      expect((await repo.getById(id))!.dgavRegistrationNumber, isNull);
+      expect((await repo.getById(id))!.registrationNumber, isNull);
     });
 
     test('an update that does not change the override writes nothing (no '
         'pointless sync op, matching the change-scoped write rule)', () async {
       final id = await repo.create(
         name: 'Encosta Nova',
-        dgavRegistrationNumber: 'PT-123456',
+        registrationNumber: 'PT-123456',
       );
       final before = store.rows.single['updated_at'] as String;
       await repo.update(
         id,
-        dgavRegistrationNumber: 'PT-123456',
-        dgavRegistrationNumberProvided: true,
+        registrationNumber: 'PT-123456',
+        registrationNumberProvided: true,
       );
       expect(store.rows.single['updated_at'], before);
     });

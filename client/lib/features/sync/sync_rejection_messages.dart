@@ -138,25 +138,16 @@ String _normalizeField(String field) {
 /// (`op`, `entity_type`, `id`, `updated_at`, `data`, `ops`), which describe
 /// the sync protocol rather than anything the beekeeper typed.
 ///
-/// **Keep this in step with the shared validation description**
-/// (`contracts/validation/sync-ops.validation.json`): every field it names is
-/// a field the server can reject, so an entry missing here silently costs the
-/// beekeeper the specific guidance and hands back the generic line instead —
-/// which is what happened to the DGAV entities (#298/#593), added after this
-/// table was written, and what #600 fixed. `sync_rejection_messages_test.dart`
-/// derives that expectation from the description itself, so a newly described
-/// field fails there rather than degrading in the field. That guard reaches
-/// exactly as far as the description does: a service that adds a field to its
-/// `validate*Op` and classes it `serverOnly` is still invisible to it, so a
-/// new server-only field check still needs a deliberate look here.
-///
-/// A field is deliberately absent only when no `<label>: <rule>` pairing can
-/// describe its constraint truthfully — not merely because the beekeeper
-/// didn't type it (they type none of a declaration's fields today, and those
-/// are labelled). A `stock_declaration`'s `breakdown` qualifies: its only
-/// checks are container-shape rules on the snapshot itself (is a JSON array,
-/// holds objects, is not over the entry cap), which no field-and-rule line can
-/// state without misdescribing them.
+/// **This table is checked, not trusted.** Being hand-written is how it went
+/// stale once already: the stock-declaration fields were validated server-side
+/// before they were labelled here, so a rejected declaration degraded to the
+/// generic "needs your attention" line and nothing failed to say so (#600).
+/// `sync_rejection_messages_test.dart` therefore derives the expected set from
+/// `contracts/validation/sync-ops.validation.json` — every `(field, code)` it
+/// describes must resolve to EN and PT copy here, or be listed as a reasoned
+/// exemption. Adding a field to that description without adding copy fails
+/// there. Rules a service classes `serverOnly` are outside the description and
+/// so outside the guard: those still need a deliberate entry here.
 String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'name' => l10n.syncNeedsFixFieldName,
   'title' => l10n.syncNeedsFixFieldTitle,
@@ -167,13 +158,6 @@ String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'location_lat' => l10n.syncNeedsFixFieldLatitude,
   'location_lon' => l10n.syncNeedsFixFieldLongitude,
   'hive_count' => l10n.syncNeedsFixFieldHiveCount,
-  // DGAV (#298/#593, labelled by #600): a stock declaration's own fields, and
-  // the registration number both it and an apiary carry. `total_hive_count` is
-  // the whole holding's total, so it gets its own label rather than reusing
-  // one apiary's "Number of hives".
-  'total_hive_count' => l10n.syncNeedsFixFieldTotalHiveCount,
-  'declared_on' => l10n.syncNeedsFixFieldDeclarationDate,
-  'dgav_registration_number' => l10n.syncNeedsFixFieldDgavNumber,
   'value' => l10n.syncNeedsFixFieldCount,
   'counter_type' => l10n.syncNeedsFixFieldCountType,
   'apiary_id' => l10n.syncNeedsFixFieldApiary,
@@ -188,6 +172,14 @@ String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'status' => l10n.syncNeedsFixFieldStatus,
   'attributes' => l10n.syncNeedsFixFieldDetails,
   'default_attributes' => l10n.syncNeedsFixFieldActivityDefaults,
+  // Stock declarations (FR-AP-10, #298). `registration_number` is deliberately
+  // one entry, not two: this table is keyed by field NAME alone, and the same
+  // column — with the same cap and the same user-facing wording — is validated
+  // on an APIARY op too (`services/apiaries/api/sync.go`), so one label covers
+  // both ops correctly.
+  'declared_on' => l10n.syncNeedsFixFieldDeclarationDate,
+  'total_hive_count' => l10n.syncNeedsFixFieldTotalHiveCount,
+  'registration_number' => l10n.syncNeedsFixFieldRegistrationNumber,
   _ => null,
 };
 
@@ -216,10 +208,6 @@ String? _ruleMessage(AppLocalizations l10n, String field, String code) {
   }
   if (code == 'out_of_range') {
     return switch (field) {
-      // The three count fields whose only bound is >= 0 (apiary hive_count,
-      // counter value, declaration total_hive_count) — "outside the allowed
-      // range" is true but says nothing; the exact bound is part of the API
-      // contract, so restating it can't drift into a leak.
       'hive_count' ||
       'value' ||
       'total_hive_count' => l10n.syncNeedsFixRuleNonNegative,

@@ -1,18 +1,19 @@
 // Package api (this file) — stock_declarations: the "Declaração de
 // Existências" log (#298, FR-AP-10, triaged from D-19).
 //
-// WHAT A DECLARATION IS, AND WHAT IT IS NOT. Portugal requires beekeepers to
-// declare their hive stock to DGAV annually (1–30 September) and again whenever
-// the stock changes materially. A declaration is therefore a POINT-IN-TIME
-// RECORD of what was declared on a date — emphatically NOT the live hive
-// counter (FR-AP-7, D-2, D-20, counters.go): a counter answers "how many hives
-// are here now" and moves with reality; a declaration must stay exactly what it
-// said after reality moves on. Conflating the two would destroy the only thing
-// the record exists for.
+// WHAT A DECLARATION IS, AND WHAT IT IS NOT. Beekeeping authorities require
+// beekeepers to declare their hive stock periodically — in Portugal, to DGAV
+// annually (1–30 September) and again whenever the stock changes materially.
+// A declaration is therefore a POINT-IN-TIME RECORD of what was declared on a
+// date — emphatically NOT the live hive counter (FR-AP-7, D-2, D-20,
+// counters.go): a counter answers "how many hives are here now" and moves with
+// reality; a declaration must stay exactly what it said after reality moves on.
+// Conflating the two would destroy the only thing the record exists for.
 //
-// SCOPED TO A DGAV REGISTRATION NUMBER, NOT TO AN APIARY. The real declaration
-// covers a BEEKEEPER's whole holding, and DGAV issues one registration number
-// per beekeeper (FR-AP-9). So a declaration is keyed by that number, and an
+// SCOPED TO A REGISTRATION NUMBER, NOT TO AN APIARY. The real declaration
+// covers a BEEKEEPER's whole holding, and the authority issues one
+// registration number per beekeeper (FR-AP-9; DGAV's `número de registo do
+// apicultor` in Portugal). So a declaration is keyed by that number, and an
 // organization covering several beekeepers files one declaration per number.
 // The number is stored as a plain text VALUE rather than a reference: it is
 // what the declaration was filed under, and must not shift retroactively if the
@@ -25,10 +26,12 @@
 // itself — so this file mirrors applyOp's plain-PK LWW + tombstone shape, not
 // applyCounterOp's upsert.
 //
-// EVERYTHING HERE IS ADVISORY. The service stores and syncs declarations; the
-// September window and the interim trigger are computed client-side for display
-// only (client/lib/features/dgav/dgav_rules.dart), nothing is required, and the
-// app submits nothing to DGAV/SICOA (D-19's research note §7 keeps that out of
+// EVERYTHING HERE IS RECORD-KEEPING, NOT COMPLIANCE. The service stores and
+// syncs declarations and derives nothing from them: no window, no threshold, no
+// deadline, no reminder. Those rules differ per jurisdiction, and a rule that is
+// wrong for the reader's country is worse than no rule at all — so the app keeps
+// the record and leaves the judgement to the beekeeper. It submits nothing to
+// any authority's portal either (D-19's research note §7 keeps that out of
 // scope).
 package api
 
@@ -57,8 +60,8 @@ const entityTypeStockDeclaration = "stock_declaration"
 const (
 	// maxDeclarationNotesLength bounds the optional free-text note on a
 	// declaration. Shorter than an apiary's 10000-char notes on purpose: this
-	// is a filing memo ("filed via the IFAP portal"), not a field journal, and
-	// the cap matches the column CHECK (migration 00010).
+	// is a filing memo ("filed on the authority's portal"), not a field journal,
+	// and the cap matches the column CHECK (migration 00010).
 	maxDeclarationNotesLength = 2000
 	// maxDeclarationBreakdownEntries bounds the per-apiary snapshot array. An
 	// organization with more apiaries than this is far outside anything the app
@@ -67,9 +70,8 @@ const (
 	maxDeclarationBreakdownEntries = 1000
 	// declaredOnLayout is the wire format for declared_on — a plain calendar
 	// DATE, not a timestamp. A declaration is filed ON a day; carrying a
-	// timezone-bearing instant would make "was this inside the 1–30 September
-	// window" depend on the reader's zone, which is exactly the ambiguity the
-	// DATE column exists to remove.
+	// timezone-bearing instant would make "which day was this filed on" depend on
+	// the reader's zone, which is exactly the ambiguity the DATE column removes.
 	declaredOnLayout = "2006-01-02"
 )
 
@@ -83,26 +85,26 @@ const (
 // of objects (validateDeclarationOp), so the column's own array CHECK cannot be
 // tripped by a malformed op and a garbage blob cannot be smuggled in.
 type declarationData struct {
-	DgavRegistrationNumber *string         `json:"dgav_registration_number"`
-	DeclaredOn             *string         `json:"declared_on"`
-	TotalHiveCount         *int32          `json:"total_hive_count"`
-	Breakdown              json.RawMessage `json:"breakdown"`
-	Notes                  *string         `json:"notes"`
+	RegistrationNumber *string         `json:"registration_number"`
+	DeclaredOn         *string         `json:"declared_on"`
+	TotalHiveCount     *int32          `json:"total_hive_count"`
+	Breakdown          json.RawMessage `json:"breakdown"`
+	Notes              *string         `json:"notes"`
 }
 
 // declarationState is the mutable projection of a declaration the LWW logic
 // reasons about — the declarations counterpart of rowState.
 type declarationState struct {
-	dgavNumber string
-	declaredOn string // "" means unset; always the declaredOnLayout form
-	total      int32
-	breakdown  string // canonical JSON text; "[]" when unset
-	notes      string // "" means unset
-	deletedAt  pgtype.Timestamptz
+	registrationNumber string
+	declaredOn         string // "" means unset; always the declaredOnLayout form
+	total              int32
+	breakdown          string // canonical JSON text; "[]" when unset
+	notes              string // "" means unset
+	deletedAt          pgtype.Timestamptz
 }
 
 func (a declarationState) sameAs(b declarationState) bool {
-	return a.dgavNumber == b.dgavNumber && a.declaredOn == b.declaredOn &&
+	return a.registrationNumber == b.registrationNumber && a.declaredOn == b.declaredOn &&
 		a.total == b.total && a.breakdown == b.breakdown && a.notes == b.notes &&
 		a.deletedAt.Valid == b.deletedAt.Valid
 }
@@ -115,9 +117,9 @@ func (a declarationState) sameAs(b declarationState) bool {
 // point of auditing a declaration is being able to see what changed about it.
 func (a declarationState) fields() map[string]any {
 	m := map[string]any{
-		"dgav_registration_number": a.dgavNumber,
-		"declared_on":              a.declaredOn,
-		"total_hive_count":         a.total,
+		"registration_number": a.registrationNumber,
+		"declared_on":         a.declaredOn,
+		"total_hive_count":    a.total,
 	}
 	if a.breakdown != "" && a.breakdown != "[]" {
 		m["breakdown"] = a.breakdown
@@ -180,15 +182,15 @@ func validateDeclarationOp(i int, op Op) []problem.FieldError {
 	if data.TotalHiveCount != nil && *data.TotalHiveCount < 0 {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.total_hive_count", Code: "out_of_range", Message: "total_hive_count must be >= 0"})
 	}
-	if data.DgavRegistrationNumber != nil && len(*data.DgavRegistrationNumber) > maxDgavRegistrationNumberLength {
-		errs = append(errs, problem.FieldError{Field: prefix + ".data.dgav_registration_number", Code: "too_long", Message: "dgav_registration_number must be at most 50 characters"})
+	if data.RegistrationNumber != nil && len(*data.RegistrationNumber) > maxRegistrationNumberLength {
+		errs = append(errs, problem.FieldError{Field: prefix + ".data.registration_number", Code: "too_long", Message: "registration_number must be at most 50 characters"})
 	}
 	if data.Notes != nil && len(*data.Notes) > maxDeclarationNotesLength {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data.notes", Code: "too_long", Message: "notes must be at most 2000 characters"})
 	}
 	errs = append(errs, validateBreakdown(prefix, data.Breakdown)...)
 
-	if op.Op == "patch" && data.DgavRegistrationNumber == nil && data.DeclaredOn == nil &&
+	if op.Op == "patch" && data.RegistrationNumber == nil && data.DeclaredOn == nil &&
 		data.TotalHiveCount == nil && data.Breakdown == nil && data.Notes == nil {
 		errs = append(errs, problem.FieldError{Field: prefix + ".data", Code: "required", Message: "patch must change at least one field"})
 	}
@@ -244,8 +246,8 @@ func mergeDeclarationOp(current declarationState, op Op, data declarationData) d
 // shared by mergeDeclarationOp's put and patch branches, which differ only in
 // what they start from.
 func applyDeclarationFields(state *declarationState, data declarationData) {
-	if data.DgavRegistrationNumber != nil {
-		state.dgavNumber = *data.DgavRegistrationNumber
+	if data.RegistrationNumber != nil {
+		state.registrationNumber = *data.RegistrationNumber
 	}
 	if data.DeclaredOn != nil {
 		state.declaredOn = *data.DeclaredOn
@@ -299,15 +301,15 @@ func applyDeclarationOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID
 			return OpResult{}, err
 		}
 		if err := q.InsertStockDeclaration(ctx, sqlcgen.InsertStockDeclarationParams{
-			ID:                     pgID,
-			OrganizationID:         org,
-			DgavRegistrationNumber: want.dgavNumber,
-			DeclaredOn:             declaredOn,
-			TotalHiveCount:         want.total,
-			Breakdown:              []byte(breakdownOrEmpty(want.breakdown)),
-			Notes:                  notesParamFromState(want.notes),
-			UpdatedAt:              incomingTS,
-			DeletedAt:              want.deletedAt,
+			ID:                 pgID,
+			OrganizationID:     org,
+			RegistrationNumber: want.registrationNumber,
+			DeclaredOn:         declaredOn,
+			TotalHiveCount:     want.total,
+			Breakdown:          []byte(breakdownOrEmpty(want.breakdown)),
+			Notes:              notesParamFromState(want.notes),
+			UpdatedAt:          incomingTS,
+			DeletedAt:          want.deletedAt,
 		}); err != nil {
 			return OpResult{}, err
 		}
@@ -318,12 +320,12 @@ func applyDeclarationOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID
 	}
 
 	current := declarationState{
-		dgavNumber: stored.DgavRegistrationNumber,
-		declaredOn: formatDeclaredOn(stored.DeclaredOn),
-		total:      stored.TotalHiveCount,
-		breakdown:  breakdownOrEmpty(string(stored.Breakdown)),
-		notes:      textOf(stored.Notes),
-		deletedAt:  stored.DeletedAt,
+		registrationNumber: stored.RegistrationNumber,
+		declaredOn:         formatDeclaredOn(stored.DeclaredOn),
+		total:              stored.TotalHiveCount,
+		breakdown:          breakdownOrEmpty(string(stored.Breakdown)),
+		notes:              textOf(stored.Notes),
+		deletedAt:          stored.DeletedAt,
 	}
 	want := mergeDeclarationOp(current, op, data)
 
@@ -333,15 +335,15 @@ func applyDeclarationOp(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID
 			return OpResult{}, err
 		}
 		if err := q.UpdateStockDeclaration(ctx, sqlcgen.UpdateStockDeclarationParams{
-			OrganizationID:         org,
-			ID:                     pgID,
-			DgavRegistrationNumber: want.dgavNumber,
-			DeclaredOn:             declaredOn,
-			TotalHiveCount:         want.total,
-			Breakdown:              []byte(breakdownOrEmpty(want.breakdown)),
-			Notes:                  notesParamFromState(want.notes),
-			UpdatedAt:              incomingTS,
-			DeletedAt:              want.deletedAt,
+			OrganizationID:     org,
+			ID:                 pgID,
+			RegistrationNumber: want.registrationNumber,
+			DeclaredOn:         declaredOn,
+			TotalHiveCount:     want.total,
+			Breakdown:          []byte(breakdownOrEmpty(want.breakdown)),
+			Notes:              notesParamFromState(want.notes),
+			UpdatedAt:          incomingTS,
+			DeletedAt:          want.deletedAt,
 		}); err != nil {
 			return OpResult{}, err
 		}
@@ -446,14 +448,14 @@ func writeDeclarationAuditLog(ctx context.Context, q *sqlcgen.Queries, org pgtyp
 // (history.md §6, "LWW losers are not lost").
 func logDeclarationConflict(ctx context.Context, q *sqlcgen.Queries, org pgtype.UUID, userID string, op Op, stored sqlcgen.GetStockDeclarationForUpdateRow) error {
 	winning, err := json.Marshal(map[string]any{
-		"id":                       uuidString(stored.ID),
-		"dgav_registration_number": stored.DgavRegistrationNumber,
-		"declared_on":              formatDeclaredOn(stored.DeclaredOn),
-		"total_hive_count":         stored.TotalHiveCount,
-		"breakdown":                json.RawMessage(breakdownOrEmpty(string(stored.Breakdown))),
-		"notes":                    textPtr(stored.Notes),
-		"updated_at":               stored.UpdatedAt.Time,
-		"deleted_at":               timePtr(stored.DeletedAt),
+		"id":                  uuidString(stored.ID),
+		"registration_number": stored.RegistrationNumber,
+		"declared_on":         formatDeclaredOn(stored.DeclaredOn),
+		"total_hive_count":    stored.TotalHiveCount,
+		"breakdown":           json.RawMessage(breakdownOrEmpty(string(stored.Breakdown))),
+		"notes":               textPtr(stored.Notes),
+		"updated_at":          stored.UpdatedAt.Time,
+		"deleted_at":          timePtr(stored.DeletedAt),
 	})
 	if err != nil {
 		return err
