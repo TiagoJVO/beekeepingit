@@ -111,16 +111,19 @@ import sys
 def _run():
     """Returns the list of failed assertion labels (empty == pass)."""
     import contextlib
+    import json
 
     from django.contrib.auth.models import AnonymousUser
 
-    from authentik.core.models import Group, User, UserSourceConnection
+    from authentik.core.models import Application, Group, User, UserSourceConnection
     from authentik.brands.models import Brand
     from authentik.core.sources.flow_manager import Action
     from authentik.flows.models import FlowStageBinding
     from authentik.policies.expression.models import ExpressionPolicy
     from authentik.stages.user_login.models import UserLoginStage
     from authentik.policies.types import PolicyRequest
+    from authentik.providers.oauth2.models import OAuth2Provider
+    from authentik.providers.oauth2.views.jwks import JWKSView
     from authentik.sources.oauth.models import OAuthSource, UserOAuthSourceConnection
     from authentik.sources.oauth.views.callback import OAuthSourceFlowManager
 
@@ -390,6 +393,119 @@ def _run():
             brand is not None
             and getattr(brand.flow_authentication, "slug", None) == "default-authentication-flow",
             "got {!r}".format(getattr(getattr(brand, "flow_authentication", None), "slug", None)),
+        )
+
+        # #599: the OAuth2 providers' three cross-file references, LIVE. All
+        # three used to be `!Find`s at objects authentik creates itself (the two
+        # flows from its bundled blueprints, the certificate from
+        # `crypto/apps.py` at BOOT), and `signing_key` is the one a null
+        # SURVIVES — `OAuth2ProviderSerializer` has it `required=False,
+        # allow_null=True` at 2026.5.4, where both flows are `required=True`. A
+        # lost race therefore left the provider with no RS256 key: `jwt_key`
+        # falls back to `(client_secret, HS256)` and the JWKS serves `{}`, so
+        # every relying party verifying signatures against it breaks while the
+        # blueprint reports "applied". The blueprint now pins all three and
+        # reaches them by `!KeyOf`; assert the RESULT here, on the deployed
+        # objects, because the offline guard can only assert the spelling.
+        expected_key_name = "authentik Self-signed Certificate"
+        # Derived, not hardcoded: the offline guard requires EVERY provider entry
+        # in the blueprint to be pinned, so a third provider must not be able to
+        # land here unchecked.
+        providers = list(OAuth2Provider.objects.filter(name__startswith="beekeepingit-"))
+        check(
+            "both beekeepingit OAuth2 providers exist (#599)",
+            len(providers) >= 2,
+            "got {!r}".format(sorted(p.name for p in providers)),
+        )
+        seen_kids = {}
+        for provider in providers:
+            provider_name = provider.name
+            app = Application.objects.filter(provider=provider).first()
+            app_slug = getattr(app, "slug", None)
+            check(
+                "{}: is published as an application (#599)".format(provider_name),
+                app_slug is not None,
+            )
+            check(
+                "{}: signing_key is set, and is authentik's boot-created "
+                "self-signed certificate (#599)".format(provider_name),
+                getattr(provider.signing_key, "name", None) == expected_key_name,
+                "got {!r}".format(getattr(provider.signing_key, "name", None)),
+            )
+            # `jwt_key` LOADS the private key, so it raises for a keypair that
+            # carries none (certificate-only) — exactly one of the states this
+            # block exists to report. Guarded for the same reason the JWKS call
+            # below is: an escaping exception kills the whole step with zero
+            # OK:/FAIL: lines (the #594 lesson). Never prints `jwt_key[0]`, which
+            # IS the private key (or the client secret on the HS256 path).
+            try:
+                jwt_alg = provider.jwt_key[1]
+            except Exception as exc:  # noqa: BLE001 - report, never abort the step
+                jwt_alg = "<raised {}: {}>".format(type(exc).__name__, exc)
+            check(
+                "{}: tokens are signed RS256, not the HS256 an empty "
+                "signing_key falls back to (#599)".format(provider_name),
+                jwt_alg == "RS256",
+                "got {!r}".format(jwt_alg),
+            )
+            check(
+                "{}: authorization_flow resolves (#599)".format(provider_name),
+                getattr(provider.authorization_flow, "slug", None)
+                == "default-provider-authorization-implicit-consent",
+                "got {!r}".format(getattr(provider.authorization_flow, "slug", None)),
+            )
+            check(
+                "{}: invalidation_flow resolves (#599)".format(provider_name),
+                getattr(provider.invalidation_flow, "slug", None)
+                == "default-provider-invalidation-flow",
+                "got {!r}".format(getattr(provider.invalidation_flow, "slug", None)),
+            )
+            # The endpoint itself, not just the FK: this is what a relying party
+            # actually fetches. Guarded so a view-signature change degrades to
+            # one FAIL rather than an AttributeError that kills the whole step
+            # with zero OK:/FAIL: lines (the #594 lesson).
+            keys = None
+            try:
+                jwks_request = RequestFactory().get("/jwks")
+                jwks_request.user = AnonymousUser()
+                keys = json.loads(
+                    JWKSView.as_view()(jwks_request, application_slug=app_slug).content.decode()
+                ).get("keys", [])
+            except Exception as exc:  # noqa: BLE001 - report, never abort the step
+                check(
+                    "{}: JWKS endpoint answered".format(provider_name),
+                    False,
+                    "{}: {}".format(type(exc).__name__, exc),
+                )
+            # A null signing_key makes the view return `{}` — no "keys" at all —
+            # which is why the .get() default above is the empty list.
+            if keys is not None:
+                check(
+                    "{}: the JWKS at /application/o/{}/ serves exactly one RS256 "
+                    "signing key — a null signing_key serves NONE (#599)".format(
+                        provider_name, app_slug
+                    ),
+                    len(keys) == 1
+                    and keys[0].get("alg") == "RS256"
+                    and keys[0].get("use") == "sig",
+                    "got {!r}".format(keys),
+                )
+                if len(keys) == 1:
+                    seen_kids[provider_name] = keys[0].get("kid")
+        # Both providers must advertise the SAME kid. The admin app overrides
+        # `iss` to the beekeepingit issuer and therefore validates against the
+        # beekeepingit JWKS; two independently-resolved certificates would 401
+        # admin login silently. Referencing ONE pin entry is what makes that
+        # structural rather than two lookups happening to agree.
+        check(
+            "every beekeepingit provider advertises the SAME, non-empty signing kid "
+            "— the shared key the admin app's issuer override depends on "
+            "(#599, oidc-integration.md §8)",
+            len(seen_kids) == len(providers)
+            and len(seen_kids) >= 2
+            and all(seen_kids.values())
+            and len(set(seen_kids.values())) == 1,
+            "got {!r}".format(seen_kids),
         )
 
         # ---------- fixtures ----------
