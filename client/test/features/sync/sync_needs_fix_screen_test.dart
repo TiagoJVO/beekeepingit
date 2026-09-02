@@ -94,6 +94,64 @@ void main() {
     });
 
     testWidgets(
+      'a rejected stock declaration names the field at fault instead of the '
+      'generic line (#600)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'stock_declaration',
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":['
+                '{"field":"data.declared_on","code":"required","message":"declared_on is required"},'
+                '{"field":"data.total_hive_count","code":"out_of_range","message":"total_hive_count must be >= 0"}'
+                ']}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Declaration date: this is required.'),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Total hives: this must be 0 or more.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('declared_on'), findsNothing);
+        expect(find.textContaining('total_hive_count'), findsNothing);
+        expect(
+          find.text('This change was rejected and needs your attention.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      "an apiary's registration number reaches the screen localized too — the "
+      'same column, validated on an apiary op (#600)',
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'apiary',
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.registration_number","code":"too_long","message":"registration_number must be at most 50 characters"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Registration number: this text is too long.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('registration_number'), findsNothing);
+      },
+    );
+
+    testWidgets(
       'falls back to the generic message when the server reports a field the '
       'app has no copy for (a new validator can never leak by default)',
       (tester) async {
@@ -357,6 +415,7 @@ void main() {
     for (final MapEntry(key: entityType, value: expectedLabel) in const {
       'apiary': 'Apiary change',
       'apiary_counter': 'Hive count change',
+      'stock_declaration': 'Stock declaration change',
       'activity': 'Activity change',
       'journey': 'Journey change',
       'journey_plan_item': 'Journey plan change',
@@ -457,6 +516,37 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Journey change'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a stock declaration keeps the plain entity label — none of its payload '
+      'fields is an already-human name, so none may reach the title (#600, '
+      "the stock-declaration counterpart of #443's raw-activity-type leak)",
+      (tester) async {
+        final store = _FakeRejectedStore([
+          _row(
+            id: 'r1',
+            entityType: 'stock_declaration',
+            payload:
+                '{"data":{"declared_on":"2026-09-14","total_hive_count":12,'
+                '"registration_number":"PT-12345","notes":"annual"}}',
+            // The helper's default detail is an apiary_counter's field, which
+            // validateDeclarationOp could never emit — use a real declaration
+            // rejection so the whole fixture is one the server could produce.
+            errorDetail:
+                '{"detail":"one or more ops are invalid","errors":[{"field":"data.declared_on","code":"invalid","message":"declared_on must be a date in YYYY-MM-DD form"}]}',
+          ),
+        ]);
+        await tester.pumpWidget(_harness(store));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Stock declaration change'), findsOneWidget);
+        // Neither the ISO wire date (unlocalized in EN *and* PT) nor the
+        // registration number may be appended to the row title.
+        expect(find.textContaining('2026-09-14'), findsNothing);
+        expect(find.textContaining('PT-12345'), findsNothing);
+        expect(find.textContaining('·'), findsNothing);
       },
     );
   });

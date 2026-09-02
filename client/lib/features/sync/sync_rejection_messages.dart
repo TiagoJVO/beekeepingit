@@ -137,6 +137,17 @@ String _normalizeField(String field) {
 /// app does not have copy for — including the wire envelope's own fields
 /// (`op`, `entity_type`, `id`, `updated_at`, `data`, `ops`), which describe
 /// the sync protocol rather than anything the beekeeper typed.
+///
+/// **This table is checked, not trusted.** Being hand-written is how it went
+/// stale once already: the stock-declaration fields were validated server-side
+/// before they were labelled here, so a rejected declaration degraded to the
+/// generic "needs your attention" line and nothing failed to say so (#600).
+/// `sync_rejection_messages_test.dart` therefore derives the expected set from
+/// `contracts/validation/sync-ops.validation.json` — every `(field, code)` it
+/// describes must resolve to EN and PT copy here, or be listed as a reasoned
+/// exemption. Adding a field to that description without adding copy fails
+/// there. Rules a service classes `serverOnly` are outside the description and
+/// so outside the guard: those still need a deliberate entry here.
 String? _fieldLabel(AppLocalizations l10n, String field) => switch (field) {
   'name' => l10n.syncNeedsFixFieldName,
   'title' => l10n.syncNeedsFixFieldTitle,
