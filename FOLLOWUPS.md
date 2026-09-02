@@ -7,7 +7,7 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `feat/client-validation-parity` (#584 — revalidate queued edits before pushing)
+## `#584`/`#585` — client↔server validation parity (PRs #591, #596)
 
 - **Confirm (or rule out) the `journey.default_attributes` null case, and open an Issue if
   it's real.** `journeys_repository.dart` stores SQL NULL for an empty defaults bag, while
@@ -19,20 +19,19 @@
   `null` literal as absent, like every other optional field on that struct), after which the
   description's `jsonObject` check must skip an explicit null for that field. Written up in
   `contracts/validation/README.md`. Cheapest check: log one op's `opData` for a journey with no
-  defaults, or add a `journeys` integration case.
-- **Give #443's `_fieldLabel` table entries for the stock-declaration fields.**
+  defaults, or add a `journeys` integration case. #596 now **pins the current behaviour** from
+  both sides (corpus case `journey/patch/default-attributes-is-an-explicit-null`) — the two sides
+  agree today, so if the server is relaxed here the description must be relaxed with it, and that
+  case is what will say so.
+- **Give the `_fieldLabel` table entries for the stock-declaration fields — and needs an owner.**
   `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
   `total_hive_count` or `registration_number`, so a rejected stock declaration (#298)
   degrades to the generic "needs your attention" line even though #584 now produces exact
   `(field, code)` pairs for it. Graceful, not broken — but it throws away guidance that is
-  already there. Three labels plus their EN/PT strings; belongs to #443's table rather than to
-  the parity description, so it was left out of #584's PR deliberately.
-- **The same evaluator wants a save-time call site.** `validateSyncOps`
-  (`client/lib/core/validation/sync_op_validator.dart`) is a pure function of the wire op, so the
-  form/repository write path can run it and tell the beekeeper _in the form_, with the record
-  open, instead of at the next push. That is a genuine FR-OF-2 improvement and needs no new source
-  of truth — but it touches every entity's form screen, so it is out of this PR's scope. Promote
-  to an Issue under EPIC-06 (#7) if it isn't picked up with #585.
+  already there. Three labels plus their EN/PT strings. **Sweep note (#596): its owning issue
+  #443 has since CLOSED without them**, so this entry is stale by this file's own rule and needs
+  promoting to its own Issue (or folding into #597's scope, which references it) rather than
+  sitting here.
 
 ## `fix/dgav-declaration-date-and-note` (PR #595 — FR-AP-9/FR-AP-10 follow-ups on top of #593)
 
@@ -92,12 +91,18 @@
 
 ---
 
-_Sweep note (2026-09-02, merging `main` into the FR-AP-9/FR-AP-10 authority-neutral rework):_
-_[#593](https://github.com/TiagoJVO/beekeepingit/pull/593) **merged** and #296/#298 both closed, so_
-_the `claude/orch-add-feature-8816f4` section was stale by definition and is pruned — its Helm-E2E_
-_precondition was met at merge (git history keeps that record). Its one genuinely pending item, the_
-_`stock_declarations` runtime grants, moved into the in-flight branch section that now owns this_
-_feature, which is why `main`'s short-lived `#296`/`#298` section is folded away here rather than_
-_kept alongside it._
+_Sweep note (2026-09-02, during #585 / PR [#596](https://github.com/TiagoJVO/beekeepingit/pull/596),_
+_then again merging `main` into the FR-AP-9/FR-AP-10 authority-neutral rework):_
+_PR [#591](https://github.com/TiagoJVO/beekeepingit/pull/591) merged, so the `feat/client-validation-parity`_
+_branch section was stale by definition; retitled to the issues it belongs to. Its save-time-call-site bullet_
+_said to promote if #585 did not pick it up — #585 did not (it built the boundary-contract corpus, not a call_
+_site), so it is now [#597](https://github.com/TiagoJVO/beekeepingit/issues/597), a sub-issue of EPIC-06 (#7),_
+_and the bullet is pruned. The `default_attributes` bullet stays: still unverified, but now pinned from both_
+_sides by the corpus. The `_fieldLabel` bullet also stays, flagged — its owning issue #443 has CLOSED without_
+_the labels, so it needs its own Issue; left for a human rather than opened unprompted._
+_[#593](https://github.com/TiagoJVO/beekeepingit/pull/593) **merged** and #296/#298 both closed, so the_
+_`claude/orch-add-feature-8816f4` section was pruned as stale — its one genuinely pending item, the_
+_`stock_declarations` runtime grants, moved into the in-flight branch section that now owns this feature,_
+_which is why `main`'s short-lived `#296`/`#298` section is folded away rather than kept alongside it._
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked: still open, entry stands._
 _Prior sweep notes dropped with their entries, per this file's convention._
