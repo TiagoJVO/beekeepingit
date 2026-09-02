@@ -39,8 +39,8 @@ func TestSharedValidationDescription_MatchesApiaryOp(t *testing.T) {
 	paritytest.AssertLimit(t, e, "notes", "maxLength", 10000)
 	paritytest.AssertLimit(t, e, "place_label", "maxLength", maxPlaceLabelLength)
 	paritytest.AssertLimit(t, e, "hive_count", "min", 0)
-	paritytest.AssertLimit(t, e, "dgav_registration_number", "maxLength", maxDgavRegistrationNumberLength)
-	paritytest.AssertAbsentWhen(t, e, "dgav_registration_number", paritytest.AbsentNull)
+	paritytest.AssertLimit(t, e, "registration_number", "maxLength", maxRegistrationNumberLength)
+	paritytest.AssertAbsentWhen(t, e, "registration_number", paritytest.AbsentNull)
 	paritytest.AssertRange(t, e, "location_lon", -180, 180)
 	paritytest.AssertRange(t, e, "location_lat", -90, 90)
 	paritytest.AssertDescribesOnlyWireFields(t, e, apiaryData{})
@@ -79,13 +79,13 @@ func TestSharedValidationDescription_MatchesDeclarationOp(t *testing.T) {
 	paritytest.AssertRequiredOn(t, e, "declared_on", "put")
 	paritytest.AssertRequiredOn(t, e, "total_hive_count", "put")
 	paritytest.AssertLimit(t, e, "total_hive_count", "min", 0)
-	paritytest.AssertLimit(t, e, "dgav_registration_number", "maxLength", maxDgavRegistrationNumberLength)
+	paritytest.AssertLimit(t, e, "registration_number", "maxLength", maxRegistrationNumberLength)
 	paritytest.AssertLimit(t, e, "notes", "maxLength", maxDeclarationNotesLength)
 	// validateDeclarationOp guards every field on nil alone — no "" special
 	// case anywhere in it.
 	paritytest.AssertAbsentWhen(t, e, "declared_on", paritytest.AbsentNull)
 	paritytest.AssertAbsentWhen(t, e, "total_hive_count", paritytest.AbsentNull)
-	paritytest.AssertAbsentWhen(t, e, "dgav_registration_number", paritytest.AbsentNull)
+	paritytest.AssertAbsentWhen(t, e, "registration_number", paritytest.AbsentNull)
 	paritytest.AssertAbsentWhen(t, e, "notes", paritytest.AbsentNull)
 
 	// breakdown is deliberately server-only: its shape rules (bounded array of

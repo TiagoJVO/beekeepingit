@@ -470,6 +470,12 @@ void main() {
       );
     });
 
+    // Still rejected, deliberately: journeys' default_attributes was relaxed
+    // to accept an explicit null (absentWhen: jsonNull) because a device
+    // genuinely uploads that to clear the bag, but activities' repository
+    // always writes an encoded map — never SQL NULL — so this column has no
+    // such wire form and validateActivityOp still rejects it. The relaxation
+    // is per-field, not a change to what `jsonObject` means.
     test('an explicitly null attributes is rejected — the server decodes it '
         'into a RawMessage, where present-but-null is not an object', () {
       expect(
@@ -558,6 +564,35 @@ void main() {
             data: {
               'default_attributes': <String, dynamic>{'feed_type': 'syrup'},
             },
+          ),
+        ),
+        isEmpty,
+      );
+    });
+
+    // An explicit null is the op PowerSync uploads when the user CLEARS a
+    // journey's defaults: its upload diff emits a column key only when the
+    // column changed, and a column set to SQL NULL is emitted as JSON null.
+    // The server reads that as "no defaults" (absentWhen: jsonNull), so the
+    // client must not hold the edit back — see contracts/validation/README.md
+    // §"journey.default_attributes and an explicit null".
+    test('an explicit null default_attributes passes — the wire form of a '
+        'cleared bag', () {
+      expect(
+        _failures(
+          _op(journeyEntityType, 'patch', data: {'default_attributes': null}),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('clearing the defaults alongside a real edit passes', () {
+      expect(
+        _failures(
+          _op(
+            journeyEntityType,
+            'patch',
+            data: {'main_activity_type': 'harvest', 'default_attributes': null},
           ),
         ),
         isEmpty,

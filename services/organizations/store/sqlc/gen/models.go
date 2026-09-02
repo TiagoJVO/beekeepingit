@@ -44,11 +44,11 @@ type OrganizationsMembership struct {
 }
 
 type OrganizationsOrganization struct {
-	ID                     pgtype.UUID        `json:"id"`
-	Name                   string             `json:"name"`
-	Address                string             `json:"address"`
-	DgavRegistrationNumber string             `json:"dgav_registration_number"`
-	CreatedBy              pgtype.UUID        `json:"created_by"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	Name               string             `json:"name"`
+	Address            string             `json:"address"`
+	RegistrationNumber string             `json:"registration_number"`
+	CreatedBy          pgtype.UUID        `json:"created_by"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }

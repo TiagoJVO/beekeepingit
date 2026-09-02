@@ -256,20 +256,34 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                       icon: Icons.lock_outline,
                       onPressed: _openChangePassword,
                     ),
-                    // Admin-only (#172): the destination screen's endpoints
-                    // are admin-only server-side (auth.md §5.3), so a
-                    // non-admin would only hit a dead-end 403 — hide the
+                    // The Organization section (#197): relocated here from the
+                    // apiaries list app bar — now that the app shell
+                    // (FR-UX-2) owns that screen's header, org/session actions
+                    // live on the account screen, matching the prototype's
+                    // "Conta" screen (docs/design/melargil-prototype).
+                    const SizedBox(height: 32),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    SectionHeader(l10n.accountOrganizationSectionTitle),
+                    const SizedBox(height: 16),
+                    // Organization details (#296, FR-ONB-2/FR-AP-9): name,
+                    // address and the beekeeper registration-number default.
+                    // NOT admin-gated like the members row below — a
+                    // non-admin may READ their organization's details; only
+                    // EDITING them is admin-only, which the destination
+                    // screen enforces on the fields themselves (and the
+                    // server enforces regardless).
+                    SecondaryActionButton(
+                      key: const Key('account-organization-details-button'),
+                      label: l10n.organizationDetailsTitle,
+                      icon: Icons.badge_outlined,
+                      onPressed: () => context.go('/organization/details'),
+                    ),
+                    // Members (#172) IS admin-only: the destination screen's
+                    // endpoints are admin-only server-side (auth.md §5.3), so
+                    // a non-admin would only hit a dead-end 403 — hide the
                     // entry point rather than show one that never works.
-                    // Relocated here from the apiaries list app bar (#197):
-                    // now that the app shell (FR-UX-2) owns that screen's
-                    // header, org/session actions live on the account
-                    // screen, matching the prototype's "Conta" screen
-                    // (docs/design/melargil-prototype).
                     if (ref.watch(isOrgAdminProvider)) ...[
-                      const SizedBox(height: 32),
-                      const Divider(),
-                      const SizedBox(height: 16),
-                      SectionHeader(l10n.accountOrganizationSectionTitle),
                       const SizedBox(height: 16),
                       SecondaryActionButton(
                         key: const Key('account-manage-members-button'),
@@ -278,22 +292,17 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                         onPressed: () => context.go('/organization/members'),
                       ),
                     ],
-                    // DGAV (#296/#298, FR-AP-9/FR-AP-10): the beekeeper
-                    // registration number and the stock-declaration log.
-                    // Available to EVERY member, not gated behind
-                    // isOrgAdminProvider like the members row above — a
-                    // non-admin can read the number and record declarations;
-                    // only CHANGING the organization-wide number is
-                    // admin-only, which the DGAV screen enforces on the field
-                    // itself (and the server enforces regardless).
+                    // The stock-declaration log (#298, FR-AP-10). Its own
+                    // section, and available to EVERY member: a non-admin can
+                    // record declarations against a number they can only read.
                     const SizedBox(height: 32),
                     const Divider(),
                     const SizedBox(height: 16),
                     SecondaryActionButton(
-                      key: const Key('account-dgav-button'),
-                      label: l10n.dgavSectionTitle,
-                      icon: Icons.badge_outlined,
-                      onPressed: () => context.go('/dgav'),
+                      key: const Key('account-stock-declarations-button'),
+                      label: l10n.stockDeclarationsTitle,
+                      icon: Icons.fact_check_outlined,
+                      onPressed: () => context.go('/stock-declarations'),
                     ),
                     const SizedBox(height: 32),
                     const Divider(),

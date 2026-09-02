@@ -283,21 +283,21 @@ disease-notification regime, not as an independent new obligation.
 
 ## 5. Summary table — findings mapped to FR/NFR
 
-| #   | Finding                                                                             | Affirms / changes                                                              | Data-model impact                                         |
-| --- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| A   | HIPAA inapplicable; bee-health data ≠ GDPR Art. 9 special category                  | NFR-CMP-1 (edit: drop HIPAA)                                                   | None                                                      |
-| B.1 | Beekeeper DGAV registration number                                                  | **FR-AP-9** (org default + per-apiary override)                                | **Implemented** — #296                                    |
-| B.2 | Apiary geo-coordinates mandatory                                                    | FR-AP-1/3 (affirms existing field)                                             | None (already covered)                                    |
-| B.3 | Annual stock declaration (Sept 1–30) + >20%-and-≥20-colony interim declaration      | **FR-AP-10** (declaration record, distinct from live count)                    | **Implemented** — #298                                    |
-| B.4 | Transhumance movement authorization                                                 | No current FR; future-only                                                     | Deferred, no near-term change                             |
-| B.5 | Hive density rules                                                                  | No current FR; informational                                                   | None near-term                                            |
-| B.6 | Mandatory-notification bee diseases (DDO list)                                      | FR-AC-1 Treatment type (optional structured disease field)                     | **Yes** — flagged                                         |
-| B.7 | Vet medicinal product record retention (5 yr / batch-expiry+1yr)                    | FR-AC-1 Treatment (affirms fields); retention-policy note vs. FR-HIS-1         | **Yes** — flagged (policy, not schema)                    |
-| C.1 | Reg 178/2002 Art. 18 + Reg 931/2011 traceability (batch/lot, one-step-back/forward) | FR-AC-1 Honey harvest, FR-IE-1 (optional lot/batch ID)                         | **Yes** — flagged                                         |
-| C.2 | Honey composition/labelling (2001/110/EC)                                           | Context only                                                                   | None                                                      |
-| C.3 | Origin labelling %, in force from 2026-06-14 (Dir 2024/1438)                        | FR-AC-1/FR-AP-1 (affirms apiary-location-linked harvest data suffices for now) | Low — flag only if label-generation feature is ever built |
-| C.4 | Lot marking (Dir 2011/91/EU)                                                        | Same as C.1                                                                    | Same as C.1                                               |
-| C.5 | Animal Health Law (Reg 2016/429)                                                    | Legal-basis context for B.6                                                    | None additional                                           |
+| #   | Finding                                                                             | Affirms / changes                                                              | Data-model impact                                                                                |
+| --- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| A   | HIPAA inapplicable; bee-health data ≠ GDPR Art. 9 special category                  | NFR-CMP-1 (edit: drop HIPAA)                                                   | None                                                                                             |
+| B.1 | Beekeeper DGAV registration number                                                  | **FR-AP-9** (org default + per-apiary override)                                | **Implemented** — #296                                                                           |
+| B.2 | Apiary geo-coordinates mandatory                                                    | FR-AP-1/3 (affirms existing field)                                             | None (already covered)                                                                           |
+| B.3 | Annual stock declaration (Sept 1–30) + >20%-and-≥20-colony interim declaration      | **FR-AP-10** (declaration record, distinct from live count)                    | **Record implemented** — #298; the window/interim rules are **not** implemented (D-19 narrowing) |
+| B.4 | Transhumance movement authorization                                                 | No current FR; future-only                                                     | Deferred, no near-term change                                                                    |
+| B.5 | Hive density rules                                                                  | No current FR; informational                                                   | None near-term                                                                                   |
+| B.6 | Mandatory-notification bee diseases (DDO list)                                      | FR-AC-1 Treatment type (optional structured disease field)                     | **Yes** — flagged                                                                                |
+| B.7 | Vet medicinal product record retention (5 yr / batch-expiry+1yr)                    | FR-AC-1 Treatment (affirms fields); retention-policy note vs. FR-HIS-1         | **Yes** — flagged (policy, not schema)                                                           |
+| C.1 | Reg 178/2002 Art. 18 + Reg 931/2011 traceability (batch/lot, one-step-back/forward) | FR-AC-1 Honey harvest, FR-IE-1 (optional lot/batch ID)                         | **Yes** — flagged                                                                                |
+| C.2 | Honey composition/labelling (2001/110/EC)                                           | Context only                                                                   | None                                                                                             |
+| C.3 | Origin labelling %, in force from 2026-06-14 (Dir 2024/1438)                        | FR-AC-1/FR-AP-1 (affirms apiary-location-linked harvest data suffices for now) | Low — flag only if label-generation feature is ever built                                        |
+| C.4 | Lot marking (Dir 2011/91/EU)                                                        | Same as C.1                                                                    | Same as C.1                                                                                      |
+| C.5 | Animal Health Law (Reg 2016/429)                                                    | Legal-basis context for B.6                                                    | None additional                                                                                  |
 
 ## 6. Data-model impact flags (for triage before the relevant feature epic)
 
@@ -312,6 +312,10 @@ feature epics that would implement them:
    2026-09-01). Resolved as a **dedicated small entity**, not an activity type, and scoped to a
    **registration number** (a declaration covers a beekeeper's whole holding) rather than to a
    single apiary; it carries a per-apiary breakdown snapshot alongside the declared total.
+   What was implemented is the **record**, not the rules: the September window and the interim
+   trigger described in §B.3 above were built as advisory flags and then **removed** by product
+   decision (D-19's narrowing note) — they are Portugal-specific, and the app is not
+   Portugal-only. They remain documented here as the obligation, not as app behavior.
 3. **Structured disease/condition field on Treatment activities** — optional, alongside the
    existing free-text notes (FR-AC-1).
 4. **Retention-policy note for Treatment records** — align any future data-retention/purge

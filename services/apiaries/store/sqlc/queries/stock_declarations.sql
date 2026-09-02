@@ -5,7 +5,7 @@
 -- GetApiaryForUpdate exactly — unlike apiary_counters (whose identity is
 -- (apiary_id, counter_type), not its row id), a declaration IS identified by
 -- its own client-generated id, so this is a plain PK lookup under org scope.
-SELECT id, organization_id, dgav_registration_number, declared_on,
+SELECT id, organization_id, registration_number, declared_on,
        total_hive_count, breakdown, notes, created_at, updated_at, deleted_at
 FROM apiaries.stock_declarations
 WHERE organization_id = $1 AND id = $2
@@ -16,7 +16,7 @@ FOR UPDATE;
 -- so an offline create and an offline create-then-delete replayed in one batch
 -- both land correctly — the same full-row shape InsertApiary uses.
 INSERT INTO apiaries.stock_declarations (
-    id, organization_id, dgav_registration_number, declared_on,
+    id, organization_id, registration_number, declared_on,
     total_hive_count, breakdown, notes, updated_at, deleted_at
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
@@ -27,7 +27,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
 -- matching UpdateApiary. recorded_at is bumped to server-now, the ingestion
 -- stamp the history/conflict log correlates against (history.md §3).
 UPDATE apiaries.stock_declarations
-SET dgav_registration_number = $3,
+SET registration_number = $3,
     declared_on = $4,
     total_hive_count = $5,
     breakdown = $6,

@@ -61,15 +61,15 @@ type apiaryDTO struct {
 	HiveCount      int32        `json:"hive_count"`
 	Location       *geoPointDTO `json:"location,omitempty"`
 	PlaceLabel     *string      `json:"place_label,omitempty"`
-	// DgavRegistrationNumber (FR-AP-9, #296) is the per-apiary OVERRIDE of the
-	// organization's DGAV registration-number default; omitted when the
-	// apiary simply inherits it (the normal case). The client resolves the
-	// EFFECTIVE number as this-or-the-organization's.
-	DgavRegistrationNumber *string   `json:"dgav_registration_number,omitempty"`
-	Notes                  *string   `json:"notes,omitempty"`
-	DistanceM              *float64  `json:"distance_m,omitempty"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	// RegistrationNumber (FR-AP-9, #296) is the per-apiary OVERRIDE of the
+	// organization's beekeeper registration-number default; omitted when
+	// the apiary simply inherits it (the normal case). The client resolves
+	// the EFFECTIVE number as this-or-the-organization's.
+	RegistrationNumber *string   `json:"registration_number,omitempty"`
+	Notes              *string   `json:"notes,omitempty"`
+	DistanceM          *float64  `json:"distance_m,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type pageDTO struct {
@@ -188,16 +188,16 @@ func listApiaries(q *sqlcgen.Queries) http.HandlerFunc {
 		data := make([]apiaryDTO, 0, len(rows))
 		for _, row := range rows {
 			data = append(data, apiaryDTO{
-				ID:                     uuidString(row.ID),
-				OrganizationID:         uuidString(row.OrganizationID),
-				Name:                   row.Name,
-				HiveCount:              row.HiveCount,
-				Location:               parseGeoJSONPoint(row.LocationGeojson),
-				PlaceLabel:             textPtr(row.PlaceLabel),
-				DgavRegistrationNumber: textPtr(row.DgavRegistrationNumber),
-				Notes:                  textPtr(row.Notes),
-				CreatedAt:              row.CreatedAt.Time,
-				UpdatedAt:              row.UpdatedAt.Time,
+				ID:                 uuidString(row.ID),
+				OrganizationID:     uuidString(row.OrganizationID),
+				Name:               row.Name,
+				HiveCount:          row.HiveCount,
+				Location:           parseGeoJSONPoint(row.LocationGeojson),
+				PlaceLabel:         textPtr(row.PlaceLabel),
+				RegistrationNumber: textPtr(row.RegistrationNumber),
+				Notes:              textPtr(row.Notes),
+				CreatedAt:          row.CreatedAt.Time,
+				UpdatedAt:          row.UpdatedAt.Time,
 			})
 		}
 		writeJSON(w, r, http.StatusOK, listDTO{Data: data, Page: page})
@@ -234,17 +234,17 @@ func listApiariesByProximity(w http.ResponseWriter, r *http.Request, q *sqlcgen.
 	data := make([]apiaryDTO, 0, len(rows))
 	for _, row := range rows {
 		data = append(data, apiaryDTO{
-			ID:                     uuidString(row.ID),
-			OrganizationID:         uuidString(row.OrganizationID),
-			Name:                   row.Name,
-			HiveCount:              row.HiveCount,
-			Location:               parseGeoJSONPoint(row.LocationGeojson),
-			PlaceLabel:             textPtr(row.PlaceLabel),
-			DgavRegistrationNumber: textPtr(row.DgavRegistrationNumber),
-			Notes:                  textPtr(row.Notes),
-			DistanceM:              distancePtr(row.DistanceM),
-			CreatedAt:              row.CreatedAt.Time,
-			UpdatedAt:              row.UpdatedAt.Time,
+			ID:                 uuidString(row.ID),
+			OrganizationID:     uuidString(row.OrganizationID),
+			Name:               row.Name,
+			HiveCount:          row.HiveCount,
+			Location:           parseGeoJSONPoint(row.LocationGeojson),
+			PlaceLabel:         textPtr(row.PlaceLabel),
+			RegistrationNumber: textPtr(row.RegistrationNumber),
+			Notes:              textPtr(row.Notes),
+			DistanceM:          distancePtr(row.DistanceM),
+			CreatedAt:          row.CreatedAt.Time,
+			UpdatedAt:          row.UpdatedAt.Time,
 		})
 	}
 	writeJSON(w, r, http.StatusOK, listDTO{Data: data, Page: page})
@@ -318,16 +318,16 @@ func getApiary(q *sqlcgen.Queries) http.HandlerFunc {
 
 		w.Header().Set("ETag", etagFor(row.UpdatedAt))
 		writeJSON(w, r, http.StatusOK, apiaryDTO{
-			ID:                     uuidString(row.ID),
-			OrganizationID:         uuidString(row.OrganizationID),
-			Name:                   row.Name,
-			HiveCount:              row.HiveCount,
-			Location:               parseGeoJSONPoint(row.LocationGeojson),
-			PlaceLabel:             textPtr(row.PlaceLabel),
-			DgavRegistrationNumber: textPtr(row.DgavRegistrationNumber),
-			Notes:                  textPtr(row.Notes),
-			CreatedAt:              row.CreatedAt.Time,
-			UpdatedAt:              row.UpdatedAt.Time,
+			ID:                 uuidString(row.ID),
+			OrganizationID:     uuidString(row.OrganizationID),
+			Name:               row.Name,
+			HiveCount:          row.HiveCount,
+			Location:           parseGeoJSONPoint(row.LocationGeojson),
+			PlaceLabel:         textPtr(row.PlaceLabel),
+			RegistrationNumber: textPtr(row.RegistrationNumber),
+			Notes:              textPtr(row.Notes),
+			CreatedAt:          row.CreatedAt.Time,
+			UpdatedAt:          row.UpdatedAt.Time,
 		})
 	}
 }
