@@ -232,6 +232,9 @@ GitHub Actions runs a **path-filtered monorepo** pipeline (#88, D-9; see
   the e2e would ship the one artifact the test exists to exercise unverified (`#245`).
 - GitOps-manifest validation (`kubeconform` against the Flux CRD schemas) moved to the
   `beekeepingit-gitops` repo's own `gitops-ci.yml` when the manifests were split out (D-27/ADR-0018).
+  That workflow's `chart-pin` job also asserts, on every gitops PR, that the staging and prod
+  `beekeepingit` `GitRepository` is pinned to a release `tag:` (dev opts out by annotation) and
+  that the umbrella `HelmRelease` sources its chart from it (`#611`).
 
 Deploy is **not** done from CI: a published GitHub Release triggers CI to publish images and open a
 tag-bump **pull request** against the GitOps state; a human merges it and Flux reconciles (D-27,

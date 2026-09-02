@@ -1,6 +1,12 @@
 ---
 name: infra-reviewer
-description: Reviews changes under `infra/` — the Helm umbrella chart, per-environment overlays, cluster scripts — and the CI workflows that drive them. Use for any diff touching `infra/helm/**`, `infra/cluster/**`, `.github/workflows/**`, or a new database table/schema. Catches the traps that fail silently: the hand-synced environments mirror, GitRepository ref pinning, authentik blueprint entries that fail silently, secrets on the wrong environment, and missing grants or PowerSync coverage.
+description: >-
+  Reviews changes under `infra/` — the Helm umbrella chart, per-environment overlays, cluster
+  scripts — and the CI workflows that drive them. Use for any diff touching `infra/helm/**`,
+  `infra/cluster/**`, `.github/workflows/**`, or a new database table/schema. Catches the traps
+  that fail silently: the hand-synced environments mirror, GitRepository ref pinning, authentik
+  blueprint entries that fail silently, secrets on the wrong environment, and missing grants or
+  PowerSync coverage.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---

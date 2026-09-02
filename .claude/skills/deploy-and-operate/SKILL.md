@@ -283,7 +283,9 @@ creating one a **second** render is needed
 - The `GitRepository` `ref` is the only chart pin: Flux ignores `chart.spec.version` for git
   sources. `reconcileStrategy` must stay `Revision` — `Chart.yaml` is frozen at `0.1.0`, so
   `ChartVersion` would never deploy a tag. Before 2026-08-31 every env read `branch: main` and the
-  chart deployed on merge, ungated.
+  chart deployed on merge, ungated. `flux get sources git -A` is the live check; on the Git side the
+  gitops repo's `chart-pin` CI job (`scripts/check-chart-pin.sh`, #611) fails any PR that un-pins
+  staging/prod.
 - The promotion PR's `sed` rewrites every `tag:` in two files; the cluster file must carry exactly
   one (the chart source) — the gitops source stays on `branch: main` or the repo can't update
   itself.
