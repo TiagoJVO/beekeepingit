@@ -7,23 +7,6 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `#584`/`#585` — client↔server validation parity (PRs #591, #596)
-
-- **Confirm (or rule out) the `journey.default_attributes` null case, and open an Issue if
-  it's real.** `journeys_repository.dart` stores SQL NULL for an empty defaults bag, while
-  `validateDefaultAttributes` (`services/journeys/api/types.go`) rejects a present JSON `null`
-  — it skips only on `len(raw) == 0`. Whether that ever reaches the wire depends on whether
-  PowerSync includes null columns in a `put`'s `opData`, which this branch did **not** verify.
-  If it does, clearing a journey's defaults is already failing server-side today and #584 only
-  makes it visible one step earlier; the fix belongs in `validateDefaultAttributes` (treat the
-  `null` literal as absent, like every other optional field on that struct), after which the
-  description's `jsonObject` check must skip an explicit null for that field. Written up in
-  `contracts/validation/README.md`. Cheapest check: log one op's `opData` for a journey with no
-  defaults, or add a `journeys` integration case. #596 now **pins the current behaviour** from
-  both sides (corpus case `journey/patch/default-attributes-is-an-explicit-null`) — the two sides
-  agree today, so if the server is relaxed here the description must be relaxed with it, and that
-  case is what will say so.
-
 ## `dependabot/npm_and_yarn/admin/typescript-7.0.2` (#495 — typescript 5.9.3 → 7.0.2)
 
 - **Blocked on upstream `typescript-eslint`, not a routine dependency bump.** TypeScript
@@ -39,29 +22,21 @@
 
 ---
 
-_Sweep note (2026-09-02, closing out PR [#595](https://github.com/TiagoJVO/beekeepingit/pull/595)):_
-_everything that branch was carrying is **resolved rather than deferred**, so its section is gone._
+_Sweep note (2026-09-02, on `fix/journey-default-attributes-explicit-null`):_
+_The `#584`/`#585` section is gone. Its `journey.default_attributes` bullet was the open question_
+_"does PowerSync put null columns on the wire?" — measured against the real `powersync-sqlite-core`_
+_extension (a `patch` clearing a column DOES emit an explicit JSON `null`; a `put` drops null_
+_columns), so it was a live bug, fixed by this branch rather than promoted. The evidence lives in_
+_`contracts/validation/README.md`._
 
-- _Its Helm-E2E precondition is met_
-  _([run 33578751459](https://github.com/TiagoJVO/beekeepingit/actions/runs/33578751459), green on_
-  _the renamed shape). Its in-place-migration precondition still holds — `v0.0.1-rc13`_
-  _(2026-09-01 10:20Z) is still the newest release and predates those migrations, so no deployed_
-  _database holds the old column name. And its `stock_declarations` runtime-grants bullet is now_
-  _exercised end to end: the rewritten `stock-declarations.spec.ts` records a declaration and_
-  _asserts a **fresh** client downloads it, which only works if the server INSERTed the row._
-- _`If-Match` on the organization-details save was opened as_
-  _[#601](https://github.com/TiagoJVO/beekeepingit/issues/601) and then \**implemented on the same_
-  _branch\**, so it closes with that PR rather than outliving it._
-- _The `#584`/`#585` section's `_fieldLabel` bullet is **implemented, not promoted**: it asked for_
-  _labels for `declared_on`, `total_hive_count` and `registration_number` — fields #595 introduced —_
-  _and was marked "needs an owner" only because its original issue (#443) had closed._
+_Its `_fieldLabel` sibling was already pruned by_
+_[#595](https://github.com/TiagoJVO/beekeepingit/pull/595), which implemented labels for the three_
+_fields it introduced. The wider localization of the needs-fix screen is still open as_
+_[#600](https://github.com/TiagoJVO/beekeepingit/issues/600) (PR_
+_[#602](https://github.com/TiagoJVO/beekeepingit/pull/602)) — tracked in Issues, not here._
 
-_Its sibling `journey.default_attributes` bullet **stays here deliberately**. It was verified true_
-_(PowerSync's `powersync_diff` omits nulls from a `put` but emits an explicit `null` from a patch_
-_that clears a column, so clearing a journey's defaults has never been able to sync) and is fixed —_
-_but in its **own PR**, since it is journeys and the shared validation description rather than_
-_apiaries. Prune this bullet when that PR merges._
+_The `#296`/`#298` section went with #595, whose e2e now records a declaration end to end._
 
-_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked: still open — blocked on_
-_upstream `typescript-eslint` supporting TypeScript 7, so it is genuinely not ours to close._
+_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that entry stands._
+_[#597](https://github.com/TiagoJVO/beekeepingit/issues/597) is open and tracked in Issues, not here._
 _Prior sweep notes dropped with their entries, per this file's convention._

@@ -1541,7 +1541,7 @@
     },
     {
       "name": "journey/patch/default-attributes-is-an-explicit-null",
-      "why": "The rough edge recorded in contracts/validation/README.md: validateDefaultAttributes skips only on an ABSENT bag, so a present `null` is rejected. Both sides agree today; if the server is ever relaxed here, this case is what says the description must be relaxed with it.",
+      "why": "An explicit null is how a journey's defaults get CLEARED: PowerSync's upload diff emits a column key only when it changed, and a column cleared to SQL NULL is emitted as JSON null (verified against powersync-sqlite-core — contracts/validation/README.md). Both sides accept it and read it as \"no defaults\"; the description says so with absentWhen: jsonNull. Contrast activity/patch/attributes-is-an-explicit-null, which is still REJECTED — the relaxation is per-field, not a change to what jsonObject means.",
       "entityType": "journey",
       "op": {
         "op": "patch",
@@ -1550,13 +1550,20 @@
         "updated_at": "2026-09-01T10:00:00Z",
         "data": { "default_attributes": null }
       },
-      "expect": [
-        {
-          "field": "data.default_attributes",
-          "code": "invalid",
-          "message": "default_attributes must be a JSON object"
-        }
-      ]
+      "expect": []
+    },
+    {
+      "name": "journey/patch/clearing-defaults-alongside-a-real-edit",
+      "why": "The op a device actually produces when a user changes a journey's main activity type, which clears the defaults section client-side: one patch carrying the changed column AND the cleared bag. This is the edit that was dead-lettered before the fix.",
+      "entityType": "journey",
+      "op": {
+        "op": "patch",
+        "entity_type": "journey",
+        "id": "55555555-5555-5555-5555-555555555555",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "data": { "main_activity_type": "harvest", "default_attributes": null }
+      },
+      "expect": []
     },
     {
       "name": "journey/patch/default-attributes-well-under-the-byte-cap",

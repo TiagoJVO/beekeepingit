@@ -541,6 +541,36 @@ func TestJourneysRest_Update_AbsentDefaultAttributesPreservesStored(t *testing.T
 	}
 }
 
+// TestJourneysRest_Update_ExplicitNullDefaultAttributesClearsStored is the
+// REST half of the explicit-null contract: `"default_attributes": null` is a
+// present-and-cleared value, distinct from an absent key (the test above),
+// and it must leave the column SQL NULL — not the JSONB literal `null`, which
+// would break the NULL-means-no-defaults convention every reader relies on.
+func TestJourneysRest_Update_ExplicitNullDefaultAttributesClearsStored(t *testing.T) {
+	apiaryID := uuid.NewString()
+	f := newJourneysFixture(t, apiaryID)
+	id := uuid.NewString()
+	createBodyReq := createBodyWithDefaultAttributes(id, "Journey", "feeding", []string{apiaryID}, map[string]any{"feed_type": "Xarope 1:1"})
+	if rec := f.do(t, http.MethodPost, "/v1/journeys", createBodyReq); rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %s", rec.Code, rec.Body.String())
+	}
+
+	updateReq := updateBody("Journey", "feeding", []string{apiaryID}, nil)
+	updateReq["default_attributes"] = nil
+	rec := f.do(t, http.MethodPatch, "/v1/journeys/"+id, updateReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var got journeyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.DefaultAttributes != nil {
+		t.Fatalf("default_attributes = %+v, want nil after an explicit null cleared it", got.DefaultAttributes)
+	}
+	assertStoredDefaultAttributesAreSQLNull(t, f, id)
+}
+
 func TestJourneysRest_Update_PresentDefaultAttributesReplaces(t *testing.T) {
 	apiaryID := uuid.NewString()
 	f := newJourneysFixture(t, apiaryID)
@@ -1578,6 +1608,88 @@ func journeyPutOpWithDefaultAttributes(id, name, mainActivityType string, defaul
 	op := journeyPutOp(id, name, mainActivityType)
 	op["data"].(map[string]any)["default_attributes"] = defaultAttributes
 	return op
+}
+
+// assertStoredDefaultAttributesAreSQLNull reads the journey straight out of
+// Postgres and asserts the column holds SQL NULL — the difference this whole
+// contract turns on, and one the DTO cannot show: both SQL NULL and the JSONB
+// literal `null` decode to a nil map on the way out.
+func assertStoredDefaultAttributesAreSQLNull(t *testing.T, f *journeysFixture, journeyID string) {
+	t.Helper()
+	q := sqlcgen.New(f.pool)
+	row, err := q.GetJourney(context.Background(), sqlcgen.GetJourneyParams{OrganizationID: devseedOrg(), ID: pgtype.UUID{Bytes: uuid.MustParse(journeyID), Valid: true}})
+	if err != nil {
+		t.Fatalf("GetJourney: %v", err)
+	}
+	if row.DefaultAttributes != nil {
+		t.Fatalf("stored default_attributes = %s, want SQL NULL (nil bytes), not the JSONB literal", row.DefaultAttributes)
+	}
+}
+
+// TestJourneysSync_Validate_AcceptsExplicitNullDefaultAttributes pins the op a
+// device actually uploads when a user CLEARS a journey's defaults. PowerSync's
+// upload diff carries a column key only when the column changed, and a column
+// set to SQL NULL is emitted as JSON `null` — verified against
+// powersync-sqlite-core itself (contracts/validation/README.md
+// §"journey.default_attributes and an explicit null"). Rejecting it sent an
+// ordinary edit to the dead-letter queue.
+func TestJourneysSync_Validate_AcceptsExplicitNullDefaultAttributes(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	op := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T11:00:00Z",
+		// Exactly the diff PowerSync uploads for "the user changed the main
+		// activity type, which cleared the defaults section".
+		"data": map[string]any{"main_activity_type": "harvest", "default_attributes": nil},
+	}
+
+	rec := f.do(t, http.MethodPost, "/internal/sync/validate", map[string]any{"ops": []any{op}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (an explicit null clears the bag), body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestJourneysSync_Apply_Patch_ExplicitNullDefaultAttributesClearsStored is the
+// counterpart of ..._AbsentDefaultAttributesKeepsStored: absent means
+// "untouched", an explicit null means "the user cleared it". Conflating the two
+// would silently drop the clear.
+func TestJourneysSync_Apply_Patch_ExplicitNullDefaultAttributesClearsStored(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	createOp := journeyPutOpWithDefaultAttributes(journeyID, "Journey", "feeding", map[string]any{"feed_type": "Candi"})
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{createOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("create apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	patchOp := map[string]any{
+		"op": "patch", "entity_type": "journey", "id": journeyID,
+		"updated_at": "2026-07-16T11:00:00Z",
+		"data":       map[string]any{"main_activity_type": "harvest", "default_attributes": nil},
+	}
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{patchOp}}); rec.Code != http.StatusOK {
+		t.Fatalf("patch apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	assertStoredDefaultAttributesAreSQLNull(t, f, journeyID)
+}
+
+// TestJourneysSync_Apply_Put_ExplicitNullDefaultAttributesStoresSQLNull covers
+// the materializing branch: a put naming an explicit null must store SQL NULL,
+// not the 4 raw bytes `null`. PowerSync never produces this shape for a put (it
+// drops null columns from a put's diff entirely), but apply is an independent
+// endpoint that must not assume its input came from that one writer.
+func TestJourneysSync_Apply_Put_ExplicitNullDefaultAttributesStoresSQLNull(t *testing.T) {
+	f := newJourneysFixture(t)
+	journeyID := uuid.NewString()
+	op := journeyPutOp(journeyID, "Journey", "harvest")
+	op["data"].(map[string]any)["default_attributes"] = nil
+
+	if rec := f.do(t, http.MethodPost, "/internal/sync/apply", map[string]any{"ops": []any{op}}); rec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	assertStoredDefaultAttributesAreSQLNull(t, f, journeyID)
 }
 
 func TestJourneysSync_Validate_RejectsNonObjectDefaultAttributes(t *testing.T) {
