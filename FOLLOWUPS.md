@@ -7,32 +7,6 @@
 > resolved — pruned or promoted to an Issue — by the time that PR merges. Completed work is
 > not recorded here; the commit, the PR description, and git history already keep that record.
 
-## `#584`/`#585` — client↔server validation parity (PRs #591, #596)
-
-- **Confirm (or rule out) the `journey.default_attributes` null case, and open an Issue if
-  it's real.** `journeys_repository.dart` stores SQL NULL for an empty defaults bag, while
-  `validateDefaultAttributes` (`services/journeys/api/types.go`) rejects a present JSON `null`
-  — it skips only on `len(raw) == 0`. Whether that ever reaches the wire depends on whether
-  PowerSync includes null columns in a `put`'s `opData`, which this branch did **not** verify.
-  If it does, clearing a journey's defaults is already failing server-side today and #584 only
-  makes it visible one step earlier; the fix belongs in `validateDefaultAttributes` (treat the
-  `null` literal as absent, like every other optional field on that struct), after which the
-  description's `jsonObject` check must skip an explicit null for that field. Written up in
-  `contracts/validation/README.md`. Cheapest check: log one op's `opData` for a journey with no
-  defaults, or add a `journeys` integration case. #596 now **pins the current behaviour** from
-  both sides (corpus case `journey/patch/default-attributes-is-an-explicit-null`) — the two sides
-  agree today, so if the server is relaxed here the description must be relaxed with it, and that
-  case is what will say so.
-- **Give the `_fieldLabel` table entries for the stock-declaration fields — and needs an owner.**
-  `client/lib/features/sync/sync_rejection_messages.dart` has no label for `declared_on`,
-  `total_hive_count` or `dgav_registration_number`, so a rejected DGAV stock declaration (#298)
-  degrades to the generic "needs your attention" line even though #584 now produces exact
-  `(field, code)` pairs for it. Graceful, not broken — but it throws away guidance that is
-  already there. Three labels plus their EN/PT strings. **Sweep note (#596): its owning issue
-  #443 has since CLOSED without them**, so this entry is stale by this file's own rule and needs
-  promoting to its own Issue (or folding into #597's scope, which references it) rather than
-  sitting here.
-
 ## `#296`/`#298` — DGAV registration + stock declarations (PR #593, merged)
 
 - **`stock_declarations` runtime grants are still unexercised on a real environment.** Helm-E2E
@@ -58,14 +32,15 @@
 
 ---
 
-_Sweep note (2026-09-02, during #585 / PR [#596](https://github.com/TiagoJVO/beekeepingit/pull/596)):_
-_PR [#591](https://github.com/TiagoJVO/beekeepingit/pull/591) merged, so the `feat/client-validation-parity`_
-_branch section was stale by definition; retitled to the issues it belongs to, matching how the merged_
-_`#296`/`#298` section is kept. Its save-time-call-site bullet said to promote if #585 didn't pick it up —_
-_#585 did not (it built the boundary-contract corpus, not a call site), so it is now_
-_[#597](https://github.com/TiagoJVO/beekeepingit/issues/597), a sub-issue of EPIC-06 (#7), and the bullet_
-_is pruned. The `default_attributes` bullet stays: still unverified, but now pinned from both sides by the_
-_corpus. The `_fieldLabel` bullet also stays, flagged — its owning issue #443 has CLOSED without the_
-_labels, so it needs its own Issue; left for a human rather than opened unprompted._
+_Sweep note (2026-09-02, on `fix/journey-default-attributes-explicit-null`):_
+_The whole `#584`/`#585` section is gone. Its `journey.default_attributes` bullet was the open_
+_question "does PowerSync put null columns on the wire?" — measured against the real_
+_`powersync-sqlite-core` extension (a `patch` clearing a column DOES emit an explicit JSON `null`;_
+_a `put` drops null columns), so it was a live bug, fixed by that branch rather than promoted; the_
+_evidence lives in `contracts/validation/README.md`. Its `_fieldLabel` bullet belongs to_
+_[#600](https://github.com/TiagoJVO/beekeepingit/issues/600), landed by PR_
+_[#602](https://github.com/TiagoJVO/beekeepingit/pull/602), which prunes it too — whichever of the_
+_two merges second, the section ends up gone either way._
 _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and still open — that entry stands._
+_[#597](https://github.com/TiagoJVO/beekeepingit/issues/597) is open and tracked in Issues, not here._
 _Prior sweep notes dropped with their entries, per this file's convention._

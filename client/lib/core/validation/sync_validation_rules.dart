@@ -144,6 +144,18 @@ enum SyncFieldAbsence {
 
   /// `null` or an all-whitespace string (`strings.TrimSpace(*data.X) == ""`).
   blank,
+
+  /// A `json.RawMessage` field whose server guard skips an explicit JSON
+  /// `null` as well as a missing key (`len(raw) == 0 || isJSONNull(raw)`).
+  ///
+  /// The distinction matters only for the shape checks that read RAW presence
+  /// rather than this "absent" notion — `jsonObject` and `maxBytes`. For a
+  /// RawMessage field WITHOUT this marker (activities' `attributes`), a
+  /// present `null` is four wire bytes that are not an object, and the server
+  /// rejects it; with it (journeys' `default_attributes`), the server reads it
+  /// as "no defaults" — the wire form of a cleared bag, which is what
+  /// PowerSync uploads for a column set to SQL NULL.
+  jsonNull,
 }
 
 /// One field's rules inside an entity's `data` object.
@@ -160,6 +172,7 @@ class SyncFieldRules {
       null => SyncFieldAbsence.nullOnly,
       'empty' => SyncFieldAbsence.empty,
       'blank' => SyncFieldAbsence.blank,
+      'jsonNull' => SyncFieldAbsence.jsonNull,
       final other => throw FormatException('unknown absentWhen: $other'),
     },
     checks: [
