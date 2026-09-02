@@ -41,6 +41,13 @@ _[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) re-checked and stil
 _[#597](https://github.com/TiagoJVO/beekeepingit/issues/597) is open and tracked in Issues, not here._
 _Prior sweep notes dropped with their entries, per this file's convention._
 
+_Sweep note (2026-09-02, during #600 / PR [#602](https://github.com/TiagoJVO/beekeepingit/pull/602)):_
+_no entries added or pruned — [#595](https://github.com/TiagoJVO/beekeepingit/pull/595) landed the_
+_labels first, so #600's remaining half is the test guard that keeps them from silently going_
+_missing again, which owes this file nothing. Sections re-checked and left as #595 wrote them:_
+_the `journey.default_attributes` bullet is still pending its own journeys PR, and_
+_[#495](https://github.com/TiagoJVO/beekeepingit/issues/495) is still open upstream._
+
 _Sweep note (2026-09-02, during [#597](https://github.com/TiagoJVO/beekeepingit/issues/597) / PR_
 _[#605](https://github.com/TiagoJVO/beekeepingit/pull/605), after merging `main`):_
 _This branch adds **no** entry, agreeing with the note above. Its one candidate — the three write_
@@ -55,4 +62,6 @@ _implemented the `_fieldLabel` entries, and [#603](https://github.com/TiagoJVO/b
 _landed the `journey.default_attributes` fix, taking the `#584`/`#585` section with it. The sweep_
 _notes above already record both accurately. #597 neither depended on #603 nor blocked it:_
 _`JourneysRepository.draftForSave` omits the key entirely when there are no defaults, and **absent**_
-_was valid on both sides before #603 and stays valid after it._
+_was valid on both sides before #603 and stays valid after it. (This supersedes the #602 note above_
+_on one point only: that note was written before #603 merged, so its "still pending its own journeys_
+_PR" line is no longer true — #603 landed and took the whole `#584`/`#585` section with it.)_

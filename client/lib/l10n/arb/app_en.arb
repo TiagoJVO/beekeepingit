@@ -720,7 +720,7 @@
   },
   "syncNeedsFixRuleNonNegative": "this must be 0 or more.",
   "@syncNeedsFixRuleNonNegative": {
-    "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)"
+    "description": "Needs-fix rule fragment replacing the generic out-of-range copy for the count fields whose only bound is >= 0 — an apiary's hive count, a counter's value, and a stock declaration's total (#443, #600)"
   },
   "syncNeedsFixRuleLatitudeRange": "this must be between -90 and 90.",
   "@syncNeedsFixRuleLatitudeRange": {

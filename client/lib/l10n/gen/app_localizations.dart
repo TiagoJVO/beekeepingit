@@ -1016,7 +1016,7 @@ abstract class AppLocalizations {
   /// **'an entry here is outside the allowed range.'**
   String get syncNeedsFixRuleAttributeOutOfRange;
 
-  /// Needs-fix rule fragment replacing the generic out-of-range copy for the two count fields whose only bound is >= 0 (#443)
+  /// Needs-fix rule fragment replacing the generic out-of-range copy for the count fields whose only bound is >= 0 — an apiary's hive count, a counter's value, and a stock declaration's total (#443, #600)
   ///
   /// In en, this message translates to:
   /// **'this must be 0 or more.'**
