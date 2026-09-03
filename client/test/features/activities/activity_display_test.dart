@@ -1,6 +1,7 @@
 import 'package:beekeepingit_client/features/activities/activities_repository.dart';
 import 'package:beekeepingit_client/features/activities/activity_display.dart';
 import 'package:beekeepingit_client/l10n/gen/app_localizations_en.dart';
+import 'package:beekeepingit_client/l10n/gen/app_localizations_pt.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _l10n = AppLocalizationsEn();
@@ -70,7 +71,8 @@ void main() {
           attributes: {'feed_type': 'Xarope 1:1', 'feed_amount': 2.0},
         ),
       );
-      expect(line, contains('Xarope 1:1'));
+      // #625: 'Xarope 1:1' is the stored value; English renders '1:1 syrup'.
+      expect(line, contains('1:1 syrup'));
       expect(line, contains('Feed amount: 2.0'));
     });
 
@@ -104,7 +106,7 @@ void main() {
           ),
         );
         expect(line, contains('Detection only (no treatment yet)'));
-        expect(line, contains('Disease / condition: Varroose'));
+        expect(line, contains('Disease / condition: Varroosis'));
         expect(line, isNot(contains('null')));
       },
     );
@@ -207,9 +209,56 @@ void main() {
           rowFor(rows, 'Treatment context')?.value,
           'Detection only (no treatment yet)',
         );
-        expect(rowFor(rows, 'Disease / condition')?.value, 'Varroose');
+        // #625: the stored value stays 'Varroose'; English renders it in
+        // English (NFR-I18N-1).
+        expect(rowFor(rows, 'Disease / condition')?.value, 'Varroosis');
         expect(rowFor(rows, 'Treatment product'), isNull);
         expect(rows.any((r) => r.value.contains('null')), isFalse);
+      },
+    );
+
+    test('vocabulary values render in the active language while the stored '
+        'attribute is untouched (#625, NFR-I18N-1)', () {
+      final activity = _activity(
+        type: 'treatment',
+        attributes: {
+          'treatment_context': 'disease_specific',
+          'treatment_type': 'Ácido oxálico',
+          'disease': 'Loque americana',
+        },
+      );
+
+      final en = activityDetailRows(_l10n, activity);
+      expect(rowFor(en, 'Treatment product')?.value, 'Oxalic acid');
+      expect(rowFor(en, 'Disease / condition')?.value, 'American foulbrood');
+
+      final pt = activityDetailRows(AppLocalizationsPt(), activity);
+      expect(rowFor(pt, 'Produto de tratamento')?.value, 'Ácido oxálico');
+      expect(rowFor(pt, 'Doença / condição')?.value, 'Loque americana');
+
+      // The activity's own attributes were never rewritten.
+      expect(activity.attributes['treatment_type'], 'Ácido oxálico');
+      expect(activity.attributes['disease'], 'Loque americana');
+    });
+
+    test(
+      'an out-of-vocabulary stored disease falls back to its raw value rather '
+      'than a blank row (#625)',
+      () {
+        final rows = activityDetailRows(
+          _l10n,
+          _activity(
+            type: 'treatment',
+            attributes: {
+              'treatment_context': 'disease_specific',
+              'disease': 'Alguma outra doença',
+            },
+          ),
+        );
+        expect(
+          rowFor(rows, 'Disease / condition')?.value,
+          'Alguma outra doença',
+        );
       },
     );
   });
